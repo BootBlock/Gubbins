@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,8 +10,15 @@ import {
   type LocationWithCount,
   type TrackingMode,
 } from '@/db/repositories';
+import {
+  applyScrapeMerge,
+  buildScrapeMergePlan,
+  ScrapeSupplierPanel,
+  useScrapeNotifier,
+  type ScrapeResultPayload,
+} from '@/features/scraping';
 import { useCategories } from '../categories';
-import { useCreateItem, useCreateSerialisedItems } from '../mutations';
+import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
 /**
@@ -24,6 +32,9 @@ const schema = z
     locationId: z.string().min(1, 'Please choose a location.'),
     categoryId: z.string().optional(),
     trackingMode: z.enum(TRACKING_MODES),
+    mpn: z.string().optional(),
+    manufacturer: z.string().optional(),
+    unitCost: z.string().optional(),
     quantity: z.string().optional(),
     count: z.string().optional(),
     unitOfMeasure: z.string().optional(),
@@ -57,12 +68,18 @@ export function CreateItemDialog({
 }) {
   const createItem = useCreateItem();
   const createSerialised = useCreateSerialisedItems();
+  const applyScrape = useApplyScrape();
+  const notifyScrape = useScrapeNotifier();
   const { data: categories } = useCategories();
+  // Supplier MPNs to map onto the new item as aliases once it is created (§4).
+  const [pendingAliases, setPendingAliases] = useState<readonly string[]>([]);
   const {
     register,
     handleSubmit,
     watch,
     reset,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -71,6 +88,9 @@ export function CreateItemDialog({
       locationId: defaultLocationId ?? UNASSIGNED_LOCATION_ID,
       categoryId: '',
       trackingMode: 'DISCRETE',
+      mpn: '',
+      manufacturer: '',
+      unitCost: '',
       quantity: '1',
       count: '1',
       unitOfMeasure: 'g',
@@ -83,22 +103,75 @@ export function CreateItemDialog({
   const trackingMode = watch('trackingMode') as TrackingMode;
   const isPending = createItem.isPending || createSerialised.isPending;
 
+  // §4 no-overwrite: a scrape only fills fields the user has left blank on the form.
+  const onScrapeResult = (payload: ScrapeResultPayload) => {
+    const v = getValues();
+    const plan = buildScrapeMergePlan(
+      {
+        mpn: v.mpn?.trim() || null,
+        manufacturer: v.manufacturer?.trim() || null,
+        description: null,
+        unitCost: v.unitCost?.trim() ? Number(v.unitCost) : null,
+        aliases: [],
+      },
+      payload,
+    );
+    const write = applyScrapeMerge(plan); // FILL fields only — no opt-in overwrites here
+    const filled: string[] = [];
+    if (write.fields.mpn !== undefined) {
+      setValue('mpn', write.fields.mpn, { shouldDirty: true });
+      filled.push('MPN');
+    }
+    if (write.fields.manufacturer !== undefined) {
+      setValue('manufacturer', write.fields.manufacturer, { shouldDirty: true });
+      filled.push('manufacturer');
+    }
+    if (write.fields.unitCost !== undefined) {
+      setValue('unitCost', String(write.fields.unitCost), { shouldDirty: true });
+      filled.push('unit cost');
+    }
+    setPendingAliases(write.aliasAdditions);
+    const host = (() => {
+      try {
+        return new URL(payload.distributor_url).hostname;
+      } catch {
+        return 'supplier';
+      }
+    })();
+    notifyScrape(filled.length > 0 ? `Filled ${filled.join(', ')} from ${host}.` : `No empty fields to fill from ${host}.`);
+  };
+
   const onSubmit = (values: FormValues) => {
     const base = {
       name: values.name.trim(),
       locationId: values.locationId,
       categoryId: values.categoryId ? values.categoryId : undefined,
       trackingMode: values.trackingMode,
+      ...(values.mpn?.trim() ? { mpn: values.mpn.trim() } : {}),
+      ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
+      ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
     };
     const done = () => {
       reset();
+      setPendingAliases([]);
       onClose();
+    };
+    // Map the scraped supplier MPN(s) onto the freshly-created item (§4 alias mapping).
+    const mapAliases = (itemId: string, next: () => void) => {
+      if (pendingAliases.length === 0) return next();
+      applyScrape.mutate(
+        { id: itemId, write: { fields: {}, aliasAdditions: pendingAliases } },
+        { onSettled: next },
+      );
     };
 
     if (values.trackingMode === 'SERIALISED') {
       // Auto-clone N distinct instance records sharing a name (spec §4).
       const count = Math.max(1, Math.floor(Number(values.count) || 1));
-      createSerialised.mutate({ ...base, count }, { onSuccess: done });
+      createSerialised.mutate(
+        { ...base, count },
+        { onSuccess: (items) => mapAliases(items[0]?.id ?? '', done) },
+      );
       return;
     }
 
@@ -117,17 +190,18 @@ export function CreateItemDialog({
         },
       };
     }
-    createItem.mutate(input, { onSuccess: done });
+    createItem.mutate(input, { onSuccess: (item) => mapAliases(item.id, done) });
   };
 
   const handleClose = () => {
     reset();
+    setPendingAliases([]);
     onClose();
   };
 
   return (
     <Modal open={open} onClose={handleClose} title="Add item" description="Create a new inventory item.">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="max-h-[78vh] space-y-4 overflow-y-auto pr-1">
         <Field label="Name" error={errors.name?.message}>
           <Input autoFocus placeholder="e.g. M3 × 10 socket screws" {...register('name')} />
         </Field>
@@ -162,6 +236,21 @@ export function CreateItemDialog({
               </option>
             ))}
           </Select>
+        </Field>
+
+        {/* §9 supplier scrape — rendered only when the companion extension is present. */}
+        <ScrapeSupplierPanel onResult={onScrapeResult} />
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="MPN (optional)">
+            <Input placeholder="e.g. NE555P" {...register('mpn')} />
+          </Field>
+          <Field label="Manufacturer (optional)">
+            <Input placeholder="e.g. Texas Instruments" {...register('manufacturer')} />
+          </Field>
+        </div>
+        <Field label="Unit cost (optional)">
+          <Input type="number" min={0} step="any" placeholder="0.00" {...register('unitCost')} />
         </Field>
 
         {trackingMode === 'DISCRETE' ? (

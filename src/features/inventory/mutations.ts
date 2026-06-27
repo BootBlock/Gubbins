@@ -25,6 +25,7 @@ import {
   type GaugeAdjustment,
   type Item,
   type Page,
+  type ScrapeApplyInput,
   type UpdateItemInput,
   type UpdateLocationInput,
 } from '@/db/repositories';
@@ -133,6 +134,24 @@ export function useUpdateItem() {
     onSettled: (_d, _e, { id }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
+    },
+  });
+}
+
+/**
+ * Apply an external-scrape merge atomically (spec §4, §9). Invalidation-based: the
+ * write touches item fields, aliases and the Activity Ledger together, so a full
+ * refresh of the affected slices is simpler and safer than an optimistic patch.
+ */
+export function useApplyScrape() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, write }: { id: string; write: ScrapeApplyInput }) =>
+      getItemRepository().applyScrape(id, write),
+    onSettled: (_d, _e, { id }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });
 }

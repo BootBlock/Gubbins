@@ -15,7 +15,15 @@
  * by that capability; plus the Phase 6 flows: generating a printable QR code,
  * simulating a scan/decode and checking the item out to an auto-created contact,
  * viewing & returning the loan on the contacts screen, and running a JSON backup
- * through the Export Wizard. Asserts there are no console/page errors.
+ * through the Export Wizard; plus the Phase 7 flows: connecting the in-memory cloud
+ * provider and publishing, downloading a versioned-JSON backup of the real OPFS
+ * database, and importing that backup (merge restore) followed by a clean re-sync;
+ * plus the Phase 8 flows: simulating the companion extension's EXTENSION_READY to
+ * unlock the "Scrape Supplier" control, proving an invalid/foreign-origin message is
+ * silently dropped, applying a trusted SCRAPE_RESULT that fills the empty MPN/price
+ * fields **without** overwriting a user-edited manufacturer, and re-scraping an
+ * existing item through the §4 no-overwrite review (a populated field stays put).
+ * Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
@@ -110,6 +118,9 @@ const tagName = `smoke-${stamp}`;
 const projectName = `Smoke Project ${stamp}`;
 const partName = `Smoke Part ${stamp}`;
 const borrowerName = `Smoke Borrower ${stamp}`;
+const scrapeItemName = `Smoke Scrape ${stamp}`;
+const scrapedMpn = `NE555P-${stamp}`;
+const userManufacturer = 'ACME (user)';
 
 // A small valid PNG, enough for the canvas→WebP compression pipeline to decode.
 const pngBuffer = makePng(8);
@@ -142,7 +153,8 @@ try {
     const dialog = page.getByRole('dialog', { name: 'Add item' });
     await dialog.getByLabel('Name').fill(filamentName);
     await dialog.getByLabel('Tracking').selectOption('CONSUMABLE_GAUGE');
-    await dialog.getByLabel('Unit').fill('g');
+    // Exact match: the Phase 8 "Unit cost" field also contains the word "Unit".
+    await dialog.getByLabel('Unit', { exact: true }).fill('g');
     await dialog.getByLabel('Full capacity').fill('1000');
     await dialog.getByLabel('Tare (empty)').fill('250');
     await dialog.getByRole('button', { name: 'Create item' }).click();
@@ -462,6 +474,184 @@ try {
     if (!file.suggestedFilename().endsWith('.zip')) {
       throw new Error(`unexpected vault filename: ${file.suggestedFilename()}`);
     }
+    await page.keyboard.press('Escape');
+  });
+
+  // --- Phase 7: Cloud Sync & File System Access --------------------------------
+  // These hops stay inside the SPA (in-app <Link> clicks, never page.goto) because
+  // the in-memory provider's "remote" lives in JS module memory; a full reload would
+  // reset it. They drive the genuine OPFS worker path for snapshot/apply/backup.
+
+  let backupJson = '';
+  await step('connects the in-memory sync provider and publishes', async () => {
+    await page.getByRole('link', { name: 'Sync' }).first().click();
+    await page.getByRole('heading', { name: /Cloud Sync/ }).waitFor({ state: 'visible', timeout: 12000 });
+    await page.getByTestId('connect-memory').click();
+    await page.getByTestId('sync-provider-label').waitFor({ state: 'visible', timeout: 8000 });
+    await page.getByTestId('sync-now').click();
+    // First sync publishes the local state; the result line reports the status.
+    await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 12000 });
+  });
+
+  await step('downloads a versioned-JSON backup of the real OPFS database', async () => {
+    const download = page.waitForEvent('download', { timeout: 15000 });
+    await page.getByTestId('download-backup').click();
+    const file = await download;
+    if (!file.suggestedFilename().endsWith('.json')) {
+      throw new Error(`unexpected backup filename: ${file.suggestedFilename()}`);
+    }
+    const fs = await import('node:fs/promises');
+    backupJson = await fs.readFile(await file.path(), 'utf8');
+    const parsed = JSON.parse(backupJson);
+    if (parsed.formatVersion !== 1) throw new Error(`backup formatVersion ${parsed.formatVersion} != 1`);
+    const items = parsed.tables?.items ?? [];
+    if (!items.some((it) => it.name === screwName)) {
+      throw new Error('backup snapshot is missing the expected item');
+    }
+  });
+
+  await step('imports the backup (merge) and re-syncs cleanly', async () => {
+    // Still on /sync. Import the just-downloaded backup through the real OPFS restore
+    // path, then run a second sync over the restored state — both must be error-free.
+    await page.getByTestId('restore-input').setInputFiles({
+      name: 'gubbins-backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(backupJson, 'utf8'),
+    });
+    await page.getByTestId('confirm-restore').click();
+    await page.getByTestId('sync-notice').waitFor({ state: 'visible', timeout: 12000 });
+    await page.getByTestId('sync-now').click();
+    await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 12000 });
+
+    // The database is intact after import + sync: the item is still searchable.
+    await page.getByRole('link', { name: 'Inventory' }).first().click();
+    await page.getByLabel('Search items').fill(screwName);
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  // --- Phase 8: External Data Scraping via Extension (§4, §9) -------------------
+  // The companion extension is feature-detected via a trusted-origin postMessage
+  // bridge. We simulate the extension here (the real one is built separately) by
+  // posting protocol-conformant messages from the page's own origin.
+
+  const EXT_SOURCE = 'HARDWARE_TRACKER_EXT';
+  const postExtMessage = (message) =>
+    page.evaluate((msg) => window.postMessage(msg, window.location.origin), message);
+  const pollInputValue = async (locator, expected, label) => {
+    for (let i = 0; i < 30; i += 1) {
+      if ((await locator.inputValue()) === expected) return;
+      await page.waitForTimeout(100);
+    }
+    throw new Error(`${label} did not become "${expected}" (was "${await locator.inputValue()}")`);
+  };
+
+  await step('extension EXTENSION_READY unlocks the Scrape Supplier control (§9.3)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    // Before readiness the panel must NOT exist (graceful degradation to manual).
+    if (await dialog.getByTestId('scrape-supplier-panel').count()) {
+      throw new Error('Scrape panel rendered before EXTENSION_READY');
+    }
+    await postExtMessage({ source: EXT_SOURCE, type: 'EXTENSION_READY', payload: { version: '1.0.0' } });
+    await dialog.getByTestId('scrape-supplier-panel').waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  await step('a foreign-origin/invalid message is silently dropped (§9.1)', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    const mpn = dialog.getByLabel('MPN (optional)');
+    // A forged-signature SCRAPE_RESULT must be ignored — and must not raise an error.
+    await postExtMessage({
+      source: 'EVIL_EXT',
+      type: 'SCRAPE_RESULT',
+      payload: { mpn: 'HACKED', manufacturer: 'x', description: 'x', distributor_url: 'https://evil.test/p', scraped_pricing: null },
+    });
+    // A malformed (schema-invalid) message from the right source must also be dropped.
+    await postExtMessage({ source: EXT_SOURCE, type: 'SCRAPE_RESULT', payload: { mpn: 42 } });
+    await page.waitForTimeout(300);
+    if ((await mpn.inputValue()) !== '') throw new Error('an invalid message populated the form');
+  });
+
+  await step('a trusted SCRAPE_RESULT fills empty fields without overwriting user entries (§4)', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.getByLabel('Name').fill(scrapeItemName);
+    const mpn = dialog.getByLabel('MPN (optional)');
+    const manufacturer = dialog.getByLabel('Manufacturer (optional)');
+    const unitCost = dialog.getByLabel('Unit cost (optional)');
+    // The user has already typed a manufacturer — it must be preserved.
+    await manufacturer.fill(userManufacturer);
+
+    await dialog.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
+    await dialog.getByRole('button', { name: 'Scrape' }).click();
+    // Now the (trusted) extension answers.
+    await postExtMessage({
+      source: EXT_SOURCE,
+      type: 'SCRAPE_RESULT',
+      payload: {
+        mpn: scrapedMpn,
+        manufacturer: 'Texas Instruments',
+        description: 'Precision 555 timer IC',
+        distributor_url: 'https://www.digikey.co.uk/p/ne555p',
+        scraped_pricing: { currency: 'GBP', value: 0.42 },
+      },
+    });
+
+    await pollInputValue(mpn, scrapedMpn, 'MPN'); // empty → filled
+    await pollInputValue(unitCost, '0.42', 'Unit cost'); // empty → filled
+    if ((await manufacturer.inputValue()) !== userManufacturer) {
+      throw new Error('scrape overwrote the user-edited manufacturer');
+    }
+    // A passive toast confirms the apply (§4 default notification).
+    await page.getByTestId('toast').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(scrapeItemName).first().waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  const scrapeCard = () =>
+    page
+      .locator('div')
+      .filter({ hasText: scrapeItemName })
+      .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+      .last();
+
+  await step('the supplier MPN was mapped as an alias (§4 Universal Alias Mapping)', async () => {
+    await scrapeCard().getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    // Supplier data section shows the scraped MPN value and the alias chip (both the MPN text).
+    await detail.getByText(scrapedMpn).first().waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
+    await detail.getByRole('button', { name: 'Scrape' }).click();
+    await postExtMessage({
+      source: EXT_SOURCE,
+      type: 'SCRAPE_RESULT',
+      payload: {
+        mpn: scrapedMpn,
+        manufacturer: 'Texas Instruments', // differs from the user's value → CONFLICT
+        description: 'Precision 555 timer IC',
+        distributor_url: 'https://www.digikey.co.uk/p/ne555p',
+        scraped_pricing: { currency: 'GBP', value: 0.42 },
+      },
+    });
+    const review = page.getByRole('dialog', { name: 'Review scraped data' });
+    await review.waitFor({ state: 'visible', timeout: 8000 });
+    // The manufacturer conflict is presented as an OFF-by-default opt-in.
+    const overwrite = review.getByTestId('overwrite-manufacturer');
+    await overwrite.waitFor({ state: 'visible', timeout: 4000 });
+    if (await overwrite.isChecked()) throw new Error('overwrite checkbox defaulted to ON');
+    // Apply WITHOUT ticking — the user's manufacturer must survive.
+    await review.getByRole('button', { name: 'Apply' }).click();
+    await review.waitFor({ state: 'hidden', timeout: 8000 });
+    await page.waitForFunction(
+      (mfr) => document.body.textContent?.includes(mfr),
+      userManufacturer,
+      { timeout: 8000 },
+    );
     await page.keyboard.press('Escape');
   });
 

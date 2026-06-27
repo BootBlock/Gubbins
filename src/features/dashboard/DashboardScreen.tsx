@@ -12,6 +12,7 @@ import {
   PackageIcon,
   ProjectIcon,
   InfoIcon,
+  CloudIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -40,7 +41,11 @@ export function DashboardScreen() {
           </h1>
           <p className="text-sm text-muted-foreground">Local-first inventory · foundation ready</p>
         </div>
-        <Link to="/projects" className={cn(buttonVariants({ variant: 'outline' }), 'ml-auto')}>
+        <Link to="/sync" className={cn(buttonVariants({ variant: 'outline' }), 'ml-auto')}>
+          <CloudIcon />
+          Sync
+        </Link>
+        <Link to="/projects" className={cn(buttonVariants({ variant: 'outline' }))}>
           <ProjectIcon />
           Projects
         </Link>

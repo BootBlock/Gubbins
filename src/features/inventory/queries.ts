@@ -43,7 +43,18 @@ export const inventoryKeys = {
   // Phase 5 — weighted capabilities & Visual-Builder search.
   itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,
   search: () => [...inventoryKeys.all, 'search'] as const,
+  // Phase 8 — Universal Alias Mapping (§4 external scraping).
+  itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
 } as const;
+
+/** An item's supplier/alternative part aliases (§4 Universal Alias Mapping). */
+export function useItemAliases(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemAliases(itemId ?? ''),
+    queryFn: () => getItemRepository().listAliases(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
 
 /** Paginated, virtualisation-ready item list. */
 export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEFAULT_PAGE_SIZE) {

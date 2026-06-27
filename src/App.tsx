@@ -5,6 +5,8 @@ import { AppErrorBoundary } from '@/app/error/AppErrorBoundary';
 import { BootGate } from '@/app/boot/BootGate';
 import { createQueryClient } from '@/state/query/queryClient';
 import { router } from '@/app/router';
+import { ToastProvider } from '@/components/foundry';
+import { ScrapeBridgeProvider } from '@/features/scraping';
 
 /**
  * Application composition root (spec §2.1, §2.2, §3).
@@ -19,9 +21,13 @@ export function App() {
   return (
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BootGate>
-          <RouterProvider router={router} />
-        </BootGate>
+        <ToastProvider>
+          <ScrapeBridgeProvider>
+            <BootGate>
+              <RouterProvider router={router} />
+            </BootGate>
+          </ScrapeBridgeProvider>
+        </ToastProvider>
       </QueryClientProvider>
     </AppErrorBoundary>
   );

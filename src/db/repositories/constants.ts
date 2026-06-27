@@ -76,6 +76,8 @@ export const HISTORY_ACTIONS = [
   // Phase 6 — borrowing & checking out (§4 Borrowing & Checking Out).
   'CHECKED_OUT', // stock lent to a contact (optionally with a due date)
   'CHECKED_IN', // borrowed stock returned by a contact
+  // Phase 8 — external data scraping via extension (§4, §9).
+  'SCRAPE_APPLIED', // supplier-scraped fields/alias merged onto the item (§4 no-overwrite)
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

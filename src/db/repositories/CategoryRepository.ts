@@ -13,6 +13,7 @@ import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { rowToCategory, rowToCategoryField } from './mappers';
+import { tombstoneStatement } from './tombstone';
 import type {
   Category,
   CategoryField,
@@ -95,7 +96,10 @@ export class CategoryRepository extends BaseRepository {
    * Permitted under the storage Hard Stop (it frees space).
    */
   async delete(id: string): Promise<void> {
-    await this.driver.execute('DELETE FROM categories WHERE id = ?;', [id]);
+    await this.driver.transaction([
+      { sql: 'DELETE FROM categories WHERE id = ?;', params: [id] },
+      tombstoneStatement('categories', id),
+    ]);
   }
 
   // --- custom fields -------------------------------------------------------------

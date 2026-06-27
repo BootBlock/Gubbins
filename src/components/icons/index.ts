@@ -95,6 +95,19 @@ export {
   Printer as PrintIcon,
   FileJson as ExportIcon,
   FolderArchive as VaultIcon,
+
+  // External data scraping via extension (Phase 8, §4, §9)
+  DownloadCloud as ScrapeIcon,
+  Puzzle as ExtensionIcon,
+  Globe as SupplierIcon,
+
+  // Cloud Sync & File System Access (Phase 7, §7, §2)
+  Cloud as CloudIcon,
+  CloudUpload as CloudUploadIcon,
+  RefreshCcwDot as SyncIcon,
+  FolderSync as FolderSyncIcon,
+  PlugZap as ConnectIcon,
+  Unplug as DisconnectIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

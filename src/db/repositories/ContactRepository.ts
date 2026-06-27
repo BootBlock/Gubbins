@@ -11,6 +11,7 @@
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToContact } from './mappers';
+import { tombstoneStatement } from './tombstone';
 import type {
   Contact,
   ContactRow,
@@ -120,9 +121,16 @@ export class ContactRepository extends BaseRepository {
     return (await this.getById(id))!;
   }
 
-  /** Delete a contact (cascades their checkout records). Bypasses the Hard Stop. */
+  /**
+   * Delete a contact (cascades their checkout records). Bypasses the Hard Stop.
+   * Records a tombstone in the same transaction so the deletion syncs (§7.2). The
+   * cascaded checkouts are implied by the contact tombstone (the remote cascades too).
+   */
   async delete(id: string): Promise<void> {
-    await this.driver.execute('DELETE FROM contacts WHERE id = ?;', [id]);
+    await this.driver.transaction([
+      { sql: 'DELETE FROM contacts WHERE id = ?;', params: [id] },
+      tombstoneStatement('contacts', id),
+    ]);
   }
 
   private async require(id: string): Promise<Contact> {

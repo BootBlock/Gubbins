@@ -13,6 +13,7 @@ import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import { rowToLocation } from './mappers';
+import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
   Location,
@@ -170,6 +171,9 @@ export class LocationRepository extends BaseRepository {
     });
 
     statements.push({ sql: 'DELETE FROM locations WHERE id = ?;', params: [id] });
+    // Propagate the hard delete on the next sync (§7.2). Re-parented items keep
+    // their own (live) rows; only the removed location is tombstoned.
+    statements.push(tombstoneStatement('locations', id));
 
     await this.driver.transaction(statements);
   }

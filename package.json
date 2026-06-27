@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:extension": "node extension/build.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",

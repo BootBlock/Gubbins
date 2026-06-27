@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SyncRouteImport } from './routes/sync'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as ContactsRouteImport } from './routes/contacts'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SyncRoute = SyncRouteImport.update({
+  id: '/sync',
+  path: '/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/sync': typeof SyncRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/sync': typeof SyncRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/sync': typeof SyncRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/contacts' | '/inventory' | '/projects'
+  fullPaths: '/' | '/contacts' | '/inventory' | '/projects' | '/sync'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/contacts' | '/inventory' | '/projects'
-  id: '__root__' | '/' | '/contacts' | '/inventory' | '/projects'
+  to: '/' | '/contacts' | '/inventory' | '/projects' | '/sync'
+  id: '__root__' | '/' | '/contacts' | '/inventory' | '/projects' | '/sync'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,10 +76,18 @@ export interface RootRouteChildren {
   ContactsRoute: typeof ContactsRoute
   InventoryRoute: typeof InventoryRoute
   ProjectsRoute: typeof ProjectsRoute
+  SyncRoute: typeof SyncRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sync': {
+      id: '/sync'
+      path: '/sync'
+      fullPath: '/sync'
+      preLoaderRoute: typeof SyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects': {
       id: '/projects'
       path: '/projects'
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactsRoute: ContactsRoute,
   InventoryRoute: InventoryRoute,
   ProjectsRoute: ProjectsRoute,
+  SyncRoute: SyncRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -15,6 +15,7 @@ import type { SearchAST } from '../search/ast';
 import { BaseRepository } from './base';
 import { DEFAULT_CAPABILITY_WEIGHT, UNASSIGNED_LOCATION_ID } from './constants';
 import { weighInNote, weighInToDelta } from './gauge';
+import { tombstoneStatement } from './tombstone';
 import { rowToCapability, rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
 import type {
   Capability,
@@ -29,6 +30,7 @@ import type {
   ItemRow,
   Page,
   PageParams,
+  ScrapeApplyInput,
   SetCapabilityInput,
   UpdateItemInput,
 } from './types';
@@ -354,10 +356,14 @@ export class ItemRepository extends BaseRepository {
 
   /**
    * Hard delete: permanently purge the item (spec §4). Cascades the Activity Log.
-   * Allowed under the storage Hard Stop. (Phase 7 will add tombstones for sync.)
+   * Allowed under the storage Hard Stop. Records a tombstone in the *same*
+   * transaction so the deletion propagates on the next sync (§7.2).
    */
   async hardDelete(id: string): Promise<void> {
-    await this.driver.execute('DELETE FROM items WHERE id = ?;', [id]);
+    await this.driver.transaction([
+      { sql: 'DELETE FROM items WHERE id = ?;', params: [id] },
+      tombstoneStatement('items', id),
+    ]);
   }
 
   /** Paginated Activity Log for an item, newest first (spec §4.1.3). */
@@ -390,6 +396,12 @@ export class ItemRepository extends BaseRepository {
    * case-insensitively. Trimmed-empty entries are dropped. Each alias is unique
    * across the table, so reassigning one already owned by another item is rejected.
    * Write-gated (it grows storage).
+   *
+   * Now that `item_aliases` participates in synchronisation (§7.1, it carries its own
+   * `updated_at`), this is a **diff** rather than a wipe-and-reinsert: retained
+   * aliases keep their stable id (so LWW timestamps stay meaningful) and each removed
+   * alias records a tombstone in the *same* transaction, so the deletion propagates on
+   * the next sync instead of being resurrected from a peer (§7.2).
    */
   async setAliases(itemId: string, aliases: readonly string[]): Promise<ItemAlias[]> {
     this.assertWritable();
@@ -406,17 +418,91 @@ export class ItemRepository extends BaseRepository {
       cleaned.push(alias);
     }
 
-    const statements: SqlStatement[] = [
-      { sql: 'DELETE FROM item_aliases WHERE item_id = ?;', params: [itemId] },
-    ];
+    const existing = await this.listAliases(itemId);
+    const existingByKey = new Map(existing.map((a) => [a.alias.toLowerCase(), a]));
+    const desiredKeys = new Set(cleaned.map((a) => a.toLowerCase()));
+
+    const statements: SqlStatement[] = [];
+    // Removals: existing aliases no longer wanted → DELETE + tombstone (atomically).
+    for (const alias of existing) {
+      if (!desiredKeys.has(alias.alias.toLowerCase())) {
+        statements.push({ sql: 'DELETE FROM item_aliases WHERE id = ?;', params: [alias.id] });
+        statements.push(tombstoneStatement('item_aliases', alias.id));
+      }
+    }
+    // Additions: genuinely-new aliases → INSERT a fresh id (retained ones untouched).
     for (const alias of cleaned) {
+      if (!existingByKey.has(alias.toLowerCase())) {
+        statements.push({
+          sql: 'INSERT INTO item_aliases (id, item_id, alias) VALUES (?, ?, ?);',
+          params: [crypto.randomUUID(), itemId, alias],
+        });
+      }
+    }
+
+    if (statements.length > 0) await this.driver.transaction(statements);
+    return this.listAliases(itemId);
+  }
+
+  /**
+   * Atomically apply an external-scrape merge to an existing item (spec §4, §9).
+   * Only the fields the caller decided to write are touched — the §4 no-overwrite
+   * safeguard is enforced *before* this call by the pure merge engine — and the
+   * supplier MPN(s) are mapped in as new aliases (§4 Universal Alias Mapping). The
+   * field UPDATE, the alias INSERTs and the `SCRAPE_APPLIED` ledger entry all run in
+   * one transaction, so the merge is all-or-nothing. Write-gated (it grows storage).
+   * A no-op write returns the item unchanged without logging.
+   */
+  async applyScrape(id: string, write: ScrapeApplyInput): Promise<Item> {
+    this.assertWritable();
+    const existing = await this.require(id);
+
+    const sets: string[] = [];
+    const params: SqlValue[] = [];
+    const changed: string[] = [];
+
+    if (write.fields.mpn !== undefined) {
+      sets.push('mpn = ?');
+      params.push(normaliseText(write.fields.mpn));
+      changed.push('MPN');
+    }
+    if (write.fields.manufacturer !== undefined) {
+      sets.push('manufacturer = ?');
+      params.push(normaliseText(write.fields.manufacturer));
+      changed.push('manufacturer');
+    }
+    if (write.fields.unitCost !== undefined) {
+      sets.push('unit_cost = ?');
+      params.push(normaliseUnitCost(write.fields.unitCost));
+      changed.push('unit cost');
+    }
+    if (write.fields.description !== undefined) {
+      sets.push('description = ?');
+      params.push(write.fields.description);
+      changed.push('description');
+    }
+
+    const statements: SqlStatement[] = [];
+    if (sets.length > 0) {
+      statements.push({ sql: `UPDATE items SET ${sets.join(', ')} WHERE id = ?;`, params: [...params, id] });
+    }
+    for (const raw of write.aliasAdditions) {
+      const alias = raw.trim();
+      if (alias.length === 0) continue;
       statements.push({
         sql: 'INSERT INTO item_aliases (id, item_id, alias) VALUES (?, ?, ?);',
-        params: [crypto.randomUUID(), itemId, alias],
+        params: [crypto.randomUUID(), id, alias],
       });
+      changed.push(`alias "${alias}"`);
     }
+
+    if (statements.length === 0) return existing;
+
+    statements.push(
+      historyStatement(id, 'SCRAPE_APPLIED', { note: `Applied scraped supplier data: ${changed.join(', ')}.` }),
+    );
     await this.driver.transaction(statements);
-    return this.listAliases(itemId);
+    return (await this.getById(id))!;
   }
 
   /**

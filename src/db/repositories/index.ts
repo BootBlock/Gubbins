@@ -18,6 +18,7 @@ import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { TagRepository } from './TagRepository';
+import { TombstoneRepository } from './tombstone';
 import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
@@ -29,6 +30,8 @@ export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
+export { TombstoneRepository, tombstoneStatement, SYNC_TABLES } from './tombstone';
+export type { Tombstone, SyncTable } from './tombstone';
 export type { ItemListFilters, SearchByAstParams } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
@@ -45,6 +48,7 @@ let attachmentRepository: AttachmentRepository | null = null;
 let projectRepository: ProjectRepository | null = null;
 let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
+let tombstoneRepository: TombstoneRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -94,4 +98,9 @@ export function getContactRepository(): ContactRepository {
 export function getCheckoutRepository(): CheckoutRepository {
   checkoutRepository ??= new CheckoutRepository(getDatabaseDriver(), productionOptions);
   return checkoutRepository;
+}
+
+export function getTombstoneRepository(): TombstoneRepository {
+  tombstoneRepository ??= new TombstoneRepository(getDatabaseDriver(), productionOptions);
+  return tombstoneRepository;
 }

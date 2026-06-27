@@ -5,6 +5,7 @@ import {
   CategoryIcon,
   DatasheetIcon,
   ImageIcon,
+  SupplierIcon,
   TagsIcon,
 } from '@/components/icons';
 import type { Item } from '@/db/repositories';
@@ -12,6 +13,7 @@ import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
+import { SupplierDataEditor } from './SupplierDataEditor';
 import { TagEditor } from './TagEditor';
 
 /**
@@ -38,6 +40,9 @@ export function ItemDetailDialog({
       className="max-w-2xl"
     >
       <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+        <Section title="Supplier data" icon={<SupplierIcon />}>
+          <SupplierDataEditor item={item} />
+        </Section>
         <Section title="Images" icon={<ImageIcon />}>
           <ImageManager itemId={item.id} />
         </Section>

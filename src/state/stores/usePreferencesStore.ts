@@ -18,16 +18,25 @@ export type Theme = 'dark' | 'light';
  */
 export type AttachmentMode = 'URL_ONLY' | 'HYBRID';
 
+/**
+ * How the user is told about external-scrape updates (spec §4). The default is a
+ * **passive toast** notification; `SILENT` suppresses the toast (the scrape still
+ * applies and is logged to the Activity Ledger).
+ */
+export type ScrapeNotificationMode = 'TOAST' | 'SILENT';
+
 interface PreferencesStore {
   readonly baseCurrency: string;
   readonly locale: string;
   readonly theme: Theme;
   readonly attachmentMode: AttachmentMode;
+  readonly scrapeNotifications: ScrapeNotificationMode;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
+  setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -37,11 +46,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
       locale: 'en-GB',
       theme: 'dark',
       attachmentMode: 'URL_ONLY',
+      scrapeNotifications: 'TOAST',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
+      setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
     }),
     { name: 'gubbins:preferences' },
   ),

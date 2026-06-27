@@ -1,16 +1,17 @@
-# PHASE_HANDOVER.md — Phase 5 → Phase 6
+# PHASE_HANDOVER.md — Phase 8 → Phase 9
 
 **Project:** Gubbins — local-first inventory tracking PWA
-**Phase completed:** Phase 5 — Weighted Capabilities, FTS5 & the Advanced Visual Search Builder
+**Phase completed:** Phase 8 — External Data Scraping via Extension
 **Date:** 2026-06-27
-**Status:** ✅ Complete. `npm run type-check` clean · `npm run build` passes · **237/237 unit tests pass** · **20/20 browser-smoke steps pass** (zero console/page errors).
+**Status:** ✅ Complete. `npm run type-check` clean · `npm run build` passes · **409/409 unit tests pass** · `npm run build:extension` builds the companion extension · **33/33 browser-smoke steps pass** (zero console/page errors — now including: simulating the companion extension's `EXTENSION_READY` to unlock the "Scrape Supplier" control, proving a forged-origin/invalid message is silently dropped, applying a trusted `SCRAPE_RESULT` that fills the empty MPN/price fields **without** overwriting a user-edited manufacturer, the supplier MPN being mapped as an alias, and re-scraping an existing item through the §4 no-overwrite review with a populated field preserved).
 
-> Protocol Alpha (§8.1.2): the incoming Phase 6 agent **must** read both the master
-> specification (`docs/todo/_specification.md`, including the locked decisions in
-> **§1.2 / §1.2.1**, the **§6** Mobile Scanner state machine, and the **§5.1** AST schema)
-> and this document before writing any code, and must reuse the established
-> Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather
-> than inventing new ones.
+> Protocol Alpha (§8.1.2): the incoming Phase 9 agent **must** read both the master
+> specification (`docs/todo/_specification.md`, esp. the locked decisions in **§1.2 / §1.2.1**, the
+> **Phase 9** deliverables in §5, and the deep dives **§4** (variants, perishables/batch, condition,
+> maintenance), **§4.3** Tool Maintenance/Calibration, **§4.4** Cycle Counting & Reconciliation, **§7.5**
+> relational integrity) and this document before writing any code, and must reuse the established
+> Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather than inventing new
+> ones.
 
 ---
 
@@ -21,283 +22,215 @@
 | SQLite WASM | `@sqlite.org/sqlite-wasm` — official build, FTS5 + OPFS VFS (FTS5 verified at boot via `probeFts5`) |
 | Package manager | **npm** (only `package-lock.json`) |
 | Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP |
-| Cloud sync | Provider-agnostic; concrete adapter deferred to **Phase 7** (no provider SDK before then) |
+| Cloud sync | **Provider-agnostic** — strict `CloudProvider` interface; in-memory + File System Access adapters. **Still no provider SDK** in the dep tree. |
+| Conflict resolution | Row-level **LWW**; **Delta-CRDT** gauge replay; §7.5 orphan re-parent + cycle rejection; §7.2 tombstones (180-day TTL + Pre-Wipe Salvage). **New in Phase 8:** `item_aliases` joins the sync set with row-level LWW + alias-text collision resolution. |
+| Extension bridge | **`window.postMessage`** Content-Script bridge (§9). **Origin-verified + Zod-validated; invalid/foreign messages silently dropped.** Mandatory `source: 'HARDWARE_TRACKER_EXT'` signature. PWA **feature-detects** the extension and degrades to manual entry. |
 | Test runner | **Vitest** · UUIDs via native `crypto.randomUUID()` · formatting via `Intl` |
 | E2E | **Playwright** (dev-only) driving **system Edge** (`channel: 'msedge'`, no download) |
-| Native-first | Web APIs over NPM bloat (§2.4.3): native `crypto.randomUUID`, `Intl`, Web Audio, `navigator.vibrate`, Barcode Detection API, Wake Lock — all behind feature-detection guards |
+| Native-first | Web APIs over NPM bloat (§2.4.3); all behind feature-detection guards |
 
-**Installed majors (unchanged in Phase 5):** React 19 · TS 6 · Vite 8 (Rolldown) · Vitest 4 ·
-Tailwind 4 (CSS-first) · TanStack Router / Query / Virtual · Zustand 5 · React Hook Form 7 + Zod 4 ·
-lucide-react · vite-plugin-pwa · react-error-boundary · happy-dom (test env). **No new runtime deps
-were added in Phase 5** — FTS5 is provided by the SQLite build; the AST translator and FTS
-query-builder are hand-rolled native modules (§2.4.3).
+**Installed majors (unchanged in Phase 8 — NO new runtime deps):** React 19 · TS 6 · Vite 8 (Rolldown) ·
+Vitest 4 · Tailwind 4 · TanStack Router / Query / Virtual · Zustand 5 · React Hook Form 7 + **Zod 4** ·
+lucide-react · vite-plugin-pwa · react-error-boundary · `fflate` · happy-dom (test env). The §9 protocol,
+the Strategy parsers and the companion extension are all hand-rolled native modules reusing **Zod** for
+IPC validation (§2.4.4).
 
 **Commands:** `npm run dev` · `npm run build` (`tsc -b && vite build`) · `npm run type-check` ·
-`npm run test:run` (unit/`:memory:`, **237 tests**) · `npm run test:e2e` (real-browser smoke; needs a dev server up).
-**Local run:** `run.bat` / `run.ps1` — **hardened in Phase 5** to a single "reuse-or-start, wait for
-HTTP readiness, then open the default browser once" flow (no more forced `msedge.exe` launches;
-honours `$env:BROWSER`, `'none'` suppresses). Probes 5173, reuses a running server, else picks a free
-port with `--strictPort`. Stop with **Ctrl+C** (or kill the PID).
-**E2E (§8.5.5):** `scripts/browser-smoke.mjs`. Base origin overridable via `SMOKE_BASE`
-(default `http://localhost:5173/Gubbins/`) — set it when the dev server falls back to another port
-(e.g. `SMOKE_BASE=http://localhost:5174/Gubbins/`). **Fails on any console error too. Extend it each phase.**
+`npm run test:run` (unit/`:memory:`, **409 tests**) · `npm run test:e2e` (real-browser smoke; needs a dev
+server up) · **`npm run build:extension`** (new — bundles the companion extension to `extension/dist/`).
+**Local run:** `run.bat` / `run.ps1`. **Stop via the PID — leave no orphaned `npm run dev`.**
+**E2E (§8.5.5):** `scripts/browser-smoke.mjs`; base origin overridable via `SMOKE_BASE`
+(default `http://localhost:5173/Gubbins/`). **Fails on any console error too. Extend it each phase.**
 
-> ⚠️ **Route-tree generation:** `src/routeTree.gen.ts` is generated by `@tanstack/router-plugin`
-> when **Vite** runs (dev/build), *not* by `tsc`. After adding/removing a file in `src/routes/`,
-> run `npx vite build` (or start the dev server) once before `npm run type-check`, or `to="…"`
-> links to the new route will fail type-checking against a stale tree.
+> ⚠️ **Route-tree generation:** `src/routeTree.gen.ts` is generated by `@tanstack/router-plugin` when
+> **Vite** runs, *not* by `tsc`. After adding/removing a file in `src/routes/`, run `npx vite build` (or
+> start the dev server) once before `npm run type-check`. **Phase 8 added no route** (the scrape UI lives
+> inside the existing item-create/edit dialogs), so this was not triggered.
 
 ---
 
-## 2. Current database schema snapshot (`PRAGMA user_version = 5`)
+## 2. Database schema snapshot (`PRAGMA user_version = 7` — UNCHANGED in Phase 8)
 
-Per-connection pragma on every open: `PRAGMA foreign_keys = ON;`. All real tables `STRICT`
-(FTS5 virtual tables are necessarily non-STRICT). `SQL_NOW_MS` (UNIX-ms) is exported from
-`@/db/migrations`. Migration registry order in `src/db/migrations/index.ts`:
-`v1Initial · v2Domain · v3Schema · v4Projects · v5CapabilitiesFts`. `TARGET_SCHEMA_VERSION` is the max (= 5).
-v1 = `app_meta`; v2 = core domain (items/locations/categories/history + system "Unassigned" location);
-v3 = category schemas/tags/images/attachments + `items.serial_no`; v4 = projects/BOM lines/item
-aliases + `items.mpn/manufacturer/unit_cost` + system "In Transit" location; **v5
-(`src/db/migrations/v5-capabilities-fts.ts`)** adds the `capabilities` table and the `items_fts`
-FTS5 index. Every syncable table keeps the §7.1 UUID PK + `updated_at` auto-stamp trigger
-(`WHEN NEW.updated_at = OLD.updated_at` LWW pass-through guard).
+**Phase 8 needed no migration.** The §9 scrape payload maps onto existing columns and tables:
+`items.mpn`, `items.manufacturer`, `items.unit_cost`, `items.description`, and the existing
+**`item_aliases`** table (which already carried its own `updated_at` + `trg_item_aliases_updated_at`
+auto-stamp trigger from v4 — so it was already LWW-stampable). `TARGET_SCHEMA_VERSION` remains **7**.
 
-**Phase 5 additions only** (v1–v4 tables unchanged — see git history / prior handovers):
+Two non-schema data-layer changes:
+- **`constants.ts`** — appended one immutable `item_history.action`: **`SCRAPE_APPLIED`** (never repurpose
+  existing values; append only).
+- **`SYNC_TABLES`** (`src/db/repositories/tombstone.ts`) — **`item_aliases` added** (after `items`,
+  FK-safe). It is now synced/backed-up with the other six core tables (see §3 + §7).
 
-```sql
--- v5: weighted capabilities (§4 "Weighted Capabilities"). One row per (item, key).
-CREATE TABLE capabilities (
-  id         TEXT    PRIMARY KEY NOT NULL,
-  item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  key        TEXT    NOT NULL,                 -- e.g. 'voltage', 'package'
-  value_num  REAL,                             -- numeric magnitude (>/< comparisons)
-  value_text TEXT,                             -- text/categorical value (EQUALS / HAS_CAPABILITY)
-  weight     REAL    NOT NULL DEFAULT 1.0,     -- relevance/salience (§4 weighted), CHECK (weight >= 0)
-  updated_at INTEGER NOT NULL DEFAULT (<SQL_NOW_MS>),
-  CHECK (weight >= 0)
-) STRICT;
-CREATE INDEX idx_capabilities_item_id ON capabilities(item_id);
-CREATE INDEX idx_capabilities_key ON capabilities(key COLLATE NOCASE);
-CREATE UNIQUE INDEX idx_capabilities_item_key ON capabilities(item_id, key COLLATE NOCASE); -- one value per (item,key)
--- + trg_capabilities_updated_at AFTER UPDATE auto-stamp (LWW pass-through guard)
-
--- v5: FTS5 external-content virtual table over the lightweight item text columns (§2.2.1a, §5).
--- Columns (fixed order) come from FTS_ITEM_COLUMNS = ['name','description','mpn','manufacturer'].
-CREATE VIRTUAL TABLE items_fts USING fts5(
-  name, description, mpn, manufacturer,
-  content='items',
-  content_rowid='rowid'
-);
--- Canonical external-content sync triggers keep the index current:
-CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
-  INSERT INTO items_fts(rowid, name, description, mpn, manufacturer)
-  VALUES (new.rowid, new.name, new.description, new.mpn, new.manufacturer);
-END;
-CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, name, description, mpn, manufacturer)
-  VALUES ('delete', old.rowid, old.name, old.description, old.mpn, old.manufacturer);
-END;
-CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, …) VALUES ('delete', old.rowid, …old);   -- remove stale
-  INSERT INTO items_fts(rowid, …) VALUES (new.rowid, …new);                        -- insert fresh
-END;
--- Back-fill rows that predate the migration:
-INSERT INTO items_fts(items_fts) VALUES ('rebuild');
-```
-
-All v5 DDL is **additive** (new table + new virtual table + triggers; no table recreation), so the
-§2.3.3 12-step pattern was not needed. `items_fts` is a **derived index, not a syncable table** — it
-carries no `id`/`updated_at`, is rebuilt from `items` per device, and is never synchronised directly.
-**`FTS_ITEM_COLUMNS`** (`['name','description','mpn','manufacturer']`, in `constants.ts`) is the single
-source of truth shared by the migration (vtable + triggers) and the search layer (column-scoped MATCH);
-changing it requires a new migration.
-
-**Confirmed driver:** `IDatabaseDriver` (§2.1.1) — production = worker driver; **tests inject
-`createMemoryDriver()`** (`node:sqlite`). **Memory note (recall):** contrary to the Phase 4 → 5 caveat,
-**`node:sqlite` bundles FTS5**, so the FTS path *is* unit-testable on `:memory:` (the v5 + Phase-5
-ItemRepository tests exercise it directly). The real-browser smoke remains the guard for the genuine
-OPFS/SharedArrayBuffer FTS5 path.
-
-**Adding Phase 6 schema:** create `src/db/migrations/v6-*.ts` (version `6`), register it in
-`src/db/migrations/index.ts`. Never edit shipped migrations; use the §2.3.3 12-step pattern for
-non-additive changes. New syncable tables (`contacts`, checkout/borrow records, etc.) replicate the
-UUID PK + `updated_at` trigger pattern; append (never repurpose) `item_history.action` values in
-`constants.ts`.
+**Adding Phase 9 schema:** Phase 9 (perishables/batch, variants, maintenance, condition, cycle-count) is
+likely to need real migrations — create `src/db/migrations/v8-*.ts` (version `8`), register it in
+`src/db/migrations/index.ts`, prefer additive `ALTER TABLE ADD COLUMN`; use the §2.3.3 12-step pattern for
+non-additive changes; keep the UUID PK + `updated_at` auto-stamp trigger; add any new syncable table to
+`SYNC_TABLES`; append (never repurpose) `item_history.action` values.
 
 ---
 
 ## 3. Repository layer (`src/db/repositories/`)
 
-All SQL lives here over the injected `IDatabaseDriver` — **components never write SQL**.
-Construct `new XRepository(driver, { isWriteSuspended? })`. Production singletons
-(`getItemRepository`, `getLocationRepository`, `getCategoryRepository`, `getTagRepository`,
-`getImageRepository`, `getAttachmentRepository`, `getProjectRepository`) wire the worker driver +
-the storage Hard-Stop gate. Reads paginate (`Page<T>`, LIMIT/OFFSET ≤ 100 via `MAX_PAGE_SIZE`).
-Growth-writes call `assertWritable()`; deletes bypass it.
+All SQL lives here over the injected `IDatabaseDriver`. Production singletons unchanged
+(`getItemRepository`, …, `getTombstoneRepository`). Reads paginate (`Page<T>`, ≤100). Storage-growing
+writes are Hard-Stop gated (`assertWritable`); deletions always allowed.
 
-### ItemRepository — Phase 5 extensions
-```ts
-// list/count are now FTS5-backed (no longer a LIKE scan):
-list(filters?)  : Page<Item>   // filters.search → buildFtsMatch() → items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)
-count(filters?) : number       // same FTS path; null match (no usable tokens) ⇒ predicate skipped
+### Phase 8 changes to `ItemRepository`
+- **`setAliases(itemId, aliases)` — now a tombstone-aware diff** (was wipe-and-reinsert). Retained aliases
+  keep their **stable id** (so LWW timestamps stay meaningful); each removed alias records a
+  `tombstoneStatement('item_aliases', id)` in the *same* transaction so the deletion **propagates** on the
+  next sync (§7.2). Still de-dups case-insensitively; still rejects an alias owned by another item
+  (UNIQUE(alias)).
+- **`applyScrape(id, write: ScrapeApplyInput)` — new, atomic.** Writes only the fields the merge engine
+  decided (`{ mpn?, manufacturer?, description?, unitCost? }`), INSERTs the supplier MPN(s) as new aliases,
+  and logs **one** `SCRAPE_APPLIED` history entry — **all in one transaction**. A no-op write returns the
+  item unchanged without logging. Write-gated. The §4 **no-overwrite** decision is made *upstream* by the
+  pure merge engine (§4 below), never here.
+- New type **`ScrapeApplyInput`** in `repositories/types.ts` (re-exported from the barrel).
 
-// weighted capabilities (§4)
-listCapabilities(itemId) : Capability[]                 // ordered by key COLLATE NOCASE
-setCapability(itemId, { key, value, weight? }) : Capability
-  // value classified: finite number → value_num (backs >/<); else → value_text (EQUALS/categorical).
-  // One value per (item,key): re-setting a key DELETEs+INSERTs in one transaction. Write-gated.
-setCapability default weight = DEFAULT_CAPABILITY_WEIGHT (1.0); weight must be ≥ 0 & finite.
-removeCapability(itemId, key) : void                    // CI key match; bypasses Hard Stop (a delete)
-
-// Visual-Builder search (§5.1)
-searchByAst(ast, { limit?, offset?, includeInactive? }) : Page<Item>  // parseASTtoSQL → WHERE; active-only by default
-countByAst(ast, { includeInactive? }) : number
-```
-Unchanged Phase 2–4 surface: `getById · createSerialised · create · update · move · adjustQuantity ·
-adjustGauge · weighInGauge · softDelete · restore · hardDelete · getHistory · listAliases · setAliases ·
-findByMatchKey`. (`create`/`update` accept `mpn`/`manufacturer`/`unitCost`.)
-
-### Other repositories — unchanged from Phase 4
-`ProjectRepository` (projects/BOM lines/reservations/procurement/costing/shopping-list/`finaliseAssembly`),
-`LocationRepository` (`getById·list·getTree·create·update·delete`), `Category`, `Tag`, `Image`,
-`Attachment`. See the prior handover (git `1aee481`) for full signatures.
-
-Domain types + constants exported from the `@/db/repositories` barrel. **New in v5:**
-`Capability`, `CapabilityRow`, `SetCapabilityInput`, `SearchByAstParams`, `FTS_ITEM_COLUMNS`/`FtsItemColumn`,
-`DEFAULT_CAPABILITY_WEIGHT` — alongside the full Phase 2–4 set.
+`listAliases` / `findByMatchKey` unchanged. The rest of the repository surface (gauges, capabilities,
+contacts, checkouts, projects, tombstones) is unchanged from Phase 7.
 
 ---
 
-## 4. Search layer (`src/db/search/`) — pure, parameterised, native (§5.1, §2.2.1a)
+## 4. New feature: `src/features/scraping/` — §9 bridge + §4 merge (pure-first)
 
-- **`ast.ts`** — the exact §5.1 AST schema: `LogicalOperator` (`'AND'|'OR'`),
-  `FilterOperator` (`'EQUALS'|'CONTAINS'|'GREATER_THAN'|'LESS_THAN'|'HAS_CAPABILITY'`),
-  `FilterCondition { field, operator, value }`, `ASTGroupNode { type:'GROUP', logicalOperator, conditions[] }`,
-  `SearchAST = ASTGroupNode`. Plus `MAX_AST_GROUP_DEPTH = 4`, `isGroupNode()`, `emptyAst()`.
-  All readonly/serialisable plain data — round-trips through React state and (later) saved searches.
-- **`parseASTtoSQL.ts`** — the single recursive translator. Returns the §5.1 tuple
-  `ParsedQuery = readonly [sql, params: SqlValue[]]`. **String concatenation for values is forbidden** —
-  every value is a `?` placeholder; only column identifiers (from fixed allow-lists `ITEM_FIELDS` /
-  the `capability:` route) are embedded. Free-text `CONTAINS` routes through the FTS5 index; `capability:<key>`
-  conditions become `EXISTS (SELECT 1 FROM capabilities …)` subqueries. Throws **`SearchAstError`** on
-  over-depth (> 4 groups, guarded *before* descent), unknown field, missing field/key, non-numeric value
-  for a numeric/comparison op, or an operator unsupported for a field. Empty tree ⇒ `['1', []]` (match all).
-  Known item fields: `name·description·mpn·manufacturer` (fts-text), `category·location` (id-text exact),
-  `quantity` (numeric).
-- **`fts.ts`** — `buildFtsMatch(text, column?)`: tokenises on whitespace, wraps each token as a
-  double-quoted FTS phrase with a trailing `*` (prefix match), AND-joins; optional column scoping
-  (`column : (…)`). Returns `null` when no usable tokens. Tokens are passed as a **bound parameter**,
-  never concatenated. Plus `isFtsColumn()` guard.
+All security/merge/parse logic is **pure and exhaustively unit-tested** against fixtures/`createMemoryDriver`;
+the `window.postMessage` bridge and live DOM are browser/extension-only, feature-detected, and covered by
+the §8.5.5 smoke.
+
+- **`protocol.ts`** — the Zod **`ExtensionMessage`** discriminated union (`EXTENSION_READY · SCRAPE_REQUEST ·
+  SCRAPE_RESULT · SCRAPE_ERROR`), `ScrapeResultPayload` / `ScrapeErrorPayload` (`error_type ∈ DOM_DRIFT |
+  NETWORK_TIMEOUT | RATE_LIMITED`), the `EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT'` signature, `makeMessage`,
+  and **`parseExtensionMessage(raw, { origin, trustedOrigins })`** — the §9.1 validator that returns the
+  typed message only when origin-trusted **and** schema-valid, else `null` (**silently dropped**; never
+  throws/logs). *(20 tests.)*
+- **`merge.ts`** — the §4 **CRITICAL no-overwrite** engine. `buildScrapeMergePlan(existing, payload)`
+  classifies each field `FILL | CONFLICT | UNCHANGED | SKIP` (empty→FILL, populated-and-differing→CONFLICT)
+  and derives the alias additions; `applyScrapeMerge(plan, overwriteFields)` writes FILL fields always but a
+  CONFLICT field **only** when explicitly opted in. Pure. *(13 tests.)*
+- **`parsers/`** — the §9.4 **Strategy pattern**: `SupplierParser` interface + `requireText`/`requireAttr`/
+  `parsePrice` DOM-drift helpers (`DomDriftError`, never `NaN`), a deterministic `genericMetaParser`
+  (Open-Graph/schema.org/`gubbins:*` metadata — the smoke/fixture target) and a host-specific
+  `digikeyParser` example, plus `registry.ts` (`selectParser`/`runParser` → uniform `ParseOutcome`,
+  marshalling any throw into a `SCRAPE_ERROR`). Pure (happy-dom). *(21 tests.)*
+- **`bridge-reducer.ts`** — pure §9.3 state machine (`ready` gate + `IDLE→SCRAPING→SUCCESS|ERROR`). *(7 tests.)*
+- **`ScrapeBridgeContext.tsx`** — **Tier-3** provider (mounted near the app root in `App.tsx`) wiring the
+  `window` message listener through `parseExtensionMessage`, exposing `{ ready, status, result, error,
+  requestScrape(url), reset }`. Mirrors `ScannerQueueProvider`.
+- **`components/ScrapeSupplierPanel.tsx`** — the gated "Scrape Supplier" control. **Renders nothing until
+  `ready`** (graceful degradation, §9.3). On result calls `onResult`; on error raises an **actionable passive
+  toast** (§9.4.3) and leaves manual entry intact.
+- **`components/ScrapeReviewDialog.tsx`** — the §4 opt-in review: FILL fields shown as auto-applied,
+  CONFLICT fields as **off-by-default** checkboxes (`data-testid="overwrite-<field>"`), then `applyScrapeMerge`.
+- **`useScrapeNotifier.tsx`** — passive success toast honouring the `scrapeNotifications` preference
+  (`TOAST` default | `SILENT`).
+- **`index.ts`** — the public barrel.
 
 ---
 
 ## 5. State roster
 
 ### Tier 1 — TanStack Query
-- **Inventory (`features/inventory/queries.ts`):** `inventoryKeys` factory; Phase-5 reads add capability +
-  AST-search hooks. Capabilities use invalidation-based writes (mirrors tag/category hooks).
-  Search results feed the virtualised list.
-- **Search (`features/search/queries.ts`):** hooks that run `searchByAst`/`countByAst` from the current AST.
-- **Projects (`features/projects/projects.ts`):** `projectKeys` + Phase-4 read/write hooks (unchanged).
+- **New read hook** `useItemAliases(itemId)` (key `inventoryKeys.itemAliases(id)`).
+- **New write hook** `useApplyScrape()` — invalidation-based (touches item fields, aliases & the ledger
+  together); invalidates `items()` + `item(id)` (the latter covers `itemAliases`/`itemHistory` by prefix).
+- Existing create hooks reused; the create flow maps scraped aliases via `useApplyScrape` after creation.
 
-### Tier 2 — Zustand (`src/state/stores/`, persisted) — unchanged
-`useStorageStore` · `useLayoutStore` · `usePreferencesStore` (`{baseCurrency:'GBP', locale:'en-GB', theme, attachmentMode}`).
-Currency via `formatCurrency(value, baseCurrency, locale)` in `src/lib/format.ts` (native `Intl`).
+### Tier 2 — Zustand (`src/state/stores/`, persisted)
+- **`usePreferencesStore`** gained **`scrapeNotifications: 'TOAST' | 'SILENT'`** (default `TOAST`, §4) +
+  `setScrapeNotifications`. All other stores unchanged.
 
 ### Tier 3 — Context/local (§2.1)
-- **`SearchBuilderContext` (`features/search/SearchBuilderContext.tsx`)** — the canonical Tier-3 pattern
-  to mirror in Phase 6. The ephemeral AST lives in a `useReducer` (`builderReducer`, pure + unit-tested),
-  mounted/unmounted with the inventory workspace so it never leaks on navigation. Exposes
-  `{ ast, dispatch, conditionCount }` via `useSearchBuilder()`. **The §6 Continuous-Checkout scanner queue
-  must follow this exact shape** (a local reducer/Context attached to the scanner overlay — §2.1 Tier 3).
-- Per-dialog open/selection state lives in the individual project & inventory components.
+- **`ScrapeBridgeProvider`** (the §9 bridge state) — the new canonical Tier-3 pattern alongside
+  `ScannerQueueProvider` / `SearchBuilderContext`.
 
 ---
 
-## 6. Component tree (Phase 5 additions)
+## 6. Component tree & UI (Phase 8 additions)
 
 ```
-features/search/
- ├─ SearchBuilderContext.tsx     Tier-3 AST provider + useSearchBuilder()
- ├─ builder-reducer.ts           pure reducer: add/remove/update conditions & groups, set operators
- ├─ fields.ts                    the field catalogue the Builder offers (labels, operators, value kinds)
- ├─ queries.ts                   TanStack hooks → searchByAst / countByAst
- └─ components/
-     ├─ VisualBuilder.tsx        the polished graphical query UI (animated dropdowns / pill tags, §3)
-     ├─ GroupEditor.tsx          recursive AND/OR group node (respects MAX_AST_GROUP_DEPTH)
-     └─ ConditionEditor.tsx      a single leaf: field + operator + value
-features/inventory/
- ├─ capabilities.ts              capability hooks/helpers
- └─ components/CapabilityEditor.tsx   add/edit/remove weighted capabilities on an item
+components/foundry/toast.tsx            ToastProvider + useToast — lean passive toast primitive (§4)  [exported from foundry]
+features/scraping/ScrapeBridgeContext   Tier-3 §9 postMessage bridge (mounted in App.tsx)
+features/scraping/components/ScrapeSupplierPanel   gated "Scrape Supplier" control (create & edit)
+features/scraping/components/ScrapeReviewDialog     §4 no-overwrite opt-in review (edit/refresh)
+features/inventory/components/SupplierDataEditor    item-detail "Supplier data" section (MPN/mfr/cost + aliases + re-scrape)
+features/inventory/components/CreateItemDialog       + MPN/manufacturer/unit-cost fields + scrape panel (fill-blanks-only); form now scrolls (max-h-[78vh])
 ```
-- **Foundry (`@/components/foundry`):** reused as-is — `Button · Banner[tone] · Surface · Spinner ·
-  Input · Select · Modal · Markdown · Tooltip`. **Always use `Tooltip` (300 ms), never the HTML `title`.**
-  No new primitives were added in Phase 5.
-- **Icons (`@/components/icons`):** central registry (`index.ts`). Phase-5 additions include
-  `CapabilityIcon · BuilderIcon · FilterIcon · AddGroupIcon · SearchIcon`. **Never import lucide directly.**
-  (Useful existing icons for Phase 6: `DownloadIcon · UploadIcon · LinkIcon · SettingsIcon` — and you'll add
-  scanner/QR/contact icons via the registry.)
-- **Forms:** RHF + `@hookform/resolvers/zod` + Zod schemas throughout. **British English** in all UI text.
-- **Labels:** British-English enum labels live in feature `*-ui.ts` files, kept out of the constants/migration layer.
+- **App composition:** `App.tsx` now wraps the router in `ToastProvider` → `ScrapeBridgeProvider`.
+- **Foundry (`@/components/foundry`):** **new `Toast` primitive** (`ToastProvider`/`useToast`, tones
+  info/success/warning/danger, auto-dismiss, optional action button — `data-testid="toast"`). All other
+  primitives reused as-is. **Always `Tooltip` (300 ms), never HTML `title`.**
+- **Icons (`@/components/icons`):** added `ScrapeIcon` (DownloadCloud), `ExtensionIcon` (Puzzle),
+  `SupplierIcon` (Globe). **Never import lucide directly.**
+- **Forms:** RHF + Zod throughout; **British English** in all UI text.
 
 ---
 
-## 7. Technical debt, stubs & deferrals
+## 7. The companion extension (`extension/` — the only new build target, §9)
 
-1. **Capability ranking:** `weight` is stored and editable, but search results are **not yet ranked by
-   aggregate matched weight** — `searchByAst` orders by name. The schema/weight is the down-payment;
-   weighted ranking (BM25 × Σweight) can land when a phase needs relevance ordering.
-2. **Capabilities UI reach:** `CapabilityEditor` manages per-item specs, but there is no global
-   capability *dictionary* (autocomplete of known keys across items) — keys are free text. Add if Phase 6+
-   ergonomics need it.
-3. **Visual Builder fields:** the Builder exposes the core scalar fields + `capability:<key>`. Tags,
-   attachments and category custom-field values are not yet filterable through the AST. `CONTAINS` is
-   FTS-backed for text columns only; `category`/`location` are exact id-match (the UI resolves names → ids).
-4. **FTS tokeniser:** default `unicode61` (no stemming/synonyms configured). Prefix-`*` matching only;
-   no fuzzy/edit-distance. Good enough for Phase 5; revisit if fuzzy matching is requested.
-5. **Export Wizard (Phase 6):** **still not built.** §3/§5 mandate a memory-retaining Granular Export
-   Wizard; §4.5 adds the Markdown/Obsidian vault export (needs an archiver — `fflate`/`JSZip` Web-Worker
-   fallback). Confirm with the developer whether the **Markdown-vault (§4.5)** export lands in Phase 6 or
-   later — Phase 6's headline deliverable is the *wizard with last-used-settings memory*; the full vault
-   may be heavier than Phase 6 warrants. **No CSV/Markdown/JSON export exists yet.**
-6. **Contacts / Borrowing (Phase 6):** not yet modelled — no `contacts` table, no checkout/borrow records,
-   no `due_date`. This is core Phase 6 work (§4 Borrowing & Checking Out).
-7. **Scanner / QR (Phase 6):** no QR generation, no camera scanner, no `BarcodeDetector` integration yet
-   (§5, §6, §6.6).
-8. **Reservations / procurement / In-Transit / aliases / costing:** unchanged Phase-4 debt — reservations
-   are ledger annotations (don't decrement on-hand `quantity`); `receiveLine` brings stock in for matched
-   DISCRETE only; In-Transit is a status, not auto-manifested placeholder items; no alias-management UI;
-   single base currency (no FX).
-9. **Sync (Phase 7):** all syncable tables (incl. `capabilities`) carry UUID PK + `updated_at` triggers,
-   ready for LWW. M:N sync semantics (`item_tags`, aliases, BOM joins), tombstones, NTP offset, delta-CRDT,
-   re-parenting remain Phase 7.
-10. **Theme toggle** still dark-only (persisted but not applied to `<html>`). **Bundle** main chunk > 500 kB
-    (warning only). **Tooltip keyboard-link reach** (focus leaving the trigger closes the bubble) — unchanged debt.
+A lean MV3 reference extension that **reuses the PWA's tested `protocol.ts` + Strategy parsers** (so the
+wire contract and DOM-drift handling cannot diverge):
+- **`manifest.json`** — MV3; content script injects on the Gubbins origins (`localhost`, `*.github.io`);
+  `host_permissions: ["<all_urls>"]` (reference scope — a production build would narrow this).
+- **`src/content-script.ts`** — page-side bridge: broadcasts `EXTENSION_READY`, validates inbound messages
+  with `parseExtensionMessage`, asks the background to fetch (CORS bypass), parses the HTML **here**
+  (content scripts have a DOM; MV3 service workers do not) with `runParser`, posts `SCRAPE_RESULT`/`SCRAPE_ERROR`.
+- **`src/background.ts`** — tiny CORS-bypassing fetcher mapping transport failures to the §9.4.2 taxonomy.
+- **`build.mjs`** — `npm run build:extension` → `extension/dist/` (git-ignored via the global `dist`); content
+  script bundled IIFE (classic), background as an ES-module service worker.
+- **`README.md`** — load-unpacked instructions + the production-hardening note.
 
 ---
 
-## 8. Phase 6 entry checklist (spec §5, §6 — QR, Mobile Scanner & Contacts)
+## 8. Technical debt, stubs & deferrals
 
-- [ ] Read the master spec (esp. **§6** scanner state machine + WebRTC ergonomics, **§6.6** tiered barcode
-      strategy, **§4** Contacts/Borrowing + scanner Discrete-vs-Continuous, **§3/§4.5** Export Wizard, **§5.1**
-      AST/Tier-3 pattern, **§8.2/§8.5** TDD) and this handover; restate the locked decisions.
-- [ ] `v6-*.ts` migration (version 6) registered in `migrations/index.ts`: `contacts` + checkout/borrow
-      record tables (UUID PK + `updated_at` trigger), additive where possible (§2.3.3 12-step otherwise).
-      Append new `item_history.action` values (e.g. `CHECKED_OUT`, `CHECKED_IN`) in `constants.ts`.
-- [ ] **TDD first over `createMemoryDriver()`** (Protocol Beta): keep the scanner **state machine**, the
-      **2000 ms Cooldown Map**, **contact auto-create**, and **due-date maths** *pure* and unit-tested.
-      Camera/WebRTC, Barcode Detection API, Web Audio, `navigator.vibrate`, Wake Lock are browser-only —
-      **feature-detect/guard** them and lean on the §8.5.5 smoke for the real device-API path.
-- [ ] QR generation must avoid heavy libraries (§2.4.3) — prefer a lean/hand-rolled approach.
-- [ ] Wrap reads in TanStack Query hooks (paginated ≤ 100; **optimistic + `onError` rollback** for rapid
-      scanner writes — §2.1). Mirror `SearchBuilderContext` for the **Continuous-Checkout queue** (Tier-3
-      reducer/Context on the scanner overlay). Gate growth-writes on the Hard Stop (`isWriteSuspended`).
-- [ ] Reuse: Repository-over-driver; Foundry primitives & **Tooltip (not `title`)**; icons via the registry;
-      RHF + Zod forms; British English; native APIs over NPM.
-- [ ] Extend `scripts/browser-smoke.mjs` with the Phase 6 flows (generate/scan a QR or simulate a decode,
-      add a contact, check an item out), keeping it green with zero console/page errors. Remember `SMOKE_BASE`
-      if the dev server isn't on 5173, and run `npx vite build` once after adding any route so the route tree
-      regenerates before `type-check`. **Stop the dev server via its PID when done — no orphaned `npm run dev`.**
+> Tracked in `docs/todo/deferred-features.md` — keep it current each phase.
+
+1. **Sync-set expansion:** **`item_aliases` is now synced** (Phase 8). Still **outside** the set: the other
+   M:N joins/leaves (`tags`+`item_tags`, `category_fields`+`item_field_values`, `projects`+`bom_lines`), the
+   append-only `item_history` ledger (gauge deltas *are* read for §7.3), and `item_images` (BLOB+OPFS). Until
+   added, a wipe-and-clone / replace-restore can still lose that child data — which is why the manual import
+   stays a **non-destructive merge**. Extend `SYNC_TABLES` to add tables (mind FK order + any UNIQUE-column
+   collisions, as was handled for `item_aliases`).
+2. **§7.6 OPFS quota recovery — DEFERRED, not dropped:** §7.6.2 Storage Triage Dashboard + §7.6.3
+   history-pruning / image-downgrade workflows (telemetry + tier state already exist).
+3. **Scraping reference limits (Phase 8):** the extension ships a generic structured-metadata parser + a
+   DigiKey example with `<all_urls>` host scope — a production build would add a parser per supplier (the
+   Strategy pattern makes this a one-file change) and narrow `host_permissions`. The bridge correlates **one
+   in-flight scrape at a time** (sufficient — one scrape modal open at once); no `requestId` correlation.
+   The §4 notification preference exists but has **no settings UI yet** (defaults to passive toast).
+4. **File System Access provider persistence**, **NTP source**, **mobile weekly auto-archive (§2.7)**,
+   **scanner WASM fallback (§6.6)**, single-item/project export scope, capability ranking, dashboard "Overdue
+   Items" widget, theme application, bundle size — all carried over from Phase 7 (see git history).
+
+---
+
+## 9. Phase 9 entry checklist (spec §5 Phase 9 — Procurement & Lifecycle Logistics)
+
+- [ ] Read the master spec (esp. **Phase 9** deliverables: **Expiry dates & Batch/Lot tracking** for
+      perishables (§4 Perishables & Batch Tracking), **Parent/Child item variants** (§4 Variant/SKU
+      Relationships — shared parent metadata, child-specific params/qty/location), **"In Transit"** procurement
+      logic (already part-built in Phase 4 — the system-locked In-Transit location + BOM procurement states),
+      **Tool Maintenance Schedules** (§4.3 — time/usage-based alerts hooked into the Activity Log),
+      **Borrowing Due Dates** (§4 — `checkouts.due_date` exists from Phase 6; the dashboard nudge does not),
+      and the **Cycle Counting / Reconciliation** mode (§4.4 — blind-count a location, highlight variance,
+      authorise a Reconciliation Adjustment in the ledger)) and this handover; restate the locked decisions.
+- [ ] **TDD-first over `createMemoryDriver()`** (Protocol Beta): keep the variant-relationship maths,
+      expiry/maintenance scheduling and cycle-count variance logic **pure and unit-tested**. Mind the §7.5
+      relational integrity (variants are a parent/child FK; re-parent + cycle rules already exist for
+      locations and may inform variants).
+- [ ] Likely needs **real migrations** (`v8-*.ts`, version 8): additive `expiry_date`/`batch_number`/
+      `lot_number`/maintenance columns; a parent/variant FK; possibly a maintenance-schedule table. Add any
+      syncable table to `SYNC_TABLES`. Append (never repurpose) `item_history.action` values (e.g.
+      `RECONCILED`, `MAINTENANCE_DUE`). Gate growth-writes on the Hard Stop. British English.
+- [ ] Reuse: Repository-over-driver; the **3-tier state**; Foundry primitives & **Tooltip (not `title`)**,
+      and the **new `Toast`** for passive alerts; icons via the registry; RHF + Zod forms; Tier-3 context for
+      ephemeral workflow state (e.g. the cycle-count session, mirroring `ScannerQueueProvider`).
+- [ ] **Extend `scripts/browser-smoke.mjs`** with the Phase-9 flows (e.g. create a perishable with an expiry,
+      clone a parent into variants, run a cycle count and authorise a variance adjustment). `SMOKE_BASE` if
+      not on 5173; `npx vite build` once after adding any route. **Stop the dev server via its PID.**
 - [ ] Verify four ways and keep all green: `npm run type-check`, `npm run test:run`, `npm run build`, and
-      `npm run test:e2e` against a live dev server, before declaring the phase complete.
-```
+      `npm run test:e2e` against a live dev server (and `npm run build:extension` if the protocol changes),
+      before declaring the phase complete. Then generate the **Phase 9 → 10** handover.

@@ -71,4 +71,51 @@ describe('ItemRepository — Phase 4 (MPN, costing & alias auto-match)', () => {
     await items.setAliases(a.id, ['SHARED']);
     await expect(items.setAliases(b.id, ['shared'])).rejects.toBeInstanceOf(DbError);
   });
+
+  // Phase 8: item_aliases now syncs, so setAliases is a diff that keeps stable ids
+  // for retained aliases and tombstones removed ones (§7.2 propagation).
+  it('keeps a retained alias id stable across re-saves (§7.1 LWW)', async () => {
+    const item = await items.create({ name: 'Timer' });
+    const [first] = await items.setAliases(item.id, ['NE555']);
+    const again = await items.setAliases(item.id, ['NE555', 'LM555']);
+    const ne555 = again.find((a) => a.alias === 'NE555');
+    expect(ne555?.id).toBe(first!.id); // unchanged, not wiped-and-reinserted
+  });
+
+  it('records a tombstone for a removed alias so the deletion propagates (§7.2)', async () => {
+    const item = await items.create({ name: 'Timer' });
+    const [alias] = await items.setAliases(item.id, ['NE555']);
+    await items.setAliases(item.id, []); // remove it
+
+    const tomb = await driver.queryOne<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM tombstones WHERE table_name = 'item_aliases' AND id = ?;",
+      [alias!.id],
+    );
+    expect(tomb?.n).toBe(1);
+    expect(await items.listAliases(item.id)).toHaveLength(0);
+  });
+
+  // Phase 8 — atomic external-scrape apply (§4, §9).
+  it('applyScrape writes resolved fields, maps the alias and logs SCRAPE_APPLIED', async () => {
+    const item = await items.create({ name: 'Timer' });
+    const updated = await items.applyScrape(item.id, {
+      fields: { mpn: 'NE555P', manufacturer: 'Texas Instruments', unitCost: 0.42 },
+      aliasAdditions: ['NE555P'],
+    });
+    expect(updated.mpn).toBe('NE555P');
+    expect(updated.manufacturer).toBe('Texas Instruments');
+    expect(updated.unitCost).toBe(0.42);
+    expect((await items.listAliases(item.id)).map((a) => a.alias)).toEqual(['NE555P']);
+
+    const history = await items.getHistory(item.id);
+    expect(history.rows.some((h) => h.action === 'SCRAPE_APPLIED')).toBe(true);
+  });
+
+  it('applyScrape is a no-op (no log) when nothing is written', async () => {
+    const item = await items.create({ name: 'Timer' });
+    const before = await items.getHistory(item.id);
+    await items.applyScrape(item.id, { fields: {}, aliasAdditions: [] });
+    const after = await items.getHistory(item.id);
+    expect(after.total).toBe(before.total);
+  });
 });

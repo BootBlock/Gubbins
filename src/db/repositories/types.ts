@@ -175,6 +175,22 @@ export interface UpdateItemInput {
 }
 
 /**
+ * The resolved writes of an external-scrape merge (spec §4, §9). Only the fields
+ * the merge engine decided to apply are present — the §4 no-overwrite decision
+ * happens upstream in the pure merge engine — plus any supplier MPNs to map in as
+ * new aliases. Structurally compatible with the scraping feature's `ScrapeWrite`.
+ */
+export interface ScrapeApplyInput {
+  readonly fields: {
+    readonly mpn?: string;
+    readonly manufacturer?: string;
+    readonly description?: string;
+    readonly unitCost?: number;
+  };
+  readonly aliasAdditions: readonly string[];
+}
+
+/**
  * A Consumable-Gauge adjustment (spec §4.1.2). Both interaction modes are
  * normalised to a **relative delta** before reaching the repository, so the
  * Activity Log only ever records relative deltas for Phase 7 CRDT reconciliation.
