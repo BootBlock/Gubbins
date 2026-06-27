@@ -34,6 +34,7 @@ This document serves as the absolute specification and implementation guide for 
 * **OPFS VFS Strategy:** The official worker-hosted OPFS VFS (`sqlite3.oo1.OpfsDb` / the OPFS access-handle VFS), **not** the SAHPool VFS, consistent with the SharedArrayBuffer coordination mandated in §2.2.6.
 * **Base Currency / Locale Default:** **GBP** with an **en-GB** locale as the initial default (remaining user-configurable per §3), consistent with the British English mandate (§1.1).
 * **Version Control:** A **git** repository shall be initialised at the project root to satisfy the autonomous rollback procedures of Protocol Delta (§8.4).
+* **End-to-End Browser Testing:** **Playwright** (a **dev-only** dependency) driving the *system-installed* browser — Edge via `channel: 'msedge'` — so **no bundled-browser binary is downloaded**. This complements, and does not replace, the Vitest/`:memory:` unit tests of §8.5: it exercises the *real* OPFS + SharedArrayBuffer + Web Worker path those deliberately bypass, against a live dev server (whose COOP/COEP headers supply the cross-origin isolation §2.2.6 requires). Introduced in Phase 2; see §8.5.5.
 
 ## **2\. Structural & Fundamental Architecture**
 
@@ -716,6 +717,14 @@ When testing the React component tree and the Tier 1 state management layer (Tan
 The agent must explicitly configure the build/test tool (e.g., Vitest) to handle the Web Worker imports seamlessly.
 
 * **Mock Injection:** Instead of attempting to execute the worker natively during UI tests, the agent must use vi.mock('./database.worker?worker', () \=\> ...) or the equivalent framework method at the top of the test files to intercept the instantiation and inject the mock bridge defined in Section 8.5.3.
+
+#### **8.5.5 Real-Browser End-to-End Smoke (Phase 2+)**
+
+The `:memory:` driver and mocked RPC bridge (§8.5.2–§8.5.4) validate SQL, maths, and UI states *without* a browser — fast, but by design they never run the genuine OPFS VFS, SharedArrayBuffer coordination, or the Web Worker bridge. To close that gap, the agent must maintain a lightweight **real-browser end-to-end smoke test** alongside the unit suite.
+
+* **Driver:** **Playwright** as a dev-only dependency (per §1.2.1), launching the **system-installed browser** (`chromium.launch({ channel: 'msedge' })`) so no browser binary is downloaded into the repository. Puppeteer and a bundled Chromium download are not to be introduced without cause.
+* **Cross-Origin Isolation:** The smoke test runs against a live **dev server** (or `vite preview`), whose COOP/COEP headers (§2.2.6) make the context cross-origin-isolated — so `crossOriginIsolated`, SharedArrayBuffer, and the OPFS-backed SQLite worker all execute exactly as in production. The test must assert `crossOriginIsolated === true` as a guard.
+* **Scope & Hygiene:** It drives the actual user flows of the current phase (e.g. for Phase 2: create items, adjust a Consumable Gauge, toggle layout density, nest locations) and **fails on any console or page error**. It lives at `scripts/browser-smoke.mjs`, is invoked via `npm run test:e2e` (with a dev server running), and any screenshot artefact it emits must be git-ignored. It is a smoke test, not a replacement for the mandatory §8.2 TDD loop.
 
 ## **9\. PWA-Extension Communication Protocol**
 

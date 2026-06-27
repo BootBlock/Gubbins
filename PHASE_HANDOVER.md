@@ -27,10 +27,15 @@
 TanStack Router 1.170 / Query 5.101 / Virtual 3.14 · Zustand 5 · React Hook Form 7 + Zod 4 (**now in use**) ·
 lucide-react 1 · vite-plugin-pwa 1.3 · react-error-boundary 6. **No new deps added in Phase 2.**
 
-**Commands:** `npm run dev` · `npm run build` (`tsc -b && vite build`) · `npm run type-check` · `npm run test:run`.
+**Commands:** `npm run dev` · `npm run build` (`tsc -b && vite build`) · `npm run type-check` · `npm run test:run` ·
+`npm run test:e2e` (real-browser smoke; needs a dev server up).
 **Local run:** `run.bat` (or `run.ps1`) — probes port 5173, reuses an already-running server, else picks a
 free port and pins `--strictPort` so the opened URL always matches. Stop with **Ctrl+C**, not the window [X]
 (the [X] orphans the node/vite child).
+**E2E (spec §8.5.5):** **Playwright** (dev-only) drives the system **Edge** (`channel: 'msedge'`, no Chromium
+download) against the cross-origin-isolated dev server — `scripts/browser-smoke.mjs`. It validates the *real*
+OPFS/SharedArrayBuffer/worker path the `:memory:` unit tests bypass, and fails on any console/page error.
+**Extend it with each phase's new flows.** Phase 2 run: 7/7 steps, zero console/page errors.
 
 ---
 
@@ -223,3 +228,5 @@ __root → RootLayout (StorageBanners)
 - [ ] Category UI, custom-field forms (RHF+Zod), freeform tagging UI, Datasheet **Pointer vs URL** config (§4 Attachments).
 - [ ] Reuse: Repository-over-driver + TDD on `createMemoryDriver()`; TanStack hooks (paginated, optimistic+rollback);
       Foundry primitives & **Tooltip (not `title`)**; British English; gate growth-writes on the Hard Stop.
+- [ ] Extend `scripts/browser-smoke.mjs` (§8.5.5) with the new Phase 3 flows (categories, tags, image upload),
+      keeping it green with zero console/page errors.
