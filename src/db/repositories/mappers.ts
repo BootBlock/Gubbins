@@ -11,6 +11,8 @@ import type {
   CategoryRow,
   GaugeState,
   Item,
+  ItemAlias,
+  ItemAliasRow,
   ItemAttachment,
   ItemAttachmentRow,
   ItemHistoryEntry,
@@ -20,6 +22,10 @@ import type {
   ItemRow,
   Location,
   LocationRow,
+  Project,
+  ProjectBomLine,
+  ProjectBomLineRow,
+  ProjectRow,
   Tag,
   TagRow,
 } from './types';
@@ -76,6 +82,9 @@ export function rowToItem(row: ItemRow): Item {
     trackingMode: row.tracking_mode,
     quantity: row.quantity,
     serialNo: row.serial_no,
+    mpn: row.mpn,
+    manufacturer: row.manufacturer,
+    unitCost: row.unit_cost,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -149,6 +158,42 @@ export function rowToItemAttachment(row: ItemAttachmentRow): ItemAttachment {
     kind: row.kind,
     value: row.value,
     label: row.label,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToItemAlias(row: ItemAliasRow): ItemAlias {
+  return { id: row.id, itemId: row.item_id, alias: row.alias, updatedAt: row.updated_at };
+}
+
+export function rowToProject(row: ProjectRow): Project {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    status: row.status,
+    costingMode: row.costing_mode,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToBomLine(row: ProjectBomLineRow): ProjectBomLine {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    itemId: row.item_id,
+    designator: row.designator,
+    mpn: row.mpn,
+    manufacturer: row.manufacturer,
+    description: row.description,
+    requiredQty: row.required_qty,
+    reservedQty: row.reserved_qty,
+    reservationStatus: row.reservation_status,
+    procurementStatus: row.procurement_status,
+    unitCostSnapshot: row.unit_cost_snapshot,
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

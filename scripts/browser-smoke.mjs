@@ -7,7 +7,10 @@
  * creation (Bulk + Consumable Gauge), quantity adjustment, the density toggle, and
  * nested location creation; plus the Phase 3 flows: category + custom-field schemas,
  * serialised auto-clone, freeform tagging, and the real image pipeline (canvas→WebP
- * compression → raw OPFS file → thumbnail). Asserts there are no console/page errors.
+ * compression → raw OPFS file → thumbnail); plus the Phase 4 flows: create a project,
+ * add a BOM line, see the automated shopping list, toggle the costing mode, reserve
+ * stock, and move a line into the "In Transit" procurement state. Asserts there are
+ * no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
@@ -56,7 +59,9 @@ function makePng(size = 8) {
   ]);
 }
 
-const BASE = 'http://localhost:5173/Gubbins/';
+// Defaults to the conventional dev-server origin; override with SMOKE_BASE when the
+// dev server picks a different port (e.g. 5173 already in use → 5174).
+const BASE = process.env.SMOKE_BASE ?? 'http://localhost:5173/Gubbins/';
 const headed = process.argv.includes('--headed');
 const results = [];
 const consoleErrors = [];
@@ -91,6 +96,8 @@ const categoryName = `Smoke Caps ${stamp}`;
 const fieldName = `Voltage ${stamp}`;
 const printerName = `Smoke Printer ${stamp}`;
 const tagName = `smoke-${stamp}`;
+const projectName = `Smoke Project ${stamp}`;
+const partName = `Smoke Part ${stamp}`;
 
 // A small valid PNG, enough for the canvas→WebP compression pipeline to decode.
 const pngBuffer = makePng(8);
@@ -225,6 +232,66 @@ try {
     // A thumbnail must render from the stored DB blob (round-trips the worker).
     await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 15000 });
     await page.keyboard.press('Escape');
+  });
+
+  // --- Phase 4 flows ------------------------------------------------------------
+
+  /** Poll a <select>'s value (it is server-controlled via TanStack Query). */
+  async function expectSelectValue(locator, value, label) {
+    for (let i = 0; i < 25; i += 1) {
+      if ((await locator.inputValue()) === value) return;
+      await page.waitForTimeout(150);
+    }
+    throw new Error(`${label} did not become ${value}`);
+  }
+
+  await step('navigates to projects and creates a project', async () => {
+    await page.getByRole('link', { name: 'Projects' }).first().click();
+    await page.getByRole('button', { name: 'New project' }).waitFor({ state: 'visible', timeout: 15000 });
+    await page.getByRole('button', { name: 'New project' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New project' });
+    await dialog.getByLabel('Name').fill(projectName);
+    await dialog.getByRole('button', { name: 'Create project' }).click();
+    // The new project becomes selected and its BOM workspace appears.
+    await page.getByRole('heading', { name: 'Bill of materials' }).waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  await step('adds a manual BOM line', async () => {
+    await page.getByRole('button', { name: 'Add line' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
+    await dialog.getByLabel('Description').fill(partName);
+    await dialog.getByLabel('Quantity').fill('5');
+    await dialog.getByRole('button', { name: 'Add line' }).click();
+    await page.getByText(partName).first().waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  await step('shows the part on the automated shopping list', async () => {
+    // The un-reserved, un-ordered line must appear under the Shopping list heading.
+    await page.getByRole('heading', { name: /Shopping list/ }).waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) =>
+        [...document.querySelectorAll('table')].some((t) => t.textContent?.includes(name)),
+      partName,
+      { timeout: 8000 },
+    );
+  });
+
+  await step('toggles the BOM costing mode', async () => {
+    const costing = page.getByLabel('Costing mode');
+    await costing.selectOption('POINT_IN_TIME');
+    await expectSelectValue(costing, 'POINT_IN_TIME', 'Costing mode');
+  });
+
+  await step('reserves stock on the BOM line', async () => {
+    const reservation = page.getByLabel('Reservation status');
+    await reservation.selectOption('ACTUAL');
+    await expectSelectValue(reservation, 'ACTUAL', 'Reservation status');
+  });
+
+  await step('moves the line into the In-Transit procurement state', async () => {
+    const procurement = page.getByLabel('Procurement status');
+    await procurement.selectOption('IN_TRANSIT');
+    await expectSelectValue(procurement, 'IN_TRANSIT', 'Procurement status');
   });
 
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });

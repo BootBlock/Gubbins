@@ -7,7 +7,16 @@
  * `ItemHistoryEntry`) that the rest of the app consumes, computing the derived
  * gauge values that spec §4.1.1 forbids storing in the database.
  */
-import type { AttachmentKind, FieldType, HistoryAction, TrackingMode } from './constants';
+import type {
+  AttachmentKind,
+  CostingMode,
+  FieldType,
+  HistoryAction,
+  ProcurementStatus,
+  ProjectStatus,
+  ReservationStatus,
+  TrackingMode,
+} from './constants';
 
 // --- Locations (spec §4) --------------------------------------------------------
 
@@ -63,6 +72,11 @@ export interface ItemRow {
   readonly current_net_value: number | null;
   readonly operational_metadata: string | null;
   readonly serial_no: number | null;
+  /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress, v4). */
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  /** Current replacement value per unit, in the base currency (v4). */
+  readonly unit_cost: number | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -100,6 +114,11 @@ export interface Item {
    * name and are distinguished by this (spec §4 "Serialised" auto-clone).
    */
   readonly serialNo: number | null;
+  /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress). */
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  /** Current replacement value per unit, in the base currency; null if unpriced. */
+  readonly unitCost: number | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -129,6 +148,11 @@ export interface CreateItemInput {
   /** Target location; defaults to the Unassigned location when omitted. */
   readonly locationId?: string;
   readonly categoryId?: string | null;
+  /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress). */
+  readonly mpn?: string | null;
+  readonly manufacturer?: string | null;
+  /** Current replacement value per unit, in the base currency. */
+  readonly unitCost?: number | null;
   readonly trackingMode?: TrackingMode;
   /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
@@ -145,6 +169,9 @@ export interface UpdateItemInput {
   readonly name?: string;
   readonly description?: string | null;
   readonly categoryId?: string | null;
+  readonly mpn?: string | null;
+  readonly manufacturer?: string | null;
+  readonly unitCost?: number | null;
 }
 
 /**
@@ -348,6 +375,165 @@ export interface CreateAttachmentInput {
   readonly value: string;
   readonly label?: string | null;
   readonly position?: number;
+}
+
+// --- Item aliases (spec §4 Universal Alias Mapping; BOM auto-match) --------------
+
+export interface ItemAliasRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly alias: string;
+  readonly updated_at: number;
+}
+
+export interface ItemAlias {
+  readonly id: string;
+  readonly itemId: string;
+  /** A supplier/alternative part identifier mapped to this local item. */
+  readonly alias: string;
+  readonly updatedAt: number;
+}
+
+// --- Projects (spec §4 "Projects & BOMs", Phase 4) ------------------------------
+
+export interface ProjectRow {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly status: ProjectStatus;
+  readonly costing_mode: CostingMode;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface Project {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly status: ProjectStatus;
+  readonly costingMode: CostingMode;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/** A project plus its denormalised BOM-line count, for the list view. */
+export interface ProjectWithCount extends Project {
+  readonly lineCount: number;
+}
+
+export interface CreateProjectInput {
+  readonly name: string;
+  readonly description?: string | null;
+  readonly costingMode?: CostingMode;
+}
+
+export interface UpdateProjectInput {
+  readonly name?: string;
+  readonly description?: string | null;
+  readonly status?: ProjectStatus;
+  readonly costingMode?: CostingMode;
+}
+
+// --- BOM lines (spec §4) --------------------------------------------------------
+
+export interface ProjectBomLineRow {
+  readonly id: string;
+  readonly project_id: string;
+  readonly item_id: string | null;
+  readonly designator: string | null;
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  readonly description: string | null;
+  readonly required_qty: number;
+  readonly reserved_qty: number;
+  readonly reservation_status: ReservationStatus;
+  readonly procurement_status: ProcurementStatus;
+  readonly unit_cost_snapshot: number | null;
+  readonly position: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface ProjectBomLine {
+  readonly id: string;
+  readonly projectId: string;
+  /** The matched local item, or null for an unmatched (manual/import) line. */
+  readonly itemId: string | null;
+  /** Free-text reference designator(s) (e.g. KiCad "R1, R2"). */
+  readonly designator: string | null;
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  /** Free-text part description; the display name when there is no matched item. */
+  readonly description: string | null;
+  readonly requiredQty: number;
+  readonly reservedQty: number;
+  readonly reservationStatus: ReservationStatus;
+  readonly procurementStatus: ProcurementStatus;
+  /** Point-in-time unit cost captured when the line was added (§4 BOM Costing). */
+  readonly unitCostSnapshot: number | null;
+  readonly position: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateBomLineInput {
+  /** Match to a local item; when set, mpn/manufacturer/cost snapshot default from it. */
+  readonly itemId?: string | null;
+  readonly designator?: string | null;
+  readonly mpn?: string | null;
+  readonly manufacturer?: string | null;
+  readonly description?: string | null;
+  readonly requiredQty?: number;
+  readonly position?: number;
+}
+
+export interface UpdateBomLineInput {
+  readonly itemId?: string | null;
+  readonly designator?: string | null;
+  readonly mpn?: string | null;
+  readonly manufacturer?: string | null;
+  readonly description?: string | null;
+  readonly requiredQty?: number;
+  readonly position?: number;
+}
+
+// --- Costing & shopping list (spec §4 BOM Costing; automated Shopping List) ------
+
+/** A project's costed totals under the active costing mode. */
+export interface ProjectCosting {
+  readonly costingMode: CostingMode;
+  /** Total cost = Σ requiredQty × unit cost (live or snapshot per the mode). */
+  readonly totalCost: number;
+  /** Lines whose unit cost is unknown under the active mode (excluded from total). */
+  readonly unpricedLineCount: number;
+  readonly lineCount: number;
+}
+
+/** A single aggregated shortfall row in a project's automated shopping list. */
+export interface ShoppingListEntry {
+  /** Matched item id when the shortfall maps to a known item, else null. */
+  readonly itemId: string | null;
+  /** Display label (item name, else description/mpn/designator). */
+  readonly label: string;
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  /** Quantity still to acquire (required − reserved), summed across merged lines. */
+  readonly shortfallQty: number;
+  /** Unit cost used for the estimate (live replacement value when matched). */
+  readonly unitCost: number | null;
+  /** shortfallQty × unitCost, or null when the unit cost is unknown. */
+  readonly estimatedCost: number | null;
+}
+
+// --- Assembly finalisation (spec §4 Composite Items & Assemblies) ----------------
+
+export interface FinaliseAssemblyInput {
+  /** CONTAINER → new location; SINGULAR_OBJECT → new item; PERMANENT_CONSUMPTION. */
+  readonly outcome: import('./constants').AssemblyOutcome;
+  /** Name for the resulting container location or singular object item. */
+  readonly resultName?: string;
+  /** Where the SINGULAR_OBJECT item is placed (defaults to Unassigned). */
+  readonly resultLocationId?: string;
 }
 
 // --- Pagination (spec §2.1) -----------------------------------------------------

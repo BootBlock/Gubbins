@@ -27,7 +27,7 @@ describe('v3 category-schemas-tags-images migration', () => {
 
   it('reaches schema version 3', async () => {
     const row = await driver.queryOne<{ user_version: number }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(3);
+    expect(Number(row?.user_version)).toBeGreaterThanOrEqual(3);
   });
 
   it('creates the Phase 3 tables', async () => {

@@ -10,6 +10,7 @@ import {
   ErrorIcon,
   SecureIcon,
   PackageIcon,
+  ProjectIcon,
   InfoIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
@@ -39,7 +40,11 @@ export function DashboardScreen() {
           </h1>
           <p className="text-sm text-muted-foreground">Local-first inventory · foundation ready</p>
         </div>
-        <Link to="/inventory" className={cn(buttonVariants(), 'ml-auto')}>
+        <Link to="/projects" className={cn(buttonVariants({ variant: 'outline' }), 'ml-auto')}>
+          <ProjectIcon />
+          Projects
+        </Link>
+        <Link to="/inventory" className={cn(buttonVariants())}>
           <PackageIcon />
           Open inventory
         </Link>

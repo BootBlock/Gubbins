@@ -16,6 +16,19 @@ export function formatPercent(ratio: number, maximumFractionDigits = 0): string 
   );
 }
 
+/**
+ * Format a monetary amount in the base currency (spec §1.2.1 default GBP/en-GB).
+ * Callers pass the user's `baseCurrency`/`locale` from usePreferencesStore.
+ */
+export function formatCurrency(
+  value: number,
+  currency = 'GBP',
+  locale: string = LOCALE,
+): string {
+  if (!Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value);
+}
+
 /** Human-readable byte size using decimal (SI) units, matching StorageManager estimates. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';

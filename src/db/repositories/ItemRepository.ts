@@ -12,11 +12,13 @@ import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import { weighInNote, weighInToDelta } from './gauge';
-import { rowToHistoryEntry, rowToItem } from './mappers';
+import { rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
 import type {
   CreateItemInput,
   GaugeAdjustment,
   Item,
+  ItemAlias,
+  ItemAliasRow,
   ItemHistoryEntry,
   ItemHistoryRow,
   ItemRow,
@@ -170,6 +172,18 @@ export class ItemRepository extends BaseRepository {
     if (input.categoryId !== undefined) {
       sets.push('category_id = ?');
       params.push(input.categoryId);
+    }
+    if (input.mpn !== undefined) {
+      sets.push('mpn = ?');
+      params.push(normaliseText(input.mpn));
+    }
+    if (input.manufacturer !== undefined) {
+      sets.push('manufacturer = ?');
+      params.push(normaliseText(input.manufacturer));
+    }
+    if (input.unitCost !== undefined) {
+      sets.push('unit_cost = ?');
+      params.push(normaliseUnitCost(input.unitCost));
     }
 
     if (sets.length > 0) {
@@ -338,6 +352,73 @@ export class ItemRepository extends BaseRepository {
     return this.toPage(rows.map(rowToHistoryEntry), limit, offset);
   }
 
+  // --- aliases & BOM auto-match (spec §4 Universal Alias Mapping) -----------------
+
+  /** Supplier/alternative part identifiers mapped to this item, alphabetically. */
+  async listAliases(itemId: string): Promise<ItemAlias[]> {
+    const rows = await this.driver.query<ItemAliasRow>(
+      'SELECT * FROM item_aliases WHERE item_id = ? ORDER BY alias COLLATE NOCASE ASC;',
+      [itemId],
+    );
+    return rows.map(rowToItemAlias);
+  }
+
+  /**
+   * Replace an item's alias set with the supplied list, de-duplicated
+   * case-insensitively. Trimmed-empty entries are dropped. Each alias is unique
+   * across the table, so reassigning one already owned by another item is rejected.
+   * Write-gated (it grows storage).
+   */
+  async setAliases(itemId: string, aliases: readonly string[]): Promise<ItemAlias[]> {
+    this.assertWritable();
+    await this.require(itemId);
+
+    const seen = new Set<string>();
+    const cleaned: string[] = [];
+    for (const raw of aliases) {
+      const alias = raw.trim();
+      if (alias.length === 0) continue;
+      const key = alias.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(alias);
+    }
+
+    const statements: SqlStatement[] = [
+      { sql: 'DELETE FROM item_aliases WHERE item_id = ?;', params: [itemId] },
+    ];
+    for (const alias of cleaned) {
+      statements.push({
+        sql: 'INSERT INTO item_aliases (id, item_id, alias) VALUES (?, ?, ?);',
+        params: [crypto.randomUUID(), itemId, alias],
+      });
+    }
+    await this.driver.transaction(statements);
+    return this.listAliases(itemId);
+  }
+
+  /**
+   * Resolve a BOM match key to a local item: first by exact (case-insensitive) MPN,
+   * then by an alias mapping (§4). Returns undefined when nothing matches, so the
+   * importer can leave the BOM line unmatched.
+   */
+  async findByMatchKey(key: string): Promise<Item | undefined> {
+    const trimmed = key.trim();
+    if (trimmed.length === 0) return undefined;
+
+    const byMpn = await this.driver.queryOne<{ id: string }>(
+      'SELECT id FROM items WHERE mpn = ? COLLATE NOCASE LIMIT 1;',
+      [trimmed],
+    );
+    if (byMpn) return this.getById(byMpn.id);
+
+    const byAlias = await this.driver.queryOne<{ item_id: string }>(
+      'SELECT item_id FROM item_aliases WHERE alias = ? COLLATE NOCASE LIMIT 1;',
+      [trimmed],
+    );
+    return byAlias ? this.getById(byAlias.item_id) : undefined;
+  }
+
   // --- internals -----------------------------------------------------------------
 
   private async require(id: string): Promise<Item> {
@@ -395,6 +476,9 @@ export class ItemRepository extends BaseRepository {
       description: input.description ?? null,
       locationId,
       categoryId: input.categoryId ?? null,
+      mpn: normaliseText(input.mpn),
+      manufacturer: normaliseText(input.manufacturer),
+      unitCost: normaliseUnitCost(input.unitCost),
       trackingMode,
       quantity,
       unit,
@@ -411,8 +495,9 @@ export class ItemRepository extends BaseRepository {
       {
         sql: `INSERT INTO items
                 (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
-                 unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                 unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
+                 mpn, manufacturer, unit_cost)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         params: [
           id,
           r.name,
@@ -427,6 +512,9 @@ export class ItemRepository extends BaseRepository {
           r.tareWeight,
           r.netValue,
           r.operationalMetadata,
+          r.mpn,
+          r.manufacturer,
+          r.unitCost,
         ],
       },
       historyStatement(id, 'CREATED', {
@@ -443,6 +531,9 @@ interface ResolvedCreate {
   readonly description: string | null;
   readonly locationId: string;
   readonly categoryId: string | null;
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  readonly unitCost: number | null;
   readonly trackingMode: string;
   readonly quantity: number;
   readonly unit: string | null;
@@ -483,4 +574,20 @@ function historyStatement(
 /** Escape LIKE wildcards so user input is matched literally (ESCAPE '\\'). */
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/** Trim a free-text field, collapsing blank/whitespace-only input to NULL. */
+function normaliseText(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Validate an optional unit cost: null clears it; otherwise it must be ≥ 0. */
+function normaliseUnitCost(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Unit cost must be a non-negative number.');
+  }
+  return value;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Button, Input, Spinner } from '@/components/foundry';
-import { AddIcon, BrandIcon, CategoryIcon, SearchIcon } from '@/components/icons';
+import { AddIcon, BrandIcon, CategoryIcon, ProjectIcon, SearchIcon } from '@/components/icons';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import {
@@ -82,6 +82,14 @@ export function InventoryScreen() {
         </div>
 
         <LayoutToggle />
+
+        <Link
+          to="/projects"
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
+        >
+          <ProjectIcon />
+          Projects
+        </Link>
 
         <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
           <CategoryIcon />

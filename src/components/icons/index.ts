@@ -63,6 +63,15 @@ export {
   SlidersHorizontal as SettingsIcon,
   Check as CheckIcon,
 
+  // Projects, BOMs & procurement (Phase 4, §4)
+  ClipboardList as ProjectIcon,
+  ShoppingCart as ShoppingCartIcon,
+  Truck as TruckIcon,
+  Wrench as AssemblyIcon,
+  PoundSterling as CostIcon,
+  BookmarkCheck as ReserveIcon,
+  FileUp as ImportIcon,
+
   // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,

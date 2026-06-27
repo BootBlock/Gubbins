@@ -14,6 +14,7 @@ import { CategoryRepository } from './CategoryRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
+import { ProjectRepository } from './ProjectRepository';
 import { TagRepository } from './TagRepository';
 import type { RepositoryOptions } from './base';
 
@@ -23,8 +24,10 @@ export { CategoryRepository } from './CategoryRepository';
 export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
+export { ProjectRepository } from './ProjectRepository';
 export type { ItemListFilters } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
+export type { AssemblyResult } from './ProjectRepository';
 export type { RepositoryOptions } from './base';
 export * from './constants';
 export * from './types';
@@ -35,6 +38,7 @@ let categoryRepository: CategoryRepository | null = null;
 let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
 let attachmentRepository: AttachmentRepository | null = null;
+let projectRepository: ProjectRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -69,4 +73,9 @@ export function getImageRepository(): ImageRepository {
 export function getAttachmentRepository(): AttachmentRepository {
   attachmentRepository ??= new AttachmentRepository(getDatabaseDriver(), productionOptions);
   return attachmentRepository;
+}
+
+export function getProjectRepository(): ProjectRepository {
+  projectRepository ??= new ProjectRepository(getDatabaseDriver(), productionOptions);
+  return projectRepository;
 }
