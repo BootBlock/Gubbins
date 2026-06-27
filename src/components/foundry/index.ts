@@ -10,3 +10,7 @@ export { Button, buttonVariants, type ButtonProps } from './button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface } from './surface';
 export { Spinner, type SpinnerProps } from './spinner';
+export { Input, Select } from './input';
+export { Modal, type ModalProps } from './modal';
+export { Markdown } from './markdown';
+export { Tooltip, type TooltipProps, type TooltipPlacement } from './tooltip';

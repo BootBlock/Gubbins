@@ -25,7 +25,7 @@ describe('migration engine', () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
     expect(report.to).toBe(TARGET_SCHEMA_VERSION);
-    expect(report.applied).toEqual([1]);
+    expect(report.applied).toEqual(migrations.map((m) => m.version));
     expect(await getUserVersion(driver)).toBe(TARGET_SCHEMA_VERSION);
   });
 

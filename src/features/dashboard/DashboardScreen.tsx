@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { Surface } from '@/components/foundry';
-import { BrandIcon, DatabaseIcon, StorageIcon, SuccessIcon, ErrorIcon, SecureIcon } from '@/components/icons';
+import { buttonVariants, Surface, Tooltip } from '@/components/foundry';
+import {
+  BrandIcon,
+  DatabaseIcon,
+  StorageIcon,
+  SuccessIcon,
+  ErrorIcon,
+  SecureIcon,
+  PackageIcon,
+  InfoIcon,
+} from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { formatBytes, formatPercent } from '@/lib/format';
@@ -29,9 +39,10 @@ export function DashboardScreen() {
           </h1>
           <p className="text-sm text-muted-foreground">Local-first inventory · foundation ready</p>
         </div>
-        <span className="ml-auto rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-          Phase 1
-        </span>
+        <Link to="/inventory" className={cn(buttonVariants(), 'ml-auto')}>
+          <PackageIcon />
+          Open inventory
+        </Link>
       </header>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -51,7 +62,17 @@ export function DashboardScreen() {
           </Row>
         </StatusCard>
 
-        <StatusCard icon={<StorageIcon />} title="Storage">
+        <StatusCard
+          icon={<StorageIcon />}
+          title="Storage"
+          info={[
+            "This is the **browser's own estimate** for the whole origin — not Gubbins' data alone.",
+            '',
+            'On `localhost` it includes **every site and dev server** sharing that origin, so the figure can look large even when your inventory is empty. Your actual database is only a few kilobytes.',
+            '',
+            'The storage safeguards use the **percentage** of quota, so a high shared figure will not trip a false [Hard Stop](https://developer.mozilla.org/docs/Web/API/StorageManager/estimate).',
+          ].join('\n')}
+        >
           <Row label="Persistence">
             <Pill ok={persisted}>{persisted ? 'Persistent' : 'Ephemeral'}</Pill>
           </Row>
@@ -79,23 +100,38 @@ export function DashboardScreen() {
       </div>
 
       <Surface className="mt-6 p-6">
-        <h2 className="text-sm font-semibold">Foundation complete</h2>
+        <h2 className="text-sm font-semibold">Inventory is live</h2>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          The local-first scaffold is in place: an offline-capable PWA backed by SQLite (FTS5) on the OPFS
-          VFS inside an isolated worker, a versioned migration engine, and storage safeguards. Item and
-          location management — creating, moving, and tracking your inventory — arrives in Phase 2.
+          The core domain model is in place: nested locations, items with Bulk, Serialised and Consumable
+          Gauge tracking, an immutable Activity Log, and virtualised lists with a Data-Heavy ↔ Visual-Heavy
+          toggle. Head to the inventory workspace to create, move and track your gubbins.
         </p>
       </Surface>
     </main>
   );
 }
 
-function StatusCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+function StatusCard({
+  icon,
+  title,
+  info,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  info?: string;
+  children: ReactNode;
+}) {
   return (
     <Surface className="p-5 transition-transform duration-200 hover:-translate-y-0.5">
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {info ? (
+          <Tooltip content={info} className="ml-auto text-muted-foreground/70 hover:text-foreground">
+            <InfoIcon className="size-3.5" aria-label={`About ${title}`} />
+          </Tooltip>
+        ) : null}
       </div>
       <dl className="mt-4 space-y-2.5">{children}</dl>
     </Surface>

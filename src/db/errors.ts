@@ -22,6 +22,8 @@ export type DbErrorCode =
   | 'MULTI_TAB_LOCKED'
   | 'INIT_FAILED'
   | 'TRANSACTION_FAILED'
+  // The storage Hard Stop (§7.6.1): writes are suspended at the locked tier.
+  | 'WRITE_SUSPENDED'
   | 'UNKNOWN';
 
 /** Plain, structured-clone-safe representation sent over the worker bridge. */

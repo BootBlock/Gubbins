@@ -35,6 +35,27 @@ export {
   RotateCcw as ResetIcon,
   Copy as DuplicateTabIcon,
   X as CloseIcon,
+  Plus as AddIcon,
+  Minus as SubtractIcon,
+  Trash2 as DeleteIcon,
+  Pencil as EditIcon,
+  FolderTree as MoveIcon,
+  Search as SearchIcon,
+  ChevronRight as ChevronRightIcon,
+  ChevronDown as ChevronDownIcon,
+  Undo2 as RestoreIcon,
+
+  // Inventory / domain
+  Folder as FolderIcon,
+  FolderOpen as FolderOpenIcon,
+  Gauge as GaugeIcon,
+  Hash as DiscreteIcon,
+  ScanBarcode as SerialisedIcon,
+  History as HistoryIcon,
+
+  // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
+  Rows3 as DataDensityIcon,
+  LayoutGrid as VisualDensityIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

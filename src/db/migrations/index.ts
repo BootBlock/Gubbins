@@ -6,8 +6,9 @@
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
+import { v2Domain } from './v2-domain';
 
-export const migrations: readonly Migration[] = [v1Initial];
+export const migrations: readonly Migration[] = [v1Initial, v2Domain];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(

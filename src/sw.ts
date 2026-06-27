@@ -28,6 +28,33 @@ const PRECACHE_URLS = (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__
 const CACHE = 'gubbins-precache-v1';
 const INDEX_URL = 'index.html';
 
+/**
+ * Defence-in-depth Content-Security-Policy injected on responses in production
+ * (this worker is disabled in dev, so Vite's HMR — which needs inline/eval/ws — is
+ * untouched). Deliberately pragmatic for a local-first PWA rather than maximally
+ * strict:
+ *   - `worker-src 'self' blob:` — the SQLite database worker (the directive a
+ *     foreign report-only policy was flagging).
+ *   - `script-src` keeps `'unsafe-inline'` for the COOP/COEP bootstrap + the PWA
+ *     registration snippet, and `'wasm-unsafe-eval'` so the SQLite WASM module can
+ *     instantiate.
+ *   - `connect-src 'self'` is correct while fully local; Phase 7 cloud sync will
+ *     broaden it to the chosen provider's origin.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 sw.addEventListener('install', (event) => {
   sw.skipWaiting();
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS)));
@@ -76,6 +103,7 @@ function withIsolationHeaders(response: Response): Response {
   headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
   headers.set('Cross-Origin-Opener-Policy', 'same-origin');
   headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
