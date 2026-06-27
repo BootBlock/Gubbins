@@ -7,7 +7,7 @@
  * `ItemHistoryEntry`) that the rest of the app consumes, computing the derived
  * gauge values that spec §4.1.1 forbids storing in the database.
  */
-import type { HistoryAction, TrackingMode } from './constants';
+import type { AttachmentKind, FieldType, HistoryAction, TrackingMode } from './constants';
 
 // --- Locations (spec §4) --------------------------------------------------------
 
@@ -62,9 +62,15 @@ export interface ItemRow {
   readonly tare_weight: number | null;
   readonly current_net_value: number | null;
   readonly operational_metadata: string | null;
+  readonly serial_no: number | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
+  /**
+   * Primary thumbnail blob, present only on list/detail reads that JOIN
+   * `item_images` (spec §4.2.4). The high-resolution path is *never* selected here.
+   */
+  readonly thumbnail_blob?: Uint8Array | null;
 }
 
 /**
@@ -89,11 +95,21 @@ export interface Item {
   readonly categoryId: string | null;
   readonly trackingMode: TrackingMode;
   readonly quantity: number;
+  /**
+   * Instance number for a SERIALISED clone (1..N), null otherwise. Clones share a
+   * name and are distinguished by this (spec §4 "Serialised" auto-clone).
+   */
+  readonly serialNo: number | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
   /** Present only when `trackingMode === 'CONSUMABLE_GAUGE'`. */
   readonly gauge: GaugeState | null;
+  /**
+   * Primary thumbnail bytes when the read JOINed `item_images` (§4.2.4); `null`
+   * when the item has no image, `undefined` on reads that didn't request it.
+   */
+  readonly thumbnailBlob?: Uint8Array | null;
 }
 
 /** Consumable-Gauge parameters supplied when creating a gauge-tracked item. */
@@ -114,8 +130,13 @@ export interface CreateItemInput {
   readonly locationId?: string;
   readonly categoryId?: string | null;
   readonly trackingMode?: TrackingMode;
-  /** Initial quantity for DISCRETE items (SERIALISED is forced to 1). */
+  /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
+  /**
+   * For SERIALISED items, how many distinct instance records to auto-clone
+   * (spec §4). Defaults to 1; ignored (must be 1) for DISCRETE / CONSUMABLE_GAUGE.
+   */
+  readonly count?: number;
   /** Required when `trackingMode === 'CONSUMABLE_GAUGE'`. */
   readonly gauge?: GaugeInput;
 }
@@ -174,6 +195,159 @@ export interface Category {
   readonly id: string;
   readonly name: string;
   readonly updatedAt: number;
+}
+
+/** A category plus its custom-field count, for the management list. */
+export interface CategoryWithFieldCount extends Category {
+  readonly fieldCount: number;
+}
+
+export interface CreateCategoryInput {
+  readonly name: string;
+}
+
+export interface UpdateCategoryInput {
+  readonly name?: string;
+}
+
+// --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------
+
+export interface CategoryFieldRow {
+  readonly id: string;
+  readonly category_id: string;
+  readonly name: string;
+  readonly field_type: FieldType;
+  readonly options: string | null;
+  readonly is_required: number;
+  readonly default_value: string | null;
+  readonly position: number;
+  readonly updated_at: number;
+}
+
+export interface CategoryField {
+  readonly id: string;
+  readonly categoryId: string;
+  readonly name: string;
+  readonly fieldType: FieldType;
+  /** Choice list for `SELECT` fields; null otherwise. */
+  readonly options: string[] | null;
+  readonly isRequired: boolean;
+  /** Value applied by lenient defaulting when an item has no stored value. */
+  readonly defaultValue: string | null;
+  readonly position: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateCategoryFieldInput {
+  readonly name: string;
+  readonly fieldType: FieldType;
+  readonly options?: string[] | null;
+  readonly isRequired?: boolean;
+  readonly defaultValue?: string | null;
+  readonly position?: number;
+}
+
+export interface UpdateCategoryFieldInput {
+  readonly name?: string;
+  readonly fieldType?: FieldType;
+  readonly options?: string[] | null;
+  readonly isRequired?: boolean;
+  readonly defaultValue?: string | null;
+  readonly position?: number;
+}
+
+/**
+ * A category field resolved against a specific item's stored value, applying
+ * **lenient defaulting** (spec §4): when no value row exists the field's
+ * `defaultValue` (or null) is returned silently — no migration of existing rows.
+ */
+export interface ResolvedItemField extends CategoryField {
+  /** The item's stored value, the field default, or null (lenient defaulting). */
+  readonly value: string | null;
+  /** True when the value came from a stored row rather than the default. */
+  readonly hasStoredValue: boolean;
+}
+
+// --- Tags (spec §4, §5 freeform tagging) ----------------------------------------
+
+export interface TagRow {
+  readonly id: string;
+  readonly name: string;
+  readonly updated_at: number;
+}
+
+export interface Tag {
+  readonly id: string;
+  readonly name: string;
+  readonly updatedAt: number;
+}
+
+/** A tag plus how many items currently carry it, for the dictionary view. */
+export interface TagWithCount extends Tag {
+  readonly itemCount: number;
+}
+
+// --- Item images (spec §4.2) ----------------------------------------------------
+
+export interface ItemImageRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly thumbnail_blob: Uint8Array | null;
+  readonly full_res_opfs_path: string;
+  readonly position: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface ItemImage {
+  readonly id: string;
+  readonly itemId: string;
+  readonly thumbnailBlob: Uint8Array | null;
+  /** Relative OPFS path to the high-resolution WebP (§4.2.2). Never Base64. */
+  readonly fullResOpfsPath: string;
+  readonly position: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateImageInput {
+  readonly itemId: string;
+  readonly thumbnailBlob: Uint8Array | null;
+  readonly fullResOpfsPath: string;
+  readonly position?: number;
+}
+
+// --- Item attachments / datasheets (spec §4) ------------------------------------
+
+export interface ItemAttachmentRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly kind: AttachmentKind;
+  readonly value: string;
+  readonly label: string | null;
+  readonly position: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface ItemAttachment {
+  readonly id: string;
+  readonly itemId: string;
+  readonly kind: AttachmentKind;
+  /** The external URL, or the literal local file-path pointer (sync-safe). */
+  readonly value: string;
+  readonly label: string | null;
+  readonly position: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateAttachmentInput {
+  readonly itemId: string;
+  readonly kind: AttachmentKind;
+  readonly value: string;
+  readonly label?: string | null;
+  readonly position?: number;
 }
 
 // --- Pagination (spec §2.1) -----------------------------------------------------

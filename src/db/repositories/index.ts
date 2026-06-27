@@ -9,19 +9,32 @@
 import { getDatabaseDriver } from '../client';
 import { isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
+import { AttachmentRepository } from './AttachmentRepository';
+import { CategoryRepository } from './CategoryRepository';
+import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
+import { TagRepository } from './TagRepository';
 import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
 export { LocationRepository } from './LocationRepository';
+export { CategoryRepository } from './CategoryRepository';
+export { TagRepository } from './TagRepository';
+export { ImageRepository } from './ImageRepository';
+export { AttachmentRepository } from './AttachmentRepository';
 export type { ItemListFilters } from './ItemRepository';
+export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { RepositoryOptions } from './base';
 export * from './constants';
 export * from './types';
 
 let itemRepository: ItemRepository | null = null;
 let locationRepository: LocationRepository | null = null;
+let categoryRepository: CategoryRepository | null = null;
+let tagRepository: TagRepository | null = null;
+let imageRepository: ImageRepository | null = null;
+let attachmentRepository: AttachmentRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -36,4 +49,24 @@ export function getItemRepository(): ItemRepository {
 export function getLocationRepository(): LocationRepository {
   locationRepository ??= new LocationRepository(getDatabaseDriver(), productionOptions);
   return locationRepository;
+}
+
+export function getCategoryRepository(): CategoryRepository {
+  categoryRepository ??= new CategoryRepository(getDatabaseDriver(), productionOptions);
+  return categoryRepository;
+}
+
+export function getTagRepository(): TagRepository {
+  tagRepository ??= new TagRepository(getDatabaseDriver(), productionOptions);
+  return tagRepository;
+}
+
+export function getImageRepository(): ImageRepository {
+  imageRepository ??= new ImageRepository(getDatabaseDriver(), productionOptions);
+  return imageRepository;
+}
+
+export function getAttachmentRepository(): AttachmentRepository {
+  attachmentRepository ??= new AttachmentRepository(getDatabaseDriver(), productionOptions);
+  return attachmentRepository;
 }

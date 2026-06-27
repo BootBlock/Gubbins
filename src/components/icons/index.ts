@@ -52,6 +52,16 @@ export {
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,
   History as HistoryIcon,
+  Shapes as CategoryIcon,
+  Tag as TagIcon,
+  Tags as TagsIcon,
+  Image as ImageIcon,
+  Upload as UploadIcon,
+  FileText as DatasheetIcon,
+  Link as LinkIcon,
+  HardDriveDownload as LocalFileIcon,
+  SlidersHorizontal as SettingsIcon,
+  Check as CheckIcon,
 
   // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
   Rows3 as DataDensityIcon,

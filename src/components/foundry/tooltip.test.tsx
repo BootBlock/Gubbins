@@ -5,7 +5,7 @@ import { Tooltip } from './tooltip';
 afterEach(cleanup);
 
 describe('Tooltip', () => {
-  it('is hidden until hovered, then shows rendered markdown', async () => {
+  it('is hidden until hovered, then shows rendered markdown after the open delay', async () => {
     render(
       <Tooltip content="Storage is **estimated** by the browser.">
         <span>info</span>
@@ -14,9 +14,38 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
 
     fireEvent.mouseEnter(screen.getByText('info'));
+    // Hover open is delayed, so it must not appear synchronously on enter.
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
     const tip = await screen.findByRole('tooltip');
     expect(tip).toBeInTheDocument();
     expect(tip.querySelector('strong')?.textContent).toBe('estimated');
+  });
+
+  it('cancels the delayed open if the pointer leaves before the delay elapses', async () => {
+    render(
+      <Tooltip content="Should never appear.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('info');
+    fireEvent.mouseEnter(trigger);
+    fireEvent.mouseLeave(trigger);
+
+    // Wait past the open delay; the cancelled timer must not have opened it.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('opens immediately on keyboard focus (no hover delay)', async () => {
+    render(
+      <Tooltip content="Focus is immediate.">
+        <span>focusable</span>
+      </Tooltip>,
+    );
+    fireEvent.focus(screen.getByText('focusable').parentElement!);
+    // Present right away, before any delay could elapse.
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
   });
 
   it('shows on keyboard focus and links the trigger via aria-describedby', async () => {

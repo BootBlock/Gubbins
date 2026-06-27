@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Button, Input, Spinner } from '@/components/foundry';
-import { AddIcon, BrandIcon, SearchIcon } from '@/components/icons';
+import { AddIcon, BrandIcon, CategoryIcon, SearchIcon } from '@/components/icons';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import {
@@ -15,6 +15,7 @@ import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { CreateItemDialog } from './components/CreateItemDialog';
+import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 
 /**
  * The Phase 2 inventory workspace (spec §5): location sidebar, a search/filter
@@ -27,6 +28,7 @@ export function InventoryScreen() {
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   // Debounce the search box so each keystroke doesn't hit the worker.
   useEffect(() => {
@@ -80,6 +82,11 @@ export function InventoryScreen() {
         </div>
 
         <LayoutToggle />
+
+        <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
+          <CategoryIcon />
+          Categories
+        </Button>
 
         <Button onClick={() => setAddOpen(true)}>
           <AddIcon />
@@ -140,6 +147,7 @@ export function InventoryScreen() {
         locations={flatLocations}
         defaultLocationId={selectedLocationId ?? UNASSIGNED_LOCATION_ID}
       />
+      <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
     </div>
   );
 }

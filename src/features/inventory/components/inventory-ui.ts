@@ -2,7 +2,8 @@
  * Shared presentational helpers for the inventory feature (spec §3, §4.1.3).
  * Pure functions — no React — for gauge colour bands and en-GB number formatting.
  */
-import type { TrackingMode } from '@/db/repositories';
+import type { AttachmentKind, FieldType, TrackingMode } from '@/db/repositories';
+import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
 
 export interface GaugeTone {
   /** Filled bar / arc colour. */
@@ -44,4 +45,24 @@ export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
   DISCRETE: 'Bulk',
   SERIALISED: 'Serialised',
   CONSUMABLE_GAUGE: 'Consumable',
+};
+
+/** British-English labels for category custom-field types (spec §4). */
+export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  TEXT: 'Text',
+  NUMBER: 'Number',
+  BOOLEAN: 'Yes / No',
+  DATE: 'Date',
+  SELECT: 'Choice',
+};
+
+/** Labels for the datasheet-linking configuration (spec §4 Attachments). */
+export const ATTACHMENT_MODE_LABELS: Record<AttachmentMode, string> = {
+  URL_ONLY: 'External URLs only',
+  HYBRID: 'URLs + local file pointers',
+};
+
+export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
+  URL: 'External URL',
+  LOCAL_POINTER: 'Local file',
 };

@@ -103,6 +103,22 @@ export function useCreateItem() {
   });
 }
 
+/**
+ * Create N distinct SERIALISED instance records sharing a name (spec §4 auto-clone).
+ * Invalidation-based: a batch insert reshapes the list more than a single optimistic
+ * patch can cleanly express.
+ */
+export function useCreateSerialisedItems() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateItemInput) => getItemRepository().createSerialised(input),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
+  });
+}
+
 export function useUpdateItem() {
   const client = useQueryClient();
   return useMutation({

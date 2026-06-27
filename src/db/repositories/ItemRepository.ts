@@ -34,9 +34,23 @@ export interface ItemListFilters extends PageParams {
   readonly includeInactive?: boolean;
 }
 
+/**
+ * A correlated subquery yielding an item's *primary* thumbnail blob (lowest
+ * `position`) and nothing else from `item_images` (spec §4.2.4: list/detail reads
+ * JOIN the image table but select the thumbnail only — never the full-res path).
+ */
+const THUMBNAIL_SUBQUERY = `(
+  SELECT thumbnail_blob FROM item_images
+  WHERE item_images.item_id = items.id
+  ORDER BY position ASC, rowid ASC LIMIT 1
+) AS thumbnail_blob`;
+
 export class ItemRepository extends BaseRepository {
   async getById(id: string): Promise<Item | undefined> {
-    const row = await this.driver.queryOne<ItemRow>('SELECT * FROM items WHERE id = ?;', [id]);
+    const row = await this.driver.queryOne<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE id = ?;`,
+      [id],
+    );
     return row ? rowToItem(row) : undefined;
   }
 
@@ -63,8 +77,8 @@ export class ItemRepository extends BaseRepository {
     const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
     params.push(limit, offset);
     const rows = await this.driver.query<ItemRow>(
-      `SELECT * FROM items ${clause}
-       ORDER BY name COLLATE NOCASE ASC, created_at ASC
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${clause}
+       ORDER BY name COLLATE NOCASE ASC, serial_no ASC, created_at ASC
        LIMIT ? OFFSET ?;`,
       params,
     );
@@ -98,75 +112,34 @@ export class ItemRepository extends BaseRepository {
 
   async create(input: CreateItemInput): Promise<Item> {
     this.assertWritable();
-    const name = input.name.trim();
-    if (name.length === 0) {
-      throw new DbError('SQLITE_CONSTRAINT', 'An item must have a name.');
-    }
-
-    const trackingMode = input.trackingMode ?? 'DISCRETE';
-    const locationId = input.locationId ?? UNASSIGNED_LOCATION_ID;
-
-    let quantity = input.quantity ?? (trackingMode === 'SERIALISED' ? 1 : 0);
-    if (trackingMode === 'SERIALISED') quantity = 1;
-    if (quantity < 0) {
-      throw new DbError('SQLITE_CONSTRAINT', 'Quantity cannot be negative.');
-    }
-
-    let unit: string | null = null;
-    let grossCapacity: number | null = null;
-    let tareWeight: number | null = null;
-    let netValue: number | null = null;
-    let operationalMetadata: string | null = null;
-
-    if (trackingMode === 'CONSUMABLE_GAUGE') {
-      const gauge = input.gauge;
-      if (!gauge || !gauge.unitOfMeasure || !(gauge.grossCapacity > 0)) {
-        throw new DbError(
-          'SQLITE_CONSTRAINT',
-          'A Consumable-Gauge item requires a unit of measure and a positive gross capacity.',
-        );
-      }
-      unit = gauge.unitOfMeasure;
-      grossCapacity = gauge.grossCapacity;
-      tareWeight = gauge.tareWeight ?? 0;
-      netValue = gauge.currentNetValue ?? gauge.grossCapacity;
-      if (tareWeight < 0 || netValue < 0) {
-        throw new DbError('SQLITE_CONSTRAINT', 'Gauge weights cannot be negative.');
-      }
-      operationalMetadata = gauge.operationalMetadata
-        ? JSON.stringify(gauge.operationalMetadata)
-        : null;
-    }
-
+    const resolved = this.resolveCreate(input);
     const id = crypto.randomUUID();
-    await this.driver.transaction([
-      {
-        sql: `INSERT INTO items
-                (id, name, description, location_id, category_id, tracking_mode, quantity,
-                 unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-        params: [
-          id,
-          name,
-          input.description ?? null,
-          locationId,
-          input.categoryId ?? null,
-          trackingMode,
-          quantity,
-          unit,
-          grossCapacity,
-          tareWeight,
-          netValue,
-          operationalMetadata,
-        ],
-      },
-      historyStatement(id, 'CREATED', {
-        note: `Created "${name}".`,
-        metadata: { trackingMode, locationId },
-      }),
-    ]);
-
+    await this.driver.transaction(this.buildInsert(id, resolved, null));
     return (await this.getById(id))!;
+  }
+
+  /**
+   * Create N distinct SERIALISED instance records that share a name (spec §4
+   * "Serialised" auto-clone). Each record gets quantity 1 and a serial number
+   * 1..N, and logs its own CREATED entry, all in one atomic transaction. A `count`
+   * of 1 (or omitted) yields a single instance #1. Write-gated.
+   */
+  async createSerialised(input: CreateItemInput): Promise<Item[]> {
+    this.assertWritable();
+    const count = Math.max(1, Math.floor(input.count ?? 1));
+    const resolved = this.resolveCreate({ ...input, trackingMode: 'SERIALISED' });
+
+    const ids: string[] = [];
+    const statements: SqlStatement[] = [];
+    for (let serial = 1; serial <= count; serial += 1) {
+      const id = crypto.randomUUID();
+      ids.push(id);
+      statements.push(...this.buildInsert(id, resolved, serial));
+    }
+    await this.driver.transaction(statements);
+
+    const created = await Promise.all(ids.map((id) => this.getById(id)));
+    return created.filter((i): i is Item => i !== undefined);
   }
 
   async update(id: string, input: UpdateItemInput): Promise<Item> {
@@ -374,6 +347,109 @@ export class ItemRepository extends BaseRepository {
     }
     return item;
   }
+
+  /** Validate and normalise creation input into the concrete column values. */
+  private resolveCreate(input: CreateItemInput): ResolvedCreate {
+    const name = input.name.trim();
+    if (name.length === 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'An item must have a name.');
+    }
+
+    const trackingMode = input.trackingMode ?? 'DISCRETE';
+    const locationId = input.locationId ?? UNASSIGNED_LOCATION_ID;
+
+    let quantity = input.quantity ?? (trackingMode === 'SERIALISED' ? 1 : 0);
+    if (trackingMode === 'SERIALISED') quantity = 1;
+    if (quantity < 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'Quantity cannot be negative.');
+    }
+
+    let unit: string | null = null;
+    let grossCapacity: number | null = null;
+    let tareWeight: number | null = null;
+    let netValue: number | null = null;
+    let operationalMetadata: string | null = null;
+
+    if (trackingMode === 'CONSUMABLE_GAUGE') {
+      const gauge = input.gauge;
+      if (!gauge || !gauge.unitOfMeasure || !(gauge.grossCapacity > 0)) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          'A Consumable-Gauge item requires a unit of measure and a positive gross capacity.',
+        );
+      }
+      unit = gauge.unitOfMeasure;
+      grossCapacity = gauge.grossCapacity;
+      tareWeight = gauge.tareWeight ?? 0;
+      netValue = gauge.currentNetValue ?? gauge.grossCapacity;
+      if (tareWeight < 0 || netValue < 0) {
+        throw new DbError('SQLITE_CONSTRAINT', 'Gauge weights cannot be negative.');
+      }
+      operationalMetadata = gauge.operationalMetadata
+        ? JSON.stringify(gauge.operationalMetadata)
+        : null;
+    }
+
+    return {
+      name,
+      description: input.description ?? null,
+      locationId,
+      categoryId: input.categoryId ?? null,
+      trackingMode,
+      quantity,
+      unit,
+      grossCapacity,
+      tareWeight,
+      netValue,
+      operationalMetadata,
+    };
+  }
+
+  /** Build the INSERT + CREATED-log statement pair for one item record. */
+  private buildInsert(id: string, r: ResolvedCreate, serialNo: number | null): SqlStatement[] {
+    return [
+      {
+        sql: `INSERT INTO items
+                (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
+                 unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        params: [
+          id,
+          r.name,
+          r.description,
+          r.locationId,
+          r.categoryId,
+          r.trackingMode,
+          r.quantity,
+          serialNo,
+          r.unit,
+          r.grossCapacity,
+          r.tareWeight,
+          r.netValue,
+          r.operationalMetadata,
+        ],
+      },
+      historyStatement(id, 'CREATED', {
+        note: serialNo === null ? `Created "${r.name}".` : `Created "${r.name}" #${serialNo}.`,
+        metadata: { trackingMode: r.trackingMode, locationId: r.locationId },
+      }),
+    ];
+  }
+}
+
+/** Normalised column values produced by {@link ItemRepository.resolveCreate}. */
+interface ResolvedCreate {
+  readonly name: string;
+  readonly description: string | null;
+  readonly locationId: string;
+  readonly categoryId: string | null;
+  readonly trackingMode: string;
+  readonly quantity: number;
+  readonly unit: string | null;
+  readonly grossCapacity: number | null;
+  readonly tareWeight: number | null;
+  readonly netValue: number | null;
+  readonly operationalMetadata: string | null;
 }
 
 interface HistoryFields {

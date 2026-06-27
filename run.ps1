@@ -24,6 +24,12 @@
 
   Tip: stop the server with Ctrl+C in this window rather than the [X], so the
   whole node/vite process tree is torn down cleanly.
+
+  Browser: the auto-open prefers system Edge (the browser this project is
+  validated against — Playwright drives msedge), falling back to your default
+  browser when Edge isn't installed. Override by setting $env:BROWSER before
+  launching: a browser executable name/path to use, or 'none' to suppress the
+  auto-open entirely (handy if your default browser is misbehaving).
 #>
 [CmdletBinding()]
 param(
@@ -68,6 +74,43 @@ function Find-FreePort([int]$Start) {
   throw "No free port found in range $Start-$($Start + 49)."
 }
 
+# Resolve the system Edge executable (App Paths registry first, then the standard
+# install locations). Returns $null when Edge is not installed.
+function Get-EdgePath {
+  foreach ($root in @('HKLM:', 'HKCU:')) {
+    $key = "$root\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe"
+    try {
+      $val = (Get-ItemProperty -Path $key -ErrorAction Stop).'(default)'
+      if ($val -and (Test-Path -LiteralPath $val)) { return $val }
+    }
+    catch { }
+  }
+  foreach ($candidate in @(
+      (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+      (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
+    )) {
+    if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+  }
+  return $null
+}
+
+# Open a URL in the preferred browser: an explicit $env:BROWSER override wins
+# ('none' suppresses), else system Edge, else the OS default browser.
+function Open-AppUrl([string]$Url) {
+  if ($env:BROWSER -eq 'none') { return }
+  if ($env:BROWSER) {
+    Start-Process -FilePath $env:BROWSER -ArgumentList $Url -ErrorAction SilentlyContinue | Out-Null
+    return
+  }
+  $edge = Get-EdgePath
+  if ($edge) {
+    Start-Process -FilePath $edge -ArgumentList $Url -ErrorAction SilentlyContinue | Out-Null
+  }
+  else {
+    Start-Process $Url | Out-Null
+  }
+}
+
 Write-Host '============================================' -ForegroundColor Cyan
 Write-Host '  Gubbins - local-first inventory tracker' -ForegroundColor Cyan
 Write-Host '============================================' -ForegroundColor Cyan
@@ -86,6 +129,15 @@ if (-not (Test-Path 'node_modules\.bin\vite.cmd')) {
   npm install
   Assert-LastExitCode 'Dependency installation failed. See the messages above.'
   Write-Host ''
+}
+
+# Prefer system Edge for Vite's own --open (dev/preview). Vite honours $env:BROWSER
+# (a browser executable/path, or 'none' to suppress), so pointing it at Edge means a
+# broken or misbehaving default browser never blocks development. A pre-set value is
+# left untouched as the user's explicit override.
+if (-not $env:BROWSER) {
+  $edgePath = Get-EdgePath
+  if ($edgePath) { $env:BROWSER = $edgePath }
 }
 
 if ($Mode -eq 'preview') {
@@ -111,7 +163,7 @@ if (Test-PortListening -Port $defaultPort) {
   if (Test-GubbinsServer -Port $defaultPort) {
     Write-Host "Gubbins is already running at http://localhost:$defaultPort$BasePath" -ForegroundColor Green
     Write-Host 'Reusing the existing dev server and opening your browser there.' -ForegroundColor DarkGray
-    Start-Process "http://localhost:$defaultPort$BasePath" | Out-Null
+    Open-AppUrl "http://localhost:$defaultPort$BasePath"
     exit 0
   }
 

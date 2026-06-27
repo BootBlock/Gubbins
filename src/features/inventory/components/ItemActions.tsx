@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/foundry';
-import { DeleteIcon, GaugeIcon, MoveIcon, RestoreIcon } from '@/components/icons';
+import { DeleteIcon, EditIcon, GaugeIcon, MoveIcon, RestoreIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useRestoreItem, useSoftDeleteItem } from '../mutations';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
+import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
 
 /**
@@ -20,13 +21,16 @@ export function ItemActions({
   locations: readonly LocationWithCount[];
   compact?: boolean;
 }) {
-  const [dialog, setDialog] = useState<'move' | 'gauge' | null>(null);
+  const [dialog, setDialog] = useState<'move' | 'gauge' | 'details' | null>(null);
   const softDelete = useSoftDeleteItem();
   const restore = useRestoreItem();
   const size = compact ? 'size-8' : '';
 
   return (
     <div className="flex items-center gap-1">
+      <Button variant="outline" size="icon" className={size} aria-label="Item details" onClick={() => setDialog('details')}>
+        <EditIcon />
+      </Button>
       {item.trackingMode === 'CONSUMABLE_GAUGE' ? (
         <Button variant="outline" size="icon" className={size} aria-label="Update gauge" onClick={() => setDialog('gauge')}>
           <GaugeIcon />
@@ -55,6 +59,7 @@ export function ItemActions({
       {item.gauge ? (
         <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
       ) : null}
+      <ItemDetailDialog item={item} open={dialog === 'details'} onClose={() => setDialog(null)} />
     </div>
   );
 }

@@ -18,10 +18,11 @@ import { Markdown } from './markdown';
  * attribute everywhere in the app. Feature code imports this from the Foundry, not
  * a third-party tooltip library.
  *
- * Behaviour: shows on hover and keyboard focus; stays open while the pointer is
- * over the bubble (so Markdown links are reachable); closes on Escape, blur, or
- * pointer-leave. It is portaled to <body> and positioned with viewport clamping so
- * it is never clipped by an overflow container.
+ * Behaviour: opens on hover after a short delay (so it never flashes up the instant
+ * the pointer crosses a trigger), and immediately on keyboard focus or touch tap;
+ * stays open while the pointer is over the bubble (so Markdown links are reachable);
+ * closes on Escape, blur, or pointer-leave. It is portaled to <body> and positioned
+ * with viewport clamping so it is never clipped by an overflow container.
  */
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -41,6 +42,8 @@ export interface TooltipProps {
 }
 
 const GAP = 8;
+/** Hover dwell before the tooltip opens, so it never flashes on a passing pointer. */
+const OPEN_DELAY_MS = 300;
 const CLOSE_DELAY_MS = 120;
 
 export function Tooltip({
@@ -55,6 +58,7 @@ export function Tooltip({
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
 
   const cancelClose = useCallback(() => {
@@ -64,17 +68,43 @@ export function Tooltip({
     }
   }, []);
 
+  const cancelOpen = useCallback(() => {
+    if (openTimer.current !== null) {
+      clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  }, []);
+
+  /** Open immediately — for keyboard focus, touch tap, and re-entering the bubble. */
   const show = useCallback(() => {
+    cancelOpen();
     cancelClose();
     setOpen(true);
-  }, [cancelClose]);
+  }, [cancelOpen, cancelClose]);
+
+  /** Open after a hover dwell — cancelled if the pointer leaves first (scheduleClose). */
+  const openWithDelay = useCallback(() => {
+    cancelClose();
+    if (openTimer.current !== null || open) return;
+    openTimer.current = setTimeout(() => {
+      openTimer.current = null;
+      setOpen(true);
+    }, OPEN_DELAY_MS);
+  }, [cancelClose, open]);
 
   const scheduleClose = useCallback(() => {
+    cancelOpen();
     cancelClose();
     closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
-  }, [cancelClose]);
+  }, [cancelOpen, cancelClose]);
 
-  useEffect(() => cancelClose, [cancelClose]);
+  useEffect(
+    () => () => {
+      cancelOpen();
+      cancelClose();
+    },
+    [cancelOpen, cancelClose],
+  );
 
   // Position once open (and keep aligned on scroll/resize). Measured after the
   // bubble renders hidden, so getBoundingClientRect reflects its true size.
@@ -155,7 +185,7 @@ export function Tooltip({
         ref={triggerRef}
         tabIndex={triggerTabIndex}
         aria-describedby={open ? id : undefined}
-        onMouseEnter={show}
+        onMouseEnter={openWithDelay}
         onMouseLeave={scheduleClose}
         onFocus={show}
         onBlur={scheduleClose}

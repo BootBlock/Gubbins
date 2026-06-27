@@ -9,7 +9,8 @@ import {
   type LocationWithCount,
   type TrackingMode,
 } from '@/db/repositories';
-import { useCreateItem } from '../mutations';
+import { useCategories } from '../categories';
+import { useCreateItem, useCreateSerialisedItems } from '../mutations';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
 /**
@@ -21,8 +22,10 @@ const schema = z
   .object({
     name: z.string().trim().min(1, 'Please enter a name.'),
     locationId: z.string().min(1, 'Please choose a location.'),
+    categoryId: z.string().optional(),
     trackingMode: z.enum(TRACKING_MODES),
     quantity: z.string().optional(),
+    count: z.string().optional(),
     unitOfMeasure: z.string().optional(),
     grossCapacity: z.string().optional(),
     tareWeight: z.string().optional(),
@@ -53,6 +56,8 @@ export function CreateItemDialog({
   defaultLocationId?: string;
 }) {
   const createItem = useCreateItem();
+  const createSerialised = useCreateSerialisedItems();
+  const { data: categories } = useCategories();
   const {
     register,
     handleSubmit,
@@ -64,8 +69,10 @@ export function CreateItemDialog({
     defaultValues: {
       name: '',
       locationId: defaultLocationId ?? UNASSIGNED_LOCATION_ID,
+      categoryId: '',
       trackingMode: 'DISCRETE',
       quantity: '1',
+      count: '1',
       unitOfMeasure: 'g',
       grossCapacity: '1000',
       tareWeight: '0',
@@ -74,13 +81,27 @@ export function CreateItemDialog({
   });
 
   const trackingMode = watch('trackingMode') as TrackingMode;
+  const isPending = createItem.isPending || createSerialised.isPending;
 
   const onSubmit = (values: FormValues) => {
     const base = {
       name: values.name.trim(),
       locationId: values.locationId,
+      categoryId: values.categoryId ? values.categoryId : undefined,
       trackingMode: values.trackingMode,
     };
+    const done = () => {
+      reset();
+      onClose();
+    };
+
+    if (values.trackingMode === 'SERIALISED') {
+      // Auto-clone N distinct instance records sharing a name (spec §4).
+      const count = Math.max(1, Math.floor(Number(values.count) || 1));
+      createSerialised.mutate({ ...base, count }, { onSuccess: done });
+      return;
+    }
+
     let input: CreateItemInput = base;
     if (values.trackingMode === 'DISCRETE') {
       input = { ...base, quantity: Math.max(0, Math.floor(Number(values.quantity) || 0)) };
@@ -96,12 +117,7 @@ export function CreateItemDialog({
         },
       };
     }
-    createItem.mutate(input, {
-      onSuccess: () => {
-        reset();
-        onClose();
-      },
-    });
+    createItem.mutate(input, { onSuccess: done });
   };
 
   const handleClose = () => {
@@ -137,9 +153,26 @@ export function CreateItemDialog({
           </Field>
         </div>
 
+        <Field label="Category (optional)">
+          <Select {...register('categoryId')}>
+            <option value="">— None —</option>
+            {(categories?.rows ?? []).map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
         {trackingMode === 'DISCRETE' ? (
           <Field label="Initial quantity">
             <Input type="number" min={0} step={1} {...register('quantity')} />
+          </Field>
+        ) : null}
+
+        {trackingMode === 'SERIALISED' ? (
+          <Field label="How many (each becomes its own record)">
+            <Input type="number" min={1} step={1} {...register('count')} />
           </Field>
         ) : null}
 
@@ -164,7 +197,7 @@ export function CreateItemDialog({
           <Button type="button" variant="ghost" onClick={handleClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={createItem.isPending}>
+          <Button type="submit" disabled={isPending}>
             Create item
           </Button>
         </div>

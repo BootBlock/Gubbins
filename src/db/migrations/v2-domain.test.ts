@@ -20,9 +20,11 @@ describe('v2 core-domain migration', () => {
     await driver.close();
   });
 
-  it('reaches schema version 2', async () => {
+  it('has applied at least the v2 core-domain migration', async () => {
+    // The full migration set advances past 2 as later phases land (v3+); assert the
+    // v2 domain is reachable rather than pinning the latest version here.
     const row = await driver.queryOne<{ user_version: number }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(2);
+    expect(Number(row?.user_version)).toBeGreaterThanOrEqual(2);
   });
 
   it('creates the domain tables', async () => {

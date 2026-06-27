@@ -29,6 +29,17 @@ export const inventoryKeys = {
   locations: () => [...inventoryKeys.all, 'locations'] as const,
   locationTree: () => [...inventoryKeys.locations(), 'tree'] as const,
   locationList: () => [...inventoryKeys.locations(), 'list'] as const,
+  // Phase 3 — categories, custom fields, tags, images & attachments.
+  categories: () => [...inventoryKeys.all, 'categories'] as const,
+  categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
+  categoryFields: (categoryId: string) =>
+    [...inventoryKeys.categories(), 'fields', categoryId] as const,
+  itemFields: (itemId: string) => [...inventoryKeys.item(itemId), 'fields'] as const,
+  tags: () => [...inventoryKeys.all, 'tags'] as const,
+  tagList: () => [...inventoryKeys.tags(), 'list'] as const,
+  itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
+  itemImages: (itemId: string) => [...inventoryKeys.item(itemId), 'images'] as const,
+  itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
 } as const;
 
 /** Paginated, virtualisation-ready item list. */

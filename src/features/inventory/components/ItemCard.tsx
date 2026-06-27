@@ -5,6 +5,7 @@ import type { Item, LocationWithCount } from '@/db/repositories';
 import { formatQuantity } from './inventory-ui';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
+import { Thumbnail } from './Thumbnail';
 import { TrackingBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 
@@ -29,12 +30,26 @@ export function ItemCard({
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold tracking-tight">{item.name}</h3>
-          <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
-            <FolderIcon />
-            {locationName}
-          </p>
+        <div className="flex min-w-0 items-start gap-3">
+          {item.thumbnailBlob ? (
+            <Thumbnail
+              bytes={item.thumbnailBlob}
+              alt={item.name}
+              className="size-11 shrink-0 rounded-lg border border-border/60"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold tracking-tight">
+              {item.name}
+              {item.serialNo !== null ? (
+                <span className="ml-1 text-muted-foreground">#{item.serialNo}</span>
+              ) : null}
+            </h3>
+            <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
+              <FolderIcon />
+              {locationName}
+            </p>
+          </div>
         </div>
         <TrackingBadge mode={item.trackingMode} />
       </div>

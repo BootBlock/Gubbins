@@ -52,3 +52,21 @@ export const HISTORY_ACTIONS = [
   'RE_PARENTED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
+
+/**
+ * Data types a category custom field may declare (spec §4 "Categories & Schema
+ * Evolution"). All values persist as TEXT in `item_field_values` (a STRICT table);
+ * the field type governs validation in the form layer and casting in the mapper.
+ * - `SELECT` constrains values to a defined option list (`category_fields.options`).
+ */
+export const FIELD_TYPES = ['TEXT', 'NUMBER', 'BOOLEAN', 'DATE', 'SELECT'] as const;
+export type FieldType = (typeof FIELD_TYPES)[number];
+
+/**
+ * Attachment/datasheet kinds (spec §4 "Attachments & Datasheets"). `URL` is an
+ * external link; `LOCAL_POINTER` stores only the literal local file-path string
+ * (never the blob), keeping it sync-safe (§4 Strict Sync Isolation). Which kinds a
+ * user may add is governed by the `attachmentMode` preference (Option A vs B).
+ */
+export const ATTACHMENT_KINDS = ['URL', 'LOCAL_POINTER'] as const;
+export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];

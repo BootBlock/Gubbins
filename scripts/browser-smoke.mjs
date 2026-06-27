@@ -5,12 +5,56 @@
  * — a real cross-origin-isolated context, so OPFS + SharedArrayBuffer + the SQLite
  * worker actually run. Exercises the Phase 2 flows: cross-origin isolation, item
  * creation (Bulk + Consumable Gauge), quantity adjustment, the density toggle, and
- * nested location creation, asserting there are no console/page errors.
+ * nested location creation; plus the Phase 3 flows: category + custom-field schemas,
+ * serialised auto-clone, freeform tagging, and the real image pipeline (canvas→WebP
+ * compression → raw OPFS file → thumbnail). Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
  */
+import zlib from 'node:zlib';
 import { chromium } from 'playwright';
+
+/** Build a tiny, guaranteed-valid RGB PNG buffer for the image-upload flow. */
+function makePng(size = 8) {
+  const crc32 = (buf) => {
+    let c = ~0;
+    for (let i = 0; i < buf.length; i += 1) {
+      c ^= buf[i];
+      for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+    return (~c) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: RGB
+  const raw = Buffer.alloc(size * (1 + size * 3));
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const o = y * (1 + size * 3) + 1 + x * 3;
+      raw[o] = 210;
+      raw[o + 1] = 90;
+      raw[o + 2] = 40;
+    }
+  }
+  return Buffer.concat([
+    sig,
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 const BASE = 'http://localhost:5173/Gubbins/';
 const headed = process.argv.includes('--headed');
@@ -43,6 +87,13 @@ page.on('pageerror', (err) => pageErrors.push(String(err)));
 const stamp = Date.now().toString().slice(-5);
 const screwName = `Smoke Screws ${stamp}`;
 const filamentName = `Smoke Filament ${stamp}`;
+const categoryName = `Smoke Caps ${stamp}`;
+const fieldName = `Voltage ${stamp}`;
+const printerName = `Smoke Printer ${stamp}`;
+const tagName = `smoke-${stamp}`;
+
+// A small valid PNG, enough for the canvas→WebP compression pipeline to decode.
+const pngBuffer = makePng(8);
 
 try {
   await step('loads and reaches the inventory workspace', async () => {
@@ -113,6 +164,69 @@ try {
     await page.getByText(`Shelf ${stamp}`).waitFor({ state: 'visible', timeout: 8000 });
   });
 
+  // --- Phase 3 flows ------------------------------------------------------------
+
+  await step('creates a category with a custom field', async () => {
+    await page.getByRole('button', { name: 'Categories' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Categories & schemas' });
+    await dialog.getByLabel('New category name').fill(categoryName);
+    await dialog.getByRole('button', { name: 'Add category' }).click();
+    // The new category becomes selected; its add-field form appears.
+    await dialog.getByLabel('Field name').fill(fieldName);
+    await dialog.getByLabel('Field type').selectOption('NUMBER');
+    await dialog.getByRole('button', { name: 'Add field' }).click();
+    await dialog.getByText(fieldName).waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  // Scope to the tightest item card containing the printer name and a details button.
+  const printerCard = () =>
+    page
+      .locator('div')
+      .filter({ hasText: printerName })
+      .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+      .last();
+
+  await step('auto-clones a serialised item into distinct records', async () => {
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.getByLabel('Name').fill(printerName);
+    await dialog.getByLabel('Tracking').selectOption('SERIALISED');
+    await dialog.getByLabel(/How many/).fill('3');
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    // Three distinct instance records share the name (#1..#3 shown beside it).
+    await page.getByText(printerName).first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForFunction(
+      (name) =>
+        document.querySelectorAll('h3').length > 0 &&
+        [...document.querySelectorAll('h3')].filter((h) => h.textContent?.includes(name)).length >= 3,
+      printerName,
+      { timeout: 10000 },
+    );
+  });
+
+  await step('opens an item, adds a freeform tag', async () => {
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Add a tag').fill(tagName);
+    await page.keyboard.press('Enter');
+    await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('uploads an image through the real OPFS pipeline', async () => {
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Upload image').setInputFiles({
+      name: 'smoke.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    // A thumbnail must render from the stored DB blob (round-trips the worker).
+    await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 15000 });
+    await page.keyboard.press('Escape');
+  });
+
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });
 } catch (err) {
   fail('unexpected failure', err);
@@ -139,4 +253,5 @@ if (pageErrors.length) {
 }
 
 const failed = results.filter((r) => !r.pass);
-process.exit(failed.length === 0 && pageErrors.length === 0 ? 0 : 1);
+// Spec §8.5.5: the smoke fails on any step failure, page error, or console error.
+process.exit(failed.length === 0 && pageErrors.length === 0 && consoleErrors.length === 0 ? 0 : 1);
