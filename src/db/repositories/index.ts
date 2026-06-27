@@ -11,6 +11,8 @@ import { isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { AttachmentRepository } from './AttachmentRepository';
 import { CategoryRepository } from './CategoryRepository';
+import { CheckoutRepository } from './CheckoutRepository';
+import { ContactRepository } from './ContactRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -25,6 +27,8 @@ export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
+export { ContactRepository } from './ContactRepository';
+export { CheckoutRepository } from './CheckoutRepository';
 export type { ItemListFilters, SearchByAstParams } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
@@ -39,6 +43,8 @@ let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
 let attachmentRepository: AttachmentRepository | null = null;
 let projectRepository: ProjectRepository | null = null;
+let contactRepository: ContactRepository | null = null;
+let checkoutRepository: CheckoutRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -78,4 +84,14 @@ export function getAttachmentRepository(): AttachmentRepository {
 export function getProjectRepository(): ProjectRepository {
   projectRepository ??= new ProjectRepository(getDatabaseDriver(), productionOptions);
   return projectRepository;
+}
+
+export function getContactRepository(): ContactRepository {
+  contactRepository ??= new ContactRepository(getDatabaseDriver(), productionOptions);
+  return contactRepository;
+}
+
+export function getCheckoutRepository(): CheckoutRepository {
+  checkoutRepository ??= new CheckoutRepository(getDatabaseDriver(), productionOptions);
+  return checkoutRepository;
 }

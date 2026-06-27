@@ -34,7 +34,9 @@ describe('v5 capabilities-fts5-search migration', () => {
 
   beforeEach(async () => {
     driver = createMemoryDriver();
-    await runMigrations(driver, migrations);
+    // Scope to v1–v5 so this migration is tested in isolation as its own head
+    // (later migrations advance user_version past 5).
+    await runMigrations(driver, migrations.filter((m) => m.version <= 5));
   });
 
   afterEach(async () => {
@@ -145,7 +147,7 @@ describe('v5 capabilities-fts5-search migration', () => {
         'Legacy Capacitor',
         UNASSIGNED_LOCATION_ID,
       ]);
-      await runMigrations(fresh, migrations);
+      await runMigrations(fresh, migrations.filter((m) => m.version <= 5));
       const rows = await fresh.query<{ id: string }>(
         'SELECT id FROM items WHERE rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?);',
         ['"capacitor"*'],

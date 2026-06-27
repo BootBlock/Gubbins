@@ -7,6 +7,10 @@ import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
   Capability,
   CapabilityRow,
+  Checkout,
+  CheckoutRow,
+  Contact,
+  ContactRow,
   Category,
   CategoryField,
   CategoryFieldRow,
@@ -178,6 +182,30 @@ export function rowToCapability(row: CapabilityRow): Capability {
     valueNum: row.value_num,
     valueText: row.value_text,
     weight: row.weight,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToContact(row: ContactRow): Contact {
+  return {
+    id: row.id,
+    name: row.name,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToCheckout(row: CheckoutRow): Checkout {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    contactId: row.contact_id,
+    quantity: row.quantity,
+    dueDate: row.due_date,
+    checkedOutAt: row.checked_out_at,
+    returnedAt: row.returned_at,
+    note: row.note,
     updatedAt: row.updated_at,
   };
 }

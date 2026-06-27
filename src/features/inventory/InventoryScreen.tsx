@@ -6,9 +6,14 @@ import {
   BrandIcon,
   BuilderIcon,
   CategoryIcon,
+  ContactsIcon,
+  ExportIcon,
   ProjectIcon,
+  ScanIcon,
   SearchIcon,
 } from '@/components/icons';
+import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
+import { ExportWizard } from '@/features/export/ExportWizard';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
@@ -50,6 +55,8 @@ function InventoryWorkspace() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const { ast, conditionCount } = useSearchBuilder();
   // The Visual Builder supersedes the quick search/location filters when it is open
@@ -121,6 +128,11 @@ function InventoryWorkspace() {
 
         <LayoutToggle />
 
+        <Button variant="outline" onClick={() => setScannerOpen(true)}>
+          <ScanIcon />
+          Scan
+        </Button>
+
         <Link
           to="/projects"
           className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
@@ -129,9 +141,22 @@ function InventoryWorkspace() {
           Projects
         </Link>
 
+        <Link
+          to="/contacts"
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
+        >
+          <ContactsIcon />
+          Contacts
+        </Link>
+
         <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
           <CategoryIcon />
           Categories
+        </Button>
+
+        <Button variant="outline" onClick={() => setExportOpen(true)}>
+          <ExportIcon />
+          Export
         </Button>
 
         <Button onClick={() => setAddOpen(true)}>
@@ -206,6 +231,8 @@ function InventoryWorkspace() {
         defaultLocationId={selectedLocationId ?? UNASSIGNED_LOCATION_ID}
       />
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+      <ScannerOverlay open={scannerOpen} onClose={() => setScannerOpen(false)} />
+      <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>
   );
 }

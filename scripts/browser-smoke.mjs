@@ -12,7 +12,10 @@
  * stock, and move a line into the "In Transit" procurement state; plus the Phase 5
  * flows: a real FTS5 full-text search over the item index, adding a weighted
  * capability to an item, and building a graphical Visual-Builder query that filters
- * by that capability. Asserts there are no console/page errors.
+ * by that capability; plus the Phase 6 flows: generating a printable QR code,
+ * simulating a scan/decode and checking the item out to an auto-created contact,
+ * viewing & returning the loan on the contacts screen, and running a JSON backup
+ * through the Export Wizard. Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
@@ -83,7 +86,13 @@ async function step(name, fn) {
   }
 }
 
-const browser = await chromium.launch({ channel: 'msedge', headless: !headed });
+const browser = await chromium.launch({
+  channel: 'msedge',
+  headless: !headed,
+  // Auto-grant a fake camera so the Phase 6 scanner's getUserMedia path runs
+  // headlessly without a permission prompt (§6.1); manual code entry is the decode.
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+});
 const page = await browser.newPage();
 
 page.on('console', (msg) => {
@@ -100,6 +109,7 @@ const printerName = `Smoke Printer ${stamp}`;
 const tagName = `smoke-${stamp}`;
 const projectName = `Smoke Project ${stamp}`;
 const partName = `Smoke Part ${stamp}`;
+const borrowerName = `Smoke Borrower ${stamp}`;
 
 // A small valid PNG, enough for the canvas→WebP compression pipeline to decode.
 const pngBuffer = makePng(8);
@@ -348,6 +358,111 @@ try {
       filamentName,
       { timeout: 8000 },
     );
+  });
+
+  // --- Phase 6: QR generation, scanner, contacts & checkout, export ------------
+
+  let scannedUrl = '';
+  await step('generates a printable QR code for an item', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await itemCard(screwName).getByRole('button', { name: 'QR code' }).click();
+    const dialog = page.getByRole('dialog', { name: 'QR code' });
+    await dialog.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 8000 });
+    scannedUrl = (await dialog.locator('[data-testid="item-qr-url"]').innerText()).trim();
+    if (!scannedUrl.includes('item=')) throw new Error(`QR url missing item param: ${scannedUrl}`);
+
+    // Prove the hand-rolled encoder produces a genuinely decodable QR: render the
+    // SVG to a canvas and decode it with the native Barcode Detection API (§6.6).
+    const decoded = await page.evaluate(async () => {
+      if (!('BarcodeDetector' in window)) return null; // skip where unsupported
+      const svgEl = document.querySelector('[data-testid="item-qr"] svg');
+      if (!svgEl) return 'no-svg';
+      const xml = new XMLSerializer().serializeToString(svgEl);
+      const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml' }));
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = rej;
+        img.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width || 300;
+      canvas.height = img.height || 300;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+      const codes = await det.detect(canvas);
+      URL.revokeObjectURL(url);
+      return codes.length ? codes[0].rawValue : 'none';
+    });
+    if (decoded !== null && decoded !== scannedUrl) {
+      throw new Error(`BarcodeDetector decoded "${decoded}", expected "${scannedUrl}"`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await step('scans a code and checks the item out to an auto-created contact', async () => {
+    await page.getByRole('button', { name: 'Scan' }).click();
+    const overlay = page.locator('[data-testid="scanner-overlay"]');
+    await overlay.waitFor({ state: 'visible', timeout: 8000 });
+    // Simulate a decode by feeding the deep-link into the manual-entry fallback.
+    await page.locator('[data-testid="scanner-manual-input"]').fill(scannedUrl);
+    await page.locator('[data-testid="scanner-manual-submit"]').click();
+    // Discrete result card shows the scanned item with a Check out action.
+    await overlay.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await overlay.getByRole('button', { name: 'Check out' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Check out' });
+    await dialog.getByPlaceholder('Type a name — new names are added automatically').fill(borrowerName);
+    await dialog.getByRole('button', { name: 'Check out' }).click();
+    await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+    // Close the scanner overlay.
+    await page.getByRole('button', { name: 'Close scanner' }).click();
+  });
+
+  await step('shows the loan and contact on the contacts screen', async () => {
+    await page.goto(`${BASE}contacts`, { waitUntil: 'domcontentloaded' });
+    await page.getByText('On loan').waitFor({ state: 'visible', timeout: 12000 });
+    // The borrowed item and the auto-created contact both appear.
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.getByText(borrowerName).first().waitFor({ state: 'visible', timeout: 8000 });
+    // Return it.
+    await page.getByRole('button', { name: 'Return' }).first().click();
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      screwName,
+      { timeout: 8000 },
+    );
+  });
+
+  await step('runs a JSON backup export through the wizard', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Export' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('button', { name: 'Export' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export' });
+    await dialog.waitFor({ state: 'visible', timeout: 8000 });
+    const download = page.waitForEvent('download', { timeout: 15000 });
+    await dialog.getByTestId('run-export').click();
+    const file = await download;
+    if (!file.suggestedFilename().endsWith('.json')) {
+      throw new Error(`unexpected export filename: ${file.suggestedFilename()}`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await step('exports a Markdown vault zip via the fflate worker (§4.5)', async () => {
+    await page.getByRole('button', { name: 'Export' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export' });
+    await dialog.getByRole('button', { name: /Markdown vault/ }).click();
+    const download = page.waitForEvent('download', { timeout: 20000 });
+    await dialog.getByTestId('run-export').click();
+    const file = await download;
+    if (!file.suggestedFilename().endsWith('.zip')) {
+      throw new Error(`unexpected vault filename: ${file.suggestedFilename()}`);
+    }
+    await page.keyboard.press('Escape');
   });
 
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });

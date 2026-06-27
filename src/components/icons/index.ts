@@ -81,6 +81,20 @@ export {
   Filter as FilterIcon,
   SlidersHorizontal as BuilderIcon,
   FolderPlus as AddGroupIcon,
+
+  // QR, scanner, contacts & checkout (Phase 6, §4 Borrowing, §5, §6)
+  QrCode as QrCodeIcon,
+  ScanLine as ScanIcon,
+  Camera as CameraIcon,
+  CameraOff as CameraOffIcon,
+  Users as ContactsIcon,
+  UserPlus as AddContactIcon,
+  HandCoins as CheckoutIcon,
+  Undo2 as CheckInIcon,
+  CalendarClock as DueDateIcon,
+  Printer as PrintIcon,
+  FileJson as ExportIcon,
+  FolderArchive as VaultIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

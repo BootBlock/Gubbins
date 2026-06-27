@@ -572,6 +572,85 @@ export interface FinaliseAssemblyInput {
   readonly resultLocationId?: string;
 }
 
+// --- Contacts & checkouts (spec §4 Borrowing & Checking Out, Phase 6) -----------
+
+export interface ContactRow {
+  readonly id: string;
+  readonly name: string;
+  readonly note: string | null;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface Contact {
+  readonly id: string;
+  readonly name: string;
+  readonly note: string | null;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/** A contact plus its denormalised count of still-out (open) checkouts. */
+export interface ContactWithCount extends Contact {
+  readonly openCount: number;
+}
+
+export interface CreateContactInput {
+  readonly name: string;
+  readonly note?: string | null;
+}
+
+export interface UpdateContactInput {
+  readonly name?: string;
+  readonly note?: string | null;
+}
+
+export interface CheckoutRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly contact_id: string;
+  readonly quantity: number;
+  readonly due_date: number | null;
+  readonly checked_out_at: number;
+  readonly returned_at: number | null;
+  readonly note: string | null;
+  readonly updated_at: number;
+}
+
+export interface Checkout {
+  readonly id: string;
+  readonly itemId: string;
+  readonly contactId: string;
+  /** Units lent out on this checkout (DISCRETE on-hand is decremented while open). */
+  readonly quantity: number;
+  /** Optional due date (UNIX-ms) for overdue tracking (§4 Due Dates). */
+  readonly dueDate: number | null;
+  readonly checkedOutAt: number;
+  /** NULL while the item is still out; set when returned (drives OPEN/RETURNED). */
+  readonly returnedAt: number | null;
+  readonly note: string | null;
+  readonly updatedAt: number;
+}
+
+/** A checkout joined with its item + contact display names, for list/dashboard rows. */
+export interface CheckoutWithNames extends Checkout {
+  readonly itemName: string;
+  readonly contactName: string;
+  readonly status: import('./constants').CheckoutStatus;
+  /** True when the checkout is open and its due date is in the past. */
+  readonly isOverdue: boolean;
+}
+
+export interface CheckoutItemInput {
+  readonly itemId: string;
+  /** Existing contact id, OR a raw name to low-friction auto-create (§4 Ergonomics). */
+  readonly contactId?: string;
+  readonly contactName?: string;
+  readonly quantity?: number;
+  readonly dueDate?: number | null;
+  readonly note?: string | null;
+}
+
 // --- Pagination (spec §2.1) -----------------------------------------------------
 
 export interface PageParams {

@@ -1,11 +1,21 @@
 import { useState } from 'react';
 import { Button } from '@/components/foundry';
-import { DeleteIcon, EditIcon, GaugeIcon, MoveIcon, RestoreIcon } from '@/components/icons';
+import {
+  CheckoutIcon,
+  DeleteIcon,
+  EditIcon,
+  GaugeIcon,
+  MoveIcon,
+  QrCodeIcon,
+  RestoreIcon,
+} from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
+import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useRestoreItem, useSoftDeleteItem } from '../mutations';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
+import { QrCodeDialog } from './QrCodeDialog';
 
 /**
  * Shared item action controls (move, update gauge, soft-delete/restore) plus the
@@ -21,7 +31,7 @@ export function ItemActions({
   locations: readonly LocationWithCount[];
   compact?: boolean;
 }) {
-  const [dialog, setDialog] = useState<'move' | 'gauge' | 'details' | null>(null);
+  const [dialog, setDialog] = useState<'move' | 'gauge' | 'details' | 'qr' | 'checkout' | null>(null);
   const softDelete = useSoftDeleteItem();
   const restore = useRestoreItem();
   const size = compact ? 'size-8' : '';
@@ -39,6 +49,14 @@ export function ItemActions({
       <Button variant="outline" size="icon" className={size} aria-label="Move item" onClick={() => setDialog('move')}>
         <MoveIcon />
       </Button>
+      <Button variant="outline" size="icon" className={size} aria-label="QR code" onClick={() => setDialog('qr')}>
+        <QrCodeIcon />
+      </Button>
+      {item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
+        <Button variant="outline" size="icon" className={size} aria-label="Check out" onClick={() => setDialog('checkout')}>
+          <CheckoutIcon />
+        </Button>
+      ) : null}
       {item.isActive ? (
         <Button
           variant="ghost"
@@ -60,6 +78,8 @@ export function ItemActions({
         <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
       ) : null}
       <ItemDetailDialog item={item} open={dialog === 'details'} onClose={() => setDialog(null)} />
+      <QrCodeDialog itemId={item.id} itemName={item.name} open={dialog === 'qr'} onClose={() => setDialog(null)} />
+      <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
     </div>
   );
 }

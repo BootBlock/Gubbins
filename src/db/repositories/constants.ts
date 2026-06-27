@@ -73,6 +73,9 @@ export const HISTORY_ACTIONS = [
   'RECEIVED', // In-Transit stock arrived and moved into active inventory
   'CONSUMED', // parts permanently consumed by an assembly (§4 Permanent Consumption)
   'ASSEMBLED', // an item created as the Singular-Object result of an assembly
+  // Phase 6 — borrowing & checking out (§4 Borrowing & Checking Out).
+  'CHECKED_OUT', // stock lent to a contact (optionally with a due date)
+  'CHECKED_IN', // borrowed stock returned by a contact
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 
@@ -157,3 +160,23 @@ export type FtsItemColumn = (typeof FTS_ITEM_COLUMNS)[number];
  * rather than treated as flat boolean tags.
  */
 export const DEFAULT_CAPABILITY_WEIGHT = 1.0;
+
+// --- Borrowing, checkout & QR (spec §4 Borrowing & Checking Out, §5/§6, Phase 6) -
+
+/**
+ * The query parameter a Gubbins item QR code deep-links with (spec §5 printable
+ * QR, Phase 6). The encoded payload is the app URL `…/Gubbins/#/inventory?item=<uuid>`
+ * — openable by any phone camera, and parsed back to the item id by the in-app
+ * scanner. The constant is shared by the QR generator and the scan-payload parser
+ * so the contract has a single source of truth.
+ */
+export const ITEM_QR_PARAM = 'item';
+
+/**
+ * A checkout's lifecycle, derived (not a stored enum): a row with `returned_at`
+ * NULL is `OPEN` (the item is still out), otherwise `RETURNED`. Exposed as a union
+ * for the UI; the database stores only the nullable `returned_at` timestamp so the
+ * §7.1 LWW model stays a simple last-write-wins on one column.
+ */
+export const CHECKOUT_STATUSES = ['OPEN', 'RETURNED'] as const;
+export type CheckoutStatus = (typeof CHECKOUT_STATUSES)[number];
