@@ -121,6 +121,14 @@ const borrowerName = `Smoke Borrower ${stamp}`;
 const scrapeItemName = `Smoke Scrape ${stamp}`;
 const scrapedMpn = `NE555P-${stamp}`;
 const userManufacturer = 'ACME (user)';
+// Phase 9 — procurement & lifecycle logistics.
+const perishableName = `Smoke Resin ${stamp}`;
+const variantName = `Variant ${stamp}`;
+const drawerName = `Drawer ${stamp}`;
+const cycleItemName = `Smoke Count ${stamp}`;
+const maintScheduleName = `Lube ${stamp}`;
+// An expiry a few days out so it classifies as "expiring soon" (§4 / dashboard widget).
+const soonExpiry = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
 
 // A small valid PNG, enough for the canvas→WebP compression pipeline to decode.
 const pngBuffer = makePng(8);
@@ -653,6 +661,102 @@ try {
       { timeout: 8000 },
     );
     await page.keyboard.press('Escape');
+  });
+
+  // --- Phase 9: perishables, variants, maintenance & cycle counting ------------
+
+  const lifecycleCard = (name) =>
+    page
+      .locator('div')
+      .filter({ hasText: name })
+      .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+      .last();
+
+  await step('creates a perishable item with an expiry date and condition (§4)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill(perishableName);
+    await dialog.getByTestId('item-expiry').fill(soonExpiry);
+    await dialog.getByTestId('item-condition').selectOption('GOOD');
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(perishableName).first().waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  await step('expands a parent item into a child variant (§4 Variant/SKU)', async () => {
+    await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('variant-name').waitFor({ state: 'visible', timeout: 8000 });
+    await detail.getByTestId('variant-name').fill(variantName);
+    await detail.getByTestId('add-variant').click();
+    await detail
+      .getByTestId('variant-list')
+      .getByText(variantName)
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('adds a tool maintenance schedule to an item (§4.3)', async () => {
+    await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('maintenance-name').fill(maintScheduleName);
+    await detail.getByTestId('add-maintenance').click();
+    await detail
+      .getByTestId('maintenance-list')
+      .getByText(maintScheduleName)
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('runs a cycle count and authorises a variance adjustment (§4.4)', async () => {
+    // A dedicated location with one bulk item at quantity 10.
+    await page.getByRole('button', { name: 'Add location' }).click();
+    const locDialog = page.getByRole('dialog');
+    await locDialog.getByLabel('Name').fill(drawerName);
+    await locDialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.locator('nav').getByText(drawerName).waitFor({ state: 'visible', timeout: 8000 });
+    await page.locator('nav button').filter({ hasText: drawerName }).first().click();
+
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const itemDialog = page.getByRole('dialog');
+    await itemDialog.getByLabel('Name').fill(cycleItemName);
+    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByLabel('Initial quantity').fill('10');
+    await itemDialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(cycleItemName).first().waitFor({ state: 'visible', timeout: 10000 });
+
+    // Blind-count it as 8 (expected 10 → variance −2) and authorise.
+    await page.getByTestId('open-cycle-count').click();
+    const ccDialog = page.getByRole('dialog');
+    const row = ccDialog
+      .getByTestId('cycle-count-lines')
+      .locator('li')
+      .filter({ hasText: cycleItemName });
+    await row.getByRole('spinbutton').fill('8');
+    await ccDialog.getByTestId('authorise-reconciliation').click();
+    await ccDialog
+      .getByTestId('cycle-count-result')
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await ccDialog.getByRole('button', { name: 'Done' }).click();
+    // The on-hand quantity reconciled to the counted figure.
+    await page.waitForFunction(
+      (name) => {
+        const li = [...document.querySelectorAll('*')].find(
+          (el) => el.textContent?.includes(name) && el.textContent?.includes('8'),
+        );
+        return Boolean(li);
+      },
+      cycleItemName,
+      { timeout: 8000 },
+    );
+  });
+
+  await step('surfaces the perishable on the dashboard "Soon to expire" widget (§3)', async () => {
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    const widget = page.getByTestId('widget-expiring');
+    await widget.waitFor({ state: 'visible', timeout: 15000 });
+    await widget.getByText(perishableName).waitFor({ state: 'visible', timeout: 8000 });
   });
 
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });

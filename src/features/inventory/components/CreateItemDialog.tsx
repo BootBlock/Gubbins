@@ -4,12 +4,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, Input, Modal, Select } from '@/components/foundry';
 import {
+  CONDITIONS,
   TRACKING_MODES,
   UNASSIGNED_LOCATION_ID,
   type CreateItemInput,
   type LocationWithCount,
   type TrackingMode,
 } from '@/db/repositories';
+import { CONDITION_LABELS, fromDateInputValue } from './inventory-ui';
 import {
   applyScrapeMerge,
   buildScrapeMergePlan,
@@ -35,6 +37,10 @@ const schema = z
     mpn: z.string().optional(),
     manufacturer: z.string().optional(),
     unitCost: z.string().optional(),
+    expiryDate: z.string().optional(),
+    batchNumber: z.string().optional(),
+    lotNumber: z.string().optional(),
+    condition: z.string().optional(),
     quantity: z.string().optional(),
     count: z.string().optional(),
     unitOfMeasure: z.string().optional(),
@@ -91,6 +97,10 @@ export function CreateItemDialog({
       mpn: '',
       manufacturer: '',
       unitCost: '',
+      expiryDate: '',
+      batchNumber: '',
+      lotNumber: '',
+      condition: '',
       quantity: '1',
       count: '1',
       unitOfMeasure: 'g',
@@ -150,6 +160,11 @@ export function CreateItemDialog({
       ...(values.mpn?.trim() ? { mpn: values.mpn.trim() } : {}),
       ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
       ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
+      // Phase 9 perishables & condition (§4) — all optional.
+      ...(values.expiryDate?.trim() ? { expiryDate: fromDateInputValue(values.expiryDate) } : {}),
+      ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
+      ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
+      ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
     };
     const done = () => {
       reset();
@@ -252,6 +267,29 @@ export function CreateItemDialog({
         <Field label="Unit cost (optional)">
           <Input type="number" min={0} step="any" placeholder="0.00" {...register('unitCost')} />
         </Field>
+
+        {/* Phase 9 — perishables, batch/lot & condition (§4). All optional. */}
+        <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-secondary/20 p-3">
+          <Field label="Expiry date (optional)">
+            <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
+          </Field>
+          <Field label="Condition (optional)">
+            <Select data-testid="item-condition" {...register('condition')}>
+              <option value="">— Untracked —</option>
+              {CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {CONDITION_LABELS[c]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Batch no. (optional)">
+            <Input placeholder="e.g. B-42" {...register('batchNumber')} />
+          </Field>
+          <Field label="Lot no. (optional)">
+            <Input placeholder="e.g. L-7" {...register('lotNumber')} />
+          </Field>
+        </div>
 
         {trackingMode === 'DISCRETE' ? (
           <Field label="Initial quantity">

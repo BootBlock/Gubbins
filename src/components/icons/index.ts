@@ -101,6 +101,12 @@ export {
   Puzzle as ExtensionIcon,
   Globe as SupplierIcon,
 
+  // Procurement & lifecycle logistics (Phase 9, §4, §4.3, §4.4)
+  ClipboardCheck as CycleCountIcon,
+  Wrench as MaintenanceIcon,
+  CalendarX as ExpiryIcon,
+  GitBranch as VariantIcon,
+
   // Cloud Sync & File System Access (Phase 7, §7, §2)
   Cloud as CloudIcon,
   CloudUpload as CloudUploadIcon,

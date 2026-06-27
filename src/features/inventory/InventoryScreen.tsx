@@ -8,11 +8,14 @@ import {
   CategoryIcon,
   CloudIcon,
   ContactsIcon,
+  CycleCountIcon,
   ExportIcon,
   ProjectIcon,
   ScanIcon,
   SearchIcon,
 } from '@/components/icons';
+import { Tooltip } from '@/components/foundry';
+import { CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
@@ -58,6 +61,7 @@ function InventoryWorkspace() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [cycleCountOpen, setCycleCountOpen] = useState(false);
 
   const { ast, conditionCount } = useSearchBuilder();
   // The Visual Builder supersedes the quick search/location filters when it is open
@@ -163,6 +167,20 @@ function InventoryWorkspace() {
           Categories
         </Button>
 
+        <Tooltip content={selectedLocationId ? 'Blind-count this location' : 'Select a location to cycle count'}>
+          <span>
+            <Button
+              variant="outline"
+              onClick={() => setCycleCountOpen(true)}
+              disabled={!selectedLocationId}
+              data-testid="open-cycle-count"
+            >
+              <CycleCountIcon />
+              Cycle count
+            </Button>
+          </span>
+        </Tooltip>
+
         <Button variant="outline" onClick={() => setExportOpen(true)}>
           <ExportIcon />
           Export
@@ -240,6 +258,13 @@ function InventoryWorkspace() {
         defaultLocationId={selectedLocationId ?? UNASSIGNED_LOCATION_ID}
       />
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+      {cycleCountOpen && selectedLocationId ? (
+        <CycleCountDialog
+          open
+          onClose={() => setCycleCountOpen(false)}
+          location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
+        />
+      ) : null}
       <ScannerOverlay open={scannerOpen} onClose={() => setScannerOpen(false)} />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>

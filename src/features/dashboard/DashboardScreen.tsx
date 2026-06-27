@@ -17,6 +17,7 @@ import {
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { formatBytes, formatPercent } from '@/lib/format';
+import { LifecycleAlerts } from './LifecycleAlerts';
 
 /**
  * Phase 1 landing — a polished System Status board confirming the whole local-first
@@ -108,6 +109,8 @@ export function DashboardScreen() {
           </Row>
         </StatusCard>
       </div>
+
+      <LifecycleAlerts />
 
       <Surface className="mt-6 p-6">
         <h2 className="text-sm font-semibold">Inventory is live</h2>

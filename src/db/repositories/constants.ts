@@ -78,8 +78,45 @@ export const HISTORY_ACTIONS = [
   'CHECKED_IN', // borrowed stock returned by a contact
   // Phase 8 — external data scraping via extension (§4, §9).
   'SCRAPE_APPLIED', // supplier-scraped fields/alias merged onto the item (§4 no-overwrite)
+  // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
+  'RECONCILED', // cycle-count variance authorised as a Reconciliation Adjustment (§4.4)
+  'MAINTENANCE_LOGGED', // a maintenance/calibration service performed, resetting its schedule (§4.3)
+  'CONDITION_CHANGED', // the item's Condition enum was changed (§4 Condition Tracking)
+  'VARIANT_CREATED', // the item was created/attached as a child variant under a parent (§4 Variant/SKU)
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
+
+// --- Perishables, condition & maintenance (spec §4, §4.3, Phase 9) --------------
+
+/**
+ * Operational condition of an item (spec §4 "Condition Tracking", §4.3). Provides
+ * granularity beyond the binary active/decommissioned flag (`items.is_active`),
+ * reflecting the *current* operational state of high-value serialised assets. A
+ * NULL condition simply means "untracked". Soft-deletion states (Decommissioned/
+ * Broken/Consumed) remain modelled by `is_active = 0`, not by this enum.
+ */
+export const CONDITIONS = ['MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION'] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
+/**
+ * Basis a maintenance schedule fires on (spec §4.3 "alerts based on time elapsed
+ * or usage metrics"):
+ * - `TIME` — calendar interval in days from the last service (or creation).
+ * - `USAGE` — a manually-logged usage counter (e.g. running hours); due once the
+ *   accrued usage since the last service reaches `interval_usage`. No automatic
+ *   usage telemetry exists, so the counter is advanced by explicit user entry.
+ */
+export const MAINTENANCE_BASES = ['TIME', 'USAGE'] as const;
+export type MaintenanceBasis = (typeof MAINTENANCE_BASES)[number];
+
+/**
+ * Default window (days) before an `expiry_date` within which a perishable item is
+ * surfaced as "expiring soon" (spec §4 Perishables, §3 "Soon to Expire" widget).
+ */
+export const EXPIRY_SOON_WINDOW_DAYS = 30;
+
+/** Milliseconds in one day — shared by the pure expiry/maintenance scheduling maths. */
+export const MS_PER_DAY = 86_400_000;
 
 /**
  * Data types a category custom field may declare (spec §4 "Categories & Schema

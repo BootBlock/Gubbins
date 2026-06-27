@@ -2,7 +2,13 @@
  * Shared presentational helpers for the inventory feature (spec §3, §4.1.3).
  * Pure functions — no React — for gauge colour bands and en-GB number formatting.
  */
-import type { AttachmentKind, FieldType, TrackingMode } from '@/db/repositories';
+import type {
+  AttachmentKind,
+  Condition,
+  FieldType,
+  MaintenanceBasis,
+  TrackingMode,
+} from '@/db/repositories';
 import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
 
 export interface GaugeTone {
@@ -66,3 +72,37 @@ export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
   URL: 'External URL',
   LOCAL_POINTER: 'Local file',
 };
+
+/** British-English labels for the §4 Condition enum (Phase 9). */
+export const CONDITION_LABELS: Record<Condition, string> = {
+  MINT: 'Mint',
+  GOOD: 'Good',
+  NEEDS_REPAIR: 'Needs repair',
+  OUT_FOR_CALIBRATION: 'Out for calibration',
+};
+
+/** Labels for the §4.3 maintenance schedule basis (Phase 9). */
+export const MAINTENANCE_BASIS_LABELS: Record<MaintenanceBasis, string> = {
+  TIME: 'Time-based',
+  USAGE: 'Usage-based',
+};
+
+/** Format a UNIX-ms instant as an en-GB date (no time) for expiry/maintenance display. */
+const dateFormat = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+export function formatDate(ms: number): string {
+  return dateFormat.format(new Date(ms));
+}
+
+/** Convert a UNIX-ms instant to the `yyyy-MM-dd` string an `<input type="date">` wants. */
+export function toDateInputValue(ms: number | null): string {
+  if (ms === null) return '';
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Parse a `yyyy-MM-dd` date-input value to a UNIX-ms instant (midnight UTC), or null. */
+export function fromDateInputValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const ms = Date.parse(trimmed);
+  return Number.isFinite(ms) ? ms : null;
+}

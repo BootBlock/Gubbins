@@ -9,9 +9,11 @@
  */
 import type {
   AttachmentKind,
+  Condition,
   CostingMode,
   FieldType,
   HistoryAction,
+  MaintenanceBasis,
   ProcurementStatus,
   ProjectStatus,
   ReservationStatus,
@@ -77,6 +79,14 @@ export interface ItemRow {
   readonly manufacturer: string | null;
   /** Current replacement value per unit, in the base currency (v4). */
   readonly unit_cost: number | null;
+  /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4, v8). */
+  readonly expiry_date: number | null;
+  readonly batch_number: string | null;
+  readonly lot_number: string | null;
+  /** Operational condition enum; null = untracked (§4 Condition, v8). */
+  readonly condition: Condition | null;
+  /** Parent item id when this is a child variant; null otherwise (§4 Variant, v8). */
+  readonly parent_id: string | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -119,6 +129,16 @@ export interface Item {
   readonly manufacturer: string | null;
   /** Current replacement value per unit, in the base currency; null if unpriced. */
   readonly unitCost: number | null;
+  /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4). */
+  readonly expiryDate: number | null;
+  /** Manufacturer batch number for perishables/traceability; null if untracked (§4). */
+  readonly batchNumber: string | null;
+  /** Manufacturer lot number for perishables/traceability; null if untracked (§4). */
+  readonly lotNumber: string | null;
+  /** Operational condition (Mint/Good/Needs Repair/Out for Calibration); null = untracked (§4). */
+  readonly condition: Condition | null;
+  /** Parent item id when this is a child variant; null for a standalone/parent item (§4). */
+  readonly parentId: string | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -153,6 +173,12 @@ export interface CreateItemInput {
   readonly manufacturer?: string | null;
   /** Current replacement value per unit, in the base currency. */
   readonly unitCost?: number | null;
+  /** Perishable expiry instant (UNIX-ms); omit/null for non-perishables (§4). */
+  readonly expiryDate?: number | null;
+  readonly batchNumber?: string | null;
+  readonly lotNumber?: string | null;
+  /** Operational condition enum (§4 Condition Tracking). */
+  readonly condition?: Condition | null;
   readonly trackingMode?: TrackingMode;
   /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
@@ -172,6 +198,28 @@ export interface UpdateItemInput {
   readonly mpn?: string | null;
   readonly manufacturer?: string | null;
   readonly unitCost?: number | null;
+  readonly expiryDate?: number | null;
+  readonly batchNumber?: string | null;
+  readonly lotNumber?: string | null;
+  /** Operational condition; a change is logged as `CONDITION_CHANGED` (§4). */
+  readonly condition?: Condition | null;
+}
+
+// --- Cycle counting & reconciliation (spec §4.4, Phase 9) -----------------------
+
+/**
+ * One authorised Reconciliation Adjustment (§4.4). The upstream cycle-count session
+ * computes the variance and the ledger note from the blind count; the repository
+ * trusts these and atomically sets the new on-hand quantity, recording a
+ * `RECONCILED` history entry — mirroring how `applyScrape` consumes an upstream
+ * merge decision.
+ */
+export interface ReconciliationAdjustment {
+  readonly itemId: string;
+  /** The physically counted quantity that becomes the new on-hand amount. */
+  readonly counted: number;
+  /** The §4.4 ledger note (built upstream from the location + variance). */
+  readonly note: string;
 }
 
 /**
@@ -577,6 +625,21 @@ export interface ShoppingListEntry {
   readonly estimatedCost: number | null;
 }
 
+/**
+ * A BOM line currently "In Transit" (spec §4 procurement), joined with its project
+ * and matched-item names — the feed for the dashboard "In Transit" tracker that
+ * distinguishes parts *arriving soon* from parts simply missing (Phase 9).
+ */
+export interface InTransitLine {
+  readonly lineId: string;
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly itemId: string | null;
+  /** Display label: matched item name, else the line's free-text description/MPN. */
+  readonly label: string;
+  readonly requiredQty: number;
+}
+
 // --- Assembly finalisation (spec §4 Composite Items & Assemblies) ----------------
 
 export interface FinaliseAssemblyInput {
@@ -664,6 +727,60 @@ export interface CheckoutItemInput {
   readonly contactName?: string;
   readonly quantity?: number;
   readonly dueDate?: number | null;
+  readonly note?: string | null;
+}
+
+// --- Tool maintenance schedules (spec §4.3, Phase 9) ----------------------------
+
+export interface MaintenanceScheduleRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly name: string;
+  readonly basis: MaintenanceBasis;
+  readonly interval_days: number | null;
+  readonly interval_usage: number | null;
+  readonly usage_unit: string | null;
+  readonly usage_since_service: number;
+  readonly last_performed_at: number | null;
+  readonly note: string | null;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface MaintenanceSchedule {
+  readonly id: string;
+  readonly itemId: string;
+  readonly name: string;
+  readonly basis: MaintenanceBasis;
+  /** Calendar interval in days (TIME basis); null for USAGE. */
+  readonly intervalDays: number | null;
+  /** Usage units between services (USAGE basis); null for TIME. */
+  readonly intervalUsage: number | null;
+  /** Label for the usage counter, e.g. "hours" (USAGE basis). */
+  readonly usageUnit: string | null;
+  /** Usage accrued since the last service (USAGE basis). */
+  readonly usageSinceService: number;
+  /** Last service instant (UNIX-ms); null = never serviced. */
+  readonly lastPerformedAt: number | null;
+  readonly note: string | null;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/** A schedule joined with its item's display name, for the dashboard "due" widget. */
+export interface MaintenanceScheduleWithItem extends MaintenanceSchedule {
+  readonly itemName: string;
+}
+
+export interface CreateMaintenanceInput {
+  readonly itemId: string;
+  readonly name: string;
+  readonly basis: MaintenanceBasis;
+  /** Required for a TIME schedule (positive days). */
+  readonly intervalDays?: number | null;
+  /** Required for a USAGE schedule (positive usage units). */
+  readonly intervalUsage?: number | null;
+  readonly usageUnit?: string | null;
   readonly note?: string | null;
 }
 

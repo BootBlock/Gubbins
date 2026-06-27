@@ -20,7 +20,9 @@ import type { SqlStatement } from '../rpc/driver';
  * `item_aliases` (the §4 Universal Alias Mapping) joined the set in Phase 8 so the
  * supplier↔item mappings scraping creates propagate across devices; it carries its
  * own `updated_at`, so it resolves by the same row-level LWW as the entity tables,
- * with the §7.5-style alias-text collision resolved in the reconcile engine. The
+ * with the §7.5-style alias-text collision resolved in the reconcile engine.
+ * `maintenance_schedules` (the §4.3 Tool Maintenance primitive) joined in Phase 9 —
+ * it is a scalar-column, LWW-simple table carrying its own `updated_at`. The
  * remaining join/leaf tables (`item_tags`, `item_images`, attachments, BOM lines,
  * custom-field values) and the append-only `item_history` ledger are still tracked
  * for a later expansion — see `docs/todo/deferred-features.md`.
@@ -33,6 +35,7 @@ export const SYNC_TABLES = [
   'capabilities',
   'contacts',
   'checkouts',
+  'maintenance_schedules',
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];

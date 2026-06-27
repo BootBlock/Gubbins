@@ -163,6 +163,24 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(history.rows.some((h) => h.action === 'PROCURED')).toBe(true);
   });
 
+  it('lists In-Transit BOM lines across projects with project + label (Phase 9)', async () => {
+    const p = await projects.create({ name: 'Bench PSU' });
+    const item = await items.create({ name: 'Toroid' });
+    const matched = await projects.addLine(p.id, { itemId: item.id, requiredQty: 2 });
+    const freeText = await projects.addLine(p.id, { description: 'Heatsink', requiredQty: 1 });
+    const idle = await projects.addLine(p.id, { description: 'Knob', requiredQty: 1 });
+
+    await projects.setProcurement(matched.id, 'IN_TRANSIT');
+    await projects.setProcurement(freeText.id, 'IN_TRANSIT');
+    void idle; // left at NONE — must not appear
+
+    const inTransit = await projects.listInTransit();
+    expect(inTransit.rows).toHaveLength(2);
+    const labels = inTransit.rows.map((r) => r.label).sort();
+    expect(labels).toEqual(['Heatsink', 'Toroid']);
+    expect(inTransit.rows.every((r) => r.projectName === 'Bench PSU')).toBe(true);
+  });
+
   it('receives a matched discrete line into stock, moving it and logging RECEIVED', async () => {
     const p = await projects.create({ name: 'P' });
     const item = await items.create({ name: 'IC', quantity: 1 });

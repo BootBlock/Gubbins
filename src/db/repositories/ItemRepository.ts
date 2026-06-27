@@ -13,7 +13,7 @@ import { buildFtsMatch } from '../search/fts';
 import { parseASTtoSQL } from '../search/parseASTtoSQL';
 import type { SearchAST } from '../search/ast';
 import { BaseRepository } from './base';
-import { DEFAULT_CAPABILITY_WEIGHT, UNASSIGNED_LOCATION_ID } from './constants';
+import { DEFAULT_CAPABILITY_WEIGHT, MS_PER_DAY, UNASSIGNED_LOCATION_ID } from './constants';
 import { weighInNote, weighInToDelta } from './gauge';
 import { tombstoneStatement } from './tombstone';
 import { rowToCapability, rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
@@ -30,6 +30,7 @@ import type {
   ItemRow,
   Page,
   PageParams,
+  ReconciliationAdjustment,
   ScrapeApplyInput,
   SetCapabilityInput,
   UpdateItemInput,
@@ -208,6 +209,28 @@ export class ItemRepository extends BaseRepository {
     if (input.unitCost !== undefined) {
       sets.push('unit_cost = ?');
       params.push(normaliseUnitCost(input.unitCost));
+    }
+    if (input.expiryDate !== undefined) {
+      sets.push('expiry_date = ?');
+      params.push(normaliseExpiry(input.expiryDate));
+    }
+    if (input.batchNumber !== undefined) {
+      sets.push('batch_number = ?');
+      params.push(normaliseText(input.batchNumber));
+    }
+    if (input.lotNumber !== undefined) {
+      sets.push('lot_number = ?');
+      params.push(normaliseText(input.lotNumber));
+    }
+    if (input.condition !== undefined && input.condition !== existing.condition) {
+      sets.push('condition = ?');
+      params.push(input.condition);
+      statements.push(
+        historyStatement(id, 'CONDITION_CHANGED', {
+          note: `Condition changed ${existing.condition ? `from "${existing.condition}" ` : ''}to "${input.condition ?? 'untracked'}".`,
+          metadata: { from: existing.condition, to: input.condition },
+        }),
+      );
     }
 
     if (sets.length > 0) {
@@ -623,7 +646,154 @@ export class ItemRepository extends BaseRepository {
     return Number(row?.n ?? 0);
   }
 
+  // --- Parent/Child variants (spec §4 Variant/SKU, Phase 9) ----------------------
+
+  /** The child variants of a parent item, ordered by name then serial (spec §4). */
+  async listVariants(parentId: string): Promise<Page<Item>> {
+    const rows = await this.driver.query<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE parent_id = ?
+       ORDER BY name COLLATE NOCASE ASC, serial_no ASC, created_at ASC;`,
+      [parentId],
+    );
+    // Variant lists are inherently small (one SKU's variants); no offset needed.
+    return this.toPage(rows.map(rowToItem), rows.length || 1, 0);
+  }
+
+  /**
+   * Create a child variant under an existing parent (spec §4 Variant/SKU). The
+   * parent holds shared metadata; the variant carries its own qty/location. The
+   * single-level rule is enforced here (the chosen parent must not itself be a
+   * variant) before the INSERT, mirroring the §7.5.3 guard discipline. Write-gated.
+   */
+  async createVariant(parentId: string, input: CreateItemInput): Promise<Item> {
+    this.assertWritable();
+    await this.assertVariantParent(parentId);
+    const resolved = this.resolveCreate(input);
+    const id = crypto.randomUUID();
+    await this.driver.transaction(this.buildInsert(id, resolved, null, parentId));
+    return (await this.getById(id))!;
+  }
+
+  /**
+   * Attach an existing item to a parent as a variant, or detach it (parentId null).
+   * Enforces the single-level + no-cycle rules (§4, §7.5.3) before writing.
+   * Write-gated.
+   */
+  async setParent(childId: string, parentId: string | null): Promise<Item> {
+    this.assertWritable();
+    const child = await this.require(childId);
+    if (parentId === child.parentId) return child;
+
+    const statements: SqlStatement[] = [];
+    if (parentId === null) {
+      statements.push({ sql: 'UPDATE items SET parent_id = NULL WHERE id = ?;', params: [childId] });
+    } else {
+      if (parentId === childId) {
+        throw new DbError('SQLITE_CONSTRAINT', 'An item cannot be a variant of itself.');
+      }
+      await this.assertVariantParent(parentId);
+      const hasVariants = await this.driver.queryOne('SELECT 1 AS ok FROM items WHERE parent_id = ? LIMIT 1;', [
+        childId,
+      ]);
+      if (hasVariants) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          'This item already has its own variants and cannot become a variant.',
+        );
+      }
+      statements.push({ sql: 'UPDATE items SET parent_id = ? WHERE id = ?;', params: [parentId, childId] });
+      statements.push(
+        historyStatement(childId, 'VARIANT_CREATED', { note: 'Attached as a variant of a parent item.' }),
+      );
+    }
+    await this.driver.transaction(statements);
+    return (await this.getById(childId))!;
+  }
+
+  // --- Perishables (spec §4 Expiry & Batch tracking, §3 "Soon to Expire") --------
+
+  /**
+   * Active perishable items expiring on or before `before` (a UNIX-ms cutoff,
+   * typically `now + N days`), soonest first — the §3 "Soon to Expire" widget feed.
+   * Already-expired items are included (their expiry is in the past, ≤ cutoff).
+   */
+  async listExpiring(before: number, params: PageParams = {}): Promise<Page<Item>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+       WHERE is_active = 1 AND expiry_date IS NOT NULL AND expiry_date <= ?
+       ORDER BY expiry_date ASC LIMIT ? OFFSET ?;`,
+      [before, limit, offset],
+    );
+    return this.toPage(rows.map(rowToItem), limit, offset);
+  }
+
+  /** Convenience: perishables expiring within `withinDays` of `now` (inclusive). */
+  async listExpiringWithin(withinDays: number, now: number, params: PageParams = {}): Promise<Page<Item>> {
+    return this.listExpiring(now + withinDays * MS_PER_DAY, params);
+  }
+
+  // --- Cycle counting & reconciliation (spec §4.4, Phase 9) ----------------------
+
+  /**
+   * Apply a batch of authorised Reconciliation Adjustments (spec §4.4) atomically.
+   * Each adjustment sets a DISCRETE item's on-hand quantity to the physically
+   * counted value and records a `RECONCILED` ledger entry whose `quantity_delta` is
+   * the variance (counted − previous) and whose note was composed upstream from the
+   * blind count. The variance arithmetic itself lives in the pure cycle-count
+   * module; this method trusts the decision, like `applyScrape`. Write-gated.
+   * A zero-variance adjustment is skipped (no-op, not logged).
+   */
+  async reconcile(adjustments: readonly ReconciliationAdjustment[]): Promise<Item[]> {
+    this.assertWritable();
+    const statements: SqlStatement[] = [];
+    const touched: string[] = [];
+
+    for (const adj of adjustments) {
+      if (!Number.isInteger(adj.counted) || adj.counted < 0) {
+        throw new DbError('SQLITE_CONSTRAINT', 'A counted quantity must be a non-negative whole number.');
+      }
+      const existing = await this.require(adj.itemId);
+      if (existing.trackingMode !== 'DISCRETE') {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Cycle counting reconciles DISCRETE items only (${existing.name} is ${existing.trackingMode}).`,
+        );
+      }
+      const delta = adj.counted - existing.quantity;
+      if (delta === 0) continue;
+      statements.push({ sql: 'UPDATE items SET quantity = ? WHERE id = ?;', params: [adj.counted, adj.itemId] });
+      statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }));
+      touched.push(adj.itemId);
+    }
+
+    if (statements.length === 0) return [];
+    await this.driver.transaction(statements);
+    const updated = await Promise.all(touched.map((id) => this.getById(id)));
+    return updated.filter((i): i is Item => i !== undefined);
+  }
+
   // --- internals -----------------------------------------------------------------
+
+  /**
+   * Guard that `parentId` is a valid variant parent: it must exist and must not
+   * itself be a variant (single-level model, §4). Throws a `DbError` otherwise.
+   */
+  private async assertVariantParent(parentId: string): Promise<void> {
+    const parent = await this.driver.queryOne<{ parent_id: string | null }>(
+      'SELECT parent_id FROM items WHERE id = ?;',
+      [parentId],
+    );
+    if (!parent) {
+      throw new DbError('SQLITE_CONSTRAINT_FOREIGNKEY', `Parent item "${parentId}" does not exist.`);
+    }
+    if (parent.parent_id !== null) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'The chosen parent is already a variant; variants cannot be nested.',
+      );
+    }
+  }
 
   private async require(id: string): Promise<Item> {
     const item = await this.getById(id);
@@ -683,6 +853,10 @@ export class ItemRepository extends BaseRepository {
       mpn: normaliseText(input.mpn),
       manufacturer: normaliseText(input.manufacturer),
       unitCost: normaliseUnitCost(input.unitCost),
+      expiryDate: normaliseExpiry(input.expiryDate),
+      batchNumber: normaliseText(input.batchNumber),
+      lotNumber: normaliseText(input.lotNumber),
+      condition: input.condition ?? null,
       trackingMode,
       quantity,
       unit,
@@ -694,14 +868,19 @@ export class ItemRepository extends BaseRepository {
   }
 
   /** Build the INSERT + CREATED-log statement pair for one item record. */
-  private buildInsert(id: string, r: ResolvedCreate, serialNo: number | null): SqlStatement[] {
+  private buildInsert(
+    id: string,
+    r: ResolvedCreate,
+    serialNo: number | null,
+    parentId: string | null = null,
+  ): SqlStatement[] {
     return [
       {
         sql: `INSERT INTO items
                 (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
                  unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-                 mpn, manufacturer, unit_cost)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                 mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition, parent_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         params: [
           id,
           r.name,
@@ -719,10 +898,20 @@ export class ItemRepository extends BaseRepository {
           r.mpn,
           r.manufacturer,
           r.unitCost,
+          r.expiryDate,
+          r.batchNumber,
+          r.lotNumber,
+          r.condition,
+          parentId,
         ],
       },
-      historyStatement(id, 'CREATED', {
-        note: serialNo === null ? `Created "${r.name}".` : `Created "${r.name}" #${serialNo}.`,
+      historyStatement(id, parentId === null ? 'CREATED' : 'VARIANT_CREATED', {
+        note:
+          parentId !== null
+            ? `Created variant "${r.name}".`
+            : serialNo === null
+              ? `Created "${r.name}".`
+              : `Created "${r.name}" #${serialNo}.`,
         metadata: { trackingMode: r.trackingMode, locationId: r.locationId },
       }),
     ];
@@ -738,6 +927,10 @@ interface ResolvedCreate {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   readonly unitCost: number | null;
+  readonly expiryDate: number | null;
+  readonly batchNumber: string | null;
+  readonly lotNumber: string | null;
+  readonly condition: string | null;
   readonly trackingMode: string;
   readonly quantity: number;
   readonly unit: string | null;
@@ -789,4 +982,13 @@ function normaliseUnitCost(value: number | null | undefined): number | null {
     throw new DbError('SQLITE_CONSTRAINT', 'Unit cost must be a non-negative number.');
   }
   return value;
+}
+
+/** Validate an optional expiry instant: null clears it; otherwise a finite UNIX-ms. */
+function normaliseExpiry(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value)) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Expiry date must be a valid timestamp.');
+  }
+  return Math.trunc(value);
 }

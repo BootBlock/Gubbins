@@ -45,6 +45,13 @@ export const inventoryKeys = {
   search: () => [...inventoryKeys.all, 'search'] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
+  // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
+  itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
+  expiring: () => [...inventoryKeys.all, 'expiring'] as const,
+  inTransit: () => [...inventoryKeys.all, 'in-transit'] as const,
+  maintenance: () => [...inventoryKeys.all, 'maintenance'] as const,
+  itemMaintenance: (itemId: string) => [...inventoryKeys.item(itemId), 'maintenance'] as const,
+  maintenanceDue: () => [...inventoryKeys.maintenance(), 'due'] as const,
 } as const;
 
 /** An item's supplier/alternative part aliases (§4 Universal Alias Mapping). */

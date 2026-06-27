@@ -1,17 +1,17 @@
-# PHASE_HANDOVER.md — Phase 8 → Phase 9
+# PHASE_HANDOVER.md — Phase 9 → Phase 10
 
 **Project:** Gubbins — local-first inventory tracking PWA
-**Phase completed:** Phase 8 — External Data Scraping via Extension
+**Phase completed:** Phase 9 — Procurement & Lifecycle Logistics
 **Date:** 2026-06-27
-**Status:** ✅ Complete. `npm run type-check` clean · `npm run build` passes · **409/409 unit tests pass** · `npm run build:extension` builds the companion extension · **33/33 browser-smoke steps pass** (zero console/page errors — now including: simulating the companion extension's `EXTENSION_READY` to unlock the "Scrape Supplier" control, proving a forged-origin/invalid message is silently dropped, applying a trusted `SCRAPE_RESULT` that fills the empty MPN/price fields **without** overwriting a user-edited manufacturer, the supplier MPN being mapped as an alias, and re-scraping an existing item through the §4 no-overwrite review with a populated field preserved).
+**Status:** ✅ Complete. `npm run type-check` clean · `npm run build` passes · **454/454 unit tests pass** · `npm run build:extension` builds the companion extension · **38/38 browser-smoke steps pass** (zero console/page errors — now including: creating a perishable with an expiry date + Condition, expanding a parent item into a child variant, adding a tool-maintenance schedule, running a blind cycle count and authorising a −2 variance Reconciliation Adjustment, and the dashboard "Soon to Expire" widget surfacing the perishable).
 
-> Protocol Alpha (§8.1.2): the incoming Phase 9 agent **must** read both the master
-> specification (`docs/todo/_specification.md`, esp. the locked decisions in **§1.2 / §1.2.1**, the
-> **Phase 9** deliverables in §5, and the deep dives **§4** (variants, perishables/batch, condition,
-> maintenance), **§4.3** Tool Maintenance/Calibration, **§4.4** Cycle Counting & Reconciliation, **§7.5**
-> relational integrity) and this document before writing any code, and must reuse the established
-> Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather than inventing new
-> ones.
+> Protocol Alpha (§8.1.2): the incoming Phase 10 agent **must** read both the master specification
+> (`docs/todo/_specification.md` — esp. the locked decisions in **§1.2 / §1.2.1**, and the still-outstanding
+> deep dives **§7.6** OPFS Quota Recovery & Archiving and **§7.2/§7.3** sync-set completeness) and this
+> document before writing any code, and must reuse the established Repository/driver, 3-tier state, Foundry,
+> icon-registry and testing patterns rather than inventing new ones. **The spec's numbered phases end at
+> Phase 9; Phase 10 is a consolidation phase delivering the explicitly *deferred-not-dropped* work tracked
+> in `docs/todo/deferred-features.md`** (see §9 below) — confirm its scope with the developer before starting.
 
 ---
 
@@ -23,214 +23,218 @@
 | Package manager | **npm** (only `package-lock.json`) |
 | Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP |
 | Cloud sync | **Provider-agnostic** — strict `CloudProvider` interface; in-memory + File System Access adapters. **Still no provider SDK** in the dep tree. |
-| Conflict resolution | Row-level **LWW**; **Delta-CRDT** gauge replay; §7.5 orphan re-parent + cycle rejection; §7.2 tombstones (180-day TTL + Pre-Wipe Salvage). **New in Phase 8:** `item_aliases` joins the sync set with row-level LWW + alias-text collision resolution. |
-| Extension bridge | **`window.postMessage`** Content-Script bridge (§9). **Origin-verified + Zod-validated; invalid/foreign messages silently dropped.** Mandatory `source: 'HARDWARE_TRACKER_EXT'` signature. PWA **feature-detects** the extension and degrades to manual entry. |
+| Conflict resolution | Row-level **LWW**; **Delta-CRDT** gauge replay; §7.5 orphan re-parent + cycle rejection; §7.2 tombstones (180-day TTL + Pre-Wipe Salvage). Synced set now also carries `item_aliases` (Phase 8) and **`maintenance_schedules` (Phase 9)**. |
+| Extension bridge | **`window.postMessage`** Content-Script bridge (§9). Origin-verified + Zod-validated; invalid/foreign messages silently dropped. PWA feature-detects the extension and degrades to manual entry. **Unchanged in Phase 9** (no protocol change). |
 | Test runner | **Vitest** · UUIDs via native `crypto.randomUUID()` · formatting via `Intl` |
 | E2E | **Playwright** (dev-only) driving **system Edge** (`channel: 'msedge'`, no download) |
 | Native-first | Web APIs over NPM bloat (§2.4.3); all behind feature-detection guards |
 
-**Installed majors (unchanged in Phase 8 — NO new runtime deps):** React 19 · TS 6 · Vite 8 (Rolldown) ·
+**Installed majors (UNCHANGED in Phase 9 — NO new runtime deps):** React 19 · TS 6 · Vite 8 (Rolldown) ·
 Vitest 4 · Tailwind 4 · TanStack Router / Query / Virtual · Zustand 5 · React Hook Form 7 + **Zod 4** ·
-lucide-react · vite-plugin-pwa · react-error-boundary · `fflate` · happy-dom (test env). The §9 protocol,
-the Strategy parsers and the companion extension are all hand-rolled native modules reusing **Zod** for
-IPC validation (§2.4.4).
+lucide-react · vite-plugin-pwa · react-error-boundary · `fflate` · happy-dom (test env).
 
 **Commands:** `npm run dev` · `npm run build` (`tsc -b && vite build`) · `npm run type-check` ·
-`npm run test:run` (unit/`:memory:`, **409 tests**) · `npm run test:e2e` (real-browser smoke; needs a dev
-server up) · **`npm run build:extension`** (new — bundles the companion extension to `extension/dist/`).
-**Local run:** `run.bat` / `run.ps1`. **Stop via the PID — leave no orphaned `npm run dev`.**
-**E2E (§8.5.5):** `scripts/browser-smoke.mjs`; base origin overridable via `SMOKE_BASE`
-(default `http://localhost:5173/Gubbins/`). **Fails on any console error too. Extend it each phase.**
+`npm run test:run` (unit/`:memory:`, **454 tests**) · `npm run test:e2e` (real-browser smoke; needs a dev
+server up) · `npm run build:extension`. **Local run:** `run.bat` / `run.ps1`. **Stop via the PID — leave no
+orphaned `npm run dev`** (Phase 9 dev server landed on **5174** as 5173 was busy; pass
+`SMOKE_BASE=http://localhost:<port>/Gubbins/`).
 
 > ⚠️ **Route-tree generation:** `src/routeTree.gen.ts` is generated by `@tanstack/router-plugin` when
-> **Vite** runs, *not* by `tsc`. After adding/removing a file in `src/routes/`, run `npx vite build` (or
-> start the dev server) once before `npm run type-check`. **Phase 8 added no route** (the scrape UI lives
-> inside the existing item-create/edit dialogs), so this was not triggered.
+> **Vite** runs, *not* by `tsc`. **Phase 9 added no route** (the cycle-count workflow is a dialog mounted
+> inside `InventoryScreen`; lifecycle/maintenance live in the existing item-detail dialog), so this was not
+> triggered. Run `npx vite build` once before `type-check` only if you add a `src/routes/*` file.
 
 ---
 
-## 2. Database schema snapshot (`PRAGMA user_version = 7` — UNCHANGED in Phase 8)
+## 2. Database schema snapshot — `PRAGMA user_version = 8` (was 7)
 
-**Phase 8 needed no migration.** The §9 scrape payload maps onto existing columns and tables:
-`items.mpn`, `items.manufacturer`, `items.unit_cost`, `items.description`, and the existing
-**`item_aliases`** table (which already carried its own `updated_at` + `trg_item_aliases_updated_at`
-auto-stamp trigger from v4 — so it was already LWW-stampable). `TARGET_SCHEMA_VERSION` remains **7**.
+**Phase 9 added migration `v8-lifecycle.ts` (version 8)**, registered in `src/db/migrations/index.ts`.
+Entirely **additive** (column adds + one new table — no §2.3.3 12-step recreation needed; an `ALTER TABLE
+ADD COLUMN` with a self-`REFERENCES` is legal because the column defaults to NULL). `TARGET_SCHEMA_VERSION`
+is the max registered version (now **8**).
 
-Two non-schema data-layer changes:
-- **`constants.ts`** — appended one immutable `item_history.action`: **`SCRAPE_APPLIED`** (never repurpose
-  existing values; append only).
-- **`SYNC_TABLES`** (`src/db/repositories/tombstone.ts`) — **`item_aliases` added** (after `items`,
-  FK-safe). It is now synced/backed-up with the other six core tables (see §3 + §7).
+**`items` gained (all nullable, default NULL):**
+```sql
+ALTER TABLE items ADD COLUMN expiry_date  INTEGER;            -- UNIX-ms perishable expiry (§4)
+ALTER TABLE items ADD COLUMN batch_number TEXT;
+ALTER TABLE items ADD COLUMN lot_number   TEXT;
+ALTER TABLE items ADD COLUMN condition    TEXT CHECK (condition IS NULL OR condition IN
+                                              ('MINT','GOOD','NEEDS_REPAIR','OUT_FOR_CALIBRATION'));
+ALTER TABLE items ADD COLUMN parent_id    TEXT REFERENCES items(id);   -- self-FK; child variant → parent
+CREATE INDEX idx_items_expiry    ON items(expiry_date) WHERE expiry_date IS NOT NULL;  -- partial
+CREATE INDEX idx_items_parent_id ON items(parent_id);
+```
+**New table `maintenance_schedules`** (UUID PK, `updated_at` + auto-stamp trigger `trg_maintenance_schedules_updated_at`, `ON DELETE CASCADE` from items):
+```sql
+CREATE TABLE maintenance_schedules (
+  id TEXT PRIMARY KEY NOT NULL,
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  basis TEXT NOT NULL,                 -- 'TIME' | 'USAGE'
+  interval_days INTEGER,               -- required (>0) for TIME
+  interval_usage REAL,                 -- required (>0) for USAGE
+  usage_unit TEXT,                     -- e.g. 'hours'
+  usage_since_service REAL NOT NULL DEFAULT 0,
+  last_performed_at INTEGER,           -- NULL = never serviced (TIME anchors on created_at)
+  note TEXT,
+  created_at INTEGER NOT NULL DEFAULT (<now-ms>),
+  updated_at INTEGER NOT NULL DEFAULT (<now-ms>),
+  CHECK (basis IN ('TIME','USAGE')), CHECK (usage_since_service >= 0),
+  CHECK (basis <> 'TIME'  OR (interval_days  IS NOT NULL AND interval_days  > 0)),
+  CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0))
+) STRICT;
+CREATE INDEX idx_maintenance_schedules_item_id ON maintenance_schedules(item_id);
+```
 
-**Adding Phase 9 schema:** Phase 9 (perishables/batch, variants, maintenance, condition, cycle-count) is
-likely to need real migrations — create `src/db/migrations/v8-*.ts` (version `8`), register it in
-`src/db/migrations/index.ts`, prefer additive `ALTER TABLE ADD COLUMN`; use the §2.3.3 12-step pattern for
-non-additive changes; keep the UUID PK + `updated_at` auto-stamp trigger; add any new syncable table to
-`SYNC_TABLES`; append (never repurpose) `item_history.action` values.
+**Data-layer constants (`src/db/repositories/constants.ts`):**
+- Appended **immutable `item_history.action`** values (never repurpose): `RECONCILED`, `MAINTENANCE_LOGGED`,
+  `CONDITION_CHANGED`, `VARIANT_CREATED` (Phase 4's `PROCURED`/`RECEIVED` were reused as-is).
+- New enums/consts: `CONDITIONS`, `Condition`; `MAINTENANCE_BASES`, `MaintenanceBasis`;
+  `EXPIRY_SOON_WINDOW_DAYS = 30`; `MS_PER_DAY`.
+- **`SYNC_TABLES`** (`tombstone.ts`) now ends with **`maintenance_schedules`** (FK-safe, after `items`):
+  `locations, categories, items, item_aliases, capabilities, contacts, checkouts, maintenance_schedules`.
+  The sync engine derives its schema dictionary from this list dynamically, so no sync code changed.
 
 ---
 
 ## 3. Repository layer (`src/db/repositories/`)
 
-All SQL lives here over the injected `IDatabaseDriver`. Production singletons unchanged
-(`getItemRepository`, …, `getTombstoneRepository`). Reads paginate (`Page<T>`, ≤100). Storage-growing
-writes are Hard-Stop gated (`assertWritable`); deletions always allowed.
+All SQL lives here over the injected `IDatabaseDriver`. Reads paginate (`Page<T>`, ≤100). Storage-growing
+writes are Hard-Stop gated (`assertWritable`); deletions always allowed. Tested TDD-first against
+`createMemoryDriver()`.
 
-### Phase 8 changes to `ItemRepository`
-- **`setAliases(itemId, aliases)` — now a tombstone-aware diff** (was wipe-and-reinsert). Retained aliases
-  keep their **stable id** (so LWW timestamps stay meaningful); each removed alias records a
-  `tombstoneStatement('item_aliases', id)` in the *same* transaction so the deletion **propagates** on the
-  next sync (§7.2). Still de-dups case-insensitively; still rejects an alias owned by another item
-  (UNIQUE(alias)).
-- **`applyScrape(id, write: ScrapeApplyInput)` — new, atomic.** Writes only the fields the merge engine
-  decided (`{ mpn?, manufacturer?, description?, unitCost? }`), INSERTs the supplier MPN(s) as new aliases,
-  and logs **one** `SCRAPE_APPLIED` history entry — **all in one transaction**. A no-op write returns the
-  item unchanged without logging. Write-gated. The §4 **no-overwrite** decision is made *upstream* by the
-  pure merge engine (§4 below), never here.
-- New type **`ScrapeApplyInput`** in `repositories/types.ts` (re-exported from the barrel).
+### `ItemRepository` — Phase 9 additions
+- **`create` / `createSerialised`** now accept `expiryDate?`, `batchNumber?`, `lotNumber?`, `condition?`
+  (validated/normalised in `resolveCreate`; `normaliseExpiry` truncates to int ms).
+- **`update`** handles the same fields; a **changed** `condition` logs a `CONDITION_CHANGED` history entry.
+- **`createVariant(parentId, input)`** — creates a child item under a parent; logs `VARIANT_CREATED`.
+- **`setParent(childId, parentId | null)`** — attach/detach an existing item as a variant.
+- **`listVariants(parentId)`** → `Page<Item>` (unpaginated-small; a single SKU's variants).
+- **`assertVariantParent(parentId)`** (private guard) enforces the **single-level** rule (parent must exist
+  and not itself be a variant); `setParent` additionally rejects self-parent + child-already-has-variants.
+  Mirrors the §7.5.3 cycle-rejection discipline at the repository.
+- **`listExpiring(before, page)`** / **`listExpiringWithin(withinDays, now, page)`** — active perishables
+  expiring at/before a cutoff, soonest first (the §3 widget feed).
+- **`reconcile(adjustments: ReconciliationAdjustment[])`** — applies authorised cycle-count adjustments
+  atomically: sets each DISCRETE item's quantity to `counted` and logs `RECONCILED` with the variance as
+  `quantity_delta` (note composed upstream). Zero-variance lines skipped; non-DISCRETE/negative rejected.
+  Trusts the upstream decision exactly like `applyScrape`.
+- `Item` now carries `expiryDate · batchNumber · lotNumber · condition · parentId` (mapper updated).
 
-`listAliases` / `findByMatchKey` unchanged. The rest of the repository surface (gauges, capabilities,
-contacts, checkouts, projects, tombstones) is unchanged from Phase 7.
+### New `MaintenanceRepository` (`MaintenanceRepository.ts`, singleton `getMaintenanceRepository()`)
+- `listForItem(itemId)` · `getById(id)` · `create(input)` (basis-conditional interval validation)
+- `listDue(now, page)` → `Page<MaintenanceScheduleWithItem>` + `countDue(now)` — due/overdue across active
+  items (TIME: `COALESCE(last_performed_at, created_at) + interval_days·86 400 000 ≤ now`; USAGE:
+  `usage_since_service ≥ interval_usage`). Injected `now` keeps it deterministic.
+- `logPerformed(id, now, note)` — resets the schedule + appends `MAINTENANCE_LOGGED` to the item ledger (one txn).
+- `addUsage(id, amount)` (USAGE only) · `remove(id)` (DELETE + tombstone, FK-cascade-safe).
+
+### `ProjectRepository` — Phase 9 addition
+- **`listInTransit(page)`** → `Page<InTransitLine>` — BOM lines with `procurement_status='IN_TRANSIT'` across
+  all projects, joined with project + matched-item names (the dashboard "In Transit" tracker; In-Transit
+  remains a Phase-4 *status*, not a physical stock move).
 
 ---
 
-## 4. New feature: `src/features/scraping/` — §9 bridge + §4 merge (pure-first)
+## 4. Pure, unit-tested lifecycle maths (`src/features/lifecycle/`)
 
-All security/merge/parse logic is **pure and exhaustively unit-tested** against fixtures/`createMemoryDriver`;
-the `window.postMessage` bridge and live DOM are browser/extension-only, feature-detected, and covered by
-the §8.5.5 smoke.
-
-- **`protocol.ts`** — the Zod **`ExtensionMessage`** discriminated union (`EXTENSION_READY · SCRAPE_REQUEST ·
-  SCRAPE_RESULT · SCRAPE_ERROR`), `ScrapeResultPayload` / `ScrapeErrorPayload` (`error_type ∈ DOM_DRIFT |
-  NETWORK_TIMEOUT | RATE_LIMITED`), the `EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT'` signature, `makeMessage`,
-  and **`parseExtensionMessage(raw, { origin, trustedOrigins })`** — the §9.1 validator that returns the
-  typed message only when origin-trusted **and** schema-valid, else `null` (**silently dropped**; never
-  throws/logs). *(20 tests.)*
-- **`merge.ts`** — the §4 **CRITICAL no-overwrite** engine. `buildScrapeMergePlan(existing, payload)`
-  classifies each field `FILL | CONFLICT | UNCHANGED | SKIP` (empty→FILL, populated-and-differing→CONFLICT)
-  and derives the alias additions; `applyScrapeMerge(plan, overwriteFields)` writes FILL fields always but a
-  CONFLICT field **only** when explicitly opted in. Pure. *(13 tests.)*
-- **`parsers/`** — the §9.4 **Strategy pattern**: `SupplierParser` interface + `requireText`/`requireAttr`/
-  `parsePrice` DOM-drift helpers (`DomDriftError`, never `NaN`), a deterministic `genericMetaParser`
-  (Open-Graph/schema.org/`gubbins:*` metadata — the smoke/fixture target) and a host-specific
-  `digikeyParser` example, plus `registry.ts` (`selectParser`/`runParser` → uniform `ParseOutcome`,
-  marshalling any throw into a `SCRAPE_ERROR`). Pure (happy-dom). *(21 tests.)*
-- **`bridge-reducer.ts`** — pure §9.3 state machine (`ready` gate + `IDLE→SCRAPING→SUCCESS|ERROR`). *(7 tests.)*
-- **`ScrapeBridgeContext.tsx`** — **Tier-3** provider (mounted near the app root in `App.tsx`) wiring the
-  `window` message listener through `parseExtensionMessage`, exposing `{ ready, status, result, error,
-  requestScrape(url), reset }`. Mirrors `ScannerQueueProvider`.
-- **`components/ScrapeSupplierPanel.tsx`** — the gated "Scrape Supplier" control. **Renders nothing until
-  `ready`** (graceful degradation, §9.3). On result calls `onResult`; on error raises an **actionable passive
-  toast** (§9.4.3) and leaves manual entry intact.
-- **`components/ScrapeReviewDialog.tsx`** — the §4 opt-in review: FILL fields shown as auto-applied,
-  CONFLICT fields as **off-by-default** checkboxes (`data-testid="overwrite-<field>"`), then `applyScrapeMerge`.
-- **`useScrapeNotifier.tsx`** — passive success toast honouring the `scrapeNotifications` preference
-  (`TOAST` default | `SILENT`).
-- **`index.ts`** — the public barrel.
+Kept pure and isolated (mirrors `repositories/gauge.ts`), so the UI/dashboard inject `Date.now()` and the
+logic is exhaustively testable (`lifecycle.test.ts`, 18 assertions). **The repository does NOT import these**
+(it does its own SQL guards), avoiding a `features → db → features` cycle — the pure modules are UI-facing.
+- **`expiry.ts`** — `expiryStatus(expiryDate, now, window?) → NONE|FRESH|EXPIRING_SOON|EXPIRED`, `daysUntilExpiry`.
+- **`variants.ts`** — `validateVariantLink(facts) → VariantRejection | null` (SELF_PARENT/CYCLE/PARENT_IS_VARIANT/CHILD_HAS_VARIANTS) + `variantRejectionMessage`. (UI pre-validation; repo guards independently.)
+- **`maintenance.ts`** — `maintenanceStatus(state, now)` (due/dueAt/remainingDays/remainingUsage) + `maintenancePerformedNote`.
+- **`cycle-count.ts`** — `lineVariance` · `variances` (drifted lines only) · `varianceCount` · `reconciliationNote`.
 
 ---
 
 ## 5. State roster
 
-### Tier 1 — TanStack Query
-- **New read hook** `useItemAliases(itemId)` (key `inventoryKeys.itemAliases(id)`).
-- **New write hook** `useApplyScrape()` — invalidation-based (touches item fields, aliases & the ledger
-  together); invalidates `items()` + `item(id)` (the latter covers `itemAliases`/`itemHistory` by prefix).
-- Existing create hooks reused; the create flow maps scraped aliases via `useApplyScrape` after creation.
+### Tier 1 — TanStack Query (keys extended in `inventoryKeys`, `features/inventory/queries.ts`)
+- New keys: `itemVariants(parentId)`, `expiring()`, `inTransit()`, `maintenance()`, `itemMaintenance(itemId)`, `maintenanceDue()`.
+- New hooks (`features/lifecycle/hooks.ts`): `useItemVariants` · `useCreateVariant` · `useSetParent` ·
+  `useExpiringItems` · `useInTransitLines` · `useReconcile` · `useItemMaintenance` · `useDueMaintenance` ·
+  `useCreateMaintenance` · `useLogMaintenance` · `useAddMaintenanceUsage` · `useRemoveMaintenance`.
+  Reconcile/maintenance writes invalidate items + the relevant item-history/maintenance slices.
 
-### Tier 2 — Zustand (`src/state/stores/`, persisted)
-- **`usePreferencesStore`** gained **`scrapeNotifications: 'TOAST' | 'SILENT'`** (default `TOAST`, §4) +
-  `setScrapeNotifications`. All other stores unchanged.
+### Tier 2 — Zustand — **unchanged** in Phase 9.
 
 ### Tier 3 — Context/local (§2.1)
-- **`ScrapeBridgeProvider`** (the §9 bridge state) — the new canonical Tier-3 pattern alongside
-  `ScannerQueueProvider` / `SearchBuilderContext`.
+- **`CycleCountProvider`** (`features/lifecycle/CycleCountContext.tsx`) — ephemeral blind-count session
+  (location + lines + raw `counts` map), mounted *inside* `CycleCountDialog`. Mirrors `ScannerQueueProvider`:
+  only the authorised adjustments persist (via `useReconcile`); the session evaporates on close/refresh.
 
 ---
 
-## 6. Component tree & UI (Phase 8 additions)
+## 6. Component tree & UI (Phase 9 additions)
 
 ```
-components/foundry/toast.tsx            ToastProvider + useToast — lean passive toast primitive (§4)  [exported from foundry]
-features/scraping/ScrapeBridgeContext   Tier-3 §9 postMessage bridge (mounted in App.tsx)
-features/scraping/components/ScrapeSupplierPanel   gated "Scrape Supplier" control (create & edit)
-features/scraping/components/ScrapeReviewDialog     §4 no-overwrite opt-in review (edit/refresh)
-features/inventory/components/SupplierDataEditor    item-detail "Supplier data" section (MPN/mfr/cost + aliases + re-scrape)
-features/inventory/components/CreateItemDialog       + MPN/manufacturer/unit-cost fields + scrape panel (fill-blanks-only); form now scrolls (max-h-[78vh])
+features/lifecycle/components/LifecycleEditor.tsx   item-detail: expiry/condition/batch/lot + variants (add child / show variants)
+features/lifecycle/components/MaintenanceEditor.tsx item-detail: schedules with computed due status; add / log-performed / add-usage / remove
+features/lifecycle/components/CycleCountDialog.tsx  §4.4 blind-count workflow (CycleCountProvider + useReconcile)
+features/dashboard/LifecycleAlerts.tsx              dashboard cards: Soon-to-expire · Overdue · Maintenance-due · In-transit
 ```
-- **App composition:** `App.tsx` now wraps the router in `ToastProvider` → `ScrapeBridgeProvider`.
-- **Foundry (`@/components/foundry`):** **new `Toast` primitive** (`ToastProvider`/`useToast`, tones
-  info/success/warning/danger, auto-dismiss, optional action button — `data-testid="toast"`). All other
-  primitives reused as-is. **Always `Tooltip` (300 ms), never HTML `title`.**
-- **Icons (`@/components/icons`):** added `ScrapeIcon` (DownloadCloud), `ExtensionIcon` (Puzzle),
-  `SupplierIcon` (Globe). **Never import lucide directly.**
-- **Forms:** RHF + Zod throughout; **British English** in all UI text.
+- **`ItemDetailDialog`** gained two sections: **"Lifecycle & variants"** (`DueDateIcon`) and **"Maintenance"** (`SettingsIcon`).
+- **`CreateItemDialog`** gained optional **expiry / condition / batch / lot** fields (`data-testid` `item-expiry`, `item-condition`).
+- **`InventoryScreen`** gained a **"Cycle count"** toolbar button (`data-testid="open-cycle-count"`, Tooltip-gated, enabled only when a location is selected) launching `CycleCountDialog` for the selected location.
+- **`DashboardScreen`** renders `<LifecycleAlerts />`.
+- **Icons (`@/components/icons`):** added `CycleCountIcon` (ClipboardCheck), `MaintenanceIcon` (Wrench), `ExpiryIcon` (CalendarX), `VariantIcon` (GitBranch). **Never import lucide directly.**
+- **inventory-ui.ts:** added `CONDITION_LABELS`, `MAINTENANCE_BASIS_LABELS`, `formatDate`, `toDateInputValue`, `fromDateInputValue` (en-GB).
+- Forms: RHF + Zod; Foundry primitives via `@/components/foundry` (`Tooltip` 300 ms — **never** HTML `title`; `Toast` for passive alerts). **British English** throughout.
 
 ---
 
-## 7. The companion extension (`extension/` — the only new build target, §9)
-
-A lean MV3 reference extension that **reuses the PWA's tested `protocol.ts` + Strategy parsers** (so the
-wire contract and DOM-drift handling cannot diverge):
-- **`manifest.json`** — MV3; content script injects on the Gubbins origins (`localhost`, `*.github.io`);
-  `host_permissions: ["<all_urls>"]` (reference scope — a production build would narrow this).
-- **`src/content-script.ts`** — page-side bridge: broadcasts `EXTENSION_READY`, validates inbound messages
-  with `parseExtensionMessage`, asks the background to fetch (CORS bypass), parses the HTML **here**
-  (content scripts have a DOM; MV3 service workers do not) with `runParser`, posts `SCRAPE_RESULT`/`SCRAPE_ERROR`.
-- **`src/background.ts`** — tiny CORS-bypassing fetcher mapping transport failures to the §9.4.2 taxonomy.
-- **`build.mjs`** — `npm run build:extension` → `extension/dist/` (git-ignored via the global `dist`); content
-  script bundled IIFE (classic), background as an ES-module service worker.
-- **`README.md`** — load-unpacked instructions + the production-hardening note.
+## 7. The companion extension (`extension/`) — UNCHANGED in Phase 9
+No §9 protocol change, so the wire contract and parsers are identical to Phase 8. `npm run build:extension`
+still builds clean (re-verified). Production-hardening notes (narrow `host_permissions`, per-supplier
+parsers) remain as the Phase-8 deferral.
 
 ---
 
 ## 8. Technical debt, stubs & deferrals
 
-> Tracked in `docs/todo/deferred-features.md` — keep it current each phase.
+> Tracked in `docs/todo/deferred-features.md` — kept current. Phase 9 added a "Deferred out of Phase 9" section.
 
-1. **Sync-set expansion:** **`item_aliases` is now synced** (Phase 8). Still **outside** the set: the other
-   M:N joins/leaves (`tags`+`item_tags`, `category_fields`+`item_field_values`, `projects`+`bom_lines`), the
-   append-only `item_history` ledger (gauge deltas *are* read for §7.3), and `item_images` (BLOB+OPFS). Until
-   added, a wipe-and-clone / replace-restore can still lose that child data — which is why the manual import
-   stays a **non-destructive merge**. Extend `SYNC_TABLES` to add tables (mind FK order + any UNIQUE-column
-   collisions, as was handled for `item_aliases`).
-2. **§7.6 OPFS quota recovery — DEFERRED, not dropped:** §7.6.2 Storage Triage Dashboard + §7.6.3
-   history-pruning / image-downgrade workflows (telemetry + tier state already exist).
-3. **Scraping reference limits (Phase 8):** the extension ships a generic structured-metadata parser + a
-   DigiKey example with `<all_urls>` host scope — a production build would add a parser per supplier (the
-   Strategy pattern makes this a one-file change) and narrow `host_permissions`. The bridge correlates **one
-   in-flight scrape at a time** (sufficient — one scrape modal open at once); no `requestId` correlation.
-   The §4 notification preference exists but has **no settings UI yet** (defaults to passive toast).
-4. **File System Access provider persistence**, **NTP source**, **mobile weekly auto-archive (§2.7)**,
-   **scanner WASM fallback (§6.6)**, single-item/project export scope, capability ranking, dashboard "Overdue
-   Items" widget, theme application, bundle size — all carried over from Phase 7 (see git history).
+1. **§7.6 OPFS Quota Recovery — STILL DEFERRED (the strongest Phase-10 candidate):** §7.6.2 Storage Triage
+   Dashboard (OPFS consumption by `item_images`/`item_history`/`items` via row-count × avg-byte estimate) +
+   §7.6.3 Workflow A (Action-History pruning with a JSON cold-storage download first) + Workflow B (image
+   downgrade dropping full-res, keeping thumbnails, **without** propagating the deletion to cloud). Telemetry
+   + tier state already exist (`useStorageStore`); only the UIs/workflows are outstanding.
+2. **Sync-set expansion:** still outside `SYNC_TABLES` — the M:N joins/leaves (`tags`+`item_tags`,
+   `category_fields`+`item_field_values`, `projects`+`bom_lines`), the append-only `item_history` ledger,
+   and `item_images` (BLOB+OPFS). Until added, a wipe-and-clone / replace-restore can lose that child data;
+   the manual import stays a **non-destructive merge**.
+3. **Phase-9 deferrals:** nested/multi-level variants (single-level locked; generic CYCLE guard already
+   present); automatic usage telemetry for maintenance (counter is manual); cycle counting of non-DISCRETE
+   stock; a settings control for `EXPIRY_SOON_WINDOW_DAYS`; In-Transit as a physical stock move (it is a
+   BOM-line status).
+4. **Phase-8 carry-overs:** per-supplier parsers + narrowed extension `host_permissions`; the
+   `scrapeNotifications` settings UI; multi-scrape `requestId` correlation.
+5. **Pre-Phase-7 carry-overs:** File System Access provider persistence, NTP source, mobile weekly
+   auto-archive (§2.7), scanner WASM fallback (§6.6), single-item/project export scope, capability ranking,
+   theme application, bundle size.
 
 ---
 
-## 9. Phase 9 entry checklist (spec §5 Phase 9 — Procurement & Lifecycle Logistics)
+## 9. Phase 10 entry checklist (consolidation of deferred-not-dropped work)
 
-- [ ] Read the master spec (esp. **Phase 9** deliverables: **Expiry dates & Batch/Lot tracking** for
-      perishables (§4 Perishables & Batch Tracking), **Parent/Child item variants** (§4 Variant/SKU
-      Relationships — shared parent metadata, child-specific params/qty/location), **"In Transit"** procurement
-      logic (already part-built in Phase 4 — the system-locked In-Transit location + BOM procurement states),
-      **Tool Maintenance Schedules** (§4.3 — time/usage-based alerts hooked into the Activity Log),
-      **Borrowing Due Dates** (§4 — `checkouts.due_date` exists from Phase 6; the dashboard nudge does not),
-      and the **Cycle Counting / Reconciliation** mode (§4.4 — blind-count a location, highlight variance,
-      authorise a Reconciliation Adjustment in the ledger)) and this handover; restate the locked decisions.
-- [ ] **TDD-first over `createMemoryDriver()`** (Protocol Beta): keep the variant-relationship maths,
-      expiry/maintenance scheduling and cycle-count variance logic **pure and unit-tested**. Mind the §7.5
-      relational integrity (variants are a parent/child FK; re-parent + cycle rules already exist for
-      locations and may inform variants).
-- [ ] Likely needs **real migrations** (`v8-*.ts`, version 8): additive `expiry_date`/`batch_number`/
-      `lot_number`/maintenance columns; a parent/variant FK; possibly a maintenance-schedule table. Add any
-      syncable table to `SYNC_TABLES`. Append (never repurpose) `item_history.action` values (e.g.
-      `RECONCILED`, `MAINTENANCE_DUE`). Gate growth-writes on the Hard Stop. British English.
-- [ ] Reuse: Repository-over-driver; the **3-tier state**; Foundry primitives & **Tooltip (not `title`)**,
-      and the **new `Toast`** for passive alerts; icons via the registry; RHF + Zod forms; Tier-3 context for
-      ephemeral workflow state (e.g. the cycle-count session, mirroring `ScannerQueueProvider`).
-- [ ] **Extend `scripts/browser-smoke.mjs`** with the Phase-9 flows (e.g. create a perishable with an expiry,
-      clone a parent into variants, run a cycle count and authorise a variance adjustment). `SMOKE_BASE` if
-      not on 5173; `npx vite build` once after adding any route. **Stop the dev server via its PID.**
+The spec's numbered phases end at Phase 9. **Confirm Phase-10 scope with the developer first** — the
+recommended, most spec-anchored target is **§7.6 OPFS Quota Recovery & Archiving** (Storage Triage Dashboard
++ history pruning + image downgrade), optionally bundled with **sync-set expansion** (§8.2) so backups/sync
+become genuinely whole.
+
+- [ ] Read the master spec (esp. **§7.6**, **§7.2/§7.3** sync completeness) **and** this handover; restate the locked decisions.
+- [ ] **TDD-first over `createMemoryDriver()`** (Protocol Beta): keep the byte-estimate maths, the
+      history-pruning cutoff logic and any new sync-reconcile rules **pure and unit-tested**.
+- [ ] Likely **needs no schema migration** for §7.6 (it reads/prunes existing tables) — but if sync-set
+      expansion needs join-row LWW semantics, design those carefully (a join row has no `updated_at`; resolve
+      by membership) and keep FK-safe ordering in `SYNC_TABLES`. Append (never repurpose) any `item_history.action`.
+- [ ] Reuse: Repository-over-driver; the **3-tier state**; Foundry primitives & **Tooltip (not `title`)** +
+      **Toast**; icons via the registry; RHF + Zod forms; Tier-3 context for any ephemeral workflow; the
+      §7.6.1 storage tiers already in `useStorageStore`.
+- [ ] **Extend `scripts/browser-smoke.mjs`** with the new flows (e.g. open the Storage Triage Dashboard;
+      prune history and confirm the cold-storage JSON download). `SMOKE_BASE` if not on 5173; `npx vite build`
+      once after adding any route. **Stop the dev server via its PID.**
 - [ ] Verify four ways and keep all green: `npm run type-check`, `npm run test:run`, `npm run build`, and
-      `npm run test:e2e` against a live dev server (and `npm run build:extension` if the protocol changes),
-      before declaring the phase complete. Then generate the **Phase 9 → 10** handover.
+      `npm run test:e2e` against a live dev server (and `npm run build:extension` only if the §9 protocol
+      changes), before declaring the phase complete. Then generate the **Phase 10 → 11** handover.

@@ -12,6 +12,7 @@ import { v4Projects } from './v4-projects';
 import { v5CapabilitiesFts } from './v5-capabilities-fts';
 import { v6ContactsCheckouts } from './v6-contacts-checkouts';
 import { v7Sync } from './v7-sync';
+import { v8Lifecycle } from './v8-lifecycle';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -21,6 +22,7 @@ export const migrations: readonly Migration[] = [
   v5CapabilitiesFts,
   v6ContactsCheckouts,
   v7Sync,
+  v8Lifecycle,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

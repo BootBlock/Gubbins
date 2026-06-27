@@ -28,6 +28,8 @@ import type {
   ItemRow,
   Location,
   LocationRow,
+  MaintenanceSchedule,
+  MaintenanceScheduleRow,
   Project,
   ProjectBomLine,
   ProjectBomLineRow,
@@ -91,6 +93,11 @@ export function rowToItem(row: ItemRow): Item {
     mpn: row.mpn,
     manufacturer: row.manufacturer,
     unitCost: row.unit_cost,
+    expiryDate: row.expiry_date,
+    batchNumber: row.batch_number,
+    lotNumber: row.lot_number,
+    condition: row.condition,
+    parentId: row.parent_id,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -206,6 +213,23 @@ export function rowToCheckout(row: CheckoutRow): Checkout {
     checkedOutAt: row.checked_out_at,
     returnedAt: row.returned_at,
     note: row.note,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToMaintenanceSchedule(row: MaintenanceScheduleRow): MaintenanceSchedule {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    name: row.name,
+    basis: row.basis,
+    intervalDays: row.interval_days,
+    intervalUsage: row.interval_usage,
+    usageUnit: row.usage_unit,
+    usageSinceService: row.usage_since_service,
+    lastPerformedAt: row.last_performed_at,
+    note: row.note,
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }

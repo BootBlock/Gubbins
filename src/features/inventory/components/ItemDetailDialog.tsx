@@ -4,11 +4,14 @@ import {
   CapabilityIcon,
   CategoryIcon,
   DatasheetIcon,
+  DueDateIcon,
   ImageIcon,
+  SettingsIcon,
   SupplierIcon,
   TagsIcon,
 } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
@@ -42,6 +45,12 @@ export function ItemDetailDialog({
       <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
         <Section title="Supplier data" icon={<SupplierIcon />}>
           <SupplierDataEditor item={item} />
+        </Section>
+        <Section title="Lifecycle & variants" icon={<DueDateIcon />}>
+          <LifecycleEditor item={item} />
+        </Section>
+        <Section title="Maintenance" icon={<SettingsIcon />}>
+          <MaintenanceEditor itemId={item.id} />
         </Section>
         <Section title="Images" icon={<ImageIcon />}>
           <ImageManager itemId={item.id} />

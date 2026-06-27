@@ -25,6 +25,7 @@ import type {
   CreateBomLineInput,
   CreateProjectInput,
   FinaliseAssemblyInput,
+  InTransitLine,
   Page,
   PageParams,
   Project,
@@ -456,6 +457,47 @@ export class ProjectRepository extends BaseRepository {
         estimatedCost: unitCost == null ? null : unitCost * shortfallQty,
       };
     });
+  }
+
+  /**
+   * Every BOM line currently In Transit across all projects (spec §4 procurement),
+   * newest project first — the dashboard "In Transit" tracker feed. Bounded by the
+   * number of outstanding orders, but paginated per the §2.1 mandate.
+   */
+  async listInTransit(params: PageParams = {}): Promise<Page<InTransitLine>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<{
+      line_id: string;
+      project_id: string;
+      project_name: string;
+      item_id: string | null;
+      label: string | null;
+      required_qty: number;
+    }>(
+      `SELECT
+         l.id AS line_id,
+         l.project_id AS project_id,
+         p.name AS project_name,
+         l.item_id AS item_id,
+         COALESCE(i.name, l.description, l.mpn, l.designator) AS label,
+         l.required_qty AS required_qty
+       FROM project_bom_lines l
+       JOIN projects p ON p.id = l.project_id
+       LEFT JOIN items i ON i.id = l.item_id
+       WHERE l.procurement_status = 'IN_TRANSIT'
+       ORDER BY p.created_at DESC, label COLLATE NOCASE ASC
+       LIMIT ? OFFSET ?;`,
+      [limit, offset],
+    );
+    const mapped = rows.map<InTransitLine>((r) => ({
+      lineId: r.line_id,
+      projectId: r.project_id,
+      projectName: r.project_name,
+      itemId: r.item_id,
+      label: r.label ?? 'Unknown part',
+      requiredQty: Number(r.required_qty),
+    }));
+    return this.toPage(mapped, limit, offset);
   }
 
   // --- assembly outcomes (spec §4 Composite Items & Assemblies) ------------------

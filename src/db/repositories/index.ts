@@ -16,6 +16,7 @@ import { ContactRepository } from './ContactRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
+import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
@@ -23,6 +24,7 @@ import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
 export { LocationRepository } from './LocationRepository';
+export { MaintenanceRepository } from './MaintenanceRepository';
 export { CategoryRepository } from './CategoryRepository';
 export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
@@ -41,6 +43,7 @@ export * from './types';
 
 let itemRepository: ItemRepository | null = null;
 let locationRepository: LocationRepository | null = null;
+let maintenanceRepository: MaintenanceRepository | null = null;
 let categoryRepository: CategoryRepository | null = null;
 let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
@@ -63,6 +66,11 @@ export function getItemRepository(): ItemRepository {
 export function getLocationRepository(): LocationRepository {
   locationRepository ??= new LocationRepository(getDatabaseDriver(), productionOptions);
   return locationRepository;
+}
+
+export function getMaintenanceRepository(): MaintenanceRepository {
+  maintenanceRepository ??= new MaintenanceRepository(getDatabaseDriver(), productionOptions);
+  return maintenanceRepository;
 }
 
 export function getCategoryRepository(): CategoryRepository {
