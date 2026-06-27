@@ -1,0 +1,14 @@
+# Normalise line endings so the repo is consistent across platforms/CI.
+* text=auto eol=lf
+
+# Windows-native launchers are happiest with CRLF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets Git must not touch or diff.
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.wasm binary
+*.sqlite binary

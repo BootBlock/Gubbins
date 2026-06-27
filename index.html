@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en-GB" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <meta
+      name="description"
+      content="Gubbins — local-first inventory tracking for electronics, 3D-printing supplies, tools, and general inventory."
+    />
+    <link rel="icon" type="image/svg+xml" href="/Gubbins/icons/gubbins.svg" />
+
+    <!--
+      Cross-origin isolation bootstrap (spec §2.2.6).
+      In production on a static host, the COOP/COEP headers required by the SQLite
+      OPFS VFS are supplied by the service worker (src/sw.ts). On the very first
+      visit the page is not yet isolated; once the worker takes control we reload
+      exactly once so SharedArrayBuffer becomes available. The dev server sets the
+      headers directly, so this is a no-op locally.
+    -->
+    <script>
+      (function () {
+        if (window.crossOriginIsolated) return;
+        if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+        var KEY = 'gubbins-coi-reloaded';
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!sessionStorage.getItem(KEY)) {
+            sessionStorage.setItem(KEY, '1');
+            window.location.reload();
+          }
+        });
+      })();
+    </script>
+
+    <title>Gubbins</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Vite / tooling caches
+.vite
+*.tsbuildinfo
+
+# The TanStack Router route tree (src/routeTree.gen.ts) is intentionally committed
+# so `tsc -b` succeeds on a fresh clone; Vite regenerates it on dev/build.
+
+# Test / coverage
+coverage
+.nyc_output
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment
+.env
+.env.*
+!.env.example
