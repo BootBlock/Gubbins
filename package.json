@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:e2e": "node scripts/browser-smoke.mjs",
     "type-check": "tsc -b --noEmit"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "happy-dom": "^20.10.6",
+    "playwright": "^1.61.1",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",

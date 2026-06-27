@@ -43,3 +43,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local browser-smoke artefact
+scripts/.smoke-screenshot.png
