@@ -40,6 +40,9 @@ export const inventoryKeys = {
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
   itemImages: (itemId: string) => [...inventoryKeys.item(itemId), 'images'] as const,
   itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
+  // Phase 5 — weighted capabilities & Visual-Builder search.
+  itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,
+  search: () => [...inventoryKeys.all, 'search'] as const,
 } as const;
 
 /** Paginated, virtualisation-ready item list. */

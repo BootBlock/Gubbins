@@ -394,6 +394,42 @@ export interface ItemAlias {
   readonly updatedAt: number;
 }
 
+// --- Capabilities (spec §4 "Weighted Capabilities", Phase 5) --------------------
+
+export interface CapabilityRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly key: string;
+  readonly value_num: number | null;
+  readonly value_text: string | null;
+  readonly weight: number;
+  readonly updated_at: number;
+}
+
+/**
+ * A weighted parametric capability of an item (spec §4). Exactly one of
+ * `valueNum`/`valueText` is populated: numeric values back the AST's
+ * GREATER_THAN/LESS_THAN comparisons; text values back EQUALS/categorical matches.
+ * `weight` (default 1.0) expresses how salient this spec is for relevance ranking.
+ */
+export interface Capability {
+  readonly id: string;
+  readonly itemId: string;
+  readonly key: string;
+  readonly valueNum: number | null;
+  readonly valueText: string | null;
+  readonly weight: number;
+  readonly updatedAt: number;
+}
+
+export interface SetCapabilityInput {
+  readonly key: string;
+  /** Raw value; classified into a numeric magnitude or a text value by the repo. */
+  readonly value: string;
+  /** Relevance weight (≥ 0); defaults to {@link DEFAULT_CAPABILITY_WEIGHT}. */
+  readonly weight?: number;
+}
+
 // --- Projects (spec §4 "Projects & BOMs", Phase 4) ------------------------------
 
 export interface ProjectRow {

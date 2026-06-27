@@ -25,7 +25,9 @@ describe('v4 projects-reservations-procurement migration', () => {
 
   beforeEach(async () => {
     driver = createMemoryDriver();
-    await runMigrations(driver, migrations);
+    // Scope to v1–v4 so this migration is tested in isolation as its own head
+    // (later migrations advance user_version past 4).
+    await runMigrations(driver, migrations.filter((m) => m.version <= 4));
   });
 
   afterEach(async () => {

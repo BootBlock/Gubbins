@@ -5,6 +5,8 @@
  */
 import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
+  Capability,
+  CapabilityRow,
   Category,
   CategoryField,
   CategoryFieldRow,
@@ -166,6 +168,18 @@ export function rowToItemAttachment(row: ItemAttachmentRow): ItemAttachment {
 
 export function rowToItemAlias(row: ItemAliasRow): ItemAlias {
   return { id: row.id, itemId: row.item_id, alias: row.alias, updatedAt: row.updated_at };
+}
+
+export function rowToCapability(row: CapabilityRow): Capability {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    key: row.key,
+    valueNum: row.value_num,
+    valueText: row.value_text,
+    weight: row.weight,
+    updatedAt: row.updated_at,
+  };
 }
 
 export function rowToProject(row: ProjectRow): Project {

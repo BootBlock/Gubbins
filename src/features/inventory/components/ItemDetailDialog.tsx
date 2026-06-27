@@ -1,8 +1,15 @@
 import type { ReactNode } from 'react';
 import { Modal } from '@/components/foundry';
-import { CategoryIcon, DatasheetIcon, ImageIcon, TagsIcon } from '@/components/icons';
+import {
+  CapabilityIcon,
+  CategoryIcon,
+  DatasheetIcon,
+  ImageIcon,
+  TagsIcon,
+} from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { AttachmentManager } from './AttachmentManager';
+import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { TagEditor } from './TagEditor';
@@ -27,7 +34,7 @@ export function ItemDetailDialog({
       open={open}
       onClose={onClose}
       title={item.serialNo === null ? item.name : `${item.name} #${item.serialNo}`}
-      description="Images, tags, custom fields & datasheets."
+      description="Images, tags, capabilities, custom fields & datasheets."
       className="max-w-2xl"
     >
       <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
@@ -36,6 +43,9 @@ export function ItemDetailDialog({
         </Section>
         <Section title="Tags" icon={<TagsIcon />}>
           <TagEditor itemId={item.id} />
+        </Section>
+        <Section title="Capabilities" icon={<CapabilityIcon />}>
+          <CapabilityEditor itemId={item.id} />
         </Section>
         <Section title="Custom fields" icon={<CategoryIcon />}>
           <CustomFieldsEditor itemId={item.id} />

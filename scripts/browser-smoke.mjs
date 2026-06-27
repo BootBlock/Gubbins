@@ -9,8 +9,10 @@
  * serialised auto-clone, freeform tagging, and the real image pipeline (canvas→WebP
  * compression → raw OPFS file → thumbnail); plus the Phase 4 flows: create a project,
  * add a BOM line, see the automated shopping list, toggle the costing mode, reserve
- * stock, and move a line into the "In Transit" procurement state. Asserts there are
- * no console/page errors.
+ * stock, and move a line into the "In Transit" procurement state; plus the Phase 5
+ * flows: a real FTS5 full-text search over the item index, adding a weighted
+ * capability to an item, and building a graphical Visual-Builder query that filters
+ * by that capability. Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
@@ -292,6 +294,60 @@ try {
     const procurement = page.getByLabel('Procurement status');
     await procurement.selectOption('IN_TRANSIT');
     await expectSelectValue(procurement, 'IN_TRANSIT', 'Procurement status');
+  });
+
+  // --- Phase 5 flows ------------------------------------------------------------
+
+  /** Scope to the tightest item card carrying a name and a details button. */
+  const itemCard = (name) =>
+    page
+      .locator('div')
+      .filter({ hasText: name })
+      .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+      .last();
+
+  await step('returns to inventory and runs an FTS5 full-text search', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    const box = page.getByLabel('Search items');
+    await box.fill('Screws');
+    // The Bulk screw item matches; the filament (no "screws" token) must not.
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      filamentName,
+      { timeout: 8000 },
+    );
+    await box.fill('');
+  });
+
+  await step('adds a weighted capability to an item', async () => {
+    await itemCard(screwName).getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Capability key').fill('voltage');
+    const value = dialog.getByLabel('Capability value');
+    await value.fill('5');
+    await value.press('Enter'); // the editor adds on Enter (avoids button-animation flakiness)
+    // The new capability chip renders, exposing its remove button.
+    await dialog
+      .getByRole('button', { name: 'Remove capability voltage' })
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('builds a Visual-Builder query filtering by capability', async () => {
+    await page.getByRole('button', { name: 'Visual search' }).click();
+    await page.getByRole('button', { name: 'Add condition' }).click();
+    // Switch the condition to a capability HAS_CAPABILITY filter on "voltage".
+    await page.getByLabel('Field').selectOption('capability');
+    await page.getByLabel('Capability key').fill('voltage');
+    // Results now show only items carrying the capability: the screw, not the filament.
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      filamentName,
+      { timeout: 8000 },
+    );
   });
 
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });

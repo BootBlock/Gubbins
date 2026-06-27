@@ -75,6 +75,12 @@ export {
   // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,
+
+  // Capabilities & Visual Search (Phase 5, §4 Weighted Capabilities, §5.1)
+  Zap as CapabilityIcon,
+  Filter as FilterIcon,
+  SlidersHorizontal as BuilderIcon,
+  FolderPlus as AddGroupIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

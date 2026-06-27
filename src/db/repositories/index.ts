@@ -25,7 +25,7 @@ export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
-export type { ItemListFilters } from './ItemRepository';
+export type { ItemListFilters, SearchByAstParams } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
 export type { RepositoryOptions } from './base';

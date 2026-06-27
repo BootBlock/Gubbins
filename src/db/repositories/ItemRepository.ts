@@ -9,11 +9,16 @@
  */
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
+import { buildFtsMatch } from '../search/fts';
+import { parseASTtoSQL } from '../search/parseASTtoSQL';
+import type { SearchAST } from '../search/ast';
 import { BaseRepository } from './base';
-import { UNASSIGNED_LOCATION_ID } from './constants';
+import { DEFAULT_CAPABILITY_WEIGHT, UNASSIGNED_LOCATION_ID } from './constants';
 import { weighInNote, weighInToDelta } from './gauge';
-import { rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
+import { rowToCapability, rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
 import type {
+  Capability,
+  CapabilityRow,
   CreateItemInput,
   GaugeAdjustment,
   Item,
@@ -24,14 +29,21 @@ import type {
   ItemRow,
   Page,
   PageParams,
+  SetCapabilityInput,
   UpdateItemInput,
 } from './types';
 
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
   readonly categoryId?: string;
-  /** Free-text name match (FTS5 arrives in Phase 5; this is a simple LIKE). */
+  /** Free-text match across name/description/mpn/manufacturer via FTS5 (spec §5). */
   readonly search?: string;
+  /** Include soft-deleted items. Defaults to false (active inventory only). */
+  readonly includeInactive?: boolean;
+}
+
+/** Pagination + scope for a Visual-Builder AST search (spec §5.1). */
+export interface SearchByAstParams extends PageParams {
   /** Include soft-deleted items. Defaults to false (active inventory only). */
   readonly includeInactive?: boolean;
 }
@@ -72,8 +84,13 @@ export class ItemRepository extends BaseRepository {
       params.push(filters.categoryId);
     }
     if (filters.search && filters.search.trim().length > 0) {
-      where.push('name LIKE ? ESCAPE ?');
-      params.push(`%${escapeLike(filters.search.trim())}%`, '\\');
+      // FTS5 full-text match over the indexed item columns (spec §5, §2.2.1a) —
+      // the genuine search backend, never a LIKE scan. `null` = no usable tokens.
+      const match = buildFtsMatch(filters.search.trim());
+      if (match !== null) {
+        where.push('items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)');
+        params.push(match);
+      }
     }
 
     const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
@@ -101,8 +118,13 @@ export class ItemRepository extends BaseRepository {
       params.push(filters.categoryId);
     }
     if (filters.search && filters.search.trim().length > 0) {
-      where.push('name LIKE ? ESCAPE ?');
-      params.push(`%${escapeLike(filters.search.trim())}%`, '\\');
+      // FTS5 full-text match over the indexed item columns (spec §5, §2.2.1a) —
+      // the genuine search backend, never a LIKE scan. `null` = no usable tokens.
+      const match = buildFtsMatch(filters.search.trim());
+      if (match !== null) {
+        where.push('items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)');
+        params.push(match);
+      }
     }
     const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
     const row = await this.driver.queryOne<{ n: number }>(
@@ -419,6 +441,102 @@ export class ItemRepository extends BaseRepository {
     return byAlias ? this.getById(byAlias.item_id) : undefined;
   }
 
+  // --- weighted capabilities (spec §4 Weighted Capabilities, Phase 5) -------------
+
+  /** An item's capabilities, ordered by key (case-insensitive). */
+  async listCapabilities(itemId: string): Promise<Capability[]> {
+    const rows = await this.driver.query<CapabilityRow>(
+      'SELECT * FROM capabilities WHERE item_id = ? ORDER BY key COLLATE NOCASE ASC;',
+      [itemId],
+    );
+    return rows.map(rowToCapability);
+  }
+
+  /**
+   * Add or replace a capability keyed by (item, key). The raw value is classified
+   * into a numeric magnitude (backing >/< comparisons) when it parses as a finite
+   * number, otherwise a text value (backing EQUALS/categorical matches). One value
+   * per key, so re-setting the same key overwrites it. Write-gated (it grows storage).
+   */
+  async setCapability(itemId: string, input: SetCapabilityInput): Promise<Capability> {
+    this.assertWritable();
+    await this.require(itemId);
+
+    const key = input.key.trim();
+    if (key.length === 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'A capability must have a key.');
+    }
+    const weight = input.weight ?? DEFAULT_CAPABILITY_WEIGHT;
+    if (!Number.isFinite(weight) || weight < 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'Capability weight must be a non-negative number.');
+    }
+
+    const raw = input.value.trim();
+    const num = Number(raw);
+    const isNumeric = raw.length > 0 && Number.isFinite(num);
+    const valueNum = isNumeric ? num : null;
+    const valueText = isNumeric ? null : raw.length > 0 ? raw : null;
+
+    const id = crypto.randomUUID();
+    await this.driver.transaction([
+      // Replace any existing value for this key (case-insensitive) — one per (item,key).
+      {
+        sql: 'DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;',
+        params: [itemId, key],
+      },
+      {
+        sql: `INSERT INTO capabilities (id, item_id, key, value_num, value_text, weight)
+              VALUES (?, ?, ?, ?, ?, ?);`,
+        params: [id, itemId, key, valueNum, valueText, weight],
+      },
+    ]);
+    const row = await this.driver.queryOne<CapabilityRow>(
+      'SELECT * FROM capabilities WHERE id = ?;',
+      [id],
+    );
+    return rowToCapability(row!);
+  }
+
+  /** Remove a capability by key (case-insensitive). Deletions bypass the Hard Stop. */
+  async removeCapability(itemId: string, key: string): Promise<void> {
+    await this.driver.execute(
+      'DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;',
+      [itemId, key.trim()],
+    );
+  }
+
+  // --- Visual-Builder search (spec §5.1) -----------------------------------------
+
+  /**
+   * Run a Visual-Builder {@link SearchAST} as a paginated item query. The AST is
+   * translated by the single parameterised {@link parseASTtoSQL} utility (§5.1) and
+   * scoped to active inventory unless `includeInactive` is set. Throws
+   * `SearchAstError` on an invalid/over-deep tree.
+   */
+  async searchByAst(ast: SearchAST, params: SearchByAstParams = {}): Promise<Page<Item>> {
+    const { limit, offset } = this.resolvePage(params);
+    const [where, whereParams] = parseASTtoSQL(ast);
+    const active = params.includeInactive ? '' : ' AND items.is_active = 1';
+    const rows = await this.driver.query<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE (${where})${active}
+       ORDER BY name COLLATE NOCASE ASC, serial_no ASC, created_at ASC
+       LIMIT ? OFFSET ?;`,
+      [...whereParams, limit, offset],
+    );
+    return this.toPage(rows.map(rowToItem), limit, offset);
+  }
+
+  /** Count items matching a {@link SearchAST} (for result headers). */
+  async countByAst(ast: SearchAST, params: { includeInactive?: boolean } = {}): Promise<number> {
+    const [where, whereParams] = parseASTtoSQL(ast);
+    const active = params.includeInactive ? '' : ' AND items.is_active = 1';
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM items WHERE (${where})${active};`,
+      whereParams,
+    );
+    return Number(row?.n ?? 0);
+  }
+
   // --- internals -----------------------------------------------------------------
 
   private async require(id: string): Promise<Item> {
@@ -569,11 +687,6 @@ function historyStatement(
       fields.metadata ? JSON.stringify(fields.metadata) : null,
     ],
   };
-}
-
-/** Escape LIKE wildcards so user input is matched literally (ESCAPE '\\'). */
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 /** Trim a free-text field, collapsing blank/whitespace-only input to NULL. */

@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Button, Input, Spinner } from '@/components/foundry';
-import { AddIcon, BrandIcon, CategoryIcon, ProjectIcon, SearchIcon } from '@/components/icons';
+import {
+  AddIcon,
+  BrandIcon,
+  BuilderIcon,
+  CategoryIcon,
+  ProjectIcon,
+  SearchIcon,
+} from '@/components/icons';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
+import { VisualBuilder } from '@/features/search/components/VisualBuilder';
+import { astError, useAstSearch } from '@/features/search/queries';
 import {
   useInventoryItems,
   useItemCount,
@@ -18,10 +28,20 @@ import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 
 /**
- * The Phase 2 inventory workspace (spec §5): location sidebar, a search/filter
- * header with the Data-Heavy ↔ Visual-Heavy toggle, and the virtualised item list.
+ * The inventory workspace (spec §5): location sidebar, a search/filter header with
+ * the Data-Heavy ↔ Visual-Heavy toggle, the Phase 5 **Visual Builder** panel for
+ * complex graphical queries, and the virtualised item list. The ephemeral search
+ * AST lives in a Tier-3 {@link SearchBuilderProvider} mounted with this screen.
  */
 export function InventoryScreen() {
+  return (
+    <SearchBuilderProvider>
+      <InventoryWorkspace />
+    </SearchBuilderProvider>
+  );
+}
+
+function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -29,8 +49,14 @@ export function InventoryScreen() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
 
-  // Debounce the search box so each keystroke doesn't hit the worker.
+  const { ast, conditionCount } = useSearchBuilder();
+  // The Visual Builder supersedes the quick search/location filters when it is open
+  // and holds at least one valid condition (spec §5.1).
+  const astActive = builderOpen && conditionCount > 0 && astError(ast) === null;
+
+  // Debounce the quick-search box so each keystroke doesn't hit the worker.
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => clearTimeout(t);
@@ -48,7 +74,9 @@ export function InventoryScreen() {
   const tree = useLocationTree();
   const flat = useLocations();
   const totalCount = useItemCount({ includeInactive });
-  const items = useInventoryItems(filters);
+  const listItems = useInventoryItems(filters);
+  const astItems = useAstSearch(ast, astActive);
+  const active = astActive ? astItems : listItems;
 
   const locationNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -57,7 +85,7 @@ export function InventoryScreen() {
   }, [flat.data]);
   const locationName = (id: string) => locationNames.get(id) ?? 'Unassigned';
 
-  const flatItems = useMemo(() => items.data?.pages.flatMap((p) => p.rows) ?? [], [items.data]);
+  const flatItems = useMemo(() => active.data?.pages.flatMap((p) => p.rows) ?? [], [active.data]);
   const flatLocations = flat.data?.rows ?? [];
 
   return (
@@ -78,8 +106,18 @@ export function InventoryScreen() {
             placeholder="Search items…"
             className="pl-9"
             aria-label="Search items"
+            disabled={astActive}
           />
         </div>
+
+        <Button
+          variant={builderOpen ? 'secondary' : 'outline'}
+          onClick={() => setBuilderOpen((v) => !v)}
+          aria-pressed={builderOpen}
+        >
+          <BuilderIcon />
+          Visual search
+        </Button>
 
         <LayoutToggle />
 
@@ -102,6 +140,16 @@ export function InventoryScreen() {
         </Button>
       </header>
 
+      {builderOpen ? (
+        <div className="pb-4">
+          <VisualBuilder
+            resultSummary={
+              astActive ? `${flatItems.length} match${flatItems.length === 1 ? '' : 'es'}` : undefined
+            }
+          />
+        </div>
+      ) : null}
+
       <div className="flex min-h-0 flex-1 gap-6">
         {tree.data && flat.data ? (
           <LocationSidebar
@@ -118,7 +166,9 @@ export function InventoryScreen() {
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-center justify-between pb-3">
             <p className="text-sm text-muted-foreground">
-              {items.isSuccess ? `${flatItems.length} shown` : 'Loading…'}
+              {active.isSuccess
+                ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
+                : 'Loading…'}
             </p>
             <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
               <input
@@ -131,7 +181,7 @@ export function InventoryScreen() {
             </label>
           </div>
 
-          {items.isLoading ? (
+          {active.isLoading ? (
             <div className="flex flex-1 items-center justify-center">
               <Spinner />
             </div>
@@ -141,9 +191,9 @@ export function InventoryScreen() {
               locations={flatLocations}
               density={density}
               locationName={locationName}
-              hasNextPage={items.hasNextPage}
-              isFetchingNextPage={items.isFetchingNextPage}
-              fetchNextPage={() => void items.fetchNextPage()}
+              hasNextPage={active.hasNextPage}
+              isFetchingNextPage={active.isFetchingNextPage}
+              fetchNextPage={() => void active.fetchNextPage()}
             />
           )}
         </main>

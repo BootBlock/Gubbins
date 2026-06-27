@@ -138,3 +138,22 @@ export type ProcurementStatus = (typeof PROCUREMENT_STATUSES)[number];
  */
 export const ASSEMBLY_OUTCOMES = ['CONTAINER', 'SINGULAR_OBJECT', 'PERMANENT_CONSUMPTION'] as const;
 export type AssemblyOutcome = (typeof ASSEMBLY_OUTCOMES)[number];
+
+// --- Capabilities & search (spec §4 Weighted Capabilities, §5.1, Phase 5) -------
+
+/**
+ * The columns of `items` indexed by the FTS5 virtual table `items_fts` (spec §5
+ * FTS5 text matching, §2.2.1a). The order is fixed and shared by the migration
+ * (which defines the vtable + sync triggers) and the search layer (which builds
+ * column-scoped `MATCH` queries). Changing this list requires a new migration.
+ */
+export const FTS_ITEM_COLUMNS = ['name', 'description', 'mpn', 'manufacturer'] as const;
+export type FtsItemColumn = (typeof FTS_ITEM_COLUMNS)[number];
+
+/**
+ * Default relevance weight for a capability (spec §4 "Weighted Capabilities"). A
+ * capability carries a `weight` (default 1.0) expressing how salient that spec is
+ * for the item, letting search results be ranked by aggregate matched weight
+ * rather than treated as flat boolean tags.
+ */
+export const DEFAULT_CAPABILITY_WEIGHT = 1.0;

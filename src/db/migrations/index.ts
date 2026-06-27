@@ -9,8 +9,15 @@ import { v1Initial } from './v1-initial';
 import { v2Domain } from './v2-domain';
 import { v3Schema } from './v3-schema';
 import { v4Projects } from './v4-projects';
+import { v5CapabilitiesFts } from './v5-capabilities-fts';
 
-export const migrations: readonly Migration[] = [v1Initial, v2Domain, v3Schema, v4Projects];
+export const migrations: readonly Migration[] = [
+  v1Initial,
+  v2Domain,
+  v3Schema,
+  v4Projects,
+  v5CapabilitiesFts,
+];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(
