@@ -126,4 +126,4 @@ This software is provided "as is", without warranty of any kind. You use it **en
 
 ## Licence
 
-[MIT](LICENSE) © 2026, Joe Cox.
+[MIT](LICENSE) © 2026 Joe Cox.
