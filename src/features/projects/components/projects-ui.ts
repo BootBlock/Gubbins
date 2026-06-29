@@ -9,6 +9,7 @@ import type {
   ProjectStatus,
   ReservationStatus,
 } from '@/db/repositories';
+import type { BudgetStatus } from '../budget';
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   PLANNING: 'Planning',
@@ -46,3 +47,28 @@ export const ASSEMBLY_OUTCOME_DESCRIPTIONS = {
   SINGULAR_OBJECT: 'The parts merge into one new inventory item; the parts are consumed.',
   PERMANENT_CONSUMPTION: 'The parts are permanently consumed and removed from active tracking.',
 } as const;
+
+// --- Budgeting display (spec §4 budgeting) -------------------------------------
+
+export const BUDGET_STATUS_LABELS: Record<BudgetStatus, string> = {
+  NONE: 'No budget set',
+  OK: 'On track',
+  WARN: 'Near budget',
+  OVER: 'Over budget',
+};
+
+/** Semantic text-colour token per budget status (never a raw colour — CLAUDE.md). */
+export const BUDGET_STATUS_TEXT: Record<BudgetStatus, string> = {
+  NONE: 'text-muted-foreground',
+  OK: 'text-success',
+  WARN: 'text-warning',
+  OVER: 'text-destructive',
+};
+
+/** Semantic fill token for the budget meter bar per status. */
+export const BUDGET_STATUS_FILL: Record<BudgetStatus, string> = {
+  NONE: 'bg-muted-foreground/40',
+  OK: 'bg-success',
+  WARN: 'bg-warning',
+  OVER: 'bg-destructive',
+};

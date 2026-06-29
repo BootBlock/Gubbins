@@ -8,6 +8,7 @@
  */
 import type { Theme } from '@/state/stores/usePreferencesStore';
 import {
+  BUDGET_WARN_PERCENT,
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
@@ -169,6 +170,23 @@ export function clampLowStockGaugePercent(value: number): number {
     LOW_STOCK_GAUGE_BOUNDS.max,
     Math.max(LOW_STOCK_GAUGE_BOUNDS.min, Math.round(value)),
   );
+}
+
+/**
+ * Inclusive bounds for the user-set project-budget warning threshold (§4 budgeting).
+ * The indicator turns to a warning tone once spend reaches this percentage of the
+ * budget; the floor of 1 keeps "warn from the first penny" possible, the ceiling of
+ * 100 keeps "warn only once exceeded" possible — never a degenerate 0 or > 100.
+ */
+export const BUDGET_WARN_BOUNDS = { min: 1, max: 100 } as const;
+
+/**
+ * Clamp a project-budget warning percentage to {@link BUDGET_WARN_BOUNDS}. Non-finite
+ * input falls back to the default constant.
+ */
+export function clampBudgetWarnPercent(value: number): number {
+  if (!Number.isFinite(value)) return BUDGET_WARN_PERCENT;
+  return Math.min(BUDGET_WARN_BOUNDS.max, Math.max(BUDGET_WARN_BOUNDS.min, Math.round(value)));
 }
 
 /**

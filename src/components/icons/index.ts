@@ -82,6 +82,10 @@ export {
   PoundSterling as CostIcon,
   BookmarkCheck as ReserveIcon,
   FileUp as ImportIcon,
+  // Project budgeting (Phase 58, §4)
+  Wallet as BudgetIcon,
+  ReceiptText as ExpenseIcon,
+  FolderTree as BudgetCategoryIcon,
 
   // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
   Rows3 as DataDensityIcon,

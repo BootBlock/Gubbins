@@ -8,6 +8,7 @@ import {
   ItemRepository,
   LocationRepository,
   MaintenanceRepository,
+  ProjectRepository,
   TagRepository,
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
@@ -22,6 +23,7 @@ async function makeDevice(): Promise<{
   contacts: ContactRepository;
   checkouts: CheckoutRepository;
   maintenance: MaintenanceRepository;
+  projects: ProjectRepository;
 }> {
   const driver = createMemoryDriver();
   await runMigrations(driver, migrations);
@@ -33,6 +35,7 @@ async function makeDevice(): Promise<{
     contacts: new ContactRepository(driver),
     checkouts: new CheckoutRepository(driver),
     maintenance: new MaintenanceRepository(driver),
+    projects: new ProjectRepository(driver),
   };
 }
 
@@ -165,6 +168,73 @@ describe('runSync round-trip (§7.3)', () => {
     const onB = await b.maintenance.getById(sched.id);
     expect(onB).toBeDefined(); // the schedule survives — it just reverts to item-level
     expect(onB?.locationId).toBeNull();
+  });
+
+  it('round-trips a project budget, its categories and its expense ledger (Phase 58)', async () => {
+    const project = await a.projects.create({ name: 'Synth', budget: 500 });
+    const cat = await a.projects.addBudgetCategory(project.id, { name: 'Parts', amount: 300 });
+    await a.projects.addExpense(project.id, {
+      description: 'PCB order',
+      amount: 95,
+      categoryId: cat.id,
+    });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect((await b.projects.getById(project.id))?.budget).toBe(500);
+    const onB = await b.projects.getBudget(project.id);
+    expect(onB.manualExpenseTotal).toBe(95);
+    expect(onB.categories).toHaveLength(1);
+    expect(onB.categories[0]).toMatchObject({ name: 'Parts', amount: 300, spent: 95 });
+  });
+
+  it('propagates a project deletion, cascading its categories and expenses to the peer (Phase 58)', async () => {
+    const project = await a.projects.create({ name: 'Scrapped', budget: 100 });
+    const cat = await a.projects.addBudgetCategory(project.id, { name: 'Parts', amount: 50 });
+    await a.projects.addExpense(project.id, { amount: 20, categoryId: cat.id });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect(await b.projects.getById(project.id)).toBeDefined();
+
+    await a.projects.delete(project.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await b.projects.getById(project.id)).toBeUndefined();
+    const cats = await b.driver.query(
+      'SELECT id FROM project_budget_categories WHERE project_id = ?;',
+      [project.id],
+    );
+    const exps = await b.driver.query('SELECT id FROM project_expenses WHERE project_id = ?;', [
+      project.id,
+    ]);
+    expect(cats).toHaveLength(0);
+    expect(exps).toHaveLength(0);
+  });
+
+  it('un-categorises an incoming expense whose category did not survive the merge (Phase 58)', async () => {
+    const project = await a.projects.create({ name: 'Build', budget: 100 });
+    const cat = await a.projects.addBudgetCategory(project.id, { name: 'Shipping', amount: 50 });
+    const expense = await a.projects.addExpense(project.id, {
+      description: 'Courier',
+      amount: 12,
+      categoryId: cat.id,
+    });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    // A removes the category (its own expense is SET NULL locally) and pushes; B, still holding
+    // the expense pointing at the category, must clear the dangling reference rather than trip
+    // the FK — the spend survives, now uncategorised.
+    await a.projects.removeBudgetCategory(cat.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    const onB = await b.projects.getBudget(project.id);
+    expect(onB.manualExpenseTotal).toBe(12);
+    expect(onB.uncategorisedExpenseTotal).toBe(12);
+    const ledger = await b.projects.listExpenses(project.id);
+    expect(ledger.rows.find((e) => e.id === expense.id)?.categoryId).toBeNull();
   });
 
   it('resolves a concurrent edit by Last-Write-Wins', async () => {

@@ -18,6 +18,8 @@ export interface ProjectRow {
   readonly description: string | null;
   readonly status: ProjectStatus;
   readonly costing_mode: CostingMode;
+  /** Optional overall budget (§4 budgeting); NULL = no budget set. */
+  readonly budget: number | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -28,6 +30,8 @@ export interface Project {
   readonly description: string | null;
   readonly status: ProjectStatus;
   readonly costingMode: CostingMode;
+  /** Optional overall budget (§4 budgeting); null = no budget set. */
+  readonly budget: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -41,6 +45,8 @@ export interface CreateProjectInput {
   readonly name: string;
   readonly description?: string | null;
   readonly costingMode?: CostingMode;
+  /** Optional overall budget set at creation (§4 budgeting). */
+  readonly budget?: number | null;
 }
 
 export interface UpdateProjectInput {
@@ -48,6 +54,8 @@ export interface UpdateProjectInput {
   readonly description?: string | null;
   readonly status?: ProjectStatus;
   readonly costingMode?: CostingMode;
+  /** Set or clear (null) the overall budget (§4 budgeting). */
+  readonly budget?: number | null;
 }
 
 // --- BOM lines (spec §4) --------------------------------------------------------
@@ -115,6 +123,121 @@ export interface UpdateBomLineInput {
   readonly description?: string | null;
   readonly requiredQty?: number;
   readonly position?: number;
+}
+
+// --- Budgeting (spec §4, on top of BOM Costing) ---------------------------------
+
+/** A named sub-budget bucket on a project (e.g. "Parts", "Shipping", "Labour"). */
+export interface ProjectBudgetCategoryRow {
+  readonly id: string;
+  readonly project_id: string;
+  readonly name: string;
+  readonly amount: number;
+  readonly position: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface ProjectBudgetCategory {
+  readonly id: string;
+  readonly projectId: string;
+  readonly name: string;
+  /** The allocated sub-budget for this category. */
+  readonly amount: number;
+  readonly position: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/** A budget category joined with its recorded spend (Σ assigned expenses). */
+export interface ProjectBudgetCategoryRollup {
+  readonly id: string;
+  readonly name: string;
+  readonly amount: number;
+  readonly position: number;
+  readonly spent: number;
+}
+
+export interface CreateBudgetCategoryInput {
+  readonly name: string;
+  readonly amount?: number;
+  readonly position?: number;
+}
+
+export interface UpdateBudgetCategoryInput {
+  readonly name?: string;
+  readonly amount?: number;
+  readonly position?: number;
+}
+
+/** A single recorded expense in a project's manual spend ledger (§4 budgeting). */
+export interface ProjectExpenseRow {
+  readonly id: string;
+  readonly project_id: string;
+  readonly category_id: string | null;
+  readonly description: string | null;
+  readonly amount: number;
+  readonly incurred_at: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface ProjectExpense {
+  readonly id: string;
+  readonly projectId: string;
+  /** The budget category this expense is filed under, or null (uncategorised). */
+  readonly categoryId: string | null;
+  readonly description: string | null;
+  readonly amount: number;
+  /** When the cost was incurred (UNIX-ms); defaults to now when omitted. */
+  readonly incurredAt: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+export interface CreateExpenseInput {
+  readonly description?: string | null;
+  readonly amount: number;
+  readonly categoryId?: string | null;
+  readonly incurredAt?: number;
+}
+
+export interface UpdateExpenseInput {
+  readonly description?: string | null;
+  readonly amount?: number;
+  readonly categoryId?: string | null;
+  readonly incurredAt?: number;
+}
+
+/**
+ * The raw budget aggregates the repository gathers for one project — the facts the pure
+ * `summariseBudget` derives spent/remaining/projected/status from. `committedFromBom`
+ * (`Σ received_qty × unit cost`) and `estimatedCost` (full BOM) are derived live from the
+ * BOM under the project's costing mode, never stored, so they cannot drift.
+ */
+export interface ProjectBudget {
+  readonly projectId: string;
+  readonly budget: number | null;
+  readonly estimatedCost: number;
+  readonly committedFromBom: number;
+  readonly manualExpenseTotal: number;
+  readonly categories: readonly ProjectBudgetCategoryRollup[];
+  /** Manual spend with no category assigned. */
+  readonly uncategorisedExpenseTotal: number;
+}
+
+/**
+ * A cross-project budget headline for the dashboard "Budget alerts" feed: one row per
+ * project that has a budget set, carrying the figures the widget needs to flag near- and
+ * over-budget projects without re-fetching each project's full rollup.
+ */
+export interface ProjectBudgetAlert {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly budget: number;
+  readonly committedFromBom: number;
+  readonly manualExpenseTotal: number;
+  readonly estimatedCost: number;
 }
 
 // --- Costing & shopping list (spec §4 BOM Costing; automated Shopping List) ------

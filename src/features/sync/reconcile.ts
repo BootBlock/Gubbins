@@ -375,6 +375,17 @@ const FK_REFS: Partial<
     { col: 'project_id', parent: 'projects', nullable: false },
     { col: 'item_id', parent: 'items', nullable: true },
   ],
+  // Budget categories (Phase 58): drop an incoming category whose project did not survive
+  // the merge (it would trip the project's cascade FK), mirroring the BOM-line guard.
+  project_budget_categories: [{ col: 'project_id', parent: 'projects', nullable: false }],
+  // Expenses (Phase 58): the project_id guard mirrors the BOM line. category_id is nullable
+  // (ON DELETE SET NULL) — an incoming expense whose category did not survive the merge keeps
+  // the spend but clears the reference (it falls back to "uncategorised"), mirroring the
+  // checkout source-location null-out.
+  project_expenses: [
+    { col: 'project_id', parent: 'projects', nullable: false },
+    { col: 'category_id', parent: 'project_budget_categories', nullable: true },
+  ],
 };
 
 /**

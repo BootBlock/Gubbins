@@ -10,11 +10,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
+  BUDGET_WARN_PERCENT,
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
 } from '@/db/repositories/constants';
 import {
+  clampBudgetWarnPercent,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
@@ -67,6 +69,8 @@ interface PreferencesStore {
   readonly lowStockQtyThreshold: number;
   /** A CONSUMABLE_GAUGE item is flagged on the §3 "Low Stock" widget at/below this % remaining. */
   readonly lowStockGaugePercent: number;
+  /** A project's budget indicator turns to a warning tone at/above this % of budget spent (§4). */
+  readonly budgetWarnPercent: number;
   /** Default "older than" window (months) for history pruning (§7.6.3 A). */
   readonly pruneWindowMonths: number;
   /** Default "older than" window (months) for image downgrading (§7.6.3 B). */
@@ -104,6 +108,7 @@ interface PreferencesStore {
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
+  setBudgetWarnPercent: (percent: number) => void;
   setPruneWindowMonths: (months: number) => void;
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
@@ -127,6 +132,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
+      budgetWarnPercent: BUDGET_WARN_PERCENT,
       pruneWindowMonths: DEFAULT_WINDOW_MONTHS,
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
@@ -151,6 +157,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setLowStockQtyThreshold: (qty) => set({ lowStockQtyThreshold: clampLowStockQty(qty) }),
       setLowStockGaugePercent: (percent) =>
         set({ lowStockGaugePercent: clampLowStockGaugePercent(percent) }),
+      setBudgetWarnPercent: (percent) =>
+        set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
       setPruneWindowMonths: (months) => set({ pruneWindowMonths: normaliseWindowMonths(months) }),
       setDowngradeWindowMonths: (months) =>
         set({ downgradeWindowMonths: normaliseWindowMonths(months) }),

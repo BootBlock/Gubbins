@@ -138,6 +138,16 @@ export const EXPIRY_SOON_WINDOW_DAYS = 30;
 export const LOW_STOCK_QTY_THRESHOLD = 5;
 export const LOW_STOCK_GAUGE_PERCENT = 15;
 
+/**
+ * Default warning threshold for the §4 project budget feature: a project's budget
+ * indicator turns to a warning tone once spend reaches this percentage of the budget,
+ * and an over-budget state once it exceeds 100%. Surfaced as the user-tunable Tier-2
+ * `budgetWarnPercent` preference (clamped to {@link BUDGET_WARN_BOUNDS}), mirroring the
+ * low-stock-threshold seam. A "fixed constant → Tier-2 preference" lift (the Phase-46
+ * pattern) so a user who runs tighter or looser on budgets can move the line.
+ */
+export const BUDGET_WARN_PERCENT = 80;
+
 /** Milliseconds in one day — shared by the pure expiry/maintenance scheduling maths. */
 export const MS_PER_DAY = 86_400_000;
 
