@@ -16,10 +16,10 @@ import { CloseIcon, RefreshIcon } from '@/components/icons';
  *
  * A user who isn't ready to reload can instead dismiss the banner ("remind me later"),
  * which snoozes it for ~8h via {@link usePwaUpdateSnoozeStore} (a device-local localStorage
- * store, mirroring saved searches — nothing synced). The snooze keeps the banner quiet for
- * the rest of the session; a fresh page load or a genuinely *new* waiting worker (the seam's
- * `updateAvailableSeq` ticks) clears it, so a real subsequent deploy always re-surfaces the
- * prompt even after a previous dismissal.
+ * store, mirroring saved searches — nothing synced). The snooze is honoured for its full
+ * window even across reloads; only a genuinely *new* waiting worker that installs while the
+ * page is open (a later `updateAvailableSeq` tick — the first tick of a session just
+ * re-announces the worker we may have snoozed) re-surfaces the prompt before it expires.
  *
  * Mounted bare in the root layout chrome, clear of the bottom-left offline pill. The
  * update signal is read through the injectable {@link PwaUpdateApi} seam so this is
@@ -32,14 +32,19 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
   const surface = usePwaUpdateSnoozeStore((s) => s.surface);
   const [reloading, setReloading] = useState(false);
 
-  // A brand-new waiting worker (seq increments) overrides any prior dismissal: clear the
-  // snooze so a genuine subsequent deploy re-surfaces the prompt. The ref tracks the last
-  // seen sequence so this fires only on a real increment, not on every render.
+  // A snooze ("remind me later") is honoured for its full window even across reloads. The
+  // FIRST waiting-worker notification of a session just re-announces the worker we already
+  // know about (and may have snoozed on a previous load), so it must NOT clear the snooze.
+  // Only a *subsequent* notification — a genuinely newer worker installing while the page is
+  // already open — overrides the snooze and re-surfaces the prompt early. The ref tracks the
+  // last seen sequence; `prevSeqRef.current === 0` means "no notification seen yet this
+  // session", i.e. the next tick is that harmless first announcement.
   const prevSeqRef = useRef(updateAvailableSeq);
   useEffect(() => {
     if (updateAvailableSeq > prevSeqRef.current) {
+      const isFirstOfSession = prevSeqRef.current === 0;
       prevSeqRef.current = updateAvailableSeq;
-      surface();
+      if (!isFirstOfSession) surface();
     }
   }, [updateAvailableSeq, surface]);
 

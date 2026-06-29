@@ -88,6 +88,29 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
     expect(screen.getByTestId('pwa-update-prompt')).toBeTruthy();
   });
 
+  it('keeps the prompt snoozed across a reload (the first notification re-announces the same worker)', () => {
+    const fake = makeFakeApi();
+    const { unmount } = render(<PwaUpdatePrompt api={fake.api} />);
+    act(() => fake.emitWaiting());
+    fireEvent.click(screen.getByTestId('pwa-dismiss'));
+    expect(screen.queryByTestId('pwa-update-prompt')).toBeNull();
+
+    // Simulate a full page reload: tear down and re-mount with a fresh seam, so the hook's
+    // `updateAvailableSeq` resets to 0 while the persisted snooze (singleton store +
+    // localStorage) survives. The still-waiting worker re-announces on the new load…
+    unmount();
+    const reloaded = makeFakeApi();
+    render(<PwaUpdatePrompt api={reloaded.api} />);
+    act(() => reloaded.emitWaiting());
+    // …and that first-of-session notification must NOT clear the snooze — the banner stays
+    // hidden for the rest of the ~8h window.
+    expect(screen.queryByTestId('pwa-update-prompt')).toBeNull();
+
+    // But a genuinely newer worker installing during this session still re-surfaces it.
+    act(() => reloaded.emitWaiting());
+    expect(screen.getByTestId('pwa-update-prompt')).toBeTruthy();
+  });
+
   it('re-shows the prompt once the snooze has expired', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-29T09:00:00Z'));

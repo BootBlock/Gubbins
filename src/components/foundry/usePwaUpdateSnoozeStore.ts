@@ -5,10 +5,10 @@
  * The "A new version is ready" banner is non-blocking, but a user who isn't ready to
  * reload shouldn't have to keep dismissing it. This small, domain-specific Zustand store
  * (no god store) records a snooze deadline in localStorage — device-local (mirroring the
- * saved-searches store), so no DB migration and nothing synced. The snooze keeps the
- * prompt hidden for the rest of the current session (~8h); a fresh page load or a
- * genuinely new waiting worker re-surfaces it (the consumer clears the snooze via
- * {@link surface}), so a real update is never lost.
+ * saved-searches store), so no DB migration and nothing synced. The deadline persists across
+ * reloads, so the prompt stays hidden for the full ~8h window; a genuinely new waiting worker
+ * that installs while the page is open re-surfaces it early (the consumer clears the snooze
+ * via {@link surface}), so a real update is never lost.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
