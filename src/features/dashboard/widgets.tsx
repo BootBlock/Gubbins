@@ -35,6 +35,7 @@ import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
+import { ChangeFlash } from '@/features/inventory/components/ChangeFlash';
 import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenance } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects } from '@/features/projects/projects';
@@ -77,7 +78,9 @@ function WidgetShell({
         {icon}
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
         {count !== undefined ? (
-          <span className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}>{count}</span>
+          <ChangeFlash flashKey={count} className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}>
+            {count}
+          </ChangeFlash>
         ) : null}
       </div>
       <div className="mt-2 space-y-1">{children}</div>

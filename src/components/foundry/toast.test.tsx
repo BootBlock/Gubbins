@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
-import { ToastProvider, useToast } from './toast';
+import { ToastProvider, useToast, TOAST_EXIT_MS } from './toast';
 
 afterEach(cleanup);
 
@@ -12,7 +12,7 @@ function Trigger({ duration }: { duration?: number }) {
 }
 
 describe('Foundry Toast', () => {
-  it('shows a toast on demand and dismisses it manually', () => {
+  it('shows a toast on demand and dismisses it manually', async () => {
     render(
       <ToastProvider>
         <Trigger duration={0} />
@@ -22,7 +22,8 @@ describe('Foundry Toast', () => {
     fireEvent.click(screen.getByText('fire'));
     expect(screen.getByTestId('toast')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Dismiss notification'));
-    expect(screen.queryByTestId('toast')).toBeNull();
+    // Two-phase dismiss: the toast plays its exit animation, then unmounts.
+    await waitFor(() => expect(screen.queryByTestId('toast')).toBeNull());
   });
 
   it('auto-dismisses after the duration (passive, §4)', async () => {
@@ -37,6 +38,11 @@ describe('Foundry Toast', () => {
       expect(screen.getByTestId('toast')).toBeInTheDocument();
       act(() => {
         vi.advanceTimersByTime(3000);
+      });
+      // The auto-dismiss has fired; the toast is now playing its exit animation.
+      // Advance past it to let the two-phase dismiss unmount the toast.
+      act(() => {
+        vi.advanceTimersByTime(TOAST_EXIT_MS);
       });
       expect(screen.queryByTestId('toast')).toBeNull();
     } finally {

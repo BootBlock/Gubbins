@@ -2,6 +2,7 @@ import { Button, Tooltip } from '@/components/foundry';
 import { AddIcon, SubtractIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAdjustQuantity } from '../mutations';
+import { ChangeFlash } from './ChangeFlash';
 
 /**
  * Inline ± quantity stepper for DISCRETE items. Each tap fires an optimistic
@@ -33,9 +34,9 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
           </Button>
         </span>
       </Tooltip>
-      <span className="min-w-12 text-center text-sm font-semibold tabular-nums">
+      <ChangeFlash flashKey={quantity} className="min-w-12 text-center text-sm font-semibold tabular-nums">
         {fmt.quantity(quantity)}
-      </span>
+      </ChangeFlash>
       <Tooltip content="Add one to stock. The change is saved instantly and logged." triggerTabIndex={-1}>
         <span>
           <Button

@@ -417,6 +417,25 @@
 }
 
 /*
+ * Toast exit — the mirror of `animate-rise`'s entrance for the Foundry Toast. A passive
+ * notification shouldn't simply blink out of existence: it fades while sinking a touch and
+ * shrinking, so the eye reads "this is leaving" before it unmounts. The provider plays this
+ * (two-phase dismiss) then removes the toast from React state. Snappier than the entrance so
+ * a stack of toasts clears briskly. Reduced-motion users skip it entirely (the provider
+ * unmounts immediately, and the global catch-all would neutralise the utility regardless).
+ */
+@keyframes gubbins-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+/*
  * Drop-target ghost — the live "your widget lands here" indicator on the customisable
  * dashboard board (spec §3). While a tile is dragged, a single translucent placeholder
  * tracks the cell under the pointer; this gives it a calm, breathing primary glow so the
@@ -470,6 +489,10 @@
 
 @utility animate-swap-in {
   animation: gubbins-swap-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility animate-toast-out {
+  animation: gubbins-toast-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @utility animate-pulse-success {

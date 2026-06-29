@@ -222,6 +222,14 @@ export default defineConfig({
     // as a separate CI job (`bridge/vitest.config.ts`). Exclude it here so the app
     // suite (happy-dom, Node 20) never sweeps the bridge's Node-only tests, which
     // would fail under the wrong environment.
-    exclude: [...configDefaults.exclude, 'bridge/**'],
+    //
+    // Also exclude `.claude/worktrees/**`: when a parallel agent has a sibling git
+    // worktree checked out under that path, it carries a full copy of `src/` (and its
+    // own `node_modules`). Vitest would otherwise discover those duplicate `*.test`
+    // files — and, worse, a positional path filter like `src/features/...` matches the
+    // worktree copy as a substring too — loading a second React/react-dom into the same
+    // worker and breaking hooks for every test in the run. Keeping the sweep inside this
+    // checkout makes the suite robust while other agents work in their own worktrees.
+    exclude: [...configDefaults.exclude, 'bridge/**', '**/.claude/worktrees/**'],
   },
 });
