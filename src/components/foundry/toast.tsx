@@ -27,7 +27,7 @@ import { prefersReducedMotion } from '@/lib/env/motion';
  * removed from React state. Kept marginally above the CSS duration so the final frame
  * is painted. Skipped entirely under reduced motion (see {@link prefersReducedMotion}).
  */
-const TOAST_EXIT_MS = 200;
+export const TOAST_EXIT_MS = 200;
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
 
