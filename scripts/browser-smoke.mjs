@@ -1660,7 +1660,14 @@ try {
     await page.getByRole('button', { name: 'Add item' }).click();
     const itemDialog = page.getByRole('dialog');
     await itemDialog.getByLabel('Name').fill(cycleItemName);
-    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByRole('combobox', { name: 'Location' }).click();
+    // Phase 55: the Add Item location picker is now the tinted custom listbox — the
+    // teal-swatched Workshop option carries its colour token (cf. the parent picker).
+    await itemDialog
+      .getByRole('option', { name: `Workshop ${stamp}` })
+      .locator('.text-loc-teal')
+      .waitFor({ state: 'visible', timeout: 5000 });
+    await itemDialog.getByRole('option', { name: drawerName }).click();
     await itemDialog.getByLabel('Initial quantity').fill('10');
     await itemDialog.getByRole('button', { name: 'Create item' }).click();
     await page.getByText(cycleItemName).first().waitFor({ state: 'visible', timeout: 5000 });
@@ -1810,7 +1817,8 @@ try {
     await page.getByRole('button', { name: 'Add item' }).click();
     const itemDialog = page.getByRole('dialog', { name: 'Add item' });
     await itemDialog.getByLabel('Name').fill(batchItemName);
-    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByRole('combobox', { name: 'Location' }).click();
+    await itemDialog.getByRole('option', { name: drawerName }).click();
     await itemDialog.getByLabel('Initial quantity').fill('0');
     await itemDialog.getByRole('button', { name: 'Create item' }).click();
     await page.getByText(batchItemName).first().waitFor({ state: 'visible', timeout: 5000 });
@@ -1910,7 +1918,8 @@ try {
     await page.getByRole('button', { name: 'Add item' }).click();
     const itemDialog = page.getByRole('dialog', { name: 'Add item' });
     await itemDialog.getByLabel('Name').fill(serialAuditName);
-    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByRole('combobox', { name: 'Location' }).click();
+    await itemDialog.getByRole('option', { name: drawerName }).click();
     await itemDialog.getByLabel('Tracking').selectOption('SERIALISED');
     await itemDialog.getByLabel(/How many/).fill('2');
     await itemDialog.getByRole('button', { name: 'Create item' }).click();

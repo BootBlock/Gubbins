@@ -1331,8 +1331,26 @@ pickers, and the item cards/rows. Description shows in the Add/Edit dialogs and 
 
 Deferred (re-scheduled, not dropped):
 
-- [ ] **Colour the Add Item location picker** — `CreateItemDialog`'s Location dropdown is a react-hook-form-bound
-      native `<select>` wrapped by Foundry `FormField` (implicit `<label>`), so it can't render the coloured
-      `LocationSelect` listbox without an RHF `Controller` + label-association rework and updating the 3 smoke
-      `getByLabel('Location').selectOption` calls. **→ next location-UI phase.** (Move Item *was* converted; the
-      item rows/cards already show the colour, so the only uncoloured surface is this one selection dropdown.)
+- [x] **Colour the Add Item location picker** — **done in Phase 55.** `CreateItemDialog`'s Location field is now the
+      tinted `LocationSelect` listbox (the same one Move Item/parent pickers use), driven by an RHF `Controller` and
+      associated via a sibling `<span id>` + `labelledBy` (an implicit `<label>` can't name a `div[role=combobox]`,
+      so the field is *not* wrapped in `FormField` — it mirrors `MoveItemDialog`). The three smoke
+      `getByLabel('Location').selectOption` calls became open-combobox + click-option, and one asserts the teal
+      Workshop option carries its swatch token. No schema change (`user_version` stays **19**). Every location surface
+      now shows the colour; no uncoloured selection dropdown remains.
+
+## Phase 55 — Colour the Add Item location picker (Phase-54 residual)
+
+Cleared the one concrete Phase-54 deferral: `CreateItemDialog`'s Location field is converted from a native
+`<select>` to the tinted `LocationSelect` combobox (the same accessible select-only listbox the parent / Move-Item
+pickers use), driven by an RHF `Controller` and named via a sibling `<span id>` + `labelledBy` rather than
+`FormField`'s implicit `<label>` (which can't name a `div[role=combobox]`) — mirroring `MoveItemDialog`. Options come
+from the existing pure `buildItemLocationOptions(locations, fmt.quantity)`, so each row shows the location's colour
+swatch + item count. **No new schema/migration** (`user_version` stays **19**); no dependency change; the three Add
+Item smoke flows now open the combobox + click the option, and the cycle-count flow asserts the teal Workshop option
+carries `text-loc-teal`. 1130 unit / 115 files / 92 smoke. **`build:extension` NOT re-run** (no §9 / `extension/`
+edit).
+
+No mandated spec gap remains, and there is no further tracked location-UI residual. Remaining open work is the
+unchanged trigger-gated Backlog (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded
+WASM decoder, live distributor selector maintenance, further `aria-live`) — none with a live trigger today.

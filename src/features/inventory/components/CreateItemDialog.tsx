@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useId, useMemo, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
+import { useFormatters } from '@/lib/useFormatters';
 import {
   CONDITIONS,
   TRACKING_MODES,
@@ -21,6 +22,8 @@ import {
 } from '@/features/scraping';
 import { useCategories } from '../categories';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
+import { buildItemLocationOptions } from '../parent-options';
+import { LocationSelect } from './LocationSelect';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
 /**
@@ -77,9 +80,12 @@ export function CreateItemDialog({
   const applyScrape = useApplyScrape();
   const notifyScrape = useScrapeNotifier();
   const { data: categories } = useCategories();
+  const fmt = useFormatters();
+  const locationLabelId = useId();
   // Supplier MPNs to map onto the new item as aliases once it is created (§4).
   const [pendingAliases, setPendingAliases] = useState<readonly string[]>([]);
   const {
+    control,
     register,
     handleSubmit,
     watch,
@@ -112,6 +118,13 @@ export function CreateItemDialog({
 
   const trackingMode = watch('trackingMode') as TrackingMode;
   const isPending = createItem.isPending || createSerialised.isPending;
+
+  // Every location is a valid home — including the system Unassigned / In Transit rows —
+  // each tinted with its colour swatch and showing its item count (mirrors MoveItemDialog).
+  const locationOptions = useMemo(
+    () => buildItemLocationOptions(locations, fmt.quantity),
+    [locations, fmt],
+  );
 
   // §4 no-overwrite: a scrape only fills fields the user has left blank on the form.
   const onScrapeResult = (payload: ScrapeResultPayload) => {
@@ -222,15 +235,31 @@ export function CreateItemDialog({
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Location" error={errors.locationId?.message}>
-            <Select {...register('locationId')}>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+          {/* A custom listbox (not a native <select>) so each row can show the location's
+              colour swatch + item count; an implicit <label> can't name a role=combobox,
+              so it is associated via labelledBy + a sibling label span (cf. MoveItemDialog). */}
+          <div>
+            <span id={locationLabelId} className="mb-field-gap block text-sm font-medium">
+              Location
+            </span>
+            <Controller
+              control={control}
+              name="locationId"
+              render={({ field }) => (
+                <LocationSelect
+                  labelledBy={locationLabelId}
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={locationOptions}
+                />
+              )}
+            />
+            {errors.locationId?.message ? (
+              <span role="alert" className="mt-1 block text-xs text-destructive">
+                {errors.locationId.message}
+              </span>
+            ) : null}
+          </div>
           <FormField label="Tracking">
             <Select {...register('trackingMode')}>
               {TRACKING_MODES.map((mode) => (

@@ -1,8 +1,40 @@
 # Gubbins — working conventions
 
+> 🔒 **NEVER COMMIT SECRETS.** This repository is **public**. No API keys, tokens,
+> passwords, private keys, connection strings, or personal data may ever enter the working
+> tree, a commit, or git history. Read the section below before adding any credential-shaped
+> value or committing changes.
+
 > ⚠️ **USE DESIGN TOKENS, NOT HARD-CODED VALUES.** This is the one rule that is easy to
 > break and hard to spot in review. Read the section below before adding any colour,
 > spacing, radius, easing, or other visual value.
+
+## No secrets in the repository (mandatory)
+
+This is a **public** repository. Committing a secret is treated as a build-breaking error —
+secrets are effectively permanent once pushed (they live in history and may be scraped within
+seconds), so the only safe rule is to never let one in.
+
+**Hard rules — these are not negotiable:**
+
+- **Never** write an API key, token, password, secret, private key, certificate, OAuth
+  client secret, session cookie, or connection string into any tracked file — including
+  source, tests, fixtures, docs, comments, config, and commit messages. Use an obvious
+  placeholder (`<YOUR_API_KEY>`, `sk-xxxx`) when an example is genuinely needed.
+- **Never** commit real personal data: private email addresses, phone numbers, real names
+  tied to private accounts, internal hostnames, or IP addresses. Use the GitHub `noreply`
+  identity (`BootBlock@users.noreply.github.com`), `example.com` / `*.test` domains, and
+  `localhost` in examples and tests.
+- **Secrets belong in `.env` only.** `.env` and `.env.*` are git-ignored (keep
+  `.env.example` with placeholder values only). Read configuration from the environment at
+  runtime — never inline it.
+- **Never** commit data artefacts that may carry real content: `*.sqlite`/`*.db`, database
+  dumps, exported vaults/archives, `.pem`/`.key`/`.pfx`/`.p12`/keystores, or `id_rsa*`.
+- **Before every commit, self-audit the diff.** Run `git diff --cached` and scan for
+  anything credential-shaped or personal. If a secret is in doubt, leave it out and ask.
+- **If a secret is ever committed, stop.** Treat it as compromised: it must be rotated/revoked
+  at the source, and the history scrubbed — removing it in a later commit is **not**
+  sufficient. Surface this immediately rather than quietly continuing.
 
 ## Design tokens are mandatory where one exists
 
