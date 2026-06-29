@@ -14,6 +14,7 @@ import {
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useDeleteLocation, useUpdateLocation } from '../mutations';
 import { resolveTreeKey, type TreeRow } from '../tree-keyboard';
+import { defaultParentForNewLocation } from '../location-tree';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 
@@ -64,13 +65,9 @@ export function LocationSidebar({
 
   const isOpen = (id: string, level: number) => overrides.get(id) ?? level === 1;
 
-  // When the "+" button is pressed while a real, user-created location is selected,
-  // seed the new location's parent with that selection — so adding inside a location
-  // nests under it by default. The synthetic "All items" (null selection) and the
-  // system-locked rows ("Unassigned", "In Transit") are *not* valid parents, so a
-  // new location started from any of those defaults to top level.
-  const selectedLocation = selectedId ? flat.find((l) => l.id === selectedId) : undefined;
-  const addParentId = selectedLocation && !selectedLocation.isSystem ? selectedLocation.id : null;
+  // Seed the "+" dialog's parent with the current selection so adding inside a
+  // location nests under it by default (policy in `defaultParentForNewLocation`).
+  const addParentId = defaultParentForNewLocation(selectedId, flat);
 
   const setRowRef = (id: string) => (el: HTMLDivElement | null) => {
     if (el) rowRefs.current.set(id, el);

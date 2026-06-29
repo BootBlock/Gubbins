@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { collectDescendantIds, locationPath, type FlatNode } from './location-tree';
+import {
+  collectDescendantIds,
+  defaultParentForNewLocation,
+  locationPath,
+  type FlatNode,
+  type FlatSystemNode,
+} from './location-tree';
 
 // workshop → cabinet → drawer; workshop → bench; plus a detached garage.
 const nodes: FlatNode[] = [
@@ -38,5 +44,31 @@ describe('locationPath', () => {
   it('stops cleanly on a broken parent chain', () => {
     const orphan: FlatNode[] = [{ id: 'x', name: 'X', parentId: 'missing' }];
     expect(locationPath('x', orphan)).toBe('X');
+  });
+});
+
+describe('defaultParentForNewLocation', () => {
+  const flat: FlatSystemNode[] = [
+    { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false },
+    { id: 'cabinet', name: 'Cabinet A', parentId: 'workshop', isSystem: false },
+    { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true },
+    { id: 'transit', name: 'In Transit', parentId: null, isSystem: true },
+  ];
+
+  it('nests under a real, user-created selection', () => {
+    expect(defaultParentForNewLocation('cabinet', flat)).toBe('cabinet');
+  });
+
+  it('defaults to top level for the "All items" (null) selection', () => {
+    expect(defaultParentForNewLocation(null, flat)).toBeNull();
+  });
+
+  it('defaults to top level for the system-locked Unassigned / In Transit rows', () => {
+    expect(defaultParentForNewLocation('unassigned', flat)).toBeNull();
+    expect(defaultParentForNewLocation('transit', flat)).toBeNull();
+  });
+
+  it('defaults to top level when the selection is no longer in the list', () => {
+    expect(defaultParentForNewLocation('deleted', flat)).toBeNull();
   });
 });

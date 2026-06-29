@@ -43,6 +43,27 @@ export function collectDescendantIds(
   return result;
 }
 
+/** A flat node that also knows whether it is a system-locked location. */
+export interface FlatSystemNode extends FlatNode {
+  readonly isSystem: boolean;
+}
+
+/**
+ * The parent a freshly-added location should default to, given the current sidebar
+ * selection. Adding *inside* a real, user-created location nests under it; but the
+ * synthetic "All items" (a `null` selection) and the system-locked rows ("Unassigned",
+ * "In Transit") are never valid parents (mirroring the dialogs' `!isSystem` parent
+ * filter), so a new location started from any of those defaults to top level (`null`).
+ */
+export function defaultParentForNewLocation(
+  selectedId: string | null,
+  nodes: readonly FlatSystemNode[],
+): string | null {
+  if (!selectedId) return null;
+  const selected = nodes.find((n) => n.id === selectedId);
+  return selected && !selected.isSystem ? selected.id : null;
+}
+
 /**
  * A human-readable ancestry breadcrumb for a location, root-first and joined by
  * `" / "` (e.g. `Workshop / Cabinet A / Drawer 3`). Defensive against a broken
