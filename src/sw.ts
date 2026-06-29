@@ -65,10 +65,32 @@ sw.addEventListener('activate', (event) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+      await pruneStalePrecache();
       await sw.clients.claim();
     })(),
   );
 });
+
+/**
+ * Drop precache entries left behind by previous deploys. The cache name is stable
+ * across releases (so the offline shell survives an update), and every build emits
+ * new content-hashed asset URLs, so `install`'s `addAll` only ever *adds* to this
+ * cache — superseded chunks would otherwise linger forever, growing CacheStorage on
+ * each deploy and eating into the same storage quota the app meters (spec §7.6).
+ *
+ * `respond()` never writes to the cache, so it holds exactly the precached set:
+ * anything no longer named by the current manifest is stale and safe to delete. URLs
+ * are resolved against `sw.location` — the identical base `addAll` uses — so the
+ * comparison matches the cached requests regardless of relative/absolute manifest form.
+ */
+async function pruneStalePrecache(): Promise<void> {
+  const cache = await caches.open(CACHE);
+  const wanted = new Set(PRECACHE_URLS.map((url) => new URL(url, sw.location.href).href));
+  const cached = await cache.keys();
+  await Promise.all(
+    cached.filter((request) => !wanted.has(request.url)).map((request) => cache.delete(request)),
+  );
+}
 
 sw.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
