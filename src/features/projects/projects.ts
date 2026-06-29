@@ -14,11 +14,16 @@ import {
   getProjectRepository,
   type CostingMode,
   type CreateBomLineInput,
+  type CreateBudgetCategoryInput,
+  type CreateExpenseInput,
   type CreateProjectInput,
   type FinaliseAssemblyInput,
+  type PageParams,
   type ProcurementStatus,
   type ReservationStatus,
   type UpdateBomLineInput,
+  type UpdateBudgetCategoryInput,
+  type UpdateExpenseInput,
   type UpdateProjectInput,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
@@ -27,10 +32,14 @@ import type { ParsedBomLine } from './bom-import';
 export const projectKeys = {
   all: ['projects'] as const,
   list: () => [...projectKeys.all, 'list'] as const,
+  budgetAlerts: () => [...projectKeys.all, 'budget-alerts'] as const,
   detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
   lines: (id: string) => [...projectKeys.detail(id), 'lines'] as const,
   costing: (id: string) => [...projectKeys.detail(id), 'costing'] as const,
   shoppingList: (id: string) => [...projectKeys.detail(id), 'shopping-list'] as const,
+  budget: (id: string) => [...projectKeys.detail(id), 'budget'] as const,
+  expenses: (id: string) => [...projectKeys.detail(id), 'expenses'] as const,
+  budgetCategories: (id: string) => [...projectKeys.detail(id), 'budget-categories'] as const,
 } as const;
 
 // --- reads ---------------------------------------------------------------------
@@ -74,15 +83,54 @@ export function useShoppingList(projectId: string | undefined) {
   });
 }
 
+// --- budgeting reads (spec §4 budgeting) ---------------------------------------
+
+/** Raw budget aggregates for a project; pair with the pure `summariseBudget`. */
+export function useProjectBudget(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectKeys.budget(projectId ?? ''),
+    queryFn: () => getProjectRepository().getBudget(projectId!),
+    enabled: Boolean(projectId),
+  });
+}
+
+/** The project's manual expense ledger (bounded per-project; fetched whole). */
+export function useExpenses(projectId: string | undefined, params: PageParams = { limit: 200 }) {
+  return useQuery({
+    queryKey: [...projectKeys.expenses(projectId ?? ''), params],
+    queryFn: () => getProjectRepository().listExpenses(projectId!, params),
+    enabled: Boolean(projectId),
+  });
+}
+
+/** The project's budget categories (sub-budgets). */
+export function useBudgetCategories(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectKeys.budgetCategories(projectId ?? ''),
+    queryFn: () => getProjectRepository().listBudgetCategories(projectId!),
+    enabled: Boolean(projectId),
+  });
+}
+
+/** Cross-project budget headlines for the dashboard "Budget alerts" widget. */
+export function useBudgetAlerts() {
+  return useQuery({
+    queryKey: projectKeys.budgetAlerts(),
+    queryFn: () => getProjectRepository().listBudgetAlerts(),
+  });
+}
+
 // --- write helpers -------------------------------------------------------------
 
-/** Invalidate every derived view of a single project (lines, costing, shopping). */
+/** Invalidate every derived view of a single project (lines, costing, shopping, budget). */
 function invalidateProject(
   client: ReturnType<typeof useQueryClient>,
   projectId: string,
 ): void {
   void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
   void client.invalidateQueries({ queryKey: projectKeys.list() });
+  // Budget figures feed the cross-project dashboard alerts feed too.
+  void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });
 }
 
 // --- projects ------------------------------------------------------------------
@@ -117,7 +165,72 @@ export function useDeleteProject() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getProjectRepository().delete(id),
-    onSettled: () => void client.invalidateQueries({ queryKey: projectKeys.list() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: projectKeys.list() });
+      void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });
+    },
+  });
+}
+
+// --- budgeting writes (spec §4 budgeting) --------------------------------------
+
+export function useSetBudget() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, budget }: { id: string; budget: number | null }) =>
+      getProjectRepository().setBudget(id, budget),
+    onSettled: (_data, _err, vars) => invalidateProject(client, vars.id),
+  });
+}
+
+export function useAddExpense(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateExpenseInput) => getProjectRepository().addExpense(projectId, input),
+    onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+export function useUpdateExpense(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ expenseId, input }: { expenseId: string; input: UpdateExpenseInput }) =>
+      getProjectRepository().updateExpense(expenseId, input),
+    onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+export function useRemoveExpense(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (expenseId: string) => getProjectRepository().removeExpense(expenseId),
+    onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+export function useAddBudgetCategory(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateBudgetCategoryInput) =>
+      getProjectRepository().addBudgetCategory(projectId, input),
+    onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+export function useUpdateBudgetCategory(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ categoryId, input }: { categoryId: string; input: UpdateBudgetCategoryInput }) =>
+      getProjectRepository().updateBudgetCategory(categoryId, input),
+    onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+export function useRemoveBudgetCategory(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (categoryId: string) => getProjectRepository().removeBudgetCategory(categoryId),
+    onSettled: () => invalidateProject(client, projectId),
   });
 }
 

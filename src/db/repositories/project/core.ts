@@ -28,6 +28,16 @@ interface ProjectCountRow extends ProjectRow {
   readonly line_count: number;
 }
 
+/**
+ * Coerce a budget input to a stored value: a non-negative finite number, or NULL to
+ * clear it. A negative or non-finite value clears the budget rather than persisting a
+ * nonsensical figure (the §4 budget is optional, so "no valid budget" is a clean state).
+ */
+function normaliseBudget(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
 export class ProjectCoreRepository extends BaseRepository {
   // --- projects ------------------------------------------------------------------
 
@@ -63,8 +73,14 @@ export class ProjectCoreRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     await this.driver.execute(
-      'INSERT INTO projects (id, name, description, costing_mode) VALUES (?, ?, ?, ?);',
-      [id, name, input.description ?? null, input.costingMode ?? 'CURRENT_REPLACEMENT'],
+      'INSERT INTO projects (id, name, description, costing_mode, budget) VALUES (?, ?, ?, ?, ?);',
+      [
+        id,
+        name,
+        input.description ?? null,
+        input.costingMode ?? 'CURRENT_REPLACEMENT',
+        normaliseBudget(input.budget),
+      ],
     );
     return (await this.getById(id))!;
   }
@@ -95,11 +111,20 @@ export class ProjectCoreRepository extends BaseRepository {
       sets.push('costing_mode = ?');
       params.push(input.costingMode);
     }
+    if (input.budget !== undefined) {
+      sets.push('budget = ?');
+      params.push(normaliseBudget(input.budget));
+    }
     if (sets.length > 0) {
       params.push(id);
       await this.driver.execute(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?;`, params);
     }
     return (await this.getById(id))!;
+  }
+
+  /** Set or clear (null) the project's overall budget (§4 budgeting). */
+  async setBudget(id: string, budget: number | null): Promise<Project> {
+    return this.update(id, { budget });
   }
 
   /** Set just the BOM costing mode (spec §4 toggle). */

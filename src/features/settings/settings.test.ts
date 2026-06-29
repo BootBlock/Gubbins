@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  BUDGET_WARN_PERCENT,
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
 } from '@/db/repositories/constants';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
+  BUDGET_WARN_BOUNDS,
+  clampBudgetWarnPercent,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
@@ -229,5 +232,36 @@ describe('usePreferencesStore — Phase 46 low-stock thresholds', () => {
     expect(usePreferencesStore.getState().lowStockQtyThreshold).toBe(LOW_STOCK_QTY_BOUNDS.min);
     usePreferencesStore.getState().setLowStockGaugePercent(150);
     expect(usePreferencesStore.getState().lowStockGaugePercent).toBe(LOW_STOCK_GAUGE_BOUNDS.max);
+  });
+});
+
+describe('clampBudgetWarnPercent', () => {
+  it('keeps an in-range value, rounding to a whole percent', () => {
+    expect(clampBudgetWarnPercent(80)).toBe(80);
+    expect(clampBudgetWarnPercent(72.4)).toBe(72);
+  });
+
+  it('clamps out-of-range values to the bounds', () => {
+    expect(clampBudgetWarnPercent(0)).toBe(BUDGET_WARN_BOUNDS.min);
+    expect(clampBudgetWarnPercent(-5)).toBe(BUDGET_WARN_BOUNDS.min);
+    expect(clampBudgetWarnPercent(150)).toBe(BUDGET_WARN_BOUNDS.max);
+  });
+
+  it('falls back to the default for non-finite input', () => {
+    expect(clampBudgetWarnPercent(Number.NaN)).toBe(BUDGET_WARN_PERCENT);
+  });
+});
+
+describe('usePreferencesStore — Phase 58 budget warn percent', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ budgetWarnPercent: BUDGET_WARN_PERCENT });
+  });
+
+  it('defaults to the shared constant and clamps through its setter', () => {
+    expect(usePreferencesStore.getState().budgetWarnPercent).toBe(BUDGET_WARN_PERCENT);
+    usePreferencesStore.getState().setBudgetWarnPercent(150);
+    expect(usePreferencesStore.getState().budgetWarnPercent).toBe(BUDGET_WARN_BOUNDS.max);
+    usePreferencesStore.getState().setBudgetWarnPercent(0);
+    expect(usePreferencesStore.getState().budgetWarnPercent).toBe(BUDGET_WARN_BOUNDS.min);
   });
 });

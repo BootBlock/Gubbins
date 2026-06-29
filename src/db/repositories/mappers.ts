@@ -33,6 +33,10 @@ import type {
   Project,
   ProjectBomLine,
   ProjectBomLineRow,
+  ProjectBudgetCategory,
+  ProjectBudgetCategoryRow,
+  ProjectExpense,
+  ProjectExpenseRow,
   ProjectRow,
   Tag,
   TagRow,
@@ -252,6 +256,32 @@ export function rowToProject(row: ProjectRow): Project {
     description: row.description,
     status: row.status,
     costingMode: row.costing_mode,
+    budget: row.budget,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToBudgetCategory(row: ProjectBudgetCategoryRow): ProjectBudgetCategory {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    name: row.name,
+    amount: row.amount,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToExpense(row: ProjectExpenseRow): ProjectExpense {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    categoryId: row.category_id,
+    description: row.description,
+    amount: row.amount,
+    incurredAt: row.incurred_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

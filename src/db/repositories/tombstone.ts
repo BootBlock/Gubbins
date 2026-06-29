@@ -58,6 +58,8 @@ export const SYNC_TABLES = [
   'checkouts',
   'projects', // independent
   'project_bom_lines', // FK → projects, items
+  'project_budget_categories', // FK → projects (ordered before project_expenses, its parent)
+  'project_expenses', // FK → projects, project_budget_categories
   'maintenance_schedules', // FK → items
 ] as const;
 
