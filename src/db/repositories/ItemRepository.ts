@@ -43,6 +43,7 @@ import { tombstoneStatement } from './tombstone';
 import { rowToCapability, rowToHistoryEntry, rowToItem, rowToItemAlias } from './mappers';
 import type {
   Capability,
+  CapabilityKeySummary,
   CapabilityRow,
   CreateItemInput,
   GaugeAdjustment,
@@ -916,6 +917,45 @@ export class ItemRepository extends BaseRepository {
       [id],
     );
     return rowToCapability(row!);
+  }
+
+  /**
+   * The distinct capability *keys* carried across active inventory — the queryable
+   * `cap:<key>` vocabulary (spec §4, §5.1) — paginated, busiest key first. For each key
+   * it reports how many active items carry it and whether the stored values are numeric
+   * (supporting `cap:key>n`) and/or textual (supporting `cap:key=value`). Read-only and
+   * static parameterised SQL; one value per (item, key), so `itemCount` is also the row
+   * count per key. Powers a "browse capabilities" view and the read-only query bridge.
+   */
+  async listCapabilityKeys(params: PageParams = {}): Promise<Page<CapabilityKeySummary>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<{
+      key: string;
+      item_count: number;
+      numeric_count: number;
+      text_count: number;
+    }>(
+      `SELECT c.key AS key,
+              COUNT(DISTINCT c.item_id) AS item_count,
+              SUM(CASE WHEN c.value_num IS NOT NULL THEN 1 ELSE 0 END) AS numeric_count,
+              SUM(CASE WHEN c.value_text IS NOT NULL THEN 1 ELSE 0 END) AS text_count
+       FROM capabilities c
+       JOIN items i ON i.id = c.item_id AND i.is_active = 1
+       GROUP BY c.key COLLATE NOCASE
+       ORDER BY item_count DESC, c.key COLLATE NOCASE ASC
+       LIMIT ? OFFSET ?;`,
+      [limit, offset],
+    );
+    return this.toPage(
+      rows.map((r) => ({
+        key: r.key,
+        itemCount: Number(r.item_count),
+        hasNumericValues: Number(r.numeric_count) > 0,
+        hasTextValues: Number(r.text_count) > 0,
+      })),
+      limit,
+      offset,
+    );
   }
 
   /** Remove a capability by key (case-insensitive). Deletions bypass the Hard Stop. */

@@ -1,0 +1,7 @@
+{
+  "name": "Gubbins Inventory",
+  "render_readme": true,
+  "content_in_root": false,
+  "country": ["GB"],
+  "homeassistant": "2024.1.0"
+}

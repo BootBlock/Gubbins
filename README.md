@@ -63,6 +63,7 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Archive and restore, including image re-hydration.
 - Storage triage dashboard: OPFS quota recovery, history pruning, and image downgrade.
 - Cross-device handling of unlinked local-file attachments.
+- Optional Home Assistant / query bridge: ask a voice assistant where your items are — or push your whole dataset straight to it (see [below](#home-assistant--external-query-bridge-optional)).
 
 **Interface & accessibility**
 - Customisable drag-and-drop dashboard widget board.
@@ -70,6 +71,93 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Installable PWA with an offline indicator.
 - Kiosk / tablet mode with screen wake-lock.
 - Accessibility throughout: focus trapping, ARIA tree navigation, skip links, live regions, accessible form errors, and reduced-motion support.
+
+## Home Assistant / external query bridge (optional)
+
+Gubbins itself stays serverless and in-browser, so a web page can't host a LAN endpoint a
+voice assistant could reach. To bridge that gap **without** breaking the local-first promise,
+an **optional companion service** in [`bridge/`](bridge/README.md) runs **on your own hardware**
+(a NUC, a Raspberry Pi, a NAS, or the Home Assistant host). It takes a copy of your inventory,
+hydrates it into a headless SQLite database, and runs the app's *own* search code over it — so
+you can ask *"Where are my M3 screws?"* and get the right answer. Nothing is sent to any cloud,
+and the bridge is **not part of the PWA or the GitHub-Pages build** — it ships nothing to the
+browser and is entirely opt-in.
+
+### What it gives you
+
+Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-limited:
+
+- **A read-only HTTP API** — `GET /health`, `/search?q=…`, `/where?q=…` plus a versioned,
+  OpenAPI-described `/api/v1` (items, locations, categories, capabilities). Anything that speaks
+  HTTP can query your inventory.
+- **A Home Assistant integration** — a HACS-compatible custom component with a
+  *"Where are my {item}?"* voice intent (it speaks the location back), a dashboard sensor, and
+  **auto-discovery** so you usually don't even type the host/port.
+- **An MCP server** — exposes the same read-only queries as tools to an LLM/agent (e.g. Claude),
+  so an assistant can look things up for you.
+- **Two data sources** — point it at either the `gubbins-sync.json` your sync writes, *or* a raw
+  exported `.sqlite` database; it auto-detects which.
+- **Opt-in, off-by-default writes** — let an automation or voice command check stock in/out
+  (`GUBBINS_BRIDGE_ALLOW_WRITES=on`); changes round-trip through the app's own sync merge, so
+  there's no drift.
+- **Opt-in, off-by-default "push to bridge"** — if you *don't* use folder sync, the app can POST
+  its whole dataset straight to the bridge (`GUBBINS_BRIDGE_ALLOW_PUSH=on`), so no shared folder
+  is needed at all.
+
+### Setting it up
+
+Full instructions (Node / Docker / systemd, every config option, the security model) are in
+[`bridge/README.md`](bridge/README.md); the Home Assistant side is in
+[`homeassistant/README.md`](homeassistant/README.md). The short version:
+
+1. **Get the bridge a copy of your data.** Pick one:
+   - **Folder sync** — in the app, open **Cloud Sync & backups**, connect a **Local folder**
+     (e.g. inside a NAS mount or a synced drive), and **Sync now**. The bridge watches the
+     `gubbins-sync.json` that lands there.
+   - **Push to bridge** *(no shared folder needed)* — see [the next section](#pushing-your-data-to-the-bridge).
+   - **Raw export** — export a `.sqlite` from **Cloud Sync & backups** and point the bridge at it.
+
+2. **Run the bridge** on a machine that can see that data and that Home Assistant can reach. From
+   a checkout of this repo (needs Node ≥ 23.6, or use the Docker image):
+
+   ```sh
+   cp bridge/.env.example bridge/.env      # then edit bridge/.env (it is git-ignored)
+   #  - GUBBINS_BRIDGE_TOKEN   → a long random string (your shared secret; never commit it)
+   #  - GUBBINS_SNAPSHOT_PATH  → the gubbins-sync.json (or .sqlite) from step 1
+   node bridge/serve.mjs                    # starts on http://127.0.0.1:8787 (loopback by default)
+   ```
+
+   To let Home Assistant on another machine reach it, bind the LAN with
+   `GUBBINS_BRIDGE_HOST=0.0.0.0` (a deliberate, logged choice) and optionally enable mDNS
+   auto-discovery with `GUBBINS_BRIDGE_MDNS=on`.
+
+3. **Add the Home Assistant integration.** Copy `homeassistant/custom_components/gubbins/` into
+   your HA config (or add this repo as a HACS custom repository), restart HA, then add the
+   **Gubbins** integration — it either auto-discovers the bridge or asks for its host, port, and
+   the **token** from step 2 (the token is stored by HA, never in YAML). Wire the
+   *"Where are my {item}?"* sentences into Assist as described in
+   [`homeassistant/README.md`](homeassistant/README.md).
+
+4. **Ask away.** *"Where are my M3 screws?"* / *"How many ESP32 boards do I have?"* — Assist speaks
+   the location and quantity back.
+
+### Pushing your data to the bridge
+
+If you don't keep a shared sync folder, you can hand the snapshot straight to the bridge over your
+local network instead:
+
+1. Start the bridge with **`GUBBINS_BRIDGE_ALLOW_PUSH=on`** (and a JSON snapshot path — push is
+   refused for a raw `.sqlite` source). Keep it on `127.0.0.1` if the app runs on the same machine,
+   or bind the LAN (`GUBBINS_BRIDGE_HOST=0.0.0.0`) to push from another device.
+2. In the app, open **Cloud Sync & backups → Push to bridge**, enter the bridge **URL**
+   (e.g. `http://127.0.0.1:8787`) and the **token**, and press **Push now**. The URL and token are
+   stored **only on that device** — never synced, never committed.
+3. The bridge validates the snapshot, swaps it in atomically, and immediately serves the new data.
+   Push again whenever you want the bridge to catch up — there's no shared folder to manage.
+
+The body size is capped (default 64 MiB, tunable via `GUBBINS_BRIDGE_MAX_PUSH_BYTES` for
+constrained hosts like a Pi on an SD card), and push uses the same token and rate limit as
+everything else.
 
 ## Architecture at a glance
 

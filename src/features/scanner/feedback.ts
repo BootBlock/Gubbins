@@ -70,10 +70,15 @@ export class ScanFeedback {
     }
   }
 
-  /** Fire both confirmations together for a successful scan. */
-  confirm(): void {
-    this.beep();
-    this.vibrate(200);
+  /**
+   * Fire the enabled confirmations for a successful scan (§6.5). Both default on;
+   * a user can mute either independently via the Tier-2 scanner preferences
+   * (`scannerBeep` / `scannerHaptics` in `usePreferencesStore`), so the overlay
+   * passes the current flags through here.
+   */
+  confirm({ beep = true, haptics = true }: { beep?: boolean; haptics?: boolean } = {}): void {
+    if (beep) this.beep();
+    if (haptics) this.vibrate(200);
   }
 
   /** Release the AudioContext when the scanner closes. */

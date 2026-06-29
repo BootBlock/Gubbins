@@ -1,0 +1,26 @@
+# Keep secrets, local data, and bulky/irrelevant files out of ANY Docker build context.
+#
+# This is a safety net for the bridge image (see bridge/Dockerfile), whose context is the
+# repo root. Most importantly it guarantees a real `.env` or an exported snapshot/database
+# can never be copied into an image, even if one is present in the working tree.
+
+# Secrets — never copy a real .env into an image (the placeholder .env.example is harmless
+# but also unneeded at runtime, so it stays out too).
+**/.env
+**/.env.*
+
+# Dependencies / build output / VCS / CI — not needed in the build-free bridge image.
+**/node_modules
+dist
+dist-ssr
+.git
+.github
+coverage
+.vite
+*.tsbuildinfo
+
+# Real inventory data must never enter an image (config points at a mounted snapshot).
+bridge/local/
+**/*.sqlite
+**/*.db
+**/gubbins-sync.json

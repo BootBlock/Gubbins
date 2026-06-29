@@ -614,6 +614,22 @@ export interface SetCapabilityInput {
   readonly weight?: number;
 }
 
+/**
+ * One distinct capability *key* across the active inventory, with how many items
+ * carry it and whether those values are numeric and/or textual — i.e. the queryable
+ * `cap:<key>` vocabulary. Backs a "browse capabilities" view (and the read-only bridge
+ * API); a numeric key supports `cap:key>n` comparisons, a textual key `cap:key=value`.
+ */
+export interface CapabilityKeySummary {
+  readonly key: string;
+  /** Number of distinct active items that carry this capability key. */
+  readonly itemCount: number;
+  /** True when at least one item stores this key as a numeric magnitude. */
+  readonly hasNumericValues: boolean;
+  /** True when at least one item stores this key as a text value. */
+  readonly hasTextValues: boolean;
+}
+
 // --- Projects (spec §4 "Projects & BOMs", Phase 4) ------------------------------
 
 export interface ProjectRow {

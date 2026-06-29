@@ -1,0 +1,22 @@
+{
+  "name": "@gubbins/bridge",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Gubbins companion bridge — hydrates a gubbins-sync.json snapshot into a headless node:sqlite database and runs the app's own read-only search code. Optional, local-first, never part of the PWA / GitHub-Pages build.",
+  "license": "UNLICENSED",
+  "author": "Joe Cox <BootBlock@users.noreply.github.com>",
+  "engines": {
+    "node": ">=23.6.0"
+  },
+  "scripts": {
+    "cli": "node cli.mjs",
+    "serve": "node serve.mjs",
+    "mcp": "node mcp.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

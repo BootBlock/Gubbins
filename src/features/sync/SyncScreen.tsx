@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, LiveRegion, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Banner, Button, FormField, Input, LiveRegion, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   BrandIcon,
   CloudIcon,
+  CloudUploadIcon,
   ConnectIcon,
   DisconnectIcon,
   DownloadIcon,
@@ -16,7 +17,9 @@ import {
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { buildBackupJson, restoreFromBackupJson } from './backup';
+import { buildPushSnapshotJson, pushSnapshotToBridge } from './push-to-bridge';
 import { MemoryCloudProvider } from './providers/memory-provider';
 import {
   connectFileSystemProvider,
@@ -39,6 +42,7 @@ export function SyncScreen() {
   const client = useQueryClient();
   const auth = useAuthStore();
   const fmt = useFormatters();
+  const { bridgeUrl, bridgeToken, setBridgeUrl, setBridgeToken } = usePreferencesStore();
   const [connected, setConnected] = useState(getActiveProvider() !== null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
@@ -187,6 +191,28 @@ export function SyncScreen() {
     }
   }
 
+  async function pushToBridge() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const json = await buildPushSnapshotJson(getSyncDriver());
+      const result = await pushSnapshotToBridge({
+        baseUrl: bridgeUrl,
+        token: bridgeToken,
+        json,
+        fetchImpl: (url, init) => fetch(url, init),
+      });
+      if (result.ok) setNotice(result.message);
+      else setError(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Push failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canPush = bridgeUrl.trim().length > 0 && bridgeToken.trim().length > 0;
   const configuredButOffline = !connected && auth.providerId !== null;
 
   return (
@@ -385,6 +411,66 @@ export function SyncScreen() {
             </div>
           </Banner>
         ) : null}
+      </section>
+
+      {/* Push to bridge — for users without folder sync, hand the dataset straight to the
+          optional Home Assistant query bridge over HTTP (the bridge re-hydrates it). */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Push to bridge
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your
+          local network, without needing a shared folder. The bridge must have pushes enabled
+          (<code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your
+          URL and token are stored only on this device.
+        </p>
+        <Surface className="space-y-4 p-4">
+          <FormField
+            label="Bridge URL"
+            hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
+          >
+            <Input
+              type="url"
+              inputMode="url"
+              placeholder="http://127.0.0.1:8787"
+              value={bridgeUrl}
+              onChange={(e) => setBridgeUrl(e.target.value)}
+              data-testid="bridge-url"
+            />
+          </FormField>
+          <FormField
+            label="Access token"
+            hint="The bridge's `GUBBINS_BRIDGE_TOKEN`. Treated as a secret — stored only on this device and never synced."
+          >
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="Bridge access token"
+              value={bridgeToken}
+              onChange={(e) => setBridgeToken(e.target.value)}
+              data-testid="bridge-token"
+            />
+          </FormField>
+          <div className="flex flex-wrap items-center gap-3">
+            <Tooltip
+              content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
+              triggerTabIndex={-1}
+            >
+              <span>
+                <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
+                  <CloudUploadIcon />
+                  Push now
+                </Button>
+              </span>
+            </Tooltip>
+            {!canPush ? (
+              <span className="text-xs text-muted-foreground">
+                Enter the bridge URL and token to enable pushing.
+              </span>
+            ) : null}
+          </div>
+        </Surface>
       </section>
       </main>
     </div>

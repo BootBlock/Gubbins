@@ -1,0 +1,46 @@
+{
+  // The bridge is a separate Node/TS package. It deliberately does NOT extend the
+  // app's tsconfig (that one targets the DOM/WebWorker libs and excludes src/test);
+  // it stands alone with the Node libs only. The single shared-code seam is the
+  // `@/*` path alias below, which points at the app's real source so the bridge
+  // imports the app's PURE search/DB modules (parseASTtoSQL, the migration engine,
+  // backup/snapshot, the repositories) rather than ever forking them.
+  //
+  // See README.md → "Shared-code mechanism" for how this alias is honoured at
+  // runtime (a tiny zero-dependency ESM loader) and under Vitest (resolve.alias).
+  "compilerOptions": {
+    "target": "ES2023",
+    // The DOM/WebWorker libs are present only so the *shared app modules* (written
+    // for the browser) type-check when imported here. The bridge itself runs on Node
+    // and never executes their DOM code paths — verified at runtime: nothing in the
+    // hydrate import graph touches window/navigator/Worker at module-evaluation time.
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    // Bundler resolution mirrors the app tsconfig so the app's extensionless `@/`
+    // imports type-check here too. We never emit — Node strips the types at runtime
+    // and the loader (loader.mjs) handles the alias + extension resolution.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // Type-check only; Node 23.6+ strips the types at runtime, so we never emit JS.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    // The one shared-code seam: the app's source, imported (never forked).
+    "paths": {
+      "@/*": ["../src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "loader.mjs", "cli.mjs"],
+  "exclude": ["node_modules", "dist"]
+}

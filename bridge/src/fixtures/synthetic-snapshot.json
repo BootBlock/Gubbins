@@ -1,0 +1,95 @@
+{
+  "formatVersion": 1,
+  "generatedAt": 1751000000000,
+  "tables": {
+    "locations": [
+      { "id": "loc-drawer-a", "name": "Drawer A", "parent_id": null, "is_system": 0, "updated_at": 1751000000000 },
+      { "id": "loc-bin-4", "name": "Bin 4", "parent_id": null, "is_system": 0, "updated_at": 1751000000000 },
+      { "id": "loc-shelf-2", "name": "Shelf 2", "parent_id": null, "is_system": 0, "updated_at": 1751000000000 }
+    ],
+    "categories": [
+      { "id": "cat-fasteners", "name": "Fasteners", "updated_at": 1751000000000 },
+      { "id": "cat-electronics", "name": "Electronics", "updated_at": 1751000000000 }
+    ],
+    "items": [
+      {
+        "id": "item-m3-bolt",
+        "name": "M3 x 10 Hex Bolt",
+        "description": "Synthetic test fastener, stainless.",
+        "location_id": "loc-drawer-a",
+        "category_id": "cat-fasteners",
+        "tracking_mode": "DISCRETE",
+        "quantity": 42,
+        "mpn": "FAS-M3-10",
+        "manufacturer": "Acme Fasteners",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-m3-washer",
+        "name": "M3 Nylon Washer",
+        "description": "Synthetic test washer.",
+        "location_id": "loc-drawer-a",
+        "category_id": "cat-fasteners",
+        "tracking_mode": "DISCRETE",
+        "quantity": 100,
+        "mpn": "FAS-M3-W",
+        "manufacturer": "Acme Fasteners",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-esp32",
+        "name": "ESP32 Dev Board",
+        "description": "Synthetic microcontroller dev board for test fixtures.",
+        "location_id": "loc-shelf-2",
+        "category_id": "cat-electronics",
+        "tracking_mode": "DISCRETE",
+        "quantity": 7,
+        "mpn": "DEV-ESP32",
+        "manufacturer": "Synthetic Silicon Co",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-resistor",
+        "name": "Resistor 10k 0603",
+        "description": "Synthetic surface-mount resistor.",
+        "location_id": "loc-bin-4",
+        "category_id": "cat-electronics",
+        "tracking_mode": "DISCRETE",
+        "quantity": 200,
+        "mpn": "RES-10K-0603",
+        "manufacturer": "Synthetic Components",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      }
+    ],
+    "item_stock": [
+      { "id": "item-m3-bolt|loc-drawer-a", "item_id": "item-m3-bolt", "location_id": "loc-drawer-a", "quantity": 42, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-m3-washer|loc-drawer-a", "item_id": "item-m3-washer", "location_id": "loc-drawer-a", "quantity": 100, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-esp32|loc-shelf-2", "item_id": "item-esp32", "location_id": "loc-shelf-2", "quantity": 5, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-esp32|loc-bin-4", "item_id": "item-esp32", "location_id": "loc-bin-4", "quantity": 2, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-resistor|loc-bin-4", "item_id": "item-resistor", "location_id": "loc-bin-4", "quantity": 200, "created_at": 1750000000000, "updated_at": 1751000000000 }
+    ],
+    "stock_batches": [
+      { "id": "item-m3-bolt|loc-drawer-a|", "item_id": "item-m3-bolt", "location_id": "loc-drawer-a", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 42, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-m3-washer|loc-drawer-a|", "item_id": "item-m3-washer", "location_id": "loc-drawer-a", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 100, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-esp32|loc-shelf-2|", "item_id": "item-esp32", "location_id": "loc-shelf-2", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 5, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-esp32|loc-bin-4|", "item_id": "item-esp32", "location_id": "loc-bin-4", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 2, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-resistor|loc-bin-4|", "item_id": "item-resistor", "location_id": "loc-bin-4", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 200, "created_at": 1750000000000, "updated_at": 1751000000000 }
+    ],
+    "capabilities": [
+      { "id": "cap-esp32-voltage", "item_id": "item-esp32", "key": "voltage", "value_num": 3.3, "value_text": null, "weight": 2.0, "updated_at": 1751000000000 },
+      { "id": "cap-esp32-cores", "item_id": "item-esp32", "key": "cores", "value_num": 2, "value_text": null, "weight": 1.0, "updated_at": 1751000000000 }
+    ]
+  },
+  "tombstones": [],
+  "gaugeHistory": [],
+  "itemTags": [],
+  "itemHistory": []
+}

@@ -1,0 +1,64 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Gubbins inventory bridge",
+        "description": "Connect to your local Gubbins bridge. The token is the GUBBINS_BRIDGE_TOKEN you set in the bridge's .env file; it is stored securely by Home Assistant and never written to YAML.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Access token"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Gubbins inventory bridge",
+        "description": "Discovered a Gubbins bridge at {host}:{port}. Enter its access token (the GUBBINS_BRIDGE_TOKEN you set in the bridge's .env file) to finish. The token is never advertised over the network — it is stored securely by Home Assistant.",
+        "data": {
+          "token": "Access token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the bridge. Check the host and port, and that the bridge is running.",
+      "invalid_auth": "The bridge rejected the token. Check GUBBINS_BRIDGE_TOKEN matches."
+    },
+    "abort": {
+      "already_configured": "This Gubbins bridge is already configured."
+    }
+  },
+  "services": {
+    "search": {
+      "name": "Search inventory",
+      "description": "Search the Gubbins inventory (read-only) and return matching items.",
+      "fields": {
+        "query": {
+          "name": "Query",
+          "description": "Free text, or the power-user syntax (e.g. cap:voltage>3.3)."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of items to return (1–25)."
+        }
+      }
+    },
+    "adjust_quantity": {
+      "name": "Adjust quantity (check in / out)",
+      "description": "Change a discrete item's stock by a signed amount. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
+      "fields": {
+        "item_id": {
+          "name": "Item id",
+          "description": "The Gubbins record id of the item (find it via the search service or the API)."
+        },
+        "delta": {
+          "name": "Delta",
+          "description": "Signed change: negative to check out, positive to check in."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Optional note recorded in the item's activity log."
+        }
+      }
+    }
+  }
+}

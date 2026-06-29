@@ -57,6 +57,10 @@ interface PreferencesStore {
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
   readonly scannerSymbology: ScannerSymbology;
+  /** Play a synthesised confirmation beep on a successful scan (§6.5). On by default. */
+  readonly scannerBeep: boolean;
+  /** Trigger a haptic bump (`navigator.vibrate`) on a successful scan (§6.5). On by default. */
+  readonly scannerHaptics: boolean;
   /** Days before `expiry_date` an item is surfaced as "expiring soon" (§3, §4). */
   readonly expirySoonWindowDays: number;
   /** A DISCRETE item is flagged on the §3 "Low Stock" widget at/below this on-hand quantity. */
@@ -75,6 +79,19 @@ interface PreferencesStore {
    * dashboard. Off by default — opt-in so casual use is unaffected.
    */
   readonly kioskMode: boolean;
+  /**
+   * "Push to bridge" target (Home Assistant query bridge). The base URL (e.g.
+   * `http://127.0.0.1:8787`) of an optional companion bridge the user can push the dataset
+   * to over HTTP, for those who don't use FS-Access folder sync. Empty until configured. The
+   * bridge code lives in `bridge/`; nothing here imports it (no bundle bloat).
+   */
+  readonly bridgeUrl: string;
+  /**
+   * Bearer token for {@link bridgeUrl}. **Device-local only** — persisted to localStorage like
+   * the rest of these preferences, never synced and never committed; treated as a secret in the
+   * UI (masked input). Empty until configured.
+   */
+  readonly bridgeToken: string;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   setTheme: (theme: Theme) => void;
@@ -82,6 +99,8 @@ interface PreferencesStore {
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
+  setScannerBeep: (enabled: boolean) => void;
+  setScannerHaptics: (enabled: boolean) => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -89,6 +108,8 @@ interface PreferencesStore {
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
   setKioskMode: (kioskMode: boolean) => void;
+  setBridgeUrl: (url: string) => void;
+  setBridgeToken: (token: string) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -101,6 +122,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
+      scannerBeep: true,
+      scannerHaptics: true,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -108,6 +131,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
       kioskMode: false,
+      bridgeUrl: '',
+      bridgeToken: '',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       setTheme: (theme) => set({ theme }),
@@ -117,6 +142,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
       setScannerSymbology: (symbology) =>
         set({ scannerSymbology: normaliseSymbology(symbology) }),
+      setScannerBeep: (scannerBeep) => set({ scannerBeep }),
+      setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) =>
@@ -129,6 +156,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),
       setKioskMode: (kioskMode) => set({ kioskMode }),
+      setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
+      setBridgeToken: (bridgeToken) => set({ bridgeToken }),
     }),
     { name: 'gubbins:preferences' },
   ),

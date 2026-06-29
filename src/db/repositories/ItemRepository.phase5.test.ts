@@ -121,6 +121,34 @@ describe('ItemRepository — weighted capabilities (spec §4)', () => {
       /suspended/,
     );
   });
+
+  it('lists the distinct capability vocabulary, busiest key first, with value kinds', async () => {
+    const other = await items.create({ name: 'ESP32' });
+    await items.setCapability(itemId, { key: 'voltage', value: '5' }); // numeric
+    await items.setCapability(other.id, { key: 'voltage', value: '3.3' }); // numeric, same key
+    await items.setCapability(itemId, { key: 'package', value: 'TO-220' }); // text only
+
+    const page = await items.listCapabilityKeys();
+    expect(page.rows.map((r) => r.key)).toEqual(['voltage', 'package']); // busiest first
+    expect(page.rows[0]).toMatchObject({
+      key: 'voltage',
+      itemCount: 2,
+      hasNumericValues: true,
+      hasTextValues: false,
+    });
+    expect(page.rows[1]).toMatchObject({
+      key: 'package',
+      itemCount: 1,
+      hasNumericValues: false,
+      hasTextValues: true,
+    });
+  });
+
+  it('excludes capabilities of soft-deleted items from the vocabulary', async () => {
+    await items.setCapability(itemId, { key: 'voltage', value: '5' });
+    await items.softDelete(itemId);
+    expect((await items.listCapabilityKeys()).rows).toHaveLength(0);
+  });
 });
 
 describe('ItemRepository.searchByAst (spec §5.1)', () => {

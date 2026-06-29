@@ -1,0 +1,27 @@
+# Gubbins conversation sentences.
+#
+# Copy this file to your Home Assistant config directory at:
+#   <config>/custom_sentences/en/gubbins.yaml
+# then restart Home Assistant. The built-in Assist agent will match these sentences and
+# fire the GubbinsWhereIs intent (handled by the custom_components/gubbins integration),
+# which speaks the bridge's answer back.
+#
+# {item} is a wildcard, so any item name the user says is passed straight through to the
+# bridge's /where endpoint.
+language: "en"
+intents:
+  GubbinsWhereIs:
+    data:
+      - sentences:
+          - "where are my {item}"
+          - "where is my {item}"
+          - "where's my {item}"
+          - "where are the {item}"
+          - "where is the {item}"
+          - "find my {item}"
+          - "find the {item}"
+          - "how many {item} do I have"
+          - "how many {item} have I got"
+lists:
+  item:
+    wildcard: true

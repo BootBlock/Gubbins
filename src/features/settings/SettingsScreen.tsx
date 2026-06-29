@@ -222,6 +222,36 @@ export function SettingsScreen() {
             ))}
           </Select>
         </SettingRow>
+        <SettingRow
+          label="Beep on scan"
+          description="Play a short confirmation tone after each successful scan (§6.5)."
+        >
+          <Select
+            aria-label="Beep on scan"
+            data-testid="setting-scanner-beep"
+            className="h-9 w-40"
+            value={prefs.scannerBeep ? 'on' : 'off'}
+            onChange={(e) => prefs.setScannerBeep(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label="Vibrate on scan"
+          description="Give a haptic bump after each successful scan, where the device supports it."
+        >
+          <Select
+            aria-label="Vibrate on scan"
+            data-testid="setting-scanner-haptics"
+            className="h-9 w-40"
+            value={prefs.scannerHaptics ? 'on' : 'off'}
+            onChange={(e) => prefs.setScannerHaptics(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </Select>
+        </SettingRow>
       </SettingsSection>
 
       <SettingsSection icon={<ExpiryIcon />} title="Inventory &amp; lifecycle">

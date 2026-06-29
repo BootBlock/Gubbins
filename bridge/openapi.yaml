@@ -1,0 +1,1421 @@
+openapi: "3.0.3"
+info:
+  title: "Gubbins Bridge API"
+  version: "1.0.0"
+  description: "Read-only HTTP API over a Gubbins inventory snapshot, served by the local companion bridge. Every endpoint is GET-only and requires a bearer token. The unversioned paths (/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, kept so existing consumers (the Home Assistant integration) keep working unchanged."
+  license:
+    name: "UNLICENSED"
+servers:
+-
+  url: "http://127.0.0.1:8787"
+  description: "Local bridge (loopback default)."
+security:
+-
+  bearerAuth: []
+tags:
+-
+  name: "meta"
+  description: "Liveness and API description."
+-
+  name: "search"
+  description: "Relevance search and \"where is X?\"."
+-
+  name: "items"
+  description: "Browse items and look one up by id."
+-
+  name: "locations"
+  description: "Browse the locations hierarchy."
+-
+  name: "categories"
+  description: "Browse categories and their custom-field schema."
+-
+  name: "capabilities"
+  description: "Browse the queryable capability vocabulary."
+-
+  name: "writes"
+  description: "Opt-in stock mutations (off by default; enabled with GUBBINS_BRIDGE_ALLOW_WRITES=on). Each write round-trips through the same sync merge the PWA uses, so it is applied without drift on the next sync. When writes are disabled these paths return 404."
+-
+  name: "push"
+  description: "Opt-in snapshot ingest — the PWA \"push to bridge\" (off by default; enabled with GUBBINS_BRIDGE_ALLOW_PUSH=on, and only for a JSON snapshot source). Accepts the same versioned backup JSON the bridge reads from a synced folder and replaces it atomically; the watcher then re-hydrates. When push is disabled this path returns 404."
+paths:
+  /api/v1:
+    get:
+      tags:
+      - "meta"
+      summary: "API index"
+      description: "A small discovery document listing the version and available endpoints."
+      responses:
+        "200":
+          description: "The API index."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiIndex"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/openapi.json:
+    get:
+      tags:
+      - "meta"
+      summary: "This OpenAPI document"
+      responses:
+        "200":
+          description: "The OpenAPI 3 description of this API."
+          content:
+            application/json:
+              schema:
+                type: "object"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/health:
+    get:
+      tags:
+      - "meta"
+      summary: "Liveness and a cheap snapshot summary"
+      responses:
+        "200":
+          description: "Health summary."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                ok: true
+                itemCount: 4
+                snapshotGeneratedAt: "2025-06-27T06:13:20.000Z"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/search:
+    get:
+      tags:
+      - "search"
+      summary: "Relevance search (top-N, not paginated)"
+      description: "Returns up to a hard ceiling of 25 best matches as compact item DTOs. For browsing all items with pagination, use GET /api/v1/items instead."
+      parameters:
+      -
+        name: "q"
+        in: "query"
+        required: true
+        description: "Search query. Accepts the app's full grammar (field:value, cap:key>n, AND/OR/parens) as well as a casual phrase like \"M3 bolt\". Max 200 characters."
+        schema:
+          type: "string"
+          maxLength: 200
+        example: "M3 bolt"
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Max results, clamped to [1, 25]. Defaults to 5."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 25
+          default: 5
+      responses:
+        "200":
+          description: "The matches."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/where:
+    get:
+      tags:
+      - "search"
+      summary: "\"Where is X?\" — matches with per-location breakdown + a spoken sentence"
+      parameters:
+      -
+        name: "q"
+        in: "query"
+        required: true
+        description: "Search query. Accepts the app's full grammar (field:value, cap:key>n, AND/OR/parens) as well as a casual phrase like \"M3 bolt\". Max 200 characters."
+        schema:
+          type: "string"
+          maxLength: 200
+        example: "M3 bolt"
+      responses:
+        "200":
+          description: "The enriched answer."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhereIsResult"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items:
+    get:
+      tags:
+      - "items"
+      summary: "Browse items (paginated)"
+      parameters:
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Page size, clamped to [1, 100]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          default: 50
+      -
+        name: "offset"
+        in: "query"
+        required: false
+        description: "Zero-based row offset. Defaults to 0."
+        schema:
+          type: "integer"
+          minimum: 0
+          default: 0
+      -
+        name: "location"
+        in: "query"
+        required: false
+        description: "Filter to items whose home location is this location id."
+        schema:
+          type: "string"
+      -
+        name: "category"
+        in: "query"
+        required: false
+        description: "Filter to items in this category id."
+        schema:
+          type: "string"
+      -
+        name: "includeInactive"
+        in: "query"
+        required: false
+        description: "Include soft-deleted items when \"true\". Defaults to active only."
+        schema:
+          type: "boolean"
+          default: false
+      responses:
+        "200":
+          description: "A page of results."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "data"
+                - "pagination"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/ItemSummary"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}:
+    get:
+      tags:
+      - "items"
+      summary: "Look up one item by id (with placements and capabilities)"
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "The item."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemDetail"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}/adjust-quantity:
+    post:
+      tags:
+      - "writes"
+      summary: "Adjust a DISCRETE item’s quantity by a signed delta (check-in / check-out)"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the item’s home-location stock and logs it, exactly as the app does, then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              required:
+              - "delta"
+              properties:
+                delta:
+                  type: "number"
+                  description: "Whole-number change; negative to check out."
+                  example: -1
+                note:
+                  type: "string"
+                  nullable: true
+                  maxLength: 500
+                  description: "Optional note recorded in the activity log."
+      responses:
+        "200":
+          description: "The updated item."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/{id}/adjust-gauge:
+    post:
+      tags:
+      - "writes"
+      summary: "Adjust a CONSUMABLE_GAUGE item’s net value by a signed delta"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a signed delta to the gauge’s current net value (clamped to [0, capacity]) and records it as a net-value delta, which the PWA replays through the §7.3 Delta-CRDT on its next sync."
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The item id."
+        schema:
+          type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              required:
+              - "delta"
+              properties:
+                delta:
+                  type: "number"
+                  description: "Signed change to the net value (e.g. -45 for 45 consumed)."
+                  example: -1
+                note:
+                  type: "string"
+                  nullable: true
+                  maxLength: 500
+                  description: "Optional note recorded in the activity log."
+      responses:
+        "200":
+          description: "The updated item."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/snapshot:
+    post:
+      tags:
+      - "push"
+      summary: "Replace the served snapshot (the PWA \"push to bridge\")"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_PUSH=on, JSON source only); returns 404 when push is disabled or the source is a raw .sqlite. Accepts the same versioned backup JSON the PWA writes to a synced folder, validates it with the format-version guard, and writes it to the snapshot path atomically. The watcher then re-hydrates it through the normal path, so subsequent reads reflect the pushed data. The body is capped at GUBBINS_BRIDGE_MAX_PUSH_BYTES (default 64 MiB)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              description: "A Gubbins versioned backup/sync snapshot (the bytes produced by the PWA’s snapshotToBackupJson). At minimum it carries a numeric formatVersion."
+              required:
+              - "formatVersion"
+              properties:
+                formatVersion:
+                  type: "integer"
+                  example: 3
+                generatedAt:
+                  type: "integer"
+                  description: "UNIX-ms."
+                  example: 1751004800000
+      responses:
+        "200":
+          description: "The snapshot was accepted and published."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotAccepted"
+              example:
+                ok: true
+                formatVersion: 3
+                generatedAt: 1751004800000
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: "The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/locations:
+    get:
+      tags:
+      - "locations"
+      summary: "Browse locations (paginated)"
+      parameters:
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Page size, clamped to [1, 100]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          default: 50
+      -
+        name: "offset"
+        in: "query"
+        required: false
+        description: "Zero-based row offset. Defaults to 0."
+        schema:
+          type: "integer"
+          minimum: 0
+          default: 0
+      responses:
+        "200":
+          description: "A page of results."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "data"
+                - "pagination"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/Location"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/locations/{id}:
+    get:
+      tags:
+      - "locations"
+      summary: "Look up one location by id"
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The location id."
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "The location."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Location"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/categories:
+    get:
+      tags:
+      - "categories"
+      summary: "Browse categories (paginated)"
+      parameters:
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Page size, clamped to [1, 100]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          default: 50
+      -
+        name: "offset"
+        in: "query"
+        required: false
+        description: "Zero-based row offset. Defaults to 0."
+        schema:
+          type: "integer"
+          minimum: 0
+          default: 0
+      responses:
+        "200":
+          description: "A page of results."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "data"
+                - "pagination"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/CategorySummary"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/categories/{id}:
+    get:
+      tags:
+      - "categories"
+      summary: "Look up one category by id (with its custom-field schema)"
+      parameters:
+      -
+        name: "id"
+        in: "path"
+        required: true
+        description: "The category id."
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "The category."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryDetail"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: "Resource not found."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/capabilities:
+    get:
+      tags:
+      - "capabilities"
+      summary: "Browse the queryable capability vocabulary (paginated)"
+      description: "The distinct capability keys across active inventory, busiest first — the keys you can filter on with cap:<key> in a search query."
+      parameters:
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Page size, clamped to [1, 100]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          default: 50
+      -
+        name: "offset"
+        in: "query"
+        required: false
+        description: "Zero-based row offset. Defaults to 0."
+        schema:
+          type: "integer"
+          minimum: 0
+          default: 0
+      responses:
+        "200":
+          description: "A page of results."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "data"
+                - "pagination"
+                properties:
+                  data:
+                    type: "array"
+                    items:
+                      $ref: "#/components/schemas/CapabilityKey"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: "http"
+      scheme: "bearer"
+      description: "The shared GUBBINS_BRIDGE_TOKEN, sent as \"Authorization: Bearer <token>\"."
+  schemas:
+    Error:
+      type: "object"
+      required:
+      - "error"
+      properties:
+        error:
+          type: "object"
+          required:
+          - "code"
+          - "message"
+          properties:
+            code:
+              type: "string"
+              enum:
+              - "bad_request"
+              - "unauthorized"
+              - "not_found"
+              - "method_not_allowed"
+              - "too_many_requests"
+              - "snapshot_unavailable"
+              - "unprocessable"
+              - "payload_too_large"
+              - "internal_error"
+            message:
+              type: "string"
+    Pagination:
+      type: "object"
+      required:
+      - "limit"
+      - "offset"
+      - "count"
+      - "hasMore"
+      properties:
+        limit:
+          type: "integer"
+          description: "Effective page size after clamping."
+        offset:
+          type: "integer"
+          description: "Zero-based offset of the first row."
+        count:
+          type: "integer"
+          description: "Rows returned in this page (≤ limit)."
+        hasMore:
+          type: "boolean"
+          description: "True when a further page may exist."
+    ApiIndex:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          example: "Gubbins Bridge API"
+        version:
+          type: "string"
+          example: "1.0.0"
+        openapi:
+          type: "string"
+          example: "/api/v1/openapi.json"
+        writable:
+          type: "boolean"
+          description: "Whether the opt-in write endpoints are enabled."
+        pushable:
+          type: "boolean"
+          description: "Whether the opt-in snapshot-ingest endpoint is enabled."
+        endpoints:
+          type: "array"
+          items:
+            type: "string"
+    SnapshotAccepted:
+      type: "object"
+      required:
+      - "ok"
+      - "formatVersion"
+      - "generatedAt"
+      properties:
+        ok:
+          type: "boolean"
+          example: true
+        formatVersion:
+          type: "integer"
+          example: 3
+        generatedAt:
+          type: "integer"
+          description: "UNIX-ms."
+          example: 1751004800000
+    Health:
+      type: "object"
+      required:
+      - "ok"
+      - "itemCount"
+      - "snapshotGeneratedAt"
+      properties:
+        ok:
+          type: "boolean"
+        itemCount:
+          type: "integer"
+        snapshotGeneratedAt:
+          type: "string"
+          nullable: true
+          format: "date-time"
+    ItemMatch:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "quantity"
+      - "locationName"
+      - "mpn"
+      - "manufacturer"
+      properties:
+        id:
+          type: "string"
+          example: "item-esp32"
+        name:
+          type: "string"
+          example: "ESP32 Dev Board"
+        quantity:
+          type: "integer"
+          example: 7
+        locationName:
+          type: "string"
+          nullable: true
+          example: "Shelf 2"
+        mpn:
+          type: "string"
+          nullable: true
+          example: "DEV-ESP32"
+        manufacturer:
+          type: "string"
+          nullable: true
+          example: "Synthetic Silicon Co"
+    SearchResult:
+      type: "object"
+      required:
+      - "query"
+      - "matches"
+      properties:
+        query:
+          type: "string"
+          example: "ESP32"
+        matches:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/ItemMatch"
+    Placement:
+      type: "object"
+      required:
+      - "locationId"
+      - "locationName"
+      - "quantity"
+      properties:
+        locationId:
+          type: "string"
+          example: "loc-shelf-2"
+        locationName:
+          type: "string"
+          example: "Shelf 2"
+        quantity:
+          type: "integer"
+          example: 5
+    WhereIsMatch:
+      allOf:
+      -
+        $ref: "#/components/schemas/ItemMatch"
+      -
+        type: "object"
+        required:
+        - "placements"
+        properties:
+          placements:
+            type: "array"
+            items:
+              $ref: "#/components/schemas/Placement"
+    WhereIsResult:
+      type: "object"
+      required:
+      - "query"
+      - "matches"
+      - "spoken"
+      properties:
+        query:
+          type: "string"
+          example: "ESP32"
+        matches:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/WhereIsMatch"
+        spoken:
+          type: "string"
+          example: "Your ESP32 Dev Board is spread across 2 locations: 5 on Shelf 2 and 2 in Bin 4 — 7 in total."
+    Capability:
+      type: "object"
+      required:
+      - "key"
+      - "valueNum"
+      - "valueText"
+      - "weight"
+      properties:
+        key:
+          type: "string"
+          example: "voltage"
+        valueNum:
+          type: "number"
+          nullable: true
+          example: 3.3
+        valueText:
+          type: "string"
+          nullable: true
+          example: null
+        weight:
+          type: "number"
+          example: 2
+    ItemSummary:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "quantity"
+      - "locationId"
+      - "locationName"
+      - "categoryId"
+      - "mpn"
+      - "manufacturer"
+      - "trackingMode"
+      - "isActive"
+      properties:
+        id:
+          type: "string"
+          example: "item-m3-bolt"
+        name:
+          type: "string"
+          example: "M3 x 10 Hex Bolt"
+        quantity:
+          type: "integer"
+          example: 42
+        locationId:
+          type: "string"
+          example: "loc-drawer-a"
+        locationName:
+          type: "string"
+          nullable: true
+          example: "Drawer A"
+        categoryId:
+          type: "string"
+          nullable: true
+          example: "cat-fasteners"
+        mpn:
+          type: "string"
+          nullable: true
+          example: "FAS-M3-10"
+        manufacturer:
+          type: "string"
+          nullable: true
+          example: "Acme Fasteners"
+        trackingMode:
+          type: "string"
+          enum:
+          - "DISCRETE"
+          - "SERIALISED"
+          example: "DISCRETE"
+        isActive:
+          type: "boolean"
+          example: true
+    ItemDetail:
+      allOf:
+      -
+        $ref: "#/components/schemas/ItemSummary"
+      -
+        type: "object"
+        required:
+        - "placements"
+        - "capabilities"
+        properties:
+          description:
+            type: "string"
+            nullable: true
+          categoryName:
+            type: "string"
+            nullable: true
+            example: "Fasteners"
+          unitCost:
+            type: "number"
+            nullable: true
+          condition:
+            type: "string"
+            nullable: true
+          serialNo:
+            type: "integer"
+            nullable: true
+          parentId:
+            type: "string"
+            nullable: true
+          expiryDate:
+            type: "integer"
+            nullable: true
+          batchNumber:
+            type: "string"
+            nullable: true
+          lotNumber:
+            type: "string"
+            nullable: true
+          createdAt:
+            type: "integer"
+          updatedAt:
+            type: "integer"
+          placements:
+            type: "array"
+            items:
+              $ref: "#/components/schemas/Placement"
+          capabilities:
+            type: "array"
+            items:
+              $ref: "#/components/schemas/Capability"
+    Location:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "parentId"
+      - "isSystem"
+      - "description"
+      - "color"
+      - "itemCount"
+      properties:
+        id:
+          type: "string"
+          example: "loc-drawer-a"
+        name:
+          type: "string"
+          example: "Drawer A"
+        parentId:
+          type: "string"
+          nullable: true
+          example: null
+        isSystem:
+          type: "boolean"
+          example: false
+        description:
+          type: "string"
+          nullable: true
+        color:
+          type: "string"
+          nullable: true
+        itemCount:
+          type: "integer"
+          example: 2
+    CategoryField:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "fieldType"
+      - "options"
+      - "isRequired"
+      - "defaultValue"
+      - "position"
+      properties:
+        id:
+          type: "string"
+        name:
+          type: "string"
+          example: "Voltage"
+        fieldType:
+          type: "string"
+          example: "TEXT"
+        options:
+          type: "array"
+          items:
+            type: "string"
+          nullable: true
+        isRequired:
+          type: "boolean"
+        defaultValue:
+          type: "string"
+          nullable: true
+        position:
+          type: "integer"
+    CategorySummary:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "fieldCount"
+      properties:
+        id:
+          type: "string"
+          example: "cat-electronics"
+        name:
+          type: "string"
+          example: "Electronics"
+        fieldCount:
+          type: "integer"
+          example: 0
+    CategoryDetail:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "fields"
+      properties:
+        id:
+          type: "string"
+          example: "cat-electronics"
+        name:
+          type: "string"
+          example: "Electronics"
+        fields:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/CategoryField"
+    CapabilityKey:
+      type: "object"
+      required:
+      - "key"
+      - "itemCount"
+      - "hasNumericValues"
+      - "hasTextValues"
+      properties:
+        key:
+          type: "string"
+          example: "voltage"
+        itemCount:
+          type: "integer"
+          example: 1
+        hasNumericValues:
+          type: "boolean"
+          example: true
+        hasTextValues:
+          type: "boolean"
+          example: false

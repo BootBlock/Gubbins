@@ -2402,6 +2402,28 @@ try {
     );
   });
 
+  // --- Phase 57: mutable scanner feedback (§6.5) -------------------------------
+  // The beep + haptic confirmation fires on every scan and is now user-mutable.
+  // Prove the Settings controls persist both flags, then restore the defaults.
+  await step('persists the mutable scanner beep/haptic preferences (§6.5)', async () => {
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('setting-scanner-beep').selectOption('off');
+    await page.getByTestId('setting-scanner-haptics').selectOption('off');
+    const stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.scannerBeep !== false || stored?.state?.scannerHaptics !== false) {
+      throw new Error(
+        `scanner feedback not persisted (beep=${stored?.state?.scannerBeep}, haptics=${stored?.state?.scannerHaptics})`,
+      );
+    }
+    // Restore the defaults (both on) so later/mobile scan steps are unaffected.
+    await page.getByTestId('setting-scanner-beep').selectOption('on');
+    await page.getByTestId('setting-scanner-haptics').selectOption('on');
+    await expectSelectValue(page.getByTestId('setting-scanner-beep'), 'on', 'Beep on scan');
+    await expectSelectValue(page.getByTestId('setting-scanner-haptics'), 'on', 'Vibrate on scan');
+  });
+
   await step('bounds the virtualised list memory: a deep scroll trims then refills pages (§2.1, Phase 37)', async () => {
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });

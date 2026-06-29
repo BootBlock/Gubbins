@@ -55,6 +55,10 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
   const locations = useLocations();
   const locationRows = locations.data?.rows ?? [];
   const symbology = usePreferencesStore((s) => s.scannerSymbology);
+  // §6.5 scan confirmation is user-mutable (quiet workshops, shared spaces, sensory
+  // preference). Read both flags so a successful scan honours the current settings.
+  const beepEnabled = usePreferencesStore((s) => s.scannerBeep);
+  const hapticsEnabled = usePreferencesStore((s) => s.scannerHaptics);
 
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
@@ -88,16 +92,17 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
         return;
       }
       setNotice(null);
+      const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
       if (state.mode === 'CONTINUOUS') {
         const added = queue.offer(item.id, item.name);
-        if (added) feedback.current.confirm();
+        if (added) feedback.current.confirm(confirmOpts);
       } else {
-        feedback.current.confirm();
+        feedback.current.confirm(confirmOpts);
         dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view
         setDiscreteResult(item);
       }
     },
-    [state.mode, queue],
+    [state.mode, queue, beepEnabled, hapticsEnabled],
   );
 
   useScanner({

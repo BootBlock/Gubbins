@@ -1,0 +1,18 @@
+# The repo-root .gitignore already covers node_modules, dist, .env, *.tsbuildinfo.
+# These are bridge-local belt-and-braces so nothing sensitive can slip in here.
+
+node_modules/
+dist/
+
+# Never commit a real exported snapshot or database — only the synthetic fixture under
+# src/fixtures/ is allowed in git. Put real snapshots you test against in local/.
+local/
+*.sqlite
+*.db
+gubbins-sync.json
+
+# Local-only deployment config that may carry a token or a real path. The committed
+# examples (.env.example, gubbins-bridge.service) hold placeholders only; a real
+# *.env environment file lives outside the repo (e.g. /etc/gubbins-bridge.env).
+*.env
+!.env.example

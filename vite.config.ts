@@ -2,6 +2,7 @@
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -125,5 +126,11 @@ export default defineConfig({
     // node:sqlite driver runs correctly under worker_threads). Per-file module
     // isolation (Vitest's default) is preserved, so no global state leaks.
     pool: 'threads',
+    // The companion bridge (`bridge/`) ships its own Vitest config — a Node
+    // environment and Node >= 23.6 for `node:sqlite` + type-stripping — and is run
+    // as a separate CI job (`bridge/vitest.config.ts`). Exclude it here so the app
+    // suite (happy-dom, Node 20) never sweeps the bridge's Node-only tests, which
+    // would fail under the wrong environment.
+    exclude: [...configDefaults.exclude, 'bridge/**'],
   },
 });

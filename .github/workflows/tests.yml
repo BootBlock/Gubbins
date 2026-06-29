@@ -1,0 +1,62 @@
+name: Tests
+
+# Runs the unit tests on every push to main and on pull requests. Two jobs: the app suite
+# (root Vitest config) and the bridge suite (its own Node-only config + a type-check). Both
+# need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`
+# (Node >= 22.5), and the bridge additionally runs TypeScript directly via Node's built-in
+# type-stripping (Node >= 23.6) — so both jobs pin Node 24.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least-privilege: the tests only need to read the checkout.
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # The app's `:memory:` test driver uses `node:sqlite` (Node >= 22.5), so the
+          # test job needs a recent Node even though the shipped PWA runs in the browser.
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:run
+
+  bridge:
+    name: Bridge unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # The bridge has no build step — it runs TypeScript directly, which needs
+          # Node >= 23.6 for unflagged type-stripping and node:sqlite. It has no deps
+          # of its own and borrows the repo-root toolchain (Vitest/TypeScript).
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies (repo-root toolchain)
+        run: npm ci
+
+      - name: Type-check the bridge
+        run: npx tsc --noEmit -p bridge/tsconfig.json
+
+      - name: Run bridge tests
+        run: npx vitest run --config bridge/vitest.config.ts

@@ -1,0 +1,52 @@
+# Example systemd unit for the Gubbins bridge — a read-only inventory query service.
+#
+# This is a template; adjust the paths and the user to your install. Setup (as root):
+#
+#   1. Put a Gubbins checkout somewhere stable, e.g. /opt/gubbins, owned by a dedicated
+#      unprivileged user (e.g. `gubbins`). Node ≥ 23.6 must be on PATH (/usr/bin/node).
+#   2. Create /etc/gubbins-bridge.env from bridge/.env.example with your real
+#      GUBBINS_BRIDGE_TOKEN and GUBBINS_SNAPSHOT_PATH. It holds the bearer token, so:
+#         chown root:gubbins /etc/gubbins-bridge.env && chmod 640 /etc/gubbins-bridge.env
+#      (Never commit this file. Set GUBBINS_BRIDGE_HOST=0.0.0.0 in it only if Home
+#      Assistant runs on another machine and needs LAN access.)
+#   3. Copy this file to /etc/systemd/system/gubbins-bridge.service.
+#   4. systemctl daemon-reload && systemctl enable --now gubbins-bridge
+#   5. journalctl -u gubbins-bridge -f   # logs never contain the token or any item data
+#
+[Unit]
+Description=Gubbins read-only inventory query bridge
+Documentation=https://github.com/BootBlock/Gubbins/tree/main/bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# A dedicated, unprivileged account that can READ the snapshot folder. Never run as root.
+User=gubbins
+Group=gubbins
+WorkingDirectory=/opt/gubbins
+ExecStart=/usr/bin/node bridge/serve.mjs
+# Token + snapshot path live here (chmod 640, never committed), not in this unit file.
+EnvironmentFile=/etc/gubbins-bridge.env
+Restart=on-failure
+RestartSec=5
+
+# Hardening — the bridge only needs to READ the snapshot and listen on a TCP socket.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+# Note: leave W^X off — V8 (Node's engine) needs writable+executable JIT pages.
+MemoryDenyWriteExecute=false
+# If your snapshot lives outside the (read-only) checkout — e.g. a NAS mount — grant the
+# service read access to just that directory:
+#   ReadOnlyPaths=/mnt/nas/gubbins
+
+[Install]
+WantedBy=multi-user.target

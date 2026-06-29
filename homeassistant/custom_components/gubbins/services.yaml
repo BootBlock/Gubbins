@@ -1,0 +1,44 @@
+# Read-only search against the Gubbins bridge. Returns the matched items as response
+# data (use response_variable in a script/automation, or "Call service" in Developer
+# Tools to see the result). It never modifies inventory.
+search:
+  fields:
+    query:
+      required: true
+      example: "ESP32"
+      selector:
+        text:
+    limit:
+      required: false
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 25
+          mode: box
+
+# Opt-in stock check-in / check-out. This is the ONLY service that changes inventory, and it
+# works only when the bridge is started with GUBBINS_BRIDGE_ALLOW_WRITES=on (otherwise it errors
+# with "writes disabled"). The change round-trips through the app's own sync merge, so the PWA
+# applies it conflict-free on its next sync. Use a negative delta to check stock out, positive to
+# check it in. item_id is the Gubbins record id (find it via the search service or /api/v1).
+adjust_quantity:
+  fields:
+    item_id:
+      required: true
+      example: "item-esp32"
+      selector:
+        text:
+    delta:
+      required: true
+      example: -1
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          mode: box
+    note:
+      required: false
+      example: "Checked out for the workshop"
+      selector:
+        text:
