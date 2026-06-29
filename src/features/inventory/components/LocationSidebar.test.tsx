@@ -11,7 +11,7 @@ const spies = vi.hoisted(() => ({
   del: vi.fn(),
 }));
 vi.mock('../mutations', () => ({
-  useDeleteLocation: () => ({ mutate: spies.del }),
+  useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateLocation: () => ({ mutate: spies.update, isPending: false }),
 }));
@@ -48,8 +48,8 @@ const tree: LocationTreeNode[] = [
   node(
     'workshop',
     'Workshop',
-    [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')])],
-    { color: 'teal', description: 'Main bench area' },
+    [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')], { itemCount: 2 })],
+    { color: 'teal', description: 'Main bench area', itemCount: 5 },
   ),
   node('unassigned', 'Unassigned', [], { isSystem: true }),
 ];
@@ -177,6 +177,45 @@ describe('LocationSidebar — accessible APG tree', () => {
     renderSidebar();
     expect(screen.queryByRole('button', { name: 'Edit Unassigned' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete Unassigned' })).toBeNull();
+  });
+
+  it('deletes an empty location immediately, with no confirmation prompt', () => {
+    renderSidebar();
+    // Reveal the empty Drawer (itemCount 0) and delete it via its button.
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Drawer' }));
+    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();
+  });
+
+  it('asks for confirmation before deleting a location that still holds items', () => {
+    renderSidebar();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Workshop' }));
+    // Nothing deleted yet — the confirmation dialog stands in the way.
+    expect(spies.del).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
+    expect(dialog.textContent).toContain('5 items');
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(spies.del).toHaveBeenCalledWith('workshop', expect.anything());
+  });
+
+  it('cancelling the confirmation leaves the location untouched', () => {
+    renderSidebar();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Workshop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(spies.del).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();
+  });
+
+  it('the Delete key also routes a non-empty location through confirmation', () => {
+    renderSidebar();
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    workshop.focus();
+    fireEvent.keyDown(workshop, { key: 'Delete' });
+    expect(spies.del).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Delete location?' })).toBeTruthy();
   });
 
   it('tints a coloured location name with its swatch class', () => {

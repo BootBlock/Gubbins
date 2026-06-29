@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Button, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Modal, Spinner, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
   AddIcon,
   ChevronDownIcon,
@@ -60,6 +60,14 @@ export function LocationSidebar({
   // the one being renamed inline (F2). They are deliberately separate affordances.
   const [editLocation, setEditLocation] = useState<LocationWithCount | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  // A non-empty location pending a delete confirmation. Empty locations delete
+  // straight away; only a location that still holds items prompts first, since
+  // deleting it silently re-parents those items to Unassigned (spec §4).
+  const [confirmDelete, setConfirmDelete] = useState<{
+    id: string;
+    name: string;
+    itemCount: number;
+  } | null>(null);
   const deleteLocation = useDeleteLocation();
   const updateLocation = useUpdateLocation();
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
@@ -95,6 +103,31 @@ export function LocationSidebar({
     updateLocation.mutate({ id, input: { name } });
   };
 
+  // Focus retreats to "All items" before a deleted row leaves the tree.
+  const retreatFocusToAllItems = () => {
+    setFocusedId(ALL_ITEMS_ID);
+    rowRefs.current.get(ALL_ITEMS_ID)?.focus();
+  };
+
+  // Either delete an empty location outright, or open the confirmation dialog when
+  // it still holds items (so re-parenting them to Unassigned is never a surprise).
+  const requestDelete = (id: string, name: string, itemCount: number) => {
+    if (itemCount > 0) {
+      setConfirmDelete({ id, name, itemCount });
+      return;
+    }
+    retreatFocusToAllItems();
+    deleteLocation.mutate(id);
+  };
+
+  const confirmDeleteNow = () => {
+    if (!confirmDelete) return;
+    retreatFocusToAllItems();
+    deleteLocation.mutate(confirmDelete.id, {
+      onSuccess: () => setConfirmDelete(null),
+    });
+  };
+
   // The flattened visible rows, in render order — fed verbatim to the keyboard maths.
   const rowMeta: TreeRow[] = [
     { id: ALL_ITEMS_ID, level: 1, expandable: false, expanded: false, deletable: false },
@@ -128,12 +161,11 @@ export function LocationSidebar({
         // F2 begins an inline rename of the focused (mutable) row.
         setRenamingId(action.id);
         break;
-      case 'delete':
-        // Focus retreats to "All items" before the deleted row leaves the tree.
-        setFocusedId(ALL_ITEMS_ID);
-        rowRefs.current.get(ALL_ITEMS_ID)?.focus();
-        deleteLocation.mutate(action.id);
+      case 'delete': {
+        const target = flat.find((loc) => loc.id === action.id);
+        if (target) requestDelete(target.id, target.name, target.itemCount);
         break;
+      }
     }
   };
 
@@ -187,6 +219,40 @@ export function LocationSidebar({
           locations={flat}
         />
       ) : null}
+
+      <Modal
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        title="Delete location?"
+        description={
+          confirmDelete
+            ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} item${
+                confirmDelete.itemCount === 1 ? '' : 's'
+              }. Deleting it will move ${
+                confirmDelete.itemCount === 1 ? 'it' : 'them'
+              } to Unassigned.`
+            : undefined
+        }
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setConfirmDelete(null)}
+            disabled={deleteLocation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={confirmDeleteNow}
+            disabled={deleteLocation.isPending}
+            data-testid="confirm-delete-location"
+          >
+            {deleteLocation.isPending ? <Spinner /> : <DeleteIcon />}
+            Delete location
+          </Button>
+        </div>
+      </Modal>
     </aside>
   );
 
@@ -217,7 +283,7 @@ export function LocationSidebar({
           onRenameCancel={() => endRename(node.id)}
           onEdit={node.isSystem ? undefined : () => setEditLocation(node)}
           editLabel={`Edit ${node.name}`}
-          onDelete={node.isSystem ? undefined : () => deleteLocation.mutate(node.id)}
+          onDelete={node.isSystem ? undefined : () => requestDelete(node.id, node.name, node.itemCount)}
           deleteLabel={`Delete ${node.name}`}
         />,
       );
