@@ -90,6 +90,16 @@
   --loc-pink: oklch(0.58 0.16 350);
   --loc-slate: oklch(0.52 0.03 255);
 
+  /*
+   * Decorative starfield (About screen). Theme-aware so the field reads on either
+   * surface: on the near-white light theme the stars are *dark* dots; the .dark
+   * block flips them to a cool near-white. `--star-flare` tints the occasional
+   * larger "lens-flare" star's glow and crossed light streaks. Purely decorative
+   * (the layer is aria-hidden) and never the sole carrier of any information.
+   */
+  --star: oklch(0.55 0.03 281);
+  --star-flare: oklch(0.5 0.18 277);
+
   --radius: 0.65rem;
 }
 
@@ -155,6 +165,11 @@
   --loc-fuchsia: oklch(0.78 0.14 320);
   --loc-pink: oklch(0.8 0.13 350);
   --loc-slate: oklch(0.75 0.03 255);
+
+  /* Starfield, dark-theme variant — cool near-white stars and a cyan-tinted flare
+   * glow on the near-black surface (see :root for the rationale). */
+  --star: oklch(0.96 0.012 250);
+  --star-flare: oklch(0.82 0.12 215);
 }
 
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
@@ -221,6 +236,11 @@
   --color-loc-fuchsia: var(--loc-fuchsia);
   --color-loc-pink: var(--loc-pink);
   --color-loc-slate: var(--loc-slate);
+
+  /* Starfield tokens → exposed as `*-star` utilities for completeness; the
+   * .gubbins-star / .gubbins-flare classes reference the raw vars directly. */
+  --color-star: var(--star);
+  --color-star-flare: var(--star-flare);
 
   /*
    * Right-aligned "N items" hint inside the location Parent picker (and similar
@@ -458,6 +478,154 @@
 
 @utility animate-ghost {
   animation: gubbins-ghost 1.2s ease-in-out infinite;
+}
+
+/*
+ * About-screen starfield (decorative; spec §3 "Micro-interactions & Delight").
+ * A lightweight, dependency-free, compositor-only effect: every star animates
+ * opacity/transform alone (no layout or paint thrash); the layer is `contain`ed
+ * and pointer-events:none + aria-hidden; and colours come from the theme-aware
+ * --star / --star-flare tokens (dark dots on the light theme, cool near-white on
+ * dark). The reduced-motion catch-all below freezes the twinkle/pulse — the static
+ * base state is fully visible, so the field degrades to a calm, fixed sky.
+ */
+@keyframes gubbins-twinkle {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/*
+ * Gentle, seamless horizontal sway. The base (untransformed) state equals the
+ * 0%/100% keyframe — translateX(0) — so a star never "pops" when its (delayed)
+ * animation begins, and the reduced-motion static state is simply un-shifted.
+ * Amplitude / duration / delay vary per star (set inline) to give parallax drift
+ * at varying speeds.
+ */
+@keyframes gubbins-drift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(var(--drift, 16px));
+  }
+}
+
+/*
+ * Lens-flare "breathing". Scaling the core also smoothly enlarges its box-shadow
+ * halo and crossed streaks, so the glow swells rather than just fading. The
+ * endpoints match the core's base style exactly (opacity 0.85, scale 1), so the
+ * pulse is continuous — no jump when a delayed flare starts, and a clean static
+ * resting state for reduced motion.
+ */
+@keyframes gubbins-flare {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+.gubbins-starfield {
+  /* Isolate the layer's rendering and make it the containing block for its stars. */
+  contain: layout paint;
+}
+
+.gubbins-star {
+  position: absolute;
+  width: var(--s, 2px);
+  height: var(--s, 2px);
+  border-radius: 9999px;
+  background-color: var(--star);
+  opacity: 0.6; /* resting brightness — also the reduced-motion static state */
+  /* Two independent compositor timelines: opacity twinkle + horizontal drift.
+   * They touch different properties, so they compose rather than fight. */
+  animation:
+    gubbins-twinkle var(--d, 4s) ease-in-out var(--delay, 0s) infinite,
+    gubbins-drift var(--drift-d, 30s) ease-in-out var(--drift-delay, 0s) infinite;
+}
+
+/*
+ * The occasional larger star with a lens flare. Two nested elements so drift and
+ * the glow-pulse own separate transforms: the wrapper drifts horizontally, while
+ * the core scales/brightens and carries the coloured halo (box-shadow) plus the
+ * two crossed light streaks (::before/::after, length scaled to the core). The
+ * core's transform keeps translate(-50%, -50%) so it stays centred as it scales.
+ */
+.gubbins-flare {
+  position: absolute;
+  animation: gubbins-drift var(--drift-d, 38s) ease-in-out var(--drift-delay, 0s) infinite;
+}
+
+.gubbins-flare-core {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* The element *is* the soft halo: a large smooth radial gradient. Driving the
+   * glow this way (rather than a box-shadow on a ~3px dot) means the scale pulse
+   * resamples a large gradient layer, so the swell stays smooth instead of looking
+   * blocky/pixelated. */
+  width: calc(var(--s, 3px) * 11);
+  height: calc(var(--s, 3px) * 11);
+  border-radius: 9999px;
+  opacity: 0.85; /* resting state — also the reduced-motion static state */
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle closest-side,
+    color-mix(in oklab, var(--star-flare) 60%, transparent) 0%,
+    color-mix(in oklab, var(--star-flare) 26%, transparent) 42%,
+    transparent 72%
+  );
+  animation: gubbins-flare var(--d, 7s) ease-in-out var(--delay, 0s) infinite;
+}
+
+/* Two crossed light streaks, drawn as two layered gradients within one pseudo. */
+.gubbins-flare-core::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--s, 3px) * 24);
+  height: calc(var(--s, 3px) * 24);
+  transform: translate(-50%, -50%);
+  background:
+    linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in oklab, var(--star-flare) 85%, transparent),
+        transparent
+      )
+      center / 100% 1px no-repeat,
+    linear-gradient(
+        180deg,
+        transparent,
+        color-mix(in oklab, var(--star-flare) 85%, transparent),
+        transparent
+      )
+      center / 1px 100% no-repeat;
+}
+
+/* The crisp bright core, painted on top of the halo and streaks. */
+.gubbins-flare-core::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--s, 3px);
+  height: var(--s, 3px);
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  background-color: var(--star);
+  box-shadow: 0 0 calc(var(--s, 3px) * 1.6) color-mix(in oklab, var(--star) 80%, transparent);
 }
 
 /*

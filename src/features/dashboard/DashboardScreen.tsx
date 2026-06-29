@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
-import { BrandIcon, PackageIcon, ProjectIcon, CloudIcon, SettingsIcon } from '@/components/icons';
+import { BrandIcon, PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
@@ -32,7 +32,16 @@ export function DashboardScreen() {
           </h1>
           <p className="text-sm text-muted-foreground">Local-first inventory · your dashboard</p>
         </div>
-        <Tooltip content="App preferences — theme, currency, scanner, storage and more." triggerTabIndex={-1} className="ml-auto">
+        <Tooltip content="About Gubbins — version, links, author and licence." triggerTabIndex={-1} className="ml-auto">
+          <Link
+            to="/about"
+            aria-label="About"
+            className={cn(buttonVariants({ variant: 'outline', size: 'icon' }))}
+          >
+            <InfoIcon />
+          </Link>
+        </Tooltip>
+        <Tooltip content="App preferences — theme, currency, scanner, storage and more." triggerTabIndex={-1}>
           <Link
             to="/settings"
             aria-label="Settings"

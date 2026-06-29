@@ -1,10 +1,17 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+// Single-source the app version from package.json (read here so it never enters
+// the TS program / app bundle as a JSON import) and expose it via `define`.
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 /**
  * Cross-origin isolation headers (spec §2.2.6).
@@ -24,6 +31,11 @@ const crossOriginIsolationHeaders = {
 export default defineConfig({
   // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
   base: '/Gubbins/',
+
+  // Build-time constant consumed by src/lib/app-version.ts (About screen).
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
 
   plugins: [
     // Must precede @vitejs/plugin-react so generated route modules are transformed.

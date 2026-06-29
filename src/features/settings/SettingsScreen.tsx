@@ -1,12 +1,13 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Select, Surface, Tooltip, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
+import { Button, Select, Surface, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
 import {
   AppearanceIcon,
   BrandIcon,
   DarkThemeIcon,
   DatasheetIcon,
   ExpiryIcon,
+  InfoIcon,
   InstallIcon,
   KioskIcon,
   LightThemeIcon,
@@ -332,6 +333,18 @@ export function SettingsScreen() {
             <StorageIcon />
             Manage storage
           </Button>
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection icon={<InfoIcon />} title="About">
+        <SettingRow
+          label="About Gubbins"
+          description="Version, project &amp; support links, author, licence and disclaimer."
+        >
+          <Link to="/about" className={cn(buttonVariants({ variant: 'outline' }))}>
+            <InfoIcon />
+            About
+          </Link>
         </SettingRow>
       </SettingsSection>
 
