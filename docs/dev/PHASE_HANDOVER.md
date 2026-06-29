@@ -14,13 +14,13 @@
 > ✅ **What shipped (one pick, no migration).**
 > - **Coloured the Add Item location picker (Phase-54 residual).** `CreateItemDialog`'s Location field is converted from a native `<select>` (which strips colour/layout from `<option>`s) to the tinted **`LocationSelect`** combobox — the accessible WAI-ARIA select-only listbox the location **Parent** and **Move Item** pickers already use, where each row renders the location's `text-loc-*` colour swatch + right-aligned item count. It is driven by an RHF **`Controller`** (`control` from `useForm`), with options from the existing pure `buildItemLocationOptions(locations, fmt.quantity)` (`features/inventory/parent-options.ts`). Crucially it is **not** wrapped in `FormField`: that primitive names its control via an implicit `<label>`, which only names *labelable* elements — a `div[role="combobox"]` is not one — so the field is associated via a sibling `<span id={useId()}>Location</span>` + `LocationSelect labelledBy={id}`, mirroring `MoveItemDialog` exactly. A `role="alert"` sibling renders the (effectively unreachable) `locationId` validation error.
 > - **Smoke:** a `role=combobox` can't be driven by Playwright `selectOption`, so the three Add Item flows changed from `getByLabel('Location').selectOption({label})` to `getByRole('combobox',{name:'Location'}).click()` + `getByRole('option',{name}).click()`; the cycle-count flow additionally asserts the teal `Workshop` option carries `.text-loc-teal`, proving the new tint.
-> - **Deferred (not dropped):** every remaining open item is a conditional/YAGNI Backlog entry with **no live trigger** (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded WASM decoder, live distributor selector maintenance, further `aria-live`). **No mandated spec gap and no tracked location-UI residual remain.** Tracked in `docs/todo/deferred-features.md` (Phase-55 section + the Phase-54 deferral now ticked).
+> - **Deferred (not dropped):** every remaining open item is a conditional/YAGNI Backlog entry with **no live trigger** (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded WASM decoder, live distributor selector maintenance, further `aria-live`). **No mandated spec gap and no tracked location-UI residual remain.** Tracked in `docs/dev/deferred-features.md` (Phase-55 section + the Phase-54 deferral now ticked).
 
 > Protocol Alpha (§8.1.2): the incoming Phase 56 agent **must** read both the master specification
 > (`docs/todo/done/_specification.md`) and this document before writing any code, and must reuse the established
 > Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather than inventing new ones.
 > **The spec's numbered phases end at Phase 9; Phases 10+ are consolidation phases delivering the explicitly
-> *deferred-not-dropped* work in `docs/todo/deferred-features.md`.** As of Phase 55 **every enumerated consolidation
+> *deferred-not-dropped* work in `docs/dev/deferred-features.md`.** As of Phase 55 **every enumerated consolidation
 > phase (10–16) is complete, the developer-chosen Backlog items so far (P17–P53) are cleared, the last *mandated*
 > spec gap (§4 "Unlinked Local File", P53) is closed, P54 added location description + colour, and P55 cleared the
 > final location-UI residual.** **No remaining open item is a mandated spec requirement** — they are all
@@ -167,7 +167,7 @@ re-run**.
   `useFormatters`/`buildItemLocationOptions`/`LocationSelect`; `control` from `useForm`; `locationOptions` memo;
   Location field rebuilt as the `Controller` + `LocationSelect` + sibling label + alert).
 - **Smoke:** `scripts/browser-smoke.mjs` (three Add Item flows converted; one tint assertion).
-- **Docs:** `docs/todo/deferred-features.md` (Phase-54 "Colour the Add Item location picker" deferral ticked +
+- **Docs:** `docs/dev/deferred-features.md` (Phase-54 "Colour the Add Item location picker" deferral ticked +
   Phase-55 section) and this file.
 - **Unchanged:** every migration; all Repositories; `LocationSelect.tsx` / `MoveItemDialog.tsx` / `parent-options.ts`
   / `location-color.ts` (reused as-is); `protocol.ts` / `scrape-errors.ts` / the whole §9 path; the extension
@@ -185,7 +185,7 @@ Phase 55 touched no §9 protocol and no `extension/` source, so `extension/dist/
 
 ## 7. Technical debt, stubs & deferrals
 
-> Tracked in `docs/todo/deferred-features.md` — kept current. **Phase 55 ticked the Phase-54 "Colour the Add Item
+> Tracked in `docs/dev/deferred-features.md` — kept current. **Phase 55 ticked the Phase-54 "Colour the Add Item
 > location picker" deferral; no tracked location-UI residual remains.**
 
 **Remaining Backlog (all triggered conditionals — none has a live trigger today):** multi-scrape UI tray (trigger: a

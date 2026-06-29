@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Gubbins — a local-first, offline-capable PWA for tracking electronics, 3D-printing supplies, tools, and general inventory.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Joe Cox <BootBlock@users.noreply.github.com>",
   "engines": {
     "node": ">=20"

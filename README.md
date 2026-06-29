@@ -2,7 +2,7 @@
 
 A **local-first, offline-capable Progressive Web App** for tracking electronic components, 3D-printing supplies, tools, and general inventory. All data resides and is processed entirely within the user's browser/device.
 
-> Status: **Phase 1 — Project Scaffolding, PWA & WASM SQL (FTS5)** _(in progress)_
+> Status: **feature-complete** — the master specification (phases 1–9) and the full consolidation roadmap are implemented. Remaining work is trigger-gated backlog only (see `docs/dev/deferred-features.md`).
 
 ## Architecture at a glance
 
@@ -40,3 +40,7 @@ npm run test       # Vitest
 > **Cross-origin isolation:** the high-performance SQLite OPFS VFS requires `SharedArrayBuffer`, which the browser only permits under COOP/COEP. The dev server sets these headers directly; production (GitHub Pages) relies on the `coi-serviceworker` polyfill.
 
 > **Single tab:** OPFS enforces an exclusive write lock — Gubbins guards against multiple open tabs and shows a graceful overlay rather than crashing.
+
+## Licence
+
+[MIT](LICENSE) © Joe Cox
