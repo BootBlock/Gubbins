@@ -39,7 +39,7 @@
 | --- | --- |
 | SQLite WASM | `@sqlite.org/sqlite-wasm` — official build, FTS5 + **OPFS VFS** (`opfs`; the file at `/gubbins.sqlite3` **is** the raw DB). FTS5 verified at boot via `probeFts5`. |
 | Package manager | **npm** (only `package-lock.json`) |
-| Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP (via `src/sw.ts` injectManifest worker). PWA `registerType: 'autoUpdate'`; the worker `skipWaiting`/`clients.claim()`s, so new versions auto-activate + auto-reload. |
+| Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP (via `src/sw.ts` injectManifest worker). PWA `registerType: 'prompt'` (`injectRegister: null` — registered in-app via `virtual:pwa-register` in `usePwaUpdate`, so the CSP stays inline-script-free); a new worker installs but **waits** (no install-time `skipWaiting`) until the user accepts the in-app `PwaUpdatePrompt` "Reload now", which posts `SKIP_WAITING` → the worker `skipWaiting`/`clients.claim()`s → `controllerchange` reloads. No surprise mid-session reload, so unsaved in-flight work is never lost. |
 | Cloud sync | **Provider-agnostic** — strict `CloudProvider` interface; in-memory + File System Access adapters. **Still no provider SDK** in the dep tree. |
 | Conflict resolution | Row-level **LWW** + tombstones (§7.2, 180-day TTL, watermark-aware); **Delta-CRDT** gauge replay (§7.3); §7.5 orphan re-parent + cycle rejection + child-FK guard. |
 | Extension bridge | **`window.postMessage`** Content-Script bridge (§9). `SCRAPE_ERROR` is the Phase-36 seven-member set (`DOM_DRIFT`/`NETWORK_TIMEOUT`/`RATE_LIMITED`/`BLOCKED`/`NOT_FOUND`/`SERVER_ERROR`/`CHALLENGE`); `requestId`-correlated, origin+Zod-validated, silent-drop. **Untouched since P36.** |

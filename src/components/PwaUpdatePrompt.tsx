@@ -1,0 +1,61 @@
+import { useState } from 'react';
+import { Banner, Button } from '@/components/foundry';
+import { usePwaUpdate, type PwaUpdateApi } from '@/components/foundry/usePwaUpdate';
+import { RefreshIcon } from '@/components/icons';
+
+/**
+ * "A new version is ready" prompt (spec §2 installable/offline-first PWA).
+ *
+ * Gubbins updates in `prompt` mode (see vite.config.ts): a newer build installs in the
+ * background but waits — it never activates or reloads the page on its own, so the
+ * user's unsaved, in-flight work on the current page is never discarded by a deploy.
+ * When an update is waiting this surfaces a non-blocking banner; only when the user
+ * clicks "Reload now" does {@link usePwaUpdate.update} hand control to the new worker,
+ * which reloads onto the new version. Until then the current page keeps running as-is.
+ *
+ * Mounted bare in the root layout chrome, clear of the bottom-left offline pill. The
+ * update signal is read through the injectable {@link PwaUpdateApi} seam so this is
+ * component-testable with a fake.
+ */
+export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
+  const { needRefresh, update } = usePwaUpdate(api);
+  const [reloading, setReloading] = useState(false);
+
+  if (!needRefresh) return null;
+
+  async function reloadNow() {
+    setReloading(true);
+    try {
+      // Resolves into a page reload onto the new version; on the off chance it returns
+      // without navigating, drop the disabled state so the user can retry.
+      await update(true);
+    } finally {
+      setReloading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-50 mx-auto w-full max-w-md px-4">
+      <Banner
+        tone="info"
+        role="alert"
+        data-testid="pwa-update-prompt"
+        icon={<RefreshIcon aria-hidden="true" />}
+        heading="A new version is ready"
+        action={
+          <Button
+            size="sm"
+            data-testid="pwa-reload-now"
+            onClick={() => void reloadNow()}
+            disabled={reloading}
+          >
+            {reloading ? 'Reloading…' : 'Reload now'}
+          </Button>
+        }
+      >
+        Reload to get the latest update. Your saved data stays intact — finish anything
+        in progress first, then reload when you&apos;re ready.
+      </Banner>
+    </div>
+  );
+}

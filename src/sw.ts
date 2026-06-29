@@ -41,8 +41,21 @@ const INDEX_URL = 'index.html';
 const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy();
 
 sw.addEventListener('install', (event) => {
-  sw.skipWaiting();
+  // Deliberately NOT skipWaiting() here. Under the `prompt` update flow a new worker
+  // installs but stays *waiting* until the user accepts the in-app "Reload now" prompt
+  // — so a deploy never activates mid-session and never discards unsaved work. The
+  // page asks this worker to take over by posting `SKIP_WAITING` (see below).
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS)));
+});
+
+// The page (workbox-window's `messageSkipWaiting`, driven by usePwaUpdate's "Reload
+// now" action) posts `{ type: 'SKIP_WAITING' }` to hand control to this waiting worker.
+// `activate` then `clients.claim()`s, which fires `controllerchange` and reloads the
+// page onto the new version. This is vite-plugin-pwa's supported `prompt` handshake.
+sw.addEventListener('message', (event) => {
+  if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') {
+    sw.skipWaiting();
+  }
 });
 
 sw.addEventListener('activate', (event) => {
