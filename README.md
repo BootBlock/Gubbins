@@ -4,6 +4,16 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 
 > Status: **feature-complete** — the master specification (phases 1–9) and the full consolidation roadmap are implemented. Remaining work is trigger-gated backlog only (see `docs/dev/deferred-features.md`).
 
+## Use it
+
+Gubbins runs entirely in your browser — **no install or local server required**.
+
+1. Open **<https://bootblock.github.io/Gubbins/>**.
+2. Start using it. All data is stored locally on your device (in the browser's OPFS); nothing is sent to a server.
+3. *(Optional)* Click **Install** in your browser to add Gubbins as a standalone, offline-capable app.
+
+> First load registers a service worker and may refresh once — this is expected (it enables the in-browser database). Your data lives in the browser profile you use, so use the same browser to find it again.
+
 ## Features
 
 **Inventory**
@@ -95,6 +105,14 @@ npm run test       # Vitest
 > **Cross-origin isolation:** the high-performance SQLite OPFS VFS requires `SharedArrayBuffer`, which the browser only permits under COOP/COEP. The dev server sets these headers directly; production (GitHub Pages) relies on the `coi-serviceworker` polyfill.
 
 > **Single tab:** OPFS enforces an exclusive write lock — Gubbins guards against multiple open tabs and shows a graceful overlay rather than crashing.
+
+## Deploying (maintainers)
+
+Hosted on **GitHub Pages**, published **manually** — pushing to `main` does *not* deploy.
+
+**One-time setup:** in the repo, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**. (Pages is free for public repositories.) The repo must be named **`Gubbins`** to match `base: '/Gubbins/'` in [vite.config.ts](vite.config.ts).
+
+**To publish a new version:** open the **Actions** tab → **Deploy to GitHub Pages** → **Run workflow** (pick `main`). The workflow runs `npm run build` and deploys `dist/` to Pages; the live site updates only when you trigger it.
 
 ## AI-assisted development
 
