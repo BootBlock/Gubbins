@@ -20,6 +20,14 @@ import {
 } from 'react';
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { prefersReducedMotion } from '@/lib/env/motion';
+
+/**
+ * How long the exit animation (`animate-toast-out`, ~0.2s) plays before the toast is
+ * removed from React state. Kept marginally above the CSS duration so the final frame
+ * is painted. Skipped entirely under reduced motion (see {@link prefersReducedMotion}).
+ */
+const TOAST_EXIT_MS = 200;
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
 
@@ -36,6 +44,8 @@ export interface ToastOptions {
 
 interface ActiveToast extends ToastOptions {
   readonly id: string;
+  /** Set while the exit animation plays, just before the toast unmounts (two-phase dismiss). */
+  readonly exiting?: boolean;
 }
 
 interface ToastContextValue {
@@ -63,16 +73,64 @@ const toastVariants = cva(
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<readonly ActiveToast[]>([]);
+  // Auto-dismiss `duration` timers, keyed by toast id.
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Pending exit-animation removal timers, keyed by toast id (two-phase dismiss).
+  const exitTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
-  const dismiss = useCallback((id: string) => {
+  /** Remove a toast from state immediately and clear any timers it owns. */
+  const remove = useCallback((id: string) => {
     const timer = timers.current.get(id);
     if (timer) {
       clearTimeout(timer);
       timers.current.delete(id);
     }
+    const exitTimer = exitTimers.current.get(id);
+    if (exitTimer) {
+      clearTimeout(exitTimer);
+      exitTimers.current.delete(id);
+    }
     setToasts((current) => current.filter((t) => t.id !== id));
   }, []);
+
+  /**
+   * Begin dismissing a toast. Under full motion this is a two-phase exit: flag the toast
+   * as `exiting` so the exit animation plays, then remove it once the animation has run.
+   * Under reduced motion (or where it can't be observed) we remove immediately so an
+   * assistive-tech user never waits on a timeout for the toast to leave the live region.
+   */
+  const dismiss = useCallback(
+    (id: string) => {
+      // Cancel the auto-dismiss timer regardless of which phase we take.
+      const timer = timers.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        timers.current.delete(id);
+      }
+
+      if (prefersReducedMotion()) {
+        remove(id);
+        return;
+      }
+
+      // Already exiting? The removal timer is in flight; nothing more to do. (This also
+      // makes the dispatch below idempotent under React StrictMode's double-invocation.)
+      if (exitTimers.current.has(id)) return;
+
+      setToasts((current) =>
+        current.map((t) => (t.id === id && !t.exiting ? { ...t, exiting: true } : t)),
+      );
+
+      exitTimers.current.set(
+        id,
+        setTimeout(() => {
+          exitTimers.current.delete(id);
+          remove(id);
+        }, TOAST_EXIT_MS),
+      );
+    },
+    [remove],
+  );
 
   const show = useCallback(
     (options: ToastOptions): string => {
@@ -91,10 +149,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    const map = timers.current;
+    const auto = timers.current;
+    const exit = exitTimers.current;
     return () => {
-      for (const timer of map.values()) clearTimeout(timer);
-      map.clear();
+      for (const timer of auto.values()) clearTimeout(timer);
+      auto.clear();
+      for (const timer of exit.values()) clearTimeout(timer);
+      exit.clear();
     };
   }, []);
 
@@ -113,7 +174,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={t.id}
             role="status"
             data-testid="toast"
-            className={cn(toastVariants({ tone: t.tone }), 'w-full max-w-sm')}
+            data-exiting={t.exiting ? '' : undefined}
+            className={cn(
+              toastVariants({ tone: t.tone }),
+              'w-full max-w-sm',
+              t.exiting ? 'animate-toast-out' : 'animate-rise',
+            )}
           >
             {t.icon ? <span className="mt-0.5 shrink-0 [&_svg]:size-5">{t.icon}</span> : null}
             <div className="min-w-0 flex-1">
