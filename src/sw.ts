@@ -12,6 +12,8 @@
  * injectManifest is vite-plugin-pwa's supported mechanism for the custom fetch
  * logic header-injection requires (generateSW cannot express it).
  */
+import { buildContentSecurityPolicy } from './csp';
+
 interface PrecacheEntry {
   url: string;
   revision: string | null;
@@ -29,31 +31,14 @@ const CACHE = 'gubbins-precache-v1';
 const INDEX_URL = 'index.html';
 
 /**
- * Defence-in-depth Content-Security-Policy injected on responses in production
- * (this worker is disabled in dev, so Vite's HMR — which needs inline/eval/ws — is
- * untouched). Deliberately pragmatic for a local-first PWA rather than maximally
- * strict:
- *   - `worker-src 'self' blob:` — the SQLite database worker (the directive a
- *     foreign report-only policy was flagging).
- *   - `script-src` keeps `'unsafe-inline'` for the COOP/COEP bootstrap + the PWA
- *     registration snippet, and `'wasm-unsafe-eval'` so the SQLite WASM module can
- *     instantiate.
- *   - `connect-src 'self'` is correct while fully local; Phase 7 cloud sync will
- *     broaden it to the chosen provider's origin.
+ * Defence-in-depth Content-Security-Policy injected on responses in production (this
+ * worker is disabled in dev, so Vite's HMR — which needs inline/eval/ws — is untouched).
+ * The policy is the single source of truth in {@link buildContentSecurityPolicy}; a
+ * build-only `<meta>` form mirrors it on the very first navigation before this worker is
+ * in control. `script-src` carries **no `'unsafe-inline'`** — the app ships no inline
+ * scripts — only `'self'` + `'wasm-unsafe-eval'` for the SQLite WASM module.
  */
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "worker-src 'self' blob:",
-  "connect-src 'self'",
-  "manifest-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-].join('; ');
+const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy();
 
 sw.addEventListener('install', (event) => {
   sw.skipWaiting();

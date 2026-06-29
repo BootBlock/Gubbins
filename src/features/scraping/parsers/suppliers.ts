@@ -29,3 +29,40 @@ export const EXTENSION_HOST_PERMISSIONS: readonly string[] = [
   // SparkFun
   'https://*.sparkfun.com/*',
 ];
+
+/**
+ * The registrable supplier domains the allowlist covers, derived from
+ * {@link EXTENSION_HOST_PERMISSIONS} so the two can never drift. Each MV3 match pattern
+ * `https://*.<domain>/*` becomes the bare `<domain>`; the leading `*.` matches the apex
+ * and any subdomain (mirroring MV3 semantics).
+ */
+const ALLOWED_SUPPLIER_DOMAINS: readonly string[] = EXTENSION_HOST_PERMISSIONS.map((pattern) =>
+  pattern
+    .replace(/^https:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^\*\./, '')
+    .toLowerCase(),
+);
+
+/**
+ * Whether a scrape target is one the extension is permitted to fetch (spec §9 hardening):
+ * an absolute **https** URL whose host is — or is a subdomain of — a registered supplier
+ * domain. This is the privileged background worker's own gate, applied *before* it makes a
+ * network request, so a page that drives the bridge can never coerce it into fetching an
+ * arbitrary origin (defence-in-depth above the manifest's `host_permissions`, which the
+ * background fetch otherwise relies on alone). `http:`, `file:`, `data:`, credentials in the
+ * URL, and any non-supplier host are all rejected.
+ */
+export function isAllowedSupplierUrl(rawUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  // A userinfo component (user:pass@host) is never legitimate here and can disguise the host.
+  if (url.username.length > 0 || url.password.length > 0) return false;
+  const host = url.hostname.toLowerCase();
+  return ALLOWED_SUPPLIER_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}

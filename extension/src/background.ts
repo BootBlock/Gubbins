@@ -14,6 +14,7 @@
  */
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 import { classifyHttpStatus } from '../../src/features/scraping/scrape-errors';
+import { isAllowedSupplierUrl } from '../../src/features/scraping/parsers/suppliers';
 
 interface FetchRequest {
   kind: 'FETCH';
@@ -37,6 +38,13 @@ declare const chrome: {
 };
 
 async function fetchPage(url: string): Promise<FetchResponse> {
+  // The privileged worker's own allowlist gate (§9 hardening): only ever fetch an https
+  // URL on a registered supplier domain, so a page driving the bridge can't turn the
+  // extension into a fetch proxy for an arbitrary origin. This is defence-in-depth above
+  // the manifest's host_permissions; a rejected target is reported as a refusal (BLOCKED).
+  if (!isAllowedSupplierUrl(url)) {
+    return { ok: false, errorType: 'BLOCKED', reason: 'URL is not an allowed supplier domain.' };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {

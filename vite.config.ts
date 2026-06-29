@@ -7,6 +7,8 @@ import react from '@vitejs/plugin-react';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import type { Plugin } from 'vite';
+import { buildContentSecurityPolicy } from './src/csp';
 
 // Single-source the app version from package.json (read here so it never enters
 // the TS program / app bundle as a JSON import) and expose it via `define`.
@@ -28,6 +30,33 @@ const crossOriginIsolationHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 } as const;
 
+/**
+ * Inject a `<meta http-equiv="Content-Security-Policy">` into `index.html` at **build
+ * time only** (spec §2.2.6 hardening). The service worker sets the authoritative CSP as a
+ * response header, but it is not in control of the very first navigation; this meta covers
+ * that first-load window with the same policy (minus the directives a `<meta>` cannot
+ * express). It is `apply: 'build'` so Vite's dev server — whose HMR needs inline scripts,
+ * `eval`, and a `ws:` connection — is left completely untouched.
+ */
+function cspMetaPlugin(): Plugin {
+  return {
+    name: 'gubbins-csp-meta',
+    apply: 'build',
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: buildContentSecurityPolicy({ forMeta: true }),
+          },
+          injectTo: 'head-prepend',
+        },
+      ];
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
@@ -38,11 +67,20 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
+  build: {
+    // Vite's modulepreload polyfill ships as an *inline* <script> in index.html, which would
+    // force `script-src 'unsafe-inline'`. The app's browser baseline (OPFS, SharedArrayBuffer,
+    // BarcodeDetector) already implies native modulepreload support, so disabling the polyfill
+    // removes the only remaining inline script and lets the CSP drop 'unsafe-inline'.
+    modulePreload: { polyfill: false },
+  },
+
   plugins: [
     // Must precede @vitejs/plugin-react so generated route modules are transformed.
     tanstackRouter({ target: 'react', autoCodeSplitting: true }),
     react(),
     tailwindcss(),
+    cspMetaPlugin(),
     VitePWA({
       // injectManifest lets a single custom worker (src/sw.ts) handle BOTH
       // offline precaching (§2.4.5) and COOP/COEP header injection for static
@@ -52,7 +90,9 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // Register via an external `'self'` script (registerSW.js), not an inline snippet, so
+      // the CSP can forbid inline script entirely (see src/csp.ts).
+      injectRegister: 'script',
       injectManifest: {
         // SQLite WASM binaries are large, so lift the default 2 MiB single-file cap.
         globPatterns: ['**/*.{js,css,html,wasm,woff2,svg,ico}'],

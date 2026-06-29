@@ -11,26 +11,11 @@
     <link rel="icon" type="image/svg+xml" href="/Gubbins/icons/gubbins.svg" />
 
     <!--
-      Cross-origin isolation bootstrap (spec §2.2.6).
-      In production on a static host, the COOP/COEP headers required by the SQLite
-      OPFS VFS are supplied by the service worker (src/sw.ts). On the very first
-      visit the page is not yet isolated; once the worker takes control we reload
-      exactly once so SharedArrayBuffer becomes available. The dev server sets the
-      headers directly, so this is a no-op locally.
+      Cross-origin isolation bootstrap (spec §2.2.6). Kept in an external `'self'` file
+      (not inline) so the Content-Security-Policy can forbid inline script entirely. See
+      public/coi-bootstrap.js and src/csp.ts.
     -->
-    <script>
-      (function () {
-        if (window.crossOriginIsolated) return;
-        if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-        var KEY = 'gubbins-coi-reloaded';
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (!sessionStorage.getItem(KEY)) {
-            sessionStorage.setItem(KEY, '1');
-            window.location.reload();
-          }
-        });
-      })();
-    </script>
+    <script src="/Gubbins/coi-bootstrap.js"></script>
 
     <title>Gubbins</title>
   </head>

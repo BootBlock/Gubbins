@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXTENSION_HOST_PERMISSIONS } from './suppliers';
+import { EXTENSION_HOST_PERMISSIONS, isAllowedSupplierUrl } from './suppliers';
 import { SUPPLIER_PARSERS } from './registry';
 
 // Vitest runs from the project root, so resolve the manifest relative to cwd (the test
@@ -33,5 +33,37 @@ describe('extension host_permissions (§9 / §4 hardening)', () => {
       const covered = EXTENSION_HOST_PERMISSIONS.some((pat) => pat.includes(`.${id}.`) || pat.includes(`.${id}-`));
       expect(covered, `no host_permission covers parser "${id}"`).toBe(true);
     }
+  });
+});
+
+describe('isAllowedSupplierUrl (§9 background-fetch gate)', () => {
+  it('allows an https supplier domain and its subdomains', () => {
+    expect(isAllowedSupplierUrl('https://www.digikey.com/en/products/detail/x')).toBe(true);
+    expect(isAllowedSupplierUrl('https://digikey.com/x')).toBe(true);
+    expect(isAllowedSupplierUrl('https://uk.farnell.com/x')).toBe(true);
+    expect(isAllowedSupplierUrl('https://www.digikey.co.uk/x')).toBe(true);
+  });
+
+  it('rejects non-https schemes', () => {
+    expect(isAllowedSupplierUrl('http://www.digikey.com/x')).toBe(false);
+    expect(isAllowedSupplierUrl('file:///etc/passwd')).toBe(false);
+    expect(isAllowedSupplierUrl('data:text/html,<script>1</script>')).toBe(false);
+  });
+
+  it('rejects a non-supplier host', () => {
+    expect(isAllowedSupplierUrl('https://evil.example.com/x')).toBe(false);
+    expect(isAllowedSupplierUrl('https://localhost/x')).toBe(false);
+    expect(isAllowedSupplierUrl('https://169.254.169.254/latest/meta-data')).toBe(false);
+  });
+
+  it('is not fooled by a look-alike host that merely ends in the domain text', () => {
+    // `digikey.com.evil.test` and `notdigikey.com` must not match `digikey.com`.
+    expect(isAllowedSupplierUrl('https://digikey.com.evil.test/x')).toBe(false);
+    expect(isAllowedSupplierUrl('https://notdigikey.com/x')).toBe(false);
+  });
+
+  it('rejects a userinfo-disguised host and unparseable input', () => {
+    expect(isAllowedSupplierUrl('https://www.digikey.com@evil.test/x')).toBe(false);
+    expect(isAllowedSupplierUrl('not a url')).toBe(false);
   });
 });
