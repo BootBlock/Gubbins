@@ -31,6 +31,30 @@ seconds), so the only safe rule is to never let one in.
   at the source, and the history scrubbed — removing it in a later commit is **not**
   sufficient. Surface this immediately rather than quietly continuing.
 
+## 🌐 Public-repository hygiene (mandatory)
+
+Everything here — code, comments, commit messages, branch names, docs, and history — is
+**world-readable and permanent**. Write it as if a stranger will read it tomorrow, because
+they can.
+
+- **Stay professional and neutral.** No profanity, disparaging remarks, jokes at anyone's
+  expense, or venting in code, comments, or commit messages. No TODOs that name or blame a
+  person.
+- **No internal-only references.** Don't embed private ticket IDs, internal wiki/Jira/Slack
+  URLs, internal hostnames, server names, or other infrastructure details a stranger
+  shouldn't see. Describe the *what* and *why*, not internal plumbing.
+- **Protect everyone's privacy, not just the maintainer's.** Never commit real data about
+  any third party — customers, testers, colleagues. Fixtures and sample data must be
+  synthetic (`example.com` / `*.test`, made-up names, placeholder values).
+- **Dependency & IP hygiene.** Don't paste code from sources with an incompatible or unknown
+  licence; prefer writing it or using a properly-attributed, licence-compatible dependency.
+  Vet new dependencies (popularity, maintenance, licence) before adding them, and keep the
+  dependency surface minimal. This repo ships as `UNLICENSED` (all rights reserved) — don't
+  add headers or text implying a different licence.
+- **Keep the ignore rules tight.** Before committing a new kind of generated or local file,
+  confirm it belongs in the repo; if it's a build artefact, local cache, or could contain
+  real data, add it to `.gitignore` instead.
+
 ## ⚠️ Use design tokens, not hard-coded values
 
 Every colour and motion value in the UI must come from a **design token**, never a raw hex /
