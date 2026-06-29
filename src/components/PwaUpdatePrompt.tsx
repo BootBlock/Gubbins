@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button } from '@/components/foundry';
 import { usePwaUpdate, type PwaUpdateApi } from '@/components/foundry/usePwaUpdate';
-import { RefreshIcon } from '@/components/icons';
+import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
+import { CloseIcon, RefreshIcon } from '@/components/icons';
 
 /**
  * "A new version is ready" prompt (spec §2 installable/offline-first PWA).
@@ -13,15 +14,37 @@ import { RefreshIcon } from '@/components/icons';
  * clicks "Reload now" does {@link usePwaUpdate.update} hand control to the new worker,
  * which reloads onto the new version. Until then the current page keeps running as-is.
  *
+ * A user who isn't ready to reload can instead dismiss the banner ("remind me later"),
+ * which snoozes it for ~8h via {@link usePwaUpdateSnoozeStore} (a device-local localStorage
+ * store, mirroring saved searches — nothing synced). The snooze keeps the banner quiet for
+ * the rest of the session; a fresh page load or a genuinely *new* waiting worker (the seam's
+ * `updateAvailableSeq` ticks) clears it, so a real subsequent deploy always re-surfaces the
+ * prompt even after a previous dismissal.
+ *
  * Mounted bare in the root layout chrome, clear of the bottom-left offline pill. The
  * update signal is read through the injectable {@link PwaUpdateApi} seam so this is
  * component-testable with a fake.
  */
 export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
-  const { needRefresh, update } = usePwaUpdate(api);
+  const { needRefresh, updateAvailableSeq, update } = usePwaUpdate(api);
+  const snoozedUntil = usePwaUpdateSnoozeStore((s) => s.snoozedUntil);
+  const snooze = usePwaUpdateSnoozeStore((s) => s.snooze);
+  const surface = usePwaUpdateSnoozeStore((s) => s.surface);
   const [reloading, setReloading] = useState(false);
 
-  if (!needRefresh) return null;
+  // A brand-new waiting worker (seq increments) overrides any prior dismissal: clear the
+  // snooze so a genuine subsequent deploy re-surfaces the prompt. The ref tracks the last
+  // seen sequence so this fires only on a real increment, not on every render.
+  const prevSeqRef = useRef(updateAvailableSeq);
+  useEffect(() => {
+    if (updateAvailableSeq > prevSeqRef.current) {
+      prevSeqRef.current = updateAvailableSeq;
+      surface();
+    }
+  }, [updateAvailableSeq, surface]);
+
+  const snoozed = snoozedUntil > Date.now();
+  if (!needRefresh || snoozed) return null;
 
   async function reloadNow() {
     setReloading(true);
@@ -43,14 +66,25 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
         icon={<RefreshIcon aria-hidden="true" />}
         heading="A new version is ready"
         action={
-          <Button
-            size="sm"
-            data-testid="pwa-reload-now"
-            onClick={() => void reloadNow()}
-            disabled={reloading}
-          >
-            {reloading ? 'Reloading…' : 'Reload now'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              data-testid="pwa-reload-now"
+              onClick={() => void reloadNow()}
+              disabled={reloading}
+            >
+              {reloading ? 'Reloading…' : 'Reload now'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Dismiss update notice"
+              data-testid="pwa-dismiss"
+              onClick={() => snooze()}
+            >
+              <CloseIcon aria-hidden="true" />
+            </Button>
+          </div>
         }
       >
         Reload to get the latest update. Your saved data stays intact — finish anything

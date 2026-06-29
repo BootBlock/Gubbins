@@ -23,9 +23,18 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 
 // `self.__WB_MANIFEST` is the injection point vite-plugin-pwa replaces at build
 // time; the cast erases to exactly that token in the emitted worker.
-const PRECACHE_URLS = (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map(
-  (entry) => entry.url,
-);
+//
+// De-duplicate by URL: the injected manifest can list the same asset twice (the
+// PWA-manifest icons are emitted both by the precache glob and the webmanifest
+// `icons` injection), and `cache.addAll` REJECTS on duplicate requests
+// ("Cache.addAll(): duplicate requests") — which would abort `install` and leave the
+// worker `redundant`, so no update could ever activate. A `Set` over the URLs keeps
+// `addAll` happy while precaching exactly the same asset set.
+const PRECACHE_URLS = [
+  ...new Set(
+    (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => entry.url),
+  ),
+];
 
 const CACHE = 'gubbins-precache-v1';
 const INDEX_URL = 'index.html';
