@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Tooltip } from '@/components/foundry';
+import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { DiscreteIcon, GaugeIcon, SerialisedIcon } from '@/components/icons';
 import type { TrackingMode } from '@/db/repositories';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
@@ -22,7 +22,7 @@ const DESCRIPTIONS: Record<TrackingMode, string> = {
 export function TrackingBadge({ mode, className }: { mode: TrackingMode; className?: string }) {
   const Icon = ICONS[mode];
   return (
-    <Tooltip content={DESCRIPTIONS[mode]} triggerTabIndex={-1}>
+    <Tooltip content={DESCRIPTIONS[mode]} triggerTabIndex={-1} openDelayMs={INFO_OPEN_DELAY_MS}>
       <span
         className={cn(
           'inline-flex cursor-help items-center gap-1 rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-xs font-medium text-muted-foreground [&_svg]:size-3',

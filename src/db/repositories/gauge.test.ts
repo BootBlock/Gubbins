@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  clampNetValue,
   currentGrossWeight,
   percentageRemaining,
+  refillDelta,
+  refillNote,
+  refillToFullAmount,
   weighInNote,
   weighInToDelta,
 } from './gauge';
@@ -40,5 +44,29 @@ describe('consumable gauge maths (§4.1)', () => {
     expect(weighInNote(900, 250, 'g')).toBe(
       'Calibrated gross weight to 900g (Calculated usage: +250g)',
     );
+  });
+
+  it('clamps a net value to [0, grossCapacity]', () => {
+    expect(clampNetValue(400, 1000)).toBe(400);
+    expect(clampNetValue(-50, 1000)).toBe(0);
+    expect(clampNetValue(1200, 1000)).toBe(1000); // overfill capped at capacity
+    expect(clampNetValue(1200, 0)).toBe(1200); // mis-configured capacity: lower bound only
+  });
+
+  it('computes the amount needed to fill back to full', () => {
+    expect(refillToFullAmount(400, 1000)).toBe(600);
+    expect(refillToFullAmount(1000, 1000)).toBe(0);
+    expect(refillToFullAmount(1100, 1000)).toBe(0); // already over: never negative
+  });
+
+  it('converts a refill into the clamped applied delta', () => {
+    expect(refillDelta(600, 400, 1000)).toBe(600); // tops up exactly to full
+    expect(refillDelta(800, 400, 1000)).toBe(600); // adding past full only tops off to capacity
+    expect(refillDelta(100, 400, 1000)).toBe(100); // partial top-up
+  });
+
+  it('formats the refill ledger note', () => {
+    expect(refillNote(600, 1000, 'g')).toBe('Refilled +600g (now 1000g)');
+    expect(refillNote(0, 1000, 'g')).toBe('Refilled 0g (now 1000g)');
   });
 });

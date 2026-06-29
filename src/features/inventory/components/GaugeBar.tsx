@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { GaugeState } from '@/db/repositories';
-import { formatMeasure, gaugeTone } from './inventory-ui';
+import { useFormatters } from '@/lib/useFormatters';
+import { gaugeTone } from './inventory-ui';
 
 /**
  * Consumable-Gauge visualisation (spec §4.1.3): a fluid linear progress bar whose
@@ -10,21 +11,22 @@ import { formatMeasure, gaugeTone } from './inventory-ui';
 export function GaugeBar({ gauge, showLabels = true }: { gauge: GaugeState; showLabels?: boolean }) {
   const pct = Math.max(0, Math.min(100, gauge.percentageRemaining));
   const tone = gaugeTone(pct);
+  const fmt = useFormatters();
 
   return (
     <div className="w-full">
       {showLabels ? (
         <div className="mb-1.5 flex items-baseline justify-between text-xs">
           <span className="text-muted-foreground">
-            {formatMeasure(gauge.currentNetValue, gauge.unitOfMeasure)} /{' '}
-            {formatMeasure(gauge.grossCapacity, gauge.unitOfMeasure)}
+            {fmt.measure(gauge.currentNetValue, gauge.unitOfMeasure)} /{' '}
+            {fmt.measure(gauge.grossCapacity, gauge.unitOfMeasure)}
           </span>
           <span className={cn('font-semibold tabular-nums', tone.text)}>{Math.round(pct)}%</span>
         </div>
       ) : null}
       <div className={cn('h-2.5 w-full overflow-hidden rounded-full', tone.track)}>
         <div
-          className={cn('h-full rounded-full transition-all duration-500 ease-out', tone.fill)}
+          className={cn('h-full rounded-full transition-all duration-500 ease-emphasized', tone.fill)}
           style={{ width: `${pct}%` }}
           role="progressbar"
           aria-valuenow={Math.round(pct)}
@@ -67,7 +69,7 @@ export function GaugeRing({ gauge, size = 40 }: { gauge: GaugeState; size?: numb
         strokeLinecap="round"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
-        className={cn('stroke-current transition-all duration-500 ease-out', tone.text)}
+        className={cn('stroke-current transition-all duration-500 ease-emphasized', tone.text)}
       />
     </svg>
   );

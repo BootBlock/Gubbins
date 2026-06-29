@@ -22,23 +22,109 @@ import type { SqlStatement } from '../rpc/driver';
  * own `updated_at`, so it resolves by the same row-level LWW as the entity tables,
  * with the §7.5-style alias-text collision resolved in the reconcile engine.
  * `maintenance_schedules` (the §4.3 Tool Maintenance primitive) joined in Phase 9 —
- * it is a scalar-column, LWW-simple table carrying its own `updated_at`. The
- * remaining join/leaf tables (`item_tags`, `item_images`, attachments, BOM lines,
- * custom-field values) and the append-only `item_history` ledger are still tracked
- * for a later expansion — see `docs/todo/deferred-features.md`.
+ * it is a scalar-column, LWW-simple table carrying its own `updated_at`.
+ *
+ * Phase 11 ("sync-set expansion") brought in the remaining LWW leaf/definition tables
+ * so a backup/restore/sync is genuinely whole: `category_fields` + `item_field_values`
+ * (the §4 dynamic-schema EAV), `tags` (the dictionary), `item_images` (§4.2 — thumbnail
+ * BLOB base64-encoded into the payload, full-res OPFS bytes stay local), `item_attachments`
+ * (datasheet pointers), and `projects` + `project_bom_lines`. They all carry an
+ * `updated_at` + auto-stamp trigger, so they resolve by the same row-level LWW.
+ *
+ * The two tables WITHOUT an `updated_at` are deliberately *not* in this list — they are
+ * reconciled by bespoke rules in the engine and read/written as dedicated snapshot
+ * sections (see {@link ITEM_TAGS_TABLE} / {@link ITEM_HISTORY_TABLE}): the M:N
+ * `item_tags` join resolves by **membership** (union minus {@link itemTagEdgeId} edge
+ * tombstones), and the immutable `item_history` ledger by **union-by-id** (gated by the
+ * §7.6.3-A prune watermark). Both are tombstone/auxiliary, not LWW.
+ *
+ * Order is dependency-safe (parents before children) so a batch of UPSERTs in this
+ * order never trips a foreign key.
  */
 export const SYNC_TABLES = [
   'locations',
   'categories',
-  'items',
-  'item_aliases',
+  'category_fields', // FK → categories
+  'tags', // independent dictionary
+  'items', // FK → categories
+  'item_stock', // FK → items, locations (per-location ledger; LWW; ordered after items so its recompute trigger has the final word on items.quantity)
+  'stock_batches', // FK → items, locations (per-batch ledger, the SSOT below item_stock; ordered after it so its recompute trigger has the final word on item_stock.quantity → items.quantity)
+  'item_aliases', // FK → items
+  'item_field_values', // FK → items, category_fields
+  'item_images', // FK → items
+  'item_attachments', // FK → items
   'capabilities',
   'contacts',
   'checkouts',
-  'maintenance_schedules',
+  'projects', // independent
+  'project_bom_lines', // FK → projects, items
+  'maintenance_schedules', // FK → items
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
+
+/**
+ * The M:N `item_tags` join (composite PK `(item_id, tag_id)`, no `id`/`updated_at`).
+ * Not in {@link SYNC_TABLES} — it has no row-level timestamp, so it cannot resolve by
+ * LWW. The engine resolves it by **membership** (Phase 11): an edge is present unless a
+ * deletion tombstone exists on either side (a tombstone-wins union / 2P-set), so an
+ * unlink propagates and a re-add becomes possible only once the edge tombstone is
+ * TTL-pruned. Its tombstones reuse the `tombstones` table keyed by {@link itemTagEdgeId}.
+ */
+export const ITEM_TAGS_TABLE = 'item_tags';
+
+/**
+ * The append-only `item_history` Activity Ledger (immutable, no `updated_at`). Not in
+ * {@link SYNC_TABLES} — it reconciles by **union-by-id** (Phase 11): the same immutable
+ * event has the same UUID on every device, so a row is simply inserted where missing.
+ * The §7.6.3-A local prune watermark (`sync_meta.history_pruned_before`) keeps a device
+ * that deliberately pruned old history from re-importing it.
+ */
+export const ITEM_HISTORY_TABLE = 'item_history';
+
+/**
+ * Separator for an `item_tags` edge tombstone id. A UUID is hex + hyphens, so `|` can
+ * never appear inside one, making `${itemId}|${tagId}` an unambiguous composite key.
+ */
+const EDGE_SEP = '|';
+
+/** Composite tombstone id for an `item_tags` edge (membership deletion, §7.3/Phase 11). */
+export function itemTagEdgeId(itemId: string, tagId: string): string {
+  return `${itemId}${EDGE_SEP}${tagId}`;
+}
+
+/** Split an {@link itemTagEdgeId} back into its `(itemId, tagId)` pair. */
+export function parseItemTagEdgeId(id: string): { itemId: string; tagId: string } {
+  const sep = id.indexOf(EDGE_SEP);
+  return { itemId: id.slice(0, sep), tagId: id.slice(sep + 1) };
+}
+
+/** The INSERT-OR-REPLACE recording an `item_tags` edge deletion as a tombstone. */
+export function itemTagTombstoneStatement(itemId: string, tagId: string): SqlStatement {
+  return {
+    sql: 'INSERT OR REPLACE INTO tombstones (table_name, id) VALUES (?, ?);',
+    params: [ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId)],
+  };
+}
+
+/** Clear any stale `item_tags` edge tombstone (run when an edge is re-linked locally). */
+export function clearItemTagTombstoneStatement(itemId: string, tagId: string): SqlStatement {
+  return {
+    sql: 'DELETE FROM tombstones WHERE table_name = ? AND id = ?;',
+    params: [ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId)],
+  };
+}
+
+/**
+ * Columns excluded from the synced payload even though they exist on the local schema
+ * (§7.6.3-B). `item_images.full_res_downgraded_at` is *per-device* OPFS state — it marks
+ * that a device dropped its own local full-res file (Phase 10). Propagating it would make
+ * a peer that still holds its full-res image wrongly believe it was downgraded, so the
+ * schema dictionary and the snapshot reader both strip it.
+ */
+export const SYNC_EXCLUDED_COLUMNS: Partial<Record<SyncTable, readonly string[]>> = {
+  item_images: ['full_res_downgraded_at'],
+};
 
 export interface Tombstone {
   readonly tableName: string;

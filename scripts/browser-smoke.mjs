@@ -22,7 +22,41 @@
  * unlock the "Scrape Supplier" control, proving an invalid/foreign-origin message is
  * silently dropped, applying a trusted SCRAPE_RESULT that fills the empty MPN/price
  * fields **without** overwriting a user-edited manufacturer, and re-scraping an
- * existing item through the §4 no-overwrite review (a populated field stays put).
+ * existing item through the §4 no-overwrite review (a populated field stays put);
+ * plus the Phase 13 flow (§9 multi-scrape hardening): capturing the requestId the PWA
+ * stamps on each outbound SCRAPE_REQUEST and proving a well-formed result carrying the
+ * WRONG requestId is ignored while the correlated id fills the form;
+ * plus the Phase 10 flows: being directed from the critical storage banner into the
+ * §7.6.2 Storage Triage Dashboard (per-table OPFS breakdown), pruning old activity
+ * history through the §7.6.3 Workflow A cold-storage JSON download (which must fire
+ * before the delete), and downgrading old images (§7.6.3 Workflow B) to drop the
+ * full-resolution file while keeping the thumbnail;
+ * plus the Phase 11 flows (sync-set expansion): asserting the versioned-JSON backup now
+ * carries the widened set — the `item_tags` membership, the `item_history` ledger and
+ * base64-encoded `item_images` thumbnails (with the local-only §7.6.3-B downgrade marker
+ * held back) — and that an item's tag and image survive the full download → import →
+ * re-sync round-trip;
+ * plus the Phase 12 flows (Settings & preferences UI, §3): opening Settings from the
+ * dashboard gear and proving the theme toggle is actually applied to the document
+ * (`.dark` on <html>), that preference controls (the §4 expiry window and the §7.6.3
+ * prune window) persist to localStorage, and that the Storage Triage dashboard now has
+ * a permanent entry-point (independent of the critical/locked banner) that honours the
+ * saved default window;
+ * plus the Phase 14 flows (export/import & sync resilience, §2.7/§3/§4.5/§7): unzipping
+ * the Markdown vault to prove full-resolution images are extracted out of OPFS into
+ * /assets (§4.5), running a scoped single-item export (§4.5 granularity), and asserting
+ * the live OPFS database is a valid raw .sqlite binary that round-trips an OPFS
+ * overwrite→reread (the restore premise, §3);
+ * plus the Phase 15 flows (scanner/search/perf polish, §6.6): weighted-capability
+ * "best match" ranking (a HAS_CAPABILITY query surfaces the heavier-weighted item
+ * first), the Storage Triage image figure now being *measured* from the real on-disk
+ * OPFS files (§7.6.2), and — in a dedicated mobile-emulation context — the §2.7 weekly
+ * Full-Archive banner downloading a zip (carried-over Phase-14 residual) and the §6.6
+ * WASM scanner fallback engine resolving when the native BarcodeDetector is absent;
+ * plus the Phase 16 flows (Backlog polish, §3/§2.1): the chosen base currency
+ * propagating end-to-end (switching to USD re-renders the project BOM total via the
+ * `useFormatters` hook), and the new "System" theme tracking the emulated OS
+ * `prefers-color-scheme` live.
  * Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
@@ -124,9 +158,16 @@ const userManufacturer = 'ACME (user)';
 // Phase 9 — procurement & lifecycle logistics.
 const perishableName = `Smoke Resin ${stamp}`;
 const variantName = `Variant ${stamp}`;
+const subVariantName = `Subvar ${stamp}`;
 const drawerName = `Drawer ${stamp}`;
 const cycleItemName = `Smoke Count ${stamp}`;
+const checkoutBorrower = `Smoke Borrower ${stamp}`;
+const serialAuditName = `Smoke Serial ${stamp}`;
+const batchItemName = `Smoke Batch ${stamp}`;
+const batchNo = `LOT-${stamp}`;
 const maintScheduleName = `Lube ${stamp}`;
+const loanScheduleName = `Recalibrate ${stamp}`;
+const scopedScheduleName = `Bench calibrate ${stamp}`;
 // An expiry a few days out so it classifies as "expiring soon" (§4 / dashboard widget).
 const soonExpiry = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
 
@@ -144,6 +185,142 @@ try {
     if (!isolated) throw new Error('crossOriginIsolated is false');
     const hasSab = await page.evaluate(() => typeof SharedArrayBuffer !== 'undefined');
     if (!hasSab) throw new Error('SharedArrayBuffer unavailable');
+  });
+
+  await step('the skip-to-content link bypasses nav to the main landmark (§3 / WCAG 2.4.1)', async () => {
+    // Reset focus to the top of the document; the skip link is the first focusable
+    // element on every route, so a single Tab must land on it.
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await page.keyboard.press('Tab');
+    const onSkipLink = await page.evaluate(
+      () => document.activeElement?.textContent?.trim() === 'Skip to content',
+    );
+    if (!onSkipLink) throw new Error('first Tab did not land on the skip-to-content link');
+
+    // Activating it moves focus past the header nav to the screen's #main-content landmark.
+    await page.keyboard.press('Enter');
+    const onMain = await page.evaluate(() => {
+      const el = document.activeElement;
+      return !!el && el.id === 'main-content' && el.tagName === 'MAIN';
+    });
+    if (!onMain) throw new Error('activating the skip link did not focus the #main-content landmark');
+
+    // The inventory result-count region announces result changes politely (aria-live).
+    const hasLiveStatus = await page.evaluate(
+      () => !!document.querySelector('#main-content [role="status"][aria-live="polite"]'),
+    );
+    if (!hasLiveStatus) throw new Error('inventory status region is not an aria-live polite status');
+  });
+
+  await step('a dialog traps focus and restores it on close (§3 accessible modal)', async () => {
+    // The opener takes focus, then opens the accessible Foundry Modal.
+    const opener = page.getByRole('button', { name: 'Add item' });
+    await opener.focus();
+    await opener.click();
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.waitFor({ state: 'visible', timeout: 10000 });
+
+    // Focus moved into the dialog on open.
+    const focusInDialogOnOpen = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      return !!d && (document.activeElement === d || d.contains(document.activeElement));
+    });
+    if (!focusInDialogOnOpen) throw new Error('focus did not move into the dialog on open');
+
+    // Tabbing many times never escapes the dialog (the aria-modal trap).
+    for (let i = 0; i < 12; i += 1) await page.keyboard.press('Tab');
+    const trapped = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      return !!d && d.contains(document.activeElement);
+    });
+    if (!trapped) throw new Error('focus escaped the dialog while tabbing');
+
+    // Shift+Tab also stays trapped.
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press('Shift+Tab');
+    const stillTrapped = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      return !!d && d.contains(document.activeElement);
+    });
+    if (!stillTrapped) throw new Error('focus escaped the dialog on Shift+Tab');
+
+    // Escape closes it and returns focus to the opener.
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+    const restored = await page.evaluate(
+      () => document.activeElement?.textContent?.includes('Add item') ?? false,
+    );
+    if (!restored) throw new Error('focus was not restored to the opener on close');
+  });
+
+  await step('an invalid form submit announces & associates the field error (§3 / WCAG 3.3.1)', async () => {
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.waitFor({ state: 'visible', timeout: 10000 });
+    // Submit with an empty Name → Zod rejects and the Foundry FormField surfaces the error.
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    await dialog
+      .getByRole('alert')
+      .filter({ hasText: 'enter a name' })
+      .first()
+      .waitFor({ state: 'visible', timeout: 8000 });
+    // The Name control is marked aria-invalid and described by that announced alert.
+    const wired = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]');
+      const input = d?.querySelector('input[aria-invalid="true"]');
+      const describedby = input?.getAttribute('aria-describedby');
+      if (!describedby) return false;
+      const desc = d?.querySelector(`#${CSS.escape(describedby)}`);
+      return (
+        !!desc && desc.getAttribute('role') === 'alert' && /enter a name/i.test(desc.textContent ?? '')
+      );
+    });
+    if (!wired) throw new Error('the invalid Name field is not wired to its announced error');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+  });
+
+  await step('kiosk mode keeps the dashboard awake and contained (§3 Kiosk & Tablet)', async () => {
+    // Record every Screen Wake Lock request the app makes, on this and later loads.
+    await page.addInitScript(() => {
+      window.__wakeLockRequests = 0;
+      const wl = navigator.wakeLock;
+      if (wl && typeof wl.request === 'function') {
+        const orig = wl.request.bind(wl);
+        wl.request = (type) => {
+          window.__wakeLockRequests += 1;
+          return orig(type);
+        };
+      }
+    });
+
+    // Opt into kiosk mode via the Settings control (default is off).
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    const kiosk = page.getByTestId('setting-kiosk-mode');
+    await kiosk.waitFor({ state: 'visible', timeout: 10000 });
+    await kiosk.selectOption('on');
+
+    // The dashboard now applies the §3 touch/selection containment to its landmark…
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    const main = page.locator('main#main-content[data-kiosk="on"]');
+    await main.waitFor({ state: 'visible', timeout: 10000 });
+    const contained = await main.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return cs.touchAction.includes('pan-y') && cs.userSelect === 'none';
+    });
+    if (!contained) throw new Error('kiosk dashboard did not apply touch-action/user-select containment');
+
+    // …and requests a screen wake lock where the API exists (else degrades silently).
+    const supported = await page.evaluate(() => 'wakeLock' in navigator);
+    const requests = await page.evaluate(() => window.__wakeLockRequests ?? 0);
+    if (supported && requests < 1) throw new Error('kiosk dashboard did not request a screen wake lock');
+
+    // Turn kiosk mode back off and return to the inventory workspace for later steps.
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('setting-kiosk-mode').selectOption('off');
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
   });
 
   await step('creates a Bulk item', async () => {
@@ -201,6 +378,57 @@ try {
     await dialog.getByLabel('Parent (optional)').selectOption({ label: `Workshop ${stamp}` });
     await dialog.getByRole('button', { name: 'Create' }).click();
     await page.getByText(`Shelf ${stamp}`).waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  await step('the location tree is keyboard navigable (§3 APG tree)', async () => {
+    const tree = page.getByRole('tree', { name: 'Locations' });
+    await tree.waitFor({ state: 'visible', timeout: 8000 });
+
+    // The whole tree is a single tab stop (roving tabindex).
+    const tabStops = await page.evaluate(
+      () => document.querySelectorAll('[role="tree"] [role="treeitem"][tabindex="0"]').length,
+    );
+    if (tabStops !== 1) throw new Error(`expected one roving tab stop, found ${tabStops}`);
+
+    // Focus "All items" and arrow down into the locations — focus and the tab stop move together.
+    await tree.getByRole('treeitem', { name: 'All items' }).focus();
+    await page.keyboard.press('ArrowDown');
+    const movedIn = await page.evaluate(() => {
+      const el = document.activeElement;
+      return (
+        !!el &&
+        el.getAttribute('role') === 'treeitem' &&
+        el.getAttribute('aria-label') !== 'All items' &&
+        el.getAttribute('tabindex') === '0'
+      );
+    });
+    if (!movedIn) throw new Error('ArrowDown did not move the roving focus into the tree');
+
+    // Workshop (a top-level node) is expanded by default, so its Shelf child shows.
+    const workshop = tree.getByRole('treeitem', { name: `Workshop ${stamp}` });
+    const shelf = tree.getByRole('treeitem', { name: `Shelf ${stamp}` });
+    await shelf.waitFor({ state: 'visible', timeout: 5000 });
+    // ArrowLeft collapses it (hiding Shelf); ArrowRight expands it again.
+    await workshop.focus();
+    await page.keyboard.press('ArrowLeft');
+    await shelf.waitFor({ state: 'hidden', timeout: 5000 });
+    await workshop.focus();
+    await page.keyboard.press('ArrowRight');
+    await shelf.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Enter selects the focused location (aria-selected reflects the active filter).
+    await workshop.focus();
+    await page.keyboard.press('Enter');
+    const selected = await page.evaluate((label) => {
+      const w = [...document.querySelectorAll('[role="treeitem"]')].find(
+        (el) => el.getAttribute('aria-label') === label,
+      );
+      return w?.getAttribute('aria-selected') === 'true';
+    }, `Workshop ${stamp}`);
+    if (!selected) throw new Error('Enter did not select the focused location');
+
+    // Restore the "All items" filter so downstream steps see the whole inventory.
+    await tree.getByRole('treeitem', { name: 'All items' }).click();
   });
 
   // --- Phase 3 flows ------------------------------------------------------------
@@ -266,6 +494,64 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('shows the item Activity Log of its immutable ledger (§4, Phase 52)', async () => {
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    const log = dialog.getByTestId('activity-log');
+    await log.scrollIntoViewIfNeeded();
+    await log.waitFor({ state: 'visible', timeout: 8000 });
+    // Every item carries at least its CREATED entry; the formatter titles it "Created".
+    const entries = dialog.getByTestId('activity-log-entry');
+    if ((await entries.count()) === 0) throw new Error('Activity Log rendered no entries');
+    await dialog.getByText('Created', { exact: true }).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
+    const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
+    const datasheetUrl = `https://smoke.test/${stamp}.pdf`;
+
+    // Option B (Hybrid Pointers) must be enabled before a LOCAL_POINTER can be added.
+    // Settings is reached from the dashboard root (the Inventory screen has no gear).
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('link', { name: 'Settings' }).first().click();
+    await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 12000 });
+    await page.getByLabel('Attachment mode').selectOption('HYBRID');
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await printerCard().getByRole('button', { name: 'Item details' }).waitFor({ state: 'visible', timeout: 15000 });
+
+    // Link a local file pointer — it is stamped with *this* device's id.
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Attachment kind').selectOption('LOCAL_POINTER');
+    await dialog.getByLabel('Attachment location').fill(datasheetPath);
+    await dialog.getByRole('button', { name: 'Link datasheet' }).click();
+    await dialog.getByText(datasheetPath, { exact: false }).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+
+    // Simulate opening the synced database on a *different* device, then reload.
+    await page.evaluate(() => localStorage.setItem('gubbins:device-id', 'smoke-other-device'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await printerCard().getByRole('button', { name: 'Item details' }).waitFor({ state: 'visible', timeout: 15000 });
+
+    // The same pointer now degrades to the "Unlinked Local File" placeholder (§4).
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    const unlinked = dialog.getByTestId('attachment-unlinked');
+    await unlinked.scrollIntoViewIfNeeded();
+    await unlinked.waitFor({ state: 'visible', timeout: 8000 });
+    await dialog.getByText('Unlinked Local File', { exact: true }).first().waitFor({ state: 'visible', timeout: 8000 });
+
+    // Replace it with an external URL via the degradation flow.
+    await dialog.getByTestId('attachment-use-url').click();
+    await dialog.getByTestId('attachment-relink-input').fill(datasheetUrl);
+    await dialog.getByTestId('attachment-relink-confirm').click();
+    // The placeholder is gone and the datasheet is now a working link.
+    await unlinked.waitFor({ state: 'detached', timeout: 8000 });
+    await dialog.getByRole('link', { name: datasheetUrl }).waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
   // --- Phase 4 flows ------------------------------------------------------------
 
   /** Poll a <select>'s value (it is server-controlled via TanStack Query). */
@@ -288,9 +574,35 @@ try {
     await page.getByRole('heading', { name: 'Bill of materials' }).waitFor({ state: 'visible', timeout: 10000 });
   });
 
+  await step('creates and then deletes a throwaway project', async () => {
+    // A self-contained create→delete round-trip on a disposable project, so the main
+    // `projectName` workspace (which later steps depend on) is left untouched.
+    const throwaway = `Smoke Delete ${stamp}`;
+    await page.getByRole('button', { name: 'New project' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New project' });
+    await dialog.getByLabel('Name').fill(throwaway);
+    await dialog.getByRole('button', { name: 'Create project' }).click();
+    // Newest-first ordering means the throwaway is auto-selected; its header h2 confirms it.
+    await page.getByRole('heading', { level: 2, name: throwaway }).waitFor({ state: 'visible', timeout: 10000 });
+
+    // Delete it: the header button opens a confirm Modal, the confirm button does the deed.
+    await page.getByTestId('delete-project').click();
+    await page.getByRole('dialog', { name: 'Delete project?' }).waitFor({ state: 'visible', timeout: 5000 });
+    await page.getByTestId('delete-project-confirm').click();
+
+    // The success toast fires and the throwaway vanishes from the master list…
+    await page.getByText('Project deleted').waitFor({ state: 'visible', timeout: 8000 });
+    await page.locator('aside').getByText(throwaway).waitFor({ state: 'detached', timeout: 8000 });
+    // …and the selection falls back to the surviving project (its BOM workspace returns).
+    await page.getByRole('heading', { name: 'Bill of materials' }).waitFor({ state: 'visible', timeout: 10000 });
+  });
+
   await step('adds a manual BOM line', async () => {
     await page.getByRole('button', { name: 'Add line' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
+    // Match the line to a real inventory item so the project has a component note for the
+    // §4.5 Project-scope vault export (the only native <select> in this dialog is item-match).
+    await dialog.getByRole('combobox').selectOption({ label: screwName });
     await dialog.getByLabel('Description').fill(partName);
     await dialog.getByLabel('Quantity').fill('5');
     await dialog.getByRole('button', { name: 'Add line' }).click();
@@ -336,6 +648,32 @@ try {
       .filter({ has: page.getByRole('button', { name: 'Item details' }) })
       .last();
 
+  await step('refills a consumable gauge back to full, capped at capacity (§4.1.2)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    const card = itemCard(filamentName);
+    await card.waitFor({ state: 'visible', timeout: 8000 });
+
+    // The gauge was created full (no currentNetValue → defaults to capacity), so first
+    // consume 600 g via the relative "Consumption" mode → 400/1000 = 40%.
+    await card.getByRole('button', { name: 'Update gauge' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/Amount used/).fill('600');
+    await dialog.getByTestId('gauge-apply').click();
+    await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+    await card.getByText('40%', { exact: true }).waitFor({ state: 'visible', timeout: 8000 });
+
+    // Now refill: switch to the new Refill mode, tap "Fill to full" (tops off to the
+    // 1000 g capacity, never above), apply → back to 100%.
+    await card.getByRole('button', { name: 'Update gauge' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByTestId('gauge-mode-refill').click();
+    await dialog.getByTestId('gauge-fill-full').click();
+    await dialog.getByTestId('gauge-apply').click();
+    await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+    await card.getByText('100%', { exact: true }).waitFor({ state: 'visible', timeout: 8000 });
+  });
+
   await step('returns to inventory and runs an FTS5 full-text search', async () => {
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
@@ -349,6 +687,44 @@ try {
       { timeout: 8000 },
     );
     await box.fill('');
+  });
+
+  await step('surfaces distinct In-Transit incoming stock on the item (§4, Phase 20)', async () => {
+    await itemCard(screwName).getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    const inTransit = dialog.getByTestId('detail-in-transit');
+    await inTransit.waitFor({ state: 'visible', timeout: 8000 });
+    // The matched BOM line (qty 5) sits IN_TRANSIT → the item shows 5 arriving, kept
+    // distinct from on-hand stock (the indicator also carries an "on hand" figure).
+    const qty = (await dialog.getByTestId('in-transit-qty').textContent())?.trim();
+    if (qty !== '5') throw new Error(`Expected 5 arriving in transit, saw "${qty}"`);
+    const text = (await inTransit.textContent()) ?? '';
+    if (!/on hand/.test(text)) {
+      throw new Error('In-Transit indicator did not distinguish on-hand stock');
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await step('receives the In-Transit BOM line in partial instalments (§4 split receipts)', async () => {
+    await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'Bill of materials' }).waitFor({ state: 'visible', timeout: 15000 });
+
+    // First instalment: receive 2 of the 5 in-transit units — the line stays In-Transit.
+    const receiveQty = page.getByLabel('Quantity to receive');
+    await receiveQty.waitFor({ state: 'visible', timeout: 8000 });
+    await receiveQty.fill('2');
+    await page.getByRole('button', { name: 'Receive into stock' }).click();
+    await page.getByText('2/5 received').waitFor({ state: 'visible', timeout: 8000 });
+    await expectSelectValue(page.getByLabel('Procurement status'), 'IN_TRANSIT', 'Procurement status');
+
+    // The field re-seeds to the outstanding 3; receiving it completes the line → RECEIVED.
+    await page.getByRole('button', { name: 'Receive into stock' }).click();
+    await expectSelectValue(page.getByLabel('Procurement status'), 'RECEIVED', 'Procurement status');
+    await page.getByLabel('Quantity to receive').waitFor({ state: 'detached', timeout: 8000 });
+
+    // Restore the inventory view for the subsequent Phase-5 steps.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
   });
 
   await step('adds a weighted capability to an item', async () => {
@@ -378,6 +754,132 @@ try {
       filamentName,
       { timeout: 8000 },
     );
+  });
+
+  // Phase 47 (§3): the hybrid text-based search syntax. Typing `cap:voltage>3.3`
+  // parses into the *same* Tier-3 AST the Visual Builder edits (the builder visibly
+  // fills in), and the existing parseASTtoSQL → FTS path runs it — the screw
+  // (voltage=5) matches, the filament does not. An invalid query surfaces an inline
+  // error and keeps the previous results.
+  await step('parses a text query into the Visual Builder (§3 hybrid syntax, Phase 47)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('button', { name: 'Visual search' }).click();
+
+    const textInput = page.locator('[data-testid="text-search-input"]');
+    await textInput.waitFor({ state: 'visible', timeout: 8000 });
+    await textInput.fill('cap:voltage>3.3');
+    await textInput.press('Enter');
+
+    // The graphical builder reflected the parsed condition (one source of truth).
+    await expectSelectValue(page.getByLabel('Field'), 'capability', 'Field');
+    const keyInput = page.getByLabel('Capability key');
+    if ((await keyInput.inputValue()) !== 'voltage') {
+      throw new Error('text query did not populate the builder capability key');
+    }
+
+    // Results are filtered exactly as the graphical capability query was.
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      filamentName,
+      { timeout: 8000 },
+    );
+
+    // An invalid query reports inline and does not blank the existing search.
+    await textInput.fill('quantity>lots');
+    await textInput.press('Enter');
+    await page
+      .locator('[data-testid="text-search-error"]')
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  // Phase 48 (§3): text-search grammar depth (OR / parentheses) + saved searches.
+  // A parenthesised OR query parses into a *nested* AST and runs through the same
+  // parseASTtoSQL → FTS path; the query can then be named, recalled and deleted.
+  await step('parses an OR / parenthesised query and saves it (§3 grammar depth, Phase 48)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('button', { name: 'Visual search' }).click();
+
+    const textInput = page.locator('[data-testid="text-search-input"]');
+    await textInput.waitFor({ state: 'visible', timeout: 8000 });
+    // Only the screw carries voltage; the other OR branch is a never-matching capability,
+    // so the parenthesised OR narrows to exactly the screw (proving the nested AST ran).
+    await textInput.fill('(cap:voltage>3.3 OR cap:nonexistent)');
+    await textInput.press('Enter');
+
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      filamentName,
+      { timeout: 8000 },
+    );
+
+    // Save the query under a name → a recall chip appears.
+    await page.locator('[data-testid="saved-search-save"]').click();
+    await page.locator('[data-testid="saved-search-name"]').fill('Voltage parts');
+    await page.locator('[data-testid="saved-search-confirm"]').click();
+    const chip = page.locator('[data-testid="saved-search-recall"]', { hasText: 'Voltage parts' });
+    await chip.waitFor({ state: 'visible', timeout: 8000 });
+
+    // Clear the builder (the filament returns), then recall the saved search → the same
+    // filtered result comes back, proving the stored query re-parses and runs.
+    await page.getByRole('button', { name: 'Clear' }).click();
+    await page.getByText(filamentName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await chip.click();
+    await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      filamentName,
+      { timeout: 8000 },
+    );
+
+    // Tidy up so the saved chip doesn't linger into later steps.
+    await page.locator('[data-testid="saved-search-remove"]').first().click();
+  });
+
+  // Phase 15 (§4/§5.1): weighted-capability "best match" ranking. Two items share a
+  // capability key with different weights; a HAS_CAPABILITY query must surface the
+  // heavier-weighted one first (beating the alphabetical fallback).
+  await step('ranks capability matches by weight — best match ordering (§4, §5.1)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    // Heavy weight on the screw, light on the filament — so weight, not name, decides.
+    for (const [name, w] of [
+      [screwName, '9'],
+      [filamentName, '1'],
+    ]) {
+      await itemCard(name).getByRole('button', { name: 'Item details' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByLabel('Capability key').fill('rankcap');
+      await dialog.getByLabel('Capability value').fill('1');
+      await dialog.getByLabel('Capability weight').fill(w);
+      await dialog.getByRole('button', { name: 'Add capability' }).click();
+      await dialog
+        .getByRole('button', { name: 'Remove capability rankcap' })
+        .waitFor({ state: 'visible', timeout: 8000 });
+      await page.keyboard.press('Escape');
+    }
+    // Query the shared capability — both items match; ranking decides their order.
+    await page.getByRole('button', { name: 'Visual search' }).click();
+    await page.getByRole('button', { name: 'Add condition' }).click();
+    await page.getByLabel('Field').selectOption('capability');
+    await page.getByLabel('Capability key').fill('rankcap');
+    await itemCard(screwName).waitFor({ state: 'visible', timeout: 8000 });
+    await itemCard(filamentName).waitFor({ state: 'visible', timeout: 8000 });
+    // Compare render (DOM document) order — robust to grid vs list density, where two
+    // cards can share a row. The heavier-weighted screw must precede the filament.
+    const screwEl = await itemCard(screwName).elementHandle();
+    const filamentEl = await itemCard(filamentName).elementHandle();
+    const screwFirst = await page.evaluate(
+      ([a, b]) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING),
+      [screwEl, filamentEl],
+    );
+    if (!screwFirst) {
+      throw new Error('best-match ranking: heavier-weighted item should render before the lighter one');
+    }
   });
 
   // --- Phase 6: QR generation, scanner, contacts & checkout, export ------------
@@ -424,6 +926,42 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('prints a batch QR label sheet for a multi-selection (§6, Phase 49)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+
+    // Enter select mode — checkboxes appear and the selection action bar shows.
+    await page.getByTestId('toggle-select').click();
+    await page.getByTestId('selection-bar').waitFor({ state: 'visible', timeout: 8000 });
+
+    // Select two items; the count tracks them even though selection is keyed by id.
+    await itemCard(screwName).getByTestId('item-select').check();
+    await itemCard(filamentName).getByTestId('item-select').check();
+    await page
+      .getByTestId('selection-count')
+      .filter({ hasText: '2 selected' })
+      .waitFor({ state: 'visible', timeout: 8000 });
+
+    // Open the print preview — it must render one QR label per selected item.
+    await page.getByTestId('print-labels').click();
+    const printDialog = page.getByRole('dialog', { name: 'Print QR labels' });
+    await printDialog.waitFor({ state: 'visible', timeout: 8000 });
+    await printDialog.locator('[data-testid="label-cell"] svg').first().waitFor({ state: 'visible', timeout: 8000 });
+    const cellCount = await printDialog.locator('[data-testid="label-cell"]').count();
+    if (cellCount !== 2) {
+      throw new Error(`expected 2 label cells in the print preview, got ${cellCount}`);
+    }
+    if (!(await printDialog.getByText(screwName).count())) {
+      throw new Error('print preview should show the selected item name');
+    }
+
+    // Close the preview and leave select mode — clean state for the next step.
+    await page.keyboard.press('Escape');
+    await printDialog.waitFor({ state: 'detached', timeout: 8000 });
+    await page.getByTestId('toggle-select').click();
+    await page.getByTestId('selection-bar').waitFor({ state: 'detached', timeout: 8000 });
+  });
+
   await step('scans a code and checks the item out to an auto-created contact', async () => {
     await page.getByRole('button', { name: 'Scan' }).click();
     const overlay = page.locator('[data-testid="scanner-overlay"]');
@@ -440,6 +978,82 @@ try {
     await dialog.waitFor({ state: 'hidden', timeout: 8000 });
     // Close the scanner overlay.
     await page.getByRole('button', { name: 'Close scanner' }).click();
+  });
+
+  await step('announces silent scanner status via aria-live regions (§3 a11y, Phase 42)', async () => {
+    // In-place status that changes after an explicit action must be announced
+    // (WCAG 4.1.3). The scanner's manual-entry feedback is the screen-reader channel:
+    // an unknown code must announce a notice (always-mounted polite region), and a
+    // real scan announces the matched item via a hidden region (the visible result
+    // card is interactive, so it can't be the live region itself).
+    await page.getByRole('button', { name: 'Scan' }).click();
+    const overlay = page.locator('[data-testid="scanner-overlay"]');
+    await overlay.waitFor({ state: 'visible', timeout: 8000 });
+
+    const notice = page.locator('[data-testid="scanner-notice"]');
+    if ((await notice.getAttribute('role')) !== 'status' || (await notice.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('scanner notice is not a polite live region');
+    }
+    await page.locator('[data-testid="scanner-manual-input"]').fill('not-a-gubbins-code');
+    await page.locator('[data-testid="scanner-manual-submit"]').click();
+    await notice.getByText('That code is not a Gubbins item.').waitFor({ state: 'visible', timeout: 8000 });
+
+    // A real scan: the hidden announcement region carries "Scanned <name>".
+    await page.locator('[data-testid="scanner-manual-input"]').fill(scannedUrl);
+    await page.locator('[data-testid="scanner-manual-submit"]').click();
+    const announce = page.locator('[data-testid="scanner-scan-announce"]');
+    await announce.waitFor({ state: 'attached', timeout: 8000 });
+    if ((await announce.getAttribute('role')) !== 'status') {
+      throw new Error('scan announcement is not a status region');
+    }
+    await page.waitForFunction(
+      (sel) => document.querySelector(sel)?.textContent?.startsWith('Scanned '),
+      '[data-testid="scanner-scan-announce"]',
+      { timeout: 8000 },
+    );
+    await page.getByRole('button', { name: 'Close scanner' }).click();
+  });
+
+  await step('moves a whole continuous-scan queue to a location (§6.3 batch action, Phase 50)', async () => {
+    // §6.3 Continuous-Mode finalisation: the queue's headline batch action is "move all
+    // to a new location". Capture the filament's deep-link too so the working queue holds
+    // two distinct items (the queue de-dupes by id).
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await itemCard(filamentName).getByRole('button', { name: 'QR code' }).click();
+    const qr = page.getByRole('dialog', { name: 'QR code' });
+    await qr.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 8000 });
+    const filamentUrl = (await qr.locator('[data-testid="item-qr-url"]').innerText()).trim();
+    await page.keyboard.press('Escape');
+    await qr.waitFor({ state: 'detached', timeout: 8000 });
+
+    // Open the scanner and switch to Continuous (batch) mode.
+    await page.getByRole('button', { name: 'Scan' }).click();
+    const overlay = page.locator('[data-testid="scanner-overlay"]');
+    await overlay.waitFor({ state: 'visible', timeout: 8000 });
+    await overlay.getByRole('button', { name: 'Continuous' }).click();
+
+    // Queue two distinct items via the manual-entry fallback (each decode offers to the queue).
+    for (const url of [scannedUrl, filamentUrl]) {
+      await page.locator('[data-testid="scanner-manual-input"]').fill(url);
+      await page.locator('[data-testid="scanner-manual-submit"]').click();
+    }
+
+    // Tap the queue toast to review, then move the whole queue to a location.
+    await overlay.getByText(/scanned · tap to review/).click();
+    await page.getByTestId('scanner-move-location').selectOption({ label: `Workshop ${stamp}` });
+    await page.getByTestId('scanner-move-all').click();
+
+    // The pure `summariseBatch` announces the real outcome: a moved id only lands in
+    // `succeeded` once `move.mutateAsync` resolved (a committed write), so two successes
+    // here prove both items were genuinely re-homed.
+    await page
+      .getByTestId('scanner-notice')
+      .getByText(`Moved 2 items to Workshop ${stamp}`)
+      .waitFor({ state: 'visible', timeout: 8000 });
+
+    await page.getByRole('button', { name: 'Close scanner' }).click();
+    await overlay.waitFor({ state: 'detached', timeout: 8000 });
   });
 
   await step('shows the loan and contact on the contacts screen', async () => {
@@ -472,7 +1086,7 @@ try {
     await page.keyboard.press('Escape');
   });
 
-  await step('exports a Markdown vault zip via the fflate worker (§4.5)', async () => {
+  await step('exports a Markdown vault zip with extracted image assets (§4.5)', async () => {
     await page.getByRole('button', { name: 'Export' }).click();
     const dialog = page.getByRole('dialog', { name: 'Export' });
     await dialog.getByRole('button', { name: /Markdown vault/ }).click();
@@ -482,7 +1096,128 @@ try {
     if (!file.suggestedFilename().endsWith('.zip')) {
       throw new Error(`unexpected vault filename: ${file.suggestedFilename()}`);
     }
+    // Phase 14: unzip and prove the vault carries .md notes AND a real full-res image
+    // pulled out of OPFS into /assets (the cross-device full-res transport).
+    const fs = await import('node:fs/promises');
+    const { unzipSync } = await import('fflate');
+    const bytes = new Uint8Array(await fs.readFile(await file.path()));
+    const entries = Object.keys(unzipSync(bytes));
+    if (!entries.some((p) => p.endsWith('.md'))) {
+      throw new Error('vault zip has no .md notes');
+    }
+    if (!entries.some((p) => p.startsWith('assets/'))) {
+      throw new Error('vault zip extracted no /assets image bytes (§4.5)');
+    }
     await page.keyboard.press('Escape');
+  });
+
+  await step('exports a Project-scope vault nested in a project folder (§4.5, Phase 19)', async () => {
+    await page.getByRole('button', { name: 'Export' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export' });
+    await dialog.getByRole('button', { name: /Markdown vault/ }).click();
+    await dialog.getByTestId('export-scope').selectOption('PROJECT');
+    await dialog.getByTestId('export-target-project').selectOption({ label: projectName });
+    const download = page.waitForEvent('download', { timeout: 20000 });
+    await dialog.getByTestId('run-export').click();
+    const file = await download;
+    // Phase 19: a Project-scope vault is one self-contained folder — the master note
+    // alongside the component notes in their Location sub-folders (§4.5).
+    const fs = await import('node:fs/promises');
+    const { unzipSync } = await import('fflate');
+    const bytes = new Uint8Array(await fs.readFile(await file.path()));
+    const entries = Object.keys(unzipSync(bytes));
+    const folder = `${projectName}/`;
+    if (!entries.length || !entries.every((p) => p.startsWith(folder))) {
+      throw new Error(`project vault did not nest every entry under "${folder}": ${entries.join(', ')}`);
+    }
+    if (!entries.includes(`${folder}${projectName}.md`)) {
+      throw new Error('project vault is missing its master note inside the project folder');
+    }
+    // A component note must sit in a Location sub-folder beneath the project folder.
+    if (!entries.some((p) => p.startsWith(folder) && p !== `${folder}${projectName}.md` && p.endsWith('.md'))) {
+      throw new Error('project vault has no component note sub-folder');
+    }
+    // Reset the wizard so later steps export the whole inventory again.
+    await dialog.getByTestId('export-scope').selectOption('ALL');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('runs a scoped single-item export (§4.5 granularity)', async () => {
+    await page.getByRole('button', { name: 'Export' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Export' });
+    await dialog.getByRole('button', { name: /JSON backup/ }).click();
+    await dialog.getByTestId('export-scope').selectOption('ITEM');
+    await dialog.getByTestId('export-target-item').selectOption({ label: screwName });
+    const download = page.waitForEvent('download', { timeout: 15000 });
+    await dialog.getByTestId('run-export').click();
+    const file = await download;
+    const fs = await import('node:fs/promises');
+    const parsed = JSON.parse(await fs.readFile(await file.path(), 'utf8'));
+    if (parsed.items.length !== 1 || parsed.items[0].name !== screwName) {
+      throw new Error(`scoped export should carry exactly the one chosen item (got ${parsed.items.length})`);
+    }
+    // Reset the wizard scope so later full exports are unaffected.
+    await dialog.getByTestId('export-scope').selectOption('ALL');
+    await page.keyboard.press('Escape');
+  });
+
+  await step('the live OPFS database is a valid raw .sqlite (restore premise, §3)', async () => {
+    // The raw-restore path overwrites this OPFS file with an uploaded binary; assert the
+    // file the app keeps IS a restorable SQLite database (magic header) and that an OPFS
+    // overwrite→reread round-trips the exact bytes (the mechanism the restore relies on).
+    const ok = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const handle = await root.getFileHandle('gubbins.sqlite3');
+      const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer());
+      const magic = 'SQLite format 3';
+      for (let i = 0; i < magic.length; i += 1) {
+        if (bytes[i] !== magic.charCodeAt(i)) return false;
+      }
+      // OPFS overwrite round-trip with a throwaway file (does not touch the live DB).
+      const probe = await root.getFileHandle('gubbins-restore-probe.sqlite3', { create: true });
+      const writable = await probe.createWritable();
+      await writable.write(bytes);
+      await writable.close();
+      const back = new Uint8Array(await (await probe.getFile()).arrayBuffer());
+      await root.removeEntry('gubbins-restore-probe.sqlite3');
+      return back.length === bytes.length && back[0] === bytes[0];
+    });
+    if (!ok) throw new Error('live OPFS file is not a restorable raw .sqlite binary');
+  });
+
+  await step('Phase 17: full-archive restore re-hydrates OPFS images (§2.7/§3)', async () => {
+    // The §2.7 archive zips the DB + full-res OPFS images; this proves the restore loop
+    // unzips a real archive and writes the full-res images back into OPFS on a fresh
+    // device. Exercises the genuine restore-archive + opfs-images modules (no reload —
+    // we stop short of overwriting the live DB, which the "restore premise" step covers).
+    const result = await page.evaluate(async (base) => {
+      const [{ readArchive }, opfs, { buildFullArchive }] = await Promise.all([
+        import(`${base}src/features/archive/restore-archive.ts`),
+        import(`${base}src/features/images/opfs-images.ts`),
+        import(`${base}src/features/archive/auto-archive.ts`),
+      ]);
+      // Seed a known full-resolution image into OPFS.
+      const probe = new Uint8Array([11, 22, 33, 44, 55, 66, 77, 88]);
+      const path = await opfs.saveImageFile(new Blob([probe], { type: 'image/webp' }), 'webp');
+      const name = path.split('/').pop();
+      // Build a genuine archive (DB binary + every OPFS image), then wipe the seeded file
+      // to simulate a fresh device whose full-res images are gone.
+      const zip = await buildFullArchive();
+      await opfs.deleteImageFile(path);
+      if ((await opfs.readImageBlob(path)) !== undefined) return 'seed image not cleared';
+      // Re-hydrate: the real unzip→parse, then the real OPFS write-back.
+      const { images } = readArchive(zip);
+      if (!images.some((img) => img.name === name)) return 'archive did not carry the image';
+      await opfs.writeImageFiles(images);
+      const back = await opfs.readImageBlob(path);
+      if (!back) return 'image not re-hydrated';
+      const got = new Uint8Array(await back.arrayBuffer());
+      await opfs.deleteImageFile(path); // keep OPFS clean for later steps
+      return got.length === probe.length && got[0] === 11 && got[7] === 88
+        ? 'ok'
+        : 'rehydrated bytes differ';
+    }, BASE);
+    if (result !== 'ok') throw new Error(`archive image re-hydration failed: ${result}`);
   });
 
   // --- Phase 7: Cloud Sync & File System Access --------------------------------
@@ -499,6 +1234,11 @@ try {
     await page.getByTestId('sync-now').click();
     // First sync publishes the local state; the result line reports the status.
     await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 12000 });
+    // Phase 42: the outcome appears in place, so it must be an announced live region.
+    const syncLive = page.getByTestId('sync-result');
+    if ((await syncLive.getAttribute('role')) !== 'status' || (await syncLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('sync result is not an announced polite live region (Phase 42)');
+    }
   });
 
   await step('downloads a versioned-JSON backup of the real OPFS database', async () => {
@@ -515,6 +1255,21 @@ try {
     const items = parsed.tables?.items ?? [];
     if (!items.some((it) => it.name === screwName)) {
       throw new Error('backup snapshot is missing the expected item');
+    }
+    // Phase 11 sync-set expansion: the widened set must travel in the same payload.
+    const images = parsed.tables?.item_images ?? [];
+    if (images.length === 0) throw new Error('backup is missing item_images (Phase 11)');
+    if (typeof images[0].thumbnail_blob !== 'string') {
+      throw new Error('item_images thumbnail is not base64-encoded for JSON');
+    }
+    if ('full_res_downgraded_at' in images[0]) {
+      throw new Error('local-only §7.6.3-B downgrade marker leaked into the sync payload');
+    }
+    if (!Array.isArray(parsed.itemTags) || parsed.itemTags.length === 0) {
+      throw new Error('backup is missing item_tags membership (Phase 11)');
+    }
+    if (!Array.isArray(parsed.itemHistory) || parsed.itemHistory.length === 0) {
+      throw new Error('backup is missing the item_history ledger (Phase 11)');
     }
   });
 
@@ -537,6 +1292,17 @@ try {
     await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 10000 });
   });
 
+  await step('Phase 11: the tag + image survive the JSON round-trip and restore', async () => {
+    // The printer item's freeform tag (item_tags membership) and its thumbnail
+    // (item_images base64) must persist through download → import → re-sync.
+    await page.getByLabel('Search items').fill(printerName);
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 8000 });
+    await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.keyboard.press('Escape');
+  });
+
   // --- Phase 8: External Data Scraping via Extension (§4, §9) -------------------
   // The companion extension is feature-detected via a trusted-origin postMessage
   // bridge. We simulate the extension here (the real one is built separately) by
@@ -553,8 +1319,34 @@ try {
     throw new Error(`${label} did not become "${expected}" (was "${await locator.inputValue()}")`);
   };
 
+  // The PWA stamps a fresh requestId on each outbound SCRAPE_REQUEST (§9 multi-scrape);
+  // the real extension echoes it back on the SCRAPE_RESULT/ERROR. To simulate that we
+  // capture the requests the PWA posts and reply with the matching id.
+  const installScrapeCapture = () =>
+    page.evaluate((src) => {
+      if (window.__scrapeCaptureInstalled) return;
+      window.__scrapeCaptureInstalled = true;
+      window.__scrapeRequests = [];
+      window.addEventListener('message', (e) => {
+        const d = e.data;
+        if (d && typeof d === 'object' && d.source === src && d.type === 'SCRAPE_REQUEST') {
+          window.__scrapeRequests.push({ id: d.requestId, url: d.payload && d.payload.url });
+        }
+      });
+    }, EXT_SOURCE);
+  const scrapeRequestCount = () => page.evaluate(() => (window.__scrapeRequests || []).length);
+  const waitForScrapeRequest = async (sinceCount) => {
+    for (let i = 0; i < 40; i += 1) {
+      const reqs = await page.evaluate(() => window.__scrapeRequests || []);
+      if (reqs.length > sinceCount) return reqs[reqs.length - 1];
+      await page.waitForTimeout(75);
+    }
+    throw new Error('expected the PWA to post a SCRAPE_REQUEST but none was captured');
+  };
+
   await step('extension EXTENSION_READY unlocks the Scrape Supplier control (§9.3)', async () => {
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await installScrapeCapture();
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
     await page.getByRole('button', { name: 'Add item' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add item' });
@@ -562,7 +1354,7 @@ try {
     if (await dialog.getByTestId('scrape-supplier-panel').count()) {
       throw new Error('Scrape panel rendered before EXTENSION_READY');
     }
-    await postExtMessage({ source: EXT_SOURCE, type: 'EXTENSION_READY', payload: { version: '1.0.0' } });
+    await postExtMessage({ source: EXT_SOURCE, type: 'EXTENSION_READY', payload: { version: '1.1.0' } });
     await dialog.getByTestId('scrape-supplier-panel').waitFor({ state: 'visible', timeout: 8000 });
   });
 
@@ -581,21 +1373,54 @@ try {
     if ((await mpn.inputValue()) !== '') throw new Error('an invalid message populated the form');
   });
 
-  await step('a trusted SCRAPE_RESULT fills empty fields without overwriting user entries (§4)', async () => {
+  // Shared across the next two steps: the requestId the PWA stamped on this scrape.
+  let scrapeReqId = null;
+
+  await step('a SCRAPE_RESULT with a mismatched requestId is ignored (§9 correlation)', async () => {
     const dialog = page.getByRole('dialog', { name: 'Add item' });
     await dialog.getByLabel('Name').fill(scrapeItemName);
-    const mpn = dialog.getByLabel('MPN (optional)');
     const manufacturer = dialog.getByLabel('Manufacturer (optional)');
-    const unitCost = dialog.getByLabel('Unit cost (optional)');
-    // The user has already typed a manufacturer — it must be preserved.
+    // The user has already typed a manufacturer — it must be preserved throughout.
     await manufacturer.fill(userManufacturer);
 
+    const before = await scrapeRequestCount();
     await dialog.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
     await dialog.getByRole('button', { name: 'Scrape' }).click();
-    // Now the (trusted) extension answers.
+
+    const req = await waitForScrapeRequest(before);
+    if (!req.id || typeof req.id !== 'string') throw new Error('SCRAPE_REQUEST carried no requestId');
+    scrapeReqId = req.id;
+
+    // A well-formed, trusted result for the WRONG requestId must be dropped (no fill).
     await postExtMessage({
       source: EXT_SOURCE,
       type: 'SCRAPE_RESULT',
+      requestId: `${req.id}-stale`,
+      payload: {
+        mpn: 'WRONG-CORRELATION',
+        manufacturer: 'Texas Instruments',
+        description: 'Precision 555 timer IC',
+        distributor_url: 'https://www.digikey.co.uk/p/ne555p',
+        scraped_pricing: { currency: 'GBP', value: 0.42 },
+      },
+    });
+    await page.waitForTimeout(300);
+    if ((await dialog.getByLabel('MPN (optional)').inputValue()) !== '') {
+      throw new Error('a result with a non-matching requestId populated the form');
+    }
+  });
+
+  await step('the correlated SCRAPE_RESULT fills empty fields without overwriting user entries (§4)', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Add item' });
+    const mpn = dialog.getByLabel('MPN (optional)');
+    const manufacturer = dialog.getByLabel('Manufacturer (optional)');
+    const unitCost = dialog.getByLabel('Unit cost (optional)');
+
+    // The (trusted) extension answers with the MATCHING requestId.
+    await postExtMessage({
+      source: EXT_SOURCE,
+      type: 'SCRAPE_RESULT',
+      requestId: scrapeReqId,
       payload: {
         mpn: scrapedMpn,
         manufacturer: 'Texas Instruments',
@@ -631,13 +1456,64 @@ try {
     await detail.getByText(scrapedMpn).first().waitFor({ state: 'visible', timeout: 8000 });
   });
 
-  await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
+  await step('a BLOCKED SCRAPE_ERROR surfaces the deepened-taxonomy degradation toast (§9.4.2/§9.4.3)', async () => {
     const detail = page.getByRole('dialog');
+    const before = await scrapeRequestCount();
     await detail.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
     await detail.getByRole('button', { name: 'Scrape' }).click();
+    const req = await waitForScrapeRequest(before);
+    // The (trusted) extension answers the correlated request with a Phase-35 BLOCKED
+    // failure (HTTP 403) — previously this would have mis-reported as NETWORK_TIMEOUT.
+    await postExtMessage({
+      source: EXT_SOURCE,
+      type: 'SCRAPE_ERROR',
+      requestId: req.id,
+      payload: { domain: 'digikey.co.uk', error_type: 'BLOCKED', reason: 'Supplier blocked the request (HTTP 403).' },
+    });
+    // §9.4.3: an actionable toast with the BLOCKED-specific wording (not the raw reason).
+    await page
+      .getByTestId('toast')
+      .filter({ hasText: 'blocked the request' })
+      .first()
+      .waitFor({ state: 'visible', timeout: 6000 });
+  });
+
+  await step('a CHALLENGE SCRAPE_ERROR surfaces the anti-bot-challenge degradation toast (§9.4.2/§9.4.3)', async () => {
+    const detail = page.getByRole('dialog');
+    const before = await scrapeRequestCount();
+    await detail.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
+    await detail.getByRole('button', { name: 'Scrape' }).click();
+    const req = await waitForScrapeRequest(before);
+    // A 200-OK anti-bot interstitial (Phase 36): the content script's detectChallengePage
+    // marshals CHALLENGE rather than mis-parsing the page into a DOM_DRIFT.
+    await postExtMessage({
+      source: EXT_SOURCE,
+      type: 'SCRAPE_ERROR',
+      requestId: req.id,
+      payload: {
+        domain: 'digikey.co.uk',
+        error_type: 'CHALLENGE',
+        reason: 'Supplier returned an anti-bot challenge page (Cloudflare).',
+      },
+    });
+    // §9.4.3: the CHALLENGE-specific wording (nudges opening the page in a tab).
+    await page
+      .getByTestId('toast')
+      .filter({ hasText: 'anti-bot challenge' })
+      .first()
+      .waitFor({ state: 'visible', timeout: 6000 });
+  });
+
+  await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
+    const detail = page.getByRole('dialog');
+    const before = await scrapeRequestCount();
+    await detail.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
+    await detail.getByRole('button', { name: 'Scrape' }).click();
+    const req = await waitForScrapeRequest(before);
     await postExtMessage({
       source: EXT_SOURCE,
       type: 'SCRAPE_RESULT',
+      requestId: req.id,
       payload: {
         mpn: scrapedMpn,
         manufacturer: 'Texas Instruments', // differs from the user's value → CONFLICT
@@ -697,6 +1573,23 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('nests a sub-variant beneath a variant (§4 multi-level, Phase 18)', async () => {
+    // The variant created above is itself a top-level inventory card. Open it and add
+    // a sub-variant beneath it — proving Phase 18 lifted the single-level cap so a
+    // variant can hold its own grandchildren (with cycles still rejected server-side).
+    await lifecycleCard(variantName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    // This item is recognised as a child variant yet can still gain sub-variants.
+    await detail.getByTestId('variant-is-child').waitFor({ state: 'visible', timeout: 8000 });
+    await detail.getByTestId('variant-name').fill(subVariantName);
+    await detail.getByTestId('add-variant').click();
+    await detail
+      .getByTestId('variant-list')
+      .getByText(subVariantName)
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
   await step('adds a tool maintenance schedule to an item (§4.3)', async () => {
     await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
@@ -709,14 +1602,35 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('opts a tool into automatic checkout-hours telemetry (§4.3, Phase 22)', async () => {
+    // Add a USAGE schedule that derives its usage from real checkout-hours instead of
+    // the manual counter — proving the v11 opt-in persists and the editor renders the
+    // derived loan-hours projection through the genuine OPFS worker + repository path.
+    await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 8000 });
+    await detail.getByTestId('maintenance-name').fill(loanScheduleName);
+    await detail.getByTestId('maintenance-basis').selectOption('USAGE');
+    await detail.getByTestId('accrue-checkout-hours').check();
+    await detail.getByTestId('add-maintenance').click();
+    const row = detail.getByTestId('maintenance-row').filter({ hasText: loanScheduleName });
+    // The derived "h from loans" figure renders and the manual log input is replaced by
+    // the auto-accrual note (manual logging is disabled in accrue mode).
+    await row.getByText(/from loans/).waitFor({ state: 'visible', timeout: 8000 });
+    await row
+      .getByText('Usage accrues automatically from checkout hours.')
+      .waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
   await step('runs a cycle count and authorises a variance adjustment (§4.4)', async () => {
     // A dedicated location with one bulk item at quantity 10.
     await page.getByRole('button', { name: 'Add location' }).click();
     const locDialog = page.getByRole('dialog');
     await locDialog.getByLabel('Name').fill(drawerName);
     await locDialog.getByRole('button', { name: 'Create', exact: true }).click();
-    await page.locator('nav').getByText(drawerName).waitFor({ state: 'visible', timeout: 8000 });
-    await page.locator('nav button').filter({ hasText: drawerName }).first().click();
+    await page.getByRole('treeitem', { name: drawerName }).first().waitFor({ state: 'visible', timeout: 8000 });
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
 
     await page.getByRole('button', { name: 'Add item' }).click();
     const itemDialog = page.getByRole('dialog');
@@ -752,6 +1666,269 @@ try {
     );
   });
 
+  await step('splits a DISCRETE item across two locations via the stock ledger (§4, Phase 25)', async () => {
+    // cycleItemName is a DISCRETE item at `drawerName` with on-hand 8 (post-reconcile).
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await lifecycleCard(cycleItemName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    const placements = detail.getByTestId('stock-placements');
+    await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 8000 });
+
+    const qtyAt = async (name) => {
+      const li = placements.locator('li').filter({ hasText: name }).first();
+      return (await li.locator('[data-testid^="stock-qty-"]').textContent())?.trim();
+    };
+    // Initially a single placement holding all 8 units.
+    if ((await qtyAt(drawerName)) !== '8') {
+      throw new Error('Expected a single placement of 8 before the split');
+    }
+
+    // Move 3 units to the Unassigned location → the item becomes multi-location.
+    await detail.getByTestId('stock-transfer-qty').fill('3');
+    await detail.getByTestId('stock-to').selectOption({ label: 'Unassigned' });
+    await detail.getByTestId('stock-transfer-submit').click();
+
+    // Two placements now: drawer 5 + Unassigned 3 (the total on hand is still 8).
+    await placements
+      .locator('li')
+      .filter({ hasText: 'Unassigned' })
+      .waitFor({ state: 'visible', timeout: 8000 });
+    const drawerQty = await qtyAt(drawerName);
+    const unassignedQty = await qtyAt('Unassigned');
+    if (drawerQty !== '5' || unassignedQty !== '3') {
+      throw new Error(`Expected drawer 5 / Unassigned 3 after the split, saw ${drawerQty} / ${unassignedQty}`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  // Read the per-location breakdown for a split item from its detail dialog, returning a
+  // { [locationName]: quantityString } map (an absent placement is undefined).
+  const placementQuantities = async (itemName, locationNames) => {
+    await lifecycleCard(itemName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    const placements = detail.getByTestId('stock-placements');
+    await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 8000 });
+    const out = {};
+    for (const name of locationNames) {
+      const li = placements.locator('li').filter({ hasText: name }).first();
+      out[name] = (await li.count())
+        ? (await li.locator('[data-testid^="stock-qty-"]').textContent())?.trim()
+        : undefined;
+    }
+    await page.keyboard.press('Escape');
+    return out;
+  };
+
+  await step('cycle-counts a single placement of a split item (§4.4, Phase 26)', async () => {
+    // cycleItemName now sits 5 @ drawer + 3 @ Unassigned. Counting the *drawer* must show
+    // its placement (5), not the item's grand total (8), and absorb the variance there only.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await page.getByTestId('open-cycle-count').click();
+    const ccDialog = page.getByRole('dialog');
+    const row = ccDialog.getByTestId('cycle-count-lines').locator('li').filter({ hasText: cycleItemName });
+    await row.waitFor({ state: 'visible', timeout: 8000 });
+    // Count 4 → a −1 variance against *this drawer's* placement of 5 (not the total of 8).
+    // The final per-location split (drawer 4 / Unassigned 3) proves the expected was 5.
+    await row.getByRole('spinbutton').fill('4');
+    await ccDialog.getByTestId('authorise-reconciliation').click();
+    await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 8000 });
+    await ccDialog.getByRole('button', { name: 'Done' }).click();
+
+    const qtys = await placementQuantities(cycleItemName, [drawerName, 'Unassigned']);
+    if (qtys[drawerName] !== '4' || qtys['Unassigned'] !== '3') {
+      throw new Error(
+        `Per-location count should leave drawer 4 / Unassigned 3, saw ${qtys[drawerName]} / ${qtys['Unassigned']}`,
+      );
+    }
+  });
+
+  await step('checks a split item out from a chosen placement and returns it there (§4, Phase 26)', async () => {
+    // cycleItemName is 4 @ drawer + 3 @ Unassigned. Lend 2 *from Unassigned* → 4 / 1.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await lifecycleCard(cycleItemName).getByRole('button', { name: 'Check out' }).click();
+    const coDialog = page.getByRole('dialog', { name: 'Check out' });
+    await coDialog.getByTestId('checkout-from-location').waitFor({ state: 'visible', timeout: 8000 });
+    await coDialog.getByTestId('checkout-from-location').selectOption({ label: 'Unassigned (3)' });
+    await coDialog.getByPlaceholder(/Type a name/).fill(checkoutBorrower);
+    await coDialog.locator('input[type="number"]').fill('2');
+    await coDialog.getByRole('button', { name: 'Check out' }).click();
+    await coDialog.waitFor({ state: 'hidden', timeout: 8000 });
+
+    const qtys = await placementQuantities(cycleItemName, [drawerName, 'Unassigned']);
+    if (qtys[drawerName] !== '4' || qtys['Unassigned'] !== '1') {
+      throw new Error(
+        `Lending 2 from Unassigned should leave drawer 4 / Unassigned 1, saw ${qtys[drawerName]} / ${qtys['Unassigned']}`,
+      );
+    }
+  });
+
+  await step('scopes a maintenance schedule to one placement of a split item (§4.3, Phase 30)', async () => {
+    // cycleItemName now sits across two placements (drawer 4 / Unassigned 1), so the
+    // maintenance editor offers a per-location scope. Pin a schedule to the drawer and
+    // assert it renders with its "@ <location>" scope badge — proving the v17 location_id
+    // round-trips through the real OPFS worker + repository + join path.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await lifecycleCard(cycleItemName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 8000 });
+    await detail.getByTestId('maintenance-name').fill(scopedScheduleName);
+    await detail.getByTestId('maintenance-location').selectOption({ label: drawerName });
+    await detail.getByTestId('add-maintenance').click();
+    const row = detail.getByTestId('maintenance-row').filter({ hasText: scopedScheduleName });
+    await row.getByText(`@ ${drawerName}`).waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('receives a BOM line into a tracked batch and FEFO-counts it (§4, Phase 28)', async () => {
+    // A fresh DISCRETE item in the drawer, received from procurement under a tracked lot.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const itemDialog = page.getByRole('dialog', { name: 'Add item' });
+    await itemDialog.getByLabel('Name').fill(batchItemName);
+    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByLabel('Initial quantity').fill('0');
+    await itemDialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(batchItemName).first().waitFor({ state: 'visible', timeout: 10000 });
+
+    // Order it on a project BOM and move it In-Transit so the receive control appears.
+    await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'Bill of materials' }).waitFor({ state: 'visible', timeout: 15000 });
+    await page.getByRole('button', { name: 'Add line' }).click();
+    const lineDialog = page.getByRole('dialog', { name: 'Add BOM line' });
+    await lineDialog.getByRole('combobox').selectOption({ label: batchItemName });
+    await lineDialog.getByLabel('Quantity').fill('6');
+    await lineDialog.getByRole('button', { name: 'Add line' }).click();
+    // The new line is the one matched to batchItemName; move just it to In-Transit.
+    const lineRow = page.locator('tr').filter({ hasText: batchItemName }).first();
+    await lineRow.getByLabel('Procurement status').selectOption('IN_TRANSIT');
+
+    // Receive all 6 under a tracked batch number + expiry (a perishable lot).
+    const expiryDate = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+    await page.getByLabel('Quantity to receive').first().fill('6');
+    await page.getByLabel('Batch number (optional)').first().fill(batchNo);
+    await page.getByLabel('Expiry date (optional)').first().fill(expiryDate);
+    await page.getByRole('button', { name: 'Receive into stock' }).first().click();
+    await lineRow.getByText('Received', { exact: false }).waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+
+    // The item detail's stock breakdown shows the tracked lot as a FEFO sub-row.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 8000 });
+    const batchRow = detail.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
+    await batchRow.waitFor({ state: 'visible', timeout: 8000 });
+    if (!/6/.test((await batchRow.textContent()) ?? '')) {
+      throw new Error('Tracked batch sub-row did not show the received quantity of 6');
+    }
+    await page.keyboard.press('Escape');
+
+    // A batch-aware cycle count of the drawer audits the lot itself: count 4 → −2 at that lot.
+    await page.getByTestId('open-cycle-count').click();
+    const ccDialog = page.getByRole('dialog');
+    const lot = ccDialog
+      .getByTestId('cycle-count-lines')
+      .locator('li')
+      .filter({ hasText: batchNo });
+    await lot.waitFor({ state: 'visible', timeout: 8000 });
+    await lot.getByRole('spinbutton').fill('4');
+    await ccDialog.getByTestId('authorise-reconciliation').click();
+    await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 8000 });
+    await ccDialog.getByRole('button', { name: 'Done' }).click();
+
+    // The lot reconciled to 4 at its placement.
+    await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
+    const after = page.getByRole('dialog');
+    const lotAfter = after.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
+    await lotAfter.waitFor({ state: 'visible', timeout: 8000 });
+    if (!/4/.test((await lotAfter.textContent()) ?? '')) {
+      throw new Error('Batch-aware cycle count did not reconcile the lot to 4');
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await step('moves a chosen lot to another location, preserving its identity (§4, Phase 29)', async () => {
+    // The Phase-28 step left `batchItemName` holding 4 of the tracked lot `batchNo` at the
+    // drawer (and no untracked remainder). Pick that lot explicitly and move 2 of it to
+    // Unassigned — proving the per-lot selector + the identity-preserving destination split.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 8000 });
+
+    // The lot picker only appears because the source placement holds a tracked lot.
+    await detail.getByTestId('stock-lot').waitFor({ state: 'visible', timeout: 8000 });
+    await detail.getByTestId('stock-lot').selectOption({ index: 1 }); // option 0 is "Any (soonest expiry)"
+    await detail.getByTestId('stock-transfer-qty').fill('2');
+    await detail.getByTestId('stock-to').selectOption({ label: 'Unassigned' });
+    await detail.getByTestId('stock-transfer-submit').click();
+
+    // The lot now sits at *both* placements with its identity intact: 2 moved, 2 left behind.
+    const dest = detail
+      .getByTestId('stock-placements')
+      .locator('li')
+      .filter({ hasText: 'Unassigned' })
+      .first();
+    await dest.waitFor({ state: 'visible', timeout: 8000 });
+    const destLot = dest.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
+    await destLot.waitFor({ state: 'visible', timeout: 8000 });
+    if (!/2/.test((await destLot.textContent()) ?? '')) {
+      throw new Error('Chosen lot did not arrive at the destination with its identity and quantity 2');
+    }
+    await page.keyboard.press('Escape');
+  });
+
+  await step('audits serialised instances and reconciles a missing one (§4.4)', async () => {
+    // Two serialised instances (#1, #2) of one asset in the same drawer.
+    await page.getByRole('treeitem', { name: drawerName }).first().click();
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const itemDialog = page.getByRole('dialog', { name: 'Add item' });
+    await itemDialog.getByLabel('Name').fill(serialAuditName);
+    await itemDialog.getByLabel('Location').selectOption({ label: drawerName });
+    await itemDialog.getByLabel('Tracking').selectOption('SERIALISED');
+    await itemDialog.getByLabel(/How many/).fill('2');
+    await itemDialog.getByRole('button', { name: 'Create item' }).click();
+    await page.waitForFunction(
+      (name) =>
+        [...document.querySelectorAll('h3')].filter((h) => h.textContent?.includes(name)).length >= 2,
+      serialAuditName,
+      { timeout: 10000 },
+    );
+
+    // Open the cycle count and flag instance #2 as missing (blind presence audit).
+    await page.getByTestId('open-cycle-count').click();
+    const ccDialog = page.getByRole('dialog');
+    const missingRow = ccDialog
+      .getByTestId('serialised-audit-lines')
+      .locator('li')
+      .filter({ hasText: `${serialAuditName} #2` });
+    await missingRow.waitFor({ state: 'visible', timeout: 8000 });
+    // Default state is "Present"; one click flags it "Missing".
+    const toggle = missingRow.getByRole('button');
+    await toggle.click();
+    await toggle.getByText('Missing').waitFor({ state: 'visible', timeout: 4000 });
+    await ccDialog.getByTestId('authorise-reconciliation').click();
+    await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 8000 });
+    await ccDialog.getByRole('button', { name: 'Done' }).click();
+
+    // The missing instance is soft-deleted (gone from active inventory); #1 remains.
+    await page.waitForFunction(
+      (name) => {
+        const heads = [...document.querySelectorAll('h3')].filter((h) =>
+          h.textContent?.includes(name),
+        );
+        return (
+          heads.length === 1 &&
+          heads.some((h) => h.textContent?.includes('#1')) &&
+          !heads.some((h) => h.textContent?.includes('#2'))
+        );
+      },
+      serialAuditName,
+      { timeout: 8000 },
+    );
+  });
+
   await step('surfaces the perishable on the dashboard "Soon to expire" widget (§3)', async () => {
     await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
     const widget = page.getByTestId('widget-expiring');
@@ -759,7 +1936,578 @@ try {
     await widget.getByText(perishableName).waitFor({ state: 'visible', timeout: 8000 });
   });
 
+  await step('customises the dashboard widget board — hide, re-pin & persist (§3, Phase 45)', async () => {
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    // The new §3 widgets are pinned by default.
+    await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 15000 });
+    await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 8000 });
+
+    // Enter customise (edit) mode and hide the Project-statuses widget; it leaves the
+    // board and joins the "hidden widgets" list.
+    await page.getByTestId('customise-dashboard').click();
+    await page.getByTestId('widget-hide-projects').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
+    await page.getByTestId('widget-add-projects').waitFor({ state: 'visible', timeout: 5000 });
+
+    // Re-pin it — it returns to the board.
+    await page.getByTestId('widget-add-projects').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+
+    // Hide it once more, finish, and prove the choice survives a reload (the layout is
+    // persisted to localStorage — device-local, no DB migration).
+    await page.getByTestId('widget-hide-projects').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
+    await page.getByTestId('customise-dashboard').click(); // Done
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 15000 });
+    if ((await page.getByTestId('widget-projects').count()) !== 0) {
+      throw new Error('hidden dashboard widget reappeared after reload (layout not persisted)');
+    }
+
+    // Restore it so the board is left in its default state for later steps.
+    await page.getByTestId('customise-dashboard').click();
+    await page.getByTestId('widget-add-projects').click();
+    await page.getByTestId('customise-dashboard').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+  });
+
+  await step('resets the dashboard board to its defaults from customise mode', async () => {
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 15000 });
+
+    // Customise: hide a widget so the board is demonstrably non-default…
+    await page.getByTestId('customise-dashboard').click();
+    await page.getByTestId('widget-hide-projects').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
+    await page.getByTestId('hidden-widgets').waitFor({ state: 'visible', timeout: 5000 });
+
+    // …then Reset returns every widget to its default position & visibility, so the
+    // hidden widget is pinned again and the "hidden widgets" list empties out.
+    await page.getByTestId('reset-dashboard').click();
+    await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+    await page.getByTestId('hidden-widgets').waitFor({ state: 'detached', timeout: 5000 });
+
+    // The reset persists across a reload (it writes the cleared layout to localStorage).
+    await page.getByTestId('customise-dashboard').click(); // Done
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 15000 });
+  });
+
+  await step('shows an offline indicator and announces reconnection (§2 offline-first)', async () => {
+    // Emulate losing connectivity: navigator.onLine flips false and the offline event
+    // fires, so the root-layout OfflineIndicator reveals its reassurance pill.
+    const context = page.context();
+    await context.setOffline(true);
+    const pill = page.getByTestId('offline-indicator');
+    await pill.waitFor({ state: 'visible', timeout: 8000 });
+    const announcedOffline = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="status"]')].some((n) => /offline/i.test(n.textContent ?? '')),
+    );
+    if (!announcedOffline) throw new Error('going offline was not announced to assistive tech');
+
+    // Back online: the pill disappears and the live region announces the recovery.
+    await context.setOffline(false);
+    await pill.waitFor({ state: 'hidden', timeout: 8000 });
+    const announcedOnline = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="status"]')].some((n) => /back online/i.test(n.textContent ?? '')),
+    );
+    if (!announcedOnline) throw new Error('coming back online was not announced to assistive tech');
+  });
+
+  // --- Phase 10: OPFS Quota Recovery & Archiving (§7.6) ------------------------
+  // The Storage Triage Dashboard is only reachable under genuine OPFS pressure, so
+  // the smoke forces the critical tier via the DEV-only store seam, and advances the
+  // page's Date.now so the freshly-created rows count as "old" for the pruning and
+  // image-downgrade windows (everything here is exercised against the real OPFS DB).
+
+  await step('directs the user to Storage Triage from the critical banner (§7.6.2)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+    // Advance time ~400 days and force the critical storage tier.
+    await page.evaluate(() => {
+      const realNow = Date.now.bind(Date);
+      const offset = 400 * 86400000;
+      Date.now = () => realNow() + offset;
+      const store = /** @type {any} */ (window).__storageStore;
+      if (!store) throw new Error('storage store test seam missing (not a DEV build?)');
+      store.setState({
+        tier: 'critical',
+        ratio: 0.93,
+        estimate: { usage: 9.3e8, quota: 1e9, ratio: 0.93, supported: true },
+      });
+    });
+    await page.getByTestId('open-storage-triage').click();
+    const dialog = page.getByRole('dialog', { name: 'Storage triage' });
+    await dialog.waitFor({ state: 'visible', timeout: 8000 });
+    // The §7.6.2 per-table breakdown renders all three rows.
+    await dialog.getByTestId('triage-row-history').waitFor({ state: 'visible', timeout: 8000 });
+    await dialog.getByTestId('triage-row-images').waitFor({ state: 'visible', timeout: 8000 });
+    await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: 8000 });
+    // Phase 15 (§7.6.2): the image figure is now the *measured* on-disk OPFS size — an
+    // image was uploaded earlier (still full-res, downgrade happens in a later step).
+    const source = await dialog.getByTestId('triage-images-source').innerText();
+    if (!/measured/i.test(source)) {
+      throw new Error(`expected measured OPFS image bytes, got: "${source}"`);
+    }
+  });
+
+  await step('prunes old history after a cold-storage JSON download (§7.6.3 A)', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Storage triage' });
+    // Wait for the candidate count to load so the button enables (avoids arming the
+    // download listener against a still-disabled control).
+    const pruneBtn = dialog.getByTestId('prune-history');
+    for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+    if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
+    // Phase 12: a confirm-before-delete step now guards the action.
+    await pruneBtn.click();
+    const confirmBtn = dialog.getByTestId('prune-confirm');
+    await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
+    // The download must fire BEFORE the delete; assert the archive filename.
+    const download = page.waitForEvent('download', { timeout: 15000 });
+    await confirmBtn.click();
+    const file = await download;
+    if (!file.suggestedFilename().startsWith('inventory_history_archive')) {
+      throw new Error(`unexpected archive filename: ${file.suggestedFilename()}`);
+    }
+    if (!file.suggestedFilename().endsWith('.json')) {
+      throw new Error(`archive is not JSON: ${file.suggestedFilename()}`);
+    }
+    await page.getByText('History archived & pruned').waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  await step('downgrades old images keeping the thumbnail (§7.6.3 B)', async () => {
+    const dialog = page.getByRole('dialog', { name: 'Storage triage' });
+    const downgradeBtn = dialog.getByTestId('downgrade-images');
+    for (let i = 0; i < 40 && (await downgradeBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+    if (await downgradeBtn.isDisabled()) throw new Error('no downgradable images were detected');
+    // Phase 12: confirm-before-delete guards the downgrade too.
+    await downgradeBtn.click();
+    const confirmBtn = dialog.getByTestId('downgrade-confirm');
+    await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
+    await confirmBtn.click();
+    await page.getByText('Images downgraded').waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  // --- Phase 12: Settings & preferences UI (§3) -------------------------------
+  // The previously-headless preferences now have a real screen, reached from the
+  // dashboard gear. Theme is applied to the document; the storage windows persist;
+  // and the Storage Triage dashboard has a permanent (non-banner) entry-point.
+
+  await step('opens Settings from the dashboard gear and applies the theme (§3)', async () => {
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('link', { name: 'Settings' }).first().click();
+    await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 12000 });
+    const isDark = () => page.evaluate(() => document.documentElement.classList.contains('dark'));
+    // The default theme is dark and is now actually projected onto <html>.
+    if (!(await isDark())) throw new Error('expected the dark theme to be applied by default');
+    await page.getByTestId('theme-light').click();
+    await page.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, {
+      timeout: 4000,
+    });
+    // Switch back so the persisted choice (and later screenshots) stay dark.
+    await page.getByTestId('theme-dark').click();
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
+      timeout: 4000,
+    });
+  });
+
+  await step('changes and persists preference controls (§3, §4 expiry, §7.6.3 windows)', async () => {
+    const expiry = page.getByLabel('Expiring soon window (days)');
+    await expiry.fill('45');
+    await expiry.blur();
+    const pruneWindow = page.getByLabel('Default purge window');
+    await pruneWindow.selectOption('12');
+    await expectSelectValue(pruneWindow, '12', 'Default purge window');
+    // Tier-2 preferences persist to localStorage.
+    const stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.expirySoonWindowDays !== 45) {
+      throw new Error(`expiry window not persisted (got ${stored?.state?.expirySoonWindowDays})`);
+    }
+    if (stored?.state?.pruneWindowMonths !== 12) {
+      throw new Error(`prune window not persisted (got ${stored?.state?.pruneWindowMonths})`);
+    }
+  });
+
+  await step('tunes and persists the low-stock thresholds (§3 Low Stock Alerts, Phase 46)', async () => {
+    // The §3 "Low Stock" widget shipped fixed thresholds in Phase 45; Phase 46 surfaces
+    // them as Tier-2 preferences (clamped, mirroring the expiry window). Set both,
+    // assert they persist to localStorage, and that an out-of-range value is clamped.
+    const qty = page.getByLabel('Low-stock quantity threshold');
+    await qty.fill('8');
+    await qty.blur();
+    const gauge = page.getByLabel('Low-stock gauge threshold');
+    await gauge.fill('25');
+    await gauge.blur();
+    let stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.lowStockQtyThreshold !== 8) {
+      throw new Error(`low-stock qty not persisted (got ${stored?.state?.lowStockQtyThreshold})`);
+    }
+    if (stored?.state?.lowStockGaugePercent !== 25) {
+      throw new Error(`low-stock gauge not persisted (got ${stored?.state?.lowStockGaugePercent})`);
+    }
+    // Out-of-range gauge clamps to the max bound (99), never reaching the read layer.
+    await gauge.fill('500');
+    await gauge.blur();
+    stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.lowStockGaugePercent !== 99) {
+      throw new Error(`low-stock gauge not clamped (got ${stored?.state?.lowStockGaugePercent})`);
+    }
+    // Restore the default so later steps and screenshots are unaffected.
+    await gauge.fill('15');
+    await gauge.blur();
+  });
+
+  await step('reaches Storage Triage from the permanent Settings entry-point (§7.6.2)', async () => {
+    await page.getByTestId('open-storage-triage-settings').click();
+    const dialog = page.getByRole('dialog', { name: 'Storage triage' });
+    await dialog.waitFor({ state: 'visible', timeout: 8000 });
+    // The chosen default window flows through to the triage control.
+    await expectSelectValue(dialog.getByTestId('prune-months'), '12', 'Triage prune window');
+    await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: 8000 });
+    await page.keyboard.press('Escape');
+  });
+
+  // --- Phase 16: currency/locale propagation (§3) + System theme (§2.1) --------
+  // The Settings controls already *set* the base currency / locale; Phase 16 routed
+  // every Intl/currency call site through them via `useFormatters`. Prove a live
+  // formatter (the project BOM total) honours a non-default currency, and that the
+  // new "System" theme tracks the OS colour scheme reactively.
+
+  await step('honours the chosen base currency end-to-end (§3 currency propagation)', async () => {
+    // Still on Settings: switch to USD / en-US and confirm the choice persists.
+    await page.getByTestId('setting-currency').selectOption('USD');
+    await page.getByTestId('setting-locale').selectOption('en-US');
+    const stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.baseCurrency !== 'USD' || stored?.state?.locale !== 'en-US') {
+      throw new Error(
+        `currency/locale not persisted (got ${stored?.state?.baseCurrency}/${stored?.state?.locale})`,
+      );
+    }
+    // The project BOM total is rendered by the live formatter — it must now be USD.
+    await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('project-total-cost').waitFor({ state: 'visible', timeout: 15000 });
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="project-total-cost"]')?.textContent?.includes('$'),
+      null,
+      { timeout: 8000 },
+    );
+    // Restore the locked GBP / en-GB defaults so later steps + the screenshot stay clean.
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('setting-currency').selectOption('GBP');
+    await page.getByTestId('setting-locale').selectOption('en-GB');
+  });
+
+  await step('the System theme follows prefers-color-scheme live (§2.1)', async () => {
+    await page.getByTestId('theme-system').click();
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
+      timeout: 4000,
+    });
+    // Flipping the emulated OS scheme must re-apply live (the §2.1 media listener).
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, {
+      timeout: 4000,
+    });
+    // Restore an explicit dark theme + default media for later steps/screenshot.
+    await page.getByTestId('theme-dark').click();
+    await page.emulateMedia({ colorScheme: null });
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
+      timeout: 4000,
+    });
+  });
+
+  await step('honours prefers-reduced-motion: drops decorative entrance motion (§3 a11y, Phase 43)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+
+    // 1) Emulate the OS reduced-motion preference and confirm the app's seam sees it.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const reducedSeen = await page.evaluate(
+      () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+    );
+    if (!reducedSeen) throw new Error('app did not observe prefers-reduced-motion: reduce');
+
+    // The Foundry Modal must NOT apply its `animate-zoom-in` entrance class at source.
+    await page.getByRole('button', { name: 'Add item' }).click();
+    let dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.waitFor({ state: 'visible', timeout: 10000 });
+    const animatedUnderReduce = await page.evaluate(
+      () => !!document.querySelector('[role="dialog"] .animate-zoom-in'),
+    );
+    if (animatedUnderReduce) {
+      throw new Error('modal kept its entrance animation under reduced motion');
+    }
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    // 2) With motion permitted again, the entrance animation returns (proves the gate
+    //    is preference-driven, not unconditionally disabled).
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.waitFor({ state: 'visible', timeout: 10000 });
+    const animatedWithMotion = await page.evaluate(
+      () => !!document.querySelector('[role="dialog"] .animate-zoom-in'),
+    );
+    if (!animatedWithMotion) {
+      throw new Error('modal lost its entrance animation even with motion permitted');
+    }
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+    // Restore the system default for later steps / the screenshot.
+    await page.emulateMedia({ reducedMotion: null });
+  });
+
+  await step('captures beforeinstallprompt and offers a one-tap PWA install (§2 installation, Phase 44)', async () => {
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    // Before any install event, the affordance falls back to manual guidance.
+    await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: 20000 });
+
+    // Simulate the platform firing the (non-standard) beforeinstallprompt event —
+    // Playwright/automation never fires it for real, so dispatch a faithful stub.
+    await page.evaluate(() => {
+      const event = new Event('beforeinstallprompt');
+      event.prompt = async () => {
+        window.__gubbinsInstallPrompted = true;
+      };
+      window.dispatchEvent(event);
+    });
+
+    // The one-tap install control now appears (the event was captured + held)...
+    const installButton = page.getByTestId('install-app-settings');
+    await installButton.waitFor({ state: 'visible', timeout: 10000 });
+
+    // ...and clicking it triggers the native install dialog (our stubbed prompt()).
+    await installButton.click();
+    const prompted = await page.evaluate(() => window.__gubbinsInstallPrompted === true);
+    if (!prompted) throw new Error('install button did not trigger the native install prompt');
+
+    // The captured event is single-use, so the control retracts to the manual fallback.
+    await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: 10000 });
+  });
+
+  // --- Phase 34: single-format scanner symbology (§6.6) ------------------------
+  // The scanner can be narrowed to one symbology so the off-thread zxing worker hints a
+  // single format (~4× cheaper per frame). Prove the Settings control persists the choice,
+  // then restore the default so the live-scan steps keep scanning everything.
+  await step('persists the single-format scanner symbology preference (§6.6)', async () => {
+    await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('setting-scanner-symbology').selectOption('qr_code');
+    const stored = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
+    );
+    if (stored?.state?.scannerSymbology !== 'qr_code') {
+      throw new Error(`scanner symbology not persisted (got ${stored?.state?.scannerSymbology})`);
+    }
+    // Restore the default (scan all codes) so later/mobile scan steps are unaffected.
+    await page.getByTestId('setting-scanner-symbology').selectOption('all');
+    await expectSelectValue(
+      page.getByTestId('setting-scanner-symbology'),
+      'all',
+      'Scanner symbology',
+    );
+  });
+
+  await step('bounds the virtualised list memory: a deep scroll trims then refills pages (§2.1, Phase 37)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 20000 });
+
+    // Seed past MAX_LIST_PAGES × DEFAULT_PAGE_SIZE (6 × 50 = 300) so a deep scroll
+    // forces the infinite query to trim a leading page — the memory bound under test.
+    // Zero-padded names sort lexically = numerically, so paging order is deterministic
+    // (the list orders by name even when an FTS search filter is applied).
+    const seedPrefix = `ZzList${stamp}`;
+    const SEED = 305;
+    const seeded = await page.evaluate(
+      async ({ base, prefix, total }) => {
+        const repos = await import(`${base}src/db/repositories/index.ts`);
+        const repo = repos.getItemRepository();
+        const pad = (n) => String(n).padStart(3, '0');
+        // Chunk the creates so request latency doesn't stack 305 round-trips deep.
+        for (let start = 0; start < total; start += 20) {
+          const batch = [];
+          for (let i = start; i < Math.min(start + 20, total); i += 1) {
+            batch.push(repo.create({ name: `${prefix} ${pad(i)}`, trackingMode: 'DISCRETE', quantity: 1 }));
+          }
+          await Promise.all(batch);
+        }
+        return repo.count({ search: prefix });
+      },
+      { base: BASE, prefix: seedPrefix, total: SEED },
+    );
+    if (seeded < SEED) throw new Error(`seed incomplete: ${seeded}/${SEED}`);
+
+    // Filter to exactly the seeded items (a fresh query key → includes the new rows).
+    const search = page.getByRole('textbox', { name: 'Search items' });
+    await search.fill(seedPrefix);
+    const firstItem = page.getByText(`${seedPrefix} 000`, { exact: true });
+    await firstItem.first().waitFor({ state: 'visible', timeout: 12000 });
+
+    const container = page.getByTestId('item-list-scroll');
+    const lastName = `${seedPrefix} ${String(SEED - 1).padStart(3, '0')}`;
+    const lastItem = page.getByText(lastName, { exact: true });
+
+    // Scroll to the tail: loads all 7 pages, trimming the leading page once the 7th
+    // arrives. If absolute indexing were broken the rows would misalign and the tail
+    // would never resolve into view.
+    for (let i = 0; i < 50; i += 1) {
+      if (await lastItem.count()) break;
+      await container.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      await page.waitForTimeout(120);
+    }
+    await lastItem.first().waitFor({ state: 'visible', timeout: 8000 });
+
+    // Scroll back to the head: the trimmed-off prefix must refill (fetchPreviousPage),
+    // proving the bounded window slides both ways without losing the start of the list.
+    for (let i = 0; i < 50; i += 1) {
+      if (await firstItem.count()) {
+        if (await firstItem.first().isVisible()) break;
+      }
+      await container.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await page.waitForTimeout(120);
+    }
+    await firstItem.first().waitFor({ state: 'visible', timeout: 8000 });
+
+    // Clear the filter so the screenshot / any later desktop assertion is unaffected.
+    await search.fill('');
+  });
+
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });
+
+  // --- Phase 15: mobile-emulation context (§2.7 auto-archive + §6.6 WASM scanner) ---
+  // A separate mobile context so two desktop-Edge-unreachable paths can be driven:
+  //  • the §2.7 weekly Full-Archive banner is mobile-gated (isLikelyMobile() + no Cloud
+  //    Sync), so the desktop page never shows it (carried-over Phase-14 residual);
+  //  • forcing the native BarcodeDetector absent exercises the §6.6 WASM fallback that
+  //    Firefox/Safari would take — now an **off-thread** decode in a Web Worker (Phase 31:
+  //    capture frame → ImageBitmap → transfer → zxing core decode on an OffscreenCanvas)
+  //    driven on an **adaptive frame-skip cadence** (Phase 32: the idle camera in this step
+  //    naturally backs the worker decode off, then re-acquires fast on a hit).
+  const mobile = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  // Force the mobile signal (deterministic isLikelyMobile) and remove the native
+  // Barcode Detection API so the scanner must resolve the WASM fallback engine.
+  await mobile.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgentData', {
+      configurable: true,
+      get: () => ({ mobile: true }),
+    });
+    try {
+      Object.defineProperty(window, 'BarcodeDetector', { configurable: true, value: undefined });
+    } catch {
+      /* already gone */
+    }
+  });
+  const mpage = await mobile.newPage();
+  mpage.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(`[mobile] ${msg.text()}`);
+  });
+  mpage.on('pageerror', (err) => pageErrors.push(`[mobile] ${String(err)}`));
+
+  await step('mobile: the §2.7 weekly Full-Archive banner appears and downloads (§2.7)', async () => {
+    await mpage.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await mpage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 25000 });
+    const archiveBtn = mpage.getByTestId('run-archive');
+    await archiveBtn.waitFor({ state: 'visible', timeout: 12000 });
+    const download = mpage.waitForEvent('download', { timeout: 25000 });
+    await archiveBtn.click();
+    const file = await download;
+    if (!file.suggestedFilename().endsWith('.zip')) {
+      throw new Error(`unexpected archive filename: ${file.suggestedFilename()}`);
+    }
+  });
+
+  await step('mobile: the scanner resolves the §6.6 off-thread WASM worker engine', async () => {
+    await mpage.getByRole('button', { name: 'Scan' }).click();
+    const overlay = mpage.locator('[data-testid="scanner-overlay"]');
+    await overlay.waitFor({ state: 'visible', timeout: 8000 });
+    // With BarcodeDetector absent, useScanner spawns the Phase-31 decode Worker (zxing
+    // core on an OffscreenCanvas). 'wasm' is now produced *only* by that worker decoder,
+    // so the engine badge appearing proves the off-thread path resolved — and the global
+    // console/page-error guards prove createImageBitmap + transfer + worker decode run
+    // cleanly per frame in a real browser. Holding the overlay open with no code in view
+    // also drives the Phase-32 adaptive frame-skip cadence through its idle backoff.
+    await mpage
+      .locator('[data-testid="scanner-engine-wasm"]')
+      .waitFor({ state: 'visible', timeout: 15000 });
+    // Manual entry still works on the fallback path (feed a non-item code: just a notice).
+    await mpage.locator('[data-testid="scanner-manual-input"]').fill('not-a-gubbins-code');
+    await mpage.locator('[data-testid="scanner-manual-submit"]').click();
+    await mpage.getByRole('button', { name: 'Close scanner' }).click();
+  });
+
+  await mobile.close();
+
+  // --- Phase 33: no-OffscreenCanvas context (§6.6 'wasm-canvas' main-thread-capture) ---
+  // A second mobile context that additionally removes OffscreenCanvas, emulating Safari < 16.4
+  // (which has Worker + a 2-D canvas but no OffscreenCanvas). The 'wasm' tier (worker +
+  // OffscreenCanvas) is therefore unavailable, so the scanner must resolve the Phase-33
+  // 'wasm-canvas' engine: the main thread reads each frame off a regular 2-D <canvas> and
+  // transfers the RGBA pixels to the SAME decode worker (no OffscreenCanvas used). The global
+  // console/page-error guards prove the canvas capture + transfer + worker decode run cleanly.
+  const safari = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.3 Mobile/15E148 Safari/604.1',
+  });
+  await safari.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgentData', {
+      configurable: true,
+      get: () => ({ mobile: true }),
+    });
+    for (const name of ['BarcodeDetector', 'OffscreenCanvas']) {
+      try {
+        Object.defineProperty(window, name, { configurable: true, value: undefined });
+      } catch {
+        /* already gone */
+      }
+    }
+  });
+  const spage = await safari.newPage();
+  spage.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(`[safari] ${msg.text()}`);
+  });
+  spage.on('pageerror', (err) => pageErrors.push(`[safari] ${String(err)}`));
+
+  await step('safari<16.4: the scanner resolves the §6.6 main-thread-capture worker engine', async () => {
+    await spage.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await spage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 25000 });
+    await spage.getByRole('button', { name: 'Scan' }).click();
+    const overlay = spage.locator('[data-testid="scanner-overlay"]');
+    await overlay.waitFor({ state: 'visible', timeout: 8000 });
+    // With BarcodeDetector AND OffscreenCanvas absent, useScanner falls through to the
+    // 'wasm-canvas' tier; its engine badge appearing proves the main-thread 2-D-canvas
+    // capture → worker pixel-decode path resolved (and ran without console/page errors).
+    await spage
+      .locator('[data-testid="scanner-engine-wasm-canvas"]')
+      .waitFor({ state: 'visible', timeout: 15000 });
+    // Manual entry still works on the fallback path (feed a non-item code: just a notice).
+    await spage.locator('[data-testid="scanner-manual-input"]').fill('not-a-gubbins-code');
+    await spage.locator('[data-testid="scanner-manual-submit"]').click();
+    await spage.getByRole('button', { name: 'Close scanner' }).click();
+  });
+
+  await safari.close();
 } catch (err) {
   fail('unexpected failure', err);
 }

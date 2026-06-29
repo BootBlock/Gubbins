@@ -178,6 +178,8 @@ export function useSetProcurement(projectId: string) {
     onSettled: () => {
       invalidateProject(client, projectId);
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      // Refresh the dashboard "arriving" feed and per-item incoming totals (Phase 20).
+      void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
     },
   });
 }
@@ -189,14 +191,18 @@ export function useReceiveLine(projectId: string) {
       lineId,
       locationId,
       quantity,
+      batch,
     }: {
       lineId: string;
       locationId?: string;
       quantity?: number;
-    }) => getProjectRepository().receiveLine(lineId, { locationId, quantity }),
+      batch?: { batchNumber: string | null; lotNumber: string | null; expiryDate: number | null };
+    }) => getProjectRepository().receiveLine(lineId, { locationId, quantity, batch }),
     onSettled: () => {
       invalidateProject(client, projectId);
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      // Received stock leaves the "arriving" feed and the item's incoming total (Phase 20).
+      void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
     },
   });
 }

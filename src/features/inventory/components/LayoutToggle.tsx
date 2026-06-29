@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { Tooltip } from '@/components/foundry';
 import { DataDensityIcon, VisualDensityIcon } from '@/components/icons';
 import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
 
@@ -7,9 +8,19 @@ import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStor
  * A sliding segmented control with a fluid animated thumb — engaging visual
  * feedback per the Phase 2 brief — backed by the persisted `useLayoutStore`.
  */
-const OPTIONS: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof DataDensityIcon }> = [
-  { value: 'visual', label: 'Visual', icon: VisualDensityIcon },
-  { value: 'data', label: 'Data', icon: DataDensityIcon },
+const OPTIONS: ReadonlyArray<{ value: LayoutDensity; label: string; hint: string; icon: typeof DataDensityIcon }> = [
+  {
+    value: 'visual',
+    label: 'Visual',
+    hint: 'Large image-led cards — best for browsing and scanning by sight.',
+    icon: VisualDensityIcon,
+  },
+  {
+    value: 'data',
+    label: 'Data',
+    hint: 'Dense tabular rows — best for managing many items at once.',
+    icon: DataDensityIcon,
+  },
 ];
 
 export function LayoutToggle() {
@@ -26,27 +37,28 @@ export function LayoutToggle() {
       {/* Sliding thumb */}
       <span
         aria-hidden
-        className="absolute inset-y-1 w-[calc(50%-0.25rem)] rounded-lg bg-card shadow-sm shadow-black/20 ring-1 ring-border transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        className="absolute inset-y-1 w-[calc(50%-0.25rem)] rounded-lg bg-card shadow-sm shadow-black/20 ring-1 ring-border transition-transform duration-300 ease-emphasized"
         style={{ transform: `translateX(${activeIndex * 100}%)` }}
       />
       {OPTIONS.map((option) => {
         const Icon = option.icon;
         const active = option.value === density;
         return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => setDensity(option.value)}
-            className={cn(
-              'relative z-10 inline-flex w-24 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors [&_svg]:size-4',
-              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Icon />
-            {option.label}
-          </button>
+          <Tooltip key={option.value} content={option.hint} triggerTabIndex={-1}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setDensity(option.value)}
+              className={cn(
+                'relative z-10 inline-flex w-24 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors [&_svg]:size-4',
+                active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon />
+              {option.label}
+            </button>
+          </Tooltip>
         );
       })}
     </div>

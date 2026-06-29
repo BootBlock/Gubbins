@@ -8,9 +8,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DomDriftError, parsePrice } from './types';
-import { runParser, selectParser } from './registry';
+import { runParser, selectParser, SUPPLIER_PARSERS } from './registry';
 import { genericMetaParser } from './generic-meta-parser';
 import { digikeyParser } from './digikey-parser';
+import { mouserParser } from './mouser-parser';
+import { farnellParser } from './farnell-parser';
+import { lcscParser } from './lcsc-parser';
+import { rsParser } from './rs-parser';
+import { adafruitParser } from './adafruit-parser';
+import { sparkfunParser } from './sparkfun-parser';
 
 function docOf(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
@@ -98,7 +104,71 @@ describe('digikeyParser', () => {
   });
 });
 
+describe('host-specific supplier parsers (§9.4.1 Strategy)', () => {
+  it.each([
+    [mouserParser, 'https://www.mouser.co.uk/ProductDetail/x', 'https://www.adafruit.com/product/1'],
+    [farnellParser, 'https://uk.farnell.com/p/x', 'https://www.digikey.com/p/x'],
+    [lcscParser, 'https://www.lcsc.com/product-detail/x.html', 'https://www.mouser.com/p/x'],
+    [rsParser, 'https://uk.rs-online.com/web/p/x', 'https://www.lcsc.com/p/x'],
+    [adafruitParser, 'https://www.adafruit.com/product/3', 'https://www.sparkfun.com/products/1'],
+    [sparkfunParser, 'https://www.sparkfun.com/products/12002', 'https://uk.rs-online.com/p/x'],
+  ])('$label matches only its own host', (parser, own, foreign) => {
+    expect(parser.matches(own)).toBe(true);
+    expect(parser.matches(foreign)).toBe(false);
+  });
+
+  it('prefers a host CSS selector over metadata, falling back per-field on drift', () => {
+    // MPN via Mouser's host selector; manufacturer absent in markup → metadata fallback.
+    const html = `<!doctype html><html><head>
+      <meta name="gubbins:manufacturer" content="Texas Instruments" />
+      <link rel="canonical" href="https://www.mouser.co.uk/ProductDetail/NE555P" />
+    </head><body>
+      <span id="pdpPartNumber">NE555P</span>
+      <span data-testid="pdp-unit-price">£0.42</span>
+    </body></html>`;
+    const payload = mouserParser.parse(docOf(html), 'https://www.mouser.co.uk/ProductDetail/NE555P');
+    expect(payload.mpn).toBe('NE555P'); // host selector
+    expect(payload.manufacturer).toBe('Texas Instruments'); // metadata fallback
+    expect(payload.scraped_pricing).toEqual({ currency: 'GBP', value: 0.42 });
+    expect(payload.distributor_url).toBe('https://www.mouser.co.uk/ProductDetail/NE555P');
+  });
+
+  it('recovers the MPN from structured metadata when host selectors all miss', () => {
+    const payload = lcscParser.parse(docOf(metaPage), 'https://www.lcsc.com/product-detail/x.html');
+    expect(payload.mpn).toBe('NE555P');
+  });
+
+  it('throws DomDriftError when neither host selectors nor metadata yield an MPN', () => {
+    const html = `<!doctype html><html><head>
+      <link rel="canonical" href="https://uk.farnell.com/p/x" />
+    </head><body><h1>Some heading</h1></body></html>`;
+    expect(() => farnellParser.parse(docOf(html), 'https://uk.farnell.com/p/x')).toThrow(DomDriftError);
+  });
+});
+
 describe('registry — strategy selection & uniform outcome', () => {
+  it('registers every supported supplier plus the generic fallback last', () => {
+    expect(SUPPLIER_PARSERS.map((p) => p.id)).toEqual([
+      'digikey',
+      'mouser',
+      'farnell',
+      'lcsc',
+      'rs',
+      'adafruit',
+      'sparkfun',
+      'generic-meta',
+    ]);
+  });
+
+  it('routes each supplier host to its own parser', () => {
+    expect(selectParser('https://www.mouser.com/p/x')?.id).toBe('mouser');
+    expect(selectParser('https://uk.farnell.com/p/x')?.id).toBe('farnell');
+    expect(selectParser('https://www.lcsc.com/p/x')?.id).toBe('lcsc');
+    expect(selectParser('https://uk.rs-online.com/p/x')?.id).toBe('rs');
+    expect(selectParser('https://www.adafruit.com/product/1')?.id).toBe('adafruit');
+    expect(selectParser('https://www.sparkfun.com/products/1')?.id).toBe('sparkfun');
+  });
+
   it('routes a DigiKey URL to the host-specific parser', () => {
     expect(selectParser('https://www.digikey.com/p/x')?.id).toBe('digikey');
   });

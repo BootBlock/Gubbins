@@ -144,6 +144,19 @@ describe('ItemRepository', () => {
     expect(history.rows[0]?.netValueDelta).toBe(-30); // applied delta, clamped
   });
 
+  it('clamps gauge net value at full capacity on an overfilled refill (§4.1.2)', async () => {
+    const spool = await items.create({
+      name: 'Refillable',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 400 },
+    });
+    // Adding 800 g would overfill (1200 g); the net is capped at the 1000 g capacity.
+    const after = await items.adjustGauge(spool.id, { delta: 800 });
+    expect(after.gauge?.currentNetValue).toBe(1000);
+    const history = await items.getHistory(spool.id);
+    expect(history.rows[0]?.netValueDelta).toBe(600); // applied delta, clamped to top-off
+  });
+
   it('rejects quantity adjustment on a gauge item', async () => {
     const spool = await items.create({
       name: 'Spool',

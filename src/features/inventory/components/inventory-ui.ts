@@ -1,15 +1,30 @@
 /**
  * Shared presentational helpers for the inventory feature (spec §3, §4.1.3).
- * Pure functions — no React — for gauge colour bands and en-GB number formatting.
+ * Pure functions — no React — for gauge colour bands, enum labels and date-input
+ * conversions. Locale-aware number/measure/date *display* lives in the
+ * `makeFormatters` factory (`@/lib/format`) via the `useFormatters()` hook so it
+ * honours the user's chosen locale (§3); these helpers are locale-independent.
  */
 import type {
   AttachmentKind,
   Condition,
   FieldType,
+  Item,
   MaintenanceBasis,
   TrackingMode,
 } from '@/db/repositories';
 import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
+
+/**
+ * Multi-select model for the inventory list (spec §6 batch QR labels, Phase 49).
+ * When present on a row/card, a selection checkbox is shown; selection lives as
+ * ephemeral Tier-3 screen state and survives the bounded virtualised-list window
+ * because it is keyed by id, independent of which page is currently resident.
+ */
+export interface ItemSelection {
+  readonly selectedIds: ReadonlySet<string>;
+  readonly onToggle: (item: Item) => void;
+}
 
 export interface GaugeTone {
   /** Filled bar / arc colour. */
@@ -32,19 +47,6 @@ export function gaugeTone(percentage: number): GaugeTone {
     return { fill: 'bg-warning', text: 'text-warning', track: 'bg-warning/15' };
   }
   return { fill: 'bg-success', text: 'text-success', track: 'bg-success/15' };
-}
-
-const numberFormat = new Intl.NumberFormat('en-GB');
-
-/** Format an integer quantity with en-GB grouping (spec §1.2.1, §2.4.3). */
-export function formatQuantity(value: number): string {
-  return numberFormat.format(value);
-}
-
-/** Format a gauge value, trimming needless decimals, with its unit. */
-export function formatMeasure(value: number, unit: string): string {
-  const rounded = Math.round(value * 100) / 100;
-  return `${numberFormat.format(rounded)}${unit}`;
 }
 
 export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
@@ -86,12 +88,6 @@ export const MAINTENANCE_BASIS_LABELS: Record<MaintenanceBasis, string> = {
   TIME: 'Time-based',
   USAGE: 'Usage-based',
 };
-
-/** Format a UNIX-ms instant as an en-GB date (no time) for expiry/maintenance display. */
-const dateFormat = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-export function formatDate(ms: number): string {
-  return dateFormat.format(new Date(ms));
-}
 
 /** Convert a UNIX-ms instant to the `yyyy-MM-dd` string an `<input type="date">` wants. */
 export function toDateInputValue(ms: number | null): string {

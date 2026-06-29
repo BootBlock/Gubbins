@@ -74,6 +74,14 @@ async function runBoot(
     void storage.requestPersistence();
     storage.startMonitoring();
 
+    // DEV-only test seam (stripped from production builds): the real-browser smoke
+    // (§8.5.5) can force a storage tier to drive the §7.6 Triage Dashboard, which is
+    // otherwise only reachable under genuine OPFS pressure.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __storageStore?: typeof useStorageStore }).__storageStore =
+        useStorageStore;
+    }
+
     commit({ status: 'ready', result });
   } catch (error) {
     commit({ status: 'error', error: DbError.fromUnknown(error, 'INIT_FAILED') });

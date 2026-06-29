@@ -17,7 +17,7 @@ describe('Tooltip', () => {
     // Hover open is delayed, so it must not appear synchronously on enter.
     expect(screen.queryByRole('tooltip')).toBeNull();
 
-    const tip = await screen.findByRole('tooltip');
+    const tip = await screen.findByRole('tooltip', {}, { timeout: 2000 });
     expect(tip).toBeInTheDocument();
     expect(tip.querySelector('strong')?.textContent).toBe('estimated');
   });
@@ -48,6 +48,20 @@ describe('Tooltip', () => {
     expect(screen.getByRole('tooltip')).toBeInTheDocument();
   });
 
+  it('does not open on the focus that follows a pointer press (so the click is never stolen)', async () => {
+    render(
+      <Tooltip content="Should not pop on a mouse click.">
+        <button type="button">toggle</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByText('toggle').parentElement!;
+    // Mouse press → focus, exactly as a real click does. The bubble must stay shut;
+    // otherwise it can render over the trigger and steal the mouse-up.
+    fireEvent.pointerDown(trigger, { pointerType: 'mouse' });
+    fireEvent.focus(trigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   it('shows on keyboard focus and links the trigger via aria-describedby', async () => {
     render(
       <Tooltip content="Helpful text.">
@@ -67,7 +81,7 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     fireEvent.mouseEnter(screen.getByText('x'));
-    await screen.findByRole('tooltip');
+    await screen.findByRole('tooltip', {}, { timeout: 2000 });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
   });

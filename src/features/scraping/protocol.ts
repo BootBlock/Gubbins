@@ -45,8 +45,35 @@ export const scrapeResultPayloadSchema = z.object({
 });
 export type ScrapeResultPayload = z.infer<typeof scrapeResultPayloadSchema>;
 
-/** The categories of scrape failure the extension marshals back (§9.4.2). */
-export const SCRAPE_ERROR_TYPES = ['DOM_DRIFT', 'NETWORK_TIMEOUT', 'RATE_LIMITED'] as const;
+/**
+ * The categories of scrape failure the extension marshals back (§9.4.2).
+ *
+ * The first three are the spec's named examples; the latter three deepen the taxonomy
+ * so a *received* HTTP failure is no longer mis-reported as a transport timeout (the
+ * pre-Phase-35 behaviour collapsed every non-429 status into `NETWORK_TIMEOUT`). The
+ * HTTP-status → type mapping is the pure {@link classifyHttpStatus} in `scrape-errors.ts`:
+ * - `DOM_DRIFT` — a parser selector/price failure (the page loaded but no longer matches).
+ * - `NETWORK_TIMEOUT` — a transport-level failure: abort/timeout/DNS, **no** HTTP response.
+ * - `RATE_LIMITED` — HTTP 429 (back off and retry).
+ * - `BLOCKED` — HTTP 401/403/other-4xx (the supplier refused the request: anti-bot, auth).
+ * - `NOT_FOUND` — HTTP 404/410 (a dead/wrong product URL — actionable: check the link).
+ * - `SERVER_ERROR` — HTTP 5xx (a supplier-side outage — actionable: try again later).
+ * - `CHALLENGE` — a **200-OK** anti-bot interstitial (Cloudflare/Incapsula/PerimeterX/
+ *   DataDome): the page loaded successfully but its body is a challenge, not the product.
+ *   Detected from the fetched body by the pure {@link detectChallengePage} (Phase 36), so
+ *   it is reported precisely rather than mis-marshalled as a `DOM_DRIFT` parse failure.
+ *
+ * Adding a member is a §9 wire change: the extension must be rebuilt (`build:extension`).
+ */
+export const SCRAPE_ERROR_TYPES = [
+  'DOM_DRIFT',
+  'NETWORK_TIMEOUT',
+  'RATE_LIMITED',
+  'BLOCKED',
+  'NOT_FOUND',
+  'SERVER_ERROR',
+  'CHALLENGE',
+] as const;
 export type ScrapeErrorType = (typeof SCRAPE_ERROR_TYPES)[number];
 
 /** Explicit error marshalling (§9.4.2): the targeted domain + the failure reason. */
@@ -66,9 +93,17 @@ export type ScrapeRequestPayload = z.infer<typeof scrapeRequestPayloadSchema>;
 const sourceLiteral = z.literal(EXTENSION_SOURCE);
 
 /**
+ * Correlation id carried by every scrape message (§9 multi-scrape). A `SCRAPE_REQUEST`
+ * stamps a fresh id and the extension echoes it back on the matching `SCRAPE_RESULT`/
+ * `SCRAPE_ERROR`, so the PWA can run several scrapes concurrently and route each
+ * outcome to the request that started it. Non-empty so a blank id can never alias.
+ */
+const requestIdSchema = z.string().min(1);
+
+/**
  * The `ExtensionMessage<T>` union (§9.2). A discriminated union on `type` keeps the
  * payload strongly typed per kind. `EXTENSION_READY` carries an optional version
- * string and is otherwise payload-free.
+ * string and is otherwise payload-free; the three scrape kinds carry a `requestId`.
  */
 export const extensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
@@ -79,16 +114,19 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     source: sourceLiteral,
     type: z.literal('SCRAPE_REQUEST'),
+    requestId: requestIdSchema,
     payload: scrapeRequestPayloadSchema,
   }),
   z.object({
     source: sourceLiteral,
     type: z.literal('SCRAPE_RESULT'),
+    requestId: requestIdSchema,
     payload: scrapeResultPayloadSchema,
   }),
   z.object({
     source: sourceLiteral,
     type: z.literal('SCRAPE_ERROR'),
+    requestId: requestIdSchema,
     payload: scrapeErrorPayloadSchema,
   }),
 ]);
@@ -128,10 +166,22 @@ export function parseExtensionMessage(
   return result.success ? result.data : null;
 }
 
+/**
+ * The constructor args for a given message kind: `EXTENSION_READY` takes only an
+ * optional payload; the three scrape kinds require `(payload, requestId)` so the
+ * correlation id can never be forgotten at a call site (the type enforces it).
+ */
+type MessageArgs<T extends ExtensionMessage['type']> = T extends 'EXTENSION_READY'
+  ? [payload?: Extract<ExtensionMessage, { type: 'EXTENSION_READY' }>['payload']]
+  : [payload: Extract<ExtensionMessage, { type: T }>['payload'], requestId: string];
+
 /** Build a well-formed envelope for the extension/content script to post. */
 export function makeMessage<T extends ExtensionMessage['type']>(
   type: T,
-  payload: Extract<ExtensionMessage, { type: T }>['payload'],
+  ...[payload, requestId]: MessageArgs<T>
 ): Extract<ExtensionMessage, { type: T }> {
-  return { source: EXTENSION_SOURCE, type, payload } as Extract<ExtensionMessage, { type: T }>;
+  const msg: Record<string, unknown> = { source: EXTENSION_SOURCE, type };
+  if (payload !== undefined) msg.payload = payload;
+  if (requestId !== undefined) msg.requestId = requestId;
+  return msg as Extract<ExtensionMessage, { type: T }>;
 }

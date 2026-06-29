@@ -45,6 +45,18 @@ export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 50;
 
 /**
+ * Maximum number of pages an infinite item list retains in the TanStack Query cache
+ * (spec §2.1 — "light memory with 100,000+ items"). Each list row carries a
+ * thumbnail BLOB, so without a cap a deep scroll would accumulate every fetched
+ * page's blobs in memory. `maxPages` bounds the resident window to
+ * `MAX_LIST_PAGES × DEFAULT_PAGE_SIZE` items (the virtualised list indexes in
+ * absolute space, so trimmed pages refetch transparently when scrolled back into
+ * view). Sized far larger than the on-screen + overscan window so trimming only
+ * happens hundreds of items deep, never near the viewport.
+ */
+export const MAX_LIST_PAGES = 6;
+
+/**
  * Item tracking levels (spec §4 "Tracking Levels", §4.1.1).
  * - `DISCRETE` — integer quantity (e.g. screws).
  * - `SERIALISED` — quantity forced to 1; cloning is a Phase 3 deliverable.
@@ -115,8 +127,22 @@ export type MaintenanceBasis = (typeof MAINTENANCE_BASES)[number];
  */
 export const EXPIRY_SOON_WINDOW_DAYS = 30;
 
+/**
+ * Default "low stock" thresholds for the §3 dashboard "Low Stock Alerts" widget.
+ * A DISCRETE/SERIALISED item is low when its on-hand `quantity` is at or below
+ * {@link LOW_STOCK_QTY_THRESHOLD}; a CONSUMABLE_GAUGE item is low when its
+ * `percentage_remaining` is at or below {@link LOW_STOCK_GAUGE_PERCENT} (§4 "low-stock
+ * alerts based on percentage or remaining weight rather than integer counts" — this
+ * matches the §4.1.3 crimson gauge zone). Both are overridable per call.
+ */
+export const LOW_STOCK_QTY_THRESHOLD = 5;
+export const LOW_STOCK_GAUGE_PERCENT = 15;
+
 /** Milliseconds in one day — shared by the pure expiry/maintenance scheduling maths. */
 export const MS_PER_DAY = 86_400_000;
+
+/** Milliseconds in one hour — the unit of checkout-hours maintenance telemetry (§4.3). */
+export const MS_PER_HOUR = 3_600_000;
 
 /**
  * Data types a category custom field may declare (spec §4 "Categories & Schema

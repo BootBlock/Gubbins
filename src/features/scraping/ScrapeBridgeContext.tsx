@@ -13,19 +13,28 @@
  * never offers the Scrape button.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import { bridgeReducer, initialBridgeState, type BridgeStatus } from './bridge-reducer';
+import {
+  bridgeReducer,
+  initialBridgeState,
+  pendingScrapeCount,
+  type ScrapeRequestState,
+} from './bridge-reducer';
 import { makeMessage, parseExtensionMessage } from './protocol';
-import type { ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
 
 interface ScrapeBridgeValue {
   readonly ready: boolean;
-  readonly status: BridgeStatus;
-  readonly result: ScrapeResultPayload | null;
-  readonly error: ScrapeErrorPayload | null;
-  /** Send a SCRAPE_REQUEST for a supplier URL across the bridge (§9.3). */
-  readonly requestScrape: (url: string) => void;
-  /** Clear the current result/error back to idle (keeps readiness). */
-  readonly reset: () => void;
+  /** Tracked scrapes keyed by `requestId` — several may be in flight at once (§9). */
+  readonly requests: Readonly<Record<string, ScrapeRequestState>>;
+  /** Number of scrapes still awaiting an outcome (for UI affordances). */
+  readonly pendingCount: number;
+  /**
+   * Send a SCRAPE_REQUEST for a supplier URL across the bridge (§9.3). Returns the
+   * generated `requestId` so the caller can track its own scrape among any concurrent
+   * ones via {@link requests}.
+   */
+  readonly requestScrape: (url: string) => string;
+  /** Drop a single finished (or abandoned) scrape by id. */
+  readonly clear: (id: string) => void;
 }
 
 const ScrapeBridgeContext = createContext<ScrapeBridgeValue | null>(null);
@@ -46,10 +55,11 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'READY' });
           break;
         case 'SCRAPE_RESULT':
-          dispatch({ type: 'RESULT', payload: msg.payload });
+          // Correlate by requestId — the reducer ignores a stale/foreign id (§9).
+          dispatch({ type: 'RESULT', id: msg.requestId, payload: msg.payload });
           break;
         case 'SCRAPE_ERROR':
-          dispatch({ type: 'ERROR', payload: msg.payload });
+          dispatch({ type: 'ERROR', id: msg.requestId, payload: msg.payload });
           break;
         // SCRAPE_REQUEST is outbound-only from the PWA — ignore our own echo.
       }
@@ -60,22 +70,23 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestScrape = useCallback((url: string) => {
-    dispatch({ type: 'REQUEST' });
-    window.postMessage(makeMessage('SCRAPE_REQUEST', { url }), window.location.origin);
+    const id = crypto.randomUUID();
+    dispatch({ type: 'REQUEST', id, url });
+    window.postMessage(makeMessage('SCRAPE_REQUEST', { url }, id), window.location.origin);
+    return id;
   }, []);
 
-  const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
+  const clear = useCallback((id: string) => dispatch({ type: 'CLEAR', id }), []);
 
   const value = useMemo<ScrapeBridgeValue>(
     () => ({
       ready: state.ready,
-      status: state.status,
-      result: state.result,
-      error: state.error,
+      requests: state.requests,
+      pendingCount: pendingScrapeCount(state),
       requestScrape,
-      reset,
+      clear,
     }),
-    [state, requestScrape, reset],
+    [state, requestScrape, clear],
   );
 
   return <ScrapeBridgeContext.Provider value={value}>{children}</ScrapeBridgeContext.Provider>;

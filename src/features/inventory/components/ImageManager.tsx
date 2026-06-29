@@ -29,7 +29,7 @@ export function ImageManager({ itemId }: { itemId: string }) {
             type="button"
             aria-label="Remove image"
             onClick={() => removeImage.mutate({ id: img.id, itemId })}
-            className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-opacity group-hover:opacity-100 [&_svg]:size-3.5"
+            className="absolute right-1 top-1 grid size-6 origin-top-right scale-90 place-items-center rounded-full bg-background/80 text-destructive opacity-0 backdrop-blur transition-all duration-200 ease-emphasized group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 [&_svg]:size-3.5"
           >
             <CloseIcon />
           </button>

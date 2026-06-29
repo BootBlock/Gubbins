@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, Surface, Tooltip } from '@/components/foundry';
+import { Banner, Button, LiveRegion, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   BrandIcon,
   CloudIcon,
@@ -14,12 +14,18 @@ import {
   SyncIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
+import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { buildBackupJson, restoreFromBackupJson } from './backup';
 import { MemoryCloudProvider } from './providers/memory-provider';
-import { connectFileSystemProvider } from './providers/file-system-provider';
+import {
+  connectFileSystemProvider,
+  forgetFileSystemProvider,
+  reconnectFileSystemProvider,
+} from './providers/file-system-provider';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
+import { httpTimeSource } from './time-source';
 
 /**
  * The Cloud Sync & File System Access hub (spec §2 Initial Handshake, §7, Phase 7).
@@ -32,15 +38,48 @@ import { runSync, type SyncResult } from './sync-engine';
 export function SyncScreen() {
   const client = useQueryClient();
   const auth = useAuthStore();
+  const fmt = useFormatters();
   const [connected, setConnected] = useState(getActiveProvider() !== null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingRestore, setPendingRestore] = useState<string | null>(null);
+  const [reconnectable, setReconnectable] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fsSupported = hasFileSystemAccess();
+
+  // Phase 14: resume the previously-chosen sync folder across sessions. On mount we only
+  // reconnect when the OS permission still stands; a handle needing a fresh grant surfaces
+  // a "Reconnect folder" button (the re-grant needs a user gesture).
+  useEffect(() => {
+    if (getActiveProvider() !== null || auth.providerId !== 'file-system') return;
+    let cancelled = false;
+    void reconnectFileSystemProvider(false).then((res) => {
+      if (cancelled) return;
+      if (res.provider) {
+        connect({ id: res.provider.id, label: res.provider.label }, res.provider);
+      } else if (res.needsGesture) {
+        setReconnectable(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function reconnectFolder() {
+    setError(null);
+    const res = await reconnectFileSystemProvider(true);
+    if (res.provider) {
+      setReconnectable(false);
+      connect({ id: res.provider.id, label: res.provider.label }, res.provider);
+    } else {
+      setError('Could not re-grant access to the sync folder. Pick it again.');
+    }
+  }
 
   function connect(provider: { id: string; label: string }, instance: NonNullable<ReturnType<typeof getActiveProvider>>) {
     setActiveProvider(instance);
@@ -69,7 +108,9 @@ export function SyncScreen() {
     setActiveProvider(null);
     auth.disconnect();
     setConnected(false);
+    setReconnectable(false);
     setResult(null);
+    void forgetFileSystemProvider(); // drop the persisted folder handle (Phase 14)
     setNotice('Disconnected.');
   }
 
@@ -83,7 +124,7 @@ export function SyncScreen() {
     setError(null);
     setNotice(null);
     try {
-      const outcome = await runSync(getSyncDriver(), provider);
+      const outcome = await runSync(getSyncDriver(), provider, { serverTime: httpTimeSource });
       setResult(outcome);
       if (outcome.status === 'HARD_STOP') {
         setError(outcome.message ?? 'Sync was halted by the storage Hard Stop.');
@@ -169,7 +210,10 @@ export function SyncScreen() {
         </Link>
       </header>
 
-      {error ? <Banner tone="danger" data-testid="sync-error">{error}</Banner> : null}
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
+      {/* Errors interrupt (assertive); a sync/restore/backup failure the user must hear
+          now. role="alert" also announces reliably on insertion, unlike a polite status. */}
+      {error ? <Banner tone="danger" role="alert" data-testid="sync-error">{error}</Banner> : null}
       {notice ? <Banner tone="info" data-testid="sync-notice">{notice}</Banner> : null}
 
       {/* Initial Handshake */}
@@ -188,14 +232,21 @@ export function SyncScreen() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {auth.lastSyncedAt
-                  ? `Last synced ${new Date(auth.lastSyncedAt).toLocaleString('en-GB')}`
+                  ? `Last synced ${fmt.dateTime(auth.lastSyncedAt)}`
                   : 'Not yet synced.'}
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={disconnect}>
-              <DisconnectIcon />
-              Disconnect
-            </Button>
+            <Tooltip
+              content="Stop syncing and forget this provider. Your local inventory is untouched; the synced copy stays in place."
+              triggerTabIndex={-1}
+            >
+              <span>
+                <Button variant="outline" size="sm" onClick={disconnect}>
+                  <DisconnectIcon />
+                  Disconnect
+                </Button>
+              </span>
+            </Tooltip>
           </Surface>
         ) : (
           <Surface className="space-y-3 p-4">
@@ -203,10 +254,22 @@ export function SyncScreen() {
               Choose where to synchronise. Gubbins is provider-agnostic — connect a local
               folder (shared via your own cloud drive) or the in-memory provider for trying it out.
             </p>
-            {configuredButOffline ? (
+            {reconnectable ? (
+              <Banner tone="info">
+                <div className="space-y-2">
+                  <p>
+                    Found your previous sync folder ({auth.providerLabel}). Re-grant access to resume
+                    syncing through it.
+                  </p>
+                  <Button size="sm" onClick={reconnectFolder} data-testid="reconnect-folder">
+                    <FolderSyncIcon />
+                    Reconnect folder
+                  </Button>
+                </div>
+              </Banner>
+            ) : configuredButOffline ? (
               <Banner tone="warning">
-                Previously connected to {auth.providerLabel}, but the connection does not survive a
-                reload — reconnect to resume syncing.
+                Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
               </Banner>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -239,17 +302,27 @@ export function SyncScreen() {
           Synchronise
         </h2>
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={syncNow} disabled={!connected || busy} data-testid="sync-now">
-            <SyncIcon />
-            Sync now
-          </Button>
-          {result && result.status !== 'HARD_STOP' ? (
-            <span className="text-sm text-muted-foreground" data-testid="sync-result">
-              {result.status} · pulled {result.pulled} · deleted {result.deleted}
-              {result.reparented > 0 ? ` · re-parented ${result.reparented}` : ''}
-              {result.rejectedCycles > 0 ? ` · cycles blocked ${result.rejectedCycles}` : ''}
+          <Tooltip
+            content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button onClick={syncNow} disabled={!connected || busy} data-testid="sync-now">
+                <SyncIcon />
+                Sync now
+              </Button>
             </span>
-          ) : null}
+          </Tooltip>
+          {/* Always-mounted polite region: the sync outcome appears in place after an
+              explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
+              The region must pre-exist for the later content change to be announced. */}
+          <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
+            {result && result.status !== 'HARD_STOP'
+              ? `${result.status} · pulled ${result.pulled} · deleted ${result.deleted}` +
+                (result.reparented > 0 ? ` · re-parented ${result.reparented}` : '') +
+                (result.rejectedCycles > 0 ? ` · cycles blocked ${result.rejectedCycles}` : '')
+              : null}
+          </LiveRegion>
         </div>
       </section>
 
@@ -263,14 +336,28 @@ export function SyncScreen() {
           across devices and schema versions.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={downloadBackup} disabled={busy} data-testid="download-backup">
-            <DownloadIcon />
-            Download backup
-          </Button>
-          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
-            <RestoreIcon />
-            Restore from file…
-          </Button>
+          <Tooltip
+            content="Save a versioned JSON snapshot of everything to your downloads — restorable on any device, across schema versions."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button variant="outline" onClick={downloadBackup} disabled={busy} data-testid="download-backup">
+                <DownloadIcon />
+                Download backup
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip
+            content="Load a backup JSON file. It **adds and updates** inventory (re-creating anything deleted since); items you have added are kept."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
+                <RestoreIcon />
+                Restore from file…
+              </Button>
+            </span>
+          </Tooltip>
           <input
             ref={fileRef}
             type="file"
@@ -299,6 +386,7 @@ export function SyncScreen() {
           </Banner>
         ) : null}
       </section>
+      </main>
     </div>
   );
 }

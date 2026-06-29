@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Tooltip } from '@/components/foundry';
+import { Button, Input, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { CapabilityIcon, CloseIcon } from '@/components/icons';
 import { useItemCapabilities, useRemoveCapability, useSetCapability } from '../capabilities';
 
@@ -41,6 +41,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
             <Tooltip
               key={cap.key}
               content={`**${cap.key}** = ${display(cap)}\n\nWeight: ${cap.weight}`}
+              openDelayMs={INFO_OPEN_DELAY_MS}
             >
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
                 <CapabilityIcon className="size-3" />

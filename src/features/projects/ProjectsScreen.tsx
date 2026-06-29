@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Spinner, Surface } from '@/components/foundry';
+import { Button, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import { AddIcon, BrandIcon, PackageIcon, ProjectIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
@@ -19,10 +19,20 @@ export function ProjectsScreen() {
 
   const rows = projects.data?.rows ?? [];
 
-  // Default the selection to the first project once loaded.
+  // Default the selection to the first project once loaded. Only acts when nothing is
+  // selected, so it never fights an explicit selection (e.g. a freshly created project
+  // selected via onCreated before the list cache has refetched).
   useEffect(() => {
     if (selectedId === null && rows.length > 0) setSelectedId(rows[0]!.id);
   }, [rows, selectedId]);
+
+  // On delete, jump to the next surviving project deterministically (computed from the
+  // current list minus the removed one) rather than clearing to null and re-deriving
+  // from a stale cache — which could briefly re-select the just-deleted project.
+  const selectAfterDelete = (deletedId: string) => {
+    const next = rows.find((p) => p.id !== deletedId);
+    setSelectedId(next?.id ?? null);
+  };
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
@@ -89,9 +99,17 @@ export function ProjectsScreen() {
         </aside>
 
         {/* Detail */}
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          className="flex min-w-0 flex-1 animate-rise flex-col outline-none"
+        >
           {selectedId ? (
-            <ProjectDetail projectId={selectedId} />
+            // Keyed by project id so picking a different project replays the swap-in
+            // entrance as the detail pane is replaced (reduced-motion handled globally).
+            <div key={selectedId} className="flex min-h-0 flex-1 animate-swap-in flex-col">
+              <ProjectDetail projectId={selectedId} onDeleted={() => selectAfterDelete(selectedId)} />
+            </div>
           ) : (
             <Surface className="grid flex-1 place-items-center p-8 text-center">
               <div className="text-muted-foreground">

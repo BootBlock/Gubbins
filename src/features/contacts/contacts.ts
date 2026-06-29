@@ -102,6 +102,9 @@ function invalidateBorrowing(client: ReturnType<typeof useQueryClient>): void {
   void client.invalidateQueries({ queryKey: checkoutKeys.all });
   void client.invalidateQueries({ queryKey: contactKeys.all });
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+  // A loan's duration feeds checkout-hours maintenance telemetry (§4.3, Phase 22), so a
+  // checkout/return shifts the derived usage on any accrue-mode schedule and the due set.
+  void client.invalidateQueries({ queryKey: inventoryKeys.maintenance() });
 }
 
 export function useCheckoutItem() {

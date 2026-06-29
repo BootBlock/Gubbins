@@ -36,7 +36,7 @@ export function CreateLocationDialog({
     <Modal open={open} onClose={onClose} title="Add location" description="Locations can be nested to any depth.">
       <div className="space-y-4">
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Name</span>
+          <span className="mb-field-gap block text-sm font-medium">Name</span>
           <Input
             autoFocus
             value={name}
@@ -46,7 +46,7 @@ export function CreateLocationDialog({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Parent (optional)</span>
+          <span className="mb-field-gap block text-sm font-medium">Parent (optional)</span>
           <Select value={parentId} onChange={(e) => setParentId(e.target.value)}>
             <option value="">— Top level —</option>
             {locations

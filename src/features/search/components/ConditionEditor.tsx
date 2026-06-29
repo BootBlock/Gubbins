@@ -1,4 +1,4 @@
-import { Input, Select } from '@/components/foundry';
+import { Input, Select, Tooltip } from '@/components/foundry';
 import { CloseIcon } from '@/components/icons';
 import type { FilterCondition, FilterOperator } from '@/db/search/ast';
 import { useSearchBuilder } from '../SearchBuilderContext';
@@ -74,19 +74,24 @@ export function ConditionEditor({
       </Select>
 
       {isCapability ? (
-        <Input
-          aria-label="Capability key"
-          placeholder="voltage"
-          value={capabilityKey(condition.field)}
-          onChange={(e) =>
-            dispatch({
-              type: 'updateCondition',
-              path,
-              patch: { field: toCapabilityField(e.target.value) },
-            })
-          }
-          className="h-9 w-28"
-        />
+        <Tooltip
+          content="The capability **key** to match, e.g. `voltage` or `tolerance` — the name of the spec, not its value."
+          triggerTabIndex={-1}
+        >
+          <Input
+            aria-label="Capability key"
+            placeholder="voltage"
+            value={capabilityKey(condition.field)}
+            onChange={(e) =>
+              dispatch({
+                type: 'updateCondition',
+                path,
+                patch: { field: toCapabilityField(e.target.value) },
+              })
+            }
+            className="h-9 w-28"
+          />
+        </Tooltip>
       ) : null}
 
       <Select
@@ -113,14 +118,18 @@ export function ConditionEditor({
         />
       ) : null}
 
-      <button
-        type="button"
-        aria-label="Remove condition"
-        onClick={() => dispatch({ type: 'remove', path })}
-        className="ml-auto grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive [&_svg]:size-4"
-      >
-        <CloseIcon />
-      </button>
+      <Tooltip content="Remove this condition from the group." triggerTabIndex={-1} className="ml-auto">
+        <span>
+          <button
+            type="button"
+            aria-label="Remove condition"
+            onClick={() => dispatch({ type: 'remove', path })}
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive [&_svg]:size-4"
+          >
+            <CloseIcon />
+          </button>
+        </span>
+      </Tooltip>
     </div>
   );
 }

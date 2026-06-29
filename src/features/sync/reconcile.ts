@@ -17,7 +17,12 @@
  * The engine never touches the database — the orchestrator applies the plan and
  * re-reads the merged state to push — so it is exhaustively unit-tested in isolation.
  */
-import { UNASSIGNED_LOCATION_ID, SYNC_TABLES } from '@/db/repositories';
+import {
+  UNASSIGNED_LOCATION_ID,
+  SYNC_TABLES,
+  ITEM_HISTORY_TABLE,
+  itemTagEdgeId,
+} from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { reconcileGauge } from './delta-crdt';
@@ -27,6 +32,8 @@ import { sanitiseRow } from './schema-dictionary';
 import type {
   GaugeHistoryDelta,
   GaugeResolution,
+  ItemTagEdge,
+  ItemTagEdgeDelete,
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
@@ -41,6 +48,12 @@ export interface ReconcileOptions {
   readonly offset: number;
   /** Live column sets per table for §7.3 payload sanitisation. */
   readonly dictionary: SchemaDictionary;
+  /**
+   * §7.6.3-A prune watermark: a remote `item_history` row older than this instant is
+   * NOT re-imported, so a device that deliberately pruned its ledger keeps that space
+   * reclaimed instead of re-downloading the pruned era from a peer. Defaults to 0.
+   */
+  readonly historyPrunedBefore?: number;
 }
 
 const EMPTY_PLAN: ReconciliationPlan = {
@@ -49,6 +62,9 @@ const EMPTY_PLAN: ReconciliationPlan = {
   gaugeResolutions: [],
   reparented: [],
   rejectedCycles: [],
+  historyInserts: [],
+  itemTagUpserts: [],
+  itemTagDeletes: [],
 };
 
 function num(value: unknown): number {
@@ -164,10 +180,321 @@ export function reconcile(
   // --- §7.5.3 cyclical-nesting rejection ----------------------------------------
   const rejectedCycles = rejectLocationCycles(local, localUpserts);
 
+  // --- §7.5 relational integrity: don't resurrect a child of a deleted parent ----
+  // A hard delete cascades its children locally but records only the *parent*
+  // tombstone (§7.2), so a peer still holds the orphaned child rows. Without this
+  // guard the deleting device would re-download them on its next sync and the atomic
+  // apply would trip a foreign key. Drop any upsert whose parent was *known and
+  // removed*; null a *nullable* FK instead of dropping the row (mirrors the schema's
+  // ON DELETE SET NULL, e.g. a BOM line whose item was removed).
+  const finalItemIds = new Set(finalItems.keys());
+  const removedCategories = removedIds(
+    'categories',
+    local,
+    remote,
+    survivingIds('categories', local, localUpserts, localDeletes),
+  );
+  const removedParents: Partial<Record<SyncTable, Set<string>>> = {
+    items: removedIds('items', local, remote, finalItemIds),
+    // A placement at a removed location must not be resurrected — its location's RESTRICT
+    // FK would reject it (Phase 25). The active set already drives the §7.5.2 item re-parent.
+    locations: removedIds('locations', local, remote, activeLocationIds),
+    categories: removedCategories,
+    contacts: removedIds('contacts', local, remote, survivingIds('contacts', local, localUpserts, localDeletes)),
+    projects: removedIds('projects', local, remote, survivingIds('projects', local, localUpserts, localDeletes)),
+    // §7.5 cascade-of-cascade (Phase 14): deleting a category cascades its category_fields
+    // (which themselves leave no tombstone), so a field belonging to a removed category is
+    // *also* removed — fold those in so item_field_values referencing them are guarded too.
+    category_fields: cascadeRemovedFields(
+      local,
+      remote,
+      removedCategories,
+      survivingIds('category_fields', local, localUpserts, localDeletes),
+    ),
+  };
+  enforceForeignKeys(localUpserts, removedParents);
+
   // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
   const gaugeResolutions = reconcileGauges(local, remote, finalItems);
 
-  return { localUpserts, localDeletes, gaugeResolutions, reparented, rejectedCycles };
+  // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
+  // Both reference parents (items/tags), so they are filtered to the rows that will
+  // survive the merge to keep the atomic apply FK-safe.
+  const finalTagIds = survivingIds('tags', local, localUpserts, localDeletes);
+
+  const historyInserts = reconcileHistory(
+    local,
+    remote,
+    options.dictionary[ITEM_HISTORY_TABLE],
+    options.historyPrunedBefore ?? 0,
+    finalItemIds,
+  );
+  const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
+    local,
+    remote,
+    offset,
+    finalItemIds,
+    finalTagIds,
+  );
+
+  return {
+    localUpserts,
+    localDeletes,
+    gaugeResolutions,
+    reparented,
+    rejectedCycles,
+    historyInserts,
+    itemTagUpserts,
+    itemTagDeletes,
+  };
+}
+
+/**
+ * Foreign-key references of each synced child table to a synced parent table (§7.5).
+ * `nullable` mirrors the column's ON DELETE behaviour: a NOT-NULL FK (ON DELETE CASCADE)
+ * means the child cannot outlive its parent (drop it); a nullable FK (ON DELETE SET NULL)
+ * keeps the child with the reference cleared. `items.location_id` is intentionally absent
+ * — the §7.5.2 re-parent already re-homes orphaned items to Unassigned.
+ */
+const FK_REFS: Partial<
+  Record<SyncTable, readonly { col: string; parent: SyncTable; nullable: boolean }[]>
+> = {
+  items: [{ col: 'category_id', parent: 'categories', nullable: true }],
+  // Per-location stock ledger (Phase 25). item_id mirrors the cascade children above —
+  // drop a placement whose item was removed. location_id drops an *incoming* placement at
+  // a removed location (it would trip the location's RESTRICT FK); the device's *own*
+  // surviving placement at that location is instead re-homed to Unassigned by `applyPlan`
+  // before the location tombstone DELETE, so local stock is preserved rather than lost.
+  item_stock: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    { col: 'location_id', parent: 'locations', nullable: false },
+  ],
+  // Per-batch ledger (Phase 28), the SSOT below item_stock. Same guards as item_stock: a
+  // batch whose item was removed is dropped (CASCADE), and an *incoming* batch at a removed
+  // location is dropped (its RESTRICT FK would reject it) while the device's own surviving
+  // batches at that location are re-homed to Unassigned by `applyPlan` before the location
+  // tombstone DELETE.
+  stock_batches: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    { col: 'location_id', parent: 'locations', nullable: false },
+  ],
+  category_fields: [{ col: 'category_id', parent: 'categories', nullable: false }],
+  item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
+  item_field_values: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    { col: 'field_id', parent: 'category_fields', nullable: false },
+  ],
+  item_images: [{ col: 'item_id', parent: 'items', nullable: false }],
+  item_attachments: [{ col: 'item_id', parent: 'items', nullable: false }],
+  capabilities: [{ col: 'item_id', parent: 'items', nullable: false }],
+  checkouts: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    // §7.5 (Phase 14): a peer hard-deleting a contact cascades its loans (ON DELETE
+    // CASCADE, NOT NULL). Without this the deleting device would re-download an orphaned
+    // checkout and trip the FK on its next sync.
+    { col: 'contact_id', parent: 'contacts', nullable: false },
+    // Phase 26: the per-location lend-from pointer. Nullable (NO ACTION) — an incoming
+    // checkout whose source location did not survive the merge keeps the loan but clears
+    // the pointer (the return then falls back to the item's primary location), mirroring
+    // the location-delete null-out in `applyPlan` / `LocationRepository.delete`.
+    { col: 'source_location_id', parent: 'locations', nullable: true },
+  ],
+  maintenance_schedules: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    // Phase 30: the optional per-location scope. Nullable (NO ACTION) — an incoming
+    // schedule whose scope location did not survive the merge keeps the schedule but
+    // clears the pointer (it reverts to item-level), mirroring the location-delete
+    // null-out in `applyPlan` / `LocationRepository.delete`.
+    { col: 'location_id', parent: 'locations', nullable: true },
+  ],
+  project_bom_lines: [
+    { col: 'project_id', parent: 'projects', nullable: false },
+    { col: 'item_id', parent: 'items', nullable: true },
+  ],
+};
+
+/**
+ * Ids of `table` that are **known** (present in either snapshot) but will not survive
+ * the merge — i.e. genuinely removed parents. An id absent from both snapshots is *not*
+ * "removed" (the snapshot just doesn't carry it), so its children are left untouched.
+ */
+function removedIds(
+  table: SyncTable,
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  surviving: ReadonlySet<string>,
+): Set<string> {
+  const removed = new Set<string>();
+  for (const r of local.tables[table] ?? []) {
+    const id = String(r.id);
+    if (!surviving.has(id)) removed.add(id);
+  }
+  for (const r of remote.tables[table] ?? []) {
+    const id = String(r.id);
+    if (!surviving.has(id)) removed.add(id);
+  }
+  return removed;
+}
+
+/**
+ * `category_fields` that will not survive the merge: those directly removed, *plus* those
+ * whose owning `category_id` was removed (the cascade a `categories` delete triggers,
+ * which leaves no child tombstone). Folding the cascade in lets the FK guard also drop
+ * `item_field_values` that reference a field whose category was deleted (§7.5, Phase 14).
+ */
+function cascadeRemovedFields(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  removedCategories: ReadonlySet<string>,
+  survivingFields: ReadonlySet<string>,
+): Set<string> {
+  const removed = removedIds('category_fields', local, remote, survivingFields);
+  for (const f of [...(local.tables.category_fields ?? []), ...(remote.tables.category_fields ?? [])]) {
+    if (removedCategories.has(String(f.category_id))) removed.add(String(f.id));
+  }
+  return removed;
+}
+
+/**
+ * Drop (or null) any upsert whose parent was removed in the merge, mutating
+ * `localUpserts` in place. A NOT-NULL orphan is removed; a nullable orphan keeps the row
+ * with the FK column cleared.
+ */
+function enforceForeignKeys(
+  localUpserts: TableRow[],
+  removedParents: Partial<Record<SyncTable, Set<string>>>,
+): void {
+  for (let i = localUpserts.length - 1; i >= 0; i -= 1) {
+    const u = localUpserts[i]!;
+    const refs = FK_REFS[u.table];
+    if (!refs) continue;
+    let row = u.row;
+    let drop = false;
+    for (const { col, parent, nullable } of refs) {
+      const value = row[col];
+      if (value === null || value === undefined) continue;
+      const removed = removedParents[parent];
+      if (!removed || !removed.has(String(value))) continue; // parent intact (or unknown)
+      if (nullable) {
+        row = { ...row, [col]: null };
+      } else {
+        drop = true;
+        break;
+      }
+    }
+    if (drop) localUpserts.splice(i, 1);
+    else if (row !== u.row) localUpserts[i] = { table: u.table, row };
+  }
+}
+
+/** Ids of a (LWW) table that survive the merge: local rows − deletes + upserts. */
+function survivingIds(
+  table: SyncTable,
+  local: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const row of local.tables[table] ?? []) ids.add(String(row.id));
+  for (const u of localUpserts) if (u.table === table) ids.add(String(u.row.id));
+  for (const d of localDeletes) if (d.tableName === table) ids.delete(d.id);
+  return ids;
+}
+
+/**
+ * Append-only Activity Ledger reconciliation (§7.3, Phase 11). The ledger is immutable,
+ * so the same event has the same UUID everywhere: simply INSERT any remote row missing
+ * locally (**union-by-id**, never LWW). Two guards: a row older than the §7.6.3-A prune
+ * watermark is skipped (the device deliberately reclaimed that space), and a row whose
+ * `item_id` will not survive the merge is skipped (its FK parent is gone — it would
+ * cascade away anyway).
+ */
+function reconcileHistory(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  allowedCols: readonly string[] | undefined,
+  prunedBefore: number,
+  finalItemIds: ReadonlySet<string>,
+): SqlRow[] {
+  const localIds = new Set((local.itemHistory ?? []).map((r) => String(r.id)));
+  const inserts: SqlRow[] = [];
+  for (const r of remote.itemHistory ?? []) {
+    if (localIds.has(String(r.id))) continue;
+    if (num(r.created_at) < prunedBefore) continue;
+    if (!finalItemIds.has(String(r.item_id))) continue;
+    inserts.push(allowedCols ? sanitiseRow(r, allowedCols) : r);
+  }
+  return inserts;
+}
+
+/**
+ * M:N `item_tags` membership reconciliation (§7.3, Phase 11). The join has no per-row
+ * timestamp, so it cannot resolve by LWW. Instead it is a **tombstone-wins union**
+ * (2P-set): an edge is present after the merge iff either side still holds it AND
+ * neither side carries a deletion tombstone for it. A surviving edge missing locally is
+ * added (FK-guarded against the surviving item/tag sets); an edge present locally but
+ * tombstoned by the peer is deleted and the (newest) tombstone adopted. A re-link is
+ * only possible once the edge tombstone is TTL-pruned.
+ */
+function reconcileItemTags(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  offset: number,
+  finalItemIds: ReadonlySet<string>,
+  finalTagIds: ReadonlySet<string>,
+): { itemTagUpserts: ItemTagEdge[]; itemTagDeletes: ItemTagEdgeDelete[] } {
+  const localEdges = edgeSet(local.itemTags);
+  const remoteEdges = edgeSet(remote.itemTags);
+  const localTomb = edgeTombstones(local.tombstones, offset);
+  const remoteTomb = edgeTombstones(remote.tombstones, 0);
+
+  const keys = new Set<string>([
+    ...localEdges.keys(),
+    ...remoteEdges.keys(),
+    ...localTomb.keys(),
+    ...remoteTomb.keys(),
+  ]);
+
+  const itemTagUpserts: ItemTagEdge[] = [];
+  const itemTagDeletes: ItemTagEdgeDelete[] = [];
+
+  for (const key of keys) {
+    const edge = localEdges.get(key) ?? remoteEdges.get(key)!;
+    const lt = localTomb.get(key);
+    const rt = remoteTomb.get(key);
+    const tombstoned = lt !== undefined || rt !== undefined;
+    const present = (localEdges.has(key) || remoteEdges.has(key)) && !tombstoned;
+    const localHas = localEdges.has(key);
+
+    if (present && !localHas) {
+      // Add the edge locally — only if both endpoints survive the merge (FK-safe).
+      if (finalItemIds.has(edge.itemId) && finalTagIds.has(edge.tagId)) {
+        itemTagUpserts.push(edge);
+      }
+    } else if (!present && localHas) {
+      // Peer removed it (we hold no tombstone, since localHas implies none) → delete +
+      // adopt the winning tombstone instant.
+      const deletedAt = Math.max(lt ?? 0, rt ?? 0);
+      itemTagDeletes.push({ ...edge, deletedAt });
+    }
+  }
+  return { itemTagUpserts, itemTagDeletes };
+}
+
+/** Index membership edges by their composite key. */
+function edgeSet(edges: readonly ItemTagEdge[] | undefined): Map<string, ItemTagEdge> {
+  const map = new Map<string, ItemTagEdge>();
+  for (const e of edges ?? []) map.set(itemTagEdgeId(e.itemId, e.tagId), e);
+  return map;
+}
+
+/** Edge tombstones (key → offset-adjusted deletedAt) from a tombstone list. */
+function edgeTombstones(tombstones: readonly Tombstone[], offset: number): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const t of tombstones) {
+    if (t.tableName === 'item_tags') map.set(t.id, t.deletedAt + offset);
+  }
+  return map;
 }
 
 /**

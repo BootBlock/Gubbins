@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LinkIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
-import { formatCurrency } from '@/lib/format';
+import { useFormatters } from '@/lib/useFormatters';
 import {
   ScrapeReviewDialog,
   ScrapeSupplierPanel,
@@ -9,7 +9,6 @@ import {
   type ScrapeResultPayload,
   type ScrapeWrite,
 } from '@/features/scraping';
-import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useItemAliases } from '../queries';
 import { useApplyScrape } from '../mutations';
 
@@ -23,7 +22,7 @@ export function SupplierDataEditor({ item }: { item: Item }) {
   const { data: aliases } = useItemAliases(item.id);
   const applyScrape = useApplyScrape();
   const notify = useScrapeNotifier();
-  const baseCurrency = usePreferencesStore((s) => s.baseCurrency);
+  const fmt = useFormatters();
   const [reviewPayload, setReviewPayload] = useState<ScrapeResultPayload | null>(null);
 
   const existing = {
@@ -57,7 +56,7 @@ export function SupplierDataEditor({ item }: { item: Item }) {
         <Detail label="Manufacturer" value={item.manufacturer} />
         <Detail
           label="Unit cost"
-          value={item.unitCost !== null ? formatCurrency(item.unitCost, baseCurrency) : null}
+          value={item.unitCost !== null ? fmt.currency(item.unitCost) : null}
         />
       </dl>
 

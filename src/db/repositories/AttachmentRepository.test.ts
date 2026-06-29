@@ -68,6 +68,64 @@ describe('AttachmentRepository', () => {
     expect(list).toHaveLength(0);
   });
 
+  it('stamps the origin device id on a local pointer and leaves it null for a URL', async () => {
+    const item = await items.create({ name: 'NE555' });
+    const local = await attachments.add({
+      itemId: item.id,
+      kind: 'LOCAL_POINTER',
+      value: 'C:\\Datasheets\\NE555.pdf',
+      originDeviceId: 'dev-A',
+    });
+    expect(local.originDeviceId).toBe('dev-A');
+
+    const url = await attachments.add({
+      itemId: item.id,
+      kind: 'URL',
+      value: 'https://a.test/d.pdf',
+    });
+    expect(url.originDeviceId).toBeNull();
+  });
+
+  it('re-links a foreign pointer to a new path on this device', async () => {
+    const item = await items.create({ name: 'NE555' });
+    const att = await attachments.add({
+      itemId: item.id,
+      kind: 'LOCAL_POINTER',
+      value: 'C:\\old\\path.pdf',
+      originDeviceId: 'dev-A',
+    });
+    const relinked = await attachments.update(att.id, {
+      value: '/home/me/ne555.pdf',
+      originDeviceId: 'dev-B',
+    });
+    expect(relinked.kind).toBe('LOCAL_POINTER');
+    expect(relinked.value).toBe('/home/me/ne555.pdf');
+    expect(relinked.originDeviceId).toBe('dev-B');
+  });
+
+  it('replaces an unlinked local pointer with a validated external URL', async () => {
+    const item = await items.create({ name: 'NE555' });
+    const att = await attachments.add({
+      itemId: item.id,
+      kind: 'LOCAL_POINTER',
+      value: 'C:\\old\\path.pdf',
+      originDeviceId: 'dev-A',
+    });
+    const asUrl = await attachments.update(att.id, {
+      kind: 'URL',
+      value: 'https://ti.com/ne555.pdf',
+      originDeviceId: null,
+    });
+    expect(asUrl.kind).toBe('URL');
+    expect(asUrl.value).toBe('https://ti.com/ne555.pdf');
+    expect(asUrl.originDeviceId).toBeNull();
+
+    // Switching to a URL validates against the *new* kind.
+    await expect(
+      attachments.update(att.id, { kind: 'URL', value: 'not a url' }),
+    ).rejects.toBeInstanceOf(DbError);
+  });
+
   it('gates attachment growth on the storage Hard Stop, but allows removal', async () => {
     const item = await items.create({ name: 'NE555' });
     const att = await attachments.add({ itemId: item.id, kind: 'URL', value: 'https://a.test/d.pdf' });

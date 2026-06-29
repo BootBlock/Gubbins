@@ -15,12 +15,17 @@
  * mutate an item's on-hand `quantity` (which tracks physical stock). The Shopping
  * List therefore computes shortfall as `required − reserved` per line.
  */
+import { planReceipt } from '@/features/projects/receipts';
+import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import type { CostingMode, ProcurementStatus, ReservationStatus } from './constants';
 import { rowToBomLine, rowToProject } from './mappers';
+import { addStockStatement, consolidateStockStatements, setStockStatement } from './stock';
+import { addBatchStatement } from './stock-batches';
+import { tombstoneStatement } from './tombstone';
 import type {
   CreateBomLineInput,
   CreateProjectInput,
@@ -132,7 +137,12 @@ export class ProjectRepository extends BaseRepository {
 
   /** Hard delete a project; its BOM lines cascade away. Allowed under Hard Stop. */
   async delete(id: string): Promise<void> {
-    await this.driver.execute('DELETE FROM projects WHERE id = ?;', [id]);
+    // Tombstone the deletion (Phase 11: projects is synced). BOM lines cascade locally
+    // and, on a peer, from this same project tombstone, so they need none of their own.
+    await this.driver.transaction([
+      { sql: 'DELETE FROM projects WHERE id = ?;', params: [id] },
+      tombstoneStatement('projects', id),
+    ]);
   }
 
   // --- BOM lines -----------------------------------------------------------------
@@ -238,7 +248,11 @@ export class ProjectRepository extends BaseRepository {
   }
 
   async removeLine(lineId: string): Promise<void> {
-    await this.driver.execute('DELETE FROM project_bom_lines WHERE id = ?;', [lineId]);
+    // Tombstone the line deletion (Phase 11: project_bom_lines is synced).
+    await this.driver.transaction([
+      { sql: 'DELETE FROM project_bom_lines WHERE id = ?;', params: [lineId] },
+      tombstoneStatement('project_bom_lines', lineId),
+    ]);
   }
 
   // --- reservations (spec §4 Tentative vs Actual) --------------------------------
@@ -321,46 +335,65 @@ export class ProjectRepository extends BaseRepository {
   }
 
   /**
-   * Receive an ordered line into active inventory. For a matched DISCRETE item the
-   * received quantity (default: the full requirement) is added to its on-hand stock
-   * and, if a destination is given, it is moved there — both logged to the ledger.
-   * Non-discrete or unmatched lines simply transition to RECEIVED.
+   * Receive an ordered line into active inventory, in whole or in instalments (§4
+   * partial / split receipts). The accepted quantity (default: the full outstanding
+   * remainder) is clamped to what is still outstanding and accumulated onto the line's
+   * `received_qty`; the line only flips to RECEIVED once cumulative receipts meet the
+   * requirement, otherwise it stays IN_TRANSIT so the remainder keeps surfacing as
+   * incoming stock (`inTransitQtyForItem`). For a matched DISCRETE item the received
+   * delta is added to its on-hand stock and, if a destination is given, it is moved
+   * there — both logged to the ledger. Non-discrete / unmatched lines just track the
+   * received progress and transition to RECEIVED when complete.
    */
   async receiveLine(
     lineId: string,
-    opts: { locationId?: string; quantity?: number } = {},
+    opts: { locationId?: string; quantity?: number; batch?: BatchIdentity } = {},
   ): Promise<ProjectBomLine> {
     this.assertWritable();
     const { line } = await this.requireLine(lineId);
 
+    const plan = planReceipt(line.requiredQty, line.receivedQty, opts.quantity);
+    const nextStatus: ProcurementStatus = plan.fullyReceived ? 'RECEIVED' : line.procurementStatus;
+
     const statements: SqlStatement[] = [
       {
-        sql: 'UPDATE project_bom_lines SET procurement_status = ? WHERE id = ?;',
-        params: ['RECEIVED', lineId],
+        sql: 'UPDATE project_bom_lines SET received_qty = ?, procurement_status = ? WHERE id = ?;',
+        params: [plan.nextReceivedQty, nextStatus, lineId],
       },
     ];
 
-    if (line.itemId) {
+    if (line.itemId && plan.receivedDelta > 0) {
       const item = await this.driver.queryOne<{ tracking_mode: string; quantity: number; location_id: string }>(
         'SELECT tracking_mode, quantity, location_id FROM items WHERE id = ?;',
         [line.itemId],
       );
       if (item && item.tracking_mode === 'DISCRETE') {
-        const qty = Math.max(0, Math.floor(opts.quantity ?? line.requiredQty));
+        const qty = plan.receivedDelta;
         const nextQty = item.quantity + qty;
+        // Received stock lands at the destination location in the per-location ledger
+        // (Phase 25); when that differs from the item's primary location the item simply
+        // becomes multi-location (the units are physically wherever they arrived).
         const targetLocation = opts.locationId ?? item.location_id;
 
-        statements.push({
-          sql: 'UPDATE items SET quantity = ?, location_id = ? WHERE id = ?;',
-          params: [nextQty, targetLocation, line.itemId],
-        });
+        // A receipt may land into a specific batch/lot (Phase 28): the units arrive tagged
+        // with their manufacturing batch and expiry, so they enter that `stock_batches` row.
+        // With no batch given they fall into the placement's untracked default batch.
+        const batchKey = opts.batch ? batchKeyOf(opts.batch) : '';
+        const batchNote = batchKey !== '' ? ` [batch ${opts.batch!.batchNumber ?? opts.batch!.lotNumber ?? '—'}]` : '';
+        statements.push(
+          opts.batch
+            ? addBatchStatement(line.itemId, targetLocation, opts.batch, qty)
+            : addStockStatement(line.itemId, targetLocation, qty),
+        );
         statements.push(
           itemHistory(line.itemId, 'RECEIVED', {
             quantityDelta: qty,
-            note: `Received ${qty} from procurement (now ${nextQty}).`,
+            note: plan.fullyReceived
+              ? `Received ${qty} from procurement (now ${nextQty})${batchNote}.`
+              : `Received ${qty} of ${line.requiredQty} from procurement (now ${nextQty}; ${plan.outstandingQty} still arriving)${batchNote}.`,
             metadata:
               targetLocation !== item.location_id
-                ? { fromLocationId: item.location_id, toLocationId: targetLocation }
+                ? { toLocationId: targetLocation }
                 : undefined,
           }),
         );
@@ -473,6 +506,7 @@ export class ProjectRepository extends BaseRepository {
       item_id: string | null;
       label: string | null;
       required_qty: number;
+      received_qty: number;
     }>(
       `SELECT
          l.id AS line_id,
@@ -480,7 +514,8 @@ export class ProjectRepository extends BaseRepository {
          p.name AS project_name,
          l.item_id AS item_id,
          COALESCE(i.name, l.description, l.mpn, l.designator) AS label,
-         l.required_qty AS required_qty
+         l.required_qty AS required_qty,
+         l.received_qty AS received_qty
        FROM project_bom_lines l
        JOIN projects p ON p.id = l.project_id
        LEFT JOIN items i ON i.id = l.item_id
@@ -496,8 +531,34 @@ export class ProjectRepository extends BaseRepository {
       itemId: r.item_id,
       label: r.label ?? 'Unknown part',
       requiredQty: Number(r.required_qty),
+      receivedQty: Number(r.received_qty),
     }));
     return this.toPage(mapped, limit, offset);
+  }
+
+  /**
+   * The total quantity of one item currently In Transit (spec §4 "The Liminal Space
+   * of Procurement") — the sum of `required_qty` over every BOM line, across all
+   * projects, matched to this item and sitting at `procurement_status = 'IN_TRANSIT'`.
+   *
+   * This is a *derived projection* of the BOM lines (the §2.1 single source of truth),
+   * never a stored counter: receiving a line (→ RECEIVED), reverting its status,
+   * deleting the line or its whole project (FK cascade), and LWW sync of the line's
+   * status all keep this figure correct with no denormalised bookkeeping to drift. It
+   * is the item's distinct "incoming stock" quantity — conceptually held in the
+   * system-locked In-Transit location — kept separate from the on-hand `quantity`
+   * rather than overloaded onto it. With partial / split receipts (§4, Phase 24) it is
+   * the *outstanding* remainder (`required − received`) of each still-IN_TRANSIT line,
+   * so a part-received order surfaces only the quantity still to arrive.
+   */
+  async inTransitQtyForItem(itemId: string): Promise<number> {
+    const row = await this.driver.queryOne<{ qty: number }>(
+      `SELECT COALESCE(SUM(MAX(required_qty - received_qty, 0)), 0) AS qty
+         FROM project_bom_lines
+        WHERE item_id = ? AND procurement_status = 'IN_TRANSIT';`,
+      [itemId],
+    );
+    return Number(row?.qty ?? 0);
   }
 
   // --- assembly outcomes (spec §4 Composite Items & Assemblies) ------------------
@@ -535,6 +596,9 @@ export class ProjectRepository extends BaseRepository {
         params: [locationId, (input.resultName ?? project.name).trim() || project.name],
       });
       for (const itemId of partIds) {
+        // Bring every placement of the part into the container (Phase 25), then point its
+        // primary location at the container.
+        statements.push(...consolidateStockStatements(itemId, locationId));
         statements.push({
           sql: 'UPDATE items SET location_id = ? WHERE id = ?;',
           params: [locationId, itemId],
@@ -555,6 +619,8 @@ export class ProjectRepository extends BaseRepository {
         sql: `INSERT INTO items (id, name, location_id, tracking_mode, quantity) VALUES (?, ?, ?, 'DISCRETE', 1);`,
         params: [itemId, name, locationId],
       });
+      // Seed the new assembly's primary placement in the per-location ledger (Phase 25).
+      statements.push(setStockStatement(itemId, locationId, 1));
       statements.push(
         itemHistory(itemId, 'ASSEMBLED', {
           note: `Assembled from project "${project.name}".`,

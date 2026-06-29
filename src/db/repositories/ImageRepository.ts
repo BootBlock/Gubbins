@@ -11,6 +11,7 @@
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToItemImage } from './mappers';
+import { tombstoneStatement } from './tombstone';
 import type { CreateImageInput, ItemImage, ItemImageRow } from './types';
 
 export class ImageRepository extends BaseRepository {
@@ -53,7 +54,12 @@ export class ImageRepository extends BaseRepository {
       [id],
     );
     if (!row) return undefined;
-    await this.driver.execute('DELETE FROM item_images WHERE id = ?;', [id]);
+    // Tombstone the deletion in the same transaction so it propagates on the next sync
+    // (item_images joined SYNC_TABLES in Phase 11) rather than re-downloading from a peer.
+    await this.driver.transaction([
+      { sql: 'DELETE FROM item_images WHERE id = ?;', params: [id] },
+      tombstoneStatement('item_images', id),
+    ]);
     return row.full_res_opfs_path;
   }
 }

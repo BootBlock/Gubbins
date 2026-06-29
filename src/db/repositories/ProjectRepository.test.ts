@@ -65,6 +65,28 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(updated.status).toBe('ACTIVE');
   });
 
+  it('hard-deletes a project, cascades its BOM lines and records a tombstone', async () => {
+    const p = await projects.create({ name: 'Doomed' });
+    await projects.addLine(p.id, { description: 'R1' });
+    await projects.addLine(p.id, { description: 'R2' });
+
+    await projects.delete(p.id);
+
+    expect(await projects.getById(p.id)).toBeUndefined();
+    // BOM lines cascade away with the parent project (no orphans left behind).
+    const orphans = await driver.queryOne<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM project_bom_lines WHERE project_id = ?;',
+      [p.id],
+    );
+    expect(Number(orphans?.n)).toBe(0);
+    // The deletion is tombstoned so it propagates on the next sync (§7.2).
+    const tomb = await driver.queryOne<{ ok: number }>(
+      "SELECT 1 AS ok FROM tombstones WHERE table_name = 'projects' AND id = ?;",
+      [p.id],
+    );
+    expect(tomb?.ok).toBe(1);
+  });
+
   // --- BOM lines -----------------------------------------------------------------
 
   it('adds a manual (unmatched) BOM line', async () => {
@@ -181,7 +203,7 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(inTransit.rows.every((r) => r.projectName === 'Bench PSU')).toBe(true);
   });
 
-  it('receives a matched discrete line into stock, moving it and logging RECEIVED', async () => {
+  it('receives a matched discrete line into a destination placement and logs RECEIVED', async () => {
     const p = await projects.create({ name: 'P' });
     const item = await items.create({ name: 'IC', quantity: 1 });
     const shelf = await locations.create({ name: 'Shelf A' });
@@ -191,16 +213,126 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(received.procurementStatus).toBe('RECEIVED');
 
     const updated = await items.getById(item.id);
-    expect(updated?.quantity).toBe(5); // 1 on-hand + 4 received
-    expect(updated?.locationId).toBe(shelf.id);
+    expect(updated?.quantity).toBe(5); // 1 on-hand + 4 received (total across locations)
+    // Phase 25: the received units land at the destination as a per-location placement;
+    // the item's primary location is unchanged and it is now multi-location.
+    expect(updated?.locationId).not.toBe(shelf.id);
+    const placements = await items.listStock(item.id);
+    const shelfStock = placements.find((s) => s.locationId === shelf.id);
+    expect(shelfStock?.quantity).toBe(4);
     const history = await items.getHistory(item.id);
     expect(history.rows.some((h) => h.action === 'RECEIVED')).toBe(true);
+  });
+
+  it('receives a line in instalments, keeping it open until fully received (§4 split receipts)', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 1 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 5 });
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+
+    // First instalment: 2 of 5 — the line stays IN_TRANSIT, on-hand grows by 2.
+    const partial = await projects.receiveLine(line.id, { quantity: 2 });
+    expect(partial.procurementStatus).toBe('IN_TRANSIT');
+    expect(partial.receivedQty).toBe(2);
+    expect((await items.getById(item.id))?.quantity).toBe(3); // 1 + 2
+    // Only the outstanding remainder still surfaces as incoming.
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(3);
+
+    // Final instalment defaults to the remainder (3) → completes the line.
+    const done = await projects.receiveLine(line.id);
+    expect(done.procurementStatus).toBe('RECEIVED');
+    expect(done.receivedQty).toBe(5);
+    expect((await items.getById(item.id))?.quantity).toBe(6); // 3 + 3
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
+
+    const history = await items.getHistory(item.id);
+    const received = history.rows.filter((h) => h.action === 'RECEIVED');
+    expect(received).toHaveLength(2); // one ledger entry per instalment
+  });
+
+  it('clamps an over-receipt to the outstanding remainder (never overshoots)', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 4 });
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+
+    // Asking for 10 against a requirement of 4 accepts only 4 and completes the line.
+    const received = await projects.receiveLine(line.id, { quantity: 10 });
+    expect(received.procurementStatus).toBe('RECEIVED');
+    expect(received.receivedQty).toBe(4);
+    expect((await items.getById(item.id))?.quantity).toBe(4);
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
   });
 
   it('exposes the system-locked In-Transit location', async () => {
     const loc = await locations.getById(IN_TRANSIT_LOCATION_ID);
     expect(loc?.name).toBe('In Transit');
     expect(loc?.isSystem).toBe(true);
+  });
+
+  // --- In-Transit physical quantity (spec §4 liminal procurement, Phase 20) -------
+
+  it('derives an item In-Transit quantity distinct from on-hand stock', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 7 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 4 });
+
+    // Not yet ordered → nothing incoming; on-hand untouched.
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
+    expect((await items.getById(item.id))?.quantity).toBe(7);
+
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(4);
+    // The incoming quantity is *distinct* — on-hand is not overloaded.
+    expect((await items.getById(item.id))?.quantity).toBe(7);
+  });
+
+  it('sums In-Transit quantity across lines and projects for the same item', async () => {
+    const a = await projects.create({ name: 'A' });
+    const b = await projects.create({ name: 'B' });
+    const item = await items.create({ name: 'Cap' });
+    const l1 = await projects.addLine(a.id, { itemId: item.id, requiredQty: 3 });
+    const l2 = await projects.addLine(b.id, { itemId: item.id, requiredQty: 5 });
+    const other = await items.create({ name: 'Res' });
+    const l3 = await projects.addLine(a.id, { itemId: other.id, requiredQty: 9 });
+
+    await projects.setProcurement(l1.id, 'IN_TRANSIT');
+    await projects.setProcurement(l2.id, 'IN_TRANSIT');
+    await projects.setProcurement(l3.id, 'IN_TRANSIT'); // a different item — must not leak in
+
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(8);
+    expect(await projects.inTransitQtyForItem(other.id)).toBe(9);
+  });
+
+  it('clears the derived In-Transit quantity when a line is received into stock', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 1 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 4 });
+
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(4);
+
+    await projects.receiveLine(line.id);
+    // Received: the stock has arrived — incoming drops to nil and moves to on-hand.
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
+    expect((await items.getById(item.id))?.quantity).toBe(5);
+  });
+
+  it('drops the derived In-Transit quantity when the order is reverted or the line removed', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC' });
+    const reverted = await projects.addLine(p.id, { itemId: item.id, requiredQty: 2 });
+    const removed = await projects.addLine(p.id, { itemId: item.id, requiredQty: 6 });
+
+    await projects.setProcurement(reverted.id, 'IN_TRANSIT');
+    await projects.setProcurement(removed.id, 'IN_TRANSIT');
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(8);
+
+    await projects.setProcurement(reverted.id, 'NONE'); // order cancelled
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(6);
+
+    await projects.removeLine(removed.id); // line deleted entirely
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
   });
 
   // --- costing (spec §4 Current Replacement vs Point-in-Time) --------------------

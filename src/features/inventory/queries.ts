@@ -9,6 +9,7 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   DEFAULT_PAGE_SIZE,
+  MAX_LIST_PAGES,
   getItemRepository,
   getLocationRepository,
   type ItemListFilters,
@@ -48,7 +49,18 @@ export const inventoryKeys = {
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
+  /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45). */
+  lowStock: () => [...inventoryKeys.all, 'low-stock'] as const,
   inTransit: () => [...inventoryKeys.all, 'in-transit'] as const,
+  /** One item's derived incoming In-Transit quantity (Phase 20); under item() so an
+   *  `items()` invalidation (fired by procurement mutations) refreshes it by prefix. */
+  itemInTransit: (itemId: string) => [...inventoryKeys.item(itemId), 'in-transit'] as const,
+  /** One item's per-location stock breakdown (Phase 25); under item() so an
+   *  `items()` invalidation (any quantity/move write) refreshes it by prefix. */
+  itemStock: (itemId: string) => [...inventoryKeys.item(itemId), 'stock'] as const,
+  /** One item's per-location batch/lot breakdown (Phase 28); under item() so an
+   *  `items()` invalidation (any quantity/move/receive write) refreshes it by prefix. */
+  itemBatches: (itemId: string) => [...inventoryKeys.item(itemId), 'batches'] as const,
   maintenance: () => [...inventoryKeys.all, 'maintenance'] as const,
   itemMaintenance: (itemId: string) => [...inventoryKeys.item(itemId), 'maintenance'] as const,
   maintenanceDue: () => [...inventoryKeys.maintenance(), 'due'] as const,
@@ -72,6 +84,13 @@ export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEF
       getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    // Bound the resident window so a deep scroll never retains every page's
+    // thumbnail BLOBs (spec §2.1). The previous-page param lets a trimmed-off
+    // prefix refetch when the user scrolls back up; the virtualised list indexes
+    // in absolute space so the refill never shifts the viewport.
+    getPreviousPageParam: (firstPage) =>
+      firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
+    maxPages: MAX_LIST_PAGES,
   });
 }
 
@@ -91,6 +110,13 @@ export function useItem(id: string | undefined) {
   });
 }
 
+/**
+ * One item's Activity Log (§4), paginated newest-first for the detail view. The
+ * resident window is bounded exactly like the inventory list (§2.1): a heavily-used
+ * consumable can accrue thousands of `GAUGE_UPDATE` rows, so `maxPages` caps retained
+ * pages and `getPreviousPageParam` lets a trimmed-off prefix refetch when the user
+ * scrolls back up — the absolute-index `list-window.ts` seam keeps the viewport stable.
+ */
 export function useItemHistory(id: string | undefined) {
   return useInfiniteQuery({
     queryKey: inventoryKeys.itemHistory(id ?? ''),
@@ -100,6 +126,9 @@ export function useItemHistory(id: string | undefined) {
       getItemRepository().getHistory(id!, { limit: DEFAULT_PAGE_SIZE, offset: pageParam }),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    getPreviousPageParam: (firstPage) =>
+      firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
+    maxPages: MAX_LIST_PAGES,
   });
 }
 

@@ -8,7 +8,7 @@
  * the worker (and never logs an error that would fail the §8.5.5 smoke).
  */
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { DEFAULT_PAGE_SIZE, getItemRepository } from '@/db/repositories';
+import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository } from '@/db/repositories';
 import type { SearchAST } from '@/db/search/ast';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 import { inventoryKeys } from '@/features/inventory/queries';
@@ -35,6 +35,11 @@ export function useAstSearch(ast: SearchAST, enabled: boolean, pageSize = DEFAUL
       getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam }),
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    // Bound the resident window exactly as the plain list does (spec §2.1) so a
+    // long AST result set never accumulates every page's thumbnail BLOBs.
+    getPreviousPageParam: (firstPage) =>
+      firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
+    maxPages: MAX_LIST_PAGES,
   });
 }
 

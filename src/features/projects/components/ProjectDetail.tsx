@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react';
-import { Button, Select, Spinner, Surface, Tooltip } from '@/components/foundry';
+import { Button, Modal, Select, Spinner, Surface, Tooltip, useToast, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
   AddIcon,
   AssemblyIcon,
   CostIcon,
+  DeleteIcon,
   ImportIcon,
   ShoppingCartIcon,
 } from '@/components/icons';
 import { COSTING_MODES, type CostingMode } from '@/db/repositories';
 import { useInventoryItems } from '@/features/inventory/queries';
 import { useLocations } from '@/features/inventory/queries';
-import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { formatCurrency } from '@/lib/format';
+import { useFormatters } from '@/lib/useFormatters';
 import {
   useBomLines,
+  useDeleteProject,
   useProject,
   useProjectCosting,
   useSetCostingMode,
@@ -26,13 +27,22 @@ import { ImportBomDialog } from './ImportBomDialog';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
 
 /** The selected project's workspace: BOM table, costing toggle and shopping list. */
-export function ProjectDetail({ projectId }: { projectId: string }) {
+export function ProjectDetail({
+  projectId,
+  onDeleted,
+}: {
+  projectId: string;
+  /** Notify the parent so it can clear the selection once the project is gone. */
+  onDeleted?: () => void;
+}) {
   const project = useProject(projectId);
   const lines = useBomLines(projectId);
   const costing = useProjectCosting(projectId);
   const shoppingList = useShoppingList(projectId);
   const setCostingMode = useSetCostingMode();
-  const { baseCurrency, locale } = usePreferencesStore();
+  const deleteProject = useDeleteProject();
+  const { show } = useToast();
+  const fmt = useFormatters();
 
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
@@ -45,6 +55,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [finaliseOpen, setFinaliseOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   if (project.isLoading) {
     return (
@@ -57,9 +68,27 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     return <p className="p-8 text-sm text-muted-foreground">Project not found.</p>;
   }
 
-  const money = (value: number) => formatCurrency(value, baseCurrency, locale);
+  const money = (value: number) => fmt.currency(value);
   const lineRows = lines.data?.rows ?? [];
   const list = shoppingList.data ?? [];
+  const projectName = project.data.name;
+
+  const onConfirmDelete = () => {
+    deleteProject.mutate(projectId, {
+      onSuccess: () => {
+        setConfirmDeleteOpen(false);
+        show({
+          tone: 'success',
+          icon: <DeleteIcon />,
+          heading: 'Project deleted',
+          message: `"${projectName}" and its bill of materials were removed.`,
+        });
+        onDeleted?.();
+      },
+      onError: () =>
+        show({ tone: 'danger', heading: 'Delete failed', message: 'The project was not deleted.' }),
+    });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -85,14 +114,31 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             <ImportIcon />
             Import BOM
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFinaliseOpen(true)}
-            disabled={lineRows.length === 0}
+          <Tooltip
+            content="Consume this BOM into a finished assembly — a new container, a single object, or permanent consumption. This **completes** the project and cannot be undone automatically."
+            triggerTabIndex={-1}
           >
-            <AssemblyIcon />
-            Finalise
+            <span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFinaliseOpen(true)}
+                disabled={lineRows.length === 0}
+              >
+                <AssemblyIcon />
+                Finalise
+              </Button>
+            </span>
+          </Tooltip>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setConfirmDeleteOpen(true)}
+            data-testid="delete-project"
+          >
+            <DeleteIcon />
+            Delete
           </Button>
         </div>
       </header>
@@ -103,12 +149,13 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <CostIcon />
           <span className="text-sm font-medium text-foreground">Estimated cost</span>
         </div>
-        <span className="text-lg font-semibold tabular-nums">
+        <span className="text-lg font-semibold tabular-nums" data-testid="project-total-cost">
           {costing.data ? money(costing.data.totalCost) : '—'}
         </span>
         {costing.data && costing.data.unpricedLineCount > 0 ? (
           <Tooltip
             content={`${costing.data.unpricedLineCount} line(s) have no unit cost under this mode and are excluded.`}
+            openDelayMs={INFO_OPEN_DELAY_MS}
           >
             <span className="text-xs text-warning">
               {costing.data.unpricedLineCount} unpriced
@@ -195,6 +242,32 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         projectName={project.data.name}
         locations={locations}
       />
+
+      <Modal
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        title="Delete project?"
+        description={`"${projectName}" and its entire bill of materials will be permanently removed. Matched inventory items and their stock are not affected.`}
+      >
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setConfirmDeleteOpen(false)}
+            disabled={deleteProject.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onConfirmDelete}
+            disabled={deleteProject.isPending}
+            data-testid="delete-project-confirm"
+          >
+            {deleteProject.isPending ? <Spinner /> : <DeleteIcon />}
+            Delete project
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

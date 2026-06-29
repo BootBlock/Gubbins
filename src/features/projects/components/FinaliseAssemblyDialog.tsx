@@ -80,7 +80,7 @@ export function FinaliseAssemblyDialog({
 
         {namesAResult ? (
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">
+            <span className="mb-field-gap block text-sm font-medium">
               {outcome === 'CONTAINER' ? 'New location name' : 'New item name'}
             </span>
             <Input
@@ -95,7 +95,7 @@ export function FinaliseAssemblyDialog({
 
         {outcome === 'SINGULAR_OBJECT' ? (
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Place the new item in</span>
+            <span className="mb-field-gap block text-sm font-medium">Place the new item in</span>
             <Select value={resultLocationId} onChange={(e) => setResultLocationId(e.target.value)}>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>

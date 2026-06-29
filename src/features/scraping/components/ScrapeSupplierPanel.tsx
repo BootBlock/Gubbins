@@ -8,10 +8,11 @@
  * raises an actionable passive toast and stays out of the way (the manual fields
  * remain editable).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Input, Tooltip, useToast } from '@/components/foundry';
 import { ScrapeIcon, SupplierIcon, WarningIcon } from '@/components/icons';
 import { useScrapeBridge } from '../ScrapeBridgeContext';
+import { describeScrapeError } from '../scrape-errors';
 import type { ScrapeResultPayload } from '../protocol';
 
 export function ScrapeSupplierPanel({
@@ -25,42 +26,43 @@ export function ScrapeSupplierPanel({
   const bridge = useScrapeBridge();
   const { show } = useToast();
   const [url, setUrl] = useState('');
-  const awaiting = useRef(false);
+  // Track only the scrape *this* panel started, by its requestId, so a concurrent
+  // scrape elsewhere can never deliver its result here (§9 multi-scrape correlation).
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const request = requestId ? bridge.requests[requestId] : undefined;
 
-  // React only to the outcome of a scrape *this* panel initiated.
+  // React only to the outcome of our own correlated request.
   useEffect(() => {
-    if (!awaiting.current) return;
-    if (bridge.status === 'SUCCESS' && bridge.result) {
-      awaiting.current = false;
-      onResult(bridge.result);
-      bridge.reset();
-    } else if (bridge.status === 'ERROR' && bridge.error) {
-      awaiting.current = false;
-      const { error } = bridge;
+    if (!request) return;
+    if (request.status === 'SUCCESS' && request.result) {
+      onResult(request.result);
+      bridge.clear(request.id);
+      setRequestId(null);
+    } else if (request.status === 'ERROR' && request.error) {
+      const { error } = request;
       show({
         tone: 'warning',
         icon: <WarningIcon />,
         heading: 'Supplier scrape failed',
-        message:
-          error.error_type === 'DOM_DRIFT'
-            ? `${error.domain}: the page layout changed. Manual entry required.`
-            : `${error.domain}: ${error.reason}`,
+        // Per-type actionable wording (§9.4.3) — the deepened §9.4.2 taxonomy now
+        // distinguishes a block / dead URL / supplier outage, each with its own nudge.
+        message: describeScrapeError(error),
         action: { label: 'Enter manually', onClick: () => {} },
       });
-      bridge.reset();
+      bridge.clear(request.id);
+      setRequestId(null);
     }
-  }, [bridge, onResult, show]);
+  }, [request, onResult, show, bridge]);
 
   // §9.3: the Scrape control only exists once the extension has announced itself.
   if (!bridge.ready) return null;
 
   const trimmed = url.trim();
-  const isScraping = bridge.status === 'SCRAPING' && awaiting.current;
+  const isScraping = request?.status === 'SCRAPING';
 
   const submit = () => {
     if (trimmed.length === 0 || isScraping) return;
-    awaiting.current = true;
-    bridge.requestScrape(trimmed);
+    setRequestId(bridge.requestScrape(trimmed));
   };
 
   return (

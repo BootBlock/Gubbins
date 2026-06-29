@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
 import { COSTING_MODES } from '@/db/repositories';
 import { useCreateProject } from '../projects';
 import { COSTING_MODE_LABELS } from './projects-ui';
@@ -62,21 +62,15 @@ export function CreateProjectDialog({
   return (
     <Modal open={open} onClose={close} title="New project" description="Plan a build and its bill of materials.">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Name</span>
+        <FormField label="Name" error={errors.name?.message}>
           <Input autoFocus placeholder="e.g. Bench power supply" {...register('name')} />
-          {errors.name ? (
-            <span className="mt-1 block text-xs text-destructive">{errors.name.message}</span>
-          ) : null}
-        </label>
+        </FormField>
 
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Description (optional)</span>
+        <FormField label="Description (optional)">
           <Input placeholder="A short summary" {...register('description')} />
-        </label>
+        </FormField>
 
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Costing</span>
+        <FormField label="Costing">
           <Select {...register('costingMode')}>
             {COSTING_MODES.map((mode) => (
               <option key={mode} value={mode}>
@@ -84,7 +78,7 @@ export function CreateProjectDialog({
               </option>
             ))}
           </Select>
-        </label>
+        </FormField>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>

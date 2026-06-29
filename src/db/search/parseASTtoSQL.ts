@@ -74,6 +74,35 @@ export function parseASTtoSQL(ast: SearchAST): ParsedQuery {
 }
 
 /**
+ * Collect the distinct `capability:<key>` keys a tree filters on (spec §4 Weighted
+ * Capabilities, §5.1). Used to drive the "best match" ranking of {@link
+ * parseASTtoSQL} results: a query that filters on capabilities can order its hits by
+ * the summed weight of *those* capabilities each item carries (ItemRepository.searchByAst).
+ *
+ * Keys are returned lower-cased and de-duplicated (capability keys match case-insensitively
+ * everywhere). Pure and recursion-safe — it does not validate depth (that is parsing's job)
+ * and simply walks every node, so it never throws on a tree the parser would reject.
+ */
+export function collectCapabilityKeys(ast: SearchAST): string[] {
+  const keys = new Set<string>();
+  const visit = (node: ASTGroupNode): void => {
+    for (const child of node.conditions) {
+      if (isGroupNode(child)) {
+        visit(child);
+        continue;
+      }
+      const field = child.field.trim();
+      if (field.toLowerCase().startsWith(CAPABILITY_PREFIX)) {
+        const key = field.slice(CAPABILITY_PREFIX.length).trim().toLowerCase();
+        if (key.length > 0) keys.add(key);
+      }
+    }
+  };
+  visit(ast);
+  return [...keys];
+}
+
+/**
  * Translate one GROUP node. Returns `null` when it contributes no predicate (an
  * empty group, or one whose children are all empty) so it vanishes from the parent
  * rather than degenerating an `OR` into "match all".

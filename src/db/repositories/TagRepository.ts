@@ -11,6 +11,7 @@
 import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { rowToTag } from './mappers';
+import { clearItemTagTombstoneStatement, itemTagTombstoneStatement } from './tombstone';
 import type { Page, PageParams, Tag, TagRow, TagWithCount } from './types';
 
 interface TagCountRow extends TagRow {
@@ -119,12 +120,18 @@ export class TagRepository extends BaseRepository {
         sql: 'INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?);',
         params: [itemId, tagId],
       });
+      // Clear any stale edge tombstone so a re-link is genuinely present again (Phase 11
+      // membership: item_tags has no updated_at, so deletions are tracked as edge
+      // tombstones keyed by item_id|tag_id; a fresh link must drop the tombstone).
+      statements.push(clearItemTagTombstoneStatement(itemId, tagId));
     }
     for (const tagId of toRemove) {
       statements.push({
         sql: 'DELETE FROM item_tags WHERE item_id = ? AND tag_id = ?;',
         params: [itemId, tagId],
       });
+      // Record the unlink as an edge tombstone so it propagates on the next sync.
+      statements.push(itemTagTombstoneStatement(itemId, tagId));
     }
     await this.driver.transaction(statements);
   }

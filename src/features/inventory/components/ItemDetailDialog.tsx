@@ -5,6 +5,7 @@ import {
   CategoryIcon,
   DatasheetIcon,
   DueDateIcon,
+  HistoryIcon,
   ImageIcon,
   SettingsIcon,
   SupplierIcon,
@@ -12,6 +13,7 @@ import {
 } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
+import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
@@ -42,7 +44,7 @@ export function ItemDetailDialog({
       description="Images, tags, capabilities, custom fields & datasheets."
       className="max-w-2xl"
     >
-      <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+      <div className="max-h-[70vh] space-y-4 dialog-scroll">
         <Section title="Supplier data" icon={<SupplierIcon />}>
           <SupplierDataEditor item={item} />
         </Section>
@@ -67,19 +69,30 @@ export function ItemDetailDialog({
         <Section title="Datasheets" icon={<DatasheetIcon />}>
           <AttachmentManager itemId={item.id} />
         </Section>
+        <Section title="Activity log" icon={<HistoryIcon />}>
+          <ActivityLog itemId={item.id} />
+        </Section>
       </div>
     </Modal>
   );
 }
 
+/**
+ * Each editor is wrapped in a self-contained card — a bordered surface with a
+ * tinted header band, a divider and an accent-chipped icon — so the long stack of
+ * sections reads as distinct, scannable blocks rather than blurring together,
+ * while staying cohesive with the app's glass-and-violet aesthetic (§1.1, §2.4.1).
+ */
 function Section({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return (
-    <section>
-      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold [&_svg]:size-4 [&_svg]:text-muted-foreground">
-        {icon}
+    <section className="overflow-hidden rounded-xl border border-border shadow-sm">
+      <h3 className="flex items-center gap-2.5 border-b border-border bg-secondary/30 px-4 py-2.5 text-sm font-semibold">
+        <span className="grid size-7 place-items-center rounded-lg bg-primary/10 text-primary [&_svg]:size-4">
+          {icon}
+        </span>
         {title}
       </h3>
-      {children}
+      <div className="p-4">{children}</div>
     </section>
   );
 }

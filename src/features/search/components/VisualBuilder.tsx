@@ -3,6 +3,7 @@ import { FilterIcon } from '@/components/icons';
 import { useSearchBuilder } from '../SearchBuilderContext';
 import { astError } from '../queries';
 import { GroupEditor } from './GroupEditor';
+import { TextQueryInput } from './TextQueryInput';
 
 /**
  * The Visual Builder panel (spec §5.1, §3) — a purely graphical query builder over
@@ -34,6 +35,10 @@ export function VisualBuilder({ resultSummary }: { resultSummary?: string }) {
           </button>
         ) : null}
       </div>
+
+      <TextQueryInput />
+
+      <div className="h-px bg-border/60" role="separator" />
 
       <GroupEditor group={ast} path={[]} depth={1} />
 

@@ -18,6 +18,74 @@ export async function downloadRawSqlite(): Promise<void> {
   downloadBlob(`gubbins-${fileTimestamp()}.sqlite`, new Blob([copy], { type: 'application/x-sqlite3' }));
 }
 
+/** The 16-byte magic string every SQLite 3 database file begins with. */
+const SQLITE_MAGIC = 'SQLite format 3\0';
+
+/**
+ * Validate that `bytes` begins with the SQLite 3 file header (spec §3 raw restore). A
+ * pure guard so a stray JSON/image file can never overwrite the live database with junk.
+ */
+export function isSqliteFile(bytes: Uint8Array): boolean {
+  if (bytes.length < SQLITE_MAGIC.length) return false;
+  for (let i = 0; i < SQLITE_MAGIC.length; i += 1) {
+    if (bytes[i] !== SQLITE_MAGIC.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+/**
+ * Overwrite the OPFS database file with raw SQLite bytes (the shared write step behind
+ * both raw-`.sqlite` and full-archive restore). The production database uses the standard
+ * OPFS VFS — the file at `DB_FILENAME` *is* the raw SQLite database — so we clear any stale
+ * WAL/SHM/journal sidecars first, then write the new bytes verbatim. The caller must have
+ * disposed the worker beforehand and must reload afterwards so the worker re-opens it.
+ */
+export async function overwriteOpfsDatabase(bytes: Uint8Array): Promise<void> {
+  const baseName = DB_FILENAME.replace(/^\//, '');
+  const root = await navigator.storage.getDirectory();
+  // Remove stale journal sidecars first so the freshly-written file is read verbatim.
+  for (const name of [`${baseName}-journal`, `${baseName}-wal`, `${baseName}-shm`]) {
+    try {
+      await root.removeEntry(name);
+    } catch {
+      // Not present — ignore.
+    }
+  }
+  const handle = await root.getFileHandle(baseName, { create: true });
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(bytes as BufferSource);
+  } finally {
+    await writable.close();
+  }
+}
+
+/**
+ * Restore the database from a raw `.sqlite` binary (spec §3 — the inverse of
+ * {@link downloadRawSqlite}). **Destructive** — the caller must confirm first. We dispose
+ * the worker, overwrite the OPFS file with the uploaded bytes, then reload so the worker
+ * re-opens the new database. Throws `InvalidRawSqliteError` for a non-SQLite file.
+ */
+export async function restoreRawSqlite(file: File): Promise<void> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!isSqliteFile(bytes)) {
+    throw new InvalidRawSqliteError('That file is not a SQLite database (bad header).');
+  }
+
+  await disposeDatabase();
+  await overwriteOpfsDatabase(bytes);
+
+  location.reload();
+}
+
+/** Thrown when {@link restoreRawSqlite} is handed a non-SQLite file. */
+export class InvalidRawSqliteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidRawSqliteError';
+  }
+}
+
 /** Best-effort JSON dump of every table (full versioned backup arrives in Phase 7). */
 export async function downloadJsonDump(): Promise<void> {
   const db = getDatabaseDriver();

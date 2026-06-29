@@ -1,4 +1,4 @@
-import { Button } from '@/components/foundry';
+import { Button, Tooltip } from '@/components/foundry';
 import { AddGroupIcon, AddIcon, CloseIcon } from '@/components/icons';
 import { isGroupNode, type ASTGroupNode, type LogicalOperator } from '@/db/search/ast';
 import { useSearchBuilder } from '../SearchBuilderContext';
@@ -39,14 +39,22 @@ export function GroupEditor({
           {group.logicalOperator === 'AND' ? 'match all of' : 'match any of'}
         </span>
         {!isRoot ? (
-          <button
-            type="button"
-            aria-label="Remove group"
-            onClick={() => dispatch({ type: 'remove', path })}
-            className="ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive [&_svg]:size-3.5"
+          <Tooltip
+            content="Remove this nested group and all the conditions inside it."
+            triggerTabIndex={-1}
+            className="ml-auto"
           >
-            <CloseIcon />
-          </button>
+            <span>
+              <button
+                type="button"
+                aria-label="Remove group"
+                onClick={() => dispatch({ type: 'remove', path })}
+                className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive [&_svg]:size-3.5"
+              >
+                <CloseIcon />
+              </button>
+            </span>
+          </Tooltip>
         ) : null}
       </div>
 
@@ -76,25 +84,36 @@ export function GroupEditor({
       )}
 
       <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => dispatch({ type: 'addCondition', path })}
-          className="h-8 text-xs"
+        <Tooltip content="Add a filter condition (field, operator, value) to this group." triggerTabIndex={-1}>
+          <span>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => dispatch({ type: 'addCondition', path })}
+              className="h-8 text-xs"
+            >
+              <AddIcon />
+              Add condition
+            </Button>
+          </span>
+        </Tooltip>
+        <Tooltip
+          content="Add a nested sub-group so you can mix **AND** and **OR** logic — e.g. *this* and (*that* or *the other*)."
+          triggerTabIndex={-1}
         >
-          <AddIcon />
-          Add condition
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={!canAddGroup(path)}
-          onClick={() => dispatch({ type: 'addGroup', path })}
-          className="h-8 text-xs"
-        >
-          <AddGroupIcon />
-          Add group
-        </Button>
+          <span>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={!canAddGroup(path)}
+              onClick={() => dispatch({ type: 'addGroup', path })}
+              className="h-8 text-xs"
+            >
+              <AddGroupIcon />
+              Add group
+            </Button>
+          </span>
+        </Tooltip>
       </div>
     </div>
   );
@@ -109,23 +128,28 @@ function OperatorToggle({
   onChange: (value: LogicalOperator) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label="Group operator" className="inline-flex rounded-lg bg-secondary p-0.5">
-      {(['AND', 'OR'] as const).map((op) => (
-        <button
-          key={op}
-          type="button"
-          role="radio"
-          aria-checked={value === op}
-          onClick={() => onChange(op)}
-          className={
-            value === op
-              ? 'rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground'
-              : 'rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground'
-          }
-        >
-          {op}
-        </button>
-      ))}
-    </div>
+    <Tooltip
+      content="**AND** keeps items matching *every* condition in this group; **OR** keeps items matching *any* one of them."
+      triggerTabIndex={-1}
+    >
+      <div role="radiogroup" aria-label="Group operator" className="inline-flex rounded-lg bg-secondary p-0.5">
+        {(['AND', 'OR'] as const).map((op) => (
+          <button
+            key={op}
+            type="button"
+            role="radio"
+            aria-checked={value === op}
+            onClick={() => onChange(op)}
+            className={
+              value === op
+                ? 'rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground'
+                : 'rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground'
+            }
+          >
+            {op}
+          </button>
+        ))}
+      </div>
+    </Tooltip>
   );
 }

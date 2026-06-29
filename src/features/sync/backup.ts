@@ -49,6 +49,9 @@ export function parseBackupJson(text: string): SyncSnapshot {
     tables: obj.tables ?? {},
     tombstones: obj.tombstones ?? [],
     gaugeHistory: obj.gaugeHistory ?? [],
+    // Phase 11 sync-set expansion: older backups predate these, so default to empty.
+    itemTags: obj.itemTags ?? [],
+    itemHistory: obj.itemHistory ?? [],
   };
 }
 

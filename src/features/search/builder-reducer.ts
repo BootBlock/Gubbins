@@ -24,6 +24,7 @@ export type BuilderAction =
   | { type: 'remove'; path: BuilderPath }
   | { type: 'updateCondition'; path: BuilderPath; patch: Partial<FilterCondition> }
   | { type: 'setOperator'; path: BuilderPath; operator: LogicalOperator }
+  | { type: 'load'; ast: ASTGroupNode }
   | { type: 'reset' };
 
 /** The default leaf inserted by "Add condition" — a free-text name search. */
@@ -87,6 +88,12 @@ export function builderReducer(ast: ASTGroupNode, action: BuilderAction): ASTGro
         ),
       }));
     }
+
+    case 'load':
+      // Replace the whole tree (the Phase-47 text-query parser loads a parsed AST
+      // into the builder). The parser only emits a flat, valid root group; a deeper
+      // tree is still caught downstream by `parseASTtoSQL`'s depth guard.
+      return action.ast;
 
     case 'reset':
       return emptyAst(ast.logicalOperator);

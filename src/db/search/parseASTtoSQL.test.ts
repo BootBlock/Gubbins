@@ -4,7 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { MAX_AST_GROUP_DEPTH, type ASTGroupNode, type FilterCondition } from './ast';
-import { parseASTtoSQL, SearchAstError } from './parseASTtoSQL';
+import { collectCapabilityKeys, parseASTtoSQL, SearchAstError } from './parseASTtoSQL';
 
 /** Wrap conditions in a root AND group for brevity. */
 function and(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
@@ -13,6 +13,33 @@ function and(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode
 function or(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
   return { type: 'GROUP', logicalOperator: 'OR', conditions };
 }
+
+describe('collectCapabilityKeys — best-match ranking inputs (spec §4, §5.1)', () => {
+  it('returns an empty list when no condition filters on a capability', () => {
+    expect(collectCapabilityKeys(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(
+      [],
+    );
+    expect(collectCapabilityKeys(and())).toEqual([]);
+  });
+
+  it('extracts capability keys, lower-cased and de-duplicated, across nested groups', () => {
+    const ast = and(
+      { field: 'capability:Voltage', operator: 'GREATER_THAN', value: 3 },
+      or(
+        { field: 'capability:voltage', operator: 'LESS_THAN', value: 12 },
+        { field: 'capability:Package', operator: 'EQUALS', value: 'TO-220' },
+      ),
+      { field: 'quantity', operator: 'GREATER_THAN', value: 1 },
+    );
+    expect(collectCapabilityKeys(ast).sort()).toEqual(['package', 'voltage']);
+  });
+
+  it('ignores a capability prefix with a blank key', () => {
+    expect(
+      collectCapabilityKeys(and({ field: 'capability:', operator: 'HAS_CAPABILITY', value: '' })),
+    ).toEqual([]);
+  });
+});
 
 describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
   it('returns match-all for an empty tree', () => {

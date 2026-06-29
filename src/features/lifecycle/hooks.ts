@@ -15,7 +15,9 @@ import {
   getProjectRepository,
   type CreateItemInput,
   type CreateMaintenanceInput,
+  type LowStockThresholds,
   type ReconciliationAdjustment,
+  type SerialisedReconciliation,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 
@@ -61,6 +63,19 @@ export function useExpiringItems(withinDays: number = EXPIRY_SOON_WINDOW_DAYS) {
 }
 
 /**
+ * Active items running low on stock (§3 "Low Stock Alerts" widget) — low discrete
+ * quantities and low consumable-gauge percentages interleaved by urgency. Thresholds
+ * default to the repository constants; passing them as a key segment keeps the cache
+ * correct if a caller ever overrides them.
+ */
+export function useLowStockItems(thresholds?: LowStockThresholds) {
+  return useQuery({
+    queryKey: [...inventoryKeys.lowStock(), thresholds ?? null],
+    queryFn: () => getItemRepository().listLowStock(thresholds, { limit: 100 }),
+  });
+}
+
+/**
  * BOM lines currently In Transit across all projects (§4 procurement) — the
  * "arriving soon" feed. Phase 4 models In Transit as a BOM-line procurement status
  * (logging `PROCURED`), so this is the faithful source, distinguishing parts
@@ -73,6 +88,75 @@ export function useInTransitLines() {
   });
 }
 
+/**
+ * One item's distinct **incoming** quantity (Phase 20, §4 liminal procurement) —
+ * the sum of its In-Transit BOM lines, derived from the SSOT so it can never drift.
+ * Surfaced on the item detail beside on-hand stock, which it deliberately never
+ * overloads. Defaults to 0 while loading so callers can read it unconditionally.
+ */
+export function useInTransitQty(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemInTransit(itemId ?? ''),
+    queryFn: () => getProjectRepository().inTransitQtyForItem(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+// --- Per-location stock ledger (spec §4, Phase 25) -----------------------------
+
+/**
+ * One item's per-location stock breakdown — busiest location first, empty placements
+ * filtered out (the `items.quantity` total is the sum of these). Surfaced on the item
+ * detail so the same item can hold stock in more than one place at once.
+ */
+export function useItemStock(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemStock(itemId ?? ''),
+    queryFn: () => getItemRepository().listStock(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+/**
+ * One item's batch/lot breakdown (Phase 28, §4 perishables) — one row per
+ * `(location, batch)` holding stock, FEFO-ordered within each location (soonest expiry
+ * first, the untracked remainder last). A non-perishable item yields one untracked row
+ * per placement, so the UI can show batch detail only where lots are actually tracked.
+ */
+export function useItemBatches(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemBatches(itemId ?? ''),
+    queryFn: () => getItemRepository().listItemBatches(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+/** Transfer part of a DISCRETE item's stock between two locations (§4 per-location ledger). */
+export function useTransferStock() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      itemId,
+      fromLocationId,
+      toLocationId,
+      quantity,
+      batchKey,
+    }: {
+      itemId: string;
+      fromLocationId: string;
+      toLocationId: string;
+      quantity: number;
+      /** Move only this specific lot rather than FEFO (Phase 29); omit for FEFO. */
+      batchKey?: string;
+    }) => getItemRepository().transferStock(itemId, fromLocationId, toLocationId, quantity, batchKey),
+    onSettled: (_d, _e, { itemId }) => {
+      // `items()` is a prefix of `itemStock`/`item` (the detail), so this refreshes both.
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(itemId) });
+    },
+  });
+}
+
 // --- Cycle counting & reconciliation (spec §4.4) -------------------------------
 
 export function useReconcile() {
@@ -80,6 +164,21 @@ export function useReconcile() {
   return useMutation({
     mutationFn: (adjustments: readonly ReconciliationAdjustment[]) =>
       getItemRepository().reconcile(adjustments),
+    onSettled: (updated) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      updated?.forEach((item) =>
+        client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
+      );
+    },
+  });
+}
+
+/** Authorise a serialised audit: soft-delete the instances flagged missing (§4.4). */
+export function useReconcileSerialised() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (adjustments: readonly SerialisedReconciliation[]) =>
+      getItemRepository().reconcileSerialised(adjustments),
     onSettled: (updated) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       updated?.forEach((item) =>

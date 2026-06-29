@@ -164,6 +164,43 @@ export class LocationRepository extends BaseRepository {
       }
     }
 
+    // Re-home every batch sitting at the deleted location into each item's Unassigned
+    // placement (Phase 28 — `stock_batches` is the SSOT below `item_stock`), preserving each
+    // lot's identity and merging same-key lots by the deterministic batch id. The recompute
+    // triggers then re-derive `item_stock.quantity` (and `items.quantity`) at Unassigned, so
+    // the grand total per item is preserved (the units just move home). The deleted
+    // location's batch and placement rows are then dropped — otherwise their RESTRICT foreign
+    // key would block the delete.
+    statements.push({
+      sql: `INSERT INTO stock_batches
+              (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
+            SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
+                   batch_number, lot_number, expiry_date, quantity
+            FROM stock_batches WHERE location_id = ? AND quantity > 0
+            ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
+      params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, id],
+    });
+    statements.push({ sql: 'DELETE FROM stock_batches WHERE location_id = ?;', params: [id] });
+    statements.push({ sql: 'DELETE FROM item_stock WHERE location_id = ?;', params: [id] });
+
+    // Clear the lend-from pointer on any checkout drawn from this location (Phase 26):
+    // an open loan's returned stock will fall back to the item's primary location, and the
+    // nullable FK would otherwise block the location's RESTRICT delete (mirrors the §7.5.2
+    // sync `applyPlan` null-out).
+    statements.push({
+      sql: 'UPDATE checkouts SET source_location_id = NULL WHERE source_location_id = ?;',
+      params: [id],
+    });
+
+    // Clear the per-location scope on any maintenance schedule pinned to this location
+    // (Phase 30): the schedule reverts to item-level rather than vanishing, and the
+    // nullable RESTRICT FK would otherwise block the delete (mirrors the §7.5.2 sync
+    // `applyPlan` null-out and the checkout source above).
+    statements.push({
+      sql: 'UPDATE maintenance_schedules SET location_id = NULL WHERE location_id = ?;',
+      params: [id],
+    });
+
     // Promote child locations to the deleted node's parent.
     statements.push({
       sql: 'UPDATE locations SET parent_id = ? WHERE parent_id = ?;',

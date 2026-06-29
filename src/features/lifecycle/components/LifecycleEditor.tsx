@@ -1,24 +1,25 @@
 /**
  * Item-detail facet for Phase 9 lifecycle data (spec §4): perishable expiry +
  * batch/lot, the Condition enum, and Parent/Child variants. Perishable/condition
- * edits go through `useUpdateItem` (logging `CONDITION_CHANGED` when it changes);
- * variants are managed via the abstract single-level model — only a non-variant
- * item may gain child variants, enforced both here (UI) and in the repository.
+ * edits go through `useUpdateItem` (logging `CONDITION_CHANGED` when it changes).
+ * Variants nest to any depth (Phase 18 lifted the single-level cap): any item may
+ * gain sub-variants; only cycles are rejected, enforced in the repository.
  */
 import { useState } from 'react';
-import { Button, Input, Select } from '@/components/foundry';
-import { DueDateIcon, WarningIcon, AddIcon, PackageIcon } from '@/components/icons';
+import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/components/icons';
 import { CONDITIONS, type Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
 import { useUpdateItem } from '@/features/inventory/mutations';
+import { useFormatters } from '@/lib/useFormatters';
 import {
   CONDITION_LABELS,
-  formatDate,
   fromDateInputValue,
   toDateInputValue,
 } from '@/features/inventory/components/inventory-ui';
 import { expiryStatus, daysUntilExpiry, type ExpiryStatus } from '../expiry';
-import { useCreateVariant, useItemVariants } from '../hooks';
+import { useCreateVariant, useInTransitQty, useItemVariants } from '../hooks';
+import { StockBreakdown } from './StockBreakdown';
 
 const EXPIRY_TONE: Record<ExpiryStatus, string> = {
   NONE: 'text-muted-foreground',
@@ -29,6 +30,7 @@ const EXPIRY_TONE: Record<ExpiryStatus, string> = {
 
 export function LifecycleEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
+  const fmt = useFormatters();
   const [expiry, setExpiry] = useState(toDateInputValue(item.expiryDate));
   const [batch, setBatch] = useState(item.batchNumber ?? '');
   const [lot, setLot] = useState(item.lotNumber ?? '');
@@ -36,6 +38,10 @@ export function LifecycleEditor({ item }: { item: Item }) {
 
   const status = expiryStatus(item.expiryDate, Date.now());
   const days = daysUntilExpiry(item.expiryDate, Date.now());
+  // Distinct "incoming" stock (Phase 20, §4): derived from In-Transit BOM lines,
+  // shown beside on-hand stock which it never overloads.
+  const inTransitQty = useInTransitQty(item.id).data ?? 0;
+  const isGauge = item.trackingMode === 'CONSUMABLE_GAUGE';
 
   const save = () => {
     update.mutate({
@@ -51,12 +57,32 @@ export function LifecycleEditor({ item }: { item: Item }) {
 
   return (
     <div className="space-y-4">
+      {inTransitQty > 0 ? (
+        <Tooltip
+          content="Incoming procurement stock — units on order and **in transit**, conceptually held in the system-locked *In Transit* location. Counted **separately** from on-hand stock and only added to it once the order is received."
+          openDelayMs={INFO_OPEN_DELAY_MS}
+        >
+          <p
+            className="flex items-center gap-1.5 text-sm font-medium text-primary [&_svg]:size-4"
+            data-testid="detail-in-transit"
+          >
+            <TruckIcon />
+            <span data-testid="in-transit-qty">{inTransitQty}</span> arriving (In Transit)
+            {!isGauge ? (
+              <span className="font-normal text-muted-foreground">· {item.quantity} on hand</span>
+            ) : null}
+          </p>
+        </Tooltip>
+      ) : null}
+
+      <StockBreakdown item={item} />
+
       {item.expiryDate !== null ? (
         <p className={cn('flex items-center gap-1.5 text-sm font-medium [&_svg]:size-4', EXPIRY_TONE[status])}>
           {status === 'EXPIRED' ? <WarningIcon /> : <DueDateIcon />}
           {status === 'EXPIRED'
-            ? `Expired ${formatDate(item.expiryDate)}`
-            : `Expires ${formatDate(item.expiryDate)}${days !== null ? ` (${days} day${days === 1 ? '' : 's'})` : ''}`}
+            ? `Expired ${fmt.date(item.expiryDate)}`
+            : `Expires ${fmt.date(item.expiryDate)}${days !== null ? ` (${days} day${days === 1 ? '' : 's'})` : ''}`}
         </p>
       ) : null}
 
@@ -94,20 +120,12 @@ export function LifecycleEditor({ item }: { item: Item }) {
 
 function VariantsSection({ item }: { item: Item }) {
   const createVariant = useCreateVariant();
-  // Only a top-level item (not itself a variant) can hold variants (single-level, §4).
-  const isParentEligible = item.parentId === null;
-  const { data: variants } = useItemVariants(isParentEligible ? item.id : undefined);
+  // Phase 18 lifts the single-level cap: any item — including one that is itself a
+  // variant — may hold its own sub-variants. Cycles are still rejected (repository).
+  const { data: variants } = useItemVariants(item.id);
   const [name, setName] = useState('');
   const [qty, setQty] = useState('0');
   const [error, setError] = useState<string | null>(null);
-
-  if (item.parentId !== null) {
-    return (
-      <p className="rounded-lg border border-border bg-secondary/20 px-3 py-2 text-xs text-muted-foreground">
-        This item is a variant of a parent item.
-      </p>
-    );
-  }
 
   const add = () => {
     if (name.trim().length === 0) return;
@@ -130,6 +148,11 @@ function VariantsSection({ item }: { item: Item }) {
         <PackageIcon />
         Variants
       </p>
+      {item.parentId !== null ? (
+        <p className="mb-2 text-xs text-muted-foreground" data-testid="variant-is-child">
+          This item is itself a variant of a parent — sub-variants nest beneath it.
+        </p>
+      ) : null}
       {variants && variants.rows.length > 0 ? (
         <ul className="mb-3 space-y-1" data-testid="variant-list">
           {variants.rows.map((v) => (
@@ -144,7 +167,7 @@ function VariantsSection({ item }: { item: Item }) {
       )}
       <div className="flex items-end gap-2">
         <label className="flex-1">
-          <span className="mb-1 block text-xs text-muted-foreground">Variant name</span>
+          <span className="mb-field-gap-compact block text-xs text-muted-foreground">Variant name</span>
           <Input
             data-testid="variant-name"
             value={name}
@@ -153,7 +176,7 @@ function VariantsSection({ item }: { item: Item }) {
           />
         </label>
         <label className="w-20">
-          <span className="mb-1 block text-xs text-muted-foreground">Qty</span>
+          <span className="mb-field-gap-compact block text-xs text-muted-foreground">Qty</span>
           <Input type="number" min={0} step={1} value={qty} onChange={(e) => setQty(e.target.value)} />
         </label>
         <Button size="sm" onClick={add} disabled={createVariant.isPending} data-testid="add-variant">
@@ -161,7 +184,7 @@ function VariantsSection({ item }: { item: Item }) {
           Add
         </Button>
       </div>
-      {error ? <p className="mt-1.5 text-xs text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="mt-1.5 text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }
@@ -169,7 +192,7 @@ function VariantsSection({ item }: { item: Item }) {
 function LField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
+      <span className="mb-field-gap-compact block text-xs text-muted-foreground">{label}</span>
       {children}
     </label>
   );

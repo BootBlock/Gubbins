@@ -13,6 +13,16 @@ import { v5CapabilitiesFts } from './v5-capabilities-fts';
 import { v6ContactsCheckouts } from './v6-contacts-checkouts';
 import { v7Sync } from './v7-sync';
 import { v8Lifecycle } from './v8-lifecycle';
+import { v9ImageDowngrade } from './v9-image-downgrade';
+import { v10HistoryWatermark } from './v10-history-watermark';
+import { v11MaintenanceUsageTelemetry } from './v11-maintenance-usage-telemetry';
+import { v12BomReceivedQty } from './v12-bom-received-qty';
+import { v13ItemStock } from './v13-item-stock';
+import { v14CheckoutSourceLocation } from './v14-checkout-source-location';
+import { v15StockBatches } from './v15-stock-batches';
+import { v16CheckoutSourceBatch } from './v16-checkout-source-batch';
+import { v17MaintenanceLocation } from './v17-maintenance-location';
+import { v18AttachmentOriginDevice } from './v18-attachment-origin-device';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -23,6 +33,16 @@ export const migrations: readonly Migration[] = [
   v6ContactsCheckouts,
   v7Sync,
   v8Lifecycle,
+  v9ImageDowngrade,
+  v10HistoryWatermark,
+  v11MaintenanceUsageTelemetry,
+  v12BomReceivedQty,
+  v13ItemStock,
+  v14CheckoutSourceLocation,
+  v15StockBatches,
+  v16CheckoutSourceBatch,
+  v17MaintenanceLocation,
+  v18AttachmentOriginDevice,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

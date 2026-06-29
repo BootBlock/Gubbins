@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Input, Surface } from '@/components/foundry';
+import { Button, Input, LiveRegion, Select, Surface, Tooltip } from '@/components/foundry';
 import {
   CameraOffIcon,
   CheckoutIcon,
   CloseIcon,
   DiscreteIcon,
+  MoveIcon,
   ScanIcon,
   SerialisedIcon,
 } from '@/components/icons';
 import { getItemRepository, type Item } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useCheckoutItem } from '@/features/contacts/contacts';
-import { ScanFeedback, hasBarcodeDetector } from '../feedback';
+import { useLocations } from '@/features/inventory/queries';
+import { useMoveItem } from '@/features/inventory/mutations';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { runBatch, summariseBatch } from '../batch-actions';
+import { ScanFeedback } from '../feedback';
+import type { ScannerEngine } from '../barcode-decoder';
 import { parseScannedItemId } from '../scan-payload';
 import {
   initialScannerState,
@@ -45,13 +51,21 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
   const queue = useScannerQueue();
   const checkout = useCheckoutItem();
+  const move = useMoveItem();
+  const locations = useLocations();
+  const locationRows = locations.data?.rows ?? [];
+  const symbology = usePreferencesStore((s) => s.scannerSymbology);
 
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
   const [checkoutItem, setCheckoutItem] = useState<Item | null>(null);
   const [batchName, setBatchName] = useState('');
-  const supported = hasBarcodeDetector();
+  const [moveTarget, setMoveTarget] = useState('');
+  // The decoding engine is resolved asynchronously by useScanner (native → lazy WASM
+  // → none); null until the camera is live. We only warn about manual-only entry once
+  // it definitively resolves to 'none' (§6.6).
+  const [engine, setEngine] = useState<ScannerEngine | null>(null);
 
   // Open the camera once on mount; prime audio from this user gesture (§6.5).
   useEffect(() => {
@@ -86,7 +100,14 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
     [state.mode, queue],
   );
 
-  useScanner({ videoRef, status: state.status, dispatch, onDecode: handleDecode });
+  useScanner({
+    videoRef,
+    status: state.status,
+    dispatch,
+    onDecode: handleDecode,
+    onEngine: setEngine,
+    symbology,
+  });
 
   const close = () => {
     dispatch({ type: 'CLOSE' });
@@ -107,29 +128,60 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
 
   const reviewQueue = () => dispatch({ type: 'REVIEW_QUEUE' });
 
+  // §6.3 finalisation: apply one batch action to the whole working queue. Both paths
+  // run through the pure `runBatch` so a single failed item never aborts the rest, and
+  // announce the outcome via the always-mounted notice region (the SR channel).
+  const ids = () => queue.entries.map((e) => e.itemId);
+
   const batchCheckout = async () => {
-    if (batchName.trim().length === 0 || queue.count === 0) return;
-    for (const entry of queue.entries) {
-      await checkout.mutateAsync({ itemId: entry.itemId, contactName: batchName.trim() }).catch(() => {});
-    }
+    const contact = batchName.trim();
+    if (contact.length === 0 || queue.count === 0) return;
+    const outcome = await runBatch(ids(), (id) => checkout.mutateAsync({ itemId: id, contactName: contact }));
+    setNotice(summariseBatch('CHECKOUT', outcome, contact));
     queue.clear();
     setBatchName('');
     dispatch({ type: 'RESUME_SCANNING' });
   };
 
+  const batchMove = async () => {
+    if (moveTarget === '' || queue.count === 0) return;
+    const outcome = await runBatch(ids(), (id) => move.mutateAsync({ id, locationId: moveTarget }));
+    const name = locationRows.find((l) => l.id === moveTarget)?.name ?? 'the location';
+    setNotice(summariseBatch('MOVE', outcome, name));
+    queue.clear();
+    setMoveTarget('');
+    dispatch({ type: 'RESUME_SCANNING' });
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white" data-testid="scanner-overlay">
+      {/* Announce a discrete scan result for screen readers: the visible result card is
+          interactive (buttons), so the announcement lives in a separate hidden region. */}
+      <LiveRegion visuallyHidden data-testid="scanner-scan-announce">
+        {discreteResult ? `Scanned ${discreteResult.name}` : null}
+      </LiveRegion>
+
       {/* Header */}
       <div className="flex items-center gap-3 p-4">
         <ScanIcon className="size-5" />
         <span className="font-semibold">Scanner</span>
         <div className="ml-auto flex items-center rounded-lg bg-white/10 p-0.5">
-          <ModeButton mode="DISCRETE" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
-            <DiscreteIcon /> Discrete
-          </ModeButton>
-          <ModeButton mode="CONTINUOUS" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
-            <SerialisedIcon /> Continuous
-          </ModeButton>
+          <Tooltip
+            content="Scan **one** code, then act on it immediately (check out or look up)."
+            triggerTabIndex={-1}
+          >
+            <ModeButton mode="DISCRETE" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
+              <DiscreteIcon /> Discrete
+            </ModeButton>
+          </Tooltip>
+          <Tooltip
+            content="Scan **many** codes into a queue, then apply one action (move or check out) to them all at once."
+            triggerTabIndex={-1}
+          >
+            <ModeButton mode="CONTINUOUS" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
+              <SerialisedIcon /> Continuous
+            </ModeButton>
+          </Tooltip>
         </div>
         <Button variant="ghost" size="icon" onClick={close} aria-label="Close scanner" className="text-white hover:bg-white/10">
           <CloseIcon />
@@ -202,13 +254,44 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
                 value={batchName}
                 onChange={(e) => setBatchName(e.target.value)}
                 placeholder="Check all out to…"
+                data-testid="scanner-batch-contact"
               />
               <div className="flex gap-2">
-                <Button onClick={() => void batchCheckout()} disabled={queue.count === 0 || batchName.trim().length === 0 || checkout.isPending}>
+                <Button
+                  onClick={() => void batchCheckout()}
+                  disabled={queue.count === 0 || batchName.trim().length === 0 || checkout.isPending}
+                  data-testid="scanner-checkout-all"
+                >
                   <CheckoutIcon /> Check out all
                 </Button>
                 <Button variant="outline" onClick={() => dispatch({ type: 'RESUME_SCANNING' })}>
                   Keep scanning
+                </Button>
+              </div>
+
+              {/* §6.3 headline batch action: move the whole queue to a new location. */}
+              <div className="flex gap-2 border-t border-border/60 pt-3">
+                <Select
+                  value={moveTarget}
+                  onChange={(e) => setMoveTarget(e.target.value)}
+                  className="flex-1"
+                  aria-label="Move all to location"
+                  data-testid="scanner-move-location"
+                >
+                  <option value="">Move all to…</option>
+                  {locationRows.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={() => void batchMove()}
+                  disabled={queue.count === 0 || moveTarget === '' || move.isPending}
+                  data-testid="scanner-move-all"
+                >
+                  <MoveIcon /> Move all
                 </Button>
               </div>
             </Surface>
@@ -228,12 +311,21 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid */}
       <div className="space-y-2 p-4">
-        {!supported ? (
-          <p className="text-center text-xs text-white/70">
+        {engine === 'none' ? (
+          <p className="text-center text-xs text-white/70" data-testid="scanner-engine-none">
             Live scanning isn’t supported on this browser — enter a code below.
           </p>
+        ) : engine === 'wasm' || engine === 'wasm-canvas' ? (
+          <p className="text-center text-xs text-white/70" data-testid={`scanner-engine-${engine}`}>
+            Using the compatibility scanner — point steadily at the code, or enter it below.
+          </p>
         ) : null}
-        {notice ? <p className="text-center text-xs text-amber-300">{notice}</p> : null}
+        {/* Manual-entry feedback ("No matching item found." etc.) is the screen-reader
+            channel for the scanner: a blind user types a code and would otherwise get
+            nothing back. Always-mounted polite region so the message is announced. */}
+        <LiveRegion data-testid="scanner-notice">
+          {notice ? <p className="text-center text-xs text-amber-300">{notice}</p> : null}
+        </LiveRegion>
         <div className="mx-auto flex max-w-md gap-2">
           <Input
             value={manual}

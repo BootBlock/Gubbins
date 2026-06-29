@@ -19,6 +19,7 @@ import type {
   ReservationStatus,
   TrackingMode,
 } from './constants';
+import type { BatchIdentity } from '@/features/inventory/batches';
 
 // --- Locations (spec §4) --------------------------------------------------------
 
@@ -205,6 +206,17 @@ export interface UpdateItemInput {
   readonly condition?: Condition | null;
 }
 
+/**
+ * Thresholds for the §3 dashboard "Low Stock Alerts" feed (Phase 45). Both are
+ * optional and default to {@link LOW_STOCK_QTY_THRESHOLD} / {@link LOW_STOCK_GAUGE_PERCENT}.
+ */
+export interface LowStockThresholds {
+  /** A DISCRETE item is low when on-hand `quantity` is at/below this. */
+  readonly qtyThreshold?: number;
+  /** A CONSUMABLE_GAUGE item is low when its percentage remaining is at/below this. */
+  readonly gaugePercent?: number;
+}
+
 // --- Cycle counting & reconciliation (spec §4.4, Phase 9) -----------------------
 
 /**
@@ -219,6 +231,35 @@ export interface ReconciliationAdjustment {
   /** The physically counted quantity that becomes the new on-hand amount. */
   readonly counted: number;
   /** The §4.4 ledger note (built upstream from the location + variance). */
+  readonly note: string;
+  /**
+   * The specific placement counted (Phase 26): when set, the variance is absorbed at
+   * *this* location's `item_stock` row and `counted` becomes that placement's new
+   * quantity. When omitted, the legacy whole-item behaviour applies — the variance lands
+   * on the item's primary location and `counted` is the new on-hand *total*.
+   */
+  readonly locationId?: string;
+  /**
+   * The specific batch counted within the placement (Phase 28): when set (alongside
+   * `locationId`), `counted` becomes *that lot's* new quantity at the placement and the
+   * variance is absorbed at its `stock_batches` row, so a single drawer's lots can be
+   * audited one at a time. The identity columns are written when the batch row is first
+   * seeded by a surplus. When omitted, the count is whole-placement (absorbed at the
+   * untracked default batch / drawn down FEFO).
+   */
+  readonly batch?: BatchIdentity;
+}
+
+/**
+ * One authorised serialised-audit adjustment (§4.4). A SERIALISED instance is a
+ * qty-1 record, so an audit reconciles **presence**, not quantity: an instance the
+ * auditor could not find is reported here and the repository soft-deletes it
+ * (reversible via `restore`), logging a `RECONCILED` entry. Only the missing
+ * instances are passed — the present/missing decision happens upstream.
+ */
+export interface SerialisedReconciliation {
+  readonly itemId: string;
+  /** The §4.4 ledger note (built upstream from the location + serial number). */
   readonly note: string;
 }
 
@@ -248,6 +289,28 @@ export interface GaugeAdjustment {
   readonly delta: number;
   /** Human-readable ledger note (e.g. a weigh-in calibration message). */
   readonly note?: string;
+}
+
+// --- Per-location stock ledger (spec §4, Phase 25) ------------------------------
+
+export interface ItemStockRow {
+  readonly id: string;
+  readonly item_id: string;
+  readonly location_id: string;
+  readonly quantity: number;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+/**
+ * One placement of an item's stock at a location, with the location's display name —
+ * the per-location breakdown shown on the item detail. `items.quantity` is the sum of
+ * these (a derived projection maintained by the `item_stock` recompute triggers).
+ */
+export interface ItemStockPlacement {
+  readonly locationId: string;
+  readonly locationName: string;
+  readonly quantity: number;
 }
 
 // --- Activity Log (spec §4, §4.1.3) ---------------------------------------------
@@ -388,6 +451,7 @@ export interface ItemImageRow {
   readonly position: number;
   readonly created_at: number;
   readonly updated_at: number;
+  readonly full_res_downgraded_at: number | null;
 }
 
 export interface ItemImage {
@@ -399,6 +463,12 @@ export interface ItemImage {
   readonly position: number;
   readonly createdAt: number;
   readonly updatedAt: number;
+  /**
+   * UNIX-ms instant the full-resolution file was dropped to reclaim OPFS space
+   * (§7.6.3 Workflow B), or null while it is still present. When set, only the
+   * thumbnail remains; `fullResOpfsPath` points at a file that no longer exists.
+   */
+  readonly fullResDowngradedAt: number | null;
 }
 
 export interface CreateImageInput {
@@ -406,6 +476,25 @@ export interface CreateImageInput {
   readonly thumbnailBlob: Uint8Array | null;
   readonly fullResOpfsPath: string;
   readonly position?: number;
+}
+
+// --- Storage triage (spec §7.6.2, §7.6.3, Phase 10) -----------------------------
+
+/**
+ * Row counts for the tables that dominate OPFS consumption (§7.6.2). Structurally
+ * compatible with the pure `estimateTableBytes` input in `features/storage/triage`,
+ * but defined here so the db layer never imports a feature module (no cycle).
+ */
+export interface StorageRowCounts {
+  readonly items: number;
+  readonly itemHistory: number;
+  readonly itemImages: number;
+}
+
+/** An image whose full-resolution OPFS file can be dropped (§7.6.3 Workflow B). */
+export interface DowngradableImage {
+  readonly id: string;
+  readonly fullResOpfsPath: string;
 }
 
 // --- Item attachments / datasheets (spec §4) ------------------------------------
@@ -417,6 +506,7 @@ export interface ItemAttachmentRow {
   readonly value: string;
   readonly label: string | null;
   readonly position: number;
+  readonly origin_device_id: string | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -429,6 +519,11 @@ export interface ItemAttachment {
   readonly value: string;
   readonly label: string | null;
   readonly position: number;
+  /**
+   * The device that created/last-relinked a `LOCAL_POINTER` (v18, §4 degradation). NULL for
+   * a `URL` and for legacy pre-v18 pointers. Feeds the pure `resolveAttachmentLink` seam.
+   */
+  readonly originDeviceId: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -439,6 +534,8 @@ export interface CreateAttachmentInput {
   readonly value: string;
   readonly label?: string | null;
   readonly position?: number;
+  /** The current device id for a `LOCAL_POINTER` (§4 degradation); omit/null for a `URL`. */
+  readonly originDeviceId?: string | null;
 }
 
 // --- Item aliases (spec §4 Universal Alias Mapping; BOM auto-match) --------------
@@ -546,6 +643,8 @@ export interface ProjectBomLineRow {
   readonly description: string | null;
   readonly required_qty: number;
   readonly reserved_qty: number;
+  /** Cumulative quantity received so far (§4 partial / split receipts, Phase 24). */
+  readonly received_qty: number;
   readonly reservation_status: ReservationStatus;
   readonly procurement_status: ProcurementStatus;
   readonly unit_cost_snapshot: number | null;
@@ -567,6 +666,8 @@ export interface ProjectBomLine {
   readonly description: string | null;
   readonly requiredQty: number;
   readonly reservedQty: number;
+  /** Cumulative quantity received so far (§4 partial / split receipts, Phase 24). */
+  readonly receivedQty: number;
   readonly reservationStatus: ReservationStatus;
   readonly procurementStatus: ProcurementStatus;
   /** Point-in-time unit cost captured when the line was added (§4 BOM Costing). */
@@ -638,6 +739,8 @@ export interface InTransitLine {
   /** Display label: matched item name, else the line's free-text description/MPN. */
   readonly label: string;
   readonly requiredQty: number;
+  /** Quantity already received in earlier instalments (§4 split receipts, Phase 24). */
+  readonly receivedQty: number;
 }
 
 // --- Assembly finalisation (spec §4 Composite Items & Assemblies) ----------------
@@ -693,6 +796,8 @@ export interface CheckoutRow {
   readonly checked_out_at: number;
   readonly returned_at: number | null;
   readonly note: string | null;
+  readonly source_location_id: string | null;
+  readonly source_batch_key: string | null;
   readonly updated_at: number;
 }
 
@@ -708,6 +813,18 @@ export interface Checkout {
   /** NULL while the item is still out; set when returned (drives OPEN/RETURNED). */
   readonly returnedAt: number | null;
   readonly note: string | null;
+  /**
+   * The location the units were lent *from* (Phase 26, §4 per-location ledger). The
+   * return restores stock here. NULL = no specific source (the item's primary location).
+   */
+  readonly sourceLocationId: string | null;
+  /**
+   * The canonical batch key of the specific lot the units were lent *from* (Phase 29,
+   * §4 perishables). The return restores stock to *that lot* (its identity round-trips
+   * from the key via `batchIdentityFromKey`). NULL = no specific lot (returned to the
+   * source placement's untracked default batch — the Phase-28 behaviour).
+   */
+  readonly sourceBatchKey: string | null;
   readonly updatedAt: number;
 }
 
@@ -728,6 +845,20 @@ export interface CheckoutItemInput {
   readonly quantity?: number;
   readonly dueDate?: number | null;
   readonly note?: string | null;
+  /**
+   * The placement to lend from (Phase 26, §4 per-location ledger). When set on a DISCRETE
+   * item, that location's stock is decremented (validated against *its* on-hand) and the
+   * return restores there. Omitted/ignored for SERIALISED items and defaults to the item's
+   * primary location.
+   */
+  readonly fromLocationId?: string;
+  /**
+   * The specific lot to lend (Phase 29, §4 perishables). When set on a DISCRETE item, *that
+   * batch* at `fromLocationId` is drawn down (validated against the lot's own quantity) rather
+   * than the placement's FEFO order, and the return restores to that exact lot. The empty
+   * string targets the untracked default batch. Omitted = the Phase-28 FEFO behaviour.
+   */
+  readonly fromBatchKey?: string;
 }
 
 // --- Tool maintenance schedules (spec §4.3, Phase 9) ----------------------------
@@ -741,10 +872,17 @@ export interface MaintenanceScheduleRow {
   readonly interval_usage: number | null;
   readonly usage_unit: string | null;
   readonly usage_since_service: number;
+  readonly accrue_checkout_hours: number;
+  /** Placement this schedule is scoped to (Phase 30); NULL = the whole item. */
+  readonly location_id: string | null;
   readonly last_performed_at: number | null;
   readonly note: string | null;
   readonly created_at: number;
   readonly updated_at: number;
+  /** Derived in SELECTs: checkout-hours accrued since service (accrue mode); else 0. */
+  readonly auto_usage_hours?: number;
+  /** Derived in SELECTs (LEFT JOIN locations): the scope location's name; null if item-level. */
+  readonly location_name?: string | null;
 }
 
 export interface MaintenanceSchedule {
@@ -758,8 +896,27 @@ export interface MaintenanceSchedule {
   readonly intervalUsage: number | null;
   /** Label for the usage counter, e.g. "hours" (USAGE basis). */
   readonly usageUnit: string | null;
-  /** Usage accrued since the last service (USAGE basis). */
+  /** Manually-logged usage accrued since the last service (USAGE basis, manual mode). */
   readonly usageSinceService: number;
+  /**
+   * Whether this USAGE schedule derives its usage from real checkout-hours (§4.3,
+   * Phase 22) rather than the manual counter. When true, {@link autoUsageHours} is the
+   * live figure and `usageSinceService` is ignored.
+   */
+  readonly accrueCheckoutHours: boolean;
+  /**
+   * Checkout-hours accrued from loans since the last service (USAGE + accrue mode) — a
+   * derived projection over the `checkouts` ledger, computed at read time; 0 otherwise.
+   * When the schedule is location-scoped, only loans drawn from that placement count.
+   */
+  readonly autoUsageHours: number;
+  /**
+   * Placement this schedule is scoped to (Phase 30, §4.3); null = the whole item. A
+   * location-scoped USAGE/accrue schedule attributes only that placement's loan-hours.
+   */
+  readonly locationId: string | null;
+  /** The scope location's display name (joined on read); null when item-level. */
+  readonly locationName: string | null;
   /** Last service instant (UNIX-ms); null = never serviced. */
   readonly lastPerformedAt: number | null;
   readonly note: string | null;
@@ -781,6 +938,13 @@ export interface CreateMaintenanceInput {
   /** Required for a USAGE schedule (positive usage units). */
   readonly intervalUsage?: number | null;
   readonly usageUnit?: string | null;
+  /** USAGE only: derive usage from real checkout-hours instead of manual logging (§4.3). */
+  readonly accrueCheckoutHours?: boolean;
+  /**
+   * Scope the schedule to a specific placement (Phase 30, §4.3); omit/null = the whole
+   * item. A USAGE/accrue schedule then accrues only loans drawn from that location.
+   */
+  readonly locationId?: string | null;
   readonly note?: string | null;
 }
 

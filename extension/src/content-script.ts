@@ -18,9 +18,10 @@ import {
   type ScrapeRequestMessage,
 } from '../../src/features/scraping/protocol';
 import { runParser } from '../../src/features/scraping/parsers/registry';
-import type { ScrapeErrorType } from '../../src/features/scraping/parsers/types';
+import { detectChallengePage } from '../../src/features/scraping/scrape-errors';
+import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const trustedOrigins = [window.location.origin];
 
 declare const chrome: {
@@ -41,6 +42,9 @@ function announce(): void {
 
 async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
   const { url } = msg.payload;
+  // Echo the request's correlation id on every reply so the PWA routes the outcome to
+  // the scrape that started it — several may be in flight at once (§9 multi-scrape).
+  const { requestId } = msg;
   let domain = '';
   try {
     domain = new URL(url).hostname;
@@ -51,14 +55,25 @@ async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
   try {
     const fetched = await chrome.runtime.sendMessage({ kind: 'FETCH', url });
     if (!fetched.ok) {
-      post(makeMessage('SCRAPE_ERROR', { domain, error_type: fetched.errorType, reason: fetched.reason }));
+      post(makeMessage('SCRAPE_ERROR', { domain, error_type: fetched.errorType, reason: fetched.reason }, requestId));
+      return;
+    }
+    // A 200-OK body can still be an anti-bot interstitial (Cloudflare/etc.). Flag it as a
+    // precise CHALLENGE before parsing, so it never mis-marshals as a DOM_DRIFT (§9.4.2).
+    const challenge = detectChallengePage(fetched.text);
+    if (challenge) {
+      post(makeMessage('SCRAPE_ERROR', { domain, error_type: challenge.errorType, reason: challenge.reason }, requestId));
       return;
     }
     const doc = new DOMParser().parseFromString(fetched.text, 'text/html');
     const outcome = runParser(doc, url);
-    post(outcome.ok ? makeMessage('SCRAPE_RESULT', outcome.payload) : makeMessage('SCRAPE_ERROR', outcome.error));
+    post(
+      outcome.ok
+        ? makeMessage('SCRAPE_RESULT', outcome.payload, requestId)
+        : makeMessage('SCRAPE_ERROR', outcome.error, requestId),
+    );
   } catch (err) {
-    post(makeMessage('SCRAPE_ERROR', { domain, error_type: 'NETWORK_TIMEOUT', reason: String(err) }));
+    post(makeMessage('SCRAPE_ERROR', { domain, error_type: 'NETWORK_TIMEOUT', reason: String(err) }, requestId));
   }
 }
 

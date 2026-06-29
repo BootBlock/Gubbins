@@ -5,12 +5,15 @@
  * PWA's origin (CORS), so it delegates the network request here. With the manifest's
  * host permissions, the background worker fetches the raw HTML and returns the text
  * for the content script to parse with the shared Strategy parsers. Transport-level
- * failures are mapped to the §9.4.2 error taxonomy (`RATE_LIMITED`/`NETWORK_TIMEOUT`).
+ * failures are mapped to the §9.4.2 error taxonomy via the shared, unit-tested pure
+ * {@link classifyHttpStatus} (`RATE_LIMITED`/`BLOCKED`/`NOT_FOUND`/`SERVER_ERROR`); a
+ * transport-level failure with no response stays `NETWORK_TIMEOUT`.
  *
  * Note: MV3 service workers have no DOM, so parsing happens in the content script
  * (which does) — keeping this worker tiny and dependency-free.
  */
-import type { ScrapeErrorType } from '../../src/features/scraping/parsers/types';
+import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
+import { classifyHttpStatus } from '../../src/features/scraping/scrape-errors';
 
 interface FetchRequest {
   kind: 'FETCH';
@@ -38,8 +41,11 @@ async function fetchPage(url: string): Promise<FetchResponse> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { signal: controller.signal, credentials: 'omit', redirect: 'follow' });
-    if (res.status === 429) return { ok: false, errorType: 'RATE_LIMITED', reason: 'Supplier returned HTTP 429 (rate limited).' };
-    if (!res.ok) return { ok: false, errorType: 'NETWORK_TIMEOUT', reason: `Supplier returned HTTP ${res.status}.` };
+    // A received HTTP status maps to a precise §9.4.2 failure (429/4xx/5xx); a usable
+    // 2xx classifies as null and we read the body. Only a transport failure with no
+    // response (the catch below) is a genuine NETWORK_TIMEOUT.
+    const failure = classifyHttpStatus(res.status);
+    if (failure) return { ok: false, errorType: failure.errorType, reason: failure.reason };
     return { ok: true, text: await res.text() };
   } catch (err) {
     const aborted = err instanceof DOMException && err.name === 'AbortError';

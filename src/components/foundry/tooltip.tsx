@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Markdown } from './markdown';
+import { useReducedMotion } from './useReducedMotion';
 
 /**
  * Foundry Tooltip (spec §2.4.1, §3) — a premium, glassmorphic tooltip whose body
@@ -39,11 +40,29 @@ export interface TooltipProps {
    * focusable control to avoid a duplicate tab stop — focus events still bubble.
    */
   readonly triggerTabIndex?: number;
+  /**
+   * Hover dwell (ms) before the tooltip opens. Defaults to {@link DEFAULT_OPEN_DELAY_MS}
+   * (1s) — the right feel for *controls*, where a tooltip is supplementary help that
+   * shouldn't flash up as the pointer merely passes over a button. Pass {@link INFO_OPEN_DELAY_MS}
+   * (300ms) for a deliberate `i` information badge, where the tooltip *is* the point of
+   * the control and the user expects the help almost immediately.
+   */
+  readonly openDelayMs?: number;
 }
 
 const GAP = 8;
-/** Hover dwell before the tooltip opens, so it never flashes on a passing pointer. */
-const OPEN_DELAY_MS = 300;
+/**
+ * Default hover dwell before a tooltip opens, so it never flashes on a passing
+ * pointer. Tuned for *controls* (buttons, toggles, steppers): a full second, long
+ * enough that brushing past a button never pops a bubble, but quick enough that a
+ * genuine "what does this do?" hover is rewarded.
+ */
+export const DEFAULT_OPEN_DELAY_MS = 1000;
+/**
+ * Snappier dwell for deliberate `i` information badges, where the glyph exists
+ * solely to surface help — the user is asking for it, so don't make them wait.
+ */
+export const INFO_OPEN_DELAY_MS = 300;
 const CLOSE_DELAY_MS = 120;
 
 export function Tooltip({
@@ -52,13 +71,18 @@ export function Tooltip({
   placement = 'top',
   className,
   triggerTabIndex = 0,
+  openDelayMs = DEFAULT_OPEN_DELAY_MS,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const reducedMotion = useReducedMotion();
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True for the brief window after a pointer press, so the focus it triggers does
+  // not force the bubble open. See `onFocus` below.
+  const pointerInitiatedFocus = useRef(false);
   const id = useId();
 
   const cancelClose = useCallback(() => {
@@ -89,8 +113,8 @@ export function Tooltip({
     openTimer.current = setTimeout(() => {
       openTimer.current = null;
       setOpen(true);
-    }, OPEN_DELAY_MS);
-  }, [cancelClose, open]);
+    }, openDelayMs);
+  }, [cancelClose, open, openDelayMs]);
 
   const scheduleClose = useCallback(() => {
     cancelOpen();
@@ -173,11 +197,27 @@ export function Tooltip({
   }, [open]);
 
   // Touch/pen: there is no hover, so tapping the trigger toggles the tooltip.
-  // Mouse taps are ignored here — hover already governs them.
+  // Mouse taps are ignored here — hover already governs them. Either way, flag that
+  // the focus about to fire was pointer-initiated so `onFocus` doesn't also open.
   const onPointerDown = useCallback((e: ReactPointerEvent) => {
+    pointerInitiatedFocus.current = true;
+    // The focus event fires synchronously right after this; clear the flag once it
+    // (and any same-tick re-focus) has passed, so a later keyboard focus still opens.
+    setTimeout(() => {
+      pointerInitiatedFocus.current = false;
+    }, 0);
     if (e.pointerType === 'mouse') return;
     setOpen((prev) => !prev);
   }, []);
+
+  // Open on focus **only when it came from the keyboard**. A focus triggered by a
+  // pointer press is skipped: hover (mouse) or the tap-toggle (touch) already governs
+  // visibility, and force-opening here would render the bubble over the trigger
+  // between pointer-down and -up — stealing the mouse-up so the click never lands.
+  const onFocus = useCallback(() => {
+    if (pointerInitiatedFocus.current) return;
+    show();
+  }, [show]);
 
   return (
     <>
@@ -187,7 +227,7 @@ export function Tooltip({
         aria-describedby={open ? id : undefined}
         onMouseEnter={openWithDelay}
         onMouseLeave={scheduleClose}
-        onFocus={show}
+        onFocus={onFocus}
         onBlur={scheduleClose}
         onPointerDown={onPointerDown}
         className={cn('inline-flex outline-none', className)}
@@ -209,7 +249,10 @@ export function Tooltip({
                 left: coords?.left ?? 0,
                 visibility: coords ? 'visible' : 'hidden',
               }}
-              className="z-[60] max-w-xs rounded-xl border border-border bg-popover/95 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl animate-fade-in"
+              className={cn(
+                'z-[60] max-w-xs rounded-xl border border-border bg-popover/95 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl',
+                !reducedMotion && 'animate-fade-in',
+              )}
             >
               <Markdown content={content} />
             </div>,

@@ -10,12 +10,25 @@
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToItemAttachment } from './mappers';
+import { tombstoneStatement } from './tombstone';
+import type { AttachmentKind } from './constants';
 import type { CreateAttachmentInput, ItemAttachment, ItemAttachmentRow } from './types';
 
 export interface UpdateAttachmentInput {
   readonly value?: string;
   readonly label?: string | null;
   readonly position?: number;
+  /**
+   * Switch a pointer's kind — used by the §4 "Unlinked Local File" flow to replace a
+   * foreign `LOCAL_POINTER` with an external `URL`. The value is validated against this
+   * new kind.
+   */
+  readonly kind?: AttachmentKind;
+  /**
+   * Restamp the origin device (§4 degradation): set to this device when re-linking a
+   * foreign pointer to a local path, or to `null` when replacing it with a URL.
+   */
+  readonly originDeviceId?: string | null;
 }
 
 export class AttachmentRepository extends BaseRepository {
@@ -32,10 +45,13 @@ export class AttachmentRepository extends BaseRepository {
     this.assertWritable();
     const value = this.validateValue(input.kind, input.value);
     const id = crypto.randomUUID();
+    // A URL is valid everywhere, so it carries no origin; only a LOCAL_POINTER is
+    // attributed to the device that linked it (§4 degradation, v18).
+    const originDeviceId = input.kind === 'LOCAL_POINTER' ? (input.originDeviceId ?? null) : null;
     await this.driver.execute(
-      `INSERT INTO item_attachments (id, item_id, kind, value, label, position)
-       VALUES (?, ?, ?, ?, ?, ?);`,
-      [id, input.itemId, input.kind, value, input.label ?? null, input.position ?? 0],
+      `INSERT INTO item_attachments (id, item_id, kind, value, label, position, origin_device_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [id, input.itemId, input.kind, value, input.label ?? null, input.position ?? 0, originDeviceId],
     );
     return (await this.requireById(id));
   }
@@ -44,11 +60,19 @@ export class AttachmentRepository extends BaseRepository {
     this.assertWritable();
     const existing = await this.requireById(id);
 
+    // A kind switch (the §4 replace-with-URL flow) validates the value against the *new*
+    // kind; otherwise the existing kind governs validation.
+    const effectiveKind = input.kind ?? existing.kind;
+
     const sets: string[] = [];
     const params: (string | number | null)[] = [];
+    if (input.kind !== undefined) {
+      sets.push('kind = ?');
+      params.push(input.kind);
+    }
     if (input.value !== undefined) {
       sets.push('value = ?');
-      params.push(this.validateValue(existing.kind, input.value));
+      params.push(this.validateValue(effectiveKind, input.value));
     }
     if (input.label !== undefined) {
       sets.push('label = ?');
@@ -57,6 +81,10 @@ export class AttachmentRepository extends BaseRepository {
     if (input.position !== undefined) {
       sets.push('position = ?');
       params.push(input.position);
+    }
+    if (input.originDeviceId !== undefined) {
+      sets.push('origin_device_id = ?');
+      params.push(input.originDeviceId);
     }
     if (sets.length > 0) {
       params.push(id);
@@ -70,7 +98,11 @@ export class AttachmentRepository extends BaseRepository {
 
   /** Delete an attachment record. Permitted under the Hard Stop (frees space). */
   async remove(id: string): Promise<void> {
-    await this.driver.execute('DELETE FROM item_attachments WHERE id = ?;', [id]);
+    // Tombstone the deletion atomically so it propagates on the next sync (Phase 11).
+    await this.driver.transaction([
+      { sql: 'DELETE FROM item_attachments WHERE id = ?;', params: [id] },
+      tombstoneStatement('item_attachments', id),
+    ]);
   }
 
   // --- internals -----------------------------------------------------------------

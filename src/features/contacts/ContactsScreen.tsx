@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Input, Spinner, Surface, Tooltip } from '@/components/foundry';
+import { Button, Input, Spinner, Surface, Tooltip, INFO_OPEN_DELAY_MS, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddContactIcon,
   BrandIcon,
@@ -10,6 +10,7 @@ import {
   PackageIcon,
 } from '@/components/icons';
 import type { CheckoutWithNames } from '@/db/repositories';
+import { useFormatters } from '@/lib/useFormatters';
 import { useContacts, useCreateContact, useOpenCheckouts, useCheckInItem } from './contacts';
 
 /**
@@ -52,6 +53,7 @@ export function ContactsScreen() {
         </Link>
       </header>
 
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
       {/* On loan */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
@@ -109,7 +111,10 @@ export function ContactsScreen() {
         ) : contacts.data && contacts.data.rows.length > 0 ? (
           <ul className="grid gap-2 sm:grid-cols-2">
             {contacts.data.rows.map((c) => (
-              <Surface key={c.id} className="flex items-center justify-between p-3">
+              <Surface
+                key={c.id}
+                className="flex items-center justify-between p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
+              >
                 <span className="font-medium">{c.name}</span>
                 {c.openCount > 0 ? (
                   <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">
@@ -127,6 +132,7 @@ export function ContactsScreen() {
           </p>
         )}
       </section>
+      </main>
     </div>
   );
 }
@@ -140,16 +146,11 @@ function LoanRow({
   onReturn: () => void;
   returning: boolean;
 }) {
-  const due = checkout.dueDate
-    ? new Date(checkout.dueDate).toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    : null;
+  const fmt = useFormatters();
+  const due = checkout.dueDate ? fmt.date(checkout.dueDate) : null;
   return (
     <Surface
-      className={`flex flex-wrap items-center gap-3 p-3 ${
+      className={`flex flex-wrap items-center gap-3 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10 ${
         checkout.isOverdue ? 'border-destructive/40' : ''
       }`}
     >
@@ -160,7 +161,14 @@ function LoanRow({
         </p>
       </div>
       {due ? (
-        <Tooltip content={checkout.isOverdue ? 'Overdue' : 'Due back'}>
+        <Tooltip
+          content={
+            checkout.isOverdue
+              ? 'Past its due date — this loan is **overdue**.'
+              : 'The date this loan is **due back**.'
+          }
+          openDelayMs={INFO_OPEN_DELAY_MS}
+        >
           <span
             className={`inline-flex items-center gap-1 text-xs [&_svg]:size-3.5 ${
               checkout.isOverdue ? 'text-destructive' : 'text-muted-foreground'
@@ -171,10 +179,17 @@ function LoanRow({
           </span>
         </Tooltip>
       ) : null}
-      <Button variant="outline" size="sm" onClick={onReturn} disabled={returning}>
-        <CheckInIcon />
-        Return
-      </Button>
+      <Tooltip
+        content="Check this item back in. Stock returns to the location — and exact lot — it was lent from."
+        triggerTabIndex={-1}
+      >
+        <span>
+          <Button variant="outline" size="sm" onClick={onReturn} disabled={returning}>
+            <CheckInIcon />
+            Return
+          </Button>
+        </span>
+      </Tooltip>
     </Surface>
   );
 }

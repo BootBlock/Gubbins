@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { formatMeasure, formatQuantity, gaugeTone } from './inventory-ui';
+import { gaugeTone } from './inventory-ui';
+// Locale-aware number/measure/date formatting now lives in the `makeFormatters`
+// factory and is covered by `src/lib/format.test.ts`.
 
 describe('gaugeTone (§4.1.3 colour bands)', () => {
   it('is green above 50%', () => {
@@ -15,16 +17,5 @@ describe('gaugeTone (§4.1.3 colour bands)', () => {
   it('is crimson below 15%', () => {
     expect(gaugeTone(14).fill).toBe('bg-destructive');
     expect(gaugeTone(0).fill).toBe('bg-destructive');
-  });
-});
-
-describe('en-GB formatting (§1.2.1)', () => {
-  it('groups large quantities', () => {
-    expect(formatQuantity(12500)).toBe('12,500');
-  });
-
-  it('trims gauge decimals and appends the unit', () => {
-    expect(formatMeasure(399.999, 'g')).toBe('400g');
-    expect(formatMeasure(45.5, 'ml')).toBe('45.5ml');
   });
 });

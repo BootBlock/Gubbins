@@ -19,6 +19,16 @@ import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, type RepositoryOptions } from './base';
 import type { CheckoutStatus } from './constants';
 import { ContactRepository } from './ContactRepository';
+import { stockRowId } from './stock';
+import {
+  addBatchStatement,
+  consumeBatchStatements,
+  placementDeltaStatements,
+  readPlacementBatches,
+  stockBatchRowId,
+  UNTRACKED_BATCH,
+} from './stock-batches';
+import { batchIdentityFromKey, planBatchSelection } from '@/features/inventory/batches';
 import { rowToCheckout } from './mappers';
 import type {
   CheckoutItemInput,
@@ -59,9 +69,9 @@ export class CheckoutRepository extends BaseRepository {
 
     const item = await this.driver.queryOne<{
       tracking_mode: string;
-      quantity: number;
+      location_id: string;
       is_active: number;
-    }>('SELECT tracking_mode, quantity, is_active FROM items WHERE id = ?;', [input.itemId]);
+    }>('SELECT tracking_mode, is_active, location_id FROM items WHERE id = ?;', [input.itemId]);
     if (!item) {
       throw new DbError('SQLITE_CONSTRAINT', `Item "${input.itemId}" does not exist.`);
     }
@@ -82,6 +92,20 @@ export class CheckoutRepository extends BaseRepository {
     // guard against double-borrowing it. DISCRETE loans decrement on-hand stock.
     const isSerialised = item.tracking_mode === 'SERIALISED';
     const quantity = isSerialised ? 1 : requested;
+
+    // Per-location source (Phase 26): a DISCRETE loan may be drawn from a *specific*
+    // placement; the return restores there. SERIALISED instances are single-placement, so
+    // the source is simply the item's location. Validate against — and decrement — the
+    // chosen placement's on-hand, not the primary's.
+    const fromLocationId =
+      !isSerialised && input.fromLocationId ? input.fromLocationId : item.location_id;
+
+    // Per-batch source (Phase 29): a DISCRETE loan may pick a *specific* lot at the placement
+    // (the empty string = the untracked default batch); the return restores to that exact lot.
+    // Omitted = the Phase-28 FEFO draw. SERIALISED instances have no batch dimension.
+    const fromBatchKey =
+      !isSerialised && input.fromBatchKey !== undefined ? input.fromBatchKey : null;
+
     if (isSerialised) {
       const open = await this.driver.queryOne<{ ok: number }>(
         'SELECT 1 AS ok FROM checkouts WHERE item_id = ? AND returned_at IS NULL LIMIT 1;',
@@ -90,30 +114,68 @@ export class CheckoutRepository extends BaseRepository {
       if (open) {
         throw new DbError('SQLITE_CONSTRAINT', 'This serialised item is already checked out.');
       }
-    } else if (item.quantity < quantity) {
-      throw new DbError(
-        'SQLITE_CONSTRAINT',
-        `Not enough stock to check out: ${item.quantity} on hand, ${quantity} requested.`,
+    } else if (fromBatchKey !== null) {
+      // Validate against — and later draw down — *the chosen lot's* own quantity.
+      const lot = await this.driver.queryOne<{ quantity: number }>(
+        'SELECT quantity FROM stock_batches WHERE id = ?;',
+        [stockBatchRowId(input.itemId, fromLocationId, fromBatchKey)],
       );
+      const available = Number(lot?.quantity ?? 0);
+      if (available < quantity) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Not enough of the chosen lot to check out: ${available} on hand, ${quantity} requested.`,
+        );
+      }
+    } else {
+      const placement = await this.driver.queryOne<{ quantity: number }>(
+        'SELECT quantity FROM item_stock WHERE id = ?;',
+        [stockRowId(input.itemId, fromLocationId)],
+      );
+      const available = Number(placement?.quantity ?? 0);
+      if (available < quantity) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Not enough stock at the chosen location to check out: ${available} on hand, ${quantity} requested.`,
+        );
+      }
     }
 
     const contact = await this.resolveContact(input);
     const id = crypto.randomUUID();
     const stockDelta = isSerialised ? 0 : quantity;
-    const nextQty = item.quantity - stockDelta;
     const dueDate = input.dueDate ?? null;
 
+    // The loan draws down the source placement: from the *chosen lot* when one was picked
+    // (Phase 29), else first-expiry-first-out across the placement's batches (Phase 28).
+    // Availability was validated above, so the plan has no shortfall either way.
+    let stockStatements: SqlStatement[] = [];
+    if (stockDelta > 0) {
+      stockStatements =
+        fromBatchKey !== null
+          ? consumeBatchStatements(
+              input.itemId,
+              fromLocationId,
+              planBatchSelection(
+                await readPlacementBatches(this.driver, input.itemId, fromLocationId),
+                fromBatchKey,
+                stockDelta,
+              ),
+            )
+          : await placementDeltaStatements(this.driver, input.itemId, fromLocationId, -stockDelta);
+    }
+
     await this.driver.transaction([
-      { sql: 'UPDATE items SET quantity = ? WHERE id = ?;', params: [nextQty, input.itemId] },
+      ...stockStatements,
       {
-        sql: `INSERT INTO checkouts (id, item_id, contact_id, quantity, due_date, note)
-              VALUES (?, ?, ?, ?, ?, ?);`,
-        params: [id, input.itemId, contact.id, quantity, dueDate, input.note?.trim() || null],
+        sql: `INSERT INTO checkouts (id, item_id, contact_id, quantity, due_date, note, source_location_id, source_batch_key)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        params: [id, input.itemId, contact.id, quantity, dueDate, input.note?.trim() || null, fromLocationId, fromBatchKey],
       },
       historyStatement(input.itemId, 'CHECKED_OUT', {
         quantityDelta: stockDelta === 0 ? null : -stockDelta,
         note: `Checked out ${quantity} to ${contact.name}${dueDate ? ' (due set)' : ''}.`,
-        metadata: { checkoutId: id, contactId: contact.id, quantity, dueDate },
+        metadata: { checkoutId: id, contactId: contact.id, quantity, dueDate, fromLocationId, fromBatchKey },
       }),
     ]);
     return (await this.getById(id))!;
@@ -132,16 +194,28 @@ export class CheckoutRepository extends BaseRepository {
       return rowToCheckout(existing); // already returned — idempotent
     }
 
-    const item = await this.driver.queryOne<{ quantity: number; tracking_mode: string }>(
-      'SELECT quantity, tracking_mode FROM items WHERE id = ?;',
+    const item = await this.driver.queryOne<{ location_id: string; tracking_mode: string }>(
+      'SELECT location_id, tracking_mode FROM items WHERE id = ?;',
       [existing.item_id],
     );
     // SERIALISED stock was never decremented (it is pinned to 1), so it is not restored.
+    // The loan is returned to *where it was lent from* (Phase 26): the stored source
+    // placement, or the item's current primary location when no source was recorded (or
+    // it was nulled because that location has since been deleted). And to *the exact lot* it
+    // came from (Phase 29): the canonical `source_batch_key` round-trips back to its identity
+    // via `batchIdentityFromKey`, so a tracked lot is rebuilt rather than anonymised into the
+    // untracked default (NULL/'' → the default batch — the pre-Phase-29 behaviour). `addBatch`
+    // upserts, so the lot is recreated even if it was emptied/consolidated while the unit was out.
     const restoreDelta = item?.tracking_mode === 'SERIALISED' ? 0 : existing.quantity;
-    const restored = (item?.quantity ?? 0) + restoreDelta;
+    const restoreLocationId = existing.source_location_id ?? item?.location_id;
+    const restoreIdentity = existing.source_batch_key
+      ? batchIdentityFromKey(existing.source_batch_key)
+      : UNTRACKED_BATCH;
 
     await this.driver.transaction([
-      { sql: 'UPDATE items SET quantity = ? WHERE id = ?;', params: [restored, existing.item_id] },
+      ...(restoreDelta > 0 && restoreLocationId
+        ? [addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta)]
+        : []),
       {
         sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), note = COALESCE(?, note) WHERE id = ?;`,
         params: [note?.trim() || null, checkoutId],

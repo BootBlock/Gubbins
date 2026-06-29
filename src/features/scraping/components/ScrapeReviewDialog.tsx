@@ -8,7 +8,7 @@
  * {@link applyScrapeMerge} and hands the concrete write to `onApply`.
  */
 import { useMemo, useState } from 'react';
-import { Button, Modal } from '@/components/foundry';
+import { Button, Modal, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { InfoIcon, WarningIcon } from '@/components/icons';
 import { applyScrapeMerge, buildScrapeMergePlan, type ScrapeField, type ScrapeWrite } from '../merge';
 import type { ExistingItemFields } from '../merge';
@@ -95,6 +95,13 @@ export function ScrapeReviewDialog({
             <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-warning [&_svg]:size-3.5">
               <WarningIcon />
               Overwrite your value? (off by default)
+              <Tooltip
+                content="These fields already hold a value you entered. Tick one only if you want the supplier's value to replace yours — anything left unticked is kept."
+                openDelayMs={INFO_OPEN_DELAY_MS}
+                className="ml-0.5 text-muted-foreground"
+              >
+                <InfoIcon aria-label="About overwrites" />
+              </Tooltip>
             </h4>
             <ul className="space-y-2 text-sm">
               {conflicts.map((p) => (

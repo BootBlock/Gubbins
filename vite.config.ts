@@ -103,5 +103,15 @@ export default defineConfig({
     // SQLite WASM / worker integration is validated via the :memory: driver and
     // mocked RPC bridge (spec §8.5), so no CSS or worker processing is needed here.
     css: false,
+    // Use the worker_threads pool rather than Vitest's default `forks` pool.
+    // On Node 25 the forks pool (tinypool spawning `child_process.fork` workers)
+    // hits a cold-start race that crashes the whole run once on a cold cache —
+    // every file reports "no tests" with `TypeError: Cannot read properties of
+    // undefined (reading 'config')` after a ~33 s environment setup. The threads
+    // pool runs in-process worker_threads, sidestepping that spawn race entirely;
+    // it is stable across cold starts and markedly faster here (the `:memory:`
+    // node:sqlite driver runs correctly under worker_threads). Per-file module
+    // isolation (Vitest's default) is preserved, so no global state leaks.
+    pool: 'threads',
   },
 });

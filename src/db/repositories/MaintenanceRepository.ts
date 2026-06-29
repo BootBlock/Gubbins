@@ -32,20 +32,55 @@ import type {
  */
 const TIME_DUE_AT = `(COALESCE(ms.last_performed_at, ms.created_at) + ms.interval_days * 86400000)`;
 
+/**
+ * Derived checkout-hours accrued to a schedule since its service anchor (§4.3, Phase 22).
+ * A *projection* over the `checkouts` ledger (the §2.1 SSOT), never a stored counter: the
+ * sum, in hours, of every loan of the item *begun* at or after `last_performed_at`
+ * (or `created_at` if never serviced), each open loan accruing up to `now`. `MAX(0, …)`
+ * clamps any clock-skewed window so it cannot subtract usage. Only accrue-mode schedules
+ * compute it; others read 0. The single `?` binds `now` (UNIX ms).
+ *
+ * When the schedule is location-scoped (`location_id` set, Phase 30), only loans drawn
+ * *from that placement* (`checkouts.source_location_id`, Phase 26) accrue toward it, so each
+ * placement's wear is attributed to its own service clock; an item-level schedule
+ * (`location_id IS NULL`) accrues every loan, exactly as before — mirroring the pure
+ * `accruedCheckoutHours` scope filter.
+ */
+const AUTO_USAGE_HOURS = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN (
+     SELECT COALESCE(SUM(MAX(0, COALESCE(k.returned_at, ?) - k.checked_out_at) / 3600000.0), 0)
+     FROM checkouts k
+     WHERE k.item_id = ms.item_id
+       AND k.checked_out_at >= COALESCE(ms.last_performed_at, ms.created_at)
+       AND (ms.location_id IS NULL OR k.source_location_id = ms.location_id)
+   ) ELSE 0 END)`;
+
+/**
+ * The usage figure a USAGE schedule is measured against in SQL: the derived
+ * checkout-hours when it auto-accrues, else the manually-logged counter. Mirrors the
+ * pure `effectiveUsage`; its embedded {@link AUTO_USAGE_HOURS} binds `now` once.
+ */
+const EFFECTIVE_USAGE = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN ${AUTO_USAGE_HOURS} ELSE ms.usage_since_service END)`;
+
 export class MaintenanceRepository extends BaseRepository {
   /** All schedules for an item, oldest first (stable display order). */
-  async listForItem(itemId: string): Promise<MaintenanceSchedule[]> {
+  async listForItem(itemId: string, now: number = Date.now()): Promise<MaintenanceSchedule[]> {
     const rows = await this.driver.query<MaintenanceScheduleRow>(
-      'SELECT * FROM maintenance_schedules WHERE item_id = ? ORDER BY created_at ASC;',
-      [itemId],
+      `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, sl.name AS location_name
+       FROM maintenance_schedules ms
+       LEFT JOIN locations sl ON sl.id = ms.location_id
+       WHERE ms.item_id = ? ORDER BY ms.created_at ASC;`,
+      [now, itemId],
     );
     return rows.map(rowToMaintenanceSchedule);
   }
 
-  async getById(id: string): Promise<MaintenanceSchedule | undefined> {
+  async getById(id: string, now: number = Date.now()): Promise<MaintenanceSchedule | undefined> {
     const row = await this.driver.queryOne<MaintenanceScheduleRow>(
-      'SELECT * FROM maintenance_schedules WHERE id = ?;',
-      [id],
+      `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, sl.name AS location_name
+       FROM maintenance_schedules ms
+       LEFT JOIN locations sl ON sl.id = ms.location_id
+       WHERE ms.id = ?;`,
+      [now, id],
     );
     return row ? rowToMaintenanceSchedule(row) : undefined;
   }
@@ -60,18 +95,19 @@ export class MaintenanceRepository extends BaseRepository {
   async listDue(now: number, params: PageParams = {}): Promise<Page<MaintenanceScheduleWithItem>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<MaintenanceScheduleRow & { item_name: string }>(
-      `SELECT ms.*, items.name AS item_name
+      `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, items.name AS item_name, sl.name AS location_name
        FROM maintenance_schedules ms
        JOIN items ON items.id = ms.item_id
+       LEFT JOIN locations sl ON sl.id = ms.location_id
        WHERE items.is_active = 1
          AND (
            (ms.basis = 'TIME'  AND ${TIME_DUE_AT} <= ?)
-           OR (ms.basis = 'USAGE' AND ms.usage_since_service >= ms.interval_usage)
+           OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage)
          )
        ORDER BY
          CASE WHEN ms.basis = 'TIME' THEN ${TIME_DUE_AT} ELSE 0 END ASC
        LIMIT ? OFFSET ?;`,
-      [now, limit, offset],
+      [now, now, now, limit, offset],
     );
     const mapped = rows.map((row) => ({
       ...rowToMaintenanceSchedule(row),
@@ -88,8 +124,8 @@ export class MaintenanceRepository extends BaseRepository {
        JOIN items ON items.id = ms.item_id
        WHERE items.is_active = 1
          AND ((ms.basis = 'TIME' AND ${TIME_DUE_AT} <= ?)
-           OR (ms.basis = 'USAGE' AND ms.usage_since_service >= ms.interval_usage));`,
-      [now],
+           OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage));`,
+      [now, now],
     );
     return Number(row?.n ?? 0);
   }
@@ -104,6 +140,8 @@ export class MaintenanceRepository extends BaseRepository {
     let intervalDays: number | null = null;
     let intervalUsage: number | null = null;
     let usageUnit: string | null = null;
+    // A TIME schedule is never loan-driven; accrual is a USAGE-only concept (§4.3).
+    let accrueCheckoutHours = false;
     if (input.basis === 'TIME') {
       intervalDays = input.intervalDays ?? null;
       if (!Number.isFinite(intervalDays ?? NaN) || (intervalDays as number) <= 0) {
@@ -115,15 +153,24 @@ export class MaintenanceRepository extends BaseRepository {
       if (!Number.isFinite(intervalUsage ?? NaN) || (intervalUsage as number) <= 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A usage-based schedule needs a positive usage interval.');
       }
-      usageUnit = input.usageUnit?.trim() || null;
+      accrueCheckoutHours = input.accrueCheckoutHours === true;
+      // When auto-accruing, the interval is necessarily measured in hours; default the
+      // label so the UI reads naturally without forcing the user to type it.
+      usageUnit = input.usageUnit?.trim() || (accrueCheckoutHours ? 'hours' : null);
     }
+
+    // A scope location (Phase 30) is optional; empty/absent → an item-level schedule (NULL).
+    const locationId = input.locationId || null;
 
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO maintenance_schedules
-         (id, item_id, name, basis, interval_days, interval_usage, usage_unit, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-      [id, input.itemId, name, input.basis, intervalDays, intervalUsage, usageUnit, input.note?.trim() || null],
+         (id, item_id, name, basis, interval_days, interval_usage, usage_unit, accrue_checkout_hours, location_id, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        id, input.itemId, name, input.basis, intervalDays, intervalUsage, usageUnit,
+        accrueCheckoutHours ? 1 : 0, locationId, input.note?.trim() || null,
+      ],
     );
     return (await this.getById(id))!;
   }
@@ -157,6 +204,12 @@ export class MaintenanceRepository extends BaseRepository {
     const schedule = await this.requireSchedule(id);
     if (schedule.basis !== 'USAGE') {
       throw new DbError('SQLITE_CONSTRAINT', 'Usage can only be logged against a usage-based schedule.');
+    }
+    if (schedule.accrueCheckoutHours) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'This schedule accrues checkout-hours automatically; usage cannot be logged manually.',
+      );
     }
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'Logged usage must be a positive number.');

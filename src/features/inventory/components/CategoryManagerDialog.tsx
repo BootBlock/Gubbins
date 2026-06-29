@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Modal, Select, Tooltip } from '@/components/foundry';
+import { Button, Input, Modal, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { AddIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
 import { FIELD_TYPES, type CategoryWithFieldCount, type FieldType } from '@/db/repositories';
 import {
@@ -59,9 +59,13 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
               placeholder="New category…"
               aria-label="New category name"
             />
-            <Button size="icon" aria-label="Add category" onClick={addCategory} disabled={!newName.trim()}>
-              <AddIcon />
-            </Button>
+            <Tooltip content="Create the category, then define its custom fields on the right." triggerTabIndex={-1}>
+              <span>
+                <Button size="icon" aria-label="Add category" onClick={addCategory} disabled={!newName.trim()}>
+                  <AddIcon />
+                </Button>
+              </span>
+            </Tooltip>
           </div>
           <ul className="max-h-64 space-y-1 overflow-y-auto">
             {rows.length === 0 ? (
@@ -122,9 +126,13 @@ function CategoryDetail({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="truncate text-sm font-semibold">{category.name}</h3>
-        <Button variant="ghost" size="icon" aria-label="Delete category" onClick={onDeleted}>
-          <DeleteIcon />
-        </Button>
+        <Tooltip content="Delete this category and all its field definitions. Items keep their stored values." triggerTabIndex={-1}>
+          <span>
+            <Button variant="ghost" size="icon" aria-label="Delete category" onClick={onDeleted}>
+              <DeleteIcon className="text-glyph-danger" />
+            </Button>
+          </span>
+        </Tooltip>
       </div>
 
       <ul className="space-y-1">
@@ -147,9 +155,9 @@ function CategoryDetail({
                 type="button"
                 aria-label={`Remove field ${field.name}`}
                 onClick={() => deleteField.mutate(field.id)}
-                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive [&_svg]:size-3.5"
+                className="rounded p-0.5 transition-colors hover:bg-secondary [&_svg]:size-3.5"
               >
-                <CloseIcon />
+                <CloseIcon className="text-glyph-danger" />
               </button>
             </li>
           ))
@@ -236,7 +244,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           Required
         </label>
       </div>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={!name.trim() || addField.isPending}>
           <AddIcon />
@@ -255,7 +263,10 @@ function DatasheetLinkingConfig() {
     <div className="mt-5 rounded-xl border border-border bg-secondary/10 p-3">
       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
         Datasheet linking
-        <Tooltip content="**Option A** links external URLs only. **Option B** also lets you point at local PDFs — only the file *path* is stored and synced, never the file itself (§4).">
+        <Tooltip
+          content="**Option A** links external URLs only. **Option B** also lets you point at local PDFs — only the file *path* is stored and synced, never the file itself (§4)."
+          openDelayMs={INFO_OPEN_DELAY_MS}
+        >
           <span className="text-muted-foreground [&_svg]:size-3.5">
             <InfoIcon />
           </span>

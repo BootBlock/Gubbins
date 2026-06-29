@@ -161,6 +161,7 @@ export function rowToItemImage(row: ItemImageRow): ItemImage {
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    fullResDowngradedAt: row.full_res_downgraded_at ?? null,
   };
 }
 
@@ -172,6 +173,7 @@ export function rowToItemAttachment(row: ItemAttachmentRow): ItemAttachment {
     value: row.value,
     label: row.label,
     position: row.position,
+    originDeviceId: row.origin_device_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -213,6 +215,8 @@ export function rowToCheckout(row: CheckoutRow): Checkout {
     checkedOutAt: row.checked_out_at,
     returnedAt: row.returned_at,
     note: row.note,
+    sourceLocationId: row.source_location_id,
+    sourceBatchKey: row.source_batch_key,
     updatedAt: row.updated_at,
   };
 }
@@ -227,6 +231,10 @@ export function rowToMaintenanceSchedule(row: MaintenanceScheduleRow): Maintenan
     intervalUsage: row.interval_usage,
     usageUnit: row.usage_unit,
     usageSinceService: row.usage_since_service,
+    accrueCheckoutHours: row.accrue_checkout_hours === 1,
+    autoUsageHours: Number(row.auto_usage_hours ?? 0),
+    locationId: row.location_id,
+    locationName: row.location_name ?? null,
     lastPerformedAt: row.last_performed_at,
     note: row.note,
     createdAt: row.created_at,
@@ -257,6 +265,7 @@ export function rowToBomLine(row: ProjectBomLineRow): ProjectBomLine {
     description: row.description,
     requiredQty: row.required_qty,
     reservedQty: row.reserved_qty,
+    receivedQty: row.received_qty,
     reservationStatus: row.reservation_status,
     procurementStatus: row.procurement_status,
     unitCostSnapshot: row.unit_cost_snapshot,

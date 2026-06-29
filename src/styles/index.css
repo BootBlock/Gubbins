@@ -50,6 +50,25 @@
   --input: oklch(0.2 0.02 280 / 15%);
   --ring: oklch(0.55 0.2 277);
 
+  /*
+   * Glyph tones (spec §2.4.1) — subtle pastel colours that tint *only the icon*
+   * inside neutral (outline/ghost/icon) action buttons, so a row of otherwise
+   * identical white glyphs reads at a glance: red = destructive, green = additive,
+   * etc. Deliberately soft (modest chroma) so they whisper rather than shout, and
+   * never applied to a solid primary/destructive button (its glyph keeps the
+   * button's own foreground). Light theme sits on a near-white surface, so these
+   * are darker/­slightly more saturated to stay legible. Colour is always paired
+   * with a distinct glyph + aria-label, never the sole signal (WCAG 1.4.1).
+   */
+  --glyph-danger: oklch(0.57 0.18 25); /* delete / remove */
+  --glyph-success: oklch(0.55 0.13 152); /* add / restore / receive */
+  --glyph-edit: oklch(0.6 0.13 80); /* edit / details */
+  --glyph-move: oklch(0.55 0.16 290); /* relocate */
+  --glyph-scan: oklch(0.55 0.12 220); /* QR / scan */
+  --glyph-checkout: oklch(0.6 0.15 55); /* check out / borrow */
+  --glyph-gauge: oklch(0.55 0.11 190); /* gauge / measure */
+  --glyph-neutral: oklch(0.5 0.03 255); /* decrement / dismiss */
+
   --radius: 0.65rem;
 }
 
@@ -89,6 +108,17 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.64 0.2 277);
+
+  /* Glyph tones, dark-theme variant — lighter & softer so the pastel reads on the
+   * near-black indigo surface (see the :root block for the rationale). */
+  --glyph-danger: oklch(0.74 0.14 25);
+  --glyph-success: oklch(0.8 0.12 152);
+  --glyph-edit: oklch(0.82 0.11 85);
+  --glyph-move: oklch(0.78 0.11 290);
+  --glyph-scan: oklch(0.8 0.1 215);
+  --glyph-checkout: oklch(0.8 0.12 55);
+  --glyph-gauge: oklch(0.8 0.1 185);
+  --glyph-neutral: oklch(0.72 0.03 255);
 }
 
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
@@ -129,11 +159,43 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Pastel glyph tones → `text-glyph-*` utilities (e.g. `text-glyph-danger`),
+   * applied to the icon inside neutral action buttons. */
+  --color-glyph-danger: var(--glyph-danger);
+  --color-glyph-success: var(--glyph-success);
+  --color-glyph-edit: var(--glyph-edit);
+  --color-glyph-move: var(--glyph-move);
+  --color-glyph-scan: var(--glyph-scan);
+  --color-glyph-checkout: var(--glyph-checkout);
+  --color-glyph-gauge: var(--glyph-gauge);
+  --color-glyph-neutral: var(--glyph-neutral);
+
+  /*
+   * Vertical gap between a form field's label and the control beneath it
+   * (spec §2.4.1). Centralised as a single spacing token so the whole app's
+   * field rhythm is consistent and tweakable in one place: every standard
+   * dialog field uses `mb-field-gap` on its label rather than a raw `mb-*`.
+   */
+  --spacing-field-gap: 0.625rem; /* 10px */
+  /* Denser secondary tier (compact text-xs labels in nested editors): a
+   * proportionally smaller gap from the same family — use `mb-field-gap-compact`. */
+  --spacing-field-gap-compact: 0.5rem; /* 8px */
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+
+  /*
+   * The signature "emphasized" easing curve (a decelerating expo-out, à la Material 3's
+   * emphasized motion). Centralised here as the `ease-emphasized` utility so every
+   * hover reveal, lift, slide and bar fill across the app shares one sleek, cohesive
+   * motion language instead of repeating the raw cubic-bezier string. As with all
+   * `transition-*`/`animate-*` utilities, the prefers-reduced-motion catch-all below
+   * neutralises it for users who ask for minimal motion.
+   */
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
   --font-sans:
     'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system,
@@ -167,10 +229,47 @@
     background-color: color-mix(in oklab, var(--primary) 35%, transparent);
   }
 
-  /* Refined, unobtrusive scrollbars in keeping with the premium aesthetic. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--foreground) 18%, transparent) transparent;
+  /*
+   * Refined, unobtrusive scrollbars in keeping with the premium aesthetic.
+   *
+   * Blink/WebKit get an explicitly-styled `::-webkit-scrollbar`. This is deliberate:
+   * Windows' native thin *overlay* scrollbar widens on hover/scroll and paints over the
+   * content beneath it. Defining a custom `::-webkit-scrollbar` opts out of that overlay and
+   * renders a fixed-width (10px), non-expanding bar instead, which sits comfortably inside
+   * the 1rem gutter that `dialog-scroll` bleeds open. The 2px transparent, padding-box-
+   * clipped border keeps the visible thumb slim within that tidy 10px track. (The overlap
+   * fix itself is `dialog-scroll`'s bleed — engine-agnostic; this is the matching cosmetic.)
+   */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--foreground) 20%, transparent);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 32%, transparent);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /*
+   * Firefox has no ::-webkit-scrollbar; feature-detect its absence and fall back to the
+   * standard thin-scrollbar properties there. (Setting these globally in Blink would
+   * suppress the custom webkit scrollbar above, re-introducing the overlay overlap.)
+   */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklab, var(--foreground) 20%, transparent) transparent;
+    }
   }
 }
 
@@ -219,6 +318,63 @@
   }
 }
 
+/*
+ * Content-swap entrance — a quick "fade-through" incoming half (Material-style) for
+ * when a panel's content is replaced in place: selecting a different Location filters
+ * the item list, picking another Project swaps the detail pane, etc. Keyed remounts
+ * re-fire it. Snappier than `animate-rise` so an interactive swap never feels laggy.
+ */
+@keyframes gubbins-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Drop-target ghost — the live "your widget lands here" indicator on the customisable
+ * dashboard board (spec §3). While a tile is dragged, a single translucent placeholder
+ * tracks the cell under the pointer; this gives it a calm, breathing primary glow so the
+ * target reads as alive without strobing. Paired with `animate-zoom-in` on a keyed
+ * wrapper so it pops as it jumps from cell to cell. Reduced-motion users get the static
+ * end state (border + tint) via the global catch-all, so the target is still indicated.
+ */
+@keyframes gubbins-ghost {
+  0%,
+  100% {
+    box-shadow: 0 0 16px 1px color-mix(in oklab, var(--primary) 20%, transparent);
+    transform: scale(0.988);
+    opacity: 0.78;
+  }
+  50% {
+    box-shadow: 0 0 34px 8px color-mix(in oklab, var(--primary) 36%, transparent);
+    transform: scale(1.006);
+    opacity: 1;
+  }
+}
+
+/*
+ * Standard scrollable region for dialogs (spec §2.4.1). Keeping a scrollbar from
+ * painting over content is browser-hostile: `scrollbar-gutter: stable` reserves nothing
+ * for *overlay* scrollbars (Firefox, and Windows when "auto-hide scrollbars" is on), so
+ * the bar still floats across the content. The reliable, engine-agnostic fix is to bleed
+ * the scroll viewport outward into the dialog's own padding by exactly as much as we then
+ * pad the content back: the negative margin and equal padding cancel, so the content (and
+ * its cards) stay aligned with the header, while the scrollbar — overlay OR classic —
+ * lives in the bled gutter instead of over the content. 1rem comfortably clears a thin or
+ * classic bar and still leaves part of the dialog's 1.5rem padding outside it. Centralised
+ * so every dialog scroll area shares the behaviour and it tunes in one place.
+ */
+@utility dialog-scroll {
+  overflow-y: auto;
+  margin-right: -1rem;
+  padding-right: 1rem;
+}
+
 @utility animate-fade-in {
   animation: gubbins-fade-in 0.2s ease-out both;
 }
@@ -231,15 +387,49 @@
   animation: gubbins-rise 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@utility animate-swap-in {
+  animation: gubbins-swap-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @utility animate-pulse-success {
   animation: gubbins-pulse-success 0.6s ease-out;
 }
 
+@utility animate-ghost {
+  animation: gubbins-ghost 1.2s ease-in-out infinite;
+}
+
+/*
+ * Reduced-motion safety net (spec §3 accessible UI; WCAG 2.3.3 Animation from
+ * Interactions). The app is deliberately animation-rich, but a user who asks their OS
+ * to minimise motion must have decorative transitions and animations neutralised. This
+ * global rule is the catch-all across every `transition-*` / `animate-*` utility (the
+ * Foundry Modal & Tooltip additionally drop their entrance classes at source via
+ * `useReducedMotion`, so no animation event even fires there). A loading spinner is
+ * *functional* feedback, not decoration, so it is exempted and keeps rotating.
+ */
+@keyframes gubbins-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-in,
-  .animate-zoom-in,
-  .animate-rise,
-  .animate-pulse-success {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    /* Zero the delay too: a staggered entrance (e.g. animation-delay on dashboard
+     * widgets) must not leave content invisible during its wait for these users. */
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Loading spinners convey "work in progress" — keep them spinning. */
+  .animate-spin {
+    animation: gubbins-spin 0.8s linear infinite !important;
   }
 }

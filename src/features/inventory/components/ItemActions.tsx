@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button } from '@/components/foundry';
+import { Button, Tooltip } from '@/components/foundry';
 import {
   CheckoutIcon,
   DeleteIcon,
@@ -38,39 +38,67 @@ export function ItemActions({
 
   return (
     <div className="flex items-center gap-1">
-      <Button variant="outline" size="icon" className={size} aria-label="Item details" onClick={() => setDialog('details')}>
-        <EditIcon />
-      </Button>
+      <Tooltip content="Open the full item record — images, tags, capabilities, custom fields & datasheets." triggerTabIndex={-1}>
+        <span>
+          <Button variant="outline" size="icon" className={size} aria-label="Item details" onClick={() => setDialog('details')}>
+            <EditIcon className="text-glyph-edit" />
+          </Button>
+        </span>
+      </Tooltip>
       {item.trackingMode === 'CONSUMABLE_GAUGE' ? (
-        <Button variant="outline" size="icon" className={size} aria-label="Update gauge" onClick={() => setDialog('gauge')}>
-          <GaugeIcon />
-        </Button>
+        <Tooltip content="Record usage or weigh-in against a scale to update the remaining level." triggerTabIndex={-1}>
+          <span>
+            <Button variant="outline" size="icon" className={size} aria-label="Update gauge" onClick={() => setDialog('gauge')}>
+              <GaugeIcon className="text-glyph-gauge" />
+            </Button>
+          </span>
+        </Tooltip>
       ) : null}
-      <Button variant="outline" size="icon" className={size} aria-label="Move item" onClick={() => setDialog('move')}>
-        <MoveIcon />
-      </Button>
-      <Button variant="outline" size="icon" className={size} aria-label="QR code" onClick={() => setDialog('qr')}>
-        <QrCodeIcon />
-      </Button>
+      <Tooltip content="Move this item to another location. The move is recorded in the activity log." triggerTabIndex={-1}>
+        <span>
+          <Button variant="outline" size="icon" className={size} aria-label="Move item" onClick={() => setDialog('move')}>
+            <MoveIcon className="text-glyph-move" />
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip content="Show a printable QR code that deep-links straight back to this item." triggerTabIndex={-1}>
+        <span>
+          <Button variant="outline" size="icon" className={size} aria-label="QR code" onClick={() => setDialog('qr')}>
+            <QrCodeIcon className="text-glyph-scan" />
+          </Button>
+        </span>
+      </Tooltip>
       {item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
-        <Button variant="outline" size="icon" className={size} aria-label="Check out" onClick={() => setDialog('checkout')}>
-          <CheckoutIcon />
-        </Button>
+        <Tooltip content="Loan this item to a contact, tracking who has it and when it is due back." triggerTabIndex={-1}>
+          <span>
+            <Button variant="outline" size="icon" className={size} aria-label="Check out" onClick={() => setDialog('checkout')}>
+              <CheckoutIcon className="text-glyph-checkout" />
+            </Button>
+          </span>
+        </Tooltip>
       ) : null}
       {item.isActive ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={size}
-          aria-label="Remove from inventory"
-          onClick={() => softDelete.mutate({ id: item.id })}
-        >
-          <DeleteIcon />
-        </Button>
+        <Tooltip content="**Soft-delete** — hides the item but keeps its history. Tick *Show removed* to restore it later." triggerTabIndex={-1}>
+          <span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={size}
+              aria-label="Remove from inventory"
+              onClick={() => softDelete.mutate({ id: item.id })}
+            >
+              <DeleteIcon className="text-glyph-danger" />
+            </Button>
+          </span>
+        </Tooltip>
       ) : (
-        <Button variant="ghost" size="icon" className={size} aria-label="Restore item" onClick={() => restore.mutate(item.id)}>
-          <RestoreIcon />
-        </Button>
+        <Tooltip content="Bring this removed item back into active inventory." triggerTabIndex={-1}>
+          <span>
+            <Button variant="ghost" size="icon" className={size} aria-label="Restore item" onClick={() => restore.mutate(item.id)}>
+              <RestoreIcon className="text-glyph-success" />
+            </Button>
+          </span>
+        </Tooltip>
       )}
 
       <MoveItemDialog item={item} open={dialog === 'move'} onClose={() => setDialog(null)} locations={locations} />

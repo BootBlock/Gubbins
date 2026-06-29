@@ -42,3 +42,48 @@ export function weighInNote(grossWeightOnScale: number, delta: number, unit: str
   const sign = delta > 0 ? '+' : '';
   return `Calibrated gross weight to ${grossWeightOnScale}${unit} (Calculated usage: ${sign}${delta}${unit})`;
 }
+
+/**
+ * Clamp a net value to the physically valid range `[0, grossCapacity]` (§4.1.1).
+ * A gauge can never hold less than empty nor more than a full unit, so an overfilled
+ * weigh-in or an over-eager refill is capped at capacity rather than stored as a
+ * nonsensical `percentage_remaining > 100%`. A non-positive capacity (mis-configured
+ * item) only enforces the lower bound.
+ */
+export function clampNetValue(value: number, grossCapacity: number): number {
+  const lowerBounded = Math.max(0, value);
+  return grossCapacity > 0 ? Math.min(grossCapacity, lowerBounded) : lowerBounded;
+}
+
+/**
+ * The amount needed to top a gauge back up to a full unit (§4.1.2 refill): the
+ * shortfall `grossCapacity - currentNetValue`, never negative. Drives the UI's
+ * "Fill to full" shortcut (e.g. mounting a fresh spool).
+ */
+export function refillToFullAmount(currentNetValue: number, grossCapacity: number): number {
+  return Math.max(0, grossCapacity - currentNetValue);
+}
+
+/**
+ * Convert a refill ("I added this much material") into the relative delta that is
+ * actually applied after capacity clamping (§4.1.2). Adding past a full unit only
+ * tops it off to capacity, so the returned delta is the *clamped* difference — the
+ * value the Activity Log and CRDT replay must record, never the raw requested add.
+ */
+export function refillDelta(
+  addedAmount: number,
+  currentNetValue: number,
+  grossCapacity: number,
+): number {
+  const clampedNext = clampNetValue(currentNetValue + addedAmount, grossCapacity);
+  return clampedNext - currentNetValue;
+}
+
+/**
+ * Compose the refill ledger note (spec §4.1.3 style): the applied (clamped) amount
+ * added and the resulting net level, e.g. "Refilled +600g (now 1000g)".
+ */
+export function refillNote(appliedDelta: number, newNetValue: number, unit: string): string {
+  const sign = appliedDelta > 0 ? '+' : '';
+  return `Refilled ${sign}${appliedDelta}${unit} (now ${newNetValue}${unit})`;
+}

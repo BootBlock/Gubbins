@@ -18,6 +18,7 @@ import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
+import { StorageRepository } from './StorageRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
 import type { RepositoryOptions } from './base';
@@ -30,11 +31,29 @@ export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
+export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
-export { TombstoneRepository, tombstoneStatement, SYNC_TABLES } from './tombstone';
+export {
+  TombstoneRepository,
+  tombstoneStatement,
+  SYNC_TABLES,
+  ITEM_TAGS_TABLE,
+  ITEM_HISTORY_TABLE,
+  SYNC_EXCLUDED_COLUMNS,
+  itemTagEdgeId,
+  parseItemTagEdgeId,
+  itemTagTombstoneStatement,
+  clearItemTagTombstoneStatement,
+} from './tombstone';
 export type { Tombstone, SyncTable } from './tombstone';
-export type { ItemListFilters, SearchByAstParams } from './ItemRepository';
+export type {
+  ItemListFilters,
+  SearchByAstParams,
+  LocationStockLine,
+  ItemBatchPlacement,
+  LocationBatchLine,
+} from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
 export type { RepositoryOptions } from './base';
@@ -49,6 +68,7 @@ let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
 let attachmentRepository: AttachmentRepository | null = null;
 let projectRepository: ProjectRepository | null = null;
+let storageRepository: StorageRepository | null = null;
 let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
@@ -96,6 +116,11 @@ export function getAttachmentRepository(): AttachmentRepository {
 export function getProjectRepository(): ProjectRepository {
   projectRepository ??= new ProjectRepository(getDatabaseDriver(), productionOptions);
   return projectRepository;
+}
+
+export function getStorageRepository(): StorageRepository {
+  storageRepository ??= new StorageRepository(getDatabaseDriver(), productionOptions);
+  return storageRepository;
 }
 
 export function getContactRepository(): ContactRepository {

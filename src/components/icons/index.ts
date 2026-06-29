@@ -44,6 +44,7 @@ export {
   ChevronRight as ChevronRightIcon,
   ChevronDown as ChevronDownIcon,
   Undo2 as RestoreIcon,
+  ArchiveRestore as ArchiveRestoreIcon,
 
   // Inventory / domain
   Folder as FolderIcon,
@@ -59,9 +60,19 @@ export {
   Upload as UploadIcon,
   FileText as DatasheetIcon,
   Link as LinkIcon,
+  Unlink as UnlinkIcon,
   HardDriveDownload as LocalFileIcon,
   SlidersHorizontal as SettingsIcon,
   Check as CheckIcon,
+
+  // Settings & preferences (Phase 12, §3)
+  Palette as AppearanceIcon,
+  Moon as DarkThemeIcon,
+  Sun as LightThemeIcon,
+  Monitor as SystemThemeIcon,
+  Tablet as KioskIcon,
+  Bell as NotificationIcon,
+  MonitorDown as InstallIcon,
 
   // Projects, BOMs & procurement (Phase 4, §4)
   ClipboardList as ProjectIcon,
@@ -75,6 +86,17 @@ export {
   // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,
+
+  // Multi-select & batch label printing (Phase 49, §6)
+  ListChecks as SelectIcon,
+
+  // Customisable dashboard widget board (Phase 45, §3)
+  LayoutDashboard as CustomiseIcon,
+  GripVertical as DragHandleIcon,
+  Eye as ShowIcon,
+  EyeOff as HideIcon,
+  Pin as PinIcon,
+  TrendingDown as LowStockIcon,
 
   // Capabilities & Visual Search (Phase 5, §4 Weighted Capabilities, §5.1)
   Zap as CapabilityIcon,
@@ -109,6 +131,7 @@ export {
 
   // Cloud Sync & File System Access (Phase 7, §7, §2)
   Cloud as CloudIcon,
+  CloudOff as OfflineIcon,
   CloudUpload as CloudUploadIcon,
   RefreshCcwDot as SyncIcon,
   FolderSync as FolderSyncIcon,

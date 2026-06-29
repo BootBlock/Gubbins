@@ -12,6 +12,14 @@ import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import type { CloudProvider } from '../provider';
 import { parseBackupJson, snapshotToBackupJson } from '../backup';
 import type { SyncSnapshot } from '../types';
+import {
+  forgetSyncDirectory,
+  handlePermission,
+  loadSyncDirectory,
+  persistSyncDirectory,
+  reconnectAction,
+  type PersistableDirectoryHandle,
+} from './fs-handle-store';
 
 const DEFAULT_FILE_NAME = 'gubbins-sync.json';
 
@@ -20,7 +28,7 @@ interface FsFileHandle {
   getFile(): Promise<File>;
   createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void> }>;
 }
-interface FsDirectoryHandle {
+interface FsDirectoryHandle extends PersistableDirectoryHandle {
   name: string;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FsFileHandle>;
 }
@@ -64,7 +72,8 @@ export class FileSystemCloudProvider implements CloudProvider {
 /**
  * Prompt for a sync directory and connect a {@link FileSystemCloudProvider}. Must be
  * invoked from a user gesture. Returns null when the API is unsupported or the user
- * cancels the picker.
+ * cancels the picker. The chosen handle is persisted (Phase 14) so a later session can
+ * resume through it without re-prompting.
  */
 export async function connectFileSystemProvider(): Promise<FileSystemCloudProvider | null> {
   if (!hasFileSystemAccess() || typeof globalThis === 'undefined') return null;
@@ -73,9 +82,62 @@ export async function connectFileSystemProvider(): Promise<FileSystemCloudProvid
   if (typeof picker !== 'function') return null;
   try {
     const dir = await picker({ mode: 'readwrite' });
+    await persistSyncDirectory(dir);
     return new FileSystemCloudProvider(dir);
   } catch {
     // User cancelled the picker, or permission was denied.
     return null;
   }
+}
+
+export interface ReconnectResult {
+  /** The reconnected provider, or null when none is available (or a gesture is needed). */
+  readonly provider: FileSystemCloudProvider | null;
+  /**
+   * True when a persisted handle exists but needs a fresh user gesture to re-grant
+   * `readwrite` permission — the UI should surface a "Reconnect folder" button that calls
+   * this again with `allowPrompt`.
+   */
+  readonly needsGesture: boolean;
+}
+
+const NO_RECONNECT: ReconnectResult = { provider: null, needsGesture: false };
+
+/**
+ * Attempt to resume the previously-chosen sync folder (Phase 14). With `allowPrompt`
+ * false (e.g. on mount) it only reconnects when the permission is still granted; a handle
+ * that needs re-granting returns `needsGesture` so the UI can offer a click. With
+ * `allowPrompt` true (inside a user gesture) it requests permission. A handle whose grant
+ * is irrecoverable (`denied`/unsupported) is forgotten so it does not nag every load.
+ */
+export async function reconnectFileSystemProvider(allowPrompt = false): Promise<ReconnectResult> {
+  if (!hasFileSystemAccess()) return NO_RECONNECT;
+  const handle = (await loadSyncDirectory()) as FsDirectoryHandle | null;
+  if (!handle) return NO_RECONNECT;
+
+  const action = reconnectAction(await handlePermission(handle));
+  if (action === 'connect') return { provider: new FileSystemCloudProvider(handle), needsGesture: false };
+  if (action === 'forget') {
+    await forgetSyncDirectory();
+    return NO_RECONNECT;
+  }
+
+  // action === 'needs-gesture'
+  if (!allowPrompt || typeof handle.requestPermission !== 'function') {
+    return { provider: null, needsGesture: true };
+  }
+  try {
+    const granted = await handle.requestPermission({ mode: 'readwrite' });
+    if (granted === 'granted') {
+      return { provider: new FileSystemCloudProvider(handle), needsGesture: false };
+    }
+  } catch {
+    // Fall through — the user denied or the prompt failed.
+  }
+  return { provider: null, needsGesture: true };
+}
+
+/** Forget the persisted sync directory (called on explicit disconnect). */
+export async function forgetFileSystemProvider(): Promise<void> {
+  await forgetSyncDirectory();
 }

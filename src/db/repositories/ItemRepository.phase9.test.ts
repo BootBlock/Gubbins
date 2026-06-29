@@ -82,16 +82,31 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     expect(history.rows.some((h) => h.action === 'VARIANT_CREATED')).toBe(true);
   });
 
-  it('refuses to nest variants (single-level model) and self-parenting', async () => {
-    const parent = await items.create({ name: 'Capacitor' });
-    const variant = await items.createVariant(parent.id, { name: '100nF' });
-    // Cannot create a variant under a variant.
-    await expect(items.createVariant(variant.id, { name: 'X' })).rejects.toBeInstanceOf(DbError);
-    // Cannot attach a parent (with variants) as someone else's variant.
+  it('allows multi-level nesting (grandparent SKUs) — Phase 18', async () => {
+    const grandparent = await items.create({ name: 'Capacitor' });
+    const parent = await items.createVariant(grandparent.id, { name: 'Ceramic' });
+    // A variant may itself hold sub-variants now (single-level rule lifted).
+    const child = await items.createVariant(parent.id, { name: '100nF' });
+    expect(child.parentId).toBe(parent.id);
+
+    // A parent (with its own variants) may also be attached as someone else's variant.
     const other = await items.create({ name: 'Other' });
-    await expect(items.setParent(parent.id, other.id)).rejects.toBeInstanceOf(DbError);
-    // Cannot self-parent.
-    await expect(items.setParent(other.id, other.id)).rejects.toBeInstanceOf(DbError);
+    const attached = await items.setParent(parent.id, other.id);
+    expect(attached.parentId).toBe(other.id);
+    // …and its existing sub-variant still hangs off it.
+    expect((await items.listVariants(parent.id)).rows.map((r) => r.name)).toEqual(['100nF']);
+  });
+
+  it('still rejects cycles and self-parenting (§7.5.3, multi-level)', async () => {
+    const a = await items.create({ name: 'A' });
+    const b = await items.createVariant(a.id, { name: 'B' });
+    const c = await items.createVariant(b.id, { name: 'C' });
+    // Making A a variant of its own descendant C would form a cycle.
+    await expect(items.setParent(a.id, c.id)).rejects.toBeInstanceOf(DbError);
+    // Direct self-parenting is still refused.
+    await expect(items.setParent(a.id, a.id)).rejects.toBeInstanceOf(DbError);
+    // The hierarchy is unchanged after the rejected moves.
+    expect((await items.getById(a.id))!.parentId).toBeNull();
   });
 
   it('attaches and detaches an existing item as a variant', async () => {
@@ -131,5 +146,38 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     await expect(items.reconcile([{ itemId: widget.id, counted: -1, note: 'x' }])).rejects.toBeInstanceOf(
       DbError,
     );
+  });
+
+  it('serialised audit: soft-deletes a missing instance and logs RECONCILED -1', async () => {
+    const [a, b, c] = await items.createSerialised({ name: 'Multimeter', count: 3 });
+    const updated = await items.reconcileSerialised([
+      { itemId: b.id, note: 'Serialised audit of Bench: Multimeter #2 not found — marked missing.' },
+    ]);
+    expect(updated).toHaveLength(1);
+    expect(updated[0].isActive).toBe(false);
+
+    // The flagged instance is gone from active inventory; the others remain.
+    expect((await items.getById(b.id))!.isActive).toBe(false);
+    expect((await items.getById(a.id))!.isActive).toBe(true);
+    expect((await items.getById(c.id))!.isActive).toBe(true);
+
+    const history = await items.getHistory(b.id);
+    const recon = history.rows.find((h) => h.action === 'RECONCILED');
+    expect(recon?.quantityDelta).toBe(-1);
+
+    // Reversible — a found-again unit can be restored.
+    expect((await items.restore(b.id)).isActive).toBe(true);
+  });
+
+  it('serialised audit: skips an already-inactive instance and rejects a non-serialised item', async () => {
+    const [a] = await items.createSerialised({ name: 'Caliper', count: 1 });
+    await items.softDelete(a.id);
+    // Already removed → no-op, returns nothing, writes no second ledger entry.
+    expect(await items.reconcileSerialised([{ itemId: a.id, note: 'x' }])).toHaveLength(0);
+
+    const widget = await items.create({ name: 'Widget', quantity: 3 }); // DISCRETE
+    await expect(
+      items.reconcileSerialised([{ itemId: widget.id, note: 'x' }]),
+    ).rejects.toBeInstanceOf(DbError);
   });
 });

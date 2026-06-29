@@ -1,35 +1,58 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button, Modal, Surface } from '@/components/foundry';
 import { ExportIcon, PackageIcon, VaultIcon } from '@/components/icons';
+import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
-import { useExportStore, type ExportFormat } from './useExportStore';
+import { useExportStore, type ExportFormat, type ExportScope } from './useExportStore';
 
 /**
  * The Granular Export Wizard (spec §3, §2 JSON backup, §4.5 Markdown vault).
  *
- * Remembers the last-used format/scope via {@link useExportStore} (§3 "must
- * remember the user's last-used settings"). Phase 6 ships the full-database scope
- * in three formats: a versioned JSON backup (§2), an items CSV, and an Obsidian
- * Markdown vault zipped off-thread (§4.5). Per-item / per-project scopes are future.
+ * Remembers the last-used format/scope via {@link useExportStore} (§3 "must remember the
+ * user's last-used settings"). Phase 14 adds the §4.5 granularity — the whole inventory, a
+ * single item, or a Project/BOM scope — in three formats: a versioned JSON backup (§2), an
+ * items CSV, and an Obsidian Markdown vault (with image assets) zipped off-thread (§4.5).
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
-  { value: 'JSON', label: 'JSON backup', hint: 'Versioned full backup (items, contacts, loans).', icon: ExportIcon },
-  { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of every item.', icon: PackageIcon },
-  { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip, one note per item.', icon: VaultIcon },
+  { value: 'JSON', label: 'JSON backup', hint: 'Versioned backup (items, contacts, loans).', icon: ExportIcon },
+  { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
+  { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
+];
+
+const SCOPES: { value: ExportScope; label: string }[] = [
+  { value: 'ALL', label: 'Whole inventory' },
+  { value: 'ITEM', label: 'A single item' },
+  { value: 'PROJECT', label: 'A project / BOM' },
 ];
 
 export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { format, includeInactive, setFormat, setIncludeInactive } = useExportStore();
+  const { format, scope, scopeTargetId, includeInactive, setFormat, setScope, setScopeTargetId, setIncludeInactive } =
+    useExportStore();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const itemList = useQuery({
+    queryKey: ['export', 'item-picker'],
+    queryFn: () => getItemRepository().list({ limit: 100, includeInactive: true }),
+    enabled: open && scope === 'ITEM',
+  });
+  const projectList = useQuery({
+    queryKey: ['export', 'project-picker'],
+    queryFn: () => getProjectRepository().list({ limit: 100 }),
+    enabled: open && scope === 'PROJECT',
+  });
+
+  const needsTarget = scope !== 'ALL';
+  const targetMissing = needsTarget && !scopeTargetId;
 
   const run = async () => {
     setBusy(true);
     setDone(null);
     setError(null);
     try {
-      const filename = await runExport(format, { includeInactive });
+      const filename = await runExport(format, { includeInactive, scope, targetId: scopeTargetId });
       setDone(filename);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The export failed.');
@@ -69,15 +92,68 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           })}
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
-            className="size-4 accent-primary"
-          />
-          Include removed (decommissioned) items
-        </label>
+        {/* §4.5 scope */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Scope
+          </label>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as ExportScope)}
+            data-testid="export-scope"
+            className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+          >
+            {SCOPES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+
+          {scope === 'ITEM' ? (
+            <select
+              value={scopeTargetId ?? ''}
+              onChange={(e) => setScopeTargetId(e.target.value || null)}
+              data-testid="export-target-item"
+              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+            >
+              <option value="">Choose an item…</option>
+              {(itemList.data?.rows ?? []).map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
+          {scope === 'PROJECT' ? (
+            <select
+              value={scopeTargetId ?? ''}
+              onChange={(e) => setScopeTargetId(e.target.value || null)}
+              data-testid="export-target-project"
+              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+            >
+              <option value="">Choose a project…</option>
+              {(projectList.data?.rows ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
+
+        {scope === 'ALL' ? (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Include removed (decommissioned) items
+          </label>
+        ) : null}
 
         {done ? (
           <Surface className="p-3 text-sm text-foreground">
@@ -90,7 +166,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={() => void run()} disabled={busy} data-testid="run-export">
+          <Button onClick={() => void run()} disabled={busy || targetMissing} data-testid="run-export">
             <ExportIcon />
             {busy ? 'Exporting…' : 'Export'}
           </Button>

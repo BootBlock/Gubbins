@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
 import {
   CONDITIONS,
   TRACKING_MODES,
@@ -216,13 +216,13 @@ export function CreateItemDialog({
 
   return (
     <Modal open={open} onClose={handleClose} title="Add item" description="Create a new inventory item.">
-      <form onSubmit={handleSubmit(onSubmit)} className="max-h-[78vh] space-y-4 overflow-y-auto pr-1">
-        <Field label="Name" error={errors.name?.message}>
+      <form onSubmit={handleSubmit(onSubmit)} className="max-h-[78vh] space-y-4 dialog-scroll">
+        <FormField label="Name" error={errors.name?.message}>
           <Input autoFocus placeholder="e.g. M3 × 10 socket screws" {...register('name')} />
-        </Field>
+        </FormField>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Location" error={errors.locationId?.message}>
+          <FormField label="Location" error={errors.locationId?.message}>
             <Select {...register('locationId')}>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
@@ -230,8 +230,8 @@ export function CreateItemDialog({
                 </option>
               ))}
             </Select>
-          </Field>
-          <Field label="Tracking">
+          </FormField>
+          <FormField label="Tracking">
             <Select {...register('trackingMode')}>
               {TRACKING_MODES.map((mode) => (
                 <option key={mode} value={mode}>
@@ -239,10 +239,10 @@ export function CreateItemDialog({
                 </option>
               ))}
             </Select>
-          </Field>
+          </FormField>
         </div>
 
-        <Field label="Category (optional)">
+        <FormField label="Category (optional)">
           <Select {...register('categoryId')}>
             <option value="">— None —</option>
             {(categories?.rows ?? []).map((cat) => (
@@ -251,29 +251,29 @@ export function CreateItemDialog({
               </option>
             ))}
           </Select>
-        </Field>
+        </FormField>
 
         {/* §9 supplier scrape — rendered only when the companion extension is present. */}
         <ScrapeSupplierPanel onResult={onScrapeResult} />
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="MPN (optional)">
+          <FormField label="MPN (optional)">
             <Input placeholder="e.g. NE555P" {...register('mpn')} />
-          </Field>
-          <Field label="Manufacturer (optional)">
+          </FormField>
+          <FormField label="Manufacturer (optional)">
             <Input placeholder="e.g. Texas Instruments" {...register('manufacturer')} />
-          </Field>
+          </FormField>
         </div>
-        <Field label="Unit cost (optional)">
+        <FormField label="Unit cost (optional)">
           <Input type="number" min={0} step="any" placeholder="0.00" {...register('unitCost')} />
-        </Field>
+        </FormField>
 
         {/* Phase 9 — perishables, batch/lot & condition (§4). All optional. */}
         <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-secondary/20 p-3">
-          <Field label="Expiry date (optional)">
+          <FormField label="Expiry date (optional)">
             <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
-          </Field>
-          <Field label="Condition (optional)">
+          </FormField>
+          <FormField label="Condition (optional)">
             <Select data-testid="item-condition" {...register('condition')}>
               <option value="">— Untracked —</option>
               {CONDITIONS.map((c) => (
@@ -282,41 +282,41 @@ export function CreateItemDialog({
                 </option>
               ))}
             </Select>
-          </Field>
-          <Field label="Batch no. (optional)">
+          </FormField>
+          <FormField label="Batch no. (optional)">
             <Input placeholder="e.g. B-42" {...register('batchNumber')} />
-          </Field>
-          <Field label="Lot no. (optional)">
+          </FormField>
+          <FormField label="Lot no. (optional)">
             <Input placeholder="e.g. L-7" {...register('lotNumber')} />
-          </Field>
+          </FormField>
         </div>
 
         {trackingMode === 'DISCRETE' ? (
-          <Field label="Initial quantity">
+          <FormField label="Initial quantity">
             <Input type="number" min={0} step={1} {...register('quantity')} />
-          </Field>
+          </FormField>
         ) : null}
 
         {trackingMode === 'SERIALISED' ? (
-          <Field label="How many (each becomes its own record)">
+          <FormField label="How many (each becomes its own record)">
             <Input type="number" min={1} step={1} {...register('count')} />
-          </Field>
+          </FormField>
         ) : null}
 
         {trackingMode === 'CONSUMABLE_GAUGE' ? (
           <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-secondary/20 p-3">
-            <Field label="Unit" error={errors.unitOfMeasure?.message}>
+            <FormField label="Unit" error={errors.unitOfMeasure?.message}>
               <Input placeholder="g, ml, m…" {...register('unitOfMeasure')} />
-            </Field>
-            <Field label="Full capacity" error={errors.grossCapacity?.message}>
+            </FormField>
+            <FormField label="Full capacity" error={errors.grossCapacity?.message}>
               <Input type="number" min={0} step="any" {...register('grossCapacity')} />
-            </Field>
-            <Field label="Tare (empty)">
+            </FormField>
+            <FormField label="Tare (empty)">
               <Input type="number" min={0} step="any" {...register('tareWeight')} />
-            </Field>
-            <Field label="Current (optional)">
+            </FormField>
+            <FormField label="Current (optional)">
               <Input type="number" min={0} step="any" placeholder="full" {...register('currentNetValue')} />
-            </Field>
+            </FormField>
           </div>
         ) : null}
 
@@ -330,23 +330,5 @@ export function CreateItemDialog({
         </div>
       </form>
     </Modal>
-  );
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium">{label}</span>
-      {children}
-      {error ? <span className="mt-1 block text-xs text-destructive">{error}</span> : null}
-    </label>
   );
 }

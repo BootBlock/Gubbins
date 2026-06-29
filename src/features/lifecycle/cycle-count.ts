@@ -49,3 +49,47 @@ export function reconciliationNote(line: CycleCountVariance, locationName: strin
   const sign = line.variance > 0 ? '+' : '';
   return `Cycle count of ${locationName}: counted ${line.counted}, expected ${line.expected} (adjustment ${sign}${line.variance}).`;
 }
+
+// --- Serialised audit (§4.4) ----------------------------------------------------
+//
+// A DISCRETE count reconciles a *quantity*; a SERIALISED audit reconciles
+// *presence* — each instance is a qty-1 record, so the question is "is this exact
+// physical unit here?". The user walks the location and flags any instance they
+// cannot find as MISSING; authorising soft-deletes those (reversible) rather than
+// adjusting a quantity. The arithmetic here is a present/missing partition; the
+// persistence (soft-delete + ledger entry) lives in the repository.
+
+export type SerialisedPresence = 'PRESENT' | 'MISSING';
+
+export interface SerialisedAuditLine {
+  readonly itemId: string;
+  readonly name: string;
+  /** Instance number (1..N) distinguishing serialised clones; null if unset. */
+  readonly serialNo: number | null;
+}
+
+/** Display label for a serialised instance: "Multimeter #3", or the bare name. */
+export function serialisedLabel(line: SerialisedAuditLine): string {
+  return line.serialNo != null ? `${line.name} #${line.serialNo}` : line.name;
+}
+
+/**
+ * The instances the user flagged as not found — the only ones needing a
+ * Reconciliation Adjustment. An instance is missing only when explicitly marked
+ * `'MISSING'`; anything else (present, or untouched) is left alone, so the
+ * soft-deleting write never fires on a unit the auditor did not actively flag.
+ */
+export function missingInstances(
+  lines: readonly SerialisedAuditLine[],
+  presence: Readonly<Record<string, SerialisedPresence>>,
+): SerialisedAuditLine[] {
+  return lines.filter((line) => presence[line.itemId] === 'MISSING');
+}
+
+/**
+ * Compose the serialised-audit Reconciliation Adjustment ledger note (§4.4):
+ * "Serialised audit of Drawer A2: Multimeter #3 not found — marked missing."
+ */
+export function serialisedAuditNote(line: SerialisedAuditLine, locationName: string): string {
+  return `Serialised audit of ${locationName}: ${serialisedLabel(line)} not found — marked missing.`;
+}

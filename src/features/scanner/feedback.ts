@@ -86,8 +86,3 @@ export class ScanFeedback {
     this.ctx = null;
   }
 }
-
-/** True when the native Barcode Detection API is available (spec §6.6 primary engine). */
-export function hasBarcodeDetector(): boolean {
-  return typeof window !== 'undefined' && 'BarcodeDetector' in window;
-}

@@ -184,7 +184,13 @@ export class CategoryRepository extends BaseRepository {
   }
 
   async deleteField(fieldId: string): Promise<void> {
-    await this.driver.execute('DELETE FROM category_fields WHERE id = ?;', [fieldId]);
+    // Tombstone the field-definition deletion (Phase 11: category_fields is synced). Its
+    // item_field_values cascade-delete locally and, on a peer, cascade from this same
+    // tombstone, so the value rows need no tombstones of their own.
+    await this.driver.transaction([
+      { sql: 'DELETE FROM category_fields WHERE id = ?;', params: [fieldId] },
+      tombstoneStatement('category_fields', fieldId),
+    ]);
   }
 
   // --- per-item field values (lenient defaulting, §4) ----------------------------
@@ -242,6 +248,14 @@ export class CategoryRepository extends BaseRepository {
     );
     const allowed = new Set(fieldRows.map((f) => f.id));
 
+    // Existing value-row ids (field_id → id) so a clear can tombstone by id (Phase 11:
+    // item_field_values is synced; a cleared value must propagate as a deletion).
+    const existingRows = await this.driver.query<{ id: string; field_id: string }>(
+      'SELECT id, field_id FROM item_field_values WHERE item_id = ?;',
+      [itemId],
+    );
+    const valueIdByField = new Map(existingRows.map((r) => [r.field_id, r.id]));
+
     const statements: SqlStatement[] = [];
     for (const [fieldId, value] of entries) {
       if (!allowed.has(fieldId)) {
@@ -251,10 +265,14 @@ export class CategoryRepository extends BaseRepository {
         );
       }
       if (value === null) {
-        statements.push({
-          sql: 'DELETE FROM item_field_values WHERE item_id = ? AND field_id = ?;',
-          params: [itemId, fieldId],
-        });
+        const existingId = valueIdByField.get(fieldId);
+        if (existingId !== undefined) {
+          statements.push({
+            sql: 'DELETE FROM item_field_values WHERE id = ?;',
+            params: [existingId],
+          });
+          statements.push(tombstoneStatement('item_field_values', existingId));
+        }
       } else {
         statements.push({
           sql: `INSERT INTO item_field_values (id, item_id, field_id, value)
@@ -264,6 +282,7 @@ export class CategoryRepository extends BaseRepository {
         });
       }
     }
+    if (statements.length === 0) return;
     await this.driver.transaction(statements);
   }
 

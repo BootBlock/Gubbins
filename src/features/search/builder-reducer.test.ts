@@ -67,6 +67,21 @@ describe('builderReducer (spec §5.1, Tier 3)', () => {
     expect(builderReducer(seeded, { type: 'remove', path: [] })).toEqual(emptyAst('OR'));
   });
 
+  it('loads a parsed AST, replacing the tree (Phase 47 text query)', () => {
+    const seeded = run({ type: 'addCondition', path: [] });
+    const loaded: ASTGroupNode = {
+      type: 'GROUP',
+      logicalOperator: 'AND',
+      conditions: [
+        { field: 'capability:voltage', operator: 'GREATER_THAN', value: 3.3 },
+        { field: 'quantity', operator: 'LESS_THAN', value: 10 },
+      ],
+    };
+    const after = builderReducer(seeded, { type: 'load', ast: loaded });
+    expect(after).toBe(loaded);
+    expect(countConditions(after)).toBe(2);
+  });
+
   it('counts leaf conditions across nesting', () => {
     const ast = run(
       { type: 'addCondition', path: [] },

@@ -7,6 +7,7 @@ import { createQueryClient } from '@/state/query/queryClient';
 import { router } from '@/app/router';
 import { ToastProvider } from '@/components/foundry';
 import { ScrapeBridgeProvider } from '@/features/scraping';
+import { useApplyTheme } from '@/features/settings/useApplyTheme';
 
 /**
  * Application composition root (spec §2.1, §2.2, §3).
@@ -17,6 +18,7 @@ import { ScrapeBridgeProvider } from '@/features/scraping';
  */
 export function App() {
   const [queryClient] = useState(createQueryClient);
+  useApplyTheme();
 
   return (
     <AppErrorBoundary>

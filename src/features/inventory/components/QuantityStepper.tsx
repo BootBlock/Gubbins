@@ -1,7 +1,7 @@
-import { Button } from '@/components/foundry';
+import { Button, Tooltip } from '@/components/foundry';
 import { AddIcon, SubtractIcon } from '@/components/icons';
+import { useFormatters } from '@/lib/useFormatters';
 import { useAdjustQuantity } from '../mutations';
-import { formatQuantity } from './inventory-ui';
 
 /**
  * Inline ± quantity stepper for DISCRETE items. Each tap fires an optimistic
@@ -10,6 +10,7 @@ import { formatQuantity } from './inventory-ui';
  */
 export function QuantityStepper({ id, quantity }: { id: string; quantity: number }) {
   const adjust = useAdjustQuantity();
+  const fmt = useFormatters();
 
   const bump = (delta: number) => {
     if (quantity + delta < 0) return;
@@ -18,28 +19,36 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
 
   return (
     <div className="inline-flex items-center gap-1.5">
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-8"
-        aria-label="Decrease quantity"
-        disabled={quantity <= 0}
-        onClick={() => bump(-1)}
-      >
-        <SubtractIcon />
-      </Button>
+      <Tooltip content="Remove one from stock. The change is saved instantly and logged." triggerTabIndex={-1}>
+        <span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label="Decrease quantity"
+            disabled={quantity <= 0}
+            onClick={() => bump(-1)}
+          >
+            <SubtractIcon className="text-glyph-neutral" />
+          </Button>
+        </span>
+      </Tooltip>
       <span className="min-w-12 text-center text-sm font-semibold tabular-nums">
-        {formatQuantity(quantity)}
+        {fmt.quantity(quantity)}
       </span>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-8"
-        aria-label="Increase quantity"
-        onClick={() => bump(1)}
-      >
-        <AddIcon />
-      </Button>
+      <Tooltip content="Add one to stock. The change is saved instantly and logged." triggerTabIndex={-1}>
+        <span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label="Increase quantity"
+            onClick={() => bump(1)}
+          >
+            <AddIcon className="text-glyph-success" />
+          </Button>
+        </span>
+      </Tooltip>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
-import { and, leaf } from '@/test/ast';
+import { and, leaf, or } from '@/test/ast';
 import { ItemRepository } from './ItemRepository';
 
 /**
@@ -158,5 +158,56 @@ describe('ItemRepository.searchByAst (spec §5.1)', () => {
     await items.softDelete(all.rows.find((r) => r.name === 'ESP32')!.id);
     expect(await items.countByAst(and())).toBe(1);
     expect(await items.countByAst(and(), { includeInactive: true })).toBe(2);
+  });
+});
+
+describe('ItemRepository.searchByAst — weighted "best match" ranking (spec §4, §5.1)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('orders capability matches by summed weight, heaviest first', async () => {
+    // "Alpha" sorts first alphabetically but carries a lighter voltage weight, so the
+    // ranking must surface the heavier "Zeta" ahead of it — proving weight beats name.
+    const alpha = await items.create({ name: 'Alpha widget' });
+    const zeta = await items.create({ name: 'Zeta widget' });
+    await items.setCapability(alpha.id, { key: 'voltage', value: '5', weight: 1 });
+    await items.setCapability(zeta.id, { key: 'voltage', value: '5', weight: 9 });
+
+    const page = await items.searchByAst(and(leaf('capability:voltage', 'HAS_CAPABILITY', '')));
+    expect(page.rows.map((r) => r.name)).toEqual(['Zeta widget', 'Alpha widget']);
+  });
+
+  it('sums weights across several queried capabilities (more matches rank higher)', async () => {
+    const both = await items.create({ name: 'Both caps' });
+    const one = await items.create({ name: 'Aaa one cap' }); // sorts first alphabetically
+    await items.setCapability(both.id, { key: 'voltage', value: '5', weight: 2 });
+    await items.setCapability(both.id, { key: 'package', value: 'SMD', weight: 2 });
+    await items.setCapability(one.id, { key: 'voltage', value: '5', weight: 3 });
+
+    const page = await items.searchByAst(
+      or(
+        leaf('capability:voltage', 'HAS_CAPABILITY', ''),
+        leaf('capability:package', 'HAS_CAPABILITY', ''),
+      ),
+    );
+    // "Both caps" totals 4 > "Aaa one cap" totals 3, so it wins despite the later name.
+    expect(page.rows.map((r) => r.name)).toEqual(['Both caps', 'Aaa one cap']);
+  });
+
+  it('falls back to alphabetical order when the query has no capability conditions', async () => {
+    await items.create({ name: 'Zebra' });
+    await items.create({ name: 'Antelope' });
+    const page = await items.searchByAst(and(leaf('quantity', 'GREATER_THAN', -1)));
+    expect(page.rows.map((r) => r.name)).toEqual(['Antelope', 'Zebra']);
   });
 });

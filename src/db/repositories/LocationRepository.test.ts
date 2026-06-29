@@ -5,6 +5,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { LocationRepository } from './LocationRepository';
 import { ItemRepository } from './ItemRepository';
+import { MaintenanceRepository } from './MaintenanceRepository';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 
 describe('LocationRepository', () => {
@@ -89,6 +90,26 @@ describe('LocationRepository', () => {
 
     const history = await items.getHistory(widget.id);
     expect(history.rows.some((h) => h.action === 'RE_PARENTED')).toBe(true);
+  });
+
+  it('reverts a location-scoped maintenance schedule to item-level on delete (Phase 30)', async () => {
+    const bench = await locations.create({ name: 'Workshop bench' });
+    const tool = await items.create({ name: 'Lathe', locationId: bench.id });
+    const maintenance = new MaintenanceRepository(driver);
+    const sched = await maintenance.create({
+      itemId: tool.id,
+      name: 'Bench calibrate',
+      basis: 'TIME',
+      intervalDays: 30,
+      locationId: bench.id,
+    });
+
+    // Deleting the scope location must not block on its RESTRICT FK, nor delete the schedule.
+    await locations.delete(bench.id);
+
+    const after = await maintenance.getById(sched.id);
+    expect(after).toBeDefined();
+    expect(after?.locationId).toBeNull(); // reverted to item-level
   });
 
   it('promotes child locations to the deleted parent', async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Tooltip } from '@/components/foundry';
+import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { InfoIcon } from '@/components/icons';
 import type { ResolvedItemField } from '@/db/repositories';
 import { useItemFields, useSetItemFieldValues } from '../categories';
@@ -45,11 +45,14 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
     <div className="space-y-3">
       {fields.map((field) => (
         <label key={field.id} className="block">
-          <span className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
+          <span className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
             {field.name}
             {field.isRequired ? <span className="text-destructive">*</span> : null}
             {!field.hasStoredValue && field.defaultValue ? (
-              <Tooltip content={`Showing the category default (**${field.defaultValue}**) — not yet set for this item.`}>
+              <Tooltip
+                content={`Showing the category default (**${field.defaultValue}**) — not yet set for this item.`}
+                openDelayMs={INFO_OPEN_DELAY_MS}
+              >
                 <span className="text-muted-foreground [&_svg]:size-3.5">
                   <InfoIcon />
                 </span>

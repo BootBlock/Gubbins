@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useAddBomLine } from '../projects';
 
@@ -72,7 +72,7 @@ export function AddBomLineDialog({
     <Modal open={open} onClose={close} title="Add BOM line" description="Add a required part to this project.">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Inventory item (optional)</span>
+          <span className="mb-field-gap block text-sm font-medium">Inventory item (optional)</span>
           <Select {...register('itemId')}>
             <option value="">— Manual / unmatched —</option>
             {items.map((item) => (
@@ -88,35 +88,26 @@ export function AddBomLineDialog({
         </label>
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Designator</span>
+          <FormField label="Designator">
             <Input placeholder="R1, R2" {...register('designator')} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Quantity</span>
+          </FormField>
+          <FormField label="Quantity" error={errors.requiredQty?.message}>
             <Input type="number" min={1} step={1} {...register('requiredQty')} />
-          </label>
+          </FormField>
         </div>
 
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium">Description</span>
+        <FormField label="Description">
           <Input placeholder="e.g. 10k 0805 resistor" {...register('description')} />
-        </label>
+        </FormField>
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">MPN</span>
+          <FormField label="MPN">
             <Input placeholder="RC0805FR-0710KL" {...register('mpn')} />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium">Manufacturer</span>
+          </FormField>
+          <FormField label="Manufacturer">
             <Input placeholder="Yageo" {...register('manufacturer')} />
-          </label>
+          </FormField>
         </div>
-
-        {errors.requiredQty ? (
-          <span className="block text-xs text-destructive">{errors.requiredQty.message}</span>
-        ) : null}
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>
