@@ -27,6 +27,7 @@ export function ItemList({
   locations,
   density,
   locationName,
+  locationColorClass,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
@@ -41,6 +42,8 @@ export function ItemList({
   locations: readonly LocationWithCount[];
   density: LayoutDensity;
   locationName: (id: string) => string;
+  /** Resolve a location id to its Tailwind text-colour class (its swatch), if any. */
+  locationColorClass?: (id: string) => string | undefined;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
@@ -131,6 +134,7 @@ export function ItemList({
                         item={item}
                         locations={locations}
                         locationName={locationName(item.locationId)}
+                        locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
                       />
                     ) : (
@@ -139,6 +143,7 @@ export function ItemList({
                         item={item}
                         locations={locations}
                         locationName={locationName(item.locationId)}
+                        locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
                       />
                     ),

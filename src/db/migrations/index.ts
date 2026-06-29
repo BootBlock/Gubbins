@@ -23,6 +23,7 @@ import { v15StockBatches } from './v15-stock-batches';
 import { v16CheckoutSourceBatch } from './v16-checkout-source-batch';
 import { v17MaintenanceLocation } from './v17-maintenance-location';
 import { v18AttachmentOriginDevice } from './v18-attachment-origin-device';
+import { v19LocationDescriptionColor } from './v19-location-description-color';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -43,6 +44,7 @@ export const migrations: readonly Migration[] = [
   v16CheckoutSourceBatch,
   v17MaintenanceLocation,
   v18AttachmentOriginDevice,
+  v19LocationDescriptionColor,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

@@ -13,6 +13,8 @@ export interface LocationOption {
    * content — which is the whole reason this control is a hand-built listbox.
    */
   readonly meta?: string;
+  /** Tailwind text-colour class tinting the label (the location's swatch), if any. */
+  readonly colorClass?: string;
 }
 
 /**
@@ -152,7 +154,9 @@ export function LocationSelect({
           'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40',
         )}
       >
-        <span className="min-w-0 flex-1 truncate text-left">{selected?.label}</span>
+        <span className={cn('min-w-0 flex-1 truncate text-left', selected?.colorClass)}>
+          {selected?.label}
+        </span>
         <ChevronDownIcon
           aria-hidden="true"
           className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')}
@@ -183,7 +187,9 @@ export function LocationSelect({
                 index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
               )}
             >
-              <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+              <span className={cn('min-w-0 flex-1 truncate text-left', option.colorClass)}>
+                {option.label}
+              </span>
               {option.meta ? (
                 <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
               ) : null}

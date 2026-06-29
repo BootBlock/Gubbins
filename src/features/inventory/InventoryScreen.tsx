@@ -36,6 +36,7 @@ import {
 import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
+import { locationColorTextClass } from './location-color';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -107,6 +108,15 @@ function InventoryWorkspace() {
     return map;
   }, [flat.data]);
   const locationName = (id: string) => locationNames.get(id) ?? 'Unassigned';
+
+  // The optional per-location colour tint (resolved to a Tailwind text class), so an
+  // item row/card can render its location name in that location's chosen swatch.
+  const locationColors = useMemo(() => {
+    const map = new Map<string, string | null>();
+    flat.data?.rows.forEach((loc) => map.set(loc.id, loc.color));
+    return map;
+  }, [flat.data]);
+  const locationColorClass = (id: string) => locationColorTextClass(locationColors.get(id));
 
   const flatItems = useMemo(() => active.data?.pages.flatMap((p) => p.rows) ?? [], [active.data]);
   // Absolute index of the first resident item: non-zero once `maxPages` has trimmed
@@ -350,6 +360,7 @@ function InventoryWorkspace() {
                 locations={flatLocations}
                 density={density}
                 locationName={locationName}
+                locationColorClass={locationColorClass}
                 hasNextPage={active.hasNextPage}
                 isFetchingNextPage={active.isFetchingNextPage}
                 fetchNextPage={() => void active.fetchNextPage()}

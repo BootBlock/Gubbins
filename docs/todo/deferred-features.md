@@ -1319,3 +1319,20 @@ arrow-key reorder + show/hide + "Customise" edit mode; single-column flow below 
 > With the §3 customisable-dashboard gap closed, **no remaining open item is a mandated spec requirement** and none
 > carries a live trigger today. Phase 46 has no pre-assigned slice — confirm scope with the developer at entry (pick a
 > Backlog item deliberately, propose another fresh investigation, or agree it is a conscious no-op until a trigger appears).
+
+---
+
+## Phase 54 — Location description & colour
+
+Added a free-text `description` and an optional pastel `color` swatch to locations (additive **v19** nullable
+columns `description`/`color`; `user_version = 19`). Colour is stored as a semantic *swatch key* mapped to themed
+`text-loc-*` tokens (12 pastels, dark+light), and tints the location *name* in the sidebar, the parent/Move-Item
+pickers, and the item cards/rows. Description shows in the Add/Edit dialogs and as a sidebar hover/focus tooltip.
+
+Deferred (re-scheduled, not dropped):
+
+- [ ] **Colour the Add Item location picker** — `CreateItemDialog`'s Location dropdown is a react-hook-form-bound
+      native `<select>` wrapped by Foundry `FormField` (implicit `<label>`), so it can't render the coloured
+      `LocationSelect` listbox without an RHF `Controller` + label-association rework and updating the 3 smoke
+      `getByLabel('Location').selectOption` calls. **→ next location-UI phase.** (Move Item *was* converted; the
+      item rows/cards already show the colour, so the only uncoloured surface is this one selection dropdown.)

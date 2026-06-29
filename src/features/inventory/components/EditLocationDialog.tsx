@@ -1,12 +1,14 @@
 import { useId, useMemo, useState } from 'react';
-import { Button, Input, Modal } from '@/components/foundry';
+import { Button, Input, Modal, Textarea } from '@/components/foundry';
 import { PackageIcon, MoveIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
 import { buildParentOptions } from '../parent-options';
+import { isLocationColor, type LocationColor } from '../location-color';
 import { LocationSelect } from './LocationSelect';
+import { ColorSwatchPicker } from './ColorSwatchPicker';
 
 /**
  * Edit an existing location (spec §4): rename it, move it under a different parent,
@@ -31,8 +33,13 @@ export function EditLocationDialog({
   const update = useUpdateLocation();
   const fmt = useFormatters();
   const parentLabelId = useId();
+  const colorLabelId = useId();
   const [name, setName] = useState(location.name);
   const [parentId, setParentId] = useState<string>(location.parentId ?? '');
+  const [description, setDescription] = useState(location.description ?? '');
+  const [color, setColor] = useState<LocationColor | null>(
+    isLocationColor(location.color) ? location.color : null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // A location may not move under itself or any of its own descendants (the repo
@@ -52,13 +59,23 @@ export function EditLocationDialog({
   const path = useMemo(() => locationPath(location.id, locations), [location.id, locations]);
 
   const trimmed = name.trim();
-  const dirty = trimmed !== location.name || (parentId || null) !== location.parentId;
+  // Treat blank/whitespace-only description as "none" so it compares against the stored
+  // value the way the repository persists it (it collapses blanks to NULL).
+  const descValue = description.trim() || null;
+  const dirty =
+    trimmed !== location.name ||
+    (parentId || null) !== location.parentId ||
+    descValue !== (location.description ?? null) ||
+    color !== (isLocationColor(location.color) ? location.color : null);
 
   const submit = () => {
     if (trimmed.length === 0 || !dirty) return;
     setError(null);
     update.mutate(
-      { id: location.id, input: { name: trimmed, parentId: parentId || null } },
+      {
+        id: location.id,
+        input: { name: trimmed, parentId: parentId || null, description: descValue, color },
+      },
       {
         onSuccess: () => onClose(),
         onError: (e) =>
@@ -96,6 +113,22 @@ export function EditLocationDialog({
             onChange={setParentId}
             options={parentOptions}
           />
+        </div>
+
+        <label className="block">
+          <span className="mb-field-gap block text-sm font-medium">Description (optional)</span>
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="A note about what lives here, for your reference."
+          />
+        </label>
+
+        <div className="block">
+          <span id={colorLabelId} className="mb-field-gap block text-sm font-medium">
+            Colour (optional)
+          </span>
+          <ColorSwatchPicker labelledBy={colorLabelId} value={color} onChange={setColor} />
         </div>
 
         {/* Read-only metadata for the location. */}

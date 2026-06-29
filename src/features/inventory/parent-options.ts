@@ -1,11 +1,14 @@
 import type { LocationOption } from './components/LocationSelect';
+import { locationColorTextClass } from './location-color';
 
-/** The minimal shape the parent picker needs from a location row. */
+/** The minimal shape the location pickers need from a location row. */
 export interface ParentLocationRow {
   readonly id: string;
   readonly name: string;
   readonly isSystem: boolean;
   readonly itemCount: number;
+  /** The location's stored colour swatch key (tints its name in the picker). */
+  readonly color: string | null;
 }
 
 /**
@@ -39,6 +42,25 @@ export function buildParentOptions(
         value: loc.id,
         label: loc.name,
         meta: itemCountMeta(loc.itemCount, quantity),
+        colorClass: locationColorTextClass(loc.color),
       })),
   ];
+}
+
+/**
+ * Build the {@link LocationSelect} options for an *item's* location picker (Move Item):
+ * every location is selectable — including the system **Unassigned** / **In Transit**
+ * rows, where an item legitimately lives — and there is no "top level" entry. Each row
+ * still carries the count hint and the location's colour tint.
+ */
+export function buildItemLocationOptions(
+  locations: readonly ParentLocationRow[],
+  quantity: (value: number) => string,
+): LocationOption[] {
+  return locations.map((loc) => ({
+    value: loc.id,
+    label: loc.name,
+    meta: itemCountMeta(loc.itemCount, quantity),
+    colorClass: locationColorTextClass(loc.color),
+  }));
 }

@@ -28,6 +28,10 @@ export interface LocationRow {
   readonly name: string;
   readonly parent_id: string | null;
   readonly is_system: number;
+  /** Free-text description for the user's reference (nullable, v19). */
+  readonly description: string | null;
+  /** Semantic colour swatch key (e.g. 'teal'); NULL = standard text colour (v19). */
+  readonly color: string | null;
   readonly updated_at: number;
 }
 
@@ -36,6 +40,10 @@ export interface Location {
   readonly name: string;
   readonly parentId: string | null;
   readonly isSystem: boolean;
+  /** Free-text description for the user's reference (v19). */
+  readonly description: string | null;
+  /** Semantic colour swatch key; null = standard text colour (v19). */
+  readonly color: string | null;
   readonly updatedAt: number;
 }
 
@@ -52,11 +60,15 @@ export interface LocationTreeNode extends LocationWithCount {
 export interface CreateLocationInput {
   readonly name: string;
   readonly parentId?: string | null;
+  readonly description?: string | null;
+  readonly color?: string | null;
 }
 
 export interface UpdateLocationInput {
   readonly name?: string;
   readonly parentId?: string | null;
+  readonly description?: string | null;
+  readonly color?: string | null;
 }
 
 // --- Items (spec §4, §4.1) ------------------------------------------------------

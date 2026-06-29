@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Button, Tooltip } from '@/components/foundry';
+import { Button, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
   AddIcon,
   ChevronDownIcon,
@@ -15,6 +15,7 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useDeleteLocation, useUpdateLocation } from '../mutations';
 import { resolveTreeKey, type TreeRow } from '../tree-keyboard';
 import { defaultParentForNewLocation } from '../location-tree';
+import { locationColorTextClass } from '../location-color';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 
@@ -204,6 +205,8 @@ export function LocationSidebar({
           focused={focusedId === node.id}
           icon={isExpanded && hasChildren ? <FolderOpenIcon /> : <FolderIcon />}
           label={node.name}
+          colorClass={locationColorTextClass(node.color)}
+          description={node.description}
           count={node.itemCount}
           expanded={hasChildren ? isExpanded : undefined}
           onToggle={hasChildren ? () => toggle(node.id, !isExpanded) : undefined}
@@ -252,6 +255,10 @@ interface TreeItemProps {
   readonly focused: boolean;
   readonly icon: ReactNode;
   readonly label: string;
+  /** Tailwind text-colour class tinting the name (the location's swatch), if any. */
+  readonly colorClass?: string;
+  /** Optional free-text description, surfaced as a hover/focus tooltip on the row. */
+  readonly description?: string | null;
   readonly count: number;
   /** `undefined` when the node has no children (no `aria-expanded`). */
   readonly expanded?: boolean;
@@ -282,6 +289,8 @@ function TreeItem({
   focused,
   icon,
   label,
+  colorClass,
+  description,
   count,
   expanded,
   onToggle,
@@ -345,7 +354,21 @@ function TreeItem({
           <InlineRename initial={label} onCommit={onRename} onCancel={onRenameCancel} />
         ) : (
           <>
-            <span className="truncate text-left">{label}</span>
+            {description ? (
+              // The description rides as a hover/focus tooltip on the name. The wrapper
+              // takes the flex role so the name still truncates within the row.
+              <Tooltip
+                content={description}
+                placement="right"
+                triggerTabIndex={-1}
+                openDelayMs={INFO_OPEN_DELAY_MS}
+                className="min-w-0 flex-1"
+              >
+                <span className={cn('block truncate text-left', colorClass)}>{label}</span>
+              </Tooltip>
+            ) : (
+              <span className={cn('min-w-0 flex-1 truncate text-left', colorClass)}>{label}</span>
+            )}
             <span className="ml-auto pl-1 text-xs tabular-nums text-muted-foreground">{count}</span>
           </>
         )}

@@ -69,6 +69,27 @@
   --glyph-gauge: oklch(0.55 0.11 190); /* gauge / measure */
   --glyph-neutral: oklch(0.5 0.03 255); /* decrement / dismiss */
 
+  /*
+   * Location swatch palette (spec §4) — the optional pastel a user assigns to a
+   * location, used to tint that location's *name* wherever it appears (sidebar,
+   * pickers, item rows). A soft, pastel set of 12 hues; on the near-white light
+   * surface these sit a touch darker/more saturated to stay legible (the .dark
+   * block lifts them lighter on the near-black surface). Colour is never the sole
+   * signal — the location name itself always reads — so this stays within WCAG 1.4.1.
+   */
+  --loc-rose: oklch(0.58 0.16 18);
+  --loc-orange: oklch(0.62 0.15 50);
+  --loc-amber: oklch(0.64 0.14 80);
+  --loc-lime: oklch(0.62 0.15 125);
+  --loc-green: oklch(0.58 0.14 150);
+  --loc-teal: oklch(0.57 0.12 185);
+  --loc-cyan: oklch(0.58 0.12 215);
+  --loc-blue: oklch(0.55 0.16 250);
+  --loc-violet: oklch(0.55 0.17 290);
+  --loc-fuchsia: oklch(0.56 0.18 320);
+  --loc-pink: oklch(0.58 0.16 350);
+  --loc-slate: oklch(0.52 0.03 255);
+
   --radius: 0.65rem;
 }
 
@@ -119,6 +140,21 @@
   --glyph-checkout: oklch(0.8 0.12 55);
   --glyph-gauge: oklch(0.8 0.1 185);
   --glyph-neutral: oklch(0.72 0.03 255);
+
+  /* Location swatch palette, dark-theme variant — lifted lighter & a touch softer so
+   * each pastel reads on the near-black indigo surface (see :root for the rationale). */
+  --loc-rose: oklch(0.78 0.13 18);
+  --loc-orange: oklch(0.8 0.12 50);
+  --loc-amber: oklch(0.82 0.11 80);
+  --loc-lime: oklch(0.83 0.13 125);
+  --loc-green: oklch(0.8 0.13 150);
+  --loc-teal: oklch(0.8 0.1 185);
+  --loc-cyan: oklch(0.8 0.1 215);
+  --loc-blue: oklch(0.76 0.13 250);
+  --loc-violet: oklch(0.78 0.13 290);
+  --loc-fuchsia: oklch(0.78 0.14 320);
+  --loc-pink: oklch(0.8 0.13 350);
+  --loc-slate: oklch(0.75 0.03 255);
 }
 
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
@@ -169,6 +205,22 @@
   --color-glyph-checkout: var(--glyph-checkout);
   --color-glyph-gauge: var(--glyph-gauge);
   --color-glyph-neutral: var(--glyph-neutral);
+
+  /* Location swatch palette → `text-loc-*` / `bg-loc-*` utilities (e.g.
+   * `text-loc-teal` tints a location name; `bg-loc-teal` fills a picker swatch). One
+   * token per hue drives both, and switches with the active theme. */
+  --color-loc-rose: var(--loc-rose);
+  --color-loc-orange: var(--loc-orange);
+  --color-loc-amber: var(--loc-amber);
+  --color-loc-lime: var(--loc-lime);
+  --color-loc-green: var(--loc-green);
+  --color-loc-teal: var(--loc-teal);
+  --color-loc-cyan: var(--loc-cyan);
+  --color-loc-blue: var(--loc-blue);
+  --color-loc-violet: var(--loc-violet);
+  --color-loc-fuchsia: var(--loc-fuchsia);
+  --color-loc-pink: var(--loc-pink);
+  --color-loc-slate: var(--loc-slate);
 
   /*
    * Right-aligned "N items" hint inside the location Parent picker (and similar

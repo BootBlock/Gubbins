@@ -375,6 +375,9 @@ try {
     await page.getByRole('button', { name: 'Add location' }).click();
     let dialog = page.getByRole('dialog', { name: 'Add location' });
     await dialog.getByLabel('Name').fill(`Workshop ${stamp}`);
+    // §4 location description + colour swatch (Phase 54).
+    await dialog.getByLabel('Description (optional)').fill('Main bench area');
+    await dialog.getByRole('radio', { name: 'Teal' }).click();
     await dialog.getByRole('button', { name: 'Create' }).click();
     await page.getByText(`Workshop ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
 
@@ -387,6 +390,19 @@ try {
     await dialog.getByRole('option', { name: `Workshop ${stamp}` }).click();
     await dialog.getByRole('button', { name: 'Create' }).click();
     await page.getByText(`Shelf ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
+  });
+
+  await step('a location shows its chosen colour swatch and description tooltip (§4, Phase 54)', async () => {
+    const workshop = page.getByRole('treeitem', { name: `Workshop ${stamp}` });
+    // The name is tinted with the chosen swatch's text token…
+    const tinted = workshop.locator('.text-loc-teal');
+    await tinted.waitFor({ state: 'visible', timeout: 5000 });
+    // …and the description surfaces as a Foundry tooltip on hover.
+    await tinted.hover();
+    await page.getByRole('tooltip').filter({ hasText: 'Main bench area' }).waitFor({
+      state: 'visible',
+      timeout: 5000,
+    });
   });
 
   await step('the location tree is keyboard navigable (§3 APG tree)', async () => {

@@ -28,20 +28,37 @@ function node(
   children: LocationTreeNode[] = [],
   extra: Partial<LocationTreeNode> = {},
 ): LocationTreeNode {
-  return { id, name, parentId: null, isSystem: false, updatedAt: 0, itemCount: 0, children, ...extra };
+  return {
+    id,
+    name,
+    parentId: null,
+    isSystem: false,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: 0,
+    children,
+    ...extra,
+  };
 }
 
 // workshop (expanded) → cabinet (collapsed) → drawer; plus a system Unassigned leaf.
+// Workshop carries a colour swatch + a description to exercise the tint + tooltip.
 const tree: LocationTreeNode[] = [
-  node('workshop', 'Workshop', [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')])]),
+  node(
+    'workshop',
+    'Workshop',
+    [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')])],
+    { color: 'teal', description: 'Main bench area' },
+  ),
   node('unassigned', 'Unassigned', [], { isSystem: true }),
 ];
 
 const flat: LocationWithCount[] = [
-  { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false, updatedAt: 0, itemCount: 5 },
-  { id: 'cabinet', name: 'Cabinet', parentId: 'workshop', isSystem: false, updatedAt: 0, itemCount: 2 },
-  { id: 'drawer', name: 'Drawer', parentId: 'cabinet', isSystem: false, updatedAt: 0, itemCount: 0 },
-  { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true, updatedAt: 0, itemCount: 0 },
+  { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false, description: null, color: 'teal', updatedAt: 0, itemCount: 5 },
+  { id: 'cabinet', name: 'Cabinet', parentId: 'workshop', isSystem: false, description: null, color: null, updatedAt: 0, itemCount: 2 },
+  { id: 'drawer', name: 'Drawer', parentId: 'cabinet', isSystem: false, description: null, color: null, updatedAt: 0, itemCount: 0 },
+  { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true, description: null, color: null, updatedAt: 0, itemCount: 0 },
 ];
 
 function renderSidebar(onSelect = vi.fn()) {
@@ -160,5 +177,15 @@ describe('LocationSidebar — accessible APG tree', () => {
     renderSidebar();
     expect(screen.queryByRole('button', { name: 'Edit Unassigned' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete Unassigned' })).toBeNull();
+  });
+
+  it('tints a coloured location name with its swatch class', () => {
+    renderSidebar();
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    // The name span carries the location's swatch text class…
+    expect(workshop.querySelector('.text-loc-teal')?.textContent).toBe('Workshop');
+    // …while an uncoloured location keeps the default colour.
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    expect(cabinet.querySelector('.text-loc-teal')).toBeNull();
   });
 });

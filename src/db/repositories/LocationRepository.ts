@@ -30,7 +30,7 @@ interface LocationCountRow extends LocationRow {
 }
 
 const SELECT_WITH_COUNT = `
-  SELECT l.id, l.name, l.parent_id, l.is_system, l.updated_at,
+  SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color, l.updated_at,
          COUNT(i.id) AS item_count
   FROM locations l
   LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1
@@ -86,8 +86,8 @@ export class LocationRepository extends BaseRepository {
 
     const id = crypto.randomUUID();
     await this.driver.execute(
-      'INSERT INTO locations (id, name, parent_id) VALUES (?, ?, ?);',
-      [id, name, parentId],
+      'INSERT INTO locations (id, name, parent_id, description, color) VALUES (?, ?, ?, ?, ?);',
+      [id, name, parentId, normaliseText(input.description), normaliseText(input.color)],
     );
     return (await this.getById(id))!;
   }
@@ -113,6 +113,14 @@ export class LocationRepository extends BaseRepository {
     if (input.parentId !== undefined) {
       sets.push('parent_id = ?');
       params.push(input.parentId);
+    }
+    if (input.description !== undefined) {
+      sets.push('description = ?');
+      params.push(normaliseText(input.description));
+    }
+    if (input.color !== undefined) {
+      sets.push('color = ?');
+      params.push(normaliseText(input.color));
     }
     if (sets.length > 0) {
       params.push(id);
@@ -271,6 +279,13 @@ export class LocationRepository extends BaseRepository {
 
 function toWithCount(row: LocationCountRow): LocationWithCount {
   return { ...rowToLocation(row), itemCount: Number(row.item_count) };
+}
+
+/** Trim a free-text/key field, collapsing blank/whitespace-only input to NULL. */
+function normaliseText(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /** Assemble flat rows into a parent/child tree, preserving input ordering. */

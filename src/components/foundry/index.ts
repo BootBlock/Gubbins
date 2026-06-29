@@ -10,7 +10,7 @@ export { Button, buttonVariants, type ButtonProps } from './button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface } from './surface';
 export { Spinner, type SpinnerProps } from './spinner';
-export { Input, Select } from './input';
+export { Input, Select, Textarea } from './input';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

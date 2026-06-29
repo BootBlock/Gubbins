@@ -20,11 +20,14 @@ export function ItemCard({
   item,
   locations,
   locationName,
+  locationColorClass,
   selection,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
   locationName: string;
+  /** Tailwind text-colour class for the location's swatch tint, if any. */
+  locationColorClass?: string;
   selection?: ItemSelection;
 }) {
   const fmt = useFormatters();
@@ -62,7 +65,12 @@ export function ItemCard({
                 <span className="ml-1 text-muted-foreground">#{item.serialNo}</span>
               ) : null}
             </h3>
-            <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground [&_svg]:size-3.5">
+            <p
+              className={cn(
+                'mt-1 inline-flex items-center gap-1.5 text-xs [&_svg]:size-3.5',
+                locationColorClass ?? 'text-muted-foreground',
+              )}
+            >
               <FolderIcon />
               {locationName}
             </p>

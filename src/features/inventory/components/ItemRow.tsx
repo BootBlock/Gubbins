@@ -16,11 +16,14 @@ export function ItemRow({
   item,
   locations,
   locationName,
+  locationColorClass,
   selection,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
   locationName: string;
+  /** Tailwind text-colour class for the location's swatch tint, if any. */
+  locationColorClass?: string;
   selection?: ItemSelection;
 }) {
   const fmt = useFormatters();
@@ -45,7 +48,9 @@ export function ItemRow({
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{item.name}</p>
-        <p className="truncate text-xs text-muted-foreground">{locationName}</p>
+        <p className={cn('truncate text-xs', locationColorClass ?? 'text-muted-foreground')}>
+          {locationName}
+        </p>
       </div>
 
       <TrackingBadge mode={item.trackingMode} className="hidden sm:inline-flex" />

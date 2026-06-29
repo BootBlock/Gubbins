@@ -1,4 +1,9 @@
-import { type InputHTMLAttributes, type SelectHTMLAttributes, forwardRef } from 'react';
+import {
+  type InputHTMLAttributes,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  forwardRef,
+} from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -21,3 +26,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   ),
 );
 Select.displayName = 'Select';
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  ({ className, rows = 3, ...props }, ref) => (
+    // Shares the field look but is auto-height (min-h, not the fixed h-10 of one-liners)
+    // and vertically resizable.
+    <textarea
+      ref={ref}
+      rows={rows}
+      className={cn(fieldClasses, 'h-auto min-h-[4.5rem] resize-y py-2 leading-relaxed', className)}
+      {...props}
+    />
+  ),
+);
+Textarea.displayName = 'Textarea';

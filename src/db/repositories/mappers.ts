@@ -54,6 +54,8 @@ export function rowToLocation(row: LocationRow): Location {
     name: row.name,
     parentId: row.parent_id,
     isSystem: row.is_system === 1,
+    description: row.description,
+    color: row.color,
     updatedAt: row.updated_at,
   };
 }
