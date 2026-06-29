@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { useId, useMemo, useState } from 'react';
+import { Button, Input, Modal } from '@/components/foundry';
 import { PackageIcon, MoveIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
+import { buildParentOptions } from '../parent-options';
+import { LocationSelect } from './LocationSelect';
 
 /**
  * Edit an existing location (spec §4): rename it, move it under a different parent,
@@ -28,6 +30,7 @@ export function EditLocationDialog({
 }) {
   const update = useUpdateLocation();
   const fmt = useFormatters();
+  const parentLabelId = useId();
   const [name, setName] = useState(location.name);
   const [parentId, setParentId] = useState<string>(location.parentId ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +40,10 @@ export function EditLocationDialog({
   const forbidden = useMemo(
     () => collectDescendantIds(location.id, locations),
     [location.id, locations],
+  );
+  const parentOptions = useMemo(
+    () => buildParentOptions(locations, fmt.quantity, forbidden),
+    [locations, fmt, forbidden],
   );
   const childCount = useMemo(
     () => locations.filter((l) => l.parentId === location.id).length,
@@ -79,19 +86,17 @@ export function EditLocationDialog({
           />
         </label>
 
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Parent</span>
-          <Select value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">— Top level —</option>
-            {locations
-              .filter((l) => !l.isSystem && !forbidden.has(l.id))
-              .map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-          </Select>
-        </label>
+        <div className="block">
+          <span id={parentLabelId} className="mb-field-gap block text-sm font-medium">
+            Parent
+          </span>
+          <LocationSelect
+            labelledBy={parentLabelId}
+            value={parentId}
+            onChange={setParentId}
+            options={parentOptions}
+          />
+        </div>
 
         {/* Read-only metadata for the location. */}
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-secondary/40 p-3 text-sm">

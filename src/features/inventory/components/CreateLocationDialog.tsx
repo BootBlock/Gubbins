@@ -3,7 +3,8 @@ import { Button, Input, Modal } from '@/components/foundry';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useCreateLocation } from '../mutations';
-import { LocationSelect, type LocationOption } from './LocationSelect';
+import { buildParentOptions } from '../parent-options';
+import { LocationSelect } from './LocationSelect';
 
 /** Create a (optionally nested) location (spec §4). */
 export function CreateLocationDialog({
@@ -25,19 +26,7 @@ export function CreateLocationDialog({
 
   // The parent choices: "top level" plus every user-created location, each carrying a
   // right-aligned item-count hint (system locations are never valid parents).
-  const parentOptions = useMemo<LocationOption[]>(
-    () => [
-      { value: '', label: '— Top level —' },
-      ...locations
-        .filter((l) => !l.isSystem)
-        .map((loc) => ({
-          value: loc.id,
-          label: loc.name,
-          meta: `${fmt.quantity(loc.itemCount)} ${loc.itemCount === 1 ? 'item' : 'items'}`,
-        })),
-    ],
-    [locations, fmt],
-  );
+  const parentOptions = useMemo(() => buildParentOptions(locations, fmt.quantity), [locations, fmt]);
 
   const submit = () => {
     if (name.trim().length === 0) return;
