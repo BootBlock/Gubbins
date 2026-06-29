@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Button, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
-import { AddIcon, BrandIcon, PackageIcon, ProjectIcon } from '@/components/icons';
+import { AddIcon, PackageIcon, ProjectIcon } from '@/components/icons';
+import { BrandMark } from '@/components/BrandMark';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
 import { PROJECT_STATUS_LABELS } from './components/projects-ui';
@@ -38,9 +39,7 @@ export function ProjectsScreen() {
     <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
       <header className="flex flex-wrap items-center gap-3 pb-4">
         <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <span className="grid size-9 place-items-center rounded-xl bg-primary/15 text-primary [&_svg]:size-5">
-            <BrandIcon />
-          </span>
+          <BrandMark className="size-9 rounded-xl" />
           <span className="text-lg font-semibold tracking-tight">Gubbins</span>
         </Link>
 

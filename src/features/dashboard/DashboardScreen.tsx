@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
-import { BrandIcon, PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon } from '@/components/icons';
+import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon } from '@/components/icons';
+import { BrandMark } from '@/components/BrandMark';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
@@ -23,9 +24,7 @@ export function DashboardScreen() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6">
       <header className="flex flex-wrap items-center gap-4">
-        <span className="grid size-12 place-items-center rounded-2xl bg-primary/15 text-primary [&_svg]:size-7">
-          <BrandIcon />
-        </span>
+        <BrandMark className="size-12 rounded-2xl" />
         <div>
           <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
             Gubbins

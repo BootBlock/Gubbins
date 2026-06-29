@@ -1,7 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Surface, Button, Spinner } from '@/components/foundry';
-import { BrandIcon, CriticalIcon, DuplicateTabIcon } from '@/components/icons';
+import { CriticalIcon, DuplicateTabIcon } from '@/components/icons';
+import { BrandMark } from '@/components/BrandMark';
 import { RescueActions } from '@/app/error/RescueActions';
 import type { DbError, DbErrorCode } from '@/db/errors';
 
@@ -48,7 +49,7 @@ function BootShell({
 
 export function StartingScreen() {
   return (
-    <BootShell accent="brand" icon={<BrandIcon />} title="Gubbins" subtitle="Local-first inventory tracking">
+    <BootShell accent="brand" icon={<BrandMark className="size-9" />} title="Gubbins" subtitle="Local-first inventory tracking">
       <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
         <Spinner className="size-4 border-2" />
         <span>Opening database &amp; verifying storage…</span>

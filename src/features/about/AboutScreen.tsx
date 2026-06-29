@@ -2,7 +2,6 @@ import { type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
-  BrandIcon,
   InfoIcon,
   LinkIcon,
   AlertIcon,
@@ -10,6 +9,7 @@ import {
   PackageIcon,
   ContactsIcon,
 } from '@/components/icons';
+import { BrandMark } from '@/components/BrandMark';
 import { cn } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/app-version';
 import { Starfield } from './Starfield';
@@ -33,9 +33,7 @@ export function AboutScreen() {
       <Starfield />
       <header className="flex flex-wrap items-center gap-3">
         <Link to="/" className="flex items-center gap-2 text-foreground">
-          <span className="grid size-9 place-items-center rounded-xl bg-primary/15 text-primary [&_svg]:size-5">
-            <BrandIcon />
-          </span>
+          <BrandMark className="size-9 rounded-xl" />
           <span className="text-lg font-semibold tracking-tight">Gubbins</span>
         </Link>
         <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">

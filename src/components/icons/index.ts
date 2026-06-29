@@ -10,8 +10,8 @@
  * current identifiers.
  */
 export {
-  // Brand — a 2×2 grid echoing the Gridfinity-baseplate app icon (see public/icons).
-  Grid2x2 as BrandIcon,
+  // Brand — the app wordmark/logo lives in <BrandMark> (renders the real app icon);
+  // PackageIcon is the generic inventory glyph used throughout the UI.
   Package as PackageIcon,
 
   // Status / feedback

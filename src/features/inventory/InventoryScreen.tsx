@@ -3,7 +3,6 @@ import { Link } from '@tanstack/react-router';
 import { Button, Input, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
-  BrandIcon,
   BuilderIcon,
   CategoryIcon,
   CloseIcon,
@@ -17,6 +16,7 @@ import {
   SearchIcon,
   SelectIcon,
 } from '@/components/icons';
+import { BrandMark } from '@/components/BrandMark';
 import { Tooltip } from '@/components/foundry';
 import { CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
@@ -153,9 +153,7 @@ function InventoryWorkspace() {
     <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
       <header className="flex flex-wrap items-center gap-3 pb-4">
         <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <span className="grid size-9 place-items-center rounded-xl bg-primary/15 text-primary [&_svg]:size-5">
-            <BrandIcon />
-          </span>
+          <BrandMark className="size-9 rounded-xl" />
           <span className="text-lg font-semibold tracking-tight">Gubbins</span>
         </Link>
 
