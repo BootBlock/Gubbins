@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/icons/gubbins.svg" alt="Gubbins" width="128" height="128" />
+</p>
+
 # Gubbins
 
 ## Use it
@@ -58,16 +62,16 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 
 **Data, sync & resilience**
 - Local-first and fully offline; an in-browser SQLite database (WASM + OPFS) is the single source of truth.
-- Provider-agnostic sync (File System Access) with last-write-wins conflict resolution.
-- Export / import as a Markdown vault or a raw `.sqlite` file.
-- Archive and restore, including image re-hydration.
+- Provider-agnostic cloud sync — a local **File System Access** folder or **Google Drive** (backend-less browser OAuth into an app-private folder) — with last-write-wins conflict resolution.
+- Full database backup & restore: a single portable `.zip` (version-guarded JSON snapshot + an exact `.sqlite` copy + full-resolution images + device settings), restored as a non-destructive **Merge** or an exact **Replace** — the destructive path guarded by an auto restore-point, an impact preview, a storage-quota pre-check, and a type-to-confirm gate.
+- Export / import as a Markdown vault or a raw `.sqlite` file, including image re-hydration.
 - Storage triage dashboard: OPFS quota recovery, history pruning, and image downgrade.
 - Cross-device handling of unlinked local-file attachments.
 - Optional Home Assistant / query bridge: ask a voice assistant where your items are — or push your whole dataset straight to it (see [below](#home-assistant--external-query-bridge-optional)).
 
 **Interface & accessibility**
-- Customisable drag-and-drop dashboard widget board.
-- Dark / light / system-auto theming, plus currency and locale formatting.
+- Customisable drag-and-drop dashboard widget board, plus an About screen with a lightweight cinematic starfield.
+- Dark / light / system-auto theming, plus currency and locale formatting (base currency guessed on first run).
 - Installable PWA with an offline indicator.
 - Kiosk / tablet mode with screen wake-lock.
 - Accessibility throughout: focus trapping, ARIA tree navigation, skip links, live regions, accessible form errors, and reduced-motion support.
@@ -176,7 +180,7 @@ See **`docs/todo/done/_specification.md` §1.2** for the binding decisions (SQLi
 | SQLite WASM | Official `@sqlite.org/sqlite-wasm` (FTS5 + OPFS VFS) |
 | Package manager | **npm** |
 | Hosting | **GitHub Pages** (`base: '/Gubbins/'` + `coi-serviceworker` for COOP/COEP) |
-| Cloud sync | Provider-agnostic interface with a File System Access adapter (last-write-wins) |
+| Cloud sync | Provider-agnostic interface with File System Access + Google Drive adapters (last-write-wins) |
 
 ## Development
 
