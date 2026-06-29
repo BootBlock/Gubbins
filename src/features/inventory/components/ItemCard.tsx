@@ -3,6 +3,7 @@ import { Surface } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { ChangeFlash } from './ChangeFlash';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
@@ -86,7 +87,9 @@ export function ItemCard({
           <p className="text-sm text-muted-foreground">Single serialised unit</p>
         ) : (
           <div className="flex items-center justify-between">
-            <span className="text-2xl font-bold tabular-nums">{fmt.quantity(item.quantity)}</span>
+            <ChangeFlash flashKey={item.quantity} className="text-2xl font-bold tabular-nums">
+              {fmt.quantity(item.quantity)}
+            </ChangeFlash>
             <span className="text-xs text-muted-foreground">in stock</span>
           </div>
         )}
