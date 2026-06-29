@@ -96,6 +96,14 @@ npm run test       # Vitest
 
 > **Single tab:** OPFS enforces an exclusive write lock — Gubbins guards against multiple open tabs and shows a graceful overlay rather than crashing.
 
+## AI-assisted development
+
+AI tooling was used in the development of this software.
+
+## Disclaimer
+
+This software is provided "as is", without warranty of any kind. You use it **entirely at your own risk**. The developers accept no responsibility or liability for any loss, damage, data loss, or other issues arising from its use. See the [LICENCE](LICENSE) for the full terms.
+
 ## Licence
 
 [MIT](LICENSE) © Joe Cox
