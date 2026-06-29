@@ -33,6 +33,12 @@ export interface ItemRow {
   readonly condition: Condition | null;
   /** Parent item id when this is a child variant; null otherwise (§4 Variant, v8). */
   readonly parent_id: string | null;
+  /** Per-item DISCRETE quantity reorder floor; null = use the global default (v21). */
+  readonly reorder_point: number | null;
+  /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null = use the global default (v21). */
+  readonly reorder_gauge_percent: number | null;
+  /** Optional suggested top-up quantity when re-ordering; null = use the shortfall (v21). */
+  readonly reorder_qty: number | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -84,6 +90,20 @@ export interface Item {
   readonly condition: Condition | null;
   /** Parent item id when this is a child variant; null for a standalone/parent item (§4). */
   readonly parentId: string | null;
+  /**
+   * This item's **own** low-stock trigger (spec §4, Phase 59), overriding the global
+   * default when set:
+   * - `reorderPoint` — a DISCRETE on-hand quantity floor; the item is low at/below it.
+   * - `reorderGaugePercent` — a CONSUMABLE_GAUGE percentage-remaining floor.
+   * - `reorderQty` — an optional suggested top-up amount for the shopping list.
+   *
+   * `null` on any of these means "fall back to the global default" — an item with no
+   * override behaves exactly as it did before Phase 59 (never a regression). The pure
+   * `reorder-policy.ts` seam decides "is low?"/"reorder how many?" from these.
+   */
+  readonly reorderPoint: number | null;
+  readonly reorderGaugePercent: number | null;
+  readonly reorderQty: number | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -131,6 +151,12 @@ export interface CreateItemInput {
   readonly lotNumber?: string | null;
   /** Operational condition enum (§4 Condition Tracking). */
   readonly condition?: Condition | null;
+  /** Per-item DISCRETE quantity reorder floor; omit/null to use the global default (§4, v21). */
+  readonly reorderPoint?: number | null;
+  /** Per-item CONSUMABLE_GAUGE percentage reorder floor; omit/null to use the global default (§4, v21). */
+  readonly reorderGaugePercent?: number | null;
+  /** Optional suggested top-up quantity when re-ordering (§4, v21). */
+  readonly reorderQty?: number | null;
   readonly trackingMode?: TrackingMode;
   /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
@@ -155,6 +181,12 @@ export interface UpdateItemInput {
   readonly lotNumber?: string | null;
   /** Operational condition; a change is logged as `CONDITION_CHANGED` (§4). */
   readonly condition?: Condition | null;
+  /** Per-item DISCRETE quantity reorder floor; null clears it back to the global default (§4, v21). */
+  readonly reorderPoint?: number | null;
+  /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null clears it back to the global default (§4, v21). */
+  readonly reorderGaugePercent?: number | null;
+  /** Optional suggested top-up quantity when re-ordering; null clears it (§4, v21). */
+  readonly reorderQty?: number | null;
   /**
    * The §4.1.1 schema-less operational-parameter map. Pass a record to replace the
    * stored set wholesale, or `null` to clear it; omit to leave it untouched.

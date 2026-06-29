@@ -11,7 +11,13 @@ import { UNASSIGNED_LOCATION_ID } from '../constants';
 import { setStockStatement } from '../stock';
 import type { CreateItemInput } from '../types';
 import { historyStatement } from './history';
-import { normaliseExpiry, normaliseText, normaliseUnitCost } from './normalise';
+import {
+  normaliseExpiry,
+  normaliseReorderInt,
+  normaliseReorderPercent,
+  normaliseText,
+  normaliseUnitCost,
+} from './normalise';
 
 /** Normalised column values produced by {@link resolveCreate}. */
 export interface ResolvedCreate {
@@ -26,6 +32,9 @@ export interface ResolvedCreate {
   readonly batchNumber: string | null;
   readonly lotNumber: string | null;
   readonly condition: string | null;
+  readonly reorderPoint: number | null;
+  readonly reorderGaugePercent: number | null;
+  readonly reorderQty: number | null;
   readonly trackingMode: string;
   readonly quantity: number;
   readonly unit: string | null;
@@ -89,6 +98,9 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     batchNumber: normaliseText(input.batchNumber),
     lotNumber: normaliseText(input.lotNumber),
     condition: input.condition ?? null,
+    reorderPoint: normaliseReorderInt(input.reorderPoint),
+    reorderGaugePercent: normaliseReorderPercent(input.reorderGaugePercent),
+    reorderQty: normaliseReorderInt(input.reorderQty),
     trackingMode,
     quantity,
     unit,
@@ -111,8 +123,9 @@ export function buildInsert(
       sql: `INSERT INTO items
               (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-               mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition, parent_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+               mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition,
+               reorder_point, reorder_gauge_percent, reorder_qty, parent_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -134,6 +147,9 @@ export function buildInsert(
         r.batchNumber,
         r.lotNumber,
         r.condition,
+        r.reorderPoint,
+        r.reorderGaugePercent,
+        r.reorderQty,
         parentId,
       ],
     },

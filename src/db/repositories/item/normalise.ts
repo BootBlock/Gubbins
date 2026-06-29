@@ -21,6 +21,30 @@ export function normaliseUnitCost(value: number | null | undefined): number | nu
   return value;
 }
 
+/**
+ * Validate an optional integer reorder threshold/quantity (Phase 59): null clears it
+ * (fall back to the global default); otherwise it must be a non-negative integer.
+ */
+export function normaliseReorderInt(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'A reorder threshold must be a non-negative number.');
+  }
+  return Math.trunc(value);
+}
+
+/**
+ * Validate an optional reorder gauge percentage (Phase 59): null clears it; otherwise it
+ * must be within 0–100 (a percentage-remaining floor).
+ */
+export function normaliseReorderPercent(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new DbError('SQLITE_CONSTRAINT', 'A reorder percentage must be between 0 and 100.');
+  }
+  return value;
+}
+
 /** Validate an optional expiry instant: null clears it; otherwise a finite UNIX-ms. */
 export function normaliseExpiry(value: number | null | undefined): number | null {
   if (value == null) return null;
