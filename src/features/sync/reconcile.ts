@@ -93,10 +93,88 @@ export function reconcile(
   if (remote === null) return EMPTY_PLAN;
 
   const { offset, dictionary } = options;
+
+  // --- per-table LWW + tombstone resolution (§7.3) ------------------------------
+  const { localUpserts, localDeletes } = resolveTableMerges(local, remote, dictionary, offset);
+
+  // --- §4/§7.5 alias-text collision resolution ----------------------------------
+  resolveAliasCollisions(local, localUpserts, localDeletes, offset);
+
+  // --- §7.5.2 orphan re-parenting ------------------------------------------------
+  const { reparented, finalItems, activeLocationIds } = reparentOrphans(
+    local,
+    localUpserts,
+    localDeletes,
+  );
+
+  // --- §7.5.3 cyclical-nesting rejection ----------------------------------------
+  const rejectedCycles = rejectLocationCycles(local, localUpserts);
+
+  // --- §7.5 relational integrity: don't resurrect a child of a deleted parent ----
+  const finalItemIds = new Set(finalItems.keys());
+  const removedParents = computeRemovedParents(
+    local,
+    remote,
+    localUpserts,
+    localDeletes,
+    finalItemIds,
+    activeLocationIds,
+  );
+  enforceForeignKeys(localUpserts, removedParents);
+
+  // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
+  const gaugeResolutions = reconcileGauges(local, remote, finalItems);
+
+  // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
+  // Both reference parents (items/tags), so they are filtered to the rows that will
+  // survive the merge to keep the atomic apply FK-safe.
+  const finalTagIds = survivingIds('tags', local, localUpserts, localDeletes);
+
+  const historyInserts = reconcileHistory(
+    local,
+    remote,
+    options.dictionary[ITEM_HISTORY_TABLE],
+    options.historyPrunedBefore ?? 0,
+    finalItemIds,
+  );
+  const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
+    local,
+    remote,
+    offset,
+    finalItemIds,
+    finalTagIds,
+  );
+
+  return {
+    localUpserts,
+    localDeletes,
+    gaugeResolutions,
+    reparented,
+    rejectedCycles,
+    historyInserts,
+    itemTagUpserts,
+    itemTagDeletes,
+  };
+}
+
+/**
+ * Per-table LWW + tombstone resolution (§7.3). For every synced table, diff the local
+ * and remote snapshots id-by-id: a remote tombstone deletes the local row unless a
+ * strictly-newer local row resurrects it; otherwise the newer of two concurrent rows
+ * wins (remote rows are sanitised against the schema dictionary before download), and a
+ * row new on the remote is downloaded unless our own (offset-adjusted) tombstone is at
+ * least as new. Local-only rows are left for the push half. Returns the initial upsert
+ * and delete lists, which later phases mutate in place.
+ */
+function resolveTableMerges(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  dictionary: SchemaDictionary,
+  offset: number,
+): { localUpserts: TableRow[]; localDeletes: Tombstone[] } {
   const localUpserts: TableRow[] = [];
   const localDeletes: Tombstone[] = [];
 
-  // --- per-table LWW + tombstone resolution (§7.3) ------------------------------
   for (const table of SYNC_TABLES) {
     const localRows = rowsById(local.tables[table] ?? []);
     const remoteRows = rowsById(remote.tables[table] ?? []);
@@ -138,14 +216,24 @@ export function reconcile(
     }
   }
 
-  // --- §4/§7.5 alias-text collision resolution ----------------------------------
-  // `item_aliases.alias` is globally UNIQUE (COLLATE NOCASE). Two devices mapping the
-  // same supplier part number to *different* items would otherwise make the atomic
-  // apply trip that constraint. Resolve by LWW on the alias rows themselves: the newer
-  // mapping wins the text; the loser is dropped (tombstoned if it was local).
-  resolveAliasCollisions(local, localUpserts, localDeletes, offset);
+  return { localUpserts, localDeletes };
+}
 
-  // --- §7.5.2 orphan re-parenting ------------------------------------------------
+/**
+ * §7.5.2 orphan re-parenting. Computes the set of items that will exist locally after the
+ * merge (untouched local items minus deletes, plus upserts) and re-homes any whose target
+ * location did not survive, mutating `localUpserts` in place. Returns the re-parent log
+ * alongside the `finalItems` map and surviving-location set that later phases reuse.
+ *
+ * Note: `finalItems` retains the pre-fix row references — downstream consumers read only
+ * its keys and the gauge columns, never `location_id`, so the re-parent fix lives solely
+ * on the corresponding upsert.
+ */
+function reparentOrphans(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+): { reparented: ReparentLog[]; finalItems: Map<string, SqlRow>; activeLocationIds: Set<string> } {
   const reparented: ReparentLog[] = [];
   const activeLocationIds = computeActiveLocations(local, localUpserts, localDeletes);
   const itemUpsertIndex = new Map<string, number>();
@@ -177,24 +265,35 @@ export function reconcile(
     }
   }
 
-  // --- §7.5.3 cyclical-nesting rejection ----------------------------------------
-  const rejectedCycles = rejectLocationCycles(local, localUpserts);
+  return { reparented, finalItems, activeLocationIds };
+}
 
-  // --- §7.5 relational integrity: don't resurrect a child of a deleted parent ----
-  // A hard delete cascades its children locally but records only the *parent*
-  // tombstone (§7.2), so a peer still holds the orphaned child rows. Without this
-  // guard the deleting device would re-download them on its next sync and the atomic
-  // apply would trip a foreign key. Drop any upsert whose parent was *known and
-  // removed*; null a *nullable* FK instead of dropping the row (mirrors the schema's
-  // ON DELETE SET NULL, e.g. a BOM line whose item was removed).
-  const finalItemIds = new Set(finalItems.keys());
+/**
+ * §7.5 relational integrity: compute the parents that will not survive the merge, so an
+ * upsert that references a *known and removed* parent can be dropped (or null-cleared).
+ *
+ * A hard delete cascades its children locally but records only the *parent* tombstone
+ * (§7.2), so a peer still holds the orphaned child rows. Without this guard the deleting
+ * device would re-download them on its next sync and the atomic apply would trip a foreign
+ * key. (`enforceForeignKeys` consumes the result: it nulls a *nullable* FK instead of
+ * dropping the row, mirroring the schema's ON DELETE SET NULL, e.g. a BOM line whose item
+ * was removed.)
+ */
+function computeRemovedParents(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+  finalItemIds: ReadonlySet<string>,
+  activeLocationIds: ReadonlySet<string>,
+): Partial<Record<SyncTable, Set<string>>> {
   const removedCategories = removedIds(
     'categories',
     local,
     remote,
     survivingIds('categories', local, localUpserts, localDeletes),
   );
-  const removedParents: Partial<Record<SyncTable, Set<string>>> = {
+  return {
     items: removedIds('items', local, remote, finalItemIds),
     // A placement at a removed location must not be resurrected — its location's RESTRICT
     // FK would reject it (Phase 25). The active set already drives the §7.5.2 item re-parent.
@@ -211,41 +310,6 @@ export function reconcile(
       removedCategories,
       survivingIds('category_fields', local, localUpserts, localDeletes),
     ),
-  };
-  enforceForeignKeys(localUpserts, removedParents);
-
-  // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
-  const gaugeResolutions = reconcileGauges(local, remote, finalItems);
-
-  // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
-  // Both reference parents (items/tags), so they are filtered to the rows that will
-  // survive the merge to keep the atomic apply FK-safe.
-  const finalTagIds = survivingIds('tags', local, localUpserts, localDeletes);
-
-  const historyInserts = reconcileHistory(
-    local,
-    remote,
-    options.dictionary[ITEM_HISTORY_TABLE],
-    options.historyPrunedBefore ?? 0,
-    finalItemIds,
-  );
-  const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
-    local,
-    remote,
-    offset,
-    finalItemIds,
-    finalTagIds,
-  );
-
-  return {
-    localUpserts,
-    localDeletes,
-    gaugeResolutions,
-    reparented,
-    rejectedCycles,
-    historyInserts,
-    itemTagUpserts,
-    itemTagDeletes,
   };
 }
 
