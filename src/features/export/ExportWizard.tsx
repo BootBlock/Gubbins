@@ -15,7 +15,7 @@ import { useExportStore, type ExportFormat, type ExportScope } from './useExport
  * items CSV, and an Obsidian Markdown vault (with image assets) zipped off-thread (§4.5).
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
-  { value: 'JSON', label: 'JSON backup', hint: 'Versioned backup (items, contacts, loans).', icon: ExportIcon },
+  { value: 'JSON', label: 'JSON data export', hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.', icon: ExportIcon },
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
   { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
 ];

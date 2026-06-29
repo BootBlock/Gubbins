@@ -150,7 +150,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
       collectContacts(),
       collectCheckouts(items),
     ]);
-    const name = `gubbins-backup${suffix}-${stamp()}.json`;
+    const name = `gubbins-export${suffix}-${stamp()}.json`;
     const json = buildJsonBackup({ items, contacts, checkouts });
     download(new Blob([json], { type: 'application/json' }), name);
     return name;

@@ -1209,7 +1209,7 @@ try {
   await step('runs a scoped single-item export (§4.5 granularity)', async () => {
     await page.getByRole('button', { name: 'Export' }).click();
     const dialog = page.getByRole('dialog', { name: 'Export' });
-    await dialog.getByRole('button', { name: /JSON backup/ }).click();
+    await dialog.getByRole('button', { name: /JSON data/ }).click();
     await dialog.getByTestId('export-scope').selectOption('ITEM');
     await dialog.getByTestId('export-target-item').selectOption({ label: screwName });
     const download = page.waitForEvent('download', { timeout: 8000 });
@@ -1289,7 +1289,7 @@ try {
   // the in-memory provider's "remote" lives in JS module memory; a full reload would
   // reset it. They drive the genuine OPFS worker path for snapshot/apply/backup.
 
-  let backupJson = '';
+  let backupZip = new Uint8Array();
   await step('connects the in-memory sync provider and publishes', async () => {
     await page.getByRole('link', { name: 'Sync' }).first().click();
     await page.getByRole('heading', { name: /Cloud Sync/ }).waitFor({ state: 'visible', timeout: 6000 });
@@ -1305,16 +1305,27 @@ try {
     }
   });
 
-  await step('downloads a versioned-JSON backup of the real OPFS database', async () => {
-    const download = page.waitForEvent('download', { timeout: 8000 });
-    await page.getByTestId('download-backup').click();
+  await step('downloads a complete .zip backup of the real OPFS database', async () => {
+    await page.getByTestId('open-backup').click();
+    const dialog = page.getByRole('dialog', { name: 'Backup & restore' });
+    await dialog.waitFor({ state: 'visible', timeout: 5000 });
+    // Leave out the exact .sqlite copy and settings so the later *merge* restore needs no
+    // reload — the in-memory provider's "remote" lives in module memory and a reload resets it.
+    await dialog.getByTestId('backup-toggle-rawSqlite').uncheck();
+    await dialog.getByTestId('backup-toggle-settings').uncheck();
+    const download = page.waitForEvent('download', { timeout: 10000 });
+    await dialog.getByTestId('create-backup').click();
     const file = await download;
-    if (!file.suggestedFilename().endsWith('.json')) {
+    if (!/^gubbins-backup-.*\.zip$/.test(file.suggestedFilename())) {
       throw new Error(`unexpected backup filename: ${file.suggestedFilename()}`);
     }
     const fs = await import('node:fs/promises');
-    backupJson = await fs.readFile(await file.path(), 'utf8');
-    const parsed = JSON.parse(backupJson);
+    const { unzipSync, strFromU8 } = await import('fflate');
+    backupZip = new Uint8Array(await fs.readFile(await file.path()));
+    const entries = unzipSync(backupZip);
+    if (!entries['backup.json']) throw new Error('backup .zip is missing backup.json');
+    if (!entries['manifest.json']) throw new Error('backup .zip is missing manifest.json');
+    const parsed = JSON.parse(strFromU8(entries['backup.json']));
     if (parsed.formatVersion !== 1) throw new Error(`backup formatVersion ${parsed.formatVersion} != 1`);
     const items = parsed.tables?.items ?? [];
     if (!items.some((it) => it.name === screwName)) {
@@ -1335,18 +1346,24 @@ try {
     if (!Array.isArray(parsed.itemHistory) || parsed.itemHistory.length === 0) {
       throw new Error('backup is missing the item_history ledger (Phase 11)');
     }
+    await page.keyboard.press('Escape');
   });
 
   await step('imports the backup (merge) and re-syncs cleanly', async () => {
-    // Still on /sync. Import the just-downloaded backup through the real OPFS restore
-    // path, then run a second sync over the restored state — both must be error-free.
-    await page.getByTestId('restore-input').setInputFiles({
-      name: 'gubbins-backup.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(backupJson, 'utf8'),
+    // Still on /sync. Import the just-downloaded backup through the real OPFS restore path
+    // (a no-reload merge), then run a second sync over the restored state — both error-free.
+    await page.getByTestId('open-backup').click();
+    const dialog = page.getByRole('dialog', { name: 'Backup & restore' });
+    await dialog.getByRole('tab', { name: /Restore/ }).click();
+    await dialog.getByTestId('restore-backup-input').setInputFiles({
+      name: 'gubbins-backup.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from(backupZip),
     });
-    await page.getByTestId('confirm-restore').click();
-    await page.getByTestId('sync-notice').waitFor({ state: 'visible', timeout: 6000 });
+    // Merge is the default mode; confirm the two-step restore.
+    await dialog.getByTestId('restore-backup').click();
+    await dialog.getByTestId('confirm-restore-backup').click();
+    await page.getByTestId('sync-notice').waitFor({ state: 'visible', timeout: 8000 });
     await page.getByTestId('sync-now').click();
     await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 6000 });
 
@@ -1356,7 +1373,7 @@ try {
     await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
   });
 
-  await step('Phase 11: the tag + image survive the JSON round-trip and restore', async () => {
+  await step('Phase 11: the tag + image survive the backup round-trip and restore', async () => {
     // The printer item's freeform tag (item_tags membership) and its thumbnail
     // (item_images base64) must persist through download → import → re-sync.
     await page.getByLabel('Search items').fill(printerName);

@@ -1,24 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Banner, Button, FormField, Input, LiveRegion, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
+  ArchiveIcon,
   BrandIcon,
   CloudIcon,
   CloudUploadIcon,
   ConnectIcon,
   DisconnectIcon,
-  DownloadIcon,
   FolderSyncIcon,
   PackageIcon,
-  RestoreIcon,
   SyncIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { buildBackupJson, restoreFromBackupJson } from './backup';
+import { BackupDialog } from '@/features/backup/BackupDialog';
+import { consumeRestoreNotice } from '@/features/backup/restore-backup';
 import { buildPushSnapshotJson, pushSnapshotToBridge } from './push-to-bridge';
 import { MemoryCloudProvider } from './providers/memory-provider';
 import {
@@ -26,6 +26,14 @@ import {
   forgetFileSystemProvider,
   reconnectFileSystemProvider,
 } from './providers/file-system-provider';
+import { isGoogleDriveConfigured } from './providers/google-config';
+import {
+  connectGoogleDrive,
+  forgetGoogleDrive,
+  reconnectGoogleDrive,
+} from './providers/google-drive-provider';
+import { GoogleApiError } from './providers/google-drive-api';
+import { consumeGoogleAuthError } from './providers/google-oauth';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
 import { httpTimeSource } from './time-source';
@@ -48,26 +56,55 @@ export function SyncScreen() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [pendingRestore, setPendingRestore] = useState<string | null>(null);
   const [reconnectable, setReconnectable] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [googleReconnectable, setGoogleReconnectable] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+
+  // Surface a one-off success message after a backup restore reloaded the app.
+  useEffect(() => {
+    const restored = consumeRestoreNotice();
+    if (restored) setNotice(restored);
+  }, []);
 
   const fsSupported = hasFileSystemAccess();
+  const driveConfigured = isGoogleDriveConfigured();
 
-  // Phase 14: resume the previously-chosen sync folder across sessions. On mount we only
-  // reconnect when the OS permission still stands; a handle needing a fresh grant surfaces
-  // a "Reconnect folder" button (the re-grant needs a user gesture).
+  // Resume the previously-chosen provider across sessions, and complete a Google Drive
+  // sign-in that has just redirected back (the token was stored at app entry, so a live
+  // token here means "freshly connected" or "still valid").
+  //  - Google Drive: a live token reconnects silently; an expired/absent token for a
+  //    returning Google user offers a "Reconnect Google Drive" sign-in.
+  //  - File System (Phase 14): reconnect only while the OS permission still stands; a handle
+  //    needing a fresh grant surfaces a "Reconnect folder" button (the re-grant needs a gesture).
   useEffect(() => {
-    if (getActiveProvider() !== null || auth.providerId !== 'file-system') return;
+    if (getActiveProvider() !== null) return;
     let cancelled = false;
-    void reconnectFileSystemProvider(false).then((res) => {
-      if (cancelled) return;
-      if (res.provider) {
-        connect({ id: res.provider.id, label: res.provider.label }, res.provider);
-      } else if (res.needsGesture) {
-        setReconnectable(true);
+
+    // Surface a one-off error from a cancelled/failed Google redirect (CSRF or denied).
+    const authErr = consumeGoogleAuthError();
+    if (authErr) setError(googleAuthErrorMessage(authErr));
+
+    if (auth.providerId === 'file-system') {
+      void reconnectFileSystemProvider(false).then((res) => {
+        if (cancelled) return;
+        if (res.provider) {
+          connect({ id: res.provider.id, label: res.provider.label }, res.provider);
+        } else if (res.needsGesture) {
+          setReconnectable(true);
+        }
+      });
+    } else if (auth.providerId === 'google-drive' || auth.providerId === null) {
+      // 'google-drive' resumes a stored session; null + a freshly-stored token is the
+      // just-redirected-back connect. A different provider (e.g. 'memory') is left alone so
+      // a stale token can never hijack it.
+      const google = reconnectGoogleDrive(auth.providerId === 'google-drive');
+      if (google.provider) {
+        connect({ id: google.provider.id, label: google.provider.label }, google.provider);
+      } else if (google.needsAuth) {
+        setGoogleReconnectable(true);
       }
-    });
+    }
+
     return () => {
       cancelled = true;
     };
@@ -108,13 +145,21 @@ export function SyncScreen() {
     connect({ id: provider.id, label: provider.label }, provider);
   }
 
+  /** Begin the Google sign-in redirect; the tab navigates to Google and resumes on return. */
+  function connectGoogle() {
+    setError(null);
+    connectGoogleDrive();
+  }
+
   function disconnect() {
     setActiveProvider(null);
     auth.disconnect();
     setConnected(false);
     setReconnectable(false);
+    setGoogleReconnectable(false);
     setResult(null);
     void forgetFileSystemProvider(); // drop the persisted folder handle (Phase 14)
+    forgetGoogleDrive(); // drop the stored Google token
     setNotice('Disconnected.');
   }
 
@@ -137,56 +182,18 @@ export function SyncScreen() {
         await client.invalidateQueries();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed.');
+      // A rejected/expired Google token drops us back to the reconnect path rather than a
+      // bare error, so one click re-authorises and resumes.
+      if (err instanceof GoogleApiError && err.isAuthError) {
+        setActiveProvider(null);
+        forgetGoogleDrive();
+        setConnected(false);
+        setGoogleReconnectable(true);
+        setError('Your Google Drive sign-in expired. Reconnect to resume syncing.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Sync failed.');
+      }
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function downloadBackup() {
-    setBusy(true);
-    setError(null);
-    try {
-      const json = await buildBackupJson(getSyncDriver());
-      const blob = new Blob([json], { type: 'application/json' });
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = href;
-      a.download = `gubbins-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(href);
-      setNotice('Backup downloaded.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Backup failed.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onFileChosen(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = ''; // allow re-picking the same file
-    if (!file) return;
-    try {
-      setPendingRestore(await file.text());
-      setError(null);
-    } catch {
-      setError('That file could not be read.');
-    }
-  }
-
-  async function confirmRestore() {
-    if (pendingRestore === null) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await restoreFromBackupJson(getSyncDriver(), pendingRestore);
-      await client.invalidateQueries();
-      setNotice('Backup imported.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Restore failed.');
-    } finally {
-      setPendingRestore(null);
       setBusy(false);
     }
   }
@@ -213,7 +220,7 @@ export function SyncScreen() {
   }
 
   const canPush = bridgeUrl.trim().length > 0 && bridgeToken.trim().length > 0;
-  const configuredButOffline = !connected && auth.providerId !== null;
+  const configuredButOffline = !connected && auth.providerId !== null && !googleReconnectable;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
@@ -277,8 +284,9 @@ export function SyncScreen() {
         ) : (
           <Surface className="space-y-3 p-4">
             <p className="text-sm text-muted-foreground">
-              Choose where to synchronise. Gubbins is provider-agnostic — connect a local
-              folder (shared via your own cloud drive) or the in-memory provider for trying it out.
+              Choose where to synchronise. Gubbins is provider-agnostic — sign in to
+              <strong> Google Drive</strong> (an app-private folder), connect a local folder
+              (shared via your own cloud drive), or use the in-memory provider to try it out.
             </p>
             {reconnectable ? (
               <Banner tone="info">
@@ -293,16 +301,36 @@ export function SyncScreen() {
                   </Button>
                 </div>
               </Banner>
+            ) : googleReconnectable ? (
+              <Banner tone="info">
+                <div className="space-y-2">
+                  <p>Your Google Drive sign-in has expired. Reconnect to resume syncing.</p>
+                  <Button size="sm" onClick={connectGoogle} data-testid="reconnect-google-drive">
+                    <CloudIcon />
+                    Reconnect Google Drive
+                  </Button>
+                </div>
+              </Banner>
             ) : configuredButOffline ? (
               <Banner tone="warning">
                 Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
               </Banner>
             ) : null}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={connectMemory} data-testid="connect-memory">
-                <ConnectIcon />
-                In-memory (test)
-              </Button>
+              <Tooltip
+                content={
+                  driveConfigured
+                    ? 'Sign in to Google to sync through an **app-private** folder in your Drive. Gubbins can only see that folder — never your other files.'
+                    : 'Google Drive sync is not configured for this build. Set `VITE_GOOGLE_CLIENT_ID` and register your OAuth client (see docs/dev/google-drive-sync.md).'
+                }
+              >
+                <span>
+                  <Button onClick={connectGoogle} disabled={!driveConfigured} data-testid="connect-google-drive">
+                    <CloudIcon />
+                    Google Drive…
+                  </Button>
+                </span>
+              </Tooltip>
               <Tooltip
                 content={
                   fsSupported
@@ -317,6 +345,10 @@ export function SyncScreen() {
                   </Button>
                 </span>
               </Tooltip>
+              <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
+                <ConnectIcon />
+                In-memory (test)
+              </Button>
             </div>
           </Surface>
         )}
@@ -358,59 +390,21 @@ export function SyncScreen() {
           Backup &amp; restore
         </h2>
         <p className="text-sm text-muted-foreground">
-          Backups are a versioned JSON file mirroring the sync payload, so they restore cleanly
-          across devices and schema versions.
+          Save a complete backup — your inventory and records, full-resolution images, and
+          settings — to a single file, then restore it later on this or another device. Choose
+          exactly what to include.
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Tooltip
-            content="Save a versioned JSON snapshot of everything to your downloads — restorable on any device, across schema versions."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button variant="outline" onClick={downloadBackup} disabled={busy} data-testid="download-backup">
-                <DownloadIcon />
-                Download backup
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip
-            content="Load a backup JSON file. It **adds and updates** inventory (re-creating anything deleted since); items you have added are kept."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
-                <RestoreIcon />
-                Restore from file…
-              </Button>
-            </span>
-          </Tooltip>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            data-testid="restore-input"
-            onChange={onFileChosen}
-          />
-        </div>
-        {pendingRestore !== null ? (
-          <Banner tone="warning">
-            <div className="space-y-2">
-              <p>
-                Importing will <strong>add and update inventory from the backup</strong> (re-creating
-                anything deleted since). Existing items you have added are kept.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive" onClick={confirmRestore} data-testid="confirm-restore">
-                  Import backup
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setPendingRestore(null)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </Banner>
-        ) : null}
+        <Tooltip
+          content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
+          triggerTabIndex={-1}
+        >
+          <span>
+            <Button variant="outline" onClick={() => setBackupOpen(true)} data-testid="open-backup">
+              <ArchiveIcon />
+              Backup &amp; restore…
+            </Button>
+          </span>
+        </Tooltip>
       </section>
 
       {/* Push to bridge — for users without folder sync, hand the dataset straight to the
@@ -473,6 +467,24 @@ export function SyncScreen() {
         </Surface>
       </section>
       </main>
+
+      <BackupDialog
+        open={backupOpen}
+        onClose={() => setBackupOpen(false)}
+        onRestored={(message) => {
+          void client.invalidateQueries();
+          setNotice(message);
+        }}
+      />
     </div>
   );
+}
+
+/** Friendly message for an error code captured during the Google sign-in redirect. */
+function googleAuthErrorMessage(code: string): string {
+  if (code === 'access_denied') return 'Google sign-in was cancelled.';
+  if (code === 'state_mismatch') {
+    return 'Google sign-in could not be verified (the request did not match). Please try again.';
+  }
+  return 'Google sign-in did not complete. Please try again.';
 }
