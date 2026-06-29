@@ -21,7 +21,7 @@ import { Tooltip } from '@/components/foundry';
 import { CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
-import { UNASSIGNED_LOCATION_ID, type Item } from '@/db/repositories';
+import { type Item } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
@@ -37,6 +37,7 @@ import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { locationColorTextClass } from './location-color';
+import { defaultLocationForNewItem } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -374,12 +375,18 @@ function InventoryWorkspace() {
         </main>
       </div>
 
-      <CreateItemDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        locations={flatLocations}
-        defaultLocationId={selectedLocationId ?? UNASSIGNED_LOCATION_ID}
-      />
+      {/* Mounted only while open so the location default is re-seeded from the current
+          sidebar selection on every open — a real, user-created location pre-fills the
+          dialog's Location (the form captures `defaultLocationId` on mount). Mirrors the
+          "Add location" dialog in LocationSidebar. */}
+      {addOpen ? (
+        <CreateItemDialog
+          open
+          onClose={() => setAddOpen(false)}
+          locations={flatLocations}
+          defaultLocationId={defaultLocationForNewItem(selectedLocationId, flatLocations)}
+        />
+      ) : null}
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
       {cycleCountOpen && selectedLocationId ? (
         <CycleCountDialog

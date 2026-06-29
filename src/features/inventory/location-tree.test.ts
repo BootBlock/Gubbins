@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescendantIds,
+  defaultLocationForNewItem,
   defaultParentForNewLocation,
   locationPath,
   type FlatNode,
   type FlatSystemNode,
 } from './location-tree';
+import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 
 // workshop → cabinet → drawer; workshop → bench; plus a detached garage.
 const nodes: FlatNode[] = [
@@ -70,5 +72,31 @@ describe('defaultParentForNewLocation', () => {
 
   it('defaults to top level when the selection is no longer in the list', () => {
     expect(defaultParentForNewLocation('deleted', flat)).toBeNull();
+  });
+});
+
+describe('defaultLocationForNewItem', () => {
+  const flat: FlatSystemNode[] = [
+    { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false },
+    { id: 'cabinet', name: 'Cabinet A', parentId: 'workshop', isSystem: false },
+    { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true },
+    { id: 'transit', name: 'In Transit', parentId: null, isSystem: true },
+  ];
+
+  it('pre-fills a real, user-created selection', () => {
+    expect(defaultLocationForNewItem('cabinet', flat)).toBe('cabinet');
+  });
+
+  it('falls back to Unassigned for the "All items" (null) selection', () => {
+    expect(defaultLocationForNewItem(null, flat)).toBe(UNASSIGNED_LOCATION_ID);
+  });
+
+  it('falls back to Unassigned for the system-locked Unassigned / In Transit rows', () => {
+    expect(defaultLocationForNewItem('unassigned', flat)).toBe(UNASSIGNED_LOCATION_ID);
+    expect(defaultLocationForNewItem('transit', flat)).toBe(UNASSIGNED_LOCATION_ID);
+  });
+
+  it('falls back to Unassigned when the selection is no longer in the list', () => {
+    expect(defaultLocationForNewItem('deleted', flat)).toBe(UNASSIGNED_LOCATION_ID);
   });
 });

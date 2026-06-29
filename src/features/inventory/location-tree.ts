@@ -4,6 +4,7 @@
  * `list-window.ts` "extract the logic out of the glue" seam. Used by the location
  * Edit dialog to forbid invalid parent moves and to render an ancestry breadcrumb.
  */
+import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 
 /** The minimal shape these helpers need from a location row. */
 export interface FlatNode {
@@ -62,6 +63,22 @@ export function defaultParentForNewLocation(
   if (!selectedId) return null;
   const selected = nodes.find((n) => n.id === selectedId);
   return selected && !selected.isSystem ? selected.id : null;
+}
+
+/**
+ * The location a freshly-added *item* should default to, given the current sidebar
+ * selection. Mirrors {@link defaultParentForNewLocation} and the "Add location"
+ * behaviour: starting "Add item" from a real, user-created location pre-fills that
+ * location; but the synthetic "All items" (a `null` selection) and the system-locked
+ * rows ("Unassigned", "In Transit") are not meaningful homes to seed, so those fall
+ * back to the Unassigned holding pen. Unlike a top-level location (whose parent is
+ * `null`), an item always needs a concrete home — hence the non-null return.
+ */
+export function defaultLocationForNewItem(
+  selectedId: string | null,
+  nodes: readonly FlatSystemNode[],
+): string {
+  return defaultParentForNewLocation(selectedId, nodes) ?? UNASSIGNED_LOCATION_ID;
 }
 
 /**
