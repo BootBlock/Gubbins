@@ -23,6 +23,8 @@ import {
   type Item,
 } from '@/db/repositories';
 import { readImageBlob } from '@/features/images/opfs-images';
+import { summariseBudget } from '@/features/projects/budget';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   buildItemsCsv,
   buildJsonBackup,
@@ -190,8 +192,22 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   // component notes in their Location sub-folders (§4.5). Other scopes stay flat.
   let build: VaultBuild;
   if (scope === 'PROJECT' && options.targetId) {
-    const project = await getProjectRepository().getById(options.targetId);
-    build = project ? buildProjectVault(project.name, vaultItems) : buildVault(vaultItems);
+    const projectRepo = getProjectRepository();
+    const project = await projectRepo.getById(options.targetId);
+    if (project) {
+      const facts = await projectRepo.getBudget(options.targetId);
+      const summary = summariseBudget(facts, usePreferencesStore.getState().budgetWarnPercent);
+      build = buildProjectVault(project.name, vaultItems, {
+        budget: summary.budget,
+        totalSpent: summary.totalSpent,
+        committedFromBom: summary.committedFromBom,
+        manualExpenseTotal: summary.manualExpenseTotal,
+        remaining: summary.remaining,
+        projectedFinalCost: summary.projectedFinalCost,
+      });
+    } else {
+      build = buildVault(vaultItems);
+    }
   } else {
     build = buildVault(vaultItems);
   }

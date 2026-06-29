@@ -147,6 +147,42 @@ describe('buildProjectMasterNote — §4.5 project scope (Phase 14)', () => {
     expect(note).toContain('- [[Servo]]');
     expect(note).toContain('- [[Bracket]]');
   });
+
+  it('omits the budget section when no budget object is given', () => {
+    const note = buildProjectMasterNote('Robot Arm', [makeItem({ id: 'a', name: 'Servo' })]);
+    expect(note).not.toContain('## Budget');
+  });
+
+  it('renders a budget summary section and frontmatter when budgeted (Phase 58)', () => {
+    const note = buildProjectMasterNote('Robot Arm', [makeItem({ id: 'a', name: 'Servo' })], {
+      budget: 500,
+      totalSpent: 240,
+      committedFromBom: 180,
+      manualExpenseTotal: 60,
+      remaining: 260,
+      projectedFinalCost: 480,
+    });
+    expect(note).toContain('budget: 500');
+    expect(note).toContain('spent: 240');
+    expect(note).toContain('remaining: 260');
+    expect(note).toContain('## Budget');
+    expect(note).toContain('| Budget | 500 |');
+    expect(note).toContain('| Projected total | 480 |');
+  });
+
+  it('still renders spend with no budget set when there is recorded spend', () => {
+    const note = buildProjectMasterNote('Robot Arm', [makeItem({ id: 'a', name: 'Servo' })], {
+      budget: null,
+      totalSpent: 30,
+      committedFromBom: 0,
+      manualExpenseTotal: 30,
+      remaining: null,
+      projectedFinalCost: 30,
+    });
+    expect(note).toContain('## Budget');
+    expect(note).not.toContain('| Budget |'); // no allocated budget row
+    expect(note).toContain('| Spent so far | 30 |');
+  });
 });
 
 describe('buildVault rootFolder — §4.5 project sub-folders (Phase 19)', () => {

@@ -9,7 +9,9 @@
  * serialised auto-clone, freeform tagging, and the real image pipeline (canvas→WebP
  * compression → raw OPFS file → thumbnail); plus the Phase 4 flows: create a project,
  * add a BOM line, see the automated shopping list, toggle the costing mode, reserve
- * stock, and move a line into the "In Transit" procurement state; plus the Phase 5
+ * stock, and move a line into the "In Transit" procurement state (plus the Phase 58
+ * §4 budgeting flow: set a project budget, record an expense, and see the over-budget
+ * status surface); plus the Phase 5
  * flows: a real FTS5 full-text search over the item index, adding a weighted
  * capability to an item, and building a graphical Visual-Builder query that filters
  * by that capability; plus the Phase 6 flows: generating a printable QR code,
@@ -681,6 +683,30 @@ try {
     const costing = page.getByLabel('Costing mode');
     await costing.selectOption('POINT_IN_TIME');
     await expectSelectValue(costing, 'POINT_IN_TIME', 'Costing mode');
+  });
+
+  await step('sets a project budget and records an expense over it (§4 budgeting, Phase 58)', async () => {
+    // Set a deliberately small budget so a single expense pushes the project over it.
+    await page.getByTestId('set-budget').click();
+    let dialog = page.getByRole('dialog', { name: 'Project budget' });
+    await dialog.getByTestId('budget-amount-input').fill('10');
+    await dialog.getByTestId('budget-save').click();
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    // Record a manual expense that exceeds the budget.
+    await page.getByTestId('add-expense').click();
+    dialog = page.getByRole('dialog', { name: 'Add expense' });
+    await dialog.getByLabel('Description').fill('Smoke shipping');
+    await dialog.getByTestId('expense-amount-input').fill('25');
+    await dialog.getByTestId('expense-save').click();
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    // The expense lands in the ledger and the card reports an over-budget status.
+    await page.getByText('Smoke shipping').first().waitFor({ state: 'visible', timeout: 5000 });
+    await page
+      .getByTestId('budget-status')
+      .filter({ hasText: 'Over budget' })
+      .waitFor({ state: 'visible', timeout: 5000 });
   });
 
   await step('reserves stock on the BOM line', async () => {

@@ -183,10 +183,15 @@ export function buildVault(
 export function buildProjectVault(
   projectName: string,
   vaultItems: readonly VaultItem[],
+  budget?: VaultBudget,
 ): VaultBuild {
   const folder = sanitiseSegment(projectName) || PROJECT_FOLDER_FALLBACK;
   const { files, assets } = buildVault(vaultItems, { rootFolder: folder });
-  const master = buildProjectMasterNote(projectName, vaultItems.map((entry) => entry.item));
+  const master = buildProjectMasterNote(
+    projectName,
+    vaultItems.map((entry) => entry.item),
+    budget,
+  );
   return { files: { ...files, [`${folder}/${folder}.md`]: master }, assets };
 }
 
@@ -248,22 +253,55 @@ function renderItemMarkdown(entry: VaultItem, imageNames: readonly string[]): st
 }
 
 /**
- * The master `.md` for a Project/BOM-scope vault export (§4.5): Dataview frontmatter
- * plus a component checklist wiki-linking each item note by name.
+ * Budget figures for a Project/BOM-scope vault export (§4 budgeting). A locale-free,
+ * repository-free numeric subset so the pure exporter can render it without a formatter.
  */
-export function buildProjectMasterNote(projectName: string, items: readonly Item[]): string {
+export interface VaultBudget {
+  readonly budget: number | null;
+  readonly totalSpent: number;
+  readonly committedFromBom: number;
+  readonly manualExpenseTotal: number;
+  readonly remaining: number | null;
+  readonly projectedFinalCost: number;
+}
+
+/**
+ * The master `.md` for a Project/BOM-scope vault export (§4.5): Dataview frontmatter
+ * plus a component checklist wiki-linking each item note by name, and — when the project
+ * carries a budget or any recorded spend — a `## Budget` summary (§4 budgeting).
+ */
+export function buildProjectMasterNote(
+  projectName: string,
+  items: readonly Item[],
+  budget?: VaultBudget,
+): string {
+  const showBudget = budget != null && (budget.budget != null || budget.totalSpent > 0);
+
   const lines: string[] = [
     '---',
     'type: project',
     `name: ${yamlValue(projectName)}`,
     `components: ${items.length}`,
-    '---',
-    '',
-    `# ${projectName}`,
-    '',
-    '## Components',
-    '',
   ];
+  if (showBudget) {
+    lines.push(`budget: ${budget.budget ?? 'null'}`);
+    lines.push(`spent: ${budget.totalSpent}`);
+    if (budget.remaining != null) lines.push(`remaining: ${budget.remaining}`);
+  }
+  lines.push('---', '', `# ${projectName}`, '');
+
+  if (showBudget) {
+    lines.push('## Budget', '', '| Measure | Amount |', '| --- | --- |');
+    if (budget.budget != null) lines.push(`| Budget | ${budget.budget} |`);
+    lines.push(`| Committed (BOM) | ${budget.committedFromBom} |`);
+    lines.push(`| Expenses | ${budget.manualExpenseTotal} |`);
+    lines.push(`| Spent so far | ${budget.totalSpent} |`);
+    if (budget.remaining != null) lines.push(`| Remaining | ${budget.remaining} |`);
+    lines.push(`| Projected total | ${budget.projectedFinalCost} |`);
+    lines.push('');
+  }
+
+  lines.push('## Components', '');
   for (const item of items) lines.push(`- [[${item.name}]]`);
   lines.push('');
   return lines.join('\n');
