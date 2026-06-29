@@ -17,7 +17,7 @@
 > - **Deferred (not dropped):** every remaining open item is a conditional/YAGNI Backlog entry with **no live trigger** (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded WASM decoder, live distributor selector maintenance, further `aria-live`). **No mandated spec gap and no tracked location-UI residual remain.** Tracked in `docs/todo/deferred-features.md` (Phase-55 section + the Phase-54 deferral now ticked).
 
 > Protocol Alpha (§8.1.2): the incoming Phase 56 agent **must** read both the master specification
-> (`docs/todo/_specification.md`) and this document before writing any code, and must reuse the established
+> (`docs/todo/done/_specification.md`) and this document before writing any code, and must reuse the established
 > Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather than inventing new ones.
 > **The spec's numbered phases end at Phase 9; Phases 10+ are consolidation phases delivering the explicitly
 > *deferred-not-dropped* work in `docs/todo/deferred-features.md`.** As of Phase 55 **every enumerated consolidation

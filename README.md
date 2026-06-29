@@ -14,7 +14,7 @@ A **local-first, offline-capable Progressive Web App** for tracking electronic c
 
 ## Locked implementation decisions
 
-See **`docs/todo/_specification.md` §1.2** for the binding decisions (SQLite distribution, package manager, hosting, cloud-sync strategy) and the rationale behind them. The master specification is the absolute source of truth.
+See **`docs/todo/done/_specification.md` §1.2** for the binding decisions (SQLite distribution, package manager, hosting, cloud-sync strategy) and the rationale behind them. The master specification is the absolute source of truth.
 
 | Area | Decision |
 | --- | --- |
