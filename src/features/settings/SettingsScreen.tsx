@@ -24,12 +24,14 @@ import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesSt
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
+  BUDGET_WARN_BOUNDS,
   CURRENCY_OPTIONS,
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
   THEME_OPTIONS,
   WINDOW_MONTH_OPTIONS,
+  clampBudgetWarnPercent,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
@@ -305,6 +307,24 @@ export function SettingsScreen() {
               onChange={(e) =>
                 prefs.setLowStockGaugePercent(clampLowStockGaugePercent(Number(e.target.value)))
               }
+            />
+            <span className="text-sm text-muted-foreground">%</span>
+          </div>
+        </SettingRow>
+        <SettingRow
+          label="Budget warning threshold"
+          description={`Projects are flagged on the dashboard once spending reaches this percentage of their budget (${BUDGET_WARN_BOUNDS.min}–${BUDGET_WARN_BOUNDS.max}).`}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              aria-label="Budget warning threshold"
+              data-testid="setting-budget-warn"
+              type="number"
+              min={BUDGET_WARN_BOUNDS.min}
+              max={BUDGET_WARN_BOUNDS.max}
+              className="h-9 w-24 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+              value={prefs.budgetWarnPercent}
+              onChange={(e) => prefs.setBudgetWarnPercent(clampBudgetWarnPercent(Number(e.target.value)))}
             />
             <span className="text-sm text-muted-foreground">%</span>
           </div>

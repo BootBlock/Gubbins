@@ -25,6 +25,7 @@ import {
   TruckIcon,
   LowStockIcon,
   ProjectIcon,
+  BudgetIcon,
   LinkIcon,
   PackageIcon,
   ContactsIcon,
@@ -37,7 +38,8 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenance } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
-import { useProjects } from '@/features/projects/projects';
+import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
+import { budgetStatus } from '@/features/projects/budget';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -228,6 +230,41 @@ function ProjectsWidget() {
   );
 }
 
+function BudgetAlertsWidget() {
+  const warnPercent = usePreferencesStore((s) => s.budgetWarnPercent);
+  const fmt = useFormatters();
+  const alerts = useBudgetAlerts();
+  // Flag projects whose spend so far (BOM commitments + manual expenses) — or whose
+  // projected final cost — is at/over budget. Only budgeted projects are returned, so an
+  // empty result simply means everything is on track (§3 "Budget alerts").
+  const flagged = (alerts.data ?? [])
+    .map((a) => {
+      const spentSoFar = a.committedFromBom + a.manualExpenseTotal;
+      const projectedFinalCost = a.estimatedCost + a.manualExpenseTotal;
+      const status = budgetStatus(spentSoFar, a.budget, warnPercent);
+      const projectedStatus = budgetStatus(projectedFinalCost, a.budget, warnPercent);
+      const over = status === 'OVER' || projectedStatus === 'OVER';
+      const warn = status === 'WARN' || projectedStatus === 'WARN';
+      return { ...a, spentSoFar, over, warn };
+    })
+    .filter((a) => a.over || a.warn)
+    // Surface the worst offenders first: over-budget before merely-warning.
+    .sort((a, b) => Number(b.over) - Number(a.over));
+
+  const tone: Tone = flagged.some((a) => a.over) ? 'danger' : flagged.some((a) => a.warn) ? 'warning' : 'quiet';
+  return (
+    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone}>
+      {flagged.length === 0 ? (
+        <EmptyRow>All budgets on track.</EmptyRow>
+      ) : (
+        flagged.slice(0, 3).map((a) => (
+          <WidgetRow key={a.projectId} label={a.projectName} meta={`${fmt.currency(a.spentSoFar)} / ${fmt.currency(a.budget)}`} />
+        ))
+      )}
+    </WidgetShell>
+  );
+}
+
 function QuickLinksWidget() {
   const links = [
     { to: '/inventory', label: 'Inventory', icon: <PackageIcon /> },
@@ -339,6 +376,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   { id: 'maintenance', title: 'Maintenance due', icon: <MaintenanceIcon />, to: '/inventory', Component: MaintenanceWidget },
   { id: 'in-transit', title: 'In transit', icon: <TruckIcon />, to: '/inventory', Component: InTransitWidget },
   { id: 'projects', title: 'Project statuses', icon: <ProjectIcon />, to: '/projects', Component: ProjectsWidget },
+  { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
   { id: 'quick-links', title: 'Quick links', icon: <LinkIcon />, Component: QuickLinksWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, Component: StorageWidget },

@@ -25,6 +25,7 @@ import { BomLineTable } from './BomLineTable';
 import { AddBomLineDialog } from './AddBomLineDialog';
 import { ImportBomDialog } from './ImportBomDialog';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
+import { BudgetSection } from './BudgetSection';
 
 /** The selected project's workspace: BOM table, costing toggle and shopping list. */
 export function ProjectDetail({
@@ -182,6 +183,10 @@ export function ProjectDetail({
       </Surface>
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pb-4">
+        <section aria-label="Budget">
+          <BudgetSection projectId={projectId} />
+        </section>
+
         <section>
           <h3 className="mb-2 text-sm font-semibold">Bill of materials</h3>
           {lines.isLoading ? <Spinner /> : <BomLineTable projectId={projectId} lines={lineRows} />}
