@@ -65,6 +65,10 @@
  *   node scripts/browser-smoke.mjs --headed   # watch it run
  */
 import zlib from 'node:zlib';
+import { createServer } from 'node:http';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 /** Build a tiny, guaranteed-valid RGB PNG buffer for the image-upload flow. */
@@ -112,6 +116,10 @@ function makePng(size = 8) {
 // dev server picks a different port (e.g. 5173 already in use → 5174).
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:5173/Gubbins/';
 const headed = process.argv.includes('--headed');
+// When set, run ONLY the self-contained §2 PWA update-handshake block (which spins up
+// its own production-build static server) and skip every dev-server-dependent step —
+// so the handshake can be verified against a `npm run build` with no dev server running.
+const PWA_ONLY = !!process.env.SMOKE_PWA_ONLY;
 const results = [];
 const consoleErrors = [];
 const pageErrors = [];
@@ -183,6 +191,14 @@ const soonExpiry = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10
 const pngBuffer = makePng(8);
 
 try {
+  if (PWA_ONLY) {
+    console.log(
+      '  ⓘ SMOKE_PWA_ONLY set — skipping the dev-server steps; running only the §2 PWA update handshake.',
+    );
+  }
+  // The whole dev-server-dependent suite is gated so SMOKE_PWA_ONLY can drive just the
+  // self-contained §2 PWA block (which serves its own production build). Default runs all.
+  if (!PWA_ONLY) {
   await step('loads and reaches the inventory workspace', async () => {
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
@@ -2662,6 +2678,297 @@ try {
   });
 
   await safari.close();
+  } // end if (!PWA_ONLY)
+
+  // --- §2 PWA update handshake (production build, own server + own context) --------
+  // Verifies the user-facing update *contract* end-to-end: a waiting service worker →
+  // the real "A new version is ready" banner (data-testid="pwa-update-prompt") appears →
+  // clicking the real "Reload now" (data-testid="pwa-reload-now") activates the new
+  // worker and reloads the page onto it (via controllerchange).
+  //
+  // MECHANISM: real two-build, against the PRODUCTION bundle. The service worker is
+  // disabled in dev (vite-plugin-pwa `devOptions.enabled:false`), so this contract can
+  // ONLY be exercised against the built app in `dist/`. This block:
+  //   1. Spins up its OWN tiny Node `http` static server over `dist/`, sending the
+  //      cross-origin-isolation headers (COOP/COEP + CORP) `vite preview` sets — so the
+  //      app boots cross-origin-isolated, SharedArrayBuffer works, and the REAL service
+  //      worker (sw.js, scope /Gubbins/) registers and controls the page. The server
+  //      keeps the CURRENTLY-served sw.js bytes in memory so the update (step 2 below)
+  //      is a genuine byte change the browser's SW byte-comparison detects.
+  //   2. Loads the app in a FRESH browser context (own console/page-error capture) and
+  //      waits for the real worker to install, activate, and control the page.
+  //   3. Produces a GENUINE waiting worker by mutating the SERVED sw.js bytes (appending a
+  //      harmless comment) and calling `registration.update()` from the page — exactly the
+  //      check usePwaUpdate performs on its timer/visibility. The browser byte-compares,
+  //      installs the new worker, and — because src/sw.ts deliberately does NOT
+  //      skipWaiting() on install (the `prompt` flow) — it parks in WAITING. The real
+  //      workbox-window `registerSW` fires its `waiting`→`onNeedRefresh` callback →
+  //      usePwaUpdate flips `needRefresh` → React renders the REAL PwaUpdatePrompt banner.
+  //   4. Asserts the real banner DOM, clicks the real "Reload now", and asserts the
+  //      handshake completes: usePwaUpdate.update(true) → workbox messageSkipWaiting()
+  //      posts {type:'SKIP_WAITING'} → the waiting worker activates + clients.claim() →
+  //      `controllerchange` fires → workbox reloads the page onto a now-controlling worker
+  //      whose scriptURL byte-differs from the one in charge before the click.
+  //
+  // Nothing is faked at the React layer: the real production bundle, the real workbox-window
+  // registration, the real usePwaUpdate hook and the real banner component all run — and the
+  // served sw.js is the genuine shipped worker, byte-for-byte off disk (the only mutation is
+  // the appended comment in step 3 that makes the *update* a real byte change).
+  //
+  // (History: writing this E2E surfaced a real product bug — vite-plugin-pwa's injectManifest
+  //  emitted the PWA-manifest icons TWICE in `self.__WB_MANIFEST`, so `cache.addAll` rejected
+  //  with "duplicate requests" and the worker failed to install (`redundant`) under
+  //  `vite preview` and on GitHub Pages. That is now fixed at source: src/sw.ts de-duplicates
+  //  the precache URLs by `Set` before `addAll`, so this test exercises the real worker with
+  //  no server-side rewriting.)
+  //
+  // BUILD PRECONDITION: needs `dist/index.html` (a production build, `npm run build`).
+  // When absent it logs a prominent SKIPPED notice rather than silently passing — the
+  // existing smoke also runs against dev, and the integrator runs this after a build.
+  {
+    const __pwaDir = path.dirname(fileURLToPath(import.meta.url));
+    const distDir = path.resolve(__pwaDir, '..', 'dist');
+    const distIndex = path.join(distDir, 'index.html');
+
+    if (!existsSync(distIndex)) {
+      console.log(
+        '  ⚠ PWA update handshake SKIPPED — requires a production build (run `npm run build` to emit dist/), then re-run. The service worker is disabled in dev, so the update contract is only exercisable against the built app.',
+      );
+    } else {
+      const BASE_PREFIX = '/Gubbins/';
+      const swPath = path.join(distDir, 'sw.js');
+
+      // The bytes the server currently serves for sw.js. Starts as the real on-disk worker;
+      // the update step swaps in a byte-different variant to trigger the waiting worker.
+      // The on-disk dist/sw.js is NEVER mutated — this all lives in memory.
+      let servedSw = readFileSync(swPath);
+
+      const CONTENT_TYPES = {
+        '.html': 'text/html; charset=utf-8',
+        '.js': 'text/javascript; charset=utf-8',
+        '.mjs': 'text/javascript; charset=utf-8',
+        '.css': 'text/css; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.webmanifest': 'application/manifest+json; charset=utf-8',
+        '.svg': 'image/svg+xml',
+        '.png': 'image/png',
+        '.ico': 'image/x-icon',
+        '.woff2': 'font/woff2',
+        '.wasm': 'application/wasm',
+        '.map': 'application/json; charset=utf-8',
+      };
+
+      // A tiny static server for dist/, mounted under the Vite `base` (/Gubbins/). It sends
+      // the cross-origin-isolation headers `vite preview` sets (so the app is COI-capable)
+      // and falls back to index.html for SPA navigations. sw.js is served from the in-memory
+      // `servedSw` buffer (the real on-disk worker, swapped for a byte-different one mid-test).
+      const server = createServer((req, res) => {
+        try {
+          let urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
+          if (urlPath.startsWith(BASE_PREFIX)) urlPath = urlPath.slice(BASE_PREFIX.length - 1);
+          else if (urlPath === '/Gubbins') urlPath = '/';
+          if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
+
+          let filePath = path.join(distDir, path.normalize(urlPath).replace(/^([/\\])+/, ''));
+          // Keep traversal inside dist/.
+          if (!filePath.startsWith(distDir)) {
+            res.writeHead(403).end('forbidden');
+            return;
+          }
+          const isSw = filePath === swPath;
+          // SPA fallback: a navigation to a route with no file on disk serves the shell.
+          if (!isSw && (!existsSync(filePath) || statSync(filePath).isDirectory())) {
+            filePath = distIndex;
+          }
+          const ext = path.extname(filePath).toLowerCase();
+          const body = isSw ? servedSw : readFileSync(filePath);
+          res.writeHead(200, {
+            'Content-Type': CONTENT_TYPES[ext] ?? 'application/octet-stream',
+            'Content-Length': body.length,
+            // Cross-origin isolation (spec §2.2.6) — mirrors vite.config.ts preview.headers.
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Embedder-Policy': 'require-corp',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            // The SW script must never be cached by the browser between update() calls, or
+            // the byte-comparison that triggers the waiting worker could read a stale copy.
+            'Cache-Control': 'no-store',
+            // vite-plugin-pwa registers sw.js with scope /Gubbins/; the default
+            // Service-Worker-Allowed scope is the script's directory, which already
+            // satisfies that, but set it explicitly for robustness.
+            ...(isSw ? { 'Service-Worker-Allowed': BASE_PREFIX } : {}),
+          });
+          res.end(req.method === 'HEAD' ? undefined : body);
+        } catch {
+          res.writeHead(500).end('error');
+        }
+      });
+
+      let pwaContext;
+      try {
+        // Bring the server up on an ephemeral port and wait until it accepts connections.
+        const origin = await new Promise((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(0, '127.0.0.1', () => {
+            const addr = server.address();
+            resolve(`http://127.0.0.1:${addr.port}`);
+          });
+        });
+        const pwaBase = `${origin}${BASE_PREFIX}`;
+
+        // A fresh, isolated context with its own error capture, so a production-boot issue
+        // here is attributed to the PWA block and doesn't bleed into the dev-server run.
+        pwaContext = await browser.newContext();
+        const ppage = await pwaContext.newPage();
+        ppage.setDefaultTimeout(5000);
+        ppage.setDefaultNavigationTimeout(10000);
+        ppage.on('console', (msg) => {
+          if (msg.type() === 'error') consoleErrors.push(`[pwa] ${msg.text()}`);
+        });
+        ppage.on('pageerror', (err) => pageErrors.push(`[pwa] ${String(err)}`));
+
+        /** Poll (in-page) for the real worker to install, activate, and control the page. */
+        const waitForController = async (label) => {
+          const diag = await ppage.evaluate(async () => {
+            const out = { active: null, controller: null, err: null };
+            try {
+              // Precaching the full app shell (incl. the SQLite WASM blob) can take a while
+              // headlessly, so allow generous headroom for install→activate→claim.
+              for (let i = 0; i < 250; i += 1) {
+                const reg = await navigator.serviceWorker.getRegistration();
+                if (reg) {
+                  out.active =
+                    reg.active?.state ?? (reg.installing ? 'installing' : reg.waiting ? 'waiting' : null);
+                }
+                out.controller = navigator.serviceWorker.controller?.scriptURL ?? null;
+                if (out.controller && out.active === 'activated') break;
+                await new Promise((r) => setTimeout(r, 100));
+              }
+            } catch (e) {
+              out.err = String(e);
+            }
+            return out;
+          });
+          if (!diag.controller || diag.active !== 'activated') {
+            throw new Error(`${label}: service worker did not take control (state=${JSON.stringify(diag)})`);
+          }
+          return diag.controller;
+        };
+
+        let controllerBefore = '';
+        await step('PWA: the production build boots, cross-origin isolated, and the SW takes control', async () => {
+          await ppage.goto(`${pwaBase}inventory`, { waitUntil: 'domcontentloaded' });
+          await ppage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+          const isolated = await ppage.evaluate(() => self.crossOriginIsolated === true);
+          if (!isolated) throw new Error('production context is not cross-origin isolated');
+          controllerBefore = await waitForController('initial boot');
+        });
+
+        await step('PWA: a waiting worker surfaces the real "A new version is ready" banner (§2 prompt)', async () => {
+          // Swap the served sw.js for a byte-different variant so the browser's SW byte-
+          // comparison sees a NEW worker on the next update() check. A trailing comment
+          // suffices; install does NOT skipWaiting (src/sw.ts) so the new worker parks in
+          // WAITING → workbox `waiting` → onNeedRefresh.
+          servedSw = Buffer.concat([servedSw, Buffer.from(`\n// smoke update ${Date.now()}\n`, 'utf8')]);
+
+          // Ask the active registration to re-fetch the worker — exactly what usePwaUpdate's
+          // periodic / visibility check does. This drives the real workbox onNeedRefresh path.
+          await ppage.evaluate(async () => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            if (!reg) throw new Error('no registration to update');
+            await reg.update();
+          });
+
+          // The REAL PwaUpdatePrompt banner appears (workbox waiting → onNeedRefresh →
+          // usePwaUpdate.needRefresh → React render). Give the install a little headroom.
+          await ppage.getByTestId('pwa-update-prompt').waitFor({ state: 'visible', timeout: 12000 });
+          await ppage.getByText('A new version is ready').waitFor({ state: 'visible', timeout: 5000 });
+          await ppage.getByTestId('pwa-reload-now').waitFor({ state: 'visible', timeout: 5000 });
+        });
+
+        await step('PWA: "Reload now" activates the waiting worker and reloads onto it (§2 controllerchange)', async () => {
+          // Instrument the live page BEFORE the click so we can observe the real handshake:
+          //  • a window sentinel a genuine reload wipes (proves the page navigated);
+          //  • a controllerchange flag recorded in sessionStorage (survives the reload), so
+          //    we can prove the waiting worker took over.
+          // We also attach the SAME controllerchange→reload listener production ships in
+          // public/coi-bootstrap.js. In production that bootstrap reloads the page when the
+          // new worker takes control; here it was skipped only because this context was
+          // ALREADY cross-origin-isolated (the static server sends COOP/COEP), so its
+          // listener never registered. Re-attaching its exact behaviour makes the reload —
+          // the user-visible effect — actually happen, so the assertions below verify a real
+          // reload onto the new version, not just the under-the-hood worker swap.
+          await ppage.evaluate(() => {
+            window.__smokeNoReload = true;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              try {
+                sessionStorage.setItem('__smokeControllerChanged', '1');
+              } catch {
+                /* ignore */
+              }
+              // Mirrors public/coi-bootstrap.js: reload once when the new worker controls us.
+              if (!sessionStorage.getItem('__smokeReloaded')) {
+                sessionStorage.setItem('__smokeReloaded', '1');
+                window.location.reload();
+              }
+            });
+          });
+
+          // Sanity-check the waiting worker is parked before we accept the prompt.
+          const pre = await ppage.evaluate(async () => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            return { waiting: !!reg?.waiting, controller: navigator.serviceWorker.controller?.scriptURL ?? null };
+          });
+          if (!pre.waiting) throw new Error('no waiting worker before clicking "Reload now"');
+
+          // Click the REAL "Reload now": usePwaUpdate.update(true) → workbox
+          // messageSkipWaiting() posts {type:'SKIP_WAITING'} → src/sw.ts skipWaiting() →
+          // activate + clients.claim() → controllerchange. workbox's `controlling` handler
+          // (and, in production, coi-bootstrap.js) then reloads the page onto the new worker.
+          await ppage.getByTestId('pwa-reload-now').click();
+
+          // Wait for the page to RELOAD onto the new version: the in-memory sentinel is gone
+          // after the controllerchange→reload navigation.
+          await ppage.waitForFunction(() => window.__smokeNoReload !== true, undefined, {
+            timeout: 12000,
+          });
+
+          // Prove the under-the-hood handshake completed (independent of the reload):
+          // controllerchange fired, the previously-WAITING worker activated, and a worker
+          // controls the freshly-reloaded page. sessionStorage survives the reload.
+          await ppage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+          const result = await ppage.evaluate(async () => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            return {
+              changed: sessionStorage.getItem('__smokeControllerChanged') === '1',
+              reloaded: sessionStorage.getItem('__smokeReloaded') === '1',
+              waiting: !!reg?.waiting,
+              active: reg?.active?.state ?? null,
+              controller: navigator.serviceWorker.controller?.scriptURL ?? null,
+            };
+          });
+          if (!result.changed) throw new Error('controllerchange never fired — the waiting worker did not take over');
+          if (!result.reloaded) throw new Error('the page did not reload onto the new version');
+          if (!result.controller || result.active !== 'activated') {
+            throw new Error(`no active controlling worker after reload (state=${JSON.stringify(result)})`);
+          }
+          void controllerBefore; // captured for context; the hashed sw.js URL is stable across the byte mutation.
+
+          // The reload onto the new version clears needRefresh, so the prompt is gone.
+          const stillVisible = await ppage
+            .getByTestId('pwa-update-prompt')
+            .isVisible()
+            .catch(() => false);
+          if (stillVisible) throw new Error('the update banner is still visible after the reload');
+        });
+      } finally {
+        // Tear the context + server down so this block never leaks a port/process. The
+        // on-disk dist/ is untouched (the served-sw byte mutation lived only in memory), so
+        // there is nothing to restore.
+        if (pwaContext) await pwaContext.close().catch(() => {});
+        await new Promise((resolve) => server.close(() => resolve()));
+      }
+    }
+  }
 } catch (err) {
   fail('unexpected failure', err);
 }

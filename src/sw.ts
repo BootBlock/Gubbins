@@ -23,9 +23,18 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 
 // `self.__WB_MANIFEST` is the injection point vite-plugin-pwa replaces at build
 // time; the cast erases to exactly that token in the emitted worker.
-const PRECACHE_URLS = (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map(
-  (entry) => entry.url,
-);
+//
+// De-duplicate by URL: the injected manifest can list the same asset twice (the
+// PWA-manifest icons are emitted both by the precache glob and the webmanifest
+// `icons` injection), and `cache.addAll` REJECTS on duplicate requests
+// ("Cache.addAll(): duplicate requests") — which would abort `install` and leave the
+// worker `redundant`, so no update could ever activate. A `Set` over the URLs keeps
+// `addAll` happy while precaching exactly the same asset set.
+const PRECACHE_URLS = [
+  ...new Set(
+    (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => entry.url),
+  ),
+];
 
 const CACHE = 'gubbins-precache-v1';
 const INDEX_URL = 'index.html';
@@ -41,8 +50,21 @@ const INDEX_URL = 'index.html';
 const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy();
 
 sw.addEventListener('install', (event) => {
-  sw.skipWaiting();
+  // Deliberately NOT skipWaiting() here. Under the `prompt` update flow a new worker
+  // installs but stays *waiting* until the user accepts the in-app "Reload now" prompt
+  // — so a deploy never activates mid-session and never discards unsaved work. The
+  // page asks this worker to take over by posting `SKIP_WAITING` (see below).
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS)));
+});
+
+// The page (workbox-window's `messageSkipWaiting`, driven by usePwaUpdate's "Reload
+// now" action) posts `{ type: 'SKIP_WAITING' }` to hand control to this waiting worker.
+// `activate` then `clients.claim()`s, which fires `controllerchange` and reloads the
+// page onto the new version. This is vite-plugin-pwa's supported `prompt` handshake.
+sw.addEventListener('message', (event) => {
+  if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') {
+    sw.skipWaiting();
+  }
 });
 
 sw.addEventListener('activate', (event) => {

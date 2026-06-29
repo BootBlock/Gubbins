@@ -115,10 +115,15 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
-      // Register via an external `'self'` script (registerSW.js), not an inline snippet, so
-      // the CSP can forbid inline script entirely (see src/csp.ts).
-      injectRegister: 'script',
+      // `prompt` (not `autoUpdate`): a new build installs but stays *waiting* — it never
+      // activates or reloads the page out from under the user. The app surfaces a
+      // "Reload now" prompt (PwaUpdatePrompt) and only swaps to the new version when the
+      // user opts in, so in-flight, unsaved work on the current page is never lost.
+      registerType: 'prompt',
+      // Registration happens in app code via the `virtual:pwa-register` module
+      // (usePwaUpdate), which is part of the hashed app bundle — so the CSP can still
+      // forbid inline script entirely (see src/csp.ts). Hence no injected snippet.
+      injectRegister: null,
       injectManifest: {
         // SQLite WASM binaries are large, so lift the default 2 MiB single-file cap.
         // `png` is included so the raster app icons are precached for offline too.
