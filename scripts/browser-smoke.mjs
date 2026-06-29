@@ -381,7 +381,10 @@ try {
     await page.getByRole('button', { name: 'Add location' }).click();
     dialog = page.getByRole('dialog', { name: 'Add location' });
     await dialog.getByLabel('Name').fill(`Shelf ${stamp}`);
-    await dialog.getByLabel('Parent (optional)').selectOption({ label: `Workshop ${stamp}` });
+    // The Parent picker is a custom listbox (so each row can show a right-aligned item
+    // count); open it and click the option rather than using native selectOption.
+    await dialog.getByRole('combobox', { name: 'Parent (optional)' }).click();
+    await dialog.getByRole('option', { name: `Workshop ${stamp}` }).click();
     await dialog.getByRole('button', { name: 'Create' }).click();
     await page.getByText(`Shelf ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
   });

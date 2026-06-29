@@ -171,6 +171,15 @@
   --color-glyph-neutral: var(--glyph-neutral);
 
   /*
+   * Right-aligned "N items" hint inside the location Parent picker (and similar
+   * secondary metadata columns). Deliberately the active `--foreground` at 70%
+   * alpha: a single derived token that needs no separate light/dark literal — it
+   * inherits whichever foreground the theme sets and simply blends a touch into the
+   * surface behind it, reading slightly dimmer than the option's own label.
+   */
+  --color-item-count: color-mix(in oklab, var(--foreground) 70%, transparent);
+
+  /*
    * Vertical gap between a form field's label and the control beneath it
    * (spec §2.4.1). Centralised as a single spacing token so the whole app's
    * field rhythm is consistent and tweakable in one place: every standard

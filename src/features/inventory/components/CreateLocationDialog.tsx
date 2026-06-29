@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { useId, useMemo, useState } from 'react';
+import { Button, Input, Modal } from '@/components/foundry';
 import type { LocationWithCount } from '@/db/repositories';
+import { useFormatters } from '@/lib/useFormatters';
 import { useCreateLocation } from '../mutations';
+import { LocationSelect, type LocationOption } from './LocationSelect';
 
 /** Create a (optionally nested) location (spec §4). */
 export function CreateLocationDialog({
@@ -16,8 +18,26 @@ export function CreateLocationDialog({
   defaultParentId?: string | null;
 }) {
   const create = useCreateLocation();
+  const fmt = useFormatters();
+  const parentLabelId = useId();
   const [name, setName] = useState('');
   const [parentId, setParentId] = useState<string>(defaultParentId ?? '');
+
+  // The parent choices: "top level" plus every user-created location, each carrying a
+  // right-aligned item-count hint (system locations are never valid parents).
+  const parentOptions = useMemo<LocationOption[]>(
+    () => [
+      { value: '', label: '— Top level —' },
+      ...locations
+        .filter((l) => !l.isSystem)
+        .map((loc) => ({
+          value: loc.id,
+          label: loc.name,
+          meta: `${fmt.quantity(loc.itemCount)} ${loc.itemCount === 1 ? 'item' : 'items'}`,
+        })),
+    ],
+    [locations, fmt],
+  );
 
   const submit = () => {
     if (name.trim().length === 0) return;
@@ -45,19 +65,17 @@ export function CreateLocationDialog({
             placeholder="e.g. Workshop, Cabinet A, Drawer 3"
           />
         </label>
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Parent (optional)</span>
-          <Select value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">— Top level —</option>
-            {locations
-              .filter((l) => !l.isSystem)
-              .map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-          </Select>
-        </label>
+        <div className="block">
+          <span id={parentLabelId} className="mb-field-gap block text-sm font-medium">
+            Parent (optional)
+          </span>
+          <LocationSelect
+            labelledBy={parentLabelId}
+            value={parentId}
+            onChange={setParentId}
+            options={parentOptions}
+          />
+        </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
