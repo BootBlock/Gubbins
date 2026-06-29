@@ -3,9 +3,9 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { LocationSidebar } from './LocationSidebar';
 
-// Keep the test free of the Web Worker / QueryClient: the sidebar (and the always-mounted
-// CreateLocationDialog) only need these mutation hooks to exist. Shared spies (via
-// vi.hoisted) let us assert what a rename/delete dispatched.
+// Keep the test free of the Web Worker / QueryClient: the sidebar (and the
+// CreateLocationDialog it mounts on demand) only need these mutation hooks to exist.
+// Shared spies (via vi.hoisted) let us assert what a rename/delete dispatched.
 const spies = vi.hoisted(() => ({
   update: vi.fn(),
   del: vi.fn(),

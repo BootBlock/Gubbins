@@ -64,6 +64,14 @@ export function LocationSidebar({
 
   const isOpen = (id: string, level: number) => overrides.get(id) ?? level === 1;
 
+  // When the "+" button is pressed while a real, user-created location is selected,
+  // seed the new location's parent with that selection — so adding inside a location
+  // nests under it by default. The synthetic "All items" (null selection) and the
+  // system-locked rows ("Unassigned", "In Transit") are *not* valid parents, so a
+  // new location started from any of those defaults to top level.
+  const selectedLocation = selectedId ? flat.find((l) => l.id === selectedId) : undefined;
+  const addParentId = selectedLocation && !selectedLocation.isSystem ? selectedLocation.id : null;
+
   const setRowRef = (id: string) => (el: HTMLDivElement | null) => {
     if (el) rowRefs.current.set(id, el);
     else rowRefs.current.delete(id);
@@ -163,7 +171,16 @@ export function LocationSidebar({
         {renderNodes(tree, 1)}
       </div>
 
-      <CreateLocationDialog open={addOpen} onClose={() => setAddOpen(false)} locations={flat} />
+      {/* Mounted only while open so the parent default is re-seeded from the current
+          selection on every open (the dialog captures `defaultParentId` on mount). */}
+      {addOpen ? (
+        <CreateLocationDialog
+          open
+          onClose={() => setAddOpen(false)}
+          locations={flat}
+          defaultParentId={addParentId}
+        />
+      ) : null}
       {editLocation ? (
         <EditLocationDialog
           open
