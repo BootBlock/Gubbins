@@ -9,8 +9,10 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  CURRENCY_OPTIONS,
   DEFAULT_WINDOW_MONTHS,
   EXPIRY_WINDOW_BOUNDS,
+  guessBaseCurrency,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
   normaliseWindowMonths,
@@ -80,6 +82,51 @@ describe('clampLowStockGaugePercent', () => {
 
   it('falls back to the default percentage for non-finite input', () => {
     expect(clampLowStockGaugePercent(Number.NaN)).toBe(LOW_STOCK_GAUGE_PERCENT);
+  });
+});
+
+describe('CURRENCY_OPTIONS', () => {
+  it('keeps GBP first as the locked default (§1.2.1)', () => {
+    expect(CURRENCY_OPTIONS[0].value).toBe('GBP');
+  });
+
+  it('offers only valid, unique ISO-4217 codes Intl can format', () => {
+    const seen = new Set<string>();
+    for (const { value } of CURRENCY_OPTIONS) {
+      expect(seen.has(value)).toBe(false);
+      seen.add(value);
+      // Throws on an unknown currency code — proves every option is formattable.
+      expect(() =>
+        new Intl.NumberFormat('en-GB', { style: 'currency', currency: value }).format(1),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe('guessBaseCurrency', () => {
+  it('maps a region to the matching offered currency', () => {
+    expect(guessBaseCurrency(['en-US'])).toBe('USD');
+    expect(guessBaseCurrency(['fr-FR'])).toBe('EUR');
+    expect(guessBaseCurrency(['de-DE'])).toBe('EUR');
+    expect(guessBaseCurrency(['ja-JP'])).toBe('JPY');
+    expect(guessBaseCurrency(['en-AU'])).toBe('AUD');
+  });
+
+  it('takes the first locale that resolves to an offered currency', () => {
+    // The leading tag has no region currency we offer; the next one does.
+    expect(guessBaseCurrency(['eo', 'pt-BR'])).toBe('BRL');
+  });
+
+  it('only ever returns a currency we actually offer in the picker', () => {
+    const offered = new Set(CURRENCY_OPTIONS.map((o) => o.value));
+    for (const locale of ['en-US', 'fr-FR', 'ja-JP', 'en-ZA', 'ko-KR', 'pl-PL']) {
+      expect(offered.has(guessBaseCurrency([locale]))).toBe(true);
+    }
+  });
+
+  it('falls back to GBP for an unknown/empty locale set', () => {
+    expect(guessBaseCurrency([])).toBe('GBP');
+    expect(guessBaseCurrency(['xx-zz-not-a-locale'])).toBe('GBP');
   });
 });
 

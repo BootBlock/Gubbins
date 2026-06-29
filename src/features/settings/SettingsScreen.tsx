@@ -24,6 +24,7 @@ import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesSt
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
+  CURRENCY_OPTIONS,
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
@@ -34,8 +35,6 @@ import {
   clampLowStockQty,
 } from './settings';
 
-/** Currencies offered for the base-currency control (§1.2.1 GBP default, §3). */
-const CURRENCY_OPTIONS = ['GBP', 'USD', 'EUR', 'AUD', 'CAD', 'JPY'] as const;
 /** Locales offered for formatting (Intl, §2.4.3); en-GB is the default (§1.2.1). */
 const LOCALE_OPTIONS = [
   { value: 'en-GB', label: 'English (United Kingdom)' },
@@ -97,8 +96,8 @@ export function SettingsScreen() {
             onChange={(e) => prefs.setBaseCurrency(e.target.value)}
           >
             {CURRENCY_OPTIONS.map((c) => (
-              <option key={c} value={c}>
-                {c}
+              <option key={c.value} value={c.value}>
+                {c.value} — {c.label}
               </option>
             ))}
           </Select>

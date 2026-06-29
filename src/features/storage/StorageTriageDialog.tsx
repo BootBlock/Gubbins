@@ -145,8 +145,10 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               />
               <p className="text-xs text-muted-foreground" data-testid="triage-images-source">
                 {breakdown.data.imagesMeasured
-                  ? 'Image size measured from the actual files on your device.'
-                  : 'Figures are estimated from row counts.'}
+                  ? 'Image size measured from the actual files on your device. '
+                  : 'Figures are estimated from row counts. '}
+                The total above is your browser&rsquo;s storage across all sites, not Gubbins
+                alone; the breakdown here is Gubbins&rsquo; own share.
               </p>
             </>
           ) : null}

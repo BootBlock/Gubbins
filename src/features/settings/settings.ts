@@ -12,6 +12,109 @@ import {
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
 } from '@/db/repositories/constants';
+import { DEFAULT_CURRENCY } from '@/lib/format';
+
+/**
+ * Popular base currencies offered by the Settings control (§1.2.1 GBP default, §3).
+ * A pragmatic subset of widely-used ISO-4217 codes — broad enough to cover most
+ * users without turning the picker into an exhaustive registry. Each entry carries
+ * a short English name so the longer list stays scannable. `GBP` stays first as the
+ * locked default. Every code here must be representable by {@link Intl.NumberFormat}.
+ */
+export const CURRENCY_OPTIONS = [
+  { value: 'GBP', label: 'British Pound' },
+  { value: 'USD', label: 'US Dollar' },
+  { value: 'EUR', label: 'Euro' },
+  { value: 'AUD', label: 'Australian Dollar' },
+  { value: 'CAD', label: 'Canadian Dollar' },
+  { value: 'JPY', label: 'Japanese Yen' },
+  { value: 'CHF', label: 'Swiss Franc' },
+  { value: 'CNY', label: 'Chinese Yuan' },
+  { value: 'INR', label: 'Indian Rupee' },
+  { value: 'NZD', label: 'New Zealand Dollar' },
+  { value: 'SEK', label: 'Swedish Krona' },
+  { value: 'NOK', label: 'Norwegian Krone' },
+  { value: 'DKK', label: 'Danish Krone' },
+  { value: 'PLN', label: 'Polish Zloty' },
+  { value: 'SGD', label: 'Singapore Dollar' },
+  { value: 'HKD', label: 'Hong Kong Dollar' },
+  { value: 'ZAR', label: 'South African Rand' },
+  { value: 'MXN', label: 'Mexican Peso' },
+  { value: 'BRL', label: 'Brazilian Real' },
+  { value: 'AED', label: 'UAE Dirham' },
+  { value: 'KRW', label: 'South Korean Won' },
+] as const satisfies readonly { value: string; label: string }[];
+
+/**
+ * Map of ISO 3166 region → an offered {@link CURRENCY_OPTIONS} code, used to make a
+ * best-effort first-run currency guess from the browser locale (§3). Only regions
+ * whose currency we actually offer appear here; anything else falls back to the
+ * locked {@link DEFAULT_CURRENCY}. Eurozone members all map to `EUR`.
+ */
+const REGION_CURRENCY: Readonly<Record<string, string>> = {
+  GB: 'GBP', IM: 'GBP', JE: 'GBP', GG: 'GBP',
+  US: 'USD',
+  // Eurozone members.
+  AT: 'EUR', BE: 'EUR', CY: 'EUR', DE: 'EUR', EE: 'EUR', ES: 'EUR', FI: 'EUR',
+  FR: 'EUR', GR: 'EUR', IE: 'EUR', IT: 'EUR', LT: 'EUR', LU: 'EUR', LV: 'EUR',
+  MT: 'EUR', NL: 'EUR', PT: 'EUR', SI: 'EUR', SK: 'EUR', HR: 'EUR',
+  AU: 'AUD',
+  CA: 'CAD',
+  JP: 'JPY',
+  CH: 'CHF', LI: 'CHF',
+  CN: 'CNY',
+  IN: 'INR',
+  NZ: 'NZD',
+  SE: 'SEK',
+  NO: 'NOK',
+  DK: 'DKK',
+  PL: 'PLN',
+  SG: 'SGD',
+  HK: 'HKD',
+  ZA: 'ZAR',
+  MX: 'MXN',
+  BR: 'BRL',
+  AE: 'AED',
+  KR: 'KRW',
+};
+
+/** Resolve a BCP-47 locale tag to its (maximized) ISO region, e.g. `en-US` → `US`. */
+function regionOf(locale: string): string | undefined {
+  try {
+    const loc = new Intl.Locale(locale);
+    const region = (loc.maximize().region ?? loc.region)?.toUpperCase();
+    return region || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The host's preferred locales, most-preferred first; `[]` when there is no DOM. */
+function readNavigatorLocales(): readonly string[] {
+  if (typeof navigator === 'undefined') return [];
+  const langs = navigator.languages;
+  if (Array.isArray(langs) && langs.length > 0) return langs;
+  return navigator.language ? [navigator.language] : [];
+}
+
+/**
+ * Best-effort first-run guess of the user's base currency from their browser locale
+ * (§1.2.1, §3). Pure and injectable — pass `locales` explicitly in tests; by default
+ * it reads the host's `navigator.languages` (falling back to `navigator.language`).
+ * Each locale's region is resolved and mapped through {@link REGION_CURRENCY},
+ * taking the first match; anything unknown falls back to the locked
+ * {@link DEFAULT_CURRENCY} (GBP). Never throws.
+ */
+export function guessBaseCurrency(
+  locales: readonly string[] = readNavigatorLocales(),
+): string {
+  for (const locale of locales) {
+    const region = regionOf(locale);
+    const currency = region ? REGION_CURRENCY[region] : undefined;
+    if (currency) return currency;
+  }
+  return DEFAULT_CURRENCY;
+}
 
 /** Theme choices for the Settings control — Dark/Light/System (spec §2.1). */
 export const THEME_OPTIONS = [

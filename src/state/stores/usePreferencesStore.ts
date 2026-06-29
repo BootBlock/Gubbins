@@ -1,9 +1,11 @@
 /**
  * usePreferencesStore — Tier-2 user preferences (spec §2.1, §1.2.1, §3).
  *
- * Base currency, locale and theme, persisted to localStorage. Defaults follow the
- * locked derived defaults: GBP / en-GB (§1.2.1). The theme palette is wired in CSS
- * (dark default); this store is the home for the Dark/Light toggle.
+ * Base currency, locale and theme, persisted to localStorage. Locale/theme follow
+ * the locked derived defaults (en-GB / dark, §1.2.1); the base currency is *guessed*
+ * from the browser locale on first run ({@link guessBaseCurrency}), falling back to
+ * GBP — once anything is persisted, the stored choice wins. The theme palette is
+ * wired in CSS (dark default); this store is the home for the Dark/Light toggle.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -17,6 +19,7 @@ import {
   clampLowStockGaugePercent,
   clampLowStockQty,
   DEFAULT_WINDOW_MONTHS,
+  guessBaseCurrency,
   normaliseWindowMonths,
 } from '@/features/settings/settings';
 import {
@@ -91,7 +94,8 @@ interface PreferencesStore {
 export const usePreferencesStore = create<PreferencesStore>()(
   persist(
     (set) => ({
-      baseCurrency: 'GBP',
+      // First-run guess from the browser locale; the persisted value (if any) wins.
+      baseCurrency: guessBaseCurrency(),
       locale: 'en-GB',
       theme: 'dark',
       attachmentMode: 'URL_ONLY',
