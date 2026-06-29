@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { CloseIcon, DatasheetIcon, LinkIcon, LocalFileIcon, UnlinkIcon } from '@/components/icons';
 import type { AttachmentKind, ItemAttachment, UpdateAttachmentInput } from '@/db/repositories';
 import { getDeviceId } from '@/lib/env/device-id';
@@ -82,6 +82,20 @@ export function AttachmentManager({ itemId }: { itemId: string }) {
       </ul>
 
       <div className="space-y-2 rounded-lg border border-border bg-secondary/10 p-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Add a datasheet
+          </span>
+          <InfoHint
+            content={
+              'Link reference documents — datasheets, manuals, certificates.\n\n' +
+              '- **External URL** — a web link; works on every device and syncs cleanly.\n' +
+              '- **Local file** *(Hybrid mode only)* — a path on *this* machine. Only the path is ' +
+              'stored, so on other devices it shows as an **Unlinked Local File** to re-link.\n\n' +
+              'The **label** is an optional friendly name shown instead of the raw path.'
+            }
+          />
+        </div>
         {mode === 'HYBRID' ? (
           <Select
             value={kind}

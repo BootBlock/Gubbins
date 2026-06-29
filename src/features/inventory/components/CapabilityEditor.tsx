@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Input, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { CapabilityIcon, CloseIcon } from '@/components/icons';
 import { useItemCapabilities, useRemoveCapability, useSetCapability } from '../capabilities';
 
@@ -66,7 +66,18 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
 
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Key
+          <span className="flex items-center gap-1">
+            Key
+            <InfoHint
+              content={
+                'A searchable **spec** of the item as a `key = value` pair — e.g. `voltage = 5`, ' +
+                '`material = PLA`.\n\n' +
+                'Numeric values are stored as magnitudes so the search builder can compare them ' +
+                '(`capability:voltage > 3.3`); text values back **categorical** matches. One value ' +
+                'per key — re-adding a key overwrites it.'
+              }
+            />
+          </span>
           <Input
             value={key}
             onChange={(e) => setKey(e.target.value)}
@@ -92,7 +103,16 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Weight
+          <span className="flex items-center gap-1">
+            Weight
+            <InfoHint
+              content={
+                'How strongly this capability counts when **ranking best-match** search results. ' +
+                'Default `1`; raise it to make a spec dominate the match score, lower it to make it ' +
+                'a tie-breaker.'
+              }
+            />
+          </span>
           <Input
             value={weight}
             onChange={(e) => setWeight(e.target.value)}

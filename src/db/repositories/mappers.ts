@@ -79,7 +79,6 @@ export function rowToItem(row: ItemRow): Item {
       currentNetValue: net,
       percentageRemaining: percentageRemaining(net, gross),
       currentGrossWeight: currentGrossWeight(net, tare),
-      operationalMetadata: parseJson(row.operational_metadata),
     };
   }
 
@@ -104,6 +103,8 @@ export function rowToItem(row: ItemRow): Item {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     gauge,
+    // §4.1.1 schema-less operational parameters — present on any item, not just gauges.
+    operationalMetadata: parseJson(row.operational_metadata),
     // Only populated by reads that JOIN item_images (§4.2.4); never the full-res path.
     thumbnailBlob: 'thumbnail_blob' in row ? (row.thumbnail_blob ?? null) : undefined,
   };

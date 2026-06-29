@@ -6,7 +6,7 @@
  * usage against a usage-based schedule, or remove one.
  */
 import { useState } from 'react';
-import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { SettingsIcon, AddIcon, DeleteIcon, CheckIcon, WarningIcon } from '@/components/icons';
 import { MAINTENANCE_BASES, type MaintenanceBasis, type MaintenanceSchedule } from '@/db/repositories';
 import { cn } from '@/lib/utils';
@@ -88,6 +88,17 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
         <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">
           <AddIcon />
           New schedule
+          <InfoHint
+            content={
+              'A recurring service for this item (e.g. *lubricate rails*, *recalibrate*). Pick a ' +
+              '**basis**:\n\n' +
+              '- **Time** — every N **days** (e.g. calibrate every 90 days).\n' +
+              '- **Usage** — every N units of use; tick *accrue checkout hours* to count loan time ' +
+              'automatically instead of logging it by hand.\n\n' +
+              'When due, the item flags up; logging a service **resets the clock** and records it in ' +
+              'the **Activity log**.'
+            }
+          />
         </p>
         <div className="space-y-2">
           <Input

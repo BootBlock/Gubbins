@@ -6,7 +6,7 @@
  * gain sub-variants; only cycles are rejected, enforced in the repository.
  */
 import { useState } from 'react';
-import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/components/icons';
 import { CONDITIONS, type Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
@@ -87,10 +87,22 @@ export function LifecycleEditor({ item }: { item: Item }) {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
-        <LField label="Expiry date">
+        <LField
+          label="Expiry date"
+          hint={
+            'When this stock expires or is best used by. Items nearing expiry surface on the ' +
+            'dashboard **Soon to expire** widget. Changing it re-evaluates the expiry status shown above.'
+          }
+        >
           <Input type="date" data-testid="detail-expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
         </LField>
-        <LField label="Condition">
+        <LField
+          label="Condition"
+          hint={
+            'The physical state of this stock (*New*, *Used*, *Damaged*…). Changing it records a ' +
+            '`CONDITION_CHANGED` entry in the item’s **Activity log**.'
+          }
+        >
           <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
             <option value="">— Untracked —</option>
             {CONDITIONS.map((c) => (
@@ -100,10 +112,16 @@ export function LifecycleEditor({ item }: { item: Item }) {
             ))}
           </Select>
         </LField>
-        <LField label="Batch no.">
+        <LField
+          label="Batch no."
+          hint="A maker/supplier **batch** identifier for traceability. Stock from different batches is kept as separate lots and consumed **oldest-first (FEFO)**."
+        >
           <Input value={batch} onChange={(e) => setBatch(e.target.value)} placeholder="—" />
         </LField>
-        <LField label="Lot no.">
+        <LField
+          label="Lot no."
+          hint="A finer **lot** identifier within a batch, when your supplier distinguishes the two."
+        >
           <Input value={lot} onChange={(e) => setLot(e.target.value)} placeholder="—" />
         </LField>
       </div>
@@ -147,6 +165,14 @@ function VariantsSection({ item }: { item: Item }) {
       <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">
         <PackageIcon />
         Variants
+        <InfoHint
+          content={
+            'Child SKUs of this item that share its identity but differ in one attribute — e.g. a ' +
+            '*resistor* parent with `10kΩ`, `4.7kΩ` variants, or a *T-shirt* in `S`/`M`/`L`.\n\n' +
+            'Variants **nest to any depth** (a variant can have its own sub-variants); only ' +
+            'circular references are rejected.'
+          }
+        />
       </p>
       {item.parentId !== null ? (
         <p className="mb-2 text-xs text-muted-foreground" data-testid="variant-is-child">
@@ -189,11 +215,28 @@ function VariantsSection({ item }: { item: Item }) {
   );
 }
 
-function LField({ label, children }: { label: string; children: React.ReactNode }) {
+function LField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block">
-      <span className="mb-field-gap-compact block text-xs text-muted-foreground">{label}</span>
-      {children}
-    </label>
+    <div className="relative">
+      <label className="block">
+        <span className={cn('mb-field-gap-compact block text-xs text-muted-foreground', hint && 'pr-5')}>
+          {label}
+        </span>
+        {children}
+      </label>
+      {hint ? (
+        <span className="absolute right-0 top-0">
+          <InfoHint content={hint} />
+        </span>
+      ) : null}
+    </div>
   );
 }

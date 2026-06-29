@@ -15,6 +15,7 @@ export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
 export { Markdown } from './markdown';
+export { InfoHint } from './info-hint';
 export {
   Tooltip,
   DEFAULT_OPEN_DELAY_MS,

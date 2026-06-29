@@ -500,6 +500,7 @@ try {
   await step('opens an item, adds a freeform tag', async () => {
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
     await dialog.getByLabel('Add a tag').fill(tagName);
     await page.keyboard.press('Enter');
     await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 5000 });
@@ -509,6 +510,7 @@ try {
   await step('uploads an image through the real OPFS pipeline', async () => {
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Media & docs' }).click();
     await dialog.getByLabel('Upload image').setInputFiles({
       name: 'smoke.png',
       mimeType: 'image/png',
@@ -522,6 +524,7 @@ try {
   await step('shows the item Activity Log of its immutable ledger (§4, Phase 52)', async () => {
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Activity' }).click();
     const log = dialog.getByTestId('activity-log');
     await log.scrollIntoViewIfNeeded();
     await log.waitFor({ state: 'visible', timeout: 5000 });
@@ -529,6 +532,33 @@ try {
     const entries = dialog.getByTestId('activity-log-entry');
     if ((await entries.count()) === 0) throw new Error('Activity Log rendered no entries');
     await dialog.getByText('Created', { exact: true }).first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+  });
+
+  await step('edits §4.1.1 operational parameters and round-trips them (Phase 56)', async () => {
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    await dialog.getByTestId('op-meta-add').click();
+    await dialog.getByLabel('Parameter 1 name').fill('bed_temp_celsius');
+    await dialog.getByLabel('Parameter 1 value').fill('60');
+    const saveBtn = dialog.getByTestId('op-meta-save');
+    await saveBtn.click();
+    // After a successful save the button collapses to its disabled "Saved" state.
+    await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+
+    // Reopen — the value must come back from the DB (the item query was invalidated),
+    // proving the §4.1.1 metadata persisted through the worker, not just local state.
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    await dialog.getByLabel('Parameter 1 name').waitFor({ state: 'visible', timeout: 5000 });
+    const key = await dialog.getByLabel('Parameter 1 name').inputValue();
+    const value = await dialog.getByLabel('Parameter 1 value').inputValue();
+    if (key !== 'bed_temp_celsius' || value !== '60') {
+      throw new Error(`operational metadata did not round-trip (got "${key}"="${value}")`);
+    }
     await page.keyboard.press('Escape');
   });
 
@@ -548,6 +578,7 @@ try {
     // Link a local file pointer — it is stamped with *this* device's id.
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     let dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Media & docs' }).click();
     await dialog.getByLabel('Attachment kind').selectOption('LOCAL_POINTER');
     await dialog.getByLabel('Attachment location').fill(datasheetPath);
     await dialog.getByRole('button', { name: 'Link datasheet' }).click();
@@ -562,6 +593,7 @@ try {
     // The same pointer now degrades to the "Unlinked Local File" placeholder (§4).
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Media & docs' }).click();
     const unlinked = dialog.getByTestId('attachment-unlinked');
     await unlinked.scrollIntoViewIfNeeded();
     await unlinked.waitFor({ state: 'visible', timeout: 5000 });
@@ -712,11 +744,16 @@ try {
       { timeout: 5000 },
     );
     await box.fill('');
+    // Clearing the box restores the full, unfiltered list — wait for it to settle
+    // (the filament re-appears) so the next step opens a dialog against a list that
+    // is no longer re-rendering and recycling its virtualised rows.
+    await page.getByText(filamentName).first().waitFor({ state: 'visible', timeout: 5000 });
   });
 
   await step('surfaces distinct In-Transit incoming stock on the item (§4, Phase 20)', async () => {
     await itemCard(screwName).getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Lifecycle' }).click();
     const inTransit = dialog.getByTestId('detail-in-transit');
     await inTransit.waitFor({ state: 'visible', timeout: 5000 });
     // The matched BOM line (qty 5) sits IN_TRANSIT → the item shows 5 arriving, kept
@@ -755,6 +792,7 @@ try {
   await step('adds a weighted capability to an item', async () => {
     await itemCard(screwName).getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
     await dialog.getByLabel('Capability key').fill('voltage');
     const value = dialog.getByLabel('Capability value');
     await value.fill('5');
@@ -878,6 +916,7 @@ try {
     ]) {
       await itemCard(name).getByRole('button', { name: 'Item details' }).click();
       const dialog = page.getByRole('dialog');
+      await dialog.getByRole('tab', { name: 'Classification' }).click();
       await dialog.getByLabel('Capability key').fill('rankcap');
       await dialog.getByLabel('Capability value').fill('1');
       await dialog.getByLabel('Capability weight').fill(w);
@@ -1323,7 +1362,9 @@ try {
     await page.getByLabel('Search items').fill(printerName);
     await printerCard().getByRole('button', { name: 'Item details' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
     await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 5000 });
+    await dialog.getByRole('tab', { name: 'Media & docs' }).click();
     await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 5000 });
     await page.keyboard.press('Escape');
   });
@@ -1588,6 +1629,7 @@ try {
   await step('expands a parent item into a child variant (§4 Variant/SKU)', async () => {
     await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('variant-name').waitFor({ state: 'visible', timeout: 5000 });
     await detail.getByTestId('variant-name').fill(variantName);
     await detail.getByTestId('add-variant').click();
@@ -1604,6 +1646,7 @@ try {
     // variant can hold its own grandchildren (with cycles still rejected server-side).
     await lifecycleCard(variantName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     // This item is recognised as a child variant yet can still gain sub-variants.
     await detail.getByTestId('variant-is-child').waitFor({ state: 'visible', timeout: 5000 });
     await detail.getByTestId('variant-name').fill(subVariantName);
@@ -1618,6 +1661,7 @@ try {
   await step('adds a tool maintenance schedule to an item (§4.3)', async () => {
     await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('maintenance-name').fill(maintScheduleName);
     await detail.getByTestId('add-maintenance').click();
     await detail
@@ -1633,6 +1677,7 @@ try {
     // derived loan-hours projection through the genuine OPFS worker + repository path.
     await lifecycleCard(perishableName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 5000 });
     await detail.getByTestId('maintenance-name').fill(loanScheduleName);
     await detail.getByTestId('maintenance-basis').selectOption('USAGE');
@@ -1703,6 +1748,7 @@ try {
     await page.getByRole('treeitem', { name: drawerName }).first().click();
     await lifecycleCard(cycleItemName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     const placements = detail.getByTestId('stock-placements');
     await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
 
@@ -1738,6 +1784,7 @@ try {
   const placementQuantities = async (itemName, locationNames) => {
     await lifecycleCard(itemName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     const placements = detail.getByTestId('stock-placements');
     await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
     const out = {};
@@ -1802,6 +1849,7 @@ try {
     await page.getByRole('treeitem', { name: drawerName }).first().click();
     await lifecycleCard(cycleItemName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 5000 });
     await detail.getByTestId('maintenance-name').fill(scopedScheduleName);
     await detail.getByTestId('maintenance-location').selectOption({ label: drawerName });
@@ -1849,6 +1897,7 @@ try {
     await page.getByRole('treeitem', { name: drawerName }).first().click();
     await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
     const batchRow = detail.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
     await batchRow.waitFor({ state: 'visible', timeout: 5000 });
@@ -1873,6 +1922,7 @@ try {
     // The lot reconciled to 4 at its placement.
     await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
     const after = page.getByRole('dialog');
+    await after.getByRole('tab', { name: 'Lifecycle' }).click();
     const lotAfter = after.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
     await lotAfter.waitFor({ state: 'visible', timeout: 5000 });
     if (!/4/.test((await lotAfter.textContent()) ?? '')) {
@@ -1888,6 +1938,7 @@ try {
     await page.getByRole('treeitem', { name: drawerName }).first().click();
     await lifecycleCard(batchItemName).getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
     await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
 
     // The lot picker only appears because the source placement holds a tracked lot.

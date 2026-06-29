@@ -1,4 +1,4 @@
-import { Spinner } from '@/components/foundry';
+import { InfoHint, Spinner } from '@/components/foundry';
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { useAddItemImage, useItemImages, useRemoveItemImage } from '../media';
 import { Thumbnail } from './Thumbnail';
@@ -21,6 +21,18 @@ export function ImageManager({ itemId }: { itemId: string }) {
   };
 
   return (
+    <div className="space-y-2">
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span>Click the dashed tile to add a photo.</span>
+      <InfoHint
+        content={
+          'Add one or more photos of the item. Each is **compressed to WebP** in the browser; ' +
+          'the full-resolution image is stored as a file, and only a small **thumbnail** lives in ' +
+          'the database — so syncing and backups stay lean.\n\nHover a thumbnail and click the ' +
+          '✕ to remove it.'
+        }
+      />
+    </div>
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
       {(images ?? []).map((img) => (
         <div key={img.id} className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-secondary/30">
@@ -40,6 +52,7 @@ export function ImageManager({ itemId }: { itemId: string }) {
         {addImage.isPending || isLoading ? <Spinner /> : <UploadIcon />}
         <input type="file" accept="image/*" className="sr-only" onChange={onPick} aria-label="Upload image" />
       </label>
+    </div>
     </div>
   );
 }

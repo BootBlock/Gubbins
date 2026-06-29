@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Input } from '@/components/foundry';
+import { InfoHint, Input } from '@/components/foundry';
 import { CloseIcon, TagIcon } from '@/components/icons';
 import { useItemTags, useSetItemTags, useTagSuggestions } from '../tags';
 
@@ -53,7 +53,8 @@ export function TagEditor({ itemId }: { itemId: string }) {
         )}
       </div>
 
-      <div className="relative">
+      <div className="flex items-start gap-2">
+      <div className="relative flex-1">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -81,6 +82,17 @@ export function TagEditor({ itemId }: { itemId: string }) {
             ))}
           </div>
         ) : null}
+      </div>
+        <div className="pt-2.5">
+          <InfoHint
+            content={
+              'Freeform labels for grouping and filtering — *fragile*, *RoHS*, *favourite*, anything.\n\n' +
+              '- Press **Enter** or **comma** to add.\n' +
+              '- Names are reused **case-insensitively**, so `Fragile` and `fragile` are the same tag.\n' +
+              '- Tags are searchable from the inventory search bar.'
+            }
+          />
+        </div>
       </div>
     </div>
   );

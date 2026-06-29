@@ -103,6 +103,30 @@ describe('ItemRepository', () => {
     expect(spool.gauge?.currentGrossWeight).toBe(1250);
   });
 
+  it('stores and clears §4.1.1 operational metadata on any item (not just gauges)', async () => {
+    const item = await items.create({ name: 'Calipers' });
+    expect(item.operationalMetadata).toBeNull();
+
+    const updated = await items.update(item.id, {
+      operationalMetadata: { calibration_interval_days: 365, last_calibrated_by: 'QA' },
+    });
+    expect(updated.operationalMetadata).toEqual({
+      calibration_interval_days: 365,
+      last_calibrated_by: 'QA',
+    });
+
+    // It survives a fresh read from the DB, not just the returned object.
+    const reread = await items.getById(item.id);
+    expect(reread?.operationalMetadata).toEqual({
+      calibration_interval_days: 365,
+      last_calibrated_by: 'QA',
+    });
+
+    // An empty record clears it back to SQL NULL.
+    const cleared = await items.update(item.id, { operationalMetadata: {} });
+    expect(cleared.operationalMetadata).toBeNull();
+  });
+
   it('applies a relative gauge consumption and logs the net delta', async () => {
     const spool = await items.create({
       name: 'PETG',

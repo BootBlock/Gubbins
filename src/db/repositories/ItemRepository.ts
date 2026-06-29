@@ -304,6 +304,16 @@ export class ItemRepository extends BaseRepository {
         }),
       );
     }
+    if (input.operationalMetadata !== undefined) {
+      // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here
+      // (mirroring the create path) so the db layer holds no feature-layer imports.
+      sets.push('operational_metadata = ?');
+      params.push(
+        input.operationalMetadata && Object.keys(input.operationalMetadata).length > 0
+          ? JSON.stringify(input.operationalMetadata)
+          : null,
+      );
+    }
 
     if (sets.length > 0) {
       params.push(id);

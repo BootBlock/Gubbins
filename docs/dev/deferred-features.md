@@ -1354,3 +1354,36 @@ edit).
 No mandated spec gap remains, and there is no further tracked location-UI residual. Remaining open work is the
 unchanged trigger-gated Backlog (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded
 WASM decoder, live distributor selector maintenance, further `aria-live`) — none with a live trigger today.
+
+## Phase 56 — §4.1.1 operational-metadata editor (fresh investigation)
+
+A fresh-investigation pick à la P37–P53. The §4.1.1 "flexible metadata layer for operational parameters" — a
+schema-less per-item JSON object (the spec's own example `{ bed_temp_celsius: 60, extrusion_multiplier: 0.98,
+drying_time_hrs: 4 }`) — existed in the schema since **v2** (`items.operational_metadata`), was repository-mapped,
+accepted by `CreateItemInput`/`UpdateItemInput`, and synced for free (`items` ∈ `SYNC_TABLES`), **but appeared in zero
+`.tsx` files** — every *other* Consumable-Gauge field (`unit_of_measure`/`gross_capacity`/`tare_weight`/
+`current_net_value`) was surfaced and this one alone was invisible, so a user could neither enter nor see it.
+
+Now surfaced as an **"Operational parameters"** section in `ItemDetailDialog` (`OperationalMetadataEditor.tsx`): a
+free-form key→value row editor saved wholesale via the existing `useUpdateItem`. The developer chose to expose it on
+**every item** (not just gauges), so the field was **promoted from the gauge-nested `GaugeState.operationalMetadata`
+to a top-level `Item.operationalMetadata`** read by `rowToItem` for all rows; `UpdateItemInput.operationalMetadata`
++ a new branch in `ItemRepository.update` persist it (inline `JSON.stringify`, mirroring the create path, so the db
+layer holds no feature-layer import). The rows↔record conversion, value coercion (a canonical numeric string →
+number per the spec example; `true`/`false` → boolean; non-canonical kept verbatim) and Zod-validation (§2.4.4) are
+the pure, unit-tested **`features/inventory/operational-metadata.ts`** seam (`buildMetadata`/`metadataToRows`/
+`coerceMetadataValue`), mirroring the `gauge.ts`/`history-format.ts` "logic out of the glue" pattern. An empty set
+stores SQL NULL, never `{}`.
+
+**No schema/migration change** — the column already exists (`user_version` stays **19**); no dependency change.
+**`build:extension` NOT re-run** (no §9 / `extension/` edit). No mandated spec gap remains; the remaining
+trigger-gated Backlog (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded WASM
+decoder, live distributor selector maintenance, further `aria-live`) is unchanged, none with a live trigger today.
+
+> **Concurrent refactor folded in (not the Phase-56 pick):** alongside this work `ItemDetailDialog` was reworked
+> from a flat scroll of `Section` cards into a **WAI-ARIA APG vertical `tabs`** layout — the ten facet editors are
+> grouped into five tabs (**Supplier & ops** holding Supplier data + Operational parameters, **Lifecycle**,
+> **Media & docs**, **Classification**, **Activity**), with arrow-key navigation in the pure, unit-tested
+> `tab-keyboard.ts` (`resolveTabKey`). Only the active tab's panel is mounted; the operational-parameters editor
+> lives in the default "Supplier & ops" tab. Every detail-dialog smoke step now clicks its tab first. **Final totals
+> for the phase: 1153 unit / 117 files / 93 smoke; build 2931.08 KiB across 32 precache files (reporter only).**

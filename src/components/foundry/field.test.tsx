@@ -42,6 +42,28 @@ describe('FormField — accessible labelled control (spec §3 / WCAG 3.3.1, 1.3.
     expect(control.getAttribute('aria-describedby')).toBe(alert.id);
   });
 
+  it('renders a hint info-badge without polluting the control’s accessible name', () => {
+    render(
+      <FormField label="Name" hint="Some **help** text.">
+        <Input />
+      </FormField>,
+    );
+    // The badge is present (its own generic accessible name)…
+    expect(screen.getByRole('img', { name: 'More information' })).toBeTruthy();
+    // …and the control is still found by its bare label — the hint lives outside the
+    // <label>, so it never folds into the control's accessible name.
+    expect(screen.getByLabelText('Name')).toBeTruthy();
+  });
+
+  it('renders no hint badge when none is given', () => {
+    render(
+      <FormField label="Name">
+        <Input />
+      </FormField>,
+    );
+    expect(screen.queryByRole('img', { name: 'More information' })).toBeNull();
+  });
+
   it('never clobbers an explicit aria prop set at the call site', () => {
     render(
       <FormField label="Custom" error="bad">

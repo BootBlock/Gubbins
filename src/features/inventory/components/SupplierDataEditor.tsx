@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { InfoHint } from '@/components/foundry';
 import { LinkIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
@@ -52,17 +53,33 @@ export function SupplierDataEditor({ item }: { item: Item }) {
   return (
     <div className="space-y-3">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <Detail label="MPN" value={item.mpn} />
-        <Detail label="Manufacturer" value={item.manufacturer} />
+        <Detail
+          label="MPN"
+          value={item.mpn}
+          hint="The **Manufacturer Part Number** — the maker’s canonical code for this part. Used to de-duplicate and to match supplier scrapes."
+        />
+        <Detail
+          label="Manufacturer"
+          value={item.manufacturer}
+          hint="Who makes the part. Edited via a supplier **scrape** below, or when the item is created."
+        />
         <Detail
           label="Unit cost"
           value={item.unitCost !== null ? fmt.currency(item.unitCost) : null}
+          hint="The cost of **one unit**, in your base currency. Feeds inventory valuation and project costing."
         />
       </dl>
 
       <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Supplier aliases
+          <InfoHint
+            content={
+              'Distributor order codes that all point at this same part (e.g. a DigiKey and an RS ' +
+              'code for one resistor). **Universal Alias Mapping** lets a scan or search of any ' +
+              'alias resolve to this item, so duplicates never creep in.'
+            }
+          />
         </p>
         {aliases && aliases.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -97,10 +114,13 @@ export function SupplierDataEditor({ item }: { item: Item }) {
   );
 }
 
-function Detail({ label, value }: { label: string; value: string | null }) {
+function Detail({ label, value, hint }: { label: string; value: string | null; hint?: string }) {
   return (
     <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {label}
+        {hint ? <InfoHint content={hint} /> : null}
+      </dt>
       <dd className="font-medium">{value ?? '—'}</dd>
     </div>
   );

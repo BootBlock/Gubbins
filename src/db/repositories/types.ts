@@ -121,7 +121,6 @@ export interface GaugeState {
   readonly currentNetValue: number;
   readonly percentageRemaining: number;
   readonly currentGrossWeight: number;
-  readonly operationalMetadata: Record<string, unknown> | null;
 }
 
 export interface Item {
@@ -157,6 +156,13 @@ export interface Item {
   readonly updatedAt: number;
   /** Present only when `trackingMode === 'CONSUMABLE_GAUGE'`. */
   readonly gauge: GaugeState | null;
+  /**
+   * The §4.1.1 "flexible metadata layer" — a schema-less, per-item JSON object of
+   * arbitrary operational parameters (e.g. `{ bed_temp_celsius: 60 }`). Available on
+   * any item, not just gauges; `null` when none are set. Edited via the item detail
+   * dialog and the pure `operational-metadata.ts` helpers.
+   */
+  readonly operationalMetadata: Record<string, unknown> | null;
   /**
    * Primary thumbnail bytes when the read JOINed `item_images` (§4.2.4); `null`
    * when the item has no image, `undefined` on reads that didn't request it.
@@ -216,6 +222,11 @@ export interface UpdateItemInput {
   readonly lotNumber?: string | null;
   /** Operational condition; a change is logged as `CONDITION_CHANGED` (§4). */
   readonly condition?: Condition | null;
+  /**
+   * The §4.1.1 schema-less operational-parameter map. Pass a record to replace the
+   * stored set wholesale, or `null` to clear it; omit to leave it untouched.
+   */
+  readonly operationalMetadata?: Record<string, unknown> | null;
 }
 
 /**
