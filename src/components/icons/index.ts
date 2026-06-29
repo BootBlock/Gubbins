@@ -10,8 +10,8 @@
  * current identifiers.
  */
 export {
-  // Brand
-  Boxes as BrandIcon,
+  // Brand — a 2×2 grid echoing the Gridfinity-baseplate app icon (see public/icons).
+  Grid2x2 as BrandIcon,
   Package as PackageIcon,
 
   // Status / feedback

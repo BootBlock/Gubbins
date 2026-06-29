@@ -4,7 +4,7 @@ info:
   version: "1.0.0"
   description: "Read-only HTTP API over a Gubbins inventory snapshot, served by the local companion bridge. Every endpoint is GET-only and requires a bearer token. The unversioned paths (/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, kept so existing consumers (the Home Assistant integration) keep working unchanged."
   license:
-    name: "UNLICENSED"
+    name: "MIT"
 servers:
 -
   url: "http://127.0.0.1:8787"

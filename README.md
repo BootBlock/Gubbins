@@ -192,6 +192,12 @@ npm run preview    # Serve the production build (real service worker + offline)
 npm run test       # Vitest
 ```
 
+> **Node version:** building and deploying the PWA works on **Node ≥ 20** (the `engines`
+> floor). Running the *test suites* needs a newer Node: the app's `:memory:` test driver and
+> the companion bridge both use `node:sqlite` (**Node ≥ 22.5**), and the bridge additionally
+> runs TypeScript directly via Node's built-in type-stripping (**Node ≥ 23.6**). CI pins Node
+> 24 for the test jobs; use a recent Node locally if you intend to run `npm run test`.
+
 > **Cross-origin isolation:** the high-performance SQLite OPFS VFS requires `SharedArrayBuffer`, which the browser only permits under COOP/COEP. The dev server sets these headers directly; production (GitHub Pages) relies on the `coi-serviceworker` polyfill.
 
 > **Single tab:** OPFS enforces an exclusive write lock — Gubbins guards against multiple open tabs and shows a graceful overlay rather than crashing.

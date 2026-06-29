@@ -49,8 +49,9 @@ they can.
 - **Dependency & IP hygiene.** Don't paste code from sources with an incompatible or unknown
   licence; prefer writing it or using a properly-attributed, licence-compatible dependency.
   Vet new dependencies (popularity, maintenance, licence) before adding them, and keep the
-  dependency surface minimal. This repo ships as `UNLICENSED` (all rights reserved) — don't
-  add headers or text implying a different licence.
+  dependency surface minimal. This repo is licensed **MIT** (see [LICENSE](LICENSE)) — keep
+  `package.json`'s `license` field and any added licence headers consistent with it, and
+  don't introduce text implying a different licence.
 - **Keep the ignore rules tight.** Before committing a new kind of generated or local file,
   confirm it belongs in the repo; if it's a build artefact, local cache, or could contain
   real data, add it to `.gitignore` instead.

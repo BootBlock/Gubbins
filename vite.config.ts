@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
@@ -57,6 +58,30 @@ function cspMetaPlugin(): Plugin {
   };
 }
 
+/**
+ * Emit `404.html` as a copy of the built `index.html` so client-side deep links work on
+ * GitHub Pages (spec §1.2). Pages returns `404.html` for any path that doesn't map to a
+ * file; serving the app shell there lets the SPA router resolve the real route on a
+ * first/cold load (before the service worker is in control). A byte-copy keeps the strict
+ * CSP intact — the usual `404.html` redirect trick needs an inline script, which the
+ * `script-src` policy (no `'unsafe-inline'`) forbids. Runs in `closeBundle`, after the
+ * final (PWA- and CSP-meta-transformed) `index.html` has been written to disk.
+ */
+function spa404FallbackPlugin(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'gubbins-spa-404',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir;
+    },
+    closeBundle() {
+      const index = resolve(outDir, 'index.html');
+      if (existsSync(index)) copyFileSync(index, resolve(outDir, '404.html'));
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
@@ -81,6 +106,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     cspMetaPlugin(),
+    spa404FallbackPlugin(),
     VitePWA({
       // injectManifest lets a single custom worker (src/sw.ts) handle BOTH
       // offline precaching (§2.4.5) and COOP/COEP header injection for static
@@ -95,7 +121,8 @@ export default defineConfig({
       injectRegister: 'script',
       injectManifest: {
         // SQLite WASM binaries are large, so lift the default 2 MiB single-file cap.
-        globPatterns: ['**/*.{js,css,html,wasm,woff2,svg,ico}'],
+        // `png` is included so the raster app icons are precached for offline too.
+        globPatterns: ['**/*.{js,css,html,wasm,woff2,svg,ico,png}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
       manifest: {
@@ -111,12 +138,36 @@ export default defineConfig({
         orientation: 'any',
         scope: '/Gubbins/',
         start_url: '/Gubbins/',
+        // A scalable vector master plus raster fallbacks. The `any` and `maskable`
+        // purposes are kept on *separate* assets: the maskable PNG carries the safe-zone
+        // padding Android's adaptive mask needs, so reusing one image for both (which
+        // would crop the glyph) is avoided. PNGs also cover platforms — notably iOS,
+        // see the apple-touch-icon in index.html — that ignore SVG manifest icons.
+        // The icon set is generated from a single glyph by scripts/generate-icons.mjs.
         icons: [
           {
             src: 'icons/gubbins.svg',
             sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },

@@ -158,7 +158,7 @@ export const openapiDocument: JsonValue = {
       'bridge. Every endpoint is GET-only and requires a bearer token. The unversioned paths ' +
       '(/health, /search, /where) are permanent, stable aliases of their /api/v1 equivalents, ' +
       'kept so existing consumers (the Home Assistant integration) keep working unchanged.',
-    license: { name: 'UNLICENSED' },
+    license: { name: 'MIT' },
   },
   servers: [{ url: SERVER_URL, description: 'Local bridge (loopback default).' }],
   security: bearerSecurity,
