@@ -103,6 +103,10 @@ export function rowToItem(row: ItemRow): Item {
     lotNumber: row.lot_number,
     condition: row.condition,
     parentId: row.parent_id,
+    // Per-item reorder policy (Phase 59); null = fall back to the global default.
+    reorderPoint: row.reorder_point,
+    reorderGaugePercent: row.reorder_gauge_percent,
+    reorderQty: row.reorder_qty,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

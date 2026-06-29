@@ -580,6 +580,61 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
+    // The bulk screws were created with qty 100 — comfortably above the global default
+    // (5), so they are NOT in the low-stock feed. Open the item and give it its own,
+    // much higher reorder point so it now counts as low.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    const screwCard = () =>
+      page
+        .locator('div')
+        .filter({ hasText: screwName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+
+    await screwCard().getByRole('button', { name: 'Item details' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    await dialog.getByTestId('reorder-point-input').fill('200');
+    await dialog.getByTestId('reorder-qty-input').fill('300');
+    const saveBtn = dialog.getByTestId('reorder-point-save');
+    await saveBtn.click();
+    await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+
+    // Reopen — the override must come back from the DB (the item query was invalidated),
+    // proving it persisted through the worker rather than living only in local state.
+    await screwCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    await dialog.getByTestId('reorder-point-input').waitFor({ state: 'visible', timeout: 5000 });
+    const point = await dialog.getByTestId('reorder-point-input').inputValue();
+    if (point !== '200') {
+      throw new Error(`reorder point did not round-trip (got "${point}")`);
+    }
+    await page.keyboard.press('Escape');
+
+    // The dashboard Low Stock widget now lists the screws (qty 100 ≤ its own 200 floor),
+    // with the suggested top-up surfaced from the per-item reorder quantity.
+    await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
+    const widget = page.getByTestId('widget-low-stock');
+    await widget.waitFor({ state: 'visible', timeout: 8000 });
+    await widget.getByText(screwName).waitFor({ state: 'visible', timeout: 5000 });
+    await widget.getByText(/reorder 300/).waitFor({ state: 'visible', timeout: 5000 });
+
+    // Clear the override so the screws return to "healthy" for any later assertions.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await screwCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    await dialog.getByTestId('reorder-point-input').fill('');
+    await dialog.getByTestId('reorder-qty-input').fill('');
+    const clearBtn = dialog.getByTestId('reorder-point-save');
+    await clearBtn.click();
+    await clearBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+  });
+
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
     const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
     const datasheetUrl = `https://smoke.test/${stamp}.pdf`;

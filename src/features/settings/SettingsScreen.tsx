@@ -274,8 +274,8 @@ export function SettingsScreen() {
           </div>
         </SettingRow>
         <SettingRow
-          label="Low-stock quantity threshold"
-          description={`Discrete items at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}).`}
+          label="Default low-stock quantity threshold"
+          description={`The default reorder point for discrete items — those at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
         >
           <div className="flex items-center gap-2">
             <input
@@ -292,8 +292,8 @@ export function SettingsScreen() {
           </div>
         </SettingRow>
         <SettingRow
-          label="Low-stock gauge threshold"
-          description={`Consumable-gauge items at or below this percentage remaining are flagged on the dashboard (${LOW_STOCK_GAUGE_BOUNDS.min}–${LOW_STOCK_GAUGE_BOUNDS.max}).`}
+          label="Default low-stock gauge threshold"
+          description={`The default reorder level for consumable-gauge items — those at or below this percentage remaining are flagged on the dashboard (${LOW_STOCK_GAUGE_BOUNDS.min}–${LOW_STOCK_GAUGE_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
         >
           <div className="flex items-center gap-2">
             <input

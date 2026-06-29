@@ -8,6 +8,7 @@ import {
   GaugeIcon,
   HistoryIcon,
   ImageIcon,
+  LowStockIcon,
   SettingsIcon,
   SupplierIcon,
   TagsIcon,
@@ -22,6 +23,7 @@ import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
+import { ReorderPointEditor } from './ReorderPointEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
 import { TagEditor } from './TagEditor';
 
@@ -168,6 +170,7 @@ function buildTabs(item: Item): readonly TabDef[] {
       icon: <SupplierIcon />,
       sections: [
         { title: 'Supplier data', icon: <SupplierIcon />, content: <SupplierDataEditor item={item} /> },
+        { title: 'Reorder point', icon: <LowStockIcon />, content: <ReorderPointEditor item={item} /> },
         {
           title: 'Operational parameters',
           icon: <GaugeIcon />,

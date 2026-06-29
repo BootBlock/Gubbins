@@ -37,6 +37,7 @@ import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { ChangeFlash } from '@/features/inventory/components/ChangeFlash';
+import { shortfall } from '@/features/inventory/reorder-policy';
 import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenance } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
@@ -133,22 +134,30 @@ function LowStockWidget() {
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const lowStock = useLowStockItems({ qtyThreshold, gaugePercent });
   const rows = lowStock.data?.rows ?? [];
+  const defaults = { qtyThreshold, gaugePercent };
   return (
     <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
       {rows.length === 0 ? (
         <EmptyRow>Stock levels healthy.</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((item) => (
-          <WidgetRow
-            key={item.id}
-            label={item.name}
-            meta={
-              item.gauge
-                ? `${Math.round(item.gauge.percentageRemaining)}%`
-                : `×${item.quantity}`
-            }
-          />
-        ))
+        rows.slice(0, 3).map((item) => {
+          // For a low discrete item, surface the suggested top-up (its own reorder
+          // quantity, else the shortfall back up to its effective reorder point).
+          const toReorder = shortfall(item, defaults);
+          return (
+            <WidgetRow
+              key={item.id}
+              label={item.name}
+              meta={
+                item.gauge
+                  ? `${Math.round(item.gauge.percentageRemaining)}%`
+                  : toReorder > 0
+                    ? `×${item.quantity} · reorder ${toReorder}`
+                    : `×${item.quantity}`
+              }
+            />
+          );
+        })
       )}
     </WidgetShell>
   );

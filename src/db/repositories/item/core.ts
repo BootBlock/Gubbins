@@ -25,7 +25,13 @@ import type {
   UpdateItemInput,
 } from '../types';
 import { historyStatement } from './history';
-import { normaliseExpiry, normaliseText, normaliseUnitCost } from './normalise';
+import {
+  normaliseExpiry,
+  normaliseReorderInt,
+  normaliseReorderPercent,
+  normaliseText,
+  normaliseUnitCost,
+} from './normalise';
 import { buildInsert, resolveCreate } from './create';
 import { THUMBNAIL_SUBQUERY } from './sql';
 
@@ -165,6 +171,18 @@ export class ItemCoreRepository extends BaseRepository {
           metadata: { from: existing.condition, to: input.condition },
         }),
       );
+    }
+    if (input.reorderPoint !== undefined) {
+      sets.push('reorder_point = ?');
+      params.push(normaliseReorderInt(input.reorderPoint));
+    }
+    if (input.reorderGaugePercent !== undefined) {
+      sets.push('reorder_gauge_percent = ?');
+      params.push(normaliseReorderPercent(input.reorderGaugePercent));
+    }
+    if (input.reorderQty !== undefined) {
+      sets.push('reorder_qty = ?');
+      params.push(normaliseReorderInt(input.reorderQty));
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here
