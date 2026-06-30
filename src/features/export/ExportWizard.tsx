@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Modal, Surface } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Surface } from '@/components/foundry';
 import { ExportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
@@ -216,6 +216,22 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           </Surface>
         ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+        {/* Always-mounted polite region: announces progress and success in place
+            after "Export" is clicked — a screen reader would otherwise miss the
+            in-place state change (WCAG 4.1.3). A second assertive region handles
+            errors so they interrupt immediately. Both regions must pre-exist so the
+            later content change is actually announced (see LiveRegion). */}
+        <LiveRegion visuallyHidden data-testid="export-live-region">
+          {busy ? (
+            <p>Exporting…</p>
+          ) : done ? (
+            <p>Exported {done} to your downloads.</p>
+          ) : null}
+        </LiveRegion>
+        <LiveRegion urgency="assertive" visuallyHidden data-testid="export-error-live-region">
+          {error ? <p>{error}</p> : null}
+        </LiveRegion>
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
