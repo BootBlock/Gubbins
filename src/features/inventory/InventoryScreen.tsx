@@ -33,6 +33,7 @@ import {
   useLocationTree,
   type ItemQueryFilters,
 } from './queries';
+import { useInventoryEntry } from './useInventoryEntry';
 import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
@@ -96,6 +97,25 @@ function InventoryWorkspace() {
     const t = setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Consume a one-shot intent handed over from the dashboard (command palette "jump to
+  // item", or the hero's Add/Scan quick actions): seed the search or open the relevant
+  // dialog, then clear it. Driven off the store so it fires whether this screen is
+  // mounting fresh from the navigation or is already on screen.
+  const pendingSearch = useInventoryEntry((s) => s.pendingSearch);
+  const pendingIntent = useInventoryEntry((s) => s.pendingIntent);
+  useEffect(() => {
+    if (pendingSearch === null) return;
+    setSearchInput(pendingSearch);
+    setSearch(pendingSearch);
+    useInventoryEntry.getState().clearSearch();
+  }, [pendingSearch]);
+  useEffect(() => {
+    if (pendingIntent === null) return;
+    if (pendingIntent === 'add') setAddOpen(true);
+    else if (pendingIntent === 'scan') setScannerOpen(true);
+    useInventoryEntry.getState().clearIntent();
+  }, [pendingIntent]);
 
   const filters: ItemQueryFilters = useMemo(
     () => ({

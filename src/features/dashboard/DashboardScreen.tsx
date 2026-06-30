@@ -7,6 +7,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
+import { DashboardActions } from './DashboardActions';
 
 /** The public GitHub repository — the brand hero links here on the landing page. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
@@ -69,6 +70,10 @@ export function DashboardScreen() {
           <dd className="tabular-nums">{RELEASE_LABEL}</dd>
         </dl>
       </header>
+
+      {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,
+          each independently toggleable from Settings → Dashboard. */}
+      <DashboardActions />
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the
           same NAV_DESTINATIONS source of truth the global AppNav menu uses on every other

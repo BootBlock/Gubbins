@@ -3,6 +3,7 @@ import { SkipLink } from '@/components/foundry';
 import { StorageBanners } from '@/features/storage/StorageBanners';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
+import { CommandPalette } from '@/features/command-palette/CommandPalette';
 
 /**
  * Root route layout (spec §2.4.2). Hosts the always-visible app chrome — the
@@ -25,6 +26,7 @@ function RootLayout() {
       <Outlet />
       <OfflineIndicator />
       <PwaUpdatePrompt />
+      <CommandPalette />
     </div>
   );
 }
