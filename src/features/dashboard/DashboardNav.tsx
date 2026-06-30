@@ -29,14 +29,16 @@ const GROUP_LABELS: Record<NavGroup, string> = {
 
 /**
  * A whisper-faint background wash per group, so the three columns read as distinct
- * regions at a glance. Each is a theme-aware semantic token at extremely low opacity
- * (no colour literals): primary violet for the everyday workspaces, accent cyan for the
- * manage column, and a neutral foreground tint for the system column.
+ * regions at a glance. Each is a theme-aware token at extremely low opacity (no colour
+ * literals): primary violet for the everyday workspaces, accent cyan for the manage
+ * column, and a rose-red hue for the system column. Rose comes from the decorative
+ * location palette rather than `destructive`, so it reads as a distinct colour without
+ * implying a danger/error state.
  */
 const GROUP_TINTS: Record<NavGroup, string> = {
   primary: 'bg-primary/5',
   manage: 'bg-accent/5',
-  system: 'bg-foreground/[0.04]',
+  system: 'bg-loc-rose/[0.06]',
 };
 
 /**
