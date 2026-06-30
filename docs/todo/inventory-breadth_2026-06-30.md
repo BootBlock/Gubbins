@@ -136,11 +136,31 @@ worktrees, review + merge each; then **Wave 3 = {68}** alone. Code review after 
   `:memory:` test that drafting creates the expected DRAFT PO + lines; smoke: drop an item below
   reorder point, open the list, draft a PO, assert it appears in DRAFT.
 * **Deliverables checklist.**
-  - [ ] `reorder-plan.ts` pure seam + tests
-  - [ ] read aggregation (`listLowStock` + `shortfall` + preferred-supplier join)
-  - [ ] `PurchaseOrderRepository.createDraftFromReorderPlan` (reuses existing insert path) + `:memory:` test
-  - [ ] "Reorder / Shopping list" UI + CSV export (design tokens, British English, skip target)
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended
+  - [x] `reorder-plan.ts` pure seam + tests
+  - [x] read aggregation (`listLowStock` + `shortfall` + preferred-supplier join)
+  - [x] `PurchaseOrderRepository.createDraftFromReorderPlan` (reuses existing insert path) + `:memory:` test
+  - [x] "Reorder / Shopping list" UI + CSV export (design tokens, British English, skip target)
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended
+
+> **Outcome (2026-06-30, Wave 2).** Shipped as specified. **No migration** — all reads are projections.
+> Pure `src/features/purchasing/reorder-plan.ts` (`buildReorderPlan` + `computeOrderQty`/`roundUpToPack`)
+> groups shortfall rows by preferred supplier (`orderQty = max(shortfall, MOQ)` rounded up to whole packs;
+> no-supplier items → an "Unassigned" group; deterministic order, Unassigned last). `ReportRepository
+> .listReorderShortfall` reuses `listLowStock`'s predicate (per-item `COALESCE` override, `MAX(…,1)`
+> zero-floor, DISCRETE/active/non-variant-parent filters) + the preferred-`supplier_parts` correlated
+> subquery (the P61 `preferredSupplierCostSql` pattern); `PurchaseOrderRepository
+> .createDraftFromReorderPlan` creates one **DRAFT** PO per supplier group **through the existing
+> `create` + `addLine` path** (no second PO-creation path; `derivePoStatus` authoritative; Unassigned
+> skipped). UI is a "Reorder / Shopping list" tab on the existing `/purchase-orders` route (no new route
+> file) with editable order quantities, per-group "Create draft PO", RFC-4180 CSV export, and an
+> always-mounted result-count live region. **Code review: CLEAN with NITs.** Three NITs fixed pre-merge:
+> the `ReorderTab` `isLoading` early-return was dropped so the WCAG 4.1.3 live region stays mounted
+> across loading→loaded→empty (the spinner is now a branch beneath it); the tab strip is a
+> `<div role="tablist">` not a `<nav>` whose landmark the role would suppress; a comment documents the
+> case-folded supplier-key invariant. Two NITs **waived**: no arrow-key tab navigation (matches the
+> existing `BackupDialog`/`ItemDetailDialog` tablists — not a regression); `useCreateDraftFromReorderPlan`
+> does not invalidate the reorder plan (correct by design — drafting a PO does not lift stock, so the
+> item legitimately stays below its reorder point). +~30 unit tests, +1 smoke step.
 
 ## Phase 66 — Asset lifecycle: purchase date, warranty, value/depreciation (v24)
 
@@ -162,11 +182,30 @@ worktrees, review + merge each; then **Wave 3 = {68}** alone. Code review after 
   migration test (additive, CHECKs); mapper round-trip; smoke sets a warranty date and asserts the
   badge. (`build:extension` NOT re-run — no §9/extension edit.)
 * **Deliverables checklist.**
-  - [ ] `v24-item-asset-lifecycle` migration + test; `user_version` → 24
-  - [ ] `asset-lifecycle.ts` pure seam (`warrantyStatus`/`currentValue`) + tests
-  - [ ] fields round-trip through mappers/types/create/update + `:memory:` test
-  - [ ] "Asset" item-detail section + token-styled warranty badge (design tokens, British English)
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended
+  - [x] `v24-item-asset-lifecycle` migration + test; `user_version` → 24
+  - [x] `asset-lifecycle.ts` pure seam (`warrantyStatus`/`currentValue`) + tests
+  - [x] fields round-trip through mappers/types/create/update + `:memory:` test
+  - [x] "Asset" item-detail section + token-styled warranty badge (design tokens, British English)
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended
+
+> **Outcome (2026-06-30, Wave 2).** Shipped as specified. Migration `v24-item-asset-lifecycle`
+> (`user_version` → **24**; registry contiguous v1…v24, **strict-contiguity guard untouched**) adds four
+> **additive nullable** `items` columns — `acquired_at` TEXT, `warranty_expires_at` TEXT, `purchase_price`
+> REAL `CHECK (… IS NULL OR … >= 0)`, `depreciation_months` INTEGER `CHECK (… IS NULL OR … > 0)` — so every
+> pre-v24 row reads NULL with zero backfill (today's behaviour). `items` already syncs ⇒ **no
+> `SYNC_TABLES`/`FK_REFS` edit** (additive non-FK columns auto-join the LWW payload). Pure
+> `src/features/inventory/asset-lifecycle.ts`: `warrantyStatus(item, now)` (active / expiring-soon within
+> `WARRANTY_EXPIRING_SOON_DAYS = 30` / expired / none) and `currentValue(item, now)` (straight-line residual
+> over `depreciation_months` from `acquired_at`, floored at 0; null term ⇒ flat; null price ⇒ null) — `now`
+> injected, no clock inside. The four fields round-trip through `types/items.ts` / `mappers.ts` /
+> create+update (the `update()` `if (input.X !== undefined)` guards distinguish SET vs leave-unchanged vs
+> clear-to-null); `buildInsert` column/placeholder/param counts verified aligned (28/28/28). UI: an "Asset
+> details" section on the item-detail **Lifecycle** tab (date pickers + price + term, each with an
+> `InfoHint`) + a token-styled warranty badge (`text-success`/`text-warning`/`text-destructive` — **no new
+> token needed**). **Code review: CLEAN with NITs.** One NIT fixed pre-merge: a hardcoded `£0` in the
+> depreciation-term hint → currency-agnostic "zero" (the app is multi-currency; the rendered book value
+> formats via `fmt.currency`). +~29 unit tests (incl. the v24 migration test), +1 smoke step.
+> `build:extension` NOT re-run (no §9/extension edit).
 
 ## Phase 67 — Bulk CSV catalog import/export (no migration)
 
@@ -184,10 +223,29 @@ worktrees, review + merge each; then **Wave 3 = {68}** alone. Code review after 
   partition); repository `:memory:` batch-apply test; smoke imports a tiny CSV and asserts the new
   items appear.
 * **Deliverables checklist.**
-  - [ ] `catalog-import.ts` pure seam (parse + column map + Zod dry-run plan) + tests
-  - [ ] guarded batch apply through existing `ItemRepository` paths + `:memory:` test
-  - [ ] import wizard (upload → map → preview → apply) + Export Wizard catalog export
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended
+  - [x] `catalog-import.ts` pure seam (parse + column map + Zod dry-run plan) + tests
+  - [x] guarded batch apply through existing `ItemRepository` paths + `:memory:` test
+  - [x] import wizard (upload → map → preview → apply) + Export Wizard catalog export
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended
+
+> **Outcome (2026-06-30, Wave 2).** Shipped as specified. **No migration.** Pure
+> `src/features/inventory/catalog-import.ts` reuses the existing RFC-4180 `parseCsv` codec (from
+> `features/projects/bom-import.ts` — **no new dependency**), a header→field column-mapping model
+> (`inferColumnMapping` over `HEADER_SYNONYMS`), and per-row Zod validation producing a dry-run plan
+> `{ create[], update[], errors[] }` (match by a chosen key — `name`/`sku`; matched→update, unmatched→
+> create, invalid→collected error, never thrown; intra-CSV duplicate keys flagged). `applyCatalogImportPlan`
+> goes **through the existing `ItemRepository.create`/`update` only** (no new column SQL / no second path —
+> kept clear of the Phase-66 asset-column edits), honouring the §7.6 storage Hard Stop (`assertWritable` →
+> a suspended write is recorded as `skipped`, not lost). UI: a four-step Foundry `Modal` wizard
+> (upload → map columns → preview with create/update counts + a `role="alert"` per-row error list → apply)
+> launched from the Inventory screen (no new route file); the export side adds a round-trip-ready
+> **Catalogue CSV** format to the existing Export Wizard (`buildCatalogCsv` headers align with the import
+> synonyms). **Code review: CLEAN with NITs.** One SHOULD + one NIT fixed pre-merge: the `CATALOG_CSV`
+> export branch now short-circuits **before** the shared `collectItems()` (was fetching the whole list
+> twice); `UploadStep` now awaits `onFileLoaded` so a rejection while loading the existing catalogue
+> surfaces in the upload-step error region instead of vanishing; plus a British-English comment fix. Two
+> cosmetic NITs **waived**: four suppressed (`void`) dead props on `PreviewStep`; the guarded `data.name!`
+> non-null assertion in `toCreateInput` (the plan builder pre-checks it). +38 unit tests, +1 smoke step.
 
 ## Phase 68 — Alert centre (Wave 3, after 66; no migration)
 

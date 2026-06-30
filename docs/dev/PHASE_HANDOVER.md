@@ -1,4 +1,25 @@
-# PHASE_HANDOVER.md — Phase 64 (aria-live Tier B) — ✅ COMPLETE · in flight: Wave 2 {65, 66, 67}
+# PHASE_HANDOVER.md — inventory-breadth Wave 2 {65, 66, 67} — ✅ MERGED · in flight: Wave 3 {68}
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Wave completed:** **Inventory-breadth Wave 2 — Phases 65 (procurement automation), 66 (asset lifecycle,
+v24), 67 (bulk CSV import).** Three parallel git worktrees, each through its **mandatory pre-merge
+code-review gate** (all CLEAN with NITs; fixes applied, cosmetic NITs waived in the per-phase Outcome
+notes in `docs/todo/inventory-breadth_2026-06-30.md`). Octopus-integrated on `integration/wave2`
+(only `scripts/browser-smoke.mjs` conflicted — both step blocks kept), full suite green, then merged.
+**Date:** 2026-06-30
+**Status:** ✅ **Merged to `main` (`2256118`).** `npx tsc -p tsconfig.app.json --noEmit` clean ·
+**1590/1590 unit tests** (156 files, +97 over the 1493 Wave-1 baseline) · `npm run build` clean (precache
+**3219.22 KiB**, no budget) · +3 browser-smoke steps. **Schema: `user_version = 24`** (Phase 66's
+`v24-item-asset-lifecycle`; 65 and 67 add no migration). **No dependency change.** `build:extension` NOT
+re-run (no §9/extension edit).
+
+**In flight — Wave 3 {68 alert centre}** (alone; its warranty lane reads Phase 66's `warranty_expires_at`).
+No migration (dismissals device-local via a Zustand persist store). Plan doc:
+`docs/todo/inventory-breadth_2026-06-30.md`.
+
+---
+
+## Reference — Phase 64 (aria-live Tier B) — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory-tracking PWA
 **Phase completed:** **Phase 64 — aria-live Tier B** (accessibility, §3 / WCAG 4.1.3). Finished the carried
