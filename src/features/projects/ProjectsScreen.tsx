@@ -103,6 +103,25 @@ export function ProjectsScreen() {
           tabIndex={-1}
           className="flex min-w-0 flex-1 animate-rise flex-col outline-none"
         >
+          {/*
+           * WCAG 4.1.3 — always-mounted polite status region. The master list lives in
+           * the <aside> so the result count would otherwise change silently as projects
+           * are created or deleted. This region is inside <main> to match the Phase-40
+           * Inventory pattern and must be mounted before data loads so later text
+           * mutations are announced by screen readers.
+           */}
+          <p
+            className="sr-only"
+            role="status"
+            aria-live="polite"
+            data-testid="projects-count-live"
+          >
+            {projects.isLoading
+              ? 'Loading projects…'
+              : rows.length === 0
+                ? 'No projects yet.'
+                : `${rows.length} project${rows.length === 1 ? '' : 's'}.`}
+          </p>
           {selectedId ? (
             // Keyed by project id so picking a different project replays the swap-in
             // entrance as the detail pane is replaced (reduced-motion handled globally).

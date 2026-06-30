@@ -1,11 +1,11 @@
 /**
- * Component tests for PurchaseOrdersScreen — WCAG 4.1.3 aria-live coverage
- * (Phase 63). Verifies that:
- *  1. The status live region is always mounted in the detail panel.
- *  2. A status-badge transition (Mark as ordered / Cancel order) populates
- *     the status live region via the mutation's onSuccess callback.
- *  3. A receipt-progress change populates the receipt live region via the
- *     useEffect that tracks the currentReceived total.
+ * Component tests for PurchaseOrdersScreen — WCAG 4.1.3 aria-live coverage.
+ *
+ * Phase 63: status live region (detail panel) — status-badge transitions and
+ * receipt-progress announcements.
+ *
+ * Phase 64 (aria-live Tier B): master-list result-count live region — asserts
+ * the always-mounted polite region announces the order count / empty state.
  *
  * Mocked at the queries boundary so no DB or QueryClient is needed.
  */
@@ -16,28 +16,34 @@ import type { PurchaseOrderWithLines } from '@/db/repositories';
 // ─── query spies ─────────────────────────────────────────────────────────────
 
 /**
- * Shared mutable state for the PO query so individual tests can update it and
+ * Shared mutable state for query hooks so individual tests can update them and
  * trigger re-renders (simulating a mutation → cache invalidation → refetch).
  */
 let poData: PurchaseOrderWithLines | undefined;
 let setStatusSpy: ReturnType<typeof vi.fn>;
 let receiveLineSpy: ReturnType<typeof vi.fn>;
 
+/** Controls usePurchaseOrders for the master-list result-count tests (Phase 64). */
+let ordersState: {
+  isLoading: boolean;
+  data?: { rows: PurchaseOrderWithLines[] };
+} = {
+  isLoading: false,
+  data: {
+    rows: [
+      {
+        id: 'po-1',
+        supplierName: 'Acme Supplies',
+        reference: 'REF-001',
+        effectiveStatus: 'DRAFT',
+        lines: [],
+      } satisfies PurchaseOrderWithLines,
+    ],
+  },
+};
+
 vi.mock('./queries', () => ({
-  usePurchaseOrders: () => ({
-    isLoading: false,
-    data: {
-      rows: [
-        {
-          id: 'po-1',
-          supplierName: 'Acme Supplies',
-          reference: 'REF-001',
-          effectiveStatus: 'DRAFT',
-          lines: [],
-        } satisfies PurchaseOrderWithLines,
-      ],
-    },
-  }),
+  usePurchaseOrders: () => ordersState,
   usePurchaseOrder: () => ({
     isLoading: false,
     data: poData,
@@ -117,6 +123,23 @@ afterEach(cleanup);
 
 beforeEach(() => {
   poData = makeDraftPo();
+
+  // Reset the orders-list state to the default single-PO fixture (preserves
+  // existing Phase-63 tests which assume one order is present).
+  ordersState = {
+    isLoading: false,
+    data: {
+      rows: [
+        {
+          id: 'po-1',
+          supplierName: 'Acme Supplies',
+          reference: 'REF-001',
+          effectiveStatus: 'DRAFT',
+          lines: [],
+        } satisfies PurchaseOrderWithLines,
+      ],
+    },
+  };
 
   // setStatus spy: synchronously calls onSuccess when invoked.
   setStatusSpy = vi.fn(
@@ -205,5 +228,72 @@ describe('PurchaseOrdersScreen — aria-live status messages (WCAG 4.1.3)', () =
     expect(receiptRegion.textContent).toContain('5');
     expect(receiptRegion.textContent).toContain('10');
     expect(receiptRegion.textContent?.toLowerCase()).toContain('receipt');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 64 — Tier B: master-list result-count live region
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PurchaseOrdersScreen — master-list result-count aria-live (WCAG 4.1.3, Phase 64)', () => {
+  it('mounts the master-list count live region before data resolves', () => {
+    ordersState = { isLoading: true };
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region).toBeTruthy();
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('the master-list count region is visually hidden (sr-only)', () => {
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.className).toContain('sr-only');
+  });
+
+  it('announces "Loading" while the orders query is in-flight', () => {
+    ordersState = { isLoading: true };
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.textContent?.toLowerCase()).toContain('loading');
+  });
+
+  it('announces the order count once orders resolve', () => {
+    // ordersState is reset in beforeEach to one order.
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.textContent).toContain('1');
+    expect(region.textContent?.toLowerCase()).toContain('purchase order');
+  });
+
+  it('uses singular form for exactly one order', () => {
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.textContent).toContain('1 purchase order');
+    expect(region.textContent).not.toContain('1 purchase orders');
+  });
+
+  it('announces the empty state when there are no orders', () => {
+    ordersState = { isLoading: false, data: { rows: [] } };
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.textContent?.toLowerCase()).toContain('no purchase orders');
+  });
+
+  it('announces the count for multiple orders', () => {
+    ordersState = {
+      isLoading: false,
+      data: {
+        rows: [
+          { id: 'po-1', supplierName: 'Acme', reference: null, effectiveStatus: 'DRAFT', lines: [] },
+          { id: 'po-2', supplierName: 'BetaCo', reference: null, effectiveStatus: 'ORDERED', lines: [] },
+          { id: 'po-3', supplierName: 'GammaCorp', reference: null, effectiveStatus: 'RECEIVED', lines: [] },
+        ] as PurchaseOrderWithLines[],
+      },
+    };
+    render(<PurchaseOrdersScreen />);
+    const region = screen.getByTestId('po-list-count-live');
+    expect(region.textContent).toContain('3');
+    expect(region.textContent?.toLowerCase()).toContain('purchase orders');
   });
 });

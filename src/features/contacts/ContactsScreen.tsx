@@ -52,6 +52,36 @@ export function ContactsScreen() {
       </header>
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
+      {/*
+       * WCAG 4.1.3 — always-mounted polite status regions. The on-loan list and the
+       * contacts list both change silently after mutations (check-in / add contact).
+       * Separate regions keep the two announcements from colliding; each must be
+       * mounted before data loads so the initial text mutation is announced.
+       */}
+      <p
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="contacts-on-loan-live"
+      >
+        {open.isLoading
+          ? 'Loading on-loan items…'
+          : onLoan.length === 0
+            ? 'Nothing currently checked out.'
+            : `${onLoan.length} item${onLoan.length === 1 ? '' : 's'} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
+      </p>
+      <p
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="contacts-count-live"
+      >
+        {contacts.isLoading
+          ? 'Loading contacts…'
+          : contacts.data && contacts.data.rows.length > 0
+            ? `${contacts.data.rows.length} contact${contacts.data.rows.length === 1 ? '' : 's'}.`
+            : 'No contacts yet.'}
+      </p>
       {/* On loan */}
       <section className="space-y-3">
         <div className="flex items-center gap-2">
