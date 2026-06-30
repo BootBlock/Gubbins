@@ -116,6 +116,36 @@ export class MaintenanceRepository extends BaseRepository {
     return this.toPage(mapped, limit, offset);
   }
 
+  /**
+   * Every active-item schedule joined with its item name (Phase 75, the unified "Upcoming"
+   * agenda). Read-only: unlike {@link listDue} this returns schedules whether or not they are
+   * yet due, so the agenda can show **future** TIME due dates as well as overdue ones. The pure
+   * `agenda.ts` seam derives each TIME schedule's calendar due instant and decides USAGE
+   * due-ness (a USAGE schedule has no calendar date, so it only appears once actually due).
+   * `now` is injected purely to evaluate the derived checkout-hours; TIME schedules sort
+   * soonest-first so a bounded read captures the nearest dates. No schema change.
+   */
+  async listUpcoming(now: number, params: PageParams = {}): Promise<Page<MaintenanceScheduleWithItem>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<MaintenanceScheduleRow & { item_name: string }>(
+      `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, items.name AS item_name, sl.name AS location_name
+       FROM maintenance_schedules ms
+       JOIN items ON items.id = ms.item_id
+       LEFT JOIN locations sl ON sl.id = ms.location_id
+       WHERE items.is_active = 1
+       ORDER BY
+         CASE WHEN ms.basis = 'TIME' THEN 0 ELSE 1 END ASC,
+         CASE WHEN ms.basis = 'TIME' THEN ${TIME_DUE_AT} ELSE 0 END ASC
+       LIMIT ? OFFSET ?;`,
+      [now, limit, offset],
+    );
+    const mapped = rows.map((row) => ({
+      ...rowToMaintenanceSchedule(row),
+      itemName: row.item_name,
+    }));
+    return this.toPage(mapped, limit, offset);
+  }
+
   /** Count of currently due/overdue schedules (for the dashboard badge). */
   async countDue(now: number): Promise<number> {
     const row = await this.driver.queryOne<{ n: number }>(

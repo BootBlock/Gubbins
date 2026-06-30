@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
-import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon, ReportIcon, ShoppingCartIcon, AlertIcon } from '@/components/icons';
+import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon, ReportIcon, ShoppingCartIcon, AlertIcon, DueDateIcon } from '@/components/icons';
 import { BrandMark } from '@/components/BrandMark';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
@@ -69,6 +69,10 @@ export function DashboardScreen() {
         <Link to="/reports" className={cn(buttonVariants({ variant: 'outline' }))}>
           <ReportIcon />
           Reports
+        </Link>
+        <Link to="/upcoming" className={cn(buttonVariants({ variant: 'outline' }))}>
+          <DueDateIcon />
+          Upcoming
         </Link>
         <Link
           to="/alerts"
