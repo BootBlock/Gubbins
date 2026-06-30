@@ -170,4 +170,76 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(await pos.getById(po.id)).toBeUndefined();
     expect(await pos.getLine(line.id)).toBeUndefined();
   });
+
+  // --- Phase 65: createDraftFromReorderPlan --------------------------------------
+
+  it('creates one DRAFT PO per named supplier group, skipping Unassigned', async () => {
+    const res = await items.create({ name: 'Resistor', quantity: 2 });
+    const cap = await items.create({ name: 'Capacitor', quantity: 1 });
+    const led = await items.create({ name: 'LED', quantity: 0 });
+
+    const plan = [
+      {
+        supplierName: 'DigiKey',
+        supplierKey: 'digikey',
+        lines: [
+          { itemId: res.id, itemName: 'Resistor', supplierPartId: null, orderQty: 8, unitCost: 0.05 },
+          { itemId: cap.id, itemName: 'Capacitor', supplierPartId: null, orderQty: 5, unitCost: 0.1 },
+        ],
+      },
+      {
+        supplierName: 'Mouser',
+        supplierKey: 'mouser',
+        lines: [
+          { itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, unitCost: 0.2 },
+        ],
+      },
+      {
+        supplierName: 'Unassigned',
+        supplierKey: '~unassigned',
+        lines: [
+          { itemId: res.id, itemName: 'Another', supplierPartId: null, orderQty: 1, unitCost: null },
+        ],
+      },
+    ] as const;
+
+    const created = await pos.createDraftFromReorderPlan(plan);
+
+    // Two named supplier groups → two DRAFT POs; Unassigned is skipped.
+    expect(created).toHaveLength(2);
+    expect(created.map((p) => p.supplierName).sort()).toEqual(['DigiKey', 'Mouser']);
+
+    const dk = created.find((p) => p.supplierName === 'DigiKey')!;
+    expect(dk.effectiveStatus).toBe('DRAFT');
+    expect(dk.lines).toHaveLength(2);
+    expect(dk.lines.find((l) => l.itemId === res.id)?.orderedQty).toBe(8);
+    expect(dk.lines.find((l) => l.itemId === cap.id)?.orderedQty).toBe(5);
+
+    const mu = created.find((p) => p.supplierName === 'Mouser')!;
+    expect(mu.lines).toHaveLength(1);
+    expect(mu.lines[0]!.orderedQty).toBe(10);
+  });
+
+  it('creates no POs when the plan is empty or only contains Unassigned', async () => {
+    const result = await pos.createDraftFromReorderPlan([]);
+    expect(result).toHaveLength(0);
+
+    const result2 = await pos.createDraftFromReorderPlan([
+      { supplierName: 'Unassigned', supplierKey: '~unassigned', lines: [] },
+    ]);
+    expect(result2).toHaveLength(0);
+  });
+
+  it('stamps unit cost on the PO line from the plan', async () => {
+    const item = await items.create({ name: 'Relay', quantity: 0 });
+    const plan = [
+      {
+        supplierName: 'Farnell',
+        supplierKey: 'farnell',
+        lines: [{ itemId: item.id, itemName: 'Relay', supplierPartId: null, orderQty: 3, unitCost: 1.25 }],
+      },
+    ] as const;
+    const [po] = await pos.createDraftFromReorderPlan(plan);
+    expect(po!.lines[0]!.unitCost).toBe(1.25);
+  });
 });

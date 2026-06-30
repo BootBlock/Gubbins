@@ -1,7 +1,9 @@
 /**
  * ReportRepository — read-only aggregations for the §3 Reports & valuation screen
- * (inventory-depth Phase 61). No schema change: every figure is a projection over data
- * already stored (`items`, `item_stock`, `item_history`, `categories`, `locations`).
+ * (inventory-depth Phase 61) and the §4 procurement automation reorder feed (Phase 65).
+ *
+ * No schema change: every figure is a projection over data already stored (`items`,
+ * `item_stock`, `item_history`, `categories`, `locations`, `supplier_parts`).
  *
  * The repository runs the SQL and hands the minimal raw rows to the pure helpers in
  * `@/features/reports/reports`, which own all bucketing/grouping/boundary maths (and are
@@ -32,6 +34,11 @@ import {
   type MovementReport,
   type ValuationRow,
 } from '@/features/reports/reports';
+import {
+  buildReorderPlan,
+  type ReorderPlanGroup,
+  type ReorderShortfallRow,
+} from '@/features/purchasing/reorder-plan';
 import type { LowStockThresholds } from './types';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
@@ -237,5 +244,83 @@ export class ReportRepository extends BaseRepository {
       createdAt: r.created_at,
     }));
     return selectDeadStock(candidates, sinceDays, now);
+  }
+
+  /**
+   * Low-stock shortfall rows joined to each item's preferred supplier-part (Phase 65).
+   *
+   * Mirrors the `listLowStock` SQL predicate (same `COALESCE(reorder_point, ?)` floor,
+   * same DISCRETE-only restriction — CONSUMABLE_GAUGE items have no countable order unit)
+   * and joins the single preferred `supplier_parts` row for each item so the caller can
+   * immediately feed the result into {@link buildReorderPlan} without a second round-trip.
+   *
+   * The shortfall is `COALESCE(reorder_qty, COALESCE(reorder_point, ?) - quantity)` —
+   * i.e. the per-item explicit top-up amount when set, else the distance from on-hand to
+   * the effective floor (matching `shortfall()` in `reorder-policy.ts`).
+   */
+  async listReorderShortfall(thresholds: LowStockThresholds = {}): Promise<ReorderShortfallRow[]> {
+    const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
+    const rows = await this.driver.query<{
+      item_id: string;
+      item_name: string;
+      shortfall: number;
+      supplier_part_id: string | null;
+      supplier_name: string | null;
+      unit_cost: number | null;
+      pack_qty: number | null;
+      min_order_qty: number | null;
+    }>(
+      // Only DISCRETE items with countable shortfall (CONSUMABLE_GAUGE has no countable
+      // top-up unit); SERIALISED singles and abstract variant parents are excluded as in
+      // listLowStock. The LEFT JOIN brings the preferred supplier-part row — NULL when
+      // none is marked preferred.
+      `SELECT i.id AS item_id,
+              i.name AS item_name,
+              COALESCE(
+                i.reorder_qty,
+                MAX(0, COALESCE(i.reorder_point, ?) - i.quantity)
+              ) AS shortfall,
+              sp.id          AS supplier_part_id,
+              sp.supplier_name,
+              sp.unit_cost,
+              sp.pack_qty,
+              sp.min_order_qty
+         FROM items i
+         LEFT JOIN supplier_parts sp
+                ON sp.item_id = i.id AND sp.is_preferred = 1
+        WHERE i.is_active = 1
+          AND i.tracking_mode = 'DISCRETE'
+          AND i.quantity <= COALESCE(i.reorder_point, ?)
+          AND i.id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
+        ORDER BY (CAST(i.quantity AS REAL) / MAX(COALESCE(i.reorder_point, ?), 1)) ASC,
+                 i.name COLLATE NOCASE ASC;`,
+      [qty, qty, qty],
+    );
+
+    return rows.map((r) => ({
+      itemId: r.item_id,
+      itemName: r.item_name,
+      shortfall: Number(r.shortfall),
+      preferredSupplier: r.supplier_part_id
+        ? {
+            supplierPartId: r.supplier_part_id,
+            supplierName: r.supplier_name!,
+            unitCost: r.unit_cost,
+            packQty: r.pack_qty,
+            minOrderQty: r.min_order_qty,
+          }
+        : null,
+    }));
+  }
+
+  /**
+   * The full reorder plan (Phase 65): shortfall rows grouped by preferred supplier, with
+   * order quantities computed (MOQ + pack rounding). Delegates to the pure
+   * {@link buildReorderPlan} helper — the repository is responsible only for fetching the
+   * input rows.
+   */
+  async reorderPlan(thresholds: LowStockThresholds = {}): Promise<readonly ReorderPlanGroup[]> {
+    const rows = await this.listReorderShortfall(thresholds);
+    return buildReorderPlan(rows);
   }
 }
