@@ -661,8 +661,12 @@ export class ReportRepository extends BaseRepository {
       });
     }
 
-    // 3. Item acquisition prices. `acquired_at` is ISO TEXT, so it is parsed + window-filtered in JS
-    // (the half-open window filter is then re-applied by buildSpendReport).
+    // 3. Item acquisition prices. `acquired_at` is ISO TEXT (no numeric instant), so the precise
+    // half-open window filter is applied in JS after `parseAcquiredAt`. A coarse lexical lower-bound
+    // pre-filter (`acquired_at >= <windowStart − 1 day, as YYYY-MM-DD>`) bounds the scan to roughly
+    // the window without dropping any valid row (ISO-8601 dates sort lexically; the one-day margin
+    // covers the timezone-less date → UTC-midnight parse). The pure seam re-applies the exact filter.
+    const acquiredLowerBound = new Date(windowStart - MS_PER_DAY).toISOString().slice(0, 10);
     const acquisitionRows = await this.driver.query<{
       amount: number;
       acquired_at: string | null;
@@ -673,7 +677,9 @@ export class ReportRepository extends BaseRepository {
               i.category_id AS category_id, c.name AS category_name
          FROM items i
          LEFT JOIN categories c ON c.id = i.category_id
-        WHERE i.purchase_price IS NOT NULL AND i.acquired_at IS NOT NULL;`,
+        WHERE i.purchase_price IS NOT NULL AND i.acquired_at IS NOT NULL
+          AND i.acquired_at >= ?;`,
+      [acquiredLowerBound],
     );
     for (const r of acquisitionRows) {
       const instant = parseAcquiredAt(r.acquired_at);
