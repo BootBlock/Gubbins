@@ -82,6 +82,21 @@ export function browserPwaUpdateApi(): PwaUpdateApi {
   };
 }
 
+/**
+ * Trigger a one-off, user-initiated check for a newer service worker — for a manual
+ * "check for updates" control (the Dashboard version badge). It asks the active
+ * registration to re-fetch the worker script; if a newer build exists it installs and the
+ * already-mounted {@link usePwaUpdate} consumer ({@link PwaUpdatePrompt}) surfaces the
+ * "Reload now" prompt via `onNeedRefresh`. A resolved promise means the check completed,
+ * not that the app is necessarily up to date. No-ops where service workers are
+ * unavailable (dev without a SW, tests, unsupported browsers).
+ */
+export async function checkForAppUpdate(): Promise<void> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  const registration = await navigator.serviceWorker.getRegistration();
+  await registration?.update();
+}
+
 export interface PwaUpdateState {
   /** A newer version has installed and is waiting — show the "Reload now" prompt. */
   readonly needRefresh: boolean;

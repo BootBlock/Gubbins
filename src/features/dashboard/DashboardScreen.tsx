@@ -2,7 +2,6 @@ import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
 import { ExternalLinkIcon } from '@/components/icons';
-import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
@@ -10,16 +9,10 @@ import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
 import { DashboardActions } from './DashboardActions';
 import { DashboardGettingStarted } from './DashboardGettingStarted';
+import { DashboardVersion } from './DashboardVersion';
 
 /** The public GitHub repository — the brand hero links here on the landing page. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
-
-/** Build/release date formatted once for display (the constant never changes at runtime). */
-const RELEASE_LABEL = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-}).format(new Date(`${APP_RELEASE_DATE}T00:00:00`));
 
 /**
  * Landing screen — the §3 customisable widget board. The fixed status cards of the
@@ -70,13 +63,8 @@ export function DashboardScreen() {
         </a>
 
         {/* Version + release date — landing-page only (the other screens use PageHeader,
-            which has no version slot). */}
-        <dl className="ml-auto text-right text-xs leading-tight text-muted-foreground">
-          <dt className="sr-only">Version</dt>
-          <dd className="font-medium tabular-nums text-foreground">v{APP_VERSION}</dd>
-          <dt className="sr-only">Released</dt>
-          <dd className="tabular-nums">{RELEASE_LABEL}</dd>
-        </dl>
+            which has no version slot). Clicking it runs a manual update check. */}
+        <DashboardVersion />
       </header>
 
       {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,
