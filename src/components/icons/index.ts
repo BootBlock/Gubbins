@@ -94,6 +94,9 @@ export {
   // Multi-select & batch label printing (Phase 49, §6)
   ListChecks as SelectIcon,
 
+  // Reports & valuation (inventory-depth Phase 61, §3)
+  ChartColumn as ReportIcon,
+
   // Customisable dashboard widget board (Phase 45, §3)
   LayoutDashboard as CustomiseIcon,
   GripVertical as DragHandleIcon,

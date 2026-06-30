@@ -18,6 +18,7 @@ import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
+import { ReportRepository } from './ReportRepository';
 import { StorageRepository } from './StorageRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
@@ -31,6 +32,7 @@ export { TagRepository } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
+export { ReportRepository } from './ReportRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
@@ -68,6 +70,7 @@ let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
 let attachmentRepository: AttachmentRepository | null = null;
 let projectRepository: ProjectRepository | null = null;
+let reportRepository: ReportRepository | null = null;
 let storageRepository: StorageRepository | null = null;
 let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
@@ -116,6 +119,11 @@ export function getAttachmentRepository(): AttachmentRepository {
 export function getProjectRepository(): ProjectRepository {
   projectRepository ??= new ProjectRepository(getDatabaseDriver(), productionOptions);
   return projectRepository;
+}
+
+export function getReportRepository(): ReportRepository {
+  reportRepository ??= new ReportRepository(getDatabaseDriver(), productionOptions);
+  return reportRepository;
 }
 
 export function getStorageRepository(): StorageRepository {

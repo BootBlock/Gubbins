@@ -12,6 +12,7 @@ import {
   ExportIcon,
   PrintIcon,
   ProjectIcon,
+  ReportIcon,
   ScanIcon,
   SearchIcon,
   SelectIcon,
@@ -203,6 +204,14 @@ function InventoryWorkspace() {
         >
           <ContactsIcon />
           Contacts
+        </Link>
+
+        <Link
+          to="/reports"
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
+        >
+          <ReportIcon />
+          Reports
         </Link>
 
         <Link

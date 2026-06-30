@@ -1,10 +1,15 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Modal, Surface } from '@/components/foundry';
-import { ExportIcon, PackageIcon, VaultIcon } from '@/components/icons';
+import { ExportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
-import { useExportStore, type ExportFormat, type ExportScope } from './useExportStore';
+import {
+  useExportStore,
+  type ExportFormat,
+  type ExportScope,
+  type ReportExportKind,
+} from './useExportStore';
 
 /**
  * The Granular Export Wizard (spec §3, §2 JSON backup, §4.5 Markdown vault).
@@ -13,11 +18,15 @@ import { useExportStore, type ExportFormat, type ExportScope } from './useExport
  * user's last-used settings"). Phase 14 adds the §4.5 granularity — the whole inventory, a
  * single item, or a Project/BOM scope — in three formats: a versioned JSON backup (§2), an
  * items CSV, and an Obsidian Markdown vault (with image assets) zipped off-thread (§4.5).
+ * Phase 61 adds a fourth format — a §3 aggregate **report CSV** (valuation / consumption /
+ * movement / dead-stock) — routed through this same wizard so the remembered-settings and
+ * download paths are shared, not duplicated.
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
   { value: 'JSON', label: 'JSON data export', hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.', icon: ExportIcon },
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
   { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
+  { value: 'REPORTS', label: 'Report CSV', hint: 'A §3 aggregate report — valuation, consumption, movement or dead stock.', icon: ReportIcon },
 ];
 
 const SCOPES: { value: ExportScope; label: string }[] = [
@@ -26,12 +35,31 @@ const SCOPES: { value: ExportScope; label: string }[] = [
   { value: 'PROJECT', label: 'A project / BOM' },
 ];
 
+const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
+  { value: 'VALUATION', label: 'Inventory valuation' },
+  { value: 'CONSUMPTION', label: 'Consumption rate' },
+  { value: 'MOVEMENT', label: 'Stock movement' },
+  { value: 'DEAD_STOCK', label: 'Dead stock' },
+];
+
 export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { format, scope, scopeTargetId, includeInactive, setFormat, setScope, setScopeTargetId, setIncludeInactive } =
-    useExportStore();
+  const {
+    format,
+    scope,
+    scopeTargetId,
+    includeInactive,
+    reportKind,
+    setFormat,
+    setScope,
+    setScopeTargetId,
+    setIncludeInactive,
+    setReportKind,
+  } = useExportStore();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const isReport = format === 'REPORTS';
 
   const itemList = useQuery({
     queryKey: ['export', 'item-picker'],
@@ -44,7 +72,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     enabled: open && scope === 'PROJECT',
   });
 
-  const needsTarget = scope !== 'ALL';
+  const needsTarget = !isReport && scope !== 'ALL';
   const targetMissing = needsTarget && !scopeTargetId;
 
   const run = async () => {
@@ -52,7 +80,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     setDone(null);
     setError(null);
     try {
-      const filename = await runExport(format, { includeInactive, scope, targetId: scopeTargetId });
+      const filename = await runExport(format, { includeInactive, scope, targetId: scopeTargetId, reportKind });
       setDone(filename);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The export failed.');
@@ -92,7 +120,33 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           })}
         </div>
 
-        {/* §4.5 scope */}
+        {/* §3 report picker (Phase 61) — shown only for the report-CSV format. */}
+        {isReport ? (
+          <div className="space-y-2">
+            <label
+              htmlFor="export-report-kind"
+              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Report
+            </label>
+            <select
+              id="export-report-kind"
+              value={reportKind}
+              onChange={(e) => setReportKind(e.target.value as ReportExportKind)}
+              data-testid="export-report-kind"
+              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+            >
+              {REPORT_KINDS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        {/* §4.5 scope (item/project/whole-inventory exports only) */}
+        {!isReport ? (
         <div className="space-y-2">
           <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Scope
@@ -142,8 +196,9 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
             </select>
           ) : null}
         </div>
+        ) : null}
 
-        {scope === 'ALL' ? (
+        {!isReport && scope === 'ALL' ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input
               type="checkbox"
