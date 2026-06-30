@@ -42,6 +42,19 @@ const GROUP_TINTS: Record<NavGroup, string> = {
 };
 
 /**
+ * Translucent, group-coloured background for the cards themselves (the non-CTA tiles),
+ * a touch deeper than the panel wash so each tile lifts off its panel while still letting
+ * the tint beneath show through. Same theme-aware tokens as {@link GROUP_TINTS}; the
+ * Surface's own `backdrop-blur` frosts it for a glassy, tinted look. The Inventory tile is
+ * exempt — it keeps its solid primary call-to-action fill.
+ */
+const GROUP_CARD_TINTS: Record<NavGroup, string> = {
+  primary: 'bg-primary/10 hover:bg-primary/15',
+  manage: 'bg-accent/10 hover:bg-accent/15',
+  system: 'bg-loc-rose/10 hover:bg-loc-rose/15',
+};
+
+/**
  * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
  * card. Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard
  * (`/`) is the current screen and never appears as a tile, so it has no entry.
@@ -126,7 +139,7 @@ export function DashboardNav() {
                             'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
                             isInventory
                               ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
-                              : 'hover:shadow-primary/10',
+                              : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
                           )}
                         >
                           <dest.Icon aria-hidden />
