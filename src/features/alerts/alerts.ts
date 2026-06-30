@@ -167,11 +167,14 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
   return alerts;
 }
 
-function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[]): Alert[] {
+function buildMaintenanceDueAlerts(
+  sources: readonly MaintenanceDueSource[],
+  now: number,
+): Alert[] {
   return sources.map((schedule) => {
     const dueAt =
       schedule.dueAtMs != null ? new Date(schedule.dueAtMs).toISOString() : null;
-    const overdue = schedule.dueAtMs != null && schedule.dueAtMs < Date.now();
+    const overdue = schedule.dueAtMs != null && schedule.dueAtMs < now;
     return {
       id: `maintenance-due:${schedule.id}`,
       kind: 'maintenance-due',
@@ -239,7 +242,7 @@ export function buildAlerts(sources: AlertSources, now: number): Alert[] {
   const all: Alert[] = [
     ...buildLowStockAlerts(sources.lowStock),
     ...buildExpiryAlerts(sources.expiring, now),
-    ...buildMaintenanceDueAlerts(sources.maintenanceDue),
+    ...buildMaintenanceDueAlerts(sources.maintenanceDue, now),
     ...buildWarrantyAlerts(sources.warrantyItems, now),
   ];
 

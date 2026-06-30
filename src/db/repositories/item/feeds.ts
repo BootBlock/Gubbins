@@ -102,6 +102,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const rows = await this.driver.query<ItemRow>(
         `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
          WHERE is_active = 1
+           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
            AND warranty_expires_at IS NOT NULL
            AND warranty_expires_at <= ?
          ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
