@@ -23,11 +23,11 @@ describe('v2 asset-bookings migration', () => {
     await driver.close();
   });
 
-  it('is the second registered migration and targets schema version 2', () => {
-    expect(migrations).toHaveLength(2);
+  it('is the second registered migration (version 2)', () => {
     expect(migrations[1]).toBe(v2AssetBookings);
     expect(v2AssetBookings.version).toBe(2);
-    expect(TARGET_SCHEMA_VERSION).toBe(2);
+    // v2 is no longer the final migration (Phase 81 added v3) — the target only ever grows.
+    expect(TARGET_SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
   });
 
   it('a v1-only database has no asset_bookings table', async () => {
@@ -44,8 +44,9 @@ describe('v2 asset-bookings migration', () => {
     await runMigrations(driver, [v1Initial]);
     await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', ['cat-1', 'Tools']);
 
-    // Apply the full chain on the same database — only v2 runs (v1 is already applied).
-    const report = await runMigrations(driver, migrations);
+    // Apply just the v1+v2 chain on the same database — only v2 runs (v1 is already applied).
+    // (Scoped to v2 so this stays a focused test of the v2 step as later versions are added.)
+    const report = await runMigrations(driver, [v1Initial, v2AssetBookings]);
     expect(report.from).toBe(1);
     expect(report.to).toBe(2);
     expect(report.applied).toEqual([2]);

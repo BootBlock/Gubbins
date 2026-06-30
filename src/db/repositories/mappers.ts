@@ -49,6 +49,8 @@ import type {
   PurchaseOrderRow,
   SupplierPart,
   SupplierPartRow,
+  SupplierPartPriceHistoryEntry,
+  SupplierPartPriceHistoryRow,
   Tag,
   TagRow,
 } from './types';
@@ -173,6 +175,20 @@ export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
     url: row.url,
     isPreferred: row.is_preferred === 1,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToSupplierPartPriceHistory(
+  row: SupplierPartPriceHistoryRow,
+): SupplierPartPriceHistoryEntry {
+  return {
+    id: row.id,
+    supplierPartId: row.supplier_part_id,
+    unitCost: row.unit_cost,
+    currency: row.currency,
+    source: row.source,
+    recordedAt: row.recorded_at,
     updatedAt: row.updated_at,
   };
 }

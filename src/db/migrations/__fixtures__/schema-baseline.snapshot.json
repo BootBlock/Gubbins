@@ -1,5 +1,5 @@
 {
-  "userVersion": 2,
+  "userVersion": 3,
   "objects": [
     {
       "type": "index",
@@ -237,6 +237,12 @@
     },
     {
       "type": "index",
+      "name": "idx_supplier_part_price_history_part",
+      "tbl_name": "supplier_part_price_history",
+      "sql": "CREATE INDEX idx_supplier_part_price_history_part\n              ON supplier_part_price_history(supplier_part_id, recorded_at)"
+    },
+    {
+      "type": "index",
       "name": "idx_supplier_parts_item_id",
       "tbl_name": "supplier_parts",
       "sql": "CREATE INDEX idx_supplier_parts_item_id\n              ON supplier_parts(item_id, is_preferred DESC, supplier_name COLLATE NOCASE)"
@@ -426,6 +432,12 @@
       "name": "stock_batches",
       "tbl_name": "stock_batches",
       "sql": "CREATE TABLE stock_batches (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id  TEXT    NOT NULL REFERENCES locations(id),\n          batch_key    TEXT    NOT NULL,\n          batch_number TEXT,\n          lot_number   TEXT,\n          expiry_date  INTEGER,\n          quantity     INTEGER NOT NULL DEFAULT 0,\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity >= 0),\n          UNIQUE (item_id, location_id, batch_key)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "supplier_part_price_history",
+      "tbl_name": "supplier_part_price_history",
+      "sql": "CREATE TABLE supplier_part_price_history (\n          id               TEXT    PRIMARY KEY NOT NULL,\n          supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,\n          unit_cost        REAL    NOT NULL,                  -- the recorded cost at recorded_at\n          currency         TEXT,                              -- null ⇒ base currency\n          source           TEXT    NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'SCRAPE'\n          recorded_at      INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at       INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (unit_cost >= 0),\n          CHECK (source IN ('MANUAL', 'SCRAPE'))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -654,6 +666,12 @@
       "name": "trg_stock_batches_updated_at",
       "tbl_name": "stock_batches",
       "sql": "CREATE TRIGGER trg_stock_batches_updated_at\n        AFTER UPDATE ON stock_batches\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE stock_batches SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_supplier_part_price_history_updated_at",
+      "tbl_name": "supplier_part_price_history",
+      "sql": "CREATE TRIGGER trg_supplier_part_price_history_updated_at\n        AFTER UPDATE ON supplier_part_price_history\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE supplier_part_price_history SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n        END"
     },
     {
       "type": "trigger",
@@ -3466,6 +3484,94 @@
           "name": "sqlite_autoindex_stock_batches_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "supplier_part_price_history": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "supplier_part_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "unit_cost",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "currency",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "source",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'MANUAL'",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "recorded_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "supplier_parts",
+          "from": "supplier_part_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_supplier_part_price_history_part",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_supplier_part_price_history_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]

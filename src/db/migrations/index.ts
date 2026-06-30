@@ -6,13 +6,19 @@
  * (Gubbins is pre-release, so no incremental upgrade path from an *older* on-disk version
  * is needed). Forward migrations resume on top of that baseline and are appended here in
  * ascending version order; the target schema version Gubbins expects is simply the highest
- * registered version. `v2-asset-bookings` (Phase 78) is the first such forward step.
+ * registered version. `v2-asset-bookings` (Phase 78) was the first such forward step;
+ * `v3-supplier-price-history` (Phase 81) is the second.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
 import { v2AssetBookings } from './v2-asset-bookings';
+import { v3SupplierPriceHistory } from './v3-supplier-price-history';
 
-export const migrations: readonly Migration[] = [v1Initial, v2AssetBookings];
+export const migrations: readonly Migration[] = [
+  v1Initial,
+  v2AssetBookings,
+  v3SupplierPriceHistory,
+];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(

@@ -4,6 +4,7 @@ import { runMigrations } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
 import { v2AssetBookings } from './v2-asset-bookings';
+import { v3SupplierPriceHistory } from './v3-supplier-price-history';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
@@ -17,7 +18,8 @@ import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
  * fixture **byte-for-byte**, so any unintended schema change (an edited table, index,
  * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture is
  * regenerated only when the schema intentionally changes — e.g. the Phase-78 `v2`
- * `asset_bookings` forward migration, which is what bumped the recorded `user_version` to 2.
+ * `asset_bookings` forward migration and the Phase-81 `v3` `supplier_part_price_history`
+ * forward migration, the latter of which bumped the recorded `user_version` to 3.
  */
 describe('schema baseline lock', () => {
   let driver: MemoryDriver;
@@ -30,13 +32,15 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the v1 baseline plus the v2 forward migration, targeting version 2', () => {
-    expect(migrations).toHaveLength(2);
+  it('registers the v1 baseline plus the v2 and v3 forward migrations, targeting version 3', () => {
+    expect(migrations).toHaveLength(3);
     expect(migrations[0]).toBe(v1Initial);
     expect(migrations[1]).toBe(v2AssetBookings);
+    expect(migrations[2]).toBe(v3SupplierPriceHistory);
     expect(v1Initial.version).toBe(1);
     expect(v2AssetBookings.version).toBe(2);
-    expect(TARGET_SCHEMA_VERSION).toBe(2);
+    expect(v3SupplierPriceHistory.version).toBe(3);
+    expect(TARGET_SCHEMA_VERSION).toBe(3);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -57,14 +61,14 @@ describe('schema baseline lock', () => {
     expect(names(snapshot)).toEqual(names(goldenSnapshot));
   });
 
-  it('boots a fresh database cleanly through the chain to user_version 2', async () => {
+  it('boots a fresh database cleanly through the chain to user_version 3', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(2);
-    expect(report.applied).toEqual([1, 2]);
+    expect(report.to).toBe(3);
+    expect(report.applied).toEqual([1, 2, 3]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(2);
+    expect(Number(row?.user_version)).toBe(3);
   });
 
   it('records the current target schema version in the golden fixture', () => {
