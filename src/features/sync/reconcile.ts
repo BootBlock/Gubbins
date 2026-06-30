@@ -310,6 +310,21 @@ function computeRemovedParents(
       removedCategories,
       survivingIds('category_fields', local, localUpserts, localDeletes),
     ),
+    // Phase 62: a removed supplier-part NULLs a PO line's nullable supplier_part_id, and a
+    // removed PO drops its lines (CASCADE). Both parents are plain LWW tables, so their
+    // surviving set is local rows − deletes + upserts.
+    supplier_parts: removedIds(
+      'supplier_parts',
+      local,
+      remote,
+      survivingIds('supplier_parts', local, localUpserts, localDeletes),
+    ),
+    purchase_orders: removedIds(
+      'purchase_orders',
+      local,
+      remote,
+      survivingIds('purchase_orders', local, localUpserts, localDeletes),
+    ),
   };
 }
 
@@ -388,6 +403,16 @@ const FK_REFS: Partial<
   project_expenses: [
     { col: 'project_id', parent: 'projects', nullable: false },
     { col: 'category_id', parent: 'project_budget_categories', nullable: true },
+  ],
+  // Purchase-order lines (Phase 62). po_id mirrors the cascade children above — drop a line
+  // whose order did not survive (ON DELETE CASCADE, NOT NULL). item_id and supplier_part_id
+  // are nullable (ON DELETE SET NULL): an incoming line whose item / supplier-part did not
+  // survive keeps the line (the order history is real) with the reference cleared, mirroring
+  // the checkout source-location / expense-category null-out.
+  purchase_order_lines: [
+    { col: 'po_id', parent: 'purchase_orders', nullable: false },
+    { col: 'item_id', parent: 'items', nullable: true },
+    { col: 'supplier_part_id', parent: 'supplier_parts', nullable: true },
   ],
 };
 

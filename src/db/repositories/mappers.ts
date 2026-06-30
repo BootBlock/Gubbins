@@ -39,6 +39,10 @@ import type {
   ProjectExpenseRow,
   ProjectRow,
   PriceBreak,
+  PurchaseOrder,
+  PurchaseOrderLine,
+  PurchaseOrderLineRow,
+  PurchaseOrderRow,
   SupplierPart,
   SupplierPartRow,
   Tag,
@@ -159,6 +163,34 @@ export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
     priceBreaks: parsePriceBreaks(row.price_breaks),
     url: row.url,
     isPreferred: row.is_preferred === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToPurchaseOrder(row: PurchaseOrderRow): PurchaseOrder {
+  return {
+    id: row.id,
+    supplierName: row.supplier_name,
+    reference: row.reference,
+    status: row.status,
+    currency: row.currency,
+    createdAt: row.created_at,
+    orderedAt: row.ordered_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToPurchaseOrderLine(row: PurchaseOrderLineRow): PurchaseOrderLine {
+  return {
+    id: row.id,
+    poId: row.po_id,
+    itemId: row.item_id,
+    supplierPartId: row.supplier_part_id,
+    description: row.description,
+    orderedQty: Number(row.ordered_qty),
+    receivedQty: Number(row.received_qty),
+    unitCost: row.unit_cost,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

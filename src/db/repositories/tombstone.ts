@@ -62,6 +62,8 @@ export const SYNC_TABLES = [
   'project_budget_categories', // FK → projects (ordered before project_expenses, its parent)
   'project_expenses', // FK → projects, project_budget_categories
   'maintenance_schedules', // FK → items
+  'purchase_orders', // independent (supplier-keyed order; Phase 62 — ordered after items/supplier_parts so its child's FKs never trip on an UPSERT batch)
+  'purchase_order_lines', // FK → purchase_orders (CASCADE), items + supplier_parts (SET NULL) — ordered after its parent PO and after items/supplier_parts (Phase 62)
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];

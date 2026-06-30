@@ -713,6 +713,61 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('creates a purchase order, receives a line and lifts on-hand stock (§4, Phase 62)', async () => {
+    const poItemName = `Smoke PO Part ${stamp}`;
+
+    // A fresh discrete item starting at qty 2 — the receipt must lift its on-hand stock.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const addDialog = page.getByRole('dialog', { name: 'Add item' });
+    await addDialog.getByLabel('Name').fill(poItemName);
+    await addDialog.getByLabel('Tracking').selectOption('DISCRETE');
+    await addDialog.getByLabel('Initial quantity').fill('2');
+    await addDialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(poItemName).waitFor({ state: 'visible', timeout: 5000 });
+
+    // Create a purchase order.
+    await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('po-new').click();
+    const createForm = page.getByTestId('po-create-form');
+    await createForm.waitFor({ state: 'visible', timeout: 5000 });
+    await createForm.getByTestId('po-supplier-name').fill('SmokePO Supplier');
+    await createForm.getByTestId('po-reference').fill(`PO-${stamp}`);
+    await createForm.getByTestId('po-create-save').click();
+    await page.getByTestId('po-detail-status').waitFor({ state: 'visible', timeout: 5000 });
+
+    // Add a line for the new item, ordering 7 units.
+    await page.getByTestId('po-add-line').click();
+    const lineForm = page.getByTestId('po-line-form');
+    await lineForm.waitFor({ state: 'visible', timeout: 5000 });
+    await lineForm.getByTestId('po-line-item').selectOption({ label: poItemName });
+    await lineForm.getByTestId('po-line-qty').fill('7');
+    await lineForm.getByTestId('po-line-save').click();
+    await page.getByTestId('po-line-row').filter({ hasText: poItemName }).waitFor({ state: 'visible', timeout: 5000 });
+
+    // Move the order out of DRAFT so the line can be received.
+    await page.getByTestId('po-mark-ordered').click();
+
+    // Receive the whole outstanding quantity (defaults to 7).
+    await page.getByTestId('po-receive-line').click();
+    const receiveForm = page.getByTestId('po-receive-form');
+    await receiveForm.waitFor({ state: 'visible', timeout: 5000 });
+    await receiveForm.getByTestId('po-receive-save').click();
+
+    // The order derives to RECEIVED once every line is fully received.
+    await page.getByTestId('po-detail-status').filter({ hasText: 'Received' }).waitFor({ state: 'visible', timeout: 5000 });
+
+    // On-hand stock rose from 2 to 9 (2 + 7). Assert on the item's inventory card.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    const poCard = page
+      .locator('div')
+      .filter({ hasText: poItemName })
+      .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+      .last();
+    await poCard.waitFor({ state: 'visible', timeout: 8000 });
+    await poCard.getByText('9', { exact: true }).first().waitFor({ state: 'visible', timeout: 8000 });
+  });
+
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
     const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
     const datasheetUrl = `https://smoke.test/${stamp}.pdf`;
