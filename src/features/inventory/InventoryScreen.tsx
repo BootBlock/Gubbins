@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Input, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
   BuilderIcon,
@@ -9,6 +9,8 @@ import {
   CloudIcon,
   ContactsIcon,
   CycleCountIcon,
+  DuplicateTabIcon,
+  EditIcon,
   ExportIcon,
   ImportIcon,
   PrintIcon,
@@ -44,6 +46,8 @@ import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
 import { CatalogImportWizard } from './components/CatalogImportWizard';
+import { BulkEditDialog } from './components/BulkEditDialog';
+import { useCloneItem } from './mutations';
 import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
@@ -81,6 +85,10 @@ function InventoryWorkspace() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Map<string, LabelItem>>(new Map());
   const [printOpen, setPrintOpen] = useState(false);
+  // Bulk edit (Phase 76) operates on the same multi-selection; duplicate clones one item.
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [actionAnnouncement, setActionAnnouncement] = useState('');
+  const cloneItem = useCloneItem();
 
   const { ast, conditionCount } = useSearchBuilder();
   // The Visual Builder supersedes the quick search/location filters when it is open
@@ -152,11 +160,26 @@ function InventoryWorkspace() {
       }
     : undefined;
   const selectedLabels = useMemo(() => Array.from(selected.values()), [selected]);
+  const selectedItemIds = useMemo(() => Array.from(selected.keys()), [selected]);
   const toggleSelecting = () => {
     setSelecting((on) => {
       if (on) setSelected(new Map()); // leaving select mode clears the selection
       return !on;
     });
+  };
+
+  // Duplicate the single selected item (enabled only when exactly one is selected). The clone
+  // appears in the list on invalidation; the selection is cleared and the outcome announced.
+  const duplicateSelected = async () => {
+    const sourceId = selectedItemIds[0];
+    if (selected.size !== 1 || !sourceId) return;
+    try {
+      await cloneItem.mutateAsync({ sourceId });
+      setSelected(new Map());
+      setActionAnnouncement('Item duplicated — the copy has been added to the inventory.');
+    } catch {
+      setActionAnnouncement('Could not duplicate the item.');
+    }
   };
 
   return (
@@ -343,6 +366,30 @@ function InventoryWorkspace() {
                   Clear
                 </Button>
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkEditOpen(true)}
+                  disabled={selected.size === 0}
+                  data-testid="bulk-edit"
+                >
+                  <EditIcon />
+                  Bulk edit
+                </Button>
+                <Tooltip content="Seed a new item from this one (item-as-template). Select exactly one item." triggerTabIndex={-1}>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={duplicateSelected}
+                      disabled={selected.size !== 1 || cloneItem.isPending}
+                      data-testid="duplicate-item"
+                    >
+                      <DuplicateTabIcon />
+                      {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Button
                   size="sm"
                   onClick={() => setPrintOpen(true)}
                   disabled={selected.size === 0}
@@ -431,6 +478,21 @@ function InventoryWorkspace() {
         onClose={() => setPrintOpen(false)}
         items={selectedLabels}
       />
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onClose={() => setBulkEditOpen(false)}
+        itemIds={selectedItemIds}
+        locations={flatLocations}
+        onApplied={() => {
+          setSelected(new Map());
+          setActionAnnouncement('Selected items updated.');
+        }}
+      />
+
+      {/* Announce bulk-edit / duplicate outcomes (WCAG 4.1.3). */}
+      <LiveRegion visuallyHidden data-testid="inventory-action-live-region">
+        {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
+      </LiveRegion>
     </div>
   );
 }
