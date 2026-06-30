@@ -27,4 +27,5 @@ export type * from './types/purchase-orders';
 export type * from './types/capabilities';
 export type * from './types/projects';
 export type * from './types/contacts';
+export type * from './types/bookings';
 export type * from './types/maintenance';

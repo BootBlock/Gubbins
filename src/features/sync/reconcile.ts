@@ -381,6 +381,16 @@ const FK_REFS: Partial<
     // the location-delete null-out in `applyPlan` / `LocationRepository.delete`.
     { col: 'source_location_id', parent: 'locations', nullable: true },
   ],
+  // Asset bookings (Phase 78). item_id mirrors the item-child cascade — drop an incoming
+  // booking whose asset was removed (ON DELETE CASCADE, NOT NULL). contact_id is nullable
+  // (ON DELETE SET NULL): an incoming booking whose contact did not survive the merge keeps
+  // the reservation but clears the "booked for" reference, mirroring the checkout
+  // source-location / expense-category null-out. (`converted_checkout_id` is a soft pointer,
+  // not a synced FK, so it needs no guard — a dangling pointer only affects a derived label.)
+  asset_bookings: [
+    { col: 'item_id', parent: 'items', nullable: false },
+    { col: 'contact_id', parent: 'contacts', nullable: true },
+  ],
   maintenance_schedules: [
     { col: 'item_id', parent: 'items', nullable: false },
     // Phase 30: the optional per-location scope. Nullable (NO ACTION) — an incoming

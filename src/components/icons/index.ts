@@ -123,6 +123,7 @@ export {
   HandCoins as CheckoutIcon,
   Undo2 as CheckInIcon,
   CalendarClock as DueDateIcon,
+  CalendarRange as BookingIcon,
   Printer as PrintIcon,
   FileJson as ExportIcon,
   FolderArchive as VaultIcon,

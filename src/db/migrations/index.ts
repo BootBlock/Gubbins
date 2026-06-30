@@ -1,17 +1,18 @@
 /**
  * The ordered migration registry (spec §2.3).
  *
- * As of the Phase 69 migration-baseline consolidation this holds a single
- * `v1-initial` migration that builds the entire current schema in one step
- * (Gubbins is pre-release with disposable developer-only data, so no incremental
- * upgrade path from an older on-disk version is needed). New migrations are still
- * appended here in ascending version order; the target schema version Gubbins
- * expects is simply the highest registered version.
+ * The Phase 69 migration-baseline consolidation collapsed the historical v1…v24 chain
+ * into a single `v1-initial` migration that builds the entire baseline schema in one step
+ * (Gubbins is pre-release, so no incremental upgrade path from an *older* on-disk version
+ * is needed). Forward migrations resume on top of that baseline and are appended here in
+ * ascending version order; the target schema version Gubbins expects is simply the highest
+ * registered version. `v2-asset-bookings` (Phase 78) is the first such forward step.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
+import { v2AssetBookings } from './v2-asset-bookings';
 
-export const migrations: readonly Migration[] = [v1Initial];
+export const migrations: readonly Migration[] = [v1Initial, v2AssetBookings];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(

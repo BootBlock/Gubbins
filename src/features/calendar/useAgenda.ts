@@ -10,6 +10,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import {
+  getAssetBookingRepository,
   getCheckoutRepository,
   getItemRepository,
   getMaintenanceRepository,
@@ -84,19 +85,26 @@ export function useAgenda(): {
     queryFn: () => getReportRepository().listReorderShortfall(),
   });
 
+  const bookingsQuery = useQuery({
+    queryKey: ['agenda', 'bookings'],
+    queryFn: () => getAssetBookingRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
+  });
+
   const isLoading =
     maintenanceQuery.isLoading ||
     warrantyQuery.isLoading ||
     expiryQuery.isLoading ||
     checkoutsQuery.isLoading ||
-    reorderQuery.isLoading;
+    reorderQuery.isLoading ||
+    bookingsQuery.isLoading;
 
   const isError =
     maintenanceQuery.isError ||
     warrantyQuery.isError ||
     expiryQuery.isError ||
     checkoutsQuery.isError ||
-    reorderQuery.isError;
+    reorderQuery.isError ||
+    bookingsQuery.isError;
 
   const sources: AgendaSources = {
     maintenance: (maintenanceQuery.data?.rows ?? []).map((s) => ({
@@ -149,6 +157,15 @@ export function useAgenda(): {
       itemId: r.itemId,
       itemName: r.itemName,
       shortfall: r.shortfall,
+    })),
+
+    bookings: (bookingsQuery.data?.rows ?? []).map((b) => ({
+      id: b.id,
+      itemId: b.itemId,
+      itemName: b.itemName,
+      contactName: b.contactName,
+      startDate: b.startDate,
+      endDate: b.endDate,
     })),
   };
 
