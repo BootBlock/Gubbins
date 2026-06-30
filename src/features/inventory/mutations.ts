@@ -185,9 +185,13 @@ export function useMoveItem() {
   });
 }
 
+/** Mutation key used to count in-flight quantity adjusts (rapid-tap de-bounce, see below). */
+const ADJUST_QUANTITY_KEY = ['inventory', 'adjust-quantity'] as const;
+
 export function useAdjustQuantity() {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: ADJUST_QUANTITY_KEY,
     mutationFn: ({ id, delta, note }: { id: string; delta: number; note?: string }) =>
       getItemRepository().adjustQuantity(id, delta, note),
     onMutate: async ({ id, delta }) => {
@@ -197,15 +201,26 @@ export function useAdjustQuantity() {
     },
     onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      // Only the LAST tap of a rapid burst refetches the list. Each tap is optimistic and
+      // its own write; if every settle invalidated, an earlier tap's refetch could resolve
+      // before a later tap's write had landed and snap the displayed quantity back to a
+      // stale value mid-burst. `isMutating === 1` means this is the only adjust still in
+      // flight, i.e. the burst is over (TanStack's awaited-optimistic-update pattern).
+      if (client.isMutating({ mutationKey: ADJUST_QUANTITY_KEY }) === 1) {
+        void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });
 }
 
+/** Mutation key used to count in-flight gauge adjusts (rapid-tap de-bounce). */
+const ADJUST_GAUGE_KEY = ['inventory', 'adjust-gauge'] as const;
+
 export function useAdjustGauge() {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: ADJUST_GAUGE_KEY,
     mutationFn: ({ id, adjustment }: { id: string; adjustment: GaugeAdjustment }) =>
       getItemRepository().adjustGauge(id, adjustment),
     onMutate: async ({ id, adjustment }) => {
@@ -217,7 +232,11 @@ export function useAdjustGauge() {
     },
     onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      // As with quantity: only the last of a rapid burst refetches, so an earlier tap's
+      // refetch can't snap the gauge back to a stale value before a later write lands.
+      if (client.isMutating({ mutationKey: ADJUST_GAUGE_KEY }) === 1) {
+        void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });
