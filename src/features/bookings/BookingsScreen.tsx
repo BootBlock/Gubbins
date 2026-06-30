@@ -52,6 +52,44 @@ function dayInputToMs(value: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * Turn a bookings-load failure into a concrete reason plus actionable guidance.
+ *
+ * The list is read from the local database, so a load failure is almost always a
+ * local-storage / database problem (a blocked or evicted OPFS store, a migration that
+ * couldn't open, or private-browsing restrictions) rather than a network outage. We surface
+ * the underlying error verbatim so the cause is visible, and pair it with the most likely
+ * fix instead of a bare "please refresh".
+ */
+function describeBookingsLoadError(error: unknown): { reason: string; guidance: string } {
+  const reason =
+    error instanceof Error && error.message.trim()
+      ? error.message.trim()
+      : 'The bookings could not be read from the local database.';
+
+  const lower = reason.toLowerCase();
+  let guidance =
+    'This usually means the local database could not be opened. Try again — if it keeps ' +
+    'failing, close any other tabs running Gubbins (only one can hold the database at a time), ' +
+    'then reload. As a last resort, restart your browser.';
+
+  if (lower.includes('quota') || lower.includes('storage') || lower.includes('space')) {
+    guidance =
+      'Your browser is out of storage space for this site. Free up disk space (or clear other ' +
+      'sites’ data), then try again. Your existing data is safe.';
+  } else if (lower.includes('private') || lower.includes('security') || lower.includes('denied')) {
+    guidance =
+      'Your browser is blocking local storage — this often happens in private/incognito windows. ' +
+      'Open Gubbins in a normal window and allow site data for this app, then try again.';
+  } else if (lower.includes('migrat') || lower.includes('schema') || lower.includes('version')) {
+    guidance =
+      'The database is mid-upgrade or its schema doesn’t match this version of the app. Make sure ' +
+      'every Gubbins tab is on the same version, close the others, then reload to finish the upgrade.';
+  }
+
+  return { reason, guidance };
+}
+
 // ---------------------------------------------------------------------------
 // New-booking form
 // ---------------------------------------------------------------------------
@@ -172,9 +210,12 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
         <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. for the trade-show build" />
       </label>
 
-      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         <Button onClick={submit} disabled={create.isPending} data-testid="booking-submit">
           <BookingIcon />
           Book asset
@@ -281,7 +322,7 @@ function BookingCard({
 // ---------------------------------------------------------------------------
 
 export function BookingsScreen() {
-  const { data, isLoading, isError } = useBookings();
+  const { data, isLoading, isError, error, refetch, isFetching } = useBookings();
   const [announcement, setAnnouncement] = useState('');
   const [announcementOk, setAnnouncementOk] = useState(true);
 
@@ -323,8 +364,25 @@ export function BookingsScreen() {
         )}
 
         {isError && !isLoading && (
-          <Surface className="p-6 text-center text-sm text-destructive">
-            Failed to load bookings. Please refresh the page.
+          <Surface className="flex flex-col gap-3 p-6" data-testid="bookings-load-error">
+            <p className="text-sm font-medium text-destructive">Couldn’t load your bookings</p>
+            <p className="text-sm text-destructive" data-testid="bookings-load-error-reason">
+              {describeBookingsLoadError(error).reason}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {describeBookingsLoadError(error).guidance}
+            </p>
+            <div className="flex justify-start">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                data-testid="bookings-load-retry"
+              >
+                Try again
+              </Button>
+            </div>
           </Surface>
         )}
 
