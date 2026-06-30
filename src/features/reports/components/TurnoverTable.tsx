@@ -1,9 +1,13 @@
 import type { Formatters } from '@/lib/format';
 import type { TurnoverReport } from '../turnover';
 
-/** Format a turnover ratio as `2.4×`, or an em dash when there is no value to turn over. */
+/**
+ * Format a turnover ratio as `2.4×` (one decimal place), or an em dash when there is no value to
+ * turn over. A plain decimal — not `toLocaleString` — so the ratio never gains locale thousands
+ * grouping the surrounding figures don't use.
+ */
 function formatRatio(value: number | null): string {
-  return value == null ? '—' : `${(Math.round(value * 10) / 10).toLocaleString()}×`;
+  return value == null ? '—' : `${Math.round(value * 10) / 10}×`;
 }
 
 /** Format a days-on-hand figure as a rounded day count, or an em dash when undefined. */
