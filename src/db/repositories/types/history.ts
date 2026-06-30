@@ -24,3 +24,19 @@ export interface ItemHistoryEntry {
   readonly metadata: Record<string, unknown> | null;
   readonly createdAt: number;
 }
+
+/**
+ * A joined `item_history` row carrying the owning item's name + active flag, for the
+ * cross-item global activity feed (Phase 80). The base history columns plus the two
+ * joined `items` columns.
+ */
+export interface ActivityFeedRow extends ItemHistoryRow {
+  readonly item_name: string;
+  readonly item_is_active: number;
+}
+
+/** One global-activity-feed entry: a history entry plus its owning item's name + state. */
+export interface ActivityFeedEntry extends ItemHistoryEntry {
+  readonly itemName: string;
+  readonly itemIsActive: boolean;
+}
