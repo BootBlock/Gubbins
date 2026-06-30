@@ -834,6 +834,12 @@ try {
     if ((await contactsLive.getAttribute('role')) !== 'status') {
       throw new Error('contacts-count-live does not have role="status"');
     }
+    if ((await onLoanLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('contacts-on-loan-live is not aria-live="polite"');
+    }
+    if ((await contactsLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('contacts-count-live is not aria-live="polite"');
+    }
     // Both regions must announce something once data loads.
     await page.waitForFunction(
       () => {

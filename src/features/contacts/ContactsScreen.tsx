@@ -76,9 +76,9 @@ export function ContactsScreen() {
         aria-live="polite"
         data-testid="contacts-count-live"
       >
-        {contacts.isLoading
+        {contacts.data == null
           ? 'Loading contacts…'
-          : contacts.data && contacts.data.rows.length > 0
+          : contacts.data.rows.length > 0
             ? `${contacts.data.rows.length} contact${contacts.data.rows.length === 1 ? '' : 's'}.`
             : 'No contacts yet.'}
       </p>
