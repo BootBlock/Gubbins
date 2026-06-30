@@ -174,7 +174,7 @@ export function AssetEditor({ item }: { item: Item }) {
           label="Depreciation term (months)"
           hint={
             'Useful life in whole months for **straight-line depreciation**: the book value ' +
-            'decreases linearly from the purchase price to £0 over this period, starting from ' +
+            'decreases linearly from the purchase price to zero over this period, starting from ' +
             'the *Acquired on* date. Leave blank to keep the value flat (no depreciation).'
           }
         >
