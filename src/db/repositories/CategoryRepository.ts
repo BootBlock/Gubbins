@@ -9,6 +9,7 @@
  * category, so `listFields` reads them whole; per-item value reads are bounded by
  * the category's field count, not the 100k+ item set, so they need no pagination.
  */
+import { validateFieldValue } from '@/features/inventory/custom-fields';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
@@ -242,11 +243,15 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', `Item "${itemId}" does not exist.`);
     }
 
-    const fieldRows = await this.driver.query<{ id: string }>(
-      'SELECT id FROM category_fields WHERE category_id IS ?;',
+    // Fetch each field's *full* definition (type/options/required/name), not just
+    // its id, so the value can be validated and canonically coerced before it is
+    // persisted (Phase 70 — typed-valid at the point of save). Reuses the shared
+    // `rowToCategoryField` mapper for one source of truth on the DTO shape.
+    const fieldRows = await this.driver.query<CategoryFieldRow>(
+      'SELECT * FROM category_fields WHERE category_id IS ?;',
       [item.category_id],
     );
-    const allowed = new Set(fieldRows.map((f) => f.id));
+    const fieldById = new Map(fieldRows.map((r) => [r.id, rowToCategoryField(r)]));
 
     // Existing value-row ids (field_id → id) so a clear can tombstone by id (Phase 11:
     // item_field_values is synced; a cleared value must propagate as a deletion).
@@ -257,13 +262,24 @@ export class CategoryRepository extends BaseRepository {
     const valueIdByField = new Map(existingRows.map((r) => [r.field_id, r.id]));
 
     const statements: SqlStatement[] = [];
-    for (const [fieldId, value] of entries) {
-      if (!allowed.has(fieldId)) {
+    for (const [fieldId, rawValue] of entries) {
+      const def = fieldById.get(fieldId);
+      if (def === undefined) {
         throw new DbError(
           'SQLITE_CONSTRAINT',
           `Field "${fieldId}" does not belong to this item's category.`,
         );
       }
+
+      // Validate + canonically coerce the incoming value against its definition.
+      // A failure rejects the whole write; a success yields the *normalised* string
+      // to persist (e.g. NUMBER '1.50' → '1.5'), or null to clear/tombstone the row.
+      const result = validateFieldValue(def, rawValue);
+      if (!result.ok) {
+        throw new DbError('SQLITE_CONSTRAINT', result.error);
+      }
+      const value = result.value;
+
       if (value === null) {
         const existingId = valueIdByField.get(fieldId);
         if (existingId !== undefined) {

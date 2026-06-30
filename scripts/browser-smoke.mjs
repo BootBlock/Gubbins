@@ -613,6 +613,62 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('validates & round-trips a category custom field on an item (Phase 70)', async () => {
+    // Create an item assigned to the smoke category (which carries the NUMBER field
+    // `fieldName` added earlier), so its Classification tab renders the editor.
+    const customItemName = `Smoke Custom ${stamp}`;
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    let dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.getByLabel('Name').fill(customItemName);
+    await dialog.getByLabel('Tracking').selectOption('DISCRETE');
+    await dialog.getByLabel('Category (optional)').selectOption({ label: categoryName });
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    const customCard = () =>
+      page
+        .locator('div')
+        .filter({ hasText: customItemName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+
+    // Open the item → Classification tab → the custom-field editor.
+    await customCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
+    const field = dialog.getByLabel(fieldName, { exact: false }).first();
+    await field.waitFor({ state: 'visible', timeout: 5000 });
+
+    // A non-numeric value must block the save (Phase 70 validation seam): the editor
+    // disables the save button and the value never reaches the worker.
+    await field.fill('not-a-number');
+    const saveBtn = dialog.getByRole('button', { name: /^Save \d+ change/ });
+    await saveBtn.waitFor({ state: 'visible', timeout: 5000 });
+    if (await saveBtn.isEnabled()) {
+      throw new Error('save was not blocked for an invalid NUMBER custom field');
+    }
+
+    // A canonicalisable NUMBER ('12.50') saves; the worker persists it as '12.5'.
+    await field.fill('12.50');
+    await saveBtn.click();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    // Reopen — the value must come back from the DB (proves it persisted through the
+    // worker, not just local state) in its canonical coerced form.
+    await customCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
+    const reopened = dialog.getByLabel(fieldName, { exact: false }).first();
+    await reopened.waitFor({ state: 'visible', timeout: 5000 });
+    const persisted = await reopened.inputValue();
+    if (persisted !== '12.5') {
+      throw new Error(`custom NUMBER field did not round-trip canonically (got "${persisted}")`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
   await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
     // The bulk screws were created with qty 100 — comfortably above the global default
     // (5), so they are NOT in the low-stock feed. Open the item and give it its own,
