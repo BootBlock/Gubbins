@@ -15,7 +15,7 @@ import { buildContentSecurityPolicy } from './src/csp';
 // the TS program / app bundle as a JSON import) and expose it via `define`.
 const pkg = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-) as { version: string };
+) as { version: string; releaseDate: string };
 
 /**
  * Cross-origin isolation headers (spec §2.2.6).
@@ -88,11 +88,12 @@ export default defineConfig({
   base: '/Gubbins/',
 
   // Build-time constants consumed by src/lib/app-version.ts (About + Dashboard).
-  // The release date is the build date (each GitHub Pages deploy is a release), as an
-  // ISO `YYYY-MM-DD` string so the UI can format it without shipping a date library.
+  // The release date is pinned per version in package.json (`releaseDate`, an ISO
+  // `YYYY-MM-DD` string) — bump it alongside `version` for each release — so the UI can
+  // format it without shipping a date library and it never drifts with rebuilds.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __APP_RELEASE_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    __APP_RELEASE_DATE__: JSON.stringify(pkg.releaseDate),
   },
 
   build: {
