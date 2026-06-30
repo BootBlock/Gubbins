@@ -1800,11 +1800,10 @@ migration (synced `asset_bookings` table → **`user_version` 2**, additive/forw
 Phase 79 was read-only. The suite grew 1750 → **1818** tests; each phase passed its own code-review
 gate (both PASS). Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
 
-**Add-ons (Wave 3) — being picked up now:**
+**Add-ons (Wave 3) — COMPLETE ✅:**
 - [x] **#6 Global activity feed** — read-only, **no migration** — ✅ **DONE** (Phase 80; see below).
-- [ ] **#7 Supplier price-history tracking** — a new lightweight history table → **`user_version` 3**
-  (recorded on every genuine `supplier_parts.unit_cost` change; manual edit + scrape both flow through
-  `SupplierPartRepository.create`/`.update`). Trigger: a request to chart a supplier part's cost over time.
+- [x] **#7 Supplier price-history tracking** — synced table → **`user_version` 3** — ✅ **DONE**
+  (Phase 81; see below).
 
 ---
 
@@ -1832,3 +1831,47 @@ gate (both PASS). Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
   tests** (158 files, +15 over Phase 79) · build green.
 
 Living plan: `docs/todo/activity-feed_2026-06-30.md`.
+
+### Phase 81 — Supplier price-history tracking (Wave 3 add-on #7) — MERGED (`6699a7b`)
+
+- **What:** records a supplier part's `unit_cost` over time instead of overwriting it, so a part's
+  price movement can be charted. Both the manual edit and the supplier scrape flow through
+  `SupplierPartRepository.create` / `.update`, so instrumenting the repository captures both. The
+  wave's **one** migration: **`user_version` 2 → 3**.
+- **Migration (v3, additive/forward, no wipe):** new synced `supplier_part_price_history` table
+  (`src/db/migrations/v3-supplier-price-history.ts`) — FK `supplier_part_id → supplier_parts`
+  (NOT NULL, ON DELETE CASCADE), `unit_cost`/`currency`/`source` (`CHECK IN ('MANUAL','SCRAPE')`)/
+  `recorded_at` + `updated_at` auto-stamp trigger, `CHECK (unit_cost >= 0)`. Wired into `SYNC_TABLES`
+  (after `supplier_parts`) + an `FK_REFS` reconcile guard. Schema-baseline snapshot **regenerated**
+  (machine, not hand-edited); `v1-initial.test.ts` retargeted to v3; the Phase-78 `v2` test had its
+  "v2 is the last migration" assumptions loosened.
+- **Recording (dedup, same-transaction):** a point is recorded on create when a cost is supplied, and
+  on update only when the cost is non-null **and** differs from the existing value (a no-op or a
+  clear-to-null records nothing). The INSERT rides the **same transaction** as the cost write in both
+  the plain-update and the preferred-toggle paths. A `source` field threads through the create/update
+  inputs (default `'MANUAL'`); the scrape resolver tags its writes `'SCRAPE'`. The currency tracked is
+  the new one when supplied, else the existing.
+- **Pure seam:** `src/features/inventory/price-history.ts` — `buildPriceSeries` (first/latest/min/max,
+  `changeAbs`, divide-by-zero-safe `changePct`, direction) + `sparklinePolyline` (empty/single/flat
+  safe). 13 unit tests.
+- **Surface:** a compact `SupplierPartPriceHistory` (sparkline via `currentColor` + a `text-*` tone
+  token + last-N points) under each row in `SupplierPartsTable`; `useSupplierPartPriceHistory` keyed
+  under `item()` so the existing supplier-part invalidation refreshes it.
+- Review gate: **PASS, clean** (no blockers; only documented NITs needing no change). tsc clean ·
+  **1859 unit tests** (161 files, +26 over Phase 80) · build green.
+
+Living plan: `docs/todo/supplier-price-history_2026-06-30.md`.
+
+---
+
+## Wave 3 of the third feature-gap audit — COMPLETE (2026-06-30)
+
+Both Wave-3 add-ons are merged & pushed: **Phase 80** (global activity feed, `7f3a295`, read-only,
+no migration) and **Phase 81** (supplier price-history, `6699a7b`, the wave's **one** migration →
+**`user_version` 3**). Suite grew 1818 → **1859** tests; each phase passed its own code-review gate.
+
+**This clears the entire third feature-gap audit** — all 7 candidates are done across Waves 1–3
+(75 upcoming-agenda, 76 bulk-edit/clone, 77 data-hygiene, 78 asset-booking, 79 spend-analytics,
+80 activity-feed, 81 supplier-price-history). Schema is at **`user_version` 3**. There is no Wave-4
+continuation: a fresh competitor re-benchmark that surfaces genuinely new in-scope gaps would be a
+**new** audit, not a continuation of this one.
