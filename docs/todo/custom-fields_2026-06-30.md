@@ -233,13 +233,49 @@ relevant) and report the result plainly.
   malformed) + repository `:memory:` (reject invalid, clear-to-null, round-trip); smoke: set a
   NUMBER custom field on an item, reopen, assert it persisted (and a bad value is blocked).
 * **Deliverables checklist.**
-  - [ ] `custom-fields.ts` pure seam (`validateFieldValue` + `fieldsForCategory`) + tests
-  - [ ] validation wired into `CategoryRepository.setItemFieldValues` + `:memory:` tests
-  - [ ] `CustomFieldsEditor` hardening (required/typed validation, `role="alert"` errors)
-  - [ ] +1 browser smoke step
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
+  - [x] `custom-fields.ts` pure seam (`validateFieldValue` + `fieldsForCategory`) + tests
+  - [x] validation wired into `CategoryRepository.setItemFieldValues` + `:memory:` tests
+  - [x] `CustomFieldsEditor` hardening (required/typed validation, `role="alert"` errors)
+  - [x] +1 browser smoke step
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
 
-> **Outcome (pending).**
+> **Outcome (2026-06-30, Wave 2 — merged `0f5c694`).** Shipped as specified, on the existing
+> `category_fields`/`item_field_values` tables — **no migration, no second write path**. The pure seam
+> `src/features/inventory/custom-fields.ts` exports `validateFieldValue(def, raw)` (never throws —
+> returns `{ ok:true; value:string|null } | { ok:false; error }`) and `fieldsForCategory(defs, categoryId)`
+> (filter + `position`-then-name order, mirroring the repo's `ORDER BY`; documents the **flat, no-ancestor**
+> model). Coercion is **canonical**: NUMBER via `String(Number(text))` behind a `Number.isFinite` gate
+> (`'1.50'`→`'1.5'`, `'01'`→`'1'`, `'1e3'`→`'1000'`; `'1.2.3'`/`'abc'`/`±Infinity`/`NaN` rejected) — hex
+> (`'0x10'`→`'16'`) and exponent forms are accepted as the finite numbers they denote (documented + tested);
+> DATE is **hand-parsed** from `YYYY-MM-DD` with explicit month/day bounds + a Gregorian leap-year check
+> (rejects `2026-02-30`/`2026-13-40`/`2025-02-29`), never the lenient `Date` constructor; BOOLEAN
+> normalises case-insensitively to `'true'`/`'false'`; SELECT enforces `∈ options`; blank ⇒ `null` (clears
+> the row, never stores `''`), `is_required` blank ⇒ error. Anything time-related is injected (`opts.now`,
+> reserved). **Repository:** `setItemFieldValues` now widens its one field-membership query from
+> `SELECT id` to `SELECT *` → `Map<fieldId, CategoryField>` via the existing `rowToCategoryField`, validates
+> each value, throws `DbError('SQLITE_CONSTRAINT', …)` on failure and **persists the coerced value**; the
+> UUID-id + `UNIQUE(item_id, field_id)` upsert / tombstone-on-clear path is unchanged (no deterministic-id
+> churn). **UI:** `CustomFieldsEditor` validates every changed field through the same seam, disables Save
+> while any field is invalid/required-empty, and renders a `role="alert"` error as a **sibling of the
+> label** wired via the existing `fieldAria` seam (Phase-51 a11y) across all control types; design tokens
+> (`text-destructive`) + British English throughout; `CategoryManagerDialog` untouched. **Tests: 1492/135
+> → 1515/136** (+1 file, +18 tests: full pure-seam matrix + 5 repo `:memory:` tests — reject-invalid,
+> canonical-persist `'1.50'`→`'1.5'`, clear-to-null still tombstones); `npx tsc -p tsconfig.app.json
+> --noEmit` clean; `npm run build` clean (precache 3228.89 KiB, no budget). **Code review: CLEAN-WITH-NITS.**
+> **Two findings fixed pre-merge:** (1) the browser-smoke "invalid value blocks save" sub-assertion was
+> unreliable — a native `<input type=number>` drops non-numeric text before the seam sees it, so it proved
+> nothing; replaced with the reliable end-to-end fact (a valid `'12.50'` coerces to `'12.5'` and round-trips
+> from the worker DB), with the block path left to the pure-seam + `:memory:` tests; (2) the
+> exhaustiveness-guard `void _never` was unreachable after the `return` — reordered above it. **Three NITs
+> waived:** the reserved-but-unused `opts.now` clock seam (forward-looking, matches sibling modules); the
+> documented hex/exponent NUMBER acceptance (harmless for an inventory field, tested); and the sanctioned
+> layering import (`CategoryRepository` imports the pure `validateFieldValue`) — no runtime cycle, since
+> `custom-fields.ts` imports only the `CategoryField` **type** from `@/db/repositories`. **Smoke status:**
+> parse-validated only (`node --check`), not run end-to-end — same known Phase-69 limitation (Vite
+> `server.fs.allow` won't serve the `sqlite-wasm` binary from outside the worktree root through the
+> junction); the step is authored against real selectors and follows the existing `await step(...)`
+> structure. The validation paths are fully proven by the 1515 unit/`:memory:` tests on the real
+> FTS5-capable `node:sqlite` engine.
 
 ## Phase 71 — Search / filter on custom fields (no migration) — Wave 3, parallel with 72
 
@@ -301,78 +337,99 @@ relevant) and report the result plainly.
 ## Continuation prompt
 
 ```text
-Continue the Gubbins custom-field-templates plan (docs/todo/custom-fields_2026-06-30.md). Wave 1
-(Phase 69 — migration squash to a single v1-initial baseline) is COMPLETE and merged to main
-(6275c36): user_version 1, registry = [v1Initial], golden-equivalence test, 1492 unit tests / 135
-files, tsc + build clean. Now run WAVE 2 = {Phase 70} ALONE.
+Continue the Gubbins custom-field-templates plan (docs/todo/custom-fields_2026-06-30.md). Waves 1 & 2
+are COMPLETE and merged to main: Phase 69 (migration squash → single v1-initial baseline, 6275c36) and
+Phase 70 (custom-field validation seam + save-time hardening, 0f5c694). main now sits at user_version 1,
+1515 unit tests / 136 files, tsc + build clean (precache 3228.89 KiB, no budget). The pure seam
+src/features/inventory/custom-fields.ts exports validateFieldValue(def, raw) → { ok:true; value:string|
+null } | { ok:false; error } (NEVER throws; canonical coercion per field_type) and fieldsForCategory;
+CategoryRepository.setItemFieldValues now validates+coerces through it. Now run WAVE 3 = {Phase 71 +
+Phase 72} in TWO PARALLEL worktrees.
 
-IMPORTANT CONTEXT (verified at plan entry): category custom-field *templates already ship* — do NOT
-build new custom_field_* tables or a CustomFieldRepository. The foundation exists as `category_fields`
+IMPORTANT CONTEXT (verified across the plan): category custom-field *templates already ship* — do NOT
+build new custom_field_* tables or a CustomFieldRepository. The foundation is `category_fields`
 (definitions) + `item_field_values` (values, EAV, lenient-defaulting, UNIQUE(item_id, field_id)) since
 the v1 baseline, synced (SYNC_TABLES + FK_REFS), owned by `CategoryRepository` (addField/updateField/
-deleteField + position reorder; resolveItemFields/setItemFieldValues). FIELD_TYPES = TEXT|NUMBER|
-BOOLEAN|DATE|SELECT (src/db/repositories/constants.ts). UI: CategoryManagerDialog.tsx (defs management)
-+ CustomFieldsEditor.tsx (per-item, one typed input per field_type, src/features/inventory/
-components/). Hooks in src/features/inventory/categories.ts. Categories are FLAT (no parent_id) → no
-ancestor resolution. Phase 70 builds ON these existing tables — no migration.
+deleteField + position reorder; resolveItemFields/setItemFieldValues, which now enforces the Phase-70
+validateFieldValue seam). FIELD_TYPES = TEXT|NUMBER|BOOLEAN|DATE|SELECT (src/db/repositories/
+constants.ts). Categories are FLAT (no parent_id) → no ancestor resolution. Phases 71 & 72 build ON
+these existing tables — NO migration.
 
 OBEY THE STANDING PROTOCOLS (§8) AND CLAUDE.md: strict phasing, autonomous TDD (§8.2), :memory:
 node:sqlite unit tests + a real-browser smoke step per phase (§8.5), derive-don't-store seams, pure
-.ts logic split out of glue (mirror cycle-count.ts / asset-lifecycle.ts / operational-metadata.ts),
-British English, design tokens only — no raw colour/easing literals (reach for Foundry primitives
-first), a PHASE_HANDOVER per phase (§8.1), and NEVER COMMIT SECRETS (public repo).
+.ts logic split out of glue (mirror cycle-count.ts / asset-lifecycle.ts / operational-metadata.ts /
+the Phase-70 custom-fields.ts), British English, design tokens only — no raw colour/easing literals
+(reach for Foundry primitives first), a PHASE_HANDOVER per phase (§8.1), and NEVER COMMIT SECRETS
+(public repo).
 
-EXECUTION MODEL (proven across phases 59–69): one implementation sub-agent for Phase 70 via the Agent
-tool, isolation: "worktree". The agent, BEFORE any work, MUST: (1) verify its worktree base is current
-main and `git rebase main` if not (the harness may branch from an OLD commit); (2) if node_modules is
-absent, junction it from the main checkout via PowerShell `New-Item -ItemType Junction -Path
-node_modules -Target P:\Source\TypeScript\Gubbins\node_modules` (Git Bash mklink /J mangles the flag);
-(3) confirm the toolchain with `npx tsc -p tsconfig.app.json --noEmit` (build-mode tsc -b cannot write
-.tsbuildinfo through a junction). Strict file isolation: touch ONLY the Phase-70 surface files + their
-tests; the single browser-smoke step belongs to that agent (append one `await step('label', async ()
-=> { … });` to scripts/browser-smoke.mjs following the existing structure exactly).
+EXECUTION MODEL (proven across phases 59–70): launch TWO implementation sub-agents CONCURRENTLY via the
+Agent tool, isolation: "worktree" — one for Phase 71, one for Phase 72 (independent surfaces: search vs
+CSV). Each agent, BEFORE any work, MUST: (1) verify its worktree base is current main and `git rebase
+main` if not (the harness may branch from an OLD commit); (2) if node_modules is absent, junction it
+from the main checkout via PowerShell `New-Item -ItemType Junction -Path node_modules -Target
+P:\Source\TypeScript\Gubbins\node_modules` (Git Bash mklink /J mangles the flag); (3) confirm the
+toolchain with `npx tsc -p tsconfig.app.json --noEmit` (build-mode tsc -b cannot write .tsbuildinfo
+through a junction). Strict file isolation: each agent touches ONLY its own phase's surface files +
+their tests. NOTE the worktree self-exclusion gotcha: `npm run test:run` from inside a worktree skips
+its own test files (vite.config.ts excludes **/.claude/worktrees/**); the full suite is authoritatively
+run on main AFTER merge.
 
-CODE-REVIEW GATE AFTER THE PHASE (hard requirement): when the implementation agent reports done, run a
+SHARED-FILE CONFLICT (the ONLY overlap): both phases append one `await step('label', async () => { … });`
+to scripts/browser-smoke.mjs. When you sequentially merge the two reviewed branches, the appends
+conflict — resolve by KEEPING BOTH steps, each explicitly closed with its own `});` (a blind
+delete-the-markers union leaves the first step unclosed). `node --check scripts/browser-smoke.mjs` after
+resolving.
+
+CODE-REVIEW GATE AFTER EACH PHASE (hard requirement): when an implementation agent reports done, run a
 review sub-agent against THAT worktree's diff BEFORE merge. Fix every finding or explicitly waive it in
-the Outcome note. No phase merges to main unreviewed. Then merge to main (--no-ff "Merge Phase 70 …"),
-junction node_modules, run `npx tsc -p tsconfig.app.json --noEmit` + full `npm run test:run` (+ `npm
-run build`), report results plainly. Remove the worktree's node_modules junction (cmd /c rmdir …\
-node_modules) BEFORE `git worktree remove`; then `git worktree prune` and delete the merged branch.
+that phase's Outcome note. No phase merges to main unreviewed. Merge the two reviewed branches
+sequentially to main (--no-ff "Merge Phase 71 …" / "Merge Phase 72 …", resolving the browser-smoke
+append per above), junction node_modules, run `npx tsc -p tsconfig.app.json --noEmit` + full `npm run
+test:run` (+ `npm run build`), report results plainly. Remove each worktree's node_modules junction
+(cmd /c rmdir …\node_modules) BEFORE `git worktree remove`; then `git worktree prune` and delete the
+merged branches.
 
-PHASE 70 — Custom-field validation seam + save-time hardening (no migration)
-* Objective. Make custom-field values typed-valid at the point of save, on the EXISTING
-  category_fields/item_field_values system — the foundation the CSV import path (Phase 72) validates
-  through. No new tables, no second write path.
-* Pure seam. src/features/inventory/custom-fields.ts —
-  - validateFieldValue(def, raw) → { ok: true; value: string | null } | { ok: false; error: string }
-    (NEVER throws): coerce/normalise by field_type — NUMBER → finite number (canonically re-serialised),
-    BOOLEAN → 'true'/'false', DATE → ISO YYYY-MM-DD, SELECT → must be ∈ options, TEXT → trimmed;
-    empty/blank ⇒ value: null (clears the row, never stores ''); is_required enforced (blank → error).
-    Returns the storage string (values persist as TEXT). Inject anything time-related; no DB.
-  - fieldsForCategory(defs, categoryId) → the category's defs in position order. Categories are FLAT —
-    document "no ancestor resolution; flat model".
-  - Unit-tested across every type + required + boundary (SELECT-not-in-options, malformed NUMBER/DATE).
-* Repository. Wire validation into CategoryRepository.setItemFieldValues so a bad value is rejected
-  with a DbError. Keep the existing UUID-id + UNIQUE(item_id, field_id) upsert / tombstone-on-clear
-  path — do NOT switch to a deterministic id (needless churn; the UNIQUE constraint already gives
-  LWW-correct sync). :memory: tests (reject invalid, clear-to-null, round-trip).
-* UI. Harden CustomFieldsEditor.tsx: validate each field via validateFieldValue before save, block
-  save on a required-but-empty or invalid field, surface errors accessibly (role="alert" sibling of
-  the label, per the Phase-51 pattern). Foundry primitives, design tokens, British English. Keep any
-  CategoryManagerDialog change minimal and in-surface.
-* Tests. pure-seam + repository :memory: + a Vitest-4/QueryClientProvider gotcha note (an
-  unhandledRejection interception blocks end-to-end rejected-promise tests — assert on success/empty
-  or test the error path in a QueryClient-free component). Smoke: set a NUMBER custom field on an item,
-  reopen, assert it persisted, and a bad value is blocked.
-* Deliverables: pure seam + tests; setItemFieldValues validation + :memory: tests; CustomFieldsEditor
-  hardening (role="alert" errors); +1 smoke step; review passed; PHASE_HANDOVER + Outcome note in
-  docs/todo/custom-fields_2026-06-30.md + auto-memory (phase-70-scope-decisions).
+PHASE 71 — Search / filter on custom fields (no migration)
+* Objective. Let users filter the inventory by a custom-field value via the existing §5.1 search.
+* Seam. Extend parse-text-query (src/features/search/parse-text-query.ts) + the SearchAST (src/db/
+  search/ast.ts) so a `field:value`-style token resolves to a custom-field predicate, lowered through
+  the EXISTING src/db/search/parseASTtoSQL.ts (join item_field_values / category_fields by field name
+  or key; the §6.6 item search lives in src/db/repositories/item/search.ts). PRODUCE THE AST — never
+  hand-build SQL at the call site (the Phase 47/48 rule). Pure, unit-tested. Watch field-name
+  ambiguity/escaping and a missing/unknown field (resolve to no-match, not an error).
+* UI. Surface custom fields in the filter affordance where appropriate (src/features/search/
+  SearchBuilderContext.tsx + components/VisualBuilder.tsx / ConditionEditor.tsx / fields.ts); the
+  result-count aria-live region stays intact.
+* Tests. parser/AST unit tests (text / number / choice / date predicates, missing-field) + a :memory:
+  query test (the join returns the right items); smoke: filter by a custom field and assert the list
+  narrows.
+* Deliverables: field:value token → SearchAST predicate lowered through existing parseASTtoSQL + tests;
+  :memory: join query test; filter-affordance UI; result-count aria-live intact; +1 smoke step; review
+  passed; PHASE_HANDOVER + Outcome note + auto-memory (phase-71-scope-decisions).
 
-WHEN PHASE 70 IS REVIEWED, MERGED AND ITS WORKTREE REMOVED, do BOTH before ending the session: (1)
-emit the Wave 3 kick-off prompt (Phases 71 + 72 in two PARALLEL worktrees) directly in the chat reply
-as a RAW, FENCED Markdown code block the user can copy verbatim — the LAST thing in the reply; (2)
-record that same prompt verbatim under the "Continuation prompt" heading at the foot of the plan doc
-(replacing this one). After the merge run npm run test:run (+ npm run build) and report plainly.
+PHASE 72 — CSV import/export of custom fields (no migration)
+* Objective. Extend the Phase-67 catalogue CSV so custom fields import/export alongside core fields.
+* Seam. Extend src/features/inventory/catalog-import.ts's column-mapping + Zod dry-run so a CSV column
+  can target a custom field (validated via the Phase-70 validateFieldValue — import that seam; do NOT
+  re-implement validation), applied THROUGH the existing batch-apply + CategoryRepository.
+  setItemFieldValues (NO second write path). Export (src/features/export/export-data.ts / ExportWizard.
+  tsx) adds the defined custom-field columns (header = field name/key; one column per definition
+  encountered).
+* Tests. pure mapping/coercion/error tests (column → field resolution, invalid value collected not
+  thrown, required enforced) + :memory: batch-apply (the value lands on the item via the existing
+  path); smoke: import a CSV with a custom-field column and assert the value lands on the item.
+* Deliverables: catalog-import custom-field column mapping + Zod dry-run (validates via Phase-70 seam)
+  + tests; batch-apply persists via existing setItemFieldValues (no second path) + :memory: test;
+  Export Wizard catalogue CSV gains custom-field columns; +1 smoke step; review passed; PHASE_HANDOVER
+  + Outcome note + auto-memory (phase-72-scope-decisions).
+
+WHEN BOTH PHASES ARE REVIEWED, MERGED AND THEIR WORKTREES REMOVED, this is the FINAL wave — do BOTH
+before ending the session: (1) emit a "Plan complete — no continuation" note directly in the chat reply
+as a RAW, FENCED Markdown code block (the LAST thing in the reply), summarising the four-phase plan's
+end state (user_version 1, the final test count, tsc+build clean); (2) record that same note verbatim
+under the "Continuation prompt" heading at the foot of the plan doc (replacing this one), and update
+auto-memory (custom-fields-plan-69-72) to PLAN COMPLETE. After the merges run npm run test:run (+ npm
+run build) and report plainly.
 ```
 </content>
 </invoke>
