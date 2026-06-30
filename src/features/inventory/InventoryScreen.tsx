@@ -114,6 +114,7 @@ function InventoryWorkspace() {
     if (pendingIntent === null) return;
     if (pendingIntent === 'add') setAddOpen(true);
     else if (pendingIntent === 'scan') setScannerOpen(true);
+    else if (pendingIntent === 'import') setImportOpen(true);
     useInventoryEntry.getState().clearIntent();
   }, [pendingIntent]);
 

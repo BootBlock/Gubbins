@@ -8,6 +8,7 @@ import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
 import { DashboardActions } from './DashboardActions';
+import { DashboardGettingStarted } from './DashboardGettingStarted';
 
 /** The public GitHub repository — the brand hero links here on the landing page. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
@@ -74,6 +75,9 @@ export function DashboardScreen() {
       {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,
           each independently toggleable from Settings → Dashboard. */}
       <DashboardActions />
+
+      {/* First-run guidance — self-hides once the inventory has any items. */}
+      <DashboardGettingStarted />
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the
           same NAV_DESTINATIONS source of truth the global AppNav menu uses on every other

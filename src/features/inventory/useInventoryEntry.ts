@@ -10,7 +10,7 @@ import { create } from 'zustand';
  * - `pendingSearch` — seed the quick-search box with this query (jump-to-item).
  * - `pendingIntent` — open the Add-item dialog or the Scanner on arrival.
  */
-type InventoryIntent = 'add' | 'scan';
+type InventoryIntent = 'add' | 'scan' | 'import';
 
 interface InventoryEntryStore {
   readonly pendingSearch: string | null;
