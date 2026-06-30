@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Button, Modal, Spinner, Tooltip } from '@/components/foundry';
 import {
   AddIcon,
@@ -9,10 +9,12 @@ import {
 } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { locationColorTextClass } from '../location-color';
+import { locationPath } from '../labels/location-label';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
 import { LocationTreeItem } from './LocationTreeItem';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
+import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
 
 /**
  * Location navigation sidebar (spec §4): the nested, self-referential hierarchy
@@ -64,6 +66,9 @@ export function LocationSidebar({
     onKeyDown,
   } = useLocationSidebar({ tree, flat, selectedId, onSelect });
 
+  // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above.
+  const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
+
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-2">
       <div className="flex items-center justify-between px-1">
@@ -112,6 +117,17 @@ export function LocationSidebar({
           onClose={() => setEditLocation(null)}
           location={editLocation}
           locations={flat}
+        />
+      ) : null}
+      {printLabelNode ? (
+        <PrintLocationLabelDialog
+          open
+          onClose={() => setPrintLabelNode(null)}
+          location={{
+            id: printLabelNode.id,
+            name: printLabelNode.name,
+            path: locationPath(printLabelNode.id, flat),
+          }}
         />
       ) : null}
 
@@ -180,6 +196,8 @@ export function LocationSidebar({
           editLabel={`Edit ${node.name}`}
           onDelete={node.isSystem ? undefined : () => requestDelete(node.id, node.name, node.itemCount)}
           deleteLabel={`Delete ${node.name}`}
+          onPrintLabel={() => setPrintLabelNode(node)}
+          printLabelLabel={`Print label for ${node.name}`}
         />,
       );
       if (hasChildren && isExpanded) out.push(...renderNodes(node.children, level + 1));

@@ -1549,8 +1549,8 @@ try {
   await step('generates a printable QR code for an item', async () => {
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
-    await itemCard(screwName).getByRole('button', { name: 'QR code' }).click();
-    const dialog = page.getByRole('dialog', { name: 'QR code' });
+    await itemCard(screwName).getByRole('button', { name: 'Item label' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Item label' });
     await dialog.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 5000 });
     scannedUrl = (await dialog.locator('[data-testid="item-qr-url"]').innerText()).trim();
     if (!scannedUrl.includes('item=')) throw new Error(`QR url missing item param: ${scannedUrl}`);
@@ -1605,7 +1605,7 @@ try {
 
     // Open the print preview — it must render one QR label per selected item.
     await page.getByTestId('print-labels').click();
-    const printDialog = page.getByRole('dialog', { name: 'Print QR labels' });
+    const printDialog = page.getByRole('dialog', { name: 'Print labels' });
     await printDialog.waitFor({ state: 'visible', timeout: 5000 });
     await printDialog.locator('[data-testid="label-cell"] svg').first().waitFor({ state: 'visible', timeout: 5000 });
     const cellCount = await printDialog.locator('[data-testid="label-cell"]').count();
@@ -1616,11 +1616,30 @@ try {
       throw new Error('print preview should show the selected item name');
     }
 
+    // Switch the symbology to a Code 128 barcode (Phase 73) — the preview re-renders
+    // a barcode SVG for each label rather than a QR.
+    await printDialog.locator('[data-testid="label-symbology"]').selectOption('barcode');
+    await printDialog.locator('[data-testid="label-cell"] svg').first().waitFor({ state: 'visible', timeout: 5000 });
+
     // Close the preview and leave select mode — clean state for the next step.
     await page.keyboard.press('Escape');
     await printDialog.waitFor({ state: 'detached', timeout: 5000 });
     await page.getByTestId('toggle-select').click();
     await page.getByTestId('selection-bar').waitFor({ state: 'detached', timeout: 5000 });
+  });
+
+  await step('prints a customisable label for a location (Phase 73)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+    // Reveal a location row's hover actions, then open its label dialog.
+    const row = page.getByRole('tree').getByRole('treeitem', { name: 'Unassigned' });
+    await row.hover();
+    await row.getByRole('button', { name: 'Print label for Unassigned' }).click({ force: true });
+    const locDialog = page.getByRole('dialog', { name: 'Print location label' });
+    await locDialog.waitFor({ state: 'visible', timeout: 5000 });
+    await locDialog.locator('[data-testid="label-cell"] svg').first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await locDialog.waitFor({ state: 'detached', timeout: 5000 });
   });
 
   await step('scans a code and checks the item out to an auto-created contact', async () => {
@@ -1681,8 +1700,8 @@ try {
     // two distinct items (the queue de-dupes by id).
     await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
-    await itemCard(filamentName).getByRole('button', { name: 'QR code' }).click();
-    const qr = page.getByRole('dialog', { name: 'QR code' });
+    await itemCard(filamentName).getByRole('button', { name: 'Item label' }).click();
+    const qr = page.getByRole('dialog', { name: 'Item label' });
     await qr.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 5000 });
     const filamentUrl = (await qr.locator('[data-testid="item-qr-url"]').innerText()).trim();
     await page.keyboard.press('Escape');

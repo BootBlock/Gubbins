@@ -45,6 +45,7 @@ import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
 import { CatalogImportWizard } from './components/CatalogImportWizard';
 import type { ItemSelection } from './components/inventory-ui';
+import type { LabelItem } from './labels/label-sheet';
 
 /**
  * The inventory workspace (spec §5): location sidebar, a search/filter header with
@@ -73,11 +74,12 @@ function InventoryWorkspace() {
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [cycleCountOpen, setCycleCountOpen] = useState(false);
-  // Multi-select for batch QR-label printing (spec §6, Phase 49). The selection
-  // keeps id→name so it survives the bounded virtualised-list window (a selected
-  // item whose page has been trimmed off still prints) and spans filter changes.
+  // Multi-select for batch label printing (spec §6, Phase 49; templated Phase 73). The
+  // selection captures each item's label fields (name/MPN/location/quantity) at toggle
+  // time so it survives the bounded virtualised-list window (a selected item whose page
+  // has been trimmed off still prints) and spans filter changes.
   const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<Map<string, string>>(new Map());
+  const [selected, setSelected] = useState<Map<string, LabelItem>>(new Map());
   const [printOpen, setPrintOpen] = useState(false);
 
   const { ast, conditionCount } = useSearchBuilder();
@@ -137,15 +139,19 @@ function InventoryWorkspace() {
           setSelected((prev) => {
             const next = new Map(prev);
             if (next.has(item.id)) next.delete(item.id);
-            else next.set(item.id, item.name);
+            else
+              next.set(item.id, {
+                id: item.id,
+                name: item.name,
+                mpn: item.mpn,
+                locationName: locationName(item.locationId),
+                quantity: item.quantity,
+              });
             return next;
           }),
       }
     : undefined;
-  const selectedLabels = useMemo(
-    () => Array.from(selected, ([id, name]) => ({ id, name })),
-    [selected],
-  );
+  const selectedLabels = useMemo(() => Array.from(selected.values()), [selected]);
   const toggleSelecting = () => {
     setSelecting((on) => {
       if (on) setSelected(new Map()); // leaving select mode clears the selection
@@ -410,7 +416,14 @@ function InventoryWorkspace() {
           location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
         />
       ) : null}
-      <ScannerOverlay open={scannerOpen} onClose={() => setScannerOpen(false)} />
+      <ScannerOverlay
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onLocationScanned={(id) => {
+          setSelectedLocationId(id);
+          setScannerOpen(false);
+        }}
+      />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
       <CatalogImportWizard open={importOpen} onClose={() => setImportOpen(false)} />
       <PrintLabelsDialog

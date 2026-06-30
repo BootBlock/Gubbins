@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildItemQrUrl, isUuid, parseScannedItemId } from './scan-payload';
+import {
+  buildItemQrUrl,
+  buildLocationQrUrl,
+  isUuid,
+  parseScannedCode,
+  parseScannedItemId,
+} from './scan-payload';
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
 import {
   initialScannerState,
@@ -35,6 +41,25 @@ describe('scan-payload', () => {
     expect(parseScannedItemId('https://example.com/other')).toBeNull();
     expect(parseScannedItemId('')).toBeNull();
     expect(isUuid('not-a-uuid')).toBe(false);
+  });
+
+  it('parses a location deep-link and namespaced token (Phase 73)', () => {
+    const url = buildLocationQrUrl(UUID, 'https://example.com/Gubbins/');
+    expect(url).toBe(`https://example.com/Gubbins/#/inventory?location=${UUID}`);
+    expect(parseScannedCode(url)).toEqual({ kind: 'location', id: UUID });
+    expect(parseScannedCode(`gubbins:location:${UUID}`)).toEqual({ kind: 'location', id: UUID });
+    // A location code is never mistaken for an item.
+    expect(parseScannedItemId(url)).toBeNull();
+  });
+
+  it('classifies item codes as kind item, including bare UUIDs', () => {
+    expect(parseScannedCode(UUID)).toEqual({ kind: 'item', id: UUID });
+    expect(parseScannedCode(buildItemQrUrl(UUID, 'https://x.test/Gubbins/'))).toEqual({
+      kind: 'item',
+      id: UUID,
+    });
+    expect(parseScannedCode(`gubbins:item:${UUID}`)).toEqual({ kind: 'item', id: UUID });
+    expect(parseScannedCode('hello world')).toBeNull();
   });
 });
 

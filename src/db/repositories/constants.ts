@@ -248,6 +248,16 @@ export const DEFAULT_CAPABILITY_WEIGHT = 1.0;
 export const ITEM_QR_PARAM = 'item';
 
 /**
+ * The query parameter a Gubbins **location** label deep-links with (Phase 73 "Label
+ * customisation"). A printed location label encodes the app URL
+ * `…/Gubbins/#/inventory?location=<uuid>` — a phone camera opens the app filtered to
+ * that location, and the in-app scanner selects it. Shared by the label generator and
+ * the scan-payload parser so the contract has a single source of truth, and kept
+ * distinct from {@link ITEM_QR_PARAM} so the two code kinds are never confused.
+ */
+export const LOCATION_QR_PARAM = 'location';
+
+/**
  * A checkout's lifecycle, derived (not a stored enum): a row with `returned_at`
  * NULL is `OPEN` (the item is still out), otherwise `RETURNED`. Exposed as a union
  * for the UI; the database stores only the nullable `returned_at` timestamp so the
