@@ -29,7 +29,8 @@ export type ReportExportKind =
   | 'ABC'
   | 'TURNOVER'
   | 'AGING'
-  | 'VALUATION_TREND';
+  | 'VALUATION_TREND'
+  | 'DATA_HYGIENE';
 
 interface ExportStore {
   readonly format: ExportFormat;

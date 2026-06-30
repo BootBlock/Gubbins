@@ -18,7 +18,13 @@ import {
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
   MS_PER_DAY,
+  UNASSIGNED_LOCATION_ID,
 } from './constants';
+import {
+  buildHygieneReport,
+  type HygieneItemFlags,
+  type HygieneReport,
+} from '@/features/reports/data-hygiene';
 import {
   bucketMovement,
   effectiveUnitCost,
@@ -528,5 +534,54 @@ export class ReportRepository extends BaseRepository {
     }));
 
     return buildValuationTrend(currentValue, events, windowStart, now, points);
+  }
+
+  // Phase 77 — data-hygiene / quality report -------------------------------------
+
+  /**
+   * Data-hygiene report (§3): per active, non-parent item, the quality flags the pure
+   * {@link buildHygieneReport} folds into "tidy up" sections — missing category / real location /
+   * price / photo, never cycle-counted, stale, and possible duplicates (shared MPN). All flags
+   * are correlated sub-queries over data already stored (`item_images`, `item_history`,
+   * `supplier_parts`); the cost fallback reuses {@link preferredSupplierCostSql} and the
+   * variant-parent exclusion reuses {@link notAVariantParent}. No schema change. `now` defaults to
+   * the wall clock; `staleDays` sets the "no activity for this long" cutoff.
+   */
+  async dataHygiene(staleDays: number, now: number = Date.now()): Promise<HygieneReport> {
+    const rows = await this.driver.query<{
+      id: string;
+      name: string;
+      mpn: string | null;
+      category_id: string | null;
+      location_id: string;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+      has_photo: number;
+      ever_counted: number;
+      last_activity_at: number;
+    }>(
+      `SELECT i.id AS id, i.name AS name, i.mpn AS mpn, i.category_id AS category_id,
+              i.location_id AS location_id, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              (EXISTS (SELECT 1 FROM item_images im WHERE im.item_id = i.id)) AS has_photo,
+              (EXISTS (SELECT 1 FROM item_history h WHERE h.item_id = i.id AND h.action = 'RECONCILED')) AS ever_counted,
+              COALESCE((SELECT MAX(h.created_at) FROM item_history h WHERE h.item_id = i.id), i.created_at) AS last_activity_at
+         FROM items i
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+    );
+
+    const flags: HygieneItemFlags[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      mpn: r.mpn,
+      hasCategory: r.category_id != null,
+      hasLocation: r.location_id !== UNASSIGNED_LOCATION_ID,
+      hasPrice: r.unit_cost != null || r.preferred_supplier_cost != null,
+      hasPhoto: r.has_photo === 1,
+      everCounted: r.ever_counted === 1,
+      lastActivityAt: Number(r.last_activity_at),
+    }));
+
+    return buildHygieneReport(flags, { now, staleDays });
   }
 }

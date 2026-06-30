@@ -25,6 +25,10 @@ export const DEFAULT_ANALYTICS_WINDOW = 90;
 /** Number of reconstructed samples on the valuation-trend sparkline. */
 export const VALUATION_TREND_POINTS = 12;
 
+// Phase 77 — data-hygiene / quality report -------------------------------------
+/** Records with no activity for at least this many days count as "stale" (≈ six months). */
+export const DATA_HYGIENE_STALE_DAYS = 180;
+
 export function useInventoryValue() {
   return useQuery({
     queryKey: ['reports', 'inventory-value'],
@@ -87,5 +91,12 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
   return useQuery({
     queryKey: ['reports', 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
+  });
+}
+
+export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
+  return useQuery({
+    queryKey: ['reports', 'data-hygiene', staleDays],
+    queryFn: () => getReportRepository().dataHygiene(staleDays),
   });
 }

@@ -29,6 +29,7 @@ import {
   buildAbcCsv,
   buildAgingCsv,
   buildConsumptionCsv,
+  buildDataHygieneCsv,
   buildDeadStockCsv,
   buildMovementCsv,
   buildTurnoverCsv,
@@ -37,6 +38,7 @@ import {
 } from '@/features/reports/report-csv';
 import {
   ABC_WINDOW_DAYS,
+  DATA_HYGIENE_STALE_DAYS,
   DEAD_STOCK_SINCE_DAYS,
   DEFAULT_ANALYTICS_WINDOW,
   REPORT_MOVEMENT_BUCKETS,
@@ -80,6 +82,7 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
   TURNOVER: 'turnover',
   AGING: 'stock-aging',
   VALUATION_TREND: 'valuation-trend',
+  DATA_HYGIENE: 'data-hygiene',
 };
 
 /** Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61). */
@@ -104,6 +107,8 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
       return buildValuationTrendCsv(
         await repo.valuationTrend(DEFAULT_ANALYTICS_WINDOW, VALUATION_TREND_POINTS),
       );
+    case 'DATA_HYGIENE':
+      return buildDataHygieneCsv(await repo.dataHygiene(DATA_HYGIENE_STALE_DAYS));
   }
 }
 
