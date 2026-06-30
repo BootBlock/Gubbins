@@ -10,10 +10,12 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
+import { CategoryRepository } from '@/db/repositories/CategoryRepository';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
-import type { Item } from '@/db/repositories/types';
+import type { CategoryField, Item } from '@/db/repositories/types';
 import {
   inferColumnMapping,
+  isCustomFieldTarget,
   buildCatalogImportPlan,
   applyCatalogImportPlan,
   type CatalogItemRepository,
@@ -51,6 +53,22 @@ function stubItem(id: string, name: string, mpn: string | null = null): Item {
     updatedAt: 0,
     gauge: null,
     operationalMetadata: null,
+  };
+}
+
+/** A minimal CategoryField definition stub for Phase-72 custom-field tests. */
+function stubField(id: string, name: string, partial: Partial<CategoryField> = {}): CategoryField {
+  return {
+    id,
+    categoryId: 'cat-1',
+    name,
+    fieldType: 'TEXT',
+    options: null,
+    isRequired: false,
+    defaultValue: null,
+    position: 0,
+    updatedAt: 0,
+    ...partial,
   };
 }
 
@@ -460,5 +478,156 @@ describe('applyCatalogImportPlan — stub repository', () => {
     expect(result.created).toBe(0);
     expect(result.skipped).toBe(1);
     expect(result.rows[0]!.error).toMatch(/simulated/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 72 — custom-field column mapping & coercion (pure)
+// ---------------------------------------------------------------------------
+
+describe('inferColumnMapping — custom fields', () => {
+  it('resolves a header to a custom-field target by normalised name', () => {
+    const fields = [stubField('f-res', 'Resistance', { fieldType: 'NUMBER' })];
+    const mapping = inferColumnMapping(['name', 'Resistance'], fields);
+    expect(mapping[0]).toBe('name');
+    expect(mapping[1]).toEqual({ fieldId: 'f-res' });
+    expect(isCustomFieldTarget(mapping[1] ?? null)).toBe(true);
+  });
+
+  it('resolves a header to a custom-field target by raw field id', () => {
+    const fields = [stubField('00000000-aaaa', 'Tolerance')];
+    const mapping = inferColumnMapping(['00000000-aaaa'], fields);
+    expect(mapping[0]).toEqual({ fieldId: '00000000-aaaa' });
+  });
+
+  it('prefers a core synonym over a same-named custom field', () => {
+    const fields = [stubField('f-name', 'Name')];
+    const mapping = inferColumnMapping(['name'], fields);
+    expect(mapping[0]).toBe('name');
+  });
+
+  it('assigns each custom field at most once (first header wins)', () => {
+    const fields = [stubField('f-res', 'Resistance')];
+    const mapping = inferColumnMapping(['Resistance', 'resistance'], fields);
+    expect(mapping[0]).toEqual({ fieldId: 'f-res' });
+    expect(mapping[1]).toBe(null);
+  });
+});
+
+describe('buildCatalogImportPlan — custom-field columns', () => {
+  it('coerces a valid custom-field value onto the create entry', () => {
+    const fields = [stubField('f-res', 'Resistance', { fieldType: 'NUMBER' })];
+    const csv = 'name,Resistance\r\nResistor,1.50\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: fields });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create).toHaveLength(1);
+    // NUMBER canonical coercion: '1.50' → '1.5' (Phase-70 seam).
+    expect(plan.create[0]!.fieldValues).toEqual({ 'f-res': '1.5' });
+  });
+
+  it('carries custom-field values onto an update entry', () => {
+    const fields = [stubField('f-grade', 'Grade', { fieldType: 'SELECT', options: ['A', 'B'] })];
+    const existing = stubItem('item-1', 'Widget');
+    const csv = 'name,Grade\r\nWidget,A\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [existing], { customFields: fields });
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.fieldValues).toEqual({ 'f-grade': 'A' });
+  });
+
+  it('COLLECTS an invalid custom-field value as a row error (never throws)', () => {
+    const fields = [stubField('f-res', 'Resistance', { fieldType: 'NUMBER' })];
+    const csv = 'name,Resistance\r\nResistor,not-a-number\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: fields });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/must be a number/i);
+  });
+
+  it('enforces a required custom field (blank → error)', () => {
+    const fields = [stubField('f-req', 'Serial', { isRequired: true })];
+    const csv = 'name,Serial\r\nGadget,\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: fields });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/required/i);
+  });
+
+  it('clears a field when a non-required column is blank (value → null)', () => {
+    const fields = [stubField('f-note', 'Note')];
+    const csv = 'name,Note\r\nGadget,\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: fields });
+    expect(plan.create).toHaveLength(1);
+    expect(plan.create[0]!.fieldValues).toEqual({ 'f-note': null });
+  });
+
+  it('reports an unknown custom-field target (mapping id not in defs)', () => {
+    const csv = 'name,Resistance\r\nResistor,10\r\n';
+    const mapping: ColumnMapping = ['name', { fieldId: 'missing' }];
+    const plan = buildCatalogImportPlan(csv, mapping, [], { customFields: [] });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/unknown custom field/i);
+  });
+
+  it('leaves entries free of fieldValues when no custom columns are mapped', () => {
+    const csv = 'name,quantity\r\nPlain,5\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create[0]!.fieldValues).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 72 — :memory: apply persists custom fields via setItemFieldValues
+// ---------------------------------------------------------------------------
+
+describe('applyCatalogImportPlan — custom fields land on the item (:memory:)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+  let categories: CategoryRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+    categories = new CategoryRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('persists an imported custom-field value through setItemFieldValues', async () => {
+    const cat = await categories.create({ name: 'Resistors' });
+    const field = await categories.addField(cat.id, { name: 'Resistance', fieldType: 'NUMBER' });
+
+    // The CSV creates an item in this category and sets the custom field.
+    const csv = `name,categoryId,Resistance\r\nResistor 10k,${cat.id},10000\r\n`;
+    const defs = await categories.listFields(cat.id);
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: defs });
+    expect(plan.create).toHaveLength(1);
+
+    const result = await applyCatalogImportPlan(plan, items, categories);
+    expect(result.created).toBe(1);
+    expect(result.rows[0]!.error).toBeUndefined();
+
+    // The value landed on the item via the existing read path.
+    const page = await items.list({ limit: 10 });
+    const created = page.rows.find((r) => r.name === 'Resistor 10k')!;
+    const resolved = await categories.resolveItemFields(created.id);
+    const stored = resolved.find((f) => f.id === field.id)!;
+    expect(stored.hasStoredValue).toBe(true);
+    expect(stored.value).toBe('10000');
+  });
+
+  it('records a custom-field write error without failing the item create', async () => {
+    // Field belongs to category A, but the item is created with NO category, so
+    // setItemFieldValues rejects the field — the item still imports.
+    const catA = await categories.create({ name: 'A' });
+    const field = await categories.addField(catA.id, { name: 'Spec', fieldType: 'TEXT' });
+
+    const csv = `name,Spec\r\nLoose Part,hello\r\n`;
+    const plan = buildCatalogImportPlan(csv, null, [], { customFields: [field] });
+    const result = await applyCatalogImportPlan(plan, items, categories);
+
+    expect(result.created).toBe(1);
+    expect(result.rows[0]!.error).toMatch(/category/i);
   });
 });

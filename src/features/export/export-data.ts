@@ -96,15 +96,46 @@ function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
 }
 
 /**
+ * A category custom-field column for the catalogue export (Phase 72). One column
+ * per field *definition* encountered: the `header` is the field's name (or key) — it
+ * round-trips back through `inferColumnMapping`'s custom-field name match — and
+ * `fieldId` keys the per-item value lookup.
+ */
+export interface CatalogCustomFieldColumn {
+  readonly fieldId: string;
+  readonly header: string;
+}
+
+/**
  * Build a catalog CSV that round-trips through the Phase 67 import wizard
  * without requiring manual column mapping (headers match the auto-detection
  * synonyms). RFC-4180 quoting, CRLF rows.
+ *
+ * When `customFields` are supplied (Phase 72) one extra column per definition is
+ * appended after the core columns, its header being the field name; each item's
+ * value is read from `valuesByItem` (item id → field id → stored value, defaulting
+ * to blank). The custom columns are deduplicated by field id (first wins) so a field
+ * shared by several items yields a single column.
  */
-export function buildCatalogCsv(items: readonly Item[]): string {
-  const header = CATALOG_CSV_COLUMNS.join(',');
-  const rows = items.map((item) =>
-    CATALOG_CSV_COLUMNS.map((col) => csvCell(catalogCsvValue(item, col))).join(','),
+export function buildCatalogCsv(
+  items: readonly Item[],
+  customFields: readonly CatalogCustomFieldColumn[] = [],
+  valuesByItem: ReadonlyMap<string, Readonly<Record<string, string | null>>> = new Map(),
+): string {
+  const seen = new Set<string>();
+  const columns = customFields.filter((c) =>
+    seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true),
   );
+
+  const header = [...CATALOG_CSV_COLUMNS, ...columns.map((c) => c.header)]
+    .map((h) => csvCell(h))
+    .join(',');
+  const rows = items.map((item) => {
+    const core = CATALOG_CSV_COLUMNS.map((col) => csvCell(catalogCsvValue(item, col)));
+    const values = valuesByItem.get(item.id);
+    const custom = columns.map((c) => csvCell(values?.[c.fieldId] ?? null));
+    return [...core, ...custom].join(',');
+  });
   return [header, ...rows].join('\r\n');
 }
 

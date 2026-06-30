@@ -1503,3 +1503,17 @@ backend-less PWA — there is no server to send the push. Trigger: if a lightwei
 companion Bridge or a sync server) is added in a future phase, background push for the four alert
 lanes (low stock, expiry, maintenance-due, warranty-due) becomes possible. Until then, users check
 the in-app alert centre or the dashboard badge.
+
+---
+
+## Phase 72 — CSV import/export of custom fields
+
+**MapStep custom-field column cue — Backlog (no trigger yet).** When the catalogue-import wizard
+auto-maps a CSV column to a category custom field, the MapStep review table renders that row's
+mapping `<select>` as `""` ("(ignore)") and the dropdown lists only core fields — so an auto-mapped
+custom column is visually indistinguishable from an ignored one, and a user cannot manually
+(re)assign a custom field for a column the inferrer missed. The inferred mapping still applies
+correctly (it survives to apply via plan-building), so this is a UX-clarity gap, not a correctness
+defect; surfaced by the Phase-72 code review (CLEAN-WITH-NITS) and waived for merge. **Trigger:** a
+future custom-fields UX-polish pass should add custom-field options (and a distinct label) to the
+MapStep dropdown so the mapping is visible and editable.

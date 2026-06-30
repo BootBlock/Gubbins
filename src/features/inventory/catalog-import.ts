@@ -16,8 +16,14 @@
  */
 import { z } from 'zod';
 import { parseCsv } from '../projects/bom-import';
+import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
-import type { CreateItemInput, UpdateItemInput, Item } from '@/db/repositories/types';
+import type {
+  CategoryField,
+  CreateItemInput,
+  UpdateItemInput,
+  Item,
+} from '@/db/repositories/types';
 
 // Re-export so callers import from one place.
 export { parseCsv };
@@ -88,10 +94,28 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
 };
 
 /**
- * Maps each CSV header (column index → logical field). A `null` entry means the
- * column is unmapped (ignored).
+ * A column that targets a category **custom field** (Phase 72) rather than a core
+ * catalog field. The value is validated and canonically coerced through the
+ * Phase-70 `validateFieldValue` seam and persisted via
+ * `CategoryRepository.setItemFieldValues` (no second write path). Identified by the
+ * field-definition id; resolution from a header to this target is by field name/key.
  */
-export type ColumnMapping = ReadonlyArray<CatalogField | null>;
+export interface CustomFieldTarget {
+  readonly fieldId: string;
+}
+
+/** Narrowing helper: is a mapping entry a custom-field target? */
+export function isCustomFieldTarget(
+  entry: CatalogField | CustomFieldTarget | null,
+): entry is CustomFieldTarget {
+  return entry !== null && typeof entry === 'object' && 'fieldId' in entry;
+}
+
+/**
+ * Maps each CSV header (column index → logical field, or a {@link CustomFieldTarget}
+ * for a category custom field). A `null` entry means the column is unmapped (ignored).
+ */
+export type ColumnMapping = ReadonlyArray<CatalogField | CustomFieldTarget | null>;
 
 /**
  * The field whose value is used to decide create-vs-update:
@@ -147,11 +171,28 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
 ];
 
 /**
- * Infer a {@link ColumnMapping} from a CSV header row. Unrecognised columns map to
- * `null`. Each logical field is assigned at most once (first header wins).
+ * Infer a {@link ColumnMapping} from a CSV header row. Core catalog synonyms win
+ * first; a header that matches no core synonym is then matched against the supplied
+ * category **custom-field** definitions by normalised name (or exact field id), so a
+ * column like `Resistance` targets that category field (Phase 72). Unrecognised
+ * columns map to `null`. Each core field and each custom field is assigned at most
+ * once (first header wins).
  */
-export function inferColumnMapping(headers: readonly string[]): ColumnMapping {
+export function inferColumnMapping(
+  headers: readonly string[],
+  customFields: readonly CategoryField[] = [],
+): ColumnMapping {
   const assigned = new Set<CatalogField>();
+  const assignedFieldIds = new Set<string>();
+  // Normalised-name → field id, plus the raw id itself, for custom-field resolution.
+  // First definition wins on a name clash (mirrors the core "first header wins").
+  const fieldByKey = new Map<string, string>();
+  for (const def of customFields) {
+    const nameKey = headerKey(def.name);
+    if (nameKey.length > 0 && !fieldByKey.has(nameKey)) fieldByKey.set(nameKey, def.id);
+    if (!fieldByKey.has(def.id)) fieldByKey.set(def.id, def.id);
+  }
+
   return headers.map((h) => {
     const key = headerKey(h);
     for (const [synonym, field] of HEADER_SYNONYMS) {
@@ -159,6 +200,14 @@ export function inferColumnMapping(headers: readonly string[]): ColumnMapping {
         assigned.add(field);
         return field;
       }
+    }
+    // No core match — try a custom field. Match on the normalised header key or the
+    // raw (un-normalised) header, the latter so a UUID field id used as a header
+    // resolves even though normalisation would strip its hyphens.
+    const fieldId = fieldByKey.get(key) ?? fieldByKey.get(h.trim());
+    if (fieldId !== undefined && !assignedFieldIds.has(fieldId)) {
+      assignedFieldIds.add(fieldId);
+      return { fieldId };
     }
     return null;
   });
@@ -213,23 +262,35 @@ function parseOptionalInt(text: string | null): number | undefined | null {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** The raw cells of one CSV data row, partitioned into core + custom-field columns. */
+interface ExtractedRow {
+  /** Core catalog fields keyed by logical name (first mapped column wins). */
+  readonly core: Partial<Record<CatalogField, string | null>>;
+  /** Custom-field raw values keyed by field-definition id (first column wins). */
+  readonly custom: Record<string, string | null>;
+}
+
 /**
- * Extract a {@link CatalogRowData} object from one CSV data row using the column
- * mapping. Returns `undefined` fields for unmapped / absent columns so the Zod
- * schema can distinguish "not supplied" from "supplied as empty".
+ * Extract one CSV data row using the column mapping. Core fields return `undefined`
+ * for unmapped / absent columns so the Zod schema can distinguish "not supplied"
+ * from "supplied as empty"; custom-field columns are collected separately keyed by
+ * field-definition id, to be validated through the Phase-70 seam.
  */
-function extractRow(
-  row: readonly string[],
-  mapping: ColumnMapping,
-): Partial<Record<CatalogField, string | null>> {
-  const result: Partial<Record<CatalogField, string | null>> = {};
+function extractRow(row: readonly string[], mapping: ColumnMapping): ExtractedRow {
+  const core: Partial<Record<CatalogField, string | null>> = {};
+  const custom: Record<string, string | null> = {};
   for (let i = 0; i < mapping.length; i += 1) {
-    const field = mapping[i];
-    if (field === null || field === undefined) continue;
-    if (field in result) continue; // first column for each logical field wins
-    result[field] = rawCell(row, i);
+    const target = mapping[i];
+    if (target === null || target === undefined) continue;
+    if (isCustomFieldTarget(target)) {
+      if (target.fieldId in custom) continue; // first column for each field wins
+      custom[target.fieldId] = rawCell(row, i);
+      continue;
+    }
+    if (target in core) continue; // first column for each logical field wins
+    core[target] = rawCell(row, i);
   }
-  return result;
+  return { core, custom };
 }
 
 /**
@@ -262,11 +323,21 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRo
 // Dry-run plan types
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-item custom-field values, keyed by field-definition id, already validated and
+ * canonically coerced through the Phase-70 `validateFieldValue` seam (`null` clears
+ * the value). Applied via `CategoryRepository.setItemFieldValues` (no second write
+ * path). Absent / empty when the import maps no custom-field columns.
+ */
+export type CustomFieldValues = Readonly<Record<string, string | null>>;
+
 /** A fully-validated row destined for {@link ItemRepository.create}. */
 export interface CatalogCreate {
   /** 1-based index of the source CSV data row (not counting the header). */
   readonly sourceRow: number;
   readonly input: CreateItemInput;
+  /** Coerced custom-field values to persist after the item is created. */
+  readonly fieldValues?: CustomFieldValues;
 }
 
 /** A fully-validated row destined for {@link ItemRepository.update}. */
@@ -275,6 +346,8 @@ export interface CatalogUpdate {
   /** The id of the matched existing item. */
   readonly itemId: string;
   readonly input: UpdateItemInput;
+  /** Coerced custom-field values to persist after the item is updated. */
+  readonly fieldValues?: CustomFieldValues;
 }
 
 /** A row that failed validation or had a duplicate match key (never thrown). */
@@ -332,6 +405,52 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
 }
 
 // ---------------------------------------------------------------------------
+// Custom-field column resolution (Phase 72)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate + canonically coerce a row's custom-field columns through the Phase-70
+ * `validateFieldValue` seam. Returns the coerced values keyed by field id (incl.
+ * `null` to clear a field), or `null` when ANY column is invalid — in which case the
+ * error is appended to `errors` (collected, never thrown) and the caller skips the
+ * row. An empty result (`{}`) means the row mapped no custom-field columns.
+ */
+function resolveCustomFieldValues(
+  rawCustom: Readonly<Record<string, string | null>>,
+  defById: ReadonlyMap<string, CategoryField>,
+  sourceRow: number,
+  errors: CatalogError[],
+): Record<string, string | null> | null {
+  const values: Record<string, string | null> = {};
+  for (const [fieldId, rawValue] of Object.entries(rawCustom)) {
+    const def = defById.get(fieldId);
+    if (def === undefined) {
+      // The mapping referenced a field id with no matching definition.
+      errors.push({ sourceRow, message: `Unknown custom field "${fieldId}".` });
+      return null;
+    }
+    const result = validateFieldValue(def, rawValue);
+    if (!result.ok) {
+      errors.push({ sourceRow, message: result.error });
+      return null;
+    }
+    values[fieldId] = result.value;
+  }
+  return values;
+}
+
+/**
+ * Spread helper: attach `fieldValues` to a plan entry only when at least one
+ * custom-field column was mapped, so existing entries (and their tests) keep their
+ * exact shape when no custom fields are in play.
+ */
+function withFieldValues(
+  values: Record<string, string | null>,
+): { fieldValues?: CustomFieldValues } {
+  return Object.keys(values).length > 0 ? { fieldValues: values } : {};
+}
+
+// ---------------------------------------------------------------------------
 // Dry-run plan builder
 // ---------------------------------------------------------------------------
 
@@ -346,6 +465,13 @@ export interface BuildPlanOptions {
    * Defaults to `'name'`.
    */
   readonly matchKey?: MatchKey;
+  /**
+   * Category custom-field **definitions** referenced by the mapping (Phase 72).
+   * Used to validate each custom-field column's value through the Phase-70
+   * `validateFieldValue` seam and to auto-resolve headers when `mapping` is null.
+   * A column targeting a field not in this list collects a row error.
+   */
+  readonly customFields?: readonly CategoryField[];
 }
 
 /**
@@ -379,8 +505,12 @@ export function buildCatalogImportPlan(
 
   const [headerRow, ...dataRows] = allRows as [string[], ...string[][]];
 
-  const resolvedMapping = mapping ?? inferColumnMapping(headerRow);
+  const customFields = options.customFields ?? [];
+  const resolvedMapping = mapping ?? inferColumnMapping(headerRow, customFields);
   const matchKey = options.matchKey ?? 'name';
+
+  // Field-definition lookup for validating each custom-field column's value.
+  const defById = new Map(customFields.map((d) => [d.id, d]));
 
   // Build fast lookup maps from existing items.
   const byName = new Map<string, Item>();
@@ -399,7 +529,7 @@ export function buildCatalogImportPlan(
     const row = dataRows[i]!;
 
     const raw = extractRow(row, resolvedMapping);
-    const coerced = coerceRow(raw);
+    const coerced = coerceRow(raw.core);
 
     // Validate with Zod — collect errors, never throw.
     const result = catalogRowSchema.safeParse(coerced);
@@ -410,6 +540,14 @@ export function buildCatalogImportPlan(
     }
 
     const data = result.data;
+
+    // Validate + coerce any custom-field columns through the Phase-70 seam. An
+    // unknown field id or an invalid value is COLLECTED as a row error (never
+    // thrown); required is enforced by the seam itself. Only the coerced values
+    // (incl. nulls that clear a field) reach the plan, applied later through the
+    // existing setItemFieldValues path.
+    const fieldValues = resolveCustomFieldValues(raw.custom, defById, sourceRow, errors);
+    if (fieldValues === null) continue; // a custom-field value was invalid
 
     // Determine the match-key value for this row.
     const matchValue: string | null | undefined =
@@ -424,7 +562,7 @@ export function buildCatalogImportPlan(
         continue;
       }
       // No match key but has a name — treat as create.
-      creates.push({ sourceRow, input: toCreateInput(data) });
+      creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
       continue;
     }
 
@@ -444,14 +582,19 @@ export function buildCatalogImportPlan(
 
     if (existingItem) {
       // Matched → update.
-      updates.push({ sourceRow, itemId: existingItem.id, input: toUpdateInput(data) });
+      updates.push({
+        sourceRow,
+        itemId: existingItem.id,
+        input: toUpdateInput(data),
+        ...withFieldValues(fieldValues),
+      });
     } else {
       // No match → create. A name is required for creates.
       if (!data.name) {
         errors.push({ sourceRow, message: 'Name is required when creating a new item.' });
         continue;
       }
-      creates.push({ sourceRow, input: toCreateInput(data) });
+      creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
     }
   }
 
@@ -470,6 +613,20 @@ export function buildCatalogImportPlan(
 export interface CatalogItemRepository {
   create(input: CreateItemInput): Promise<Item>;
   update(id: string, input: UpdateItemInput): Promise<Item>;
+}
+
+/**
+ * Minimal interface for persisting custom-field values (Phase 72). Backed in
+ * production by `CategoryRepository.setItemFieldValues` — the ONLY custom-field
+ * write path; the importer never inserts `item_field_values` rows itself. The
+ * values supplied are already validated/coerced (Phase-70 seam); `setItemFieldValues`
+ * re-validates and enforces that each field belongs to the item's current category.
+ */
+export interface CatalogCategoryRepository {
+  setItemFieldValues(
+    itemId: string,
+    values: Readonly<Record<string, string | null>>,
+  ): Promise<void>;
 }
 
 /** Outcome of a single applied row. */
@@ -500,20 +657,31 @@ export interface CatalogApplyResult {
  * Rows that appear in `plan.errors` are already invalid and are NOT applied; only
  * the valid `create` and `update` entries are processed.
  *
- * @param plan   - The validated dry-run plan from {@link buildCatalogImportPlan}.
- * @param repo   - The item repository (production: `getItemRepository()`).
+ * Custom-field values (Phase 72) on a `create`/`update` entry are persisted through
+ * the supplied `categories.setItemFieldValues` — the existing custom-field write path
+ * — immediately after the item is created/updated. A custom-field write that throws
+ * (e.g. the field is not on the item's category) is recorded against the row's
+ * `error` without rolling back the item itself; the item create/update still counts.
+ *
+ * @param plan       - The validated dry-run plan from {@link buildCatalogImportPlan}.
+ * @param repo       - The item repository (production: `getItemRepository()`).
+ * @param categories - Optional custom-field writer (production:
+ *                     `getCategoryRepository()`); required only when the plan carries
+ *                     `fieldValues`.
  * @returns An aggregated {@link CatalogApplyResult}.
  */
 export async function applyCatalogImportPlan(
   plan: CatalogImportPlan,
   repo: CatalogItemRepository,
+  categories?: CatalogCategoryRepository,
 ): Promise<CatalogApplyResult> {
   const rows: ApplyRowResult[] = [];
 
   for (const entry of plan.create) {
     try {
-      await repo.create(entry.input);
-      rows.push({ sourceRow: entry.sourceRow, kind: 'created' });
+      const created = await repo.create(entry.input);
+      const fieldError = await applyFieldValues(categories, created.id, entry.fieldValues);
+      rows.push({ sourceRow: entry.sourceRow, kind: 'created', ...(fieldError ? { error: fieldError } : {}) });
     } catch (err) {
       rows.push({
         sourceRow: entry.sourceRow,
@@ -526,7 +694,8 @@ export async function applyCatalogImportPlan(
   for (const entry of plan.update) {
     try {
       await repo.update(entry.itemId, entry.input);
-      rows.push({ sourceRow: entry.sourceRow, kind: 'updated' });
+      const fieldError = await applyFieldValues(categories, entry.itemId, entry.fieldValues);
+      rows.push({ sourceRow: entry.sourceRow, kind: 'updated', ...(fieldError ? { error: fieldError } : {}) });
     } catch (err) {
       rows.push({
         sourceRow: entry.sourceRow,
@@ -541,4 +710,27 @@ export async function applyCatalogImportPlan(
   const skipped = rows.filter((r) => r.kind === 'skipped').length;
 
   return { created, updated, skipped, rows };
+}
+
+/**
+ * Persist a row's custom-field values through the existing
+ * `CategoryRepository.setItemFieldValues` path. Returns an error message (never
+ * throws) when the write fails — so the item create/update is not rolled back — or
+ * `undefined` on success / when there is nothing to write.
+ */
+async function applyFieldValues(
+  categories: CatalogCategoryRepository | undefined,
+  itemId: string,
+  fieldValues: CustomFieldValues | undefined,
+): Promise<string | undefined> {
+  if (!fieldValues || Object.keys(fieldValues).length === 0) return undefined;
+  if (!categories) {
+    return 'Custom-field values were ignored: no category repository was provided.';
+  }
+  try {
+    await categories.setItemFieldValues(itemId, fieldValues);
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : 'Unknown error writing custom fields.';
+  }
 }

@@ -28,7 +28,7 @@ const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof 
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
   { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
   { value: 'REPORTS', label: 'Report CSV', hint: 'A §3 aggregate report — valuation, consumption, movement or dead stock.', icon: ReportIcon },
-  { value: 'CATALOG_CSV', label: 'Catalogue CSV', hint: 'Whole-catalogue CSV that imports back without manual column mapping. Use this to migrate or back up your items as a spreadsheet.', icon: ImportIcon },
+  { value: 'CATALOG_CSV', label: 'Catalogue CSV', hint: 'Whole-catalogue CSV that imports back without manual column mapping — including a column for each category custom field. Use this to migrate or back up your items as a spreadsheet.', icon: ImportIcon },
 ];
 
 const SCOPES: { value: ExportScope; label: string }[] = [

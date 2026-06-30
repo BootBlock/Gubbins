@@ -291,11 +291,11 @@ relevant) and report the result plainly.
   `:memory:` query test (the join returns the right items); smoke: filter by a custom field and
   assert the list narrows.
 * **Deliverables checklist.**
-  - [ ] `field:value` token → SearchAST predicate, lowered through existing `parseASTtoSQL` + tests
-  - [ ] `:memory:` query test (join `item_field_values` returns expected items)
-  - [ ] filter-affordance UI surfacing custom fields; result-count `aria-live` intact
-  - [ ] +1 browser smoke step
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
+  - [x] `field:value` token → SearchAST predicate, lowered through existing `parseASTtoSQL` + tests
+  - [x] `:memory:` query test (join `item_field_values` returns expected items)
+  - [x] filter-affordance UI surfacing custom fields; result-count `aria-live` intact
+  - [x] +1 browser smoke step
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
 
 > **Outcome (Phase 71 — Search / filter on custom fields).** Shipped a `field:<name>` search
 > predicate that lets the existing §5.1 search filter the inventory by a category custom-field value,
@@ -321,7 +321,13 @@ relevant) and report the result plainly.
 > only** (`node --check` passes): run end-to-end it fails like every dev-server step because Vite's
 > `server.fs.allow` rejects the junctioned `sqlite-wasm` binary (resolved to the main checkout, outside
 > the worktree root) so the app's DB never boots — the documented Phase-69/70 worktree limitation, not a
-> Phase-71 defect. No waived nits.
+> Phase-71 defect. **Code review: CLEAN-WITH-NITS** — verified parameterisation (field name + value are
+> bound `?` params, no SQL interpolation/injection), the AST-produced-then-lowered discipline, scope
+> isolation, and that the `:memory:` tests meaningfully prove the join + numeric REAL-cast + no-match
+> behaviour. **Two review nits, both observations (no code change):** (1) `category_fields.name` is not
+> UNIQUE, so `field:Rating` is **name-scoped, not category-scoped** — intended "resolve by name" behaviour,
+> and `EXISTS` makes duplicate joins harmless; (2) the smoke step is parse-only per the standing worktree
+> limitation above. Merged to `main` (`4b84410`).
 
 ## Phase 72 — CSV import/export of custom fields (no migration) — Wave 3, parallel with 71
 
@@ -336,13 +342,43 @@ relevant) and report the result plainly.
   existing path); smoke: import a CSV with a custom-field column and assert the value lands on the
   item.
 * **Deliverables checklist.**
-  - [ ] `catalog-import.ts` custom-field column mapping + Zod dry-run (validates via Phase-70 seam) + tests
-  - [ ] batch-apply persists via existing `setItemFieldValues` (no second path) + `:memory:` test
-  - [ ] Export Wizard catalogue CSV gains custom-field columns
-  - [ ] +1 browser smoke step
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
+  - [x] `catalog-import.ts` custom-field column mapping + Zod dry-run (validates via Phase-70 seam) + tests
+  - [x] batch-apply persists via existing `setItemFieldValues` (no second path) + `:memory:` test
+  - [x] Export Wizard catalogue CSV gains custom-field columns
+  - [x] +1 browser smoke step
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
 
-> **Outcome (pending).**
+> **Outcome (shipped).** Phase 72 extends the Phase-67 catalogue CSV so category custom fields import and
+> export alongside core fields, entirely on the existing `category_fields` + `item_field_values` tables —
+> **no migration, no new tables, no second write/validation path**. IMPORT: `catalog-import.ts` gained a
+> `CustomFieldTarget` (`{ fieldId }`) mapping variant; `inferColumnMapping(headers, customFields?)`
+> auto-maps a non-core header to a custom field by normalised name (or raw field id, core synonyms winning a
+> clash); each custom cell is validated + canonically coerced through the **Phase-70** `validateFieldValue`
+> seam, with an invalid value / unknown field id / required-blank **collected as a row error (never
+> thrown)** and a non-required blank coercing to `null` (clear); the plan carries an optional `fieldValues`
+> per create/update, persisted by `applyCatalogImportPlan(plan, repo, categories?)` through the existing
+> `CategoryRepository.setItemFieldValues` (the only write path) — a custom-field write failure (e.g. the
+> field is not on the item's category) is recorded on the row without rolling back the item.
+> `CatalogImportWizard.tsx` loads every category's `listFields` and threads the defs through inference,
+> plan-building and apply. EXPORT: `buildCatalogCsv(items, customFields?, valuesByItem?)` appends one column
+> per definition (header = field name, dedup by field id, RFC-4180-quoted), fed by a new
+> `collectCustomFieldColumns` in `run-export.ts` that resolves each item's fields via the existing
+> `resolveItemFields` read path and exports **stored** values only (lenient defaults left blank so an
+> export→import round-trip never pins a default). +18 unit tests (1515 → **1533**, no new files: 14 added to
+> `catalog-import.test.ts` incl. a `:memory:` apply test proving the value lands, 5 to `export-data.test.ts`);
+> +1 browser-smoke step (*"imports a CSV custom-field column and the value lands on the item (Phase 72)"*).
+> `tsc -p tsconfig.app.json --noEmit` **clean**; `npm run build` **clean** (precache 3230.94 KiB, no
+> budget); `node --check scripts/browser-smoke.mjs` parses. Smoke parse-validated only (the standing
+> worktree `sqlite-wasm` `server.fs.allow` limitation); all unit tests run green in-worktree. **Code
+> review: CLEAN-WITH-NITS** — verified the two load-bearing constraints hold: import persists **only**
+> through `CategoryRepository.setItemFieldValues` (no second write path) and validation is the imported
+> Phase-70 `validateFieldValue` (not re-implemented); export RFC-4180 quoting, dedup-by-field-id, and the
+> category-mismatch-records-an-error case are all covered by meaningful tests. **One nit waived → deferred:**
+> in the import wizard's MapStep, an *auto-mapped* custom-field column renders its select as `''`
+> ("(ignore)") and the dropdown lists only core fields, so it looks identical to an ignored column and
+> can't be manually (re)assigned — cosmetic/UX only (the inferred mapping still applies; correctness
+> unaffected). Logged in `docs/dev/deferred-features.md` (Phase 72) as a backlog UX-cue follow-up. Merged
+> to `main` (`<this merge>`).
 
 ## Deferred / explicitly out of scope
 
