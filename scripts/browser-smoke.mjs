@@ -2848,6 +2848,57 @@ try {
     await search.fill('');
   });
 
+  await step('imports a synthetic catalogue CSV and verifies new items appear in inventory (Phase 67)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+
+    // Synthesise a tiny in-memory CSV (2 items; names are test-unique via `stamp`).
+    const csvContent = [
+      'name,quantity,unitCost',
+      `Smoke Gizmo ${stamp},3,1.50`,
+      `Smoke Thingamajig ${stamp},7,0.99`,
+    ].join('\r\n');
+
+    // Open the import wizard.
+    await page.getByTestId('open-catalog-import').click();
+    await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
+
+    // Inject the synthetic CSV directly via the file input (no real file needed).
+    const csvBytes = Buffer.from(csvContent, 'utf-8');
+    await page.getByTestId('catalog-import-file').setInputFiles({
+      name: 'smoke-catalog.csv',
+      mimeType: 'text/csv',
+      buffer: csvBytes,
+    });
+
+    // Wizard should auto-advance to the map step.
+    await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
+
+    // Advance to preview.
+    await page.getByTestId('catalog-import-preview').click();
+    await page.getByTestId('catalog-import-apply').waitFor({ state: 'visible', timeout: 5000 });
+
+    // The preview should show 2 creates and 0 errors.
+    const applyButton = page.getByTestId('catalog-import-apply');
+    const applyText = await applyButton.textContent();
+    if (!applyText?.includes('2')) {
+      throw new Error(`Expected "Import 2 rows" button but got: "${applyText}"`);
+    }
+
+    // Apply the import.
+    await applyButton.click();
+    await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: 8000 });
+
+    // Close the wizard.
+    await page.getByTestId('catalog-import-done').click();
+
+    // Verify both items appear in the inventory list via search.
+    const searchBox = page.getByRole('textbox', { name: 'Search items' });
+    await searchBox.fill(`Smoke Gizmo ${stamp}`);
+    await page.getByText(`Smoke Gizmo ${stamp}`).waitFor({ state: 'visible', timeout: 6000 });
+    await searchBox.fill('');
+  });
+
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });
 
   // --- Phase 15: mobile-emulation context (§2.7 auto-archive + §6.6 WASM scanner) ---

@@ -10,6 +10,7 @@ import {
   ContactsIcon,
   CycleCountIcon,
   ExportIcon,
+  ImportIcon,
   PrintIcon,
   ProjectIcon,
   ReportIcon,
@@ -42,6 +43,7 @@ import { defaultLocationForNewItem } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
+import { CatalogImportWizard } from './components/CatalogImportWizard';
 import type { ItemSelection } from './components/inventory-ui';
 
 /**
@@ -69,6 +71,7 @@ function InventoryWorkspace() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [cycleCountOpen, setCycleCountOpen] = useState(false);
   // Multi-select for batch QR-label printing (spec §6, Phase 49). The selection
   // keeps id→name so it survives the bounded virtualised-list window (a selected
@@ -246,6 +249,11 @@ function InventoryWorkspace() {
           Export
         </Button>
 
+        <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="open-catalog-import">
+          <ImportIcon />
+          Import CSV
+        </Button>
+
         <Tooltip content="Tick multiple items to print a sheet of QR labels. Toggling off clears the selection." triggerTabIndex={-1}>
           <span>
             <Button
@@ -404,6 +412,7 @@ function InventoryWorkspace() {
       ) : null}
       <ScannerOverlay open={scannerOpen} onClose={() => setScannerOpen(false)} />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
+      <CatalogImportWizard open={importOpen} onClose={() => setImportOpen(false)} />
       <PrintLabelsDialog
         open={printOpen}
         onClose={() => setPrintOpen(false)}

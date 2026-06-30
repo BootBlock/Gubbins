@@ -63,6 +63,51 @@ function csvCell(value: unknown): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+/**
+ * Catalog CSV column spec for the Phase 67 round-trip import format.
+ * Headers match the synonym map in `catalog-import.ts` so a file exported here
+ * can be imported back without a manual column-mapping step.
+ */
+const CATALOG_CSV_COLUMNS = [
+  'name',
+  'description',
+  'sku',
+  'quantity',
+  'locationId',
+  'categoryId',
+  'trackingMode',
+  'manufacturer',
+  'unitCost',
+  'batchNumber',
+  'lotNumber',
+  'condition',
+  'reorderPoint',
+  'reorderQty',
+] as const;
+
+type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];
+
+/** Map a logical catalog-CSV column to the Item field that holds the value. */
+function catalogCsvValue(item: Item, col: CatalogCsvColumn): unknown {
+  // `sku` and `mpn` refer to the same field; export as `sku` so the importer
+  // auto-maps it without requiring a manual column selection.
+  if (col === 'sku') return item.mpn;
+  return (item as unknown as Record<string, unknown>)[col];
+}
+
+/**
+ * Build a catalog CSV that round-trips through the Phase 67 import wizard
+ * without requiring manual column mapping (headers match the auto-detection
+ * synonyms). RFC-4180 quoting, CRLF rows.
+ */
+export function buildCatalogCsv(items: readonly Item[]): string {
+  const header = CATALOG_CSV_COLUMNS.join(',');
+  const rows = items.map((item) =>
+    CATALOG_CSV_COLUMNS.map((col) => csvCell(catalogCsvValue(item, col))).join(','),
+  );
+  return [header, ...rows].join('\r\n');
+}
+
 // --- Markdown / Obsidian vault (§4.5) ------------------------------------------
 
 /** A full-resolution image to extract into the vault's `/assets` (§4.5). */
