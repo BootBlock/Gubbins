@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, LiveRegion, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, LiveRegion, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   ExportIcon,
   LowStockIcon,
@@ -137,7 +137,7 @@ export function ReportsScreen() {
   }, [spend.isLoading, spend.isError, spend.data, f]);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader
         icon={<ReportIcon />}
         title="Reports & valuation"
@@ -369,7 +369,7 @@ export function ReportsScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="spend-error-live-region">
         {spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }
 

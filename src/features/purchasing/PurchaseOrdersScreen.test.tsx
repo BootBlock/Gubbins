@@ -85,7 +85,7 @@ vi.mock('@tanstack/react-router', () => ({
 // The global nav menu has its own suite; stub it so this screen test needs no
 // router/alerts context for the header.
 vi.mock('@/components/nav/AppNav', () => ({
-  AppNav: () => <nav data-testid="app-nav" aria-label="Navigation" />,
+  AppNav: () => <button type="button" data-testid="app-nav" aria-label="Navigation menu" />,
 }));
 
 // Stub dialogs — they are outside scope and add noise; we only care about the

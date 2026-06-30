@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { LiveRegion, MAIN_CONTENT_ID, PageHeader, Spinner, Surface } from '@/components/foundry';
+import { LiveRegion, MAIN_CONTENT_ID, PageContainer, PageHeader, Spinner, Surface } from '@/components/foundry';
 import { HistoryIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
@@ -156,7 +156,7 @@ export function ActivityFeedScreen() {
   }, [isLoading, entries.length]);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader icon={<HistoryIcon />} title="Activity" />
 
       <p className="text-sm text-muted-foreground">
@@ -272,6 +272,6 @@ export function ActivityFeedScreen() {
       <LiveRegion visuallyHidden data-testid="activity-live-region">
         {announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }

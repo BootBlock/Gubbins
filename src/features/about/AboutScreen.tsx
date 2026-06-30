@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
+import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   InfoIcon,
   LinkIcon,
@@ -26,7 +26,7 @@ const WEBSITE_URL = 'https://bootblock.co.uk';
  */
 export function AboutScreen() {
   return (
-    <div className="relative isolate mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
+    <PageContainer className="relative isolate">
       <Starfield />
       <PageHeader icon={<InfoIcon />} title="About" />
 
@@ -118,7 +118,7 @@ export function AboutScreen() {
           </p>
         </AboutSection>
       </main>
-    </div>
+    </PageContainer>
   );
 }
 

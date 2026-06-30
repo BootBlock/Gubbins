@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   LiveRegion,
+  PageContainer,
   PageHeader,
   Spinner,
   Surface,
@@ -204,7 +205,7 @@ export function CalendarScreen() {
   }, [isLoading, isError, events.length]);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       {/* Header ---------------------------------------------------------- */}
       <PageHeader icon={<DueDateIcon />} title="Upcoming" />
 
@@ -280,6 +281,6 @@ export function CalendarScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="agenda-error-live-region">
         {isError && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }

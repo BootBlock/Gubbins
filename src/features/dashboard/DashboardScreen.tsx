@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
+import { buttonVariants, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
 import { NAV_DESTINATIONS } from '@/components/nav/nav-destinations';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -27,7 +27,7 @@ export function DashboardScreen() {
   const alertCount = activeAlerts.length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6">
+    <PageContainer>
       <header className="flex flex-wrap items-center gap-4">
         <BrandMark className="size-12 rounded-2xl" />
         <div>
@@ -84,6 +84,6 @@ export function DashboardScreen() {
       >
         <DashboardGrid />
       </main>
-    </div>
+    </PageContainer>
   );
 }

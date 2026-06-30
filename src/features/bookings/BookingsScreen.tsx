@@ -19,6 +19,7 @@ import {
   Input,
   LiveRegion,
   MAIN_CONTENT_ID,
+  PageContainer,
   PageHeader,
   Select,
   Spinner,
@@ -309,7 +310,7 @@ export function BookingsScreen() {
   })).filter((g) => g.rows.length > 0);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader icon={<BookingIcon />} title="Bookings" />
 
       <NewBookingForm onResult={onResult} />
@@ -373,6 +374,6 @@ export function BookingsScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="bookings-error-live-region">
         {!announcementOk && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }

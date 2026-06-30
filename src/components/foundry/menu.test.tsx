@@ -126,4 +126,38 @@ describe('Menu — accessible menu button (spec §2.4.1)', () => {
     fireEvent.keyDown(menu, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(screen.getByText('One').closest('[role="menuitem"]'));
   });
+
+  it('Tab closes the menu and returns focus to the trigger', () => {
+    render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuLink to="/inventory">Inventory</MenuLink>
+      </Menu>,
+    );
+    open();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Navigation' }));
+  });
+
+  it('MenuAction renders its icon normally, but a check glyph in place of it when selected', () => {
+    const { rerender } = render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} icon={<svg data-testid="row-icon" />}>
+          Select items
+        </MenuAction>
+      </Menu>,
+    );
+    open();
+    expect(screen.getByTestId('row-icon')).toBeTruthy();
+
+    // When the row's mode is on, the leading slot shows a check instead of the icon.
+    rerender(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} icon={<svg data-testid="row-icon" />} selected>
+          Select items
+        </MenuAction>
+      </Menu>,
+    );
+    expect(screen.queryByTestId('row-icon')).toBeNull();
+  });
 });

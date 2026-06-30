@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, PageHeader, Spinner, Surface, Tooltip, INFO_OPEN_DELAY_MS, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, Input, PageContainer, PageHeader, Spinner, Surface, Tooltip, INFO_OPEN_DELAY_MS, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddContactIcon,
   CheckInIcon,
@@ -30,7 +30,7 @@ export function ContactsScreen() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader icon={<ContactsIcon />} title="Contacts & borrowing" />
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
@@ -143,7 +143,7 @@ export function ContactsScreen() {
         )}
       </section>
       </main>
-    </div>
+    </PageContainer>
   );
 }
 

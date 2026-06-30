@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import { AddIcon, ProjectIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
@@ -34,7 +34,7 @@ export function ProjectsScreen() {
   };
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
+    <PageContainer fullHeight>
       <PageHeader
         className="pb-4"
         icon={<ProjectIcon />}
@@ -134,6 +134,6 @@ export function ProjectsScreen() {
         onClose={() => setCreateOpen(false)}
         onCreated={(id) => setSelectedId(id)}
       />
-    </div>
+    </PageContainer>
   );
 }
