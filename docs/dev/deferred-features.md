@@ -1724,3 +1724,38 @@ passed its own code-review gate. Tracked in the `feature-gap-audit-2026-06-30c` 
 **Still queued (not started)** in that audit: **Wave 2** = #2 time-based asset booking (the one
 genuinely-new table → `user_version` **2**) + #5 procurement/spend analytics; **add-ons** = #6
 global activity feed, #7 supplier price-history. These remain tracked for a future session.
+
+---
+
+## Phase 78 — Outcome (time-based asset booking / reservations) — MERGED ✅
+
+Wave 2, candidate #2 of the third feature-gap audit. **The wave's one migration: synced
+`asset_bookings` table → `user_version` 1 → 2** (additive/forward — an existing v1 DB upgrades
+cleanly, **no wipe**, unlike the Phase-69 squash). Merged `c86e24d` & pushed; review verdict **PASS**.
+
+- **What:** reserve a *specific* serialised / single-unit asset for a whole-day date range ("book
+  the 3D printer Tue–Thu"); hard-prevent double-booking; convert a booking → checkout; surface
+  bookings as a 6th lane in the Phase-75 `/upcoming` agenda. **Distinct** from the §4 project
+  *quantity* reservation (`project_bom_lines.reserved_qty` — a stock annotation): a booking is a
+  calendar hold on one identifiable unit.
+- **Migration/sync:** `src/db/migrations/v2-asset-bookings.ts` (STRICT table, `CHECK (end_date >=
+  start_date)`, `updated_at` auto-stamp trigger). Joined `SYNC_TABLES` (after items + contacts) +
+  an `FK_REFS` guard (`item_id` CASCADE NOT-NULL, `contact_id` SET-NULL nullable); deletions
+  tombstoned and reconciled by the generic LWW path. `converted_checkout_id` is a nullable soft
+  pointer (not a FK, mirrors Phase-29 `source_batch_key`). Lifecycle (upcoming/active/overdue/
+  converted/cancelled) is **derived** from dates + two nullable columns (mirrors checkout
+  OPEN/RETURNED). Regenerated `__fixtures__/schema-baseline.snapshot.json` (script, not hand-edit);
+  the schema-lock test now targets version 2 and ties the golden `userVersion` to `TARGET_SCHEMA_VERSION`.
+- **Pure seams:** `booking-overlap.ts` (whole-day inclusive range maths — adjacent days don't clash,
+  same-day touch does) + `booking-status.ts` (lifecycle derivation, design-token tones,
+  bookable-asset rule). Both exhaustively unit-tested (21 + 19 tests, boundary instants).
+- **Surfaces:** `AssetBookingRepository` (create/cancel/convert/list/listUpcoming + overlap check),
+  a `/bookings` screen + route + dashboard nav entry, the calendar `'booking'` lane (single `now`
+  threaded), a new `BookingIcon`. Each in-place async result announces via a Phase-63 aria-live region.
+- **Tests:** new `AssetBookingRepository.test.ts` (`:memory:` SQL), a v2 migration round-trip test
+  (forward upgrade + data preservation + CHECK), and a two-device sync round-trip (LWW cancel +
+  tombstone delete). tsc clean · **1809 unit tests** (155 files, +59 over Phase 77) · build green.
+- **Review nits applied:** removed a dead `excludeId` overlap param; replaced a per-render
+  `useMemo` (never cached) with a direct bounded fold.
+
+Living plan: `docs/todo/asset-booking_2026-06-30.md`. Tracked in `feature-gap-audit-2026-06-30c`.
