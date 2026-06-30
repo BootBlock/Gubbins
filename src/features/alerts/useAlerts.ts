@@ -9,15 +9,11 @@
  * SQL query genuinely required — no existing method covered warranty expiry).
  */
 import { useQuery } from '@tanstack/react-query';
-import {
-  getItemRepository,
-  getMaintenanceRepository,
-} from '@/db/repositories';
+import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
+import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
-import {
-  EXPIRY_SOON_WINDOW_DAYS,
-} from '@/db/repositories/constants';
 import {
   buildAlerts,
   applyDismissals,
@@ -48,23 +44,20 @@ export function useAlerts(): {
 } {
   const now = Date.now();
 
-  // --- Source queries (reuse existing hooks/query keys where possible) ---
+  // --- Source queries ---
+  //
+  // Reuse the exact dashboard widget hooks (with the same user-tuned thresholds/window) so
+  // the alert feeds and the widgets share one cache entry each rather than double-fetching
+  // the same data under slightly different keys. It also keeps the badge/alert counts in
+  // step with what the Low-stock / Soon-to-expire widgets show. Warranty has no widget, so
+  // it stays a bespoke query here.
+  const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
+  const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
+  const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
 
-  const lowStockQuery = useQuery({
-    queryKey: [...inventoryKeys.lowStock(), null],
-    queryFn: () => getItemRepository().listLowStock({}, { limit: 100 }),
-  });
-
-  const expiringQuery = useQuery({
-    queryKey: [...inventoryKeys.expiring(), EXPIRY_SOON_WINDOW_DAYS],
-    queryFn: () =>
-      getItemRepository().listExpiringWithin(EXPIRY_SOON_WINDOW_DAYS, now, { limit: 100 }),
-  });
-
-  const maintenanceDueQuery = useQuery({
-    queryKey: inventoryKeys.maintenanceDue(),
-    queryFn: () => getMaintenanceRepository().listDue(now, { limit: 100 }),
-  });
+  const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent });
+  const expiringQuery = useExpiringItems(expirySoonWindowDays);
+  const maintenanceDueQuery = useDueMaintenance();
 
   const warrantyQuery = useQuery({
     queryKey: warrantyExpiringKey(),
