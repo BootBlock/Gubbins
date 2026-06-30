@@ -26,13 +26,12 @@ import {
   LowStockIcon,
   ProjectIcon,
   BudgetIcon,
-  LinkIcon,
-  PackageIcon,
-  ContactsIcon,
-  CloudIcon,
-  SettingsIcon,
   HistoryIcon,
   ValueIcon,
+  AddIcon,
+  ScanIcon,
+  ImportIcon,
+  ShoppingCartIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -49,6 +48,7 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
+import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -286,27 +286,34 @@ function BudgetAlertsWidget() {
   );
 }
 
-function QuickLinksWidget() {
-  const links = [
-    { to: '/inventory', label: 'Inventory', icon: <PackageIcon /> },
-    { to: '/projects', label: 'Projects', icon: <ProjectIcon /> },
-    { to: '/contacts', label: 'Contacts', icon: <ContactsIcon /> },
-    { to: '/sync', label: 'Cloud Sync', icon: <CloudIcon /> },
-    { to: '/settings', label: 'Settings', icon: <SettingsIcon /> },
+function QuickActionsWidget() {
+  // Action-oriented, not destinations — the destinations already appear as nav tiles
+  // directly above this board (improvement #8). Add/Scan/Import hand a one-shot intent to
+  // the Inventory screen (it opens the matching dialog on arrival); New PO navigates to
+  // where a purchase order is raised.
+  const actions = [
+    { to: '/inventory', label: 'Add item', icon: <AddIcon />, intent: 'add' as const },
+    { to: '/inventory', label: 'Scan', icon: <ScanIcon />, intent: 'scan' as const },
+    { to: '/inventory', label: 'Import CSV', icon: <ImportIcon />, intent: 'import' as const },
+    { to: '/purchase-orders', label: 'New PO', icon: <ShoppingCartIcon />, intent: null },
   ] as const;
   return (
-    <WidgetShell icon={<LinkIcon />} title="Quick links">
+    <WidgetShell icon={<AddIcon />} title="Quick actions">
       <div className="grid grid-cols-2 gap-1.5">
-        {links.map((l) => (
-          <Link
-            key={l.to}
-            to={l.to}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
-          >
-            {l.icon}
-            {l.label}
-          </Link>
-        ))}
+        {actions.map((a) => {
+          const { intent } = a;
+          return (
+            <Link
+              key={a.label}
+              to={a.to}
+              onClick={intent ? () => useInventoryEntry.getState().requestIntent(intent) : undefined}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
+            >
+              {a.icon}
+              {a.label}
+            </Link>
+          );
+        })}
       </div>
     </WidgetShell>
   );
@@ -452,7 +459,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   { id: 'projects', title: 'Project statuses', icon: <ProjectIcon />, to: '/projects', Component: ProjectsWidget },
   { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
   { id: 'recent-activity', title: 'Recent activity', icon: <HistoryIcon />, to: '/activity', Component: RecentActivityWidget },
-  { id: 'quick-links', title: 'Quick links', icon: <LinkIcon />, Component: QuickLinksWidget },
+  { id: 'quick-links', title: 'Quick actions', icon: <AddIcon />, Component: QuickActionsWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, to: '/settings', hash: 'danger-zone', Component: StorageWidget },
   { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },
