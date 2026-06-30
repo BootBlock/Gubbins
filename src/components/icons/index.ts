@@ -65,6 +65,7 @@ export {
   Upload as UploadIcon,
   FileText as DatasheetIcon,
   Link as LinkIcon,
+  ExternalLink as ExternalLinkIcon,
   Unlink as UnlinkIcon,
   HardDriveDownload as LocalFileIcon,
   SlidersHorizontal as SettingsIcon,

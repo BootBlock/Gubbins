@@ -1,10 +1,22 @@
 import { cn } from '@/lib/utils';
 import { MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
+import { ExternalLinkIcon } from '@/components/icons';
+import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
+
+/** The public GitHub repository — the brand hero links here on the landing page. */
+const REPO_URL = 'https://github.com/BootBlock/Gubbins';
+
+/** Build/release date formatted once for display (the constant never changes at runtime). */
+const RELEASE_LABEL = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+}).format(new Date(`${APP_RELEASE_DATE}T00:00:00`));
 
 /**
  * Landing screen — the §3 customisable widget board. The fixed status cards of the
@@ -23,13 +35,39 @@ export function DashboardScreen() {
   return (
     <PageContainer>
       <header className="flex flex-wrap items-center gap-4">
-        <BrandMark className="size-12 rounded-2xl" />
-        <div>
-          <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
-            Gubbins
-          </h1>
-          <p className="text-sm text-muted-foreground">Local-first inventory · your dashboard</p>
-        </div>
+        {/* On the landing page the brand hero doubles as a link to the public GitHub
+            repository (opens in a new tab) — a deliberate exception to the other screens'
+            home-link brand mark, which this screen doesn't have. */}
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open the Gubbins GitHub repository (opens in a new tab)"
+          className="group flex items-center gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <BrandMark className="size-12 rounded-2xl transition-transform duration-200 ease-emphasized group-hover:-translate-y-0.5" />
+          <div>
+            <span className="flex items-center gap-2">
+              <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
+                Gubbins
+              </h1>
+              <ExternalLinkIcon
+                aria-hidden
+                className="size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+              />
+            </span>
+            <p className="text-sm text-muted-foreground">Local-first inventory · your dashboard</p>
+          </div>
+        </a>
+
+        {/* Version + release date — landing-page only (the other screens use PageHeader,
+            which has no version slot). */}
+        <dl className="ml-auto text-right text-xs leading-tight text-muted-foreground">
+          <dt className="sr-only">Version</dt>
+          <dd className="font-medium tabular-nums text-foreground">v{APP_VERSION}</dd>
+          <dt className="sr-only">Released</dt>
+          <dd className="tabular-nums">{RELEASE_LABEL}</dd>
+        </dl>
       </header>
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the
