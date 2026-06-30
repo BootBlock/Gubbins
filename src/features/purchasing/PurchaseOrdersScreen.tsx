@@ -81,6 +81,25 @@ export function PurchaseOrdersScreen() {
         tabIndex={-1}
         className="grid flex-1 animate-rise gap-6 outline-none lg:grid-cols-[20rem_1fr]"
       >
+        {/*
+         * WCAG 4.1.3 — always-mounted polite status region for the purchase-order
+         * master list. The list count changes silently when orders are created or
+         * deleted; this sr-only region announces it to screen-reader users. It is
+         * always mounted so that later text mutations are reliably picked up, and
+         * col-span-full keeps it out of the two-column grid flow.
+         */}
+        <p
+          className="sr-only col-span-full"
+          role="status"
+          aria-live="polite"
+          data-testid="po-list-count-live"
+        >
+          {ordersQuery.isLoading
+            ? 'Loading purchase orders…'
+            : orders.length === 0
+              ? 'No purchase orders yet.'
+              : `${orders.length} purchase order${orders.length === 1 ? '' : 's'}.`}
+        </p>
         {/* Order list */}
         <section aria-label="Purchase orders" className="flex flex-col gap-2">
           {ordersQuery.isLoading ? (

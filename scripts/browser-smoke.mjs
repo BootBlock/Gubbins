@@ -58,7 +58,10 @@
  * plus the Phase 16 flows (Backlog polish, §3/§2.1): the chosen base currency
  * propagating end-to-end (switching to USD re-renders the project BOM total via the
  * `useFormatters` hook), and the new "System" theme tracking the emulated OS
- * `prefers-color-scheme` live.
+ * `prefers-color-scheme` live;
+ * plus the Phase 64 flow (aria-live Tier B, §3 WCAG 4.1.3): the Projects, Contacts,
+ * and Purchase-Orders master-list result-count regions are always-mounted polite
+ * live regions that announce the list count or empty state once data loads.
  * Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
@@ -796,6 +799,75 @@ try {
     if (!text || text.trim().length === 0) {
       throw new Error('reports live region did not announce a completion message');
     }
+  });
+
+  await step('Projects / Contacts / PO master-list result-count regions are aria-live polite (§3, Phase 64)', async () => {
+    // Projects screen — the projects-count-live region must be mounted (always)
+    // and announce a non-empty count or empty state after data loads.
+    await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
+    const projectsLive = page.getByTestId('projects-count-live');
+    await projectsLive.waitFor({ state: 'attached', timeout: 5000 });
+    if ((await projectsLive.getAttribute('role')) !== 'status') {
+      throw new Error('projects-count-live does not have role="status"');
+    }
+    if ((await projectsLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('projects-count-live is not aria-live="polite"');
+    }
+    // Wait for the list to resolve then check the region carries text.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="projects-count-live"]');
+        return el != null && (el.textContent ?? '').trim().length > 0;
+      },
+      { timeout: 5000 },
+    );
+
+    // Contacts screen — both on-loan and contacts count regions must be present.
+    await page.goto(`${BASE}contacts`, { waitUntil: 'domcontentloaded' });
+    const onLoanLive = page.getByTestId('contacts-on-loan-live');
+    const contactsLive = page.getByTestId('contacts-count-live');
+    await onLoanLive.waitFor({ state: 'attached', timeout: 5000 });
+    await contactsLive.waitFor({ state: 'attached', timeout: 5000 });
+    if ((await onLoanLive.getAttribute('role')) !== 'status') {
+      throw new Error('contacts-on-loan-live does not have role="status"');
+    }
+    if ((await contactsLive.getAttribute('role')) !== 'status') {
+      throw new Error('contacts-count-live does not have role="status"');
+    }
+    if ((await onLoanLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('contacts-on-loan-live is not aria-live="polite"');
+    }
+    if ((await contactsLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('contacts-count-live is not aria-live="polite"');
+    }
+    // Both regions must announce something once data loads.
+    await page.waitForFunction(
+      () => {
+        const a = document.querySelector('[data-testid="contacts-on-loan-live"]');
+        const b = document.querySelector('[data-testid="contacts-count-live"]');
+        return a != null && (a.textContent ?? '').trim().length > 0
+          && b != null && (b.textContent ?? '').trim().length > 0;
+      },
+      { timeout: 5000 },
+    );
+
+    // Purchase orders screen — master-list count region must be present and announce.
+    await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
+    const poListLive = page.getByTestId('po-list-count-live');
+    await poListLive.waitFor({ state: 'attached', timeout: 5000 });
+    if ((await poListLive.getAttribute('role')) !== 'status') {
+      throw new Error('po-list-count-live does not have role="status"');
+    }
+    if ((await poListLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('po-list-count-live is not aria-live="polite"');
+    }
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="po-list-count-live"]');
+        return el != null && (el.textContent ?? '').trim().length > 0;
+      },
+      { timeout: 5000 },
+    );
   });
 
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {

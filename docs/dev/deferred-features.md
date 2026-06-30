@@ -1423,8 +1423,10 @@ The largest remaining source files (`reconcile.ts` 730 — data-heavy FK table; 
 
 - [x] **Further `aria-live` (Tier A)** — **DONE at Phase 63.** The trigger finally appeared: an audit found four
   genuinely-silent in-place status surfaces (Reports aggregate completion, PO status/receipt progress, cycle-count
-  reconciliation result, export+backup completion), now wired to the P42 `LiveRegion` seam. **Tier B residual**
-  (list result-count announcements on Projects/Contacts/PO master list; `ActivityLog` fetch status) **→ Phase 64.**
+  reconciliation result, export+backup completion), now wired to the P42 `LiveRegion` seam.
+- [x] **Further `aria-live` (Tier B)** — **DONE at Phase 64.** List result-count announcements on Projects,
+  Contacts, and Purchase-orders master lists (mirroring the Phase-40 Inventory pattern). `ActivityLog` scroll-fetch
+  status deferred — a bare spinner→list swap with no count is **not** a WCAG 4.1.3 status message. **→ Backlog.**
 - [ ] **True NTP / cross-origin time source** — **→ Backlog** (carried from Phase 14).
 - [ ] **Leaner / precache-excluded WASM decoder** — **→ Backlog** (carried from Phase 15; offline-scanning trade-off,
   and the size gate that would have forced it was **retired at Phase 44** — no budget remains).
@@ -1456,12 +1458,36 @@ code-review sub-agent gate** before merge (1 SHOULD + 3 NITs, all fixed). tsc cl
 (150 files, +29) · 1 new browser-smoke step · build clean (precache 3184.65 KiB). Merged to `main` at
 `71324cc`. Details + reusable worktree gotchas in auto-memory [[aria-live-status-coverage]].
 
-**Carried → Phase 64 (aria-live Tier B):** list result-count announcements on the Projects / Contacts /
-Purchase-order **master** lists (mirror the Phase-40 Inventory pattern); `ActivityLog` scroll-fetch status.
-Bare spinner→list swaps with no count stay deferred (not a WCAG 4.1.3 status message). Continuation prompt
-delivered as a raw block.
+**Carried → Phase 64 (aria-live Tier B) — now DONE.** See Phase 64 Outcome below.
 
 > **Numbering note.** This a11y lineage owns Phases **63–64**. A separate, unstarted "inventory-breadth"
 > plan (second feature-gap audit, auto-memory `feature-gap-audit-2026-06-30b`) was drafted in another
 > session also numbered 63–66; per developer decision it **renumbers to follow this lineage** (≥ 65) and
 > starts from a fresh plan doc — it has not touched the repo.
+
+---
+
+## Phase 64 — Outcome (aria-live Tier B — list result-count announcements)
+
+Closed the three Tier-B surfaces carried from Phase 63: list result-count live regions on the Projects,
+Contacts, and Purchase-orders **master** lists, mirroring the Phase-40 Inventory `role="status" aria-live="polite"`
+inline element pattern. All three screens were confirmed silent before this phase (no existing `aria-live` / `LiveRegion`
+on the master list in any of the three files).
+
+**Surfaces wired:**
+
+- **Projects** (`ProjectsScreen.tsx`) — sr-only `<p role="status">` inside `<main>` announces
+  "N project(s)" / "No projects yet." / "Loading projects…".
+- **Contacts** (`ContactsScreen.tsx`) — two sr-only status paragraphs inside `<main>`:
+  one for on-loan count (with overdue breakdown) and one for contacts count.
+- **Purchase orders** (`PurchaseOrdersScreen.tsx`) — sr-only `<p role="status" className="sr-only col-span-full">`
+  inside the `<main>` grid, announces "N purchase order(s)" / "No purchase orders yet." / loading.
+  The PO **detail** panel's two `<LiveRegion>` elements (Phase 63) are untouched.
+
+**ActivityLog scroll-fetch status — DEFERRED → Backlog.** A bare `isFetchingNextPage` spinner swap
+carries no count and is not a WCAG 4.1.3 status message; no concrete phase target until an audit
+re-triggers it.
+
+**Execution:** single worktree sub-agent. tsc clean · **1493 unit tests** (152 files, +23 tests / +2
+new test files + 1 extended) · 1 new browser-smoke step (covers all three screens). No schema
+change — `user_version` stays **23**. No new dependency.
