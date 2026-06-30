@@ -206,6 +206,81 @@
         color: #e6fffa;
       }
 
+      .gb-hosted {
+        margin: 26px 0 0;
+        padding: 22px;
+        border-radius: 16px;
+        border: 1px solid rgba(99, 102, 241, 0.35);
+        background:
+          radial-gradient(130% 150% at 0% 0%, rgba(99, 102, 241, 0.24), transparent 60%),
+          rgba(99, 102, 241, 0.08);
+      }
+
+      .gb-hosted-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .gb-hosted-badge {
+        flex: none;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #0b0b0f;
+        background: linear-gradient(140deg, #a5b4fc, #c4b5fd);
+      }
+
+      .gb-hosted-title {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #f4f4f8;
+      }
+
+      .gb-hosted-text {
+        margin: 0 0 16px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #cdcdda;
+      }
+
+      .gb-hosted-text strong {
+        color: #e7e7ee;
+        font-weight: 650;
+      }
+
+      .gb-hosted-cta {
+        font-size: 14px;
+        padding: 11px 18px;
+      }
+
+      .gb-divider {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 28px 0 2px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8a8a99;
+      }
+
+      .gb-divider::before,
+      .gb-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
       .gb-links {
         display: flex;
         flex-wrap: wrap;
@@ -325,11 +400,39 @@
           <h1 class="gb-title">Gubbins needs to be launched, not opened directly</h1>
           <p class="gb-lede">
             You're seeing this because <code class="gb-code">index.html</code> was opened on its own
-            (a <code class="gb-code">file://</code> page). Gubbins is a web app that has to be served
-            by a small local server — it relies on JavaScript modules, a cross-origin-isolated
-            context, and an in-browser SQLite database that simply can't load from a bare file. The
-            good news: starting it properly takes one double-click.
+            (a <code class="gb-code">file://</code> page). Gubbins is a web app — it relies on
+            JavaScript modules, a cross-origin-isolated context, and an in-browser SQLite database
+            that simply can't load from a bare file. The good news: there are two easy ways in, so
+            pick whichever suits you.
           </p>
+
+          <div class="gb-hosted">
+            <div class="gb-hosted-head">
+              <span class="gb-hosted-badge">Easiest</span>
+              <h2 class="gb-hosted-title">Use the hosted app — no server required</h2>
+            </div>
+            <p class="gb-hosted-text">
+              Gubbins is published on the web, so you don't have to run anything locally if you'd
+              rather not. Open it in your browser and start using it right away — or click your
+              browser's <strong>Install</strong> icon in the address bar (on a phone, “Add to Home
+              Screen”) to install it as a Progressive Web App that launches like a native program
+              and works fully offline. Either way Gubbins is <strong>local-first</strong>: your data
+              lives on your own device, not on a server.
+            </p>
+            <a
+              class="gb-link gb-link--primary gb-hosted-cta"
+              href="https://bootblock.github.io/Gubbins/"
+              rel="noopener noreferrer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+              </svg>
+              Open Gubbins on the web
+            </a>
+          </div>
+
+          <div class="gb-divider">or run it locally</div>
 
           <ol class="gb-steps">
             <li class="gb-step">
