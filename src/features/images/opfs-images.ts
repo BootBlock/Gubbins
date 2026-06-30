@@ -140,6 +140,21 @@ export async function writeImageFiles(files: readonly OpfsImageFile[]): Promise<
   return written;
 }
 
+/**
+ * Remove the entire OPFS `images/` directory and everything in it (the §3 "Erase my data"
+ * full photo wipe / hard reset). Recursive so it drops every stored full-resolution file in
+ * one call. Swallows a missing directory (and any OPFS unavailability) like the other helpers,
+ * so erasing photos when none were ever saved is a harmless no-op.
+ */
+export async function removeImagesDirectory(): Promise<void> {
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(IMAGES_DIR, { recursive: true });
+  } catch {
+    // Directory never created, or OPFS unavailable — nothing to remove.
+  }
+}
+
 /** Delete a raw image file from OPFS. Silently ignores an already-missing file. */
 export async function deleteImageFile(path: string): Promise<void> {
   const filename = filenameOf(path);

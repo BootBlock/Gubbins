@@ -9,6 +9,7 @@
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { getDatabaseDriver, disposeDatabase } from '@/db/client';
 import { DB_FILENAME } from '@/db/worker/sqlite-bootstrap';
+import { removeImagesDirectory } from '@/features/images/opfs-images';
 
 /** Download the live database as a raw .sqlite binary (spec §3 — the key rescue). */
 export async function downloadRawSqlite(): Promise<void> {
@@ -145,7 +146,41 @@ export async function hardResetLocalData(): Promise<void> {
     // No service workers — ignore.
   }
 
+  await clearLocalAppState();
+
   location.reload();
+}
+
+/**
+ * Clear the app's local browser-side state that lives outside the OPFS database file: the
+ * full-resolution OPFS image directory, every `gubbins:`-namespaced `localStorage` key, and the
+ * file-system-access IndexedDB store. Factored out so the same teardown is reusable, and each
+ * step is wrapped independently so one failure (e.g. OPFS unavailable) can never block the
+ * others — a hard reset must make best-effort progress on every front.
+ */
+export async function clearLocalAppState(): Promise<void> {
+  try {
+    await removeImagesDirectory();
+  } catch {
+    // OPFS unavailable or already clear — ignore.
+  }
+
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('gubbins:')) keys.push(key);
+    }
+    for (const key of keys) localStorage.removeItem(key);
+  } catch {
+    // localStorage unavailable (e.g. privacy mode) — ignore.
+  }
+
+  try {
+    indexedDB.deleteDatabase('gubbins-fs');
+  } catch {
+    // IndexedDB unavailable — ignore.
+  }
 }
 
 function jsonReplacer(_key: string, value: unknown): unknown {

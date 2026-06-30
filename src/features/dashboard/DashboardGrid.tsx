@@ -357,7 +357,7 @@ function WidgetTile({
   // quick-link target makes the whole tile navigable (§3 "quick-links").
   if (def.to) {
     return (
-      <Link to={def.to} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
+      <Link to={def.to} hash={def.hash} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
         {card}
       </Link>
     );

@@ -20,6 +20,7 @@ export {
   Tooltip,
   DEFAULT_OPEN_DELAY_MS,
   INFO_OPEN_DELAY_MS,
+  NAV_OPEN_DELAY_MS,
   type TooltipProps,
   type TooltipPlacement,
 } from './tooltip';

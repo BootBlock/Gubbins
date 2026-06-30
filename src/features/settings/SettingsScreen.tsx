@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Select, Surface, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
+import { Button, Select, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
 import {
   AppearanceIcon,
   DarkThemeIcon,
@@ -21,6 +21,8 @@ import { BrandMark } from '@/components/BrandMark';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
+import { SettingsSection, SettingRow } from './SettingsSection';
+import { DangerZone } from '@/features/danger-zone/DangerZone';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
@@ -395,6 +397,8 @@ export function SettingsScreen() {
         </SettingRow>
       </SettingsSection>
 
+      <DangerZone />
+
       {/* Mounted on demand so its reads run when opened and its reference "now" is
           captured at open time (mirrors the banner entry-point). */}
       {triageOpen ? <StorageTriageDialog open onClose={() => setTriageOpen(false)} /> : null}
@@ -456,42 +460,3 @@ function ThemeToggle({
   );
 }
 
-function SettingsSection({
-  icon,
-  title,
-  children,
-}: {
-  readonly icon: ReactNode;
-  readonly title: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <Surface className="p-5">
-      <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
-        {icon}
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-      </div>
-      <div className="mt-4 divide-y divide-border">{children}</div>
-    </Surface>
-  );
-}
-
-function SettingRow({
-  label,
-  description,
-  children,
-}: {
-  readonly label: string;
-  readonly description: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{label}</div>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
