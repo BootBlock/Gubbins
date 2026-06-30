@@ -1392,3 +1392,42 @@ decoder, live distributor selector maintenance, further `aria-live`) is unchange
 > `tab-keyboard.ts` (`resolveTabKey`). Only the active tab's panel is mounted; the operational-parameters editor
 > lives in the default "Supplier & ops" tab. Every detail-dialog smoke step now clicks its tab first. **Final totals
 > for the phase: 1153 unit / 117 files / 93 smoke; build 2931.08 KiB across 32 precache files (reporter only).**
+
+## Tech-debt sweep — tier-2 monolith decomposition CLOSED + Backlog re-triage — 2026-06-30
+
+A standing tech-debt sweep confirmed the **tier-2 monolith decomposition is complete** — all three targets were
+split & merged on 2026-06-29 and re-verified on 2026-06-30 (`npx tsc --noEmit` clean, **1441/1441** unit tests
+green, no behaviour change). A **retroactive `/code-review high` gate was run on each of the three commits**
+(the merges had no recorded review) — **all three came back CLEAN, zero findings**; only one pure-style NIT
+(a stale doc comment in `tree-keyboard.ts` naming `LocationSidebar.tsx` where the glue now lives in
+`useLocationSidebar.ts`) was noted and waived:
+
+- **`db/repositories/ProjectRepository.ts`** — `0e8d251` "Decompose ProjectRepository god object into core + concern
+  mixins". Now a 37-line mixin composition over `project/{core,assembly,bom-lines,budget,costing,procurement}.ts`;
+  public API preserved (`new ProjectRepository(driver)` + every `projects.method()` call site unchanged;
+  `AssemblyResult` re-exported), the 480-line `ProjectRepository.test.ts` safety net passing unchanged.
+- **`features/sync/reconcile.ts`** — `12e47cb` "Decompose reconcile() into named per-phase sub-steps". `reconcile()`
+  is now a ~70-line orchestrator delegating to named pure sub-steps (`resolveTableMerges`/`reparentOrphans`/
+  `rejectLocationCycles`/`computeRemovedParents`/`enforceForeignKeys`/`reconcileGauges`/`reconcileHistory`/
+  `reconcileItemTags`); the §7.3 delta-CRDT merge behaviour is byte-identical (reconcile tests green). The file is
+  still ~730 LOC, but that is Phase 58/60/62 `FK_REFS` table growth, **not** a monolithic function.
+- **`features/inventory/components/LocationSidebar.tsx`** — `51945ce` "Decompose LocationSidebar into co-located
+  sub-components and a controller hook". Now 189 LOC with `LocationTreeItem`/`LocationRowActions`/
+  `LocationInlineRename` extracted; **design tokens only** (no raw colour/easing literals) and the Phase-39 APG
+  flat-tree contract intact (`role=tree`/`treeitem`, roving `tabIndex`, `data-tree-id` keydown, `resolveTreeKey` seam).
+
+The largest remaining source files (`reconcile.ts` 730 — data-heavy FK table; `BackupDialog.tsx` 533;
+`SettingsScreen.tsx` 497; `SyncScreen.tsx` 488) are all reasonable — **no god-object remains.**
+
+**Backlog re-triage (re-scheduled, never dropped — all confirmed with no live trigger today):**
+
+- [ ] **Further `aria-live`** — **→ Backlog** (carried from Phase 42; needs a genuinely silent in-place status surface).
+- [ ] **True NTP / cross-origin time source** — **→ Backlog** (carried from Phase 14).
+- [ ] **Leaner / precache-excluded WASM decoder** — **→ Backlog** (carried from Phase 15; offline-scanning trade-off,
+  and the size gate that would have forced it was **retired at Phase 44** — no budget remains).
+- [ ] **Multi-scrape UI tray / live distributor-selector maintenance** — **→ Backlog** (carried from Phase 13).
+
+> The **hard-failing bundle-size CI gate** is **not** re-listed: it was **retired at Phase 44** (the in-app budget it
+> would enforce no longer exists), so it is closed rather than deferred. The **`useItemHistory` pagination residual**
+> was bounded/cleared at **Phase 52** (the Activity Log viewer's `useItemHistory` is bounded — the P37 residual is
+> gone). No standing tech debt remains beyond the four trigger-gated Backlog items above.

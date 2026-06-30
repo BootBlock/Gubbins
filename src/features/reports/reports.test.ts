@@ -23,6 +23,15 @@ describe('effectiveUnitCost — the single cost-precedence seam', () => {
     expect(effectiveUnitCost({ unitCost: null })).toBe(0);
     expect(effectiveUnitCost({ unitCost: NaN })).toBe(0);
   });
+
+  it('prefers the manual unitCost over a present preferred-supplier cost', () => {
+    expect(effectiveUnitCost({ unitCost: 3, preferredSupplierCost: 99 })).toBe(3);
+  });
+
+  it('treats a negative cost as unset (the shared precedence helper rejects it)', () => {
+    expect(effectiveUnitCost({ unitCost: -5, preferredSupplierCost: 2 })).toBe(2);
+    expect(effectiveUnitCost({ unitCost: null, preferredSupplierCost: -1 })).toBe(0);
+  });
 });
 
 describe('groupValuation — valuation grouping', () => {

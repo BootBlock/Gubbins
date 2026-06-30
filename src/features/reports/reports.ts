@@ -7,10 +7,12 @@
  *
  * The reports are read-only projections over data already stored — there is no schema
  * change in this phase. Valuation honours a single internal "effective unit cost"
- * lookup ({@link effectiveUnitCost}) so a later phase can swap in the preferred-supplier
- * cost helper without touching the aggregations.
+ * lookup ({@link effectiveUnitCost}) which delegates the cost-precedence rule to the
+ * Phase-60 {@link resolveCostPrecedence} helper, so the "manual cost wins, else preferred
+ * supplier cost" rule lives in exactly one place across the app.
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
 
 // --- Effective unit cost (the single swap-point for cost precedence) -----------
 
@@ -23,25 +25,29 @@ export interface ValuedUnit {
   /** Manual replacement cost per unit (`items.unit_cost`); null when unpriced. */
   readonly unitCost: number | null;
   /**
-   * Preferred-supplier cost per unit, when a later phase wires one in. Absent today
-   * (Phase 60 runs in parallel and is not in this tree), so it is optional and the
-   * lookup simply falls through to {@link ValuedUnit.unitCost}.
+   * The preferred supplier part's cost per unit, resolved by `ReportRepository` from the
+   * `supplier_parts` ledger (NULL/absent when no preferred part is marked or priced). It is
+   * the fallback when there is no manual {@link ValuedUnit.unitCost}.
    */
   readonly preferredSupplierCost?: number | null;
 }
 
 /**
- * The effective per-unit cost used for valuation, isolated behind one function so the
- * precedence rule lives in exactly one place. **Today:** the manual `unitCost`. The
- * plan: "Honour the Phase-60 cost-precedence helper if merged; otherwise `items.unitCost`."
- * The optional preferred-supplier cost is consulted as a fallback when present, so a
- * later phase can populate it without changing any caller.
+ * The effective per-unit cost used for valuation, isolated behind one function so callers
+ * never re-implement cost precedence. The precedence rule itself — a manual `unitCost`
+ * wins, else the preferred supplier cost, else unpriced — is owned by the Phase-60
+ * {@link resolveCostPrecedence} helper (`@/features/inventory/supplier-cost`), which this
+ * delegates to so there is a single source of truth across reporting and the item screens.
+ * An unpriced item contributes `0` to valuation totals.
  */
 export function effectiveUnitCost(unit: ValuedUnit): number {
-  if (unit.unitCost != null && Number.isFinite(unit.unitCost)) return unit.unitCost;
-  const supplier = unit.preferredSupplierCost;
-  if (supplier != null && Number.isFinite(supplier)) return supplier;
-  return 0;
+  const resolved = resolveCostPrecedence(
+    { unitCost: unit.unitCost },
+    unit.preferredSupplierCost != null
+      ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }]
+      : [],
+  );
+  return resolved ?? 0;
 }
 
 // --- Inventory valuation -------------------------------------------------------

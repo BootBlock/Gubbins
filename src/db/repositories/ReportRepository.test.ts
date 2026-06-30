@@ -7,6 +7,7 @@ import { CategoryRepository } from './CategoryRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ReportRepository } from './ReportRepository';
+import { SupplierPartRepository } from './SupplierPartRepository';
 
 /**
  * ReportRepository — read-only §3 valuation/consumption/movement/low-stock/dead-stock
@@ -20,6 +21,7 @@ describe('ReportRepository', () => {
   let categories: CategoryRepository;
   let locations: LocationRepository;
   let reports: ReportRepository;
+  let supplierParts: SupplierPartRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
@@ -28,6 +30,7 @@ describe('ReportRepository', () => {
     categories = new CategoryRepository(driver);
     locations = new LocationRepository(driver);
     reports = new ReportRepository(driver);
+    supplierParts = new SupplierPartRepository(driver);
   });
 
   afterEach(async () => {
@@ -60,6 +63,39 @@ describe('ReportRepository', () => {
       expect(shelfGroup).toMatchObject({ value: 120, quantity: 110 });
       const unassigned = report.byLocation.find((g) => g.id === UNASSIGNED_LOCATION_ID);
       expect(unassigned).toMatchObject({ value: 0, quantity: 5 });
+    });
+
+    it('values an item with no manual cost at its preferred supplier cost (Phase-60 precedence)', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      // No manual unitCost: valuation must fall back to the preferred supplier part's cost.
+      const item = await items.create({ name: 'Relay', locationId: shelf.id, quantity: 10, unitCost: null });
+      await supplierParts.create(item.id, { supplierName: 'Cheap Co', unitCost: 5 });
+      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 7, isPreferred: true });
+
+      const report = await reports.inventoryValue();
+      expect(report.totalValue).toBe(70); // 10 × £7 (the *preferred* part, not the cheaper one)
+      expect(report.unpricedItemCount).toBe(0);
+      const shelfGroup = report.byLocation.find((g) => g.id === shelf.id);
+      expect(shelfGroup).toMatchObject({ value: 70 });
+    });
+
+    it('lets a manual unitCost win over the preferred supplier cost', async () => {
+      const item = await items.create({ name: 'Switch', quantity: 4, unitCost: 2 });
+      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 99, isPreferred: true });
+
+      const report = await reports.inventoryValue();
+      expect(report.totalValue).toBe(8); // 4 × £2 manual, not £99
+    });
+
+    it('values dead stock at the preferred supplier cost when unpriced manually', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'OldFan', quantity: 3, unitCost: null });
+      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 6, isPreferred: true });
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, item.id]);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines.map((l) => l.name)).toEqual(['OldFan']);
+      expect(report.totalValue).toBe(18); // 3 × £6 preferred supplier cost
     });
 
     it('excludes inactive items and abstract variant parents from valuation', async () => {

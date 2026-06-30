@@ -337,6 +337,14 @@ not a defect). Every phase passed its mandatory pre-merge code-review gate; all 
 recorded in the per-phase Outcome notes above.
 
 **There is no Wave 3 and no further kick-off prompt.** Future inventory work starts a fresh plan
-document. The remaining deferred items live in `docs/dev/deferred-features.md` (notably: adopt the
-Phase-60 `supplier-cost.ts` `effectiveUnitCost` in the Phase-61 report cost seam — a clean,
-isolated follow-up now that both are on `main`).
+document.
+
+> **Follow-up closed (2026-06-30).** The one tracked follow-up — adopt the Phase-60
+> `supplier-cost.ts` `effectiveUnitCost` in the Phase-61 report cost seam — is **done**. The pure
+> `effectiveUnitCost` in `src/features/reports/reports.ts` now *delegates* its precedence rule to
+> `supplier-cost.ts` (single authority: manual `items.unit_cost` wins, else the preferred supplier
+> cost, else unpriced→0), and `ReportRepository`'s valuation queries (headline/category/location +
+> dead-stock) feed it the preferred supplier `unit_cost` via a shared `preferredSupplierCostSql`
+> correlated subquery. Side effect: a (DB-permitted) negative `items.unit_cost` is now treated as
+> unset rather than reducing valuation, matching the `supplier_parts` `CHECK (unit_cost >= 0)`.
+> 1441 unit tests green (+5), `tsc` clean, no schema/migration change.

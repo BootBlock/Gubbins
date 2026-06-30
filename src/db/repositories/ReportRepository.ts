@@ -6,8 +6,10 @@
  * The repository runs the SQL and hands the minimal raw rows to the pure helpers in
  * `@/features/reports/reports`, which own all bucketing/grouping/boundary maths (and are
  * unit-tested there). Cost lookups go through a single `effectiveUnitCost` seam in that
- * module, so a later phase can swap in the preferred-supplier cost without touching these
- * queries. Reads are unpaginated *aggregates* (a fixed, tiny result set), not row dumps.
+ * module, which delegates the precedence rule (manual cost wins, else the preferred supplier
+ * cost) to the Phase-60 `supplier-cost` helper; the valuation queries feed it the preferred
+ * supplier cost via {@link preferredSupplierCostSql}. Reads are unpaginated *aggregates* (a
+ * fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
 import {
@@ -45,6 +47,21 @@ function notAVariantParent(col: string): string {
   return `${col} NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)`;
 }
 
+/**
+ * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
+ * (NULL when none is marked or the preferred row is unpriced). Feeds the `preferredSupplierCost`
+ * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
+ * else the preferred supplier cost — resolved in one place by `effectiveUnitCost`
+ * (`@/features/reports/reports`). `col` is the qualified item-id column to correlate on. At most
+ * one preferred row exists per item (repository invariant); the `ORDER BY` is a defensive
+ * tiebreak for a malformed multi-preferred state.
+ */
+function preferredSupplierCostSql(col: string): string {
+  return `(SELECT sp.unit_cost FROM supplier_parts sp
+             WHERE sp.item_id = ${col} AND sp.is_preferred = 1
+             ORDER BY sp.updated_at DESC LIMIT 1)`;
+}
+
 export class ReportRepository extends BaseRepository {
   /**
    * Inventory valuation (§3): the overall `SUM(quantity × effectiveUnitCost)`, the count of
@@ -60,8 +77,10 @@ export class ReportRepository extends BaseRepository {
       category_name: string | null;
       quantity: number;
       unit_cost: number | null;
+      preferred_supplier_cost: number | null;
     }>(
-      `SELECT i.category_id AS category_id, c.name AS category_name, i.quantity AS quantity, i.unit_cost AS unit_cost
+      `SELECT i.category_id AS category_id, c.name AS category_name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
          FROM items i
          LEFT JOIN categories c ON c.id = i.category_id
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
@@ -70,12 +89,14 @@ export class ReportRepository extends BaseRepository {
     const itemValuations: ItemValuationRow[] = itemRows.map((r) => ({
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
     }));
     const categoryRows: ValuationRow[] = itemRows.map((r) => ({
       groupId: r.category_id,
       groupName: r.category_name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
     }));
 
     // Per-location: the `item_stock` ledger (where stock actually sits), costed by the item.
@@ -84,8 +105,10 @@ export class ReportRepository extends BaseRepository {
       location_name: string | null;
       quantity: number;
       unit_cost: number | null;
+      preferred_supplier_cost: number | null;
     }>(
-      `SELECT s.location_id AS location_id, l.name AS location_name, s.quantity AS quantity, i.unit_cost AS unit_cost
+      `SELECT s.location_id AS location_id, l.name AS location_name, s.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
          FROM item_stock s
          JOIN items i ON i.id = s.item_id
          LEFT JOIN locations l ON l.id = s.location_id
@@ -96,6 +119,7 @@ export class ReportRepository extends BaseRepository {
       groupName: r.location_name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
     }));
 
     const headline = summariseValuation(itemValuations);
@@ -188,10 +212,12 @@ export class ReportRepository extends BaseRepository {
       name: string;
       quantity: number;
       unit_cost: number | null;
+      preferred_supplier_cost: number | null;
       created_at: number;
       last_moved_at: number | null;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
               i.created_at AS created_at,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id
@@ -206,6 +232,7 @@ export class ReportRepository extends BaseRepository {
       name: r.name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
       lastMovedAt: r.last_moved_at,
       createdAt: r.created_at,
     }));

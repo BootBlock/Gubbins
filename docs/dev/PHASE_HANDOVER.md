@@ -19,8 +19,14 @@ Phase 61 added no migration). **No dependency change.** **`build:extension` NOT 
 > (59→v21, 60→v22, 61→none, 62→v23) so concurrent worktrees never claimed the same `user_version`.
 > All four phases are merged and reviewed; the plan doc's "Plan complete — no continuation" section
 > records the final state. **There is no next phase in this plan** — future inventory work starts a
-> fresh plan document. The one tracked follow-up is to adopt the Phase-60 `supplier-cost.ts`
-> `effectiveUnitCost` in the Phase-61 report cost seam (`docs/dev/deferred-features.md`).
+> fresh plan document. The one tracked follow-up (adopt the Phase-60 `supplier-cost.ts`
+> `effectiveUnitCost` in the Phase-61 report cost seam) is now **done** (2026-06-30): the reports
+> `effectiveUnitCost` delegates precedence to `supplier-cost.ts` and `ReportRepository` feeds it the
+> preferred supplier cost. The **tier-2 monolith decomposition is also complete** —
+> `ProjectRepository` (`0e8d251`), `reconcile()` (`12e47cb`) and `LocationSidebar` (`51945ce`) were all
+> split & merged on 2026-06-29 and re-verified on 2026-06-30 (tsc clean, 1441 tests green, design
+> tokens / APG tree contract / public API all intact). The only standing tech debt is now the
+> trigger-gated Backlog (no item carries a live trigger today).
 
 ---
 
@@ -207,8 +213,10 @@ v12 `received_qty`, etc.), remain untouched.
 
 > Tracked in `docs/dev/deferred-features.md` and the plan doc's per-phase Outcome notes.
 
-- **Adopt the Phase-60 cost helper in Phase-61 reports** (above) — `supplier-cost.ts`'s `effectiveUnitCost`
-  is now on `main`; the report cost seam still uses `items.unitCost`. A clean, isolated follow-up.
+- **Adopt the Phase-60 cost helper in Phase-61 reports** — ✅ **done (2026-06-30).** The reports
+  `effectiveUnitCost` now delegates its precedence rule to `supplier-cost.ts` (single authority), and
+  `ReportRepository`'s valuation queries feed the preferred supplier cost via a shared
+  `preferredSupplierCostSql` correlated subquery. +5 tests (1441 green), `tsc` clean, no migration.
 - **Waived NITs (recorded):** P59 — curly-vs-straight apostrophe in the InfoHint copy; `shortfall` returns
   0 for gauges by design. P60 — a redundant `getById` round-trip in `SupplierPartRepository.update`; no
   explicit malformed-`price_breaks`-JSON repository test (the mapper is defensively covered). P61 — add the
