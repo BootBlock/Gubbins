@@ -189,19 +189,20 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
     return name;
   }
 
-  const scope = options.scope ?? 'ALL';
-  const items = await collectItems(options);
-
-  // Catalog CSV (Phase 67): a round-trip-ready spreadsheet whose headers auto-map
+  // Catalogue CSV (Phase 67): a round-trip-ready spreadsheet whose headers auto-map
   // in the import wizard. Ignores scope so it always exports all items (a whole-
-  // catalogue file is the common onboarding use-case). The download reuses the
-  // existing `download` side-effect so no parallel path is introduced.
+  // catalogue file is the common onboarding use-case), so it short-circuits before
+  // the shared item-scope plumbing rather than fetching the list twice. The download
+  // reuses the existing `download` side-effect so no parallel path is introduced.
   if (format === 'CATALOG_CSV') {
     const allItems = await collectAllItems(options.includeInactive);
     const name = `gubbins-catalog-${stamp()}.csv`;
     download(new Blob([buildCatalogCsv(allItems)], { type: 'text/csv;charset=utf-8' }), name);
     return name;
   }
+
+  const scope = options.scope ?? 'ALL';
+  const items = await collectItems(options);
   const suffix = scopeSuffix(scope, items);
 
   if (format === 'CSV') {

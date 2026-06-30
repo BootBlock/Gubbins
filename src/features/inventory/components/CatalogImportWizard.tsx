@@ -52,7 +52,7 @@ function StepHeading({ children }: { children: React.ReactNode }) {
 function UploadStep({
   onFileLoaded,
 }: {
-  onFileLoaded: (text: string, filename: string) => void;
+  onFileLoaded: (text: string, filename: string) => void | Promise<void>;
 }) {
   const inputId = useId();
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +69,13 @@ function UploadStep({
     setBusy(true);
     const reader = new FileReader();
     reader.onload = () => {
-      setBusy(false);
-      onFileLoaded(reader.result as string, file.name);
+      // Stay busy through onFileLoaded — it loads the existing catalogue for
+      // create-vs-update matching, which can reject (e.g. the store is not ready).
+      // Awaiting it here surfaces that failure in the upload-step error region
+      // instead of letting the rejected promise vanish.
+      Promise.resolve(onFileLoaded(reader.result as string, file.name))
+        .catch(() => setError('Could not read the catalogue — please try again.'))
+        .finally(() => setBusy(false));
     };
     reader.onerror = () => {
       setBusy(false);
