@@ -1759,3 +1759,51 @@ cleanly, **no wipe**, unlike the Phase-69 squash). Merged `c86e24d` & pushed; re
   `useMemo` (never cached) with a direct bounded fold.
 
 Living plan: `docs/todo/asset-booking_2026-06-30.md`. Tracked in `feature-gap-audit-2026-06-30c`.
+
+---
+
+## Phase 79 — Outcome (procurement / spend analytics) — MERGED ✅
+
+Wave 2, candidate #5 (the last). **Read-only — NO migration (`user_version` stays 2).** Merged
+`43a5bd1` & pushed; review verdict **PASS**.
+
+- **What:** "money out over time, by source / supplier / category" — the complement to the Phase-74
+  valuation-trend (which tracks inventory *value*, reconstructed backward; this tracks *spend*,
+  summed forward). Composed from three sources already stored, **each tagged by source** so any
+  overlap is auditable rather than silently de-duplicated: received purchase-order lines
+  (`received_qty × unit_cost`, dated by the PO's `ordered_at`/`created_at`), manual
+  `project_expenses`, and item `purchase_price` at the parsed `acquired_at`.
+- **Pure seam:** `src/features/reports/spend-analytics.ts` (`buildSpendReport`) — half-open
+  windowing + equal time buckets (mirrors `bucketMovement`), by-source / by-supplier / by-category
+  grouping with a divide-by-zero-safe `share` guard; null supplier/category collapse into
+  "No supplier" / "Uncategorised" catch-alls. 7 unit tests.
+- **Repository:** `ReportRepository.spendAnalytics(windowDays, buckets, now)` fetches the three raw
+  event sets (acquisitions parsed + window-filtered in JS via `parseAcquiredAt`, bounded by a coarse
+  ISO lower-bound pre-filter from the review) and feeds the seam. A new `:memory:`
+  `ReportRepository.test.ts` block proves the SQL across all three sources + window exclusion +
+  unreceived-line / zero-amount handling.
+- **Surfaces:** `useSpendAnalytics` + a token-only `SpendBreakdown` (bars, no chart dep) in a new
+  Reports "Spend analytics" section with the selectable window control (a `label`-parameterised
+  `WindowToggle`, distinct a11y name) and its own Phase-63 aria-live region. CSV (`buildSpendCsv`)
+  wired through the 5 Export-Wizard touchpoints.
+- tsc clean · **1818 unit tests** (156 files, +9 over Phase 78) · build green.
+
+Living plan: `docs/todo/spend-analytics_2026-06-30.md`.
+
+---
+
+## Wave 2 of the third feature-gap audit — COMPLETE (2026-06-30)
+
+Both Wave-2 phases are merged & pushed: **Phase 78** (time-based asset booking, `c86e24d`) and
+**Phase 79** (procurement/spend analytics, `43a5bd1`). Phase 78 introduced the wave's **one**
+migration (synced `asset_bookings` table → **`user_version` 2**, additive/forward, no wipe);
+Phase 79 was read-only. The suite grew 1750 → **1818** tests; each phase passed its own code-review
+gate (both PASS). Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
+
+**Add-ons remain tracked for a later wave (not started):**
+- [ ] **#6 Global activity feed** — read-only, **no migration** (composes `item_history` across
+  items; today the Phase-52 Activity Log is per-item only). Trigger: a request for a cross-item
+  recent-activity timeline.
+- [ ] **#7 Supplier price-history tracking** — a new lightweight history table → **`user_version` 3**
+  (the scraper already refreshes `supplier_parts.unit_cost`; this would record it over time).
+  Trigger: a request to chart a supplier part's cost over time.
