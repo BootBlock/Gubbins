@@ -1,21 +1,26 @@
-# PHASE_HANDOVER.md — inventory-breadth Wave 2 {65, 66, 67} — ✅ MERGED · in flight: Wave 3 {68}
+# PHASE_HANDOVER.md — inventory-breadth plan (Phases 64–68) — ✅ COMPLETE · no next phase
 
 **Project:** Gubbins — local-first inventory-tracking PWA
-**Wave completed:** **Inventory-breadth Wave 2 — Phases 65 (procurement automation), 66 (asset lifecycle,
-v24), 67 (bulk CSV import).** Three parallel git worktrees, each through its **mandatory pre-merge
-code-review gate** (all CLEAN with NITs; fixes applied, cosmetic NITs waived in the per-phase Outcome
-notes in `docs/todo/inventory-breadth_2026-06-30.md`). Octopus-integrated on `integration/wave2`
-(only `scripts/browser-smoke.mjs` conflicted — both step blocks kept), full suite green, then merged.
+**Plan completed:** **The combined a11y + inventory-breadth plan (Phases 64–68) is COMPLETE.** Phase 64
+(aria-live Tier B) finished the accessibility arc; Phases 65–68 closed the second feature-gap audit —
+65 procurement automation, 66 asset lifecycle (migration **v24**), 67 bulk CSV import, 68 alert centre.
+Run as Wave 1 {64} → Wave 2 {65,66,67} (three parallel worktrees) → Wave 3 {68} alone; **one worktree +
+implementation sub-agent per phase, each through its mandatory pre-merge code-review gate** (all CLEAN
+with NITs — fixes applied, waived findings recorded in the per-phase Outcome notes in
+`docs/todo/inventory-breadth_2026-06-30.md`).
 **Date:** 2026-06-30
-**Status:** ✅ **Merged to `main` (`2256118`).** `npx tsc -p tsconfig.app.json --noEmit` clean ·
-**1590/1590 unit tests** (156 files, +97 over the 1493 Wave-1 baseline) · `npm run build` clean (precache
-**3219.22 KiB**, no budget) · +3 browser-smoke steps. **Schema: `user_version = 24`** (Phase 66's
-`v24-item-asset-lifecycle`; 65 and 67 add no migration). **No dependency change.** `build:extension` NOT
-re-run (no §9/extension edit).
+**Status:** ✅ **All merged to `main` (final merge `32c0c7f`).** `npx tsc -p tsconfig.app.json --noEmit`
+clean · **1626/1626 unit tests** (157 files, +156 over the 1470 post-Phase-63 baseline) · `npm run build`
+clean (precache **3230.27 KiB**, no budget) · +5 browser-smoke steps (one per phase). **Schema:
+`user_version = 24`** (Phase 66's `v24-item-asset-lifecycle`; 64/65/67/68 add no migration; registry
+contiguous v1…v24, strict guard intact). **No dependency change.** `build:extension` NOT re-run (no
+§9/extension edit in any phase).
 
-**In flight — Wave 3 {68 alert centre}** (alone; its warranty lane reads Phase 66's `warranty_expires_at`).
-No migration (dismissals device-local via a Zustand persist store). Plan doc:
-`docs/todo/inventory-breadth_2026-06-30.md`.
+> **No next phase in this plan.** Future inventory work starts a fresh plan document. The second
+> feature-gap audit's remaining in-scope candidates (category custom-field templates; advanced analytics
+> / ABC / turnover / aging; label customisation) are parked in `docs/dev/deferred-features.md` and the
+> plan doc's *Deferred* section for a possible later wave. Web push for the alert centre is a Backlog
+> trigger (backend-less PWA).
 
 ---
 

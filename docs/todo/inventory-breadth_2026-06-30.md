@@ -264,10 +264,32 @@ worktrees, review + merge each; then **Wave 3 = {68}** alone. Code review after 
 * **Tests.** `alerts` pure tests (each source lane + severity ordering + warranty lane gated on P66
   fields + dismissal); smoke triggers a low-stock alert, asserts it lists, then dismisses it.
 * **Deliverables checklist.**
-  - [ ] `alerts.ts` pure seam (four lanes + severity sort + dismissal/grouping) + tests
-  - [ ] device-local Zustand persist dismissal store (no migration)
-  - [ ] `/alerts` route + nav badge + skip target + `aria-live` count (reuse `<LiveRegion>`)
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended
+  - [x] `alerts.ts` pure seam (four lanes + severity sort + dismissal/grouping) + tests
+  - [x] device-local Zustand persist dismissal store (no migration)
+  - [x] `/alerts` route + nav badge + skip target + `aria-live` count (reuse `<LiveRegion>`)
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended
+
+> **Outcome (2026-06-30, Wave 3 — final).** Shipped as specified. **No migration** (`user_version` stays
+> **24**). Pure `src/features/alerts/alerts.ts` (`buildAlerts(sources, now)` + `applyDismissals` +
+> `groupByKind`, `now` injected) folds four already-fetched source arrays into one typed `Alert[]` — kinds
+> `low-stock` / `expiry` / `maintenance-due` / `warranty-due`, severity `info|warning|critical`
+> (expired/overdue → critical, expiring-soon/low → warning), sorted by severity then soonest `dueAt` then
+> id. The four lanes compose existing seams: `listLowStock` (P59), `listExpiringWithin`/`expiryStatus`,
+> `MaintenanceRepository.listDue`, and the **Phase-66** `warrantyStatus` over `warranty_expires_at` via a
+> new additive `ItemRepository.listWarrantyExpiring` feed (the warranty lane is strictly gated — no
+> `warrantyExpiresAt` ⇒ no alert). Dismissals persist **device-local** via a Zustand `persist` store
+> (`useDismissedAlertsStore`, mirroring `useSavedSearchesStore`; `Set ↔ string[]` round-trip) — **no
+> migration, no synced table**. UI: a new `/alerts` route (file-based, `routeTree.gen.ts` regenerated) +
+> a Dashboard nav entry with an undismissed-count badge + `<main id={MAIN_CONTENT_ID}>` skip target + an
+> always-mounted `<LiveRegion>` announcing the count; token-styled severity badges (`bg-destructive/10
+> text-destructive` / `bg-warning/10 text-warning-foreground` — **no new token**). Web push **deferred to
+> Backlog** (backend-less PWA; trigger = a companion backend) in `docs/dev/deferred-features.md`. **Code
+> review: CLEAN with NITs.** One SHOULD + one NIT fixed pre-merge: `buildMaintenanceDueAlerts` now takes
+> the injected `now` instead of `Date.now()` inside the pure seam (restoring the no-clock contract +
+> making the not-yet-overdue branch testable); `listWarrantyExpiring` gained the variant-parent exclusion
+> for consistency with `listLowStock`. One NIT **waived**: the `Link to={… as any}` typing suppression in
+> `AlertsScreen` (no runtime risk — all current targets are `/inventory`). +36 unit tests, +1 smoke step.
+> `build:extension` NOT re-run (no §9/extension edit).
 
 ## Deferred / explicitly out of scope
 
@@ -280,6 +302,27 @@ worktrees, review + merge each; then **Wave 3 = {68}** alone. Code review after 
   customisation (multi-symbology / templates / location labels)** — confirmed in-scope audit
   candidates, parked for a possible later wave; not in 65–68.
 
-## Continuation prompt
+## Plan complete — no continuation
 
-_To be populated when a wave completes (see the Continuation-prompt rule at the head of this doc)._
+**The inventory-breadth plan (Phases 65–68) is COMPLETE**, on top of the carried Phase 64 (aria-live
+Tier B). All are merged to `main`:
+
+| Phase | Shipped | Migration | `user_version` |
+| --- | --- | --- | --- |
+| 64 — aria-live Tier B | result-count live regions (Projects/Contacts/PO master) | none | 23 |
+| 65 — Procurement automation | `reorder-plan.ts` + `listReorderShortfall` + `createDraftFromReorderPlan` + Reorder tab | none | 23 |
+| 66 — Asset lifecycle | `asset-lifecycle.ts` (`warrantyStatus`/`currentValue`) + Asset section | `v24-item-asset-lifecycle` | **24** |
+| 67 — Bulk CSV import | `catalog-import.ts` + import wizard + Export Wizard catalogue CSV | none | 24 |
+| 68 — Alert centre | `alerts.ts` (four lanes) + `/alerts` + device-local dismissals | none | 24 |
+
+Final state: `user_version = 24`, the migration registry is contiguous v1…v24 (strict-contiguity guard
+intact), **1626/1626 unit tests pass across 157 files**, `npx tsc -p tsconfig.app.json --noEmit` clean,
+`npm run build` clean (precache **3230.27 KiB**, no budget), and the browser smoke gained one step per
+phase (five total). Every phase passed its mandatory pre-merge code-review gate (all **CLEAN with
+NITs**); every waived finding is recorded in the per-phase Outcome notes above. `build:extension` was
+not re-run in any phase (no §9 / `extension/` edit).
+
+**There is no Wave 4 and no further kick-off prompt.** Future inventory work starts a fresh plan
+document. The second feature-gap audit's remaining in-scope candidates (category custom-field templates,
+advanced analytics / ABC / turnover / aging, label customisation) are parked in *Deferred / out of
+scope* above and in `docs/dev/deferred-features.md` for a possible later wave.
