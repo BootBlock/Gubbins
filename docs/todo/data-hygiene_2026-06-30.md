@@ -43,7 +43,8 @@ the raw flag rows to `buildHygieneReport`. No schema change.
 
 ## Glue
 
-- `queries.ts`: `useDataHygiene()` + `DATA_HYGIENE_STALE_DAYS` (180) + `DATA_HYGIENE_SAMPLE_LIMIT`.
+- `queries.ts`: `useDataHygiene()` + `DATA_HYGIENE_STALE_DAYS` (180). (The sample cap uses the
+  seam's `DEFAULT_SAMPLE_LIMIT` of 100; no separate constant is wired.)
 - `report-csv.ts`: `buildDataHygieneCsv` (one row per flagged item: kind, item, detail) +
   `'DATA_HYGIENE'` in `ReportCsvKind`; wired through the Export Wizard (`useExportStore`
   `ReportExportKind`, `run-export` slug+case, `ExportWizard` option) — the Phase-74 pattern.
@@ -59,3 +60,6 @@ the raw flag rows to `buildHygieneReport`. No schema change.
 - One-click fixes (bulk-assign a category from the report) — Backlog (the jump-to-fix link +
   Phase-76 bulk edit cover the workflow). 
 - Duplicate-by-name / fuzzy duplicate detection — Backlog (MPN is the precise signal).
+- Item-level deep links from the checklist — Backlog (the jump links go to `/inventory`, which
+  defines no search params yet, matching every other cross-screen link in the app; deep-linking
+  to a pre-filtered/opened item needs route `validateSearch` work).

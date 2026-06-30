@@ -381,4 +381,89 @@ describe('ReportRepository', () => {
       expect(report.changeValue).toBe(-10);
     });
   });
+
+  describe('dataHygiene', () => {
+    const sampleIds = (
+      report: Awaited<ReturnType<ReportRepository['dataHygiene']>>,
+      kind: string,
+    ) => report.sections.find((s) => s.kind === kind)!.samples.map((s) => s.id);
+    const countFor = (
+      report: Awaited<ReturnType<ReportRepository['dataHygiene']>>,
+      kind: string,
+    ) => report.sections.find((s) => s.kind === kind)!.count;
+
+    it('flags each quality issue over real SQL and leaves a tidy item unflagged', async () => {
+      const cat = await categories.create({ name: 'Capacitors' });
+      const shelf = await locations.create({ name: 'Shelf A' });
+
+      // Tidy: categorised, real location, priced, photographed, cycle-counted.
+      const tidy = await items.create({ name: 'Tidy', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: 2 });
+      await driver.execute(
+        'INSERT INTO item_images (id, item_id, full_res_opfs_path) VALUES (?, ?, ?);',
+        [crypto.randomUUID(), tidy.id, 'images/tidy.jpg'],
+      );
+      await driver.execute(
+        "INSERT INTO item_history (id, item_id, action) VALUES (?, ?, 'RECONCILED');",
+        [crypto.randomUUID(), tidy.id],
+      );
+
+      const noCat = await items.create({ name: 'NoCat', locationId: shelf.id, quantity: 1, unitCost: 2 });
+      // Unassigned: omit locationId so it lands in the holding pen.
+      const unassigned = await items.create({ name: 'Homeless', categoryId: cat.id, quantity: 1, unitCost: 2 });
+      const unpriced = await items.create({ name: 'Unpriced', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: null });
+
+      // Two items sharing an MPN (case/space-insensitively) — possible duplicates. The first
+      // is unpriced manually but carries a preferred supplier cost, so it must NOT be flagged
+      // as missing-price (exercises preferredSupplierCostSql).
+      const dupA = await items.create({ name: 'DupA', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: null, mpn: 'NE555P' });
+      await supplierParts.create(dupA.id, { supplierName: 'Pref Co', unitCost: 0.5, isPreferred: true });
+      const dupB = await items.create({ name: 'DupB', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: 2, mpn: ' ne555p ' });
+
+      const report = await reports.dataHygiene(180);
+
+      expect(report.totalItems).toBe(6);
+      expect(sampleIds(report, 'missing-category')).toEqual([noCat.id]);
+      expect(sampleIds(report, 'missing-location')).toEqual([unassigned.id]);
+      expect(sampleIds(report, 'missing-price')).toEqual([unpriced.id]); // dupA saved by supplier cost
+      expect(new Set(sampleIds(report, 'duplicate-mpn'))).toEqual(new Set([dupA.id, dupB.id]));
+
+      // Only Tidy has a photo / a reconciliation, so the other five are flagged for each.
+      expect(countFor(report, 'missing-photo')).toBe(5);
+      expect(sampleIds(report, 'missing-photo')).not.toContain(tidy.id);
+      expect(countFor(report, 'never-counted')).toBe(5);
+      expect(sampleIds(report, 'never-counted')).not.toContain(tidy.id);
+
+      // Tidy clears every check; the other five each fail at least one.
+      expect(report.flaggedItems).toBe(5);
+      expect(sampleIds(report, 'stale')).toEqual([]); // everything is freshly created
+    });
+
+    it('flags a long-idle item as stale (lastActivity falls back to created_at)', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const item = await items.create({ name: 'Forgotten', locationId: shelf.id, quantity: 1, unitCost: 1 });
+      const now = Date.now();
+      const old = now - 200 * MS_PER_DAY;
+      // The ledger is immutable (append-only), so drop the CREATED row and backdate the item:
+      // with no history, lastActivityAt falls back to the (now-old) created_at.
+      await driver.execute('DELETE FROM item_history WHERE item_id = ?;', [item.id]);
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [old, item.id]);
+
+      const report = await reports.dataHygiene(180, now);
+      expect(report.sections.find((s) => s.kind === 'stale')!.samples.map((s) => s.id)).toContain(item.id);
+    });
+
+    it('excludes inactive items and abstract variant parents', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const removed = await items.create({ name: 'Removed', locationId: shelf.id, quantity: 1, unitCost: 1 });
+      await items.softDelete(removed.id);
+
+      const parent = await items.create({ name: 'Resistor', locationId: shelf.id });
+      await items.createVariant(parent.id, { name: '10k', quantity: 5 });
+
+      const report = await reports.dataHygiene(180);
+      const everyId = new Set(report.sections.flatMap((s) => s.samples.map((x) => x.id)));
+      expect(everyId.has(removed.id)).toBe(false); // inactive — excluded
+      expect(everyId.has(parent.id)).toBe(false); // abstract variant parent — excluded
+    });
+  });
 });
