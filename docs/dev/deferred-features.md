@@ -1639,3 +1639,41 @@ and dashboard widgets with no single time-ordered view. **Read-only — no schem
   `warranty_expires_at` as UTC midnight while buckets use local midnight, mirroring the existing
   app-wide `asset-lifecycle.ts` convention; fixing it is an app-wide change, out of scope here).
   Trigger: a deliberate pass to normalise date-only fields to local time.
+
+## Phase 76 — Outcome (Bulk edit & item clone) — 2026-06-30
+
+**Third feature-gap audit (`feature-gap-audit-2026-06-30c`), Wave 1, candidate #3 — MERGED**
+(merge `bfd0d2a`; features `c770378` + review-fix `438ab7a`; pushed). The inventory multi-select
+already drove label printing and the scanner move-all; this adds **field bulk-edit** and **item
+duplication**. **~No schema change** — every write reuses an existing repository method, so
+`user_version` stays **1**. Living plan: `docs/todo/bulk-edit_2026-06-30.md`.
+
+- **Bulk edit** — set category / location / condition / active-state / tags (add **or** replace)
+  across every selected item from the selection bar. Pure seam `bulk-edit.ts` (+12 tests): a
+  `BulkEditSpec` *wrapper-presence* model (so "set to None" is distinct from "leave unchanged"),
+  `isBulkEditEmpty`, `summariseBulkEdit`, `parseTagInput`, `resolveItemTagNames`. The
+  `useBulkEditItems` mutation applies per item via `update`/`move`/`softDelete`/`restore`/
+  `setForItem` — **no new write SQL** — counting per-item failures rather than aborting the batch.
+- **Duplicate item** — seed a new item from an existing one (item-as-template). Pure seam
+  `clone.ts` (+10 tests): `planItemClone` copies template fields, strips per-instance identity
+  (serial / batch / lot / expiry / acquired-at / warranty / purchase price) and resets stock to 0;
+  `clonedSupplierPartInput` + `clonedFieldValues` map the child rows. The `useCloneItem` mutation
+  creates the item then copies operational metadata, custom-field values and supplier parts.
+  Enabled when exactly one item is selected.
+- UI: `BulkEditDialog` (Foundry `Modal`, per-field enable toggles, design tokens only) +
+  "Bulk edit" / "Duplicate" buttons in the selection bar; the bulk/clone outcome is announced
+  from the screen's always-mounted Phase-63 `<LiveRegion>` (the dialog's own region would unmount
+  with the modal before it could be read).
+- tsc clean · **1739 unit tests** (149 files, +19) · build green · code-reviewed
+  (CLEAN-WITH-NITS — the dialog announce-on-close NIT fixed; the non-atomic-clone SHOULD-FIX
+  documented).
+
+**Deferred → Backlog (tracked, not dropped):**
+
+- [ ] **Bulk-edit of price / reorder thresholds / arbitrary custom fields** — **→ Backlog**
+  (started with the five highest-value fields). Trigger: a request to bulk-set other fields.
+- [ ] **Open the clone in the detail dialog immediately** — **→ Backlog** (it appears in the list
+  on invalidation and the outcome is announced). Trigger: a request to edit the copy inline.
+- [ ] **Atomic (all-or-nothing) clone** — **→ Backlog** (the clone is best-effort across
+  repositories; a mid-sequence failure can leave a partial copy, documented on `useCloneItem` and
+  easily soft-deleted). Trigger: a need for guaranteed transactional duplication.
