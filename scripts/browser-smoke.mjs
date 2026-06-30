@@ -768,6 +768,36 @@ try {
     await poCard.getByText('9', { exact: true }).first().waitFor({ state: 'visible', timeout: 8000 });
   });
 
+  await step('Reports screen aria-live region announces aggregate completion (§3, Phase 63)', async () => {
+    // Navigate to the Reports screen (a priced item already exists from Phase 61 step).
+    await page.goto(`${BASE}reports`, { waitUntil: 'domcontentloaded' });
+
+    // The always-mounted polite status region must exist in the DOM immediately.
+    const liveRegion = page.getByTestId('reports-live-region');
+    await liveRegion.waitFor({ state: 'attached', timeout: 5000 });
+    if ((await liveRegion.getAttribute('role')) !== 'status') {
+      throw new Error('reports live region does not have role="status"');
+    }
+    if ((await liveRegion.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('reports live region is not aria-live="polite"');
+    }
+
+    // Wait for the stat cards to finish loading (the headline value renders), then assert
+    // the region's text content becomes non-empty — the aggregate "ready" announcement.
+    await page.getByTestId('stat-total-value').waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="reports-live-region"]');
+        return el != null && (el.textContent ?? '').trim().length > 0;
+      },
+      { timeout: 5000 },
+    );
+    const text = await liveRegion.textContent();
+    if (!text || text.trim().length === 0) {
+      throw new Error('reports live region did not announce a completion message');
+    }
+  });
+
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
     const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
     const datasheetUrl = `https://smoke.test/${stamp}.pdf`;

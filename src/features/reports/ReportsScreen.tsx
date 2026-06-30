@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, LiveRegion, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   ExportIcon,
   LowStockIcon,
@@ -38,6 +38,30 @@ export function ReportsScreen() {
   const movement = useMovement();
   const lowStock = useLowStockCount();
   const deadStock = useDeadStock();
+
+  // Derive aggregate loading / error state from all five queries.
+  const isAnyLoading =
+    value.isLoading || consumption.isLoading || movement.isLoading ||
+    lowStock.isLoading || deadStock.isLoading;
+  const isAnyError =
+    value.isError || consumption.isError || movement.isError ||
+    lowStock.isError || deadStock.isError;
+
+  // Announce the ready / error transition ONCE via the always-mounted live region.
+  // Tracked with a ref so re-renders (e.g. React Strict Mode double-invoke) don't
+  // re-fire the announcement after it has already been set.
+  const [announcement, setAnnouncement] = useState('');
+  const announcedRef = useRef(false);
+  useEffect(() => {
+    if (isAnyLoading || announcedRef.current) return;
+    announcedRef.current = true;
+    if (isAnyError) {
+      setAnnouncement('Reports failed to load.');
+    } else {
+      const total = value.data ? ` — inventory value ${f.currency(value.data.totalValue)}` : '';
+      setAnnouncement(`Reports ready${total}.`);
+    }
+  }, [isAnyLoading, isAnyError, value.data, f]);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
@@ -152,6 +176,17 @@ export function ReportsScreen() {
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
+
+      {/* Pre-mounted announce-only regions; content mutates once reports resolve so the
+          transition from "Loading…" to resolved values is announced to assistive tech
+          (WCAG 4.1.3). Two regions so polite "ready" and assertive "error" are always
+          mounted — switching role on a single region breaks screen-reader registration. */}
+      <LiveRegion visuallyHidden data-testid="reports-live-region">
+        {!isAnyError && announcement ? <p>{announcement}</p> : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden>
+        {isAnyError && announcement ? <p>{announcement}</p> : null}
+      </LiveRegion>
     </div>
   );
 }
