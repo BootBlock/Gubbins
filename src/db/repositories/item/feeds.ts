@@ -81,5 +81,35 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
     }
+
+    /**
+     * Active items with a `warranty_expires_at` date set whose warranty has either
+     * already expired or will expire within `withinDays` of `now` — the alert-centre
+     * warranty lane (Phase 68, spec §3). Ordered soonest-expiry first.
+     *
+     * Only items with the Phase-66 column populated are returned; items without a
+     * warranty date are excluded (they produce no warranty alert, per spec). The
+     * `withinDays` window should match {@link WARRANTY_EXPIRING_SOON_DAYS} from
+     * `asset-lifecycle.ts` so the SQL pre-filter and the pure status function agree.
+     */
+    async listWarrantyExpiring(withinDays: number, now: number, params: PageParams = {}): Promise<Page<Item>> {
+      const { limit, offset } = this.resolvePage(params);
+      // ISO date string for now + window. `warranty_expires_at` is stored as TEXT
+      // 'YYYY-MM-DD' so ISO-ordered string comparison gives correct date ordering.
+      // We include items already past expiry (warranty_expires_at <= today) as well
+      // as those expiring within the window (warranty_expires_at <= cutoff date).
+      const cutoff = new Date(now + withinDays * MS_PER_DAY).toISOString().slice(0, 10);
+      const rows = await this.driver.query<ItemRow>(
+        `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+         WHERE is_active = 1
+           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
+           AND warranty_expires_at IS NOT NULL
+           AND warranty_expires_at <= ?
+         ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
+         LIMIT ? OFFSET ?;`,
+        [cutoff, limit, offset],
+      );
+      return this.toPage(rows.map(rowToItem), limit, offset);
+    }
   };
 }
