@@ -1,4 +1,34 @@
-# PHASE_HANDOVER.md — Inventory-depth Phases 59–62 — ✅ COMPLETE
+# PHASE_HANDOVER.md — Phase 63 (aria-live status coverage) — ✅ COMPLETE · next: Phase 64
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Phase completed:** **Phase 63 — broader `aria-live` status-message coverage** (accessibility, §3 / WCAG
+4.1.3). Actioned the long-carried "Further aria-live" Backlog item once an audit surfaced four genuinely
+silent in-place status surfaces. Built on the existing **P42 `LiveRegion` seam** — **no new primitive, no
+dependency, no migration** (`user_version` stays **23**).
+**Date:** 2026-06-30
+**Status:** ✅ **Merged to `main` (`71324cc`).** `npm run type-check` clean · **1470/1470 unit tests**
+(150 files, +29) · 1 new browser-smoke step · `npm run build` clean (precache **3184.65 KiB**, no budget).
+**Surfaces:** Reports aggregate completion, PO status/receipt progress, cycle-count reconciliation result,
+export+backup completion — each an **always-mounted `<LiveRegion>` whose children mutate**, separate
+polite/assertive regions. Also folded in the held **report-cost follow-up** (reports valuation delegates to
+`supplier-cost.ts`) + the `tree-keyboard.ts` doc-comment NIT.
+**Execution model:** per-surface git worktrees + one implementation sub-agent each (`Agent
+isolation:"worktree"`), octopus-merged conflict-free; **mandatory code-review sub-agent gate** before merge
+(1 SHOULD + 3 NITs, all fixed). Worktree gotchas + the full surface list live in auto-memory
+[[aria-live-status-coverage]].
+
+**Next phase — Phase 64 (aria-live Tier B):** list result-count announcements on the Projects / Contacts /
+PO **master** lists (mirror Phase 40) + `ActivityLog` fetch status. Continuation prompt delivered to the
+developer as a raw fenced block; start it in a fresh chat.
+
+> **Numbering note.** This a11y lineage owns Phases **63–64**. A separate, unstarted **"inventory-breadth"**
+> plan (auto-memory `feature-gap-audit-2026-06-30b`: procurement automation / asset lifecycle + v24 / bulk
+> CSV import / alert centre), drafted in another session and also numbered 63–66, **renumbers to follow this
+> lineage (≥ 65)** per developer decision and starts from a fresh plan doc. It has not touched the repo.
+
+---
+
+## Reference — prior plan: Inventory-depth Phases 59–62 — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory tracking PWA
 **Plan completed:** **Inventory-depth Phases 59–62** — competitor-gap closure. Wave 1 ({59, 60, 61})

@@ -1421,7 +1421,10 @@ The largest remaining source files (`reconcile.ts` 730 — data-heavy FK table; 
 
 **Backlog re-triage (re-scheduled, never dropped — all confirmed with no live trigger today):**
 
-- [ ] **Further `aria-live`** — **→ Backlog** (carried from Phase 42; needs a genuinely silent in-place status surface).
+- [x] **Further `aria-live` (Tier A)** — **DONE at Phase 63.** The trigger finally appeared: an audit found four
+  genuinely-silent in-place status surfaces (Reports aggregate completion, PO status/receipt progress, cycle-count
+  reconciliation result, export+backup completion), now wired to the P42 `LiveRegion` seam. **Tier B residual**
+  (list result-count announcements on Projects/Contacts/PO master list; `ActivityLog` fetch status) **→ Phase 64.**
 - [ ] **True NTP / cross-origin time source** — **→ Backlog** (carried from Phase 14).
 - [ ] **Leaner / precache-excluded WASM decoder** — **→ Backlog** (carried from Phase 15; offline-scanning trade-off,
   and the size gate that would have forced it was **retired at Phase 44** — no budget remains).
@@ -1431,3 +1434,34 @@ The largest remaining source files (`reconcile.ts` 730 — data-heavy FK table; 
 > would enforce no longer exists), so it is closed rather than deferred. The **`useItemHistory` pagination residual**
 > was bounded/cleared at **Phase 52** (the Activity Log viewer's `useItemHistory` is bounded — the P37 residual is
 > gone). No standing tech debt remains beyond the four trigger-gated Backlog items above.
+
+---
+
+## Phase 63 — Outcome (broader `aria-live` status-message coverage, accessibility)
+
+The carried "Further `aria-live`" item's trigger appeared, so it was actioned. Four genuinely-silent
+in-place status surfaces (§3 / WCAG 4.1.3 Status Messages) were wired to the existing P42 `LiveRegion`
+seam (`src/components/foundry/live-region.tsx` + pure `liveRegionAttrs`) — **no new primitive, no
+dependency, no migration** (`user_version` stays **23**):
+
+- **Reports** (`ReportsScreen`) — announces aggregate completion once all queries resolve (assertive on error).
+- **Purchase Orders** (`PurchaseOrdersScreen`) — status-badge transition + receipt-progress change, on each action.
+- **Cycle count** (`CycleCountDialog`) — reconciliation-complete message (single-return refactor keeps one stable region).
+- **Export / Backup** (`ExportWizard`, `BackupDialog`) — progress + outcome (polite) / errors (assertive).
+
+**Pattern:** always-mounted region whose children mutate; separate polite/assertive regions; announce-once
+(one-shot) vs announce-on-change (repeatable, with the holding component keyed by entity id). **Execution:**
+per-surface git worktrees + one implementation sub-agent each, octopus-merged conflict-free, **mandatory
+code-review sub-agent gate** before merge (1 SHOULD + 3 NITs, all fixed). tsc clean · **1470 unit tests**
+(150 files, +29) · 1 new browser-smoke step · build clean (precache 3184.65 KiB). Merged to `main` at
+`71324cc`. Details + reusable worktree gotchas in auto-memory [[aria-live-status-coverage]].
+
+**Carried → Phase 64 (aria-live Tier B):** list result-count announcements on the Projects / Contacts /
+Purchase-order **master** lists (mirror the Phase-40 Inventory pattern); `ActivityLog` scroll-fetch status.
+Bare spinner→list swaps with no count stay deferred (not a WCAG 4.1.3 status message). Continuation prompt
+delivered as a raw block.
+
+> **Numbering note.** This a11y lineage owns Phases **63–64**. A separate, unstarted "inventory-breadth"
+> plan (second feature-gap audit, auto-memory `feature-gap-audit-2026-06-30b`) was drafted in another
+> session also numbered 63–66; per developer decision it **renumbers to follow this lineage** (≥ 65) and
+> starts from a fresh plan doc — it has not touched the repo.
