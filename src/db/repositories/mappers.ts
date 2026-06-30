@@ -38,6 +38,9 @@ import type {
   ProjectExpense,
   ProjectExpenseRow,
   ProjectRow,
+  PriceBreak,
+  SupplierPart,
+  SupplierPartRow,
   Tag,
   TagRow,
 } from './types';
@@ -111,6 +114,49 @@ export function rowToItem(row: ItemRow): Item {
     operationalMetadata: parseJson(row.operational_metadata),
     // Only populated by reads that JOIN item_images (§4.2.4); never the full-res path.
     thumbnailBlob: 'thumbnail_blob' in row ? (row.thumbnail_blob ?? null) : undefined,
+  };
+}
+
+/**
+ * Parse a `supplier_parts.price_breaks` JSON column into a clean, ascending `PriceBreak[]`.
+ * Defensive: any malformed entry (non-object, non-finite/negative numbers) is dropped rather
+ * than surfaced, so a corrupt or future-shaped value never reaches the UI as `NaN`.
+ */
+function parsePriceBreaks(value: string | null): PriceBreak[] {
+  if (value == null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const breaks: PriceBreak[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { qty, unitCost } = entry as Record<string, unknown>;
+    if (typeof qty !== 'number' || typeof unitCost !== 'number') continue;
+    if (!Number.isFinite(qty) || !Number.isFinite(unitCost) || qty <= 0 || unitCost < 0) continue;
+    breaks.push({ qty, unitCost });
+  }
+  return breaks.sort((a, b) => a.qty - b.qty);
+}
+
+export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    supplierName: row.supplier_name,
+    orderCode: row.order_code,
+    unitCost: row.unit_cost,
+    currency: row.currency,
+    packQty: row.pack_qty,
+    minOrderQty: row.min_order_qty,
+    priceBreaks: parsePriceBreaks(row.price_breaks),
+    url: row.url,
+    isPreferred: row.is_preferred === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

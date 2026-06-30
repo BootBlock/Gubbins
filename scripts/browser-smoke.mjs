@@ -580,6 +580,46 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('adds an editable supplier part and stars it preferred (§4, Phase 60)', async () => {
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+
+    // Open the add-supplier dialog and fill it in.
+    await dialog.getByTestId('supplier-part-add').click();
+    const form = page.getByTestId('supplier-part-form');
+    await form.waitFor({ state: 'visible', timeout: 5000 });
+    await form.getByTestId('supplier-part-name').fill('SmokeSupplier');
+    await form.getByTestId('supplier-part-order-code').fill('SMK-001');
+    await form.getByTestId('supplier-part-unit-cost').fill('1.25');
+    await form.getByTestId('supplier-part-breaks').fill('10:1.10\n100:0.95');
+    await form.getByTestId('supplier-part-save').click();
+
+    // The new row appears in the suppliers list.
+    const row = dialog.getByTestId('supplier-part-row').filter({ hasText: 'SmokeSupplier' });
+    await row.waitFor({ state: 'visible', timeout: 5000 });
+    // Star it preferred; the "Preferred" badge then renders.
+    await row.getByTestId('supplier-part-prefer').click();
+    await row.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+
+    // Reopen — the supplier part must come back from the DB (the item query was invalidated),
+    // proving it persisted through the worker rather than living only in local state.
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+    const reopened = dialog.getByTestId('supplier-part-row').filter({ hasText: 'SmokeSupplier' });
+    await reopened.waitFor({ state: 'visible', timeout: 5000 });
+    await reopened.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+    // Remove it again so later supplier-focused steps start clean.
+    await reopened.getByTestId('supplier-part-remove').click();
+    await dialog
+      .getByTestId('supplier-part-row')
+      .filter({ hasText: 'SmokeSupplier' })
+      .waitFor({ state: 'detached', timeout: 5000 });
+    await page.keyboard.press('Escape');
+  });
+
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
     const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
     const datasheetUrl = `https://smoke.test/${stamp}.pdf`;
@@ -1631,6 +1671,13 @@ try {
 
   await step('re-scraping honours the §4 no-overwrite review for a populated field', async () => {
     const detail = page.getByRole('dialog');
+    // The two prior steps each raise a degradation toast; wait for them to auto-dismiss so
+    // the fixed-position toast overlay cannot intercept the "Scrape" button click below.
+    await page
+      .getByTestId('toast')
+      .first()
+      .waitFor({ state: 'detached', timeout: 8000 })
+      .catch(() => {});
     const before = await scrapeRequestCount();
     await detail.getByTestId('scrape-supplier-panel').locator('input[type="url"]').fill('https://www.digikey.co.uk/p/ne555p');
     await detail.getByRole('button', { name: 'Scrape' }).click();

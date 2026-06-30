@@ -22,6 +22,7 @@ export type * from './types/tags';
 export type * from './types/images';
 export type * from './types/attachments';
 export type * from './types/aliases';
+export type * from './types/supplier-parts';
 export type * from './types/capabilities';
 export type * from './types/projects';
 export type * from './types/contacts';

@@ -344,6 +344,9 @@ const FK_REFS: Partial<
   ],
   category_fields: [{ col: 'category_id', parent: 'categories', nullable: false }],
   item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
+  // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
+  // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
+  supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
   item_field_values: [
     { col: 'item_id', parent: 'items', nullable: false },
     { col: 'field_id', parent: 'category_fields', nullable: false },

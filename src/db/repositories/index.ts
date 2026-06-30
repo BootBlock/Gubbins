@@ -19,6 +19,7 @@ import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { StorageRepository } from './StorageRepository';
+import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
 import type { RepositoryOptions } from './base';
@@ -34,6 +35,7 @@ export { ProjectRepository } from './ProjectRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
+export { SupplierPartRepository } from './SupplierPartRepository';
 export {
   TombstoneRepository,
   tombstoneStatement,
@@ -71,6 +73,7 @@ let projectRepository: ProjectRepository | null = null;
 let storageRepository: StorageRepository | null = null;
 let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
+let supplierPartRepository: SupplierPartRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
@@ -131,6 +134,11 @@ export function getContactRepository(): ContactRepository {
 export function getCheckoutRepository(): CheckoutRepository {
   checkoutRepository ??= new CheckoutRepository(getDatabaseDriver(), productionOptions);
   return checkoutRepository;
+}
+
+export function getSupplierPartRepository(): SupplierPartRepository {
+  supplierPartRepository ??= new SupplierPartRepository(getDatabaseDriver(), productionOptions);
+  return supplierPartRepository;
 }
 
 export function getTombstoneRepository(): TombstoneRepository {

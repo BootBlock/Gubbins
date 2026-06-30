@@ -25,6 +25,10 @@ import { v17MaintenanceLocation } from './v17-maintenance-location';
 import { v18AttachmentOriginDevice } from './v18-attachment-origin-device';
 import { v19LocationDescriptionColor } from './v19-location-description-color';
 import { v20ProjectBudgets } from './v20-project-budgets';
+// v21 (item reorder points) is pre-allocated to a parallel inventory-depth phase; this
+// worktree appends only its own v22. The gap is intentional — `runMigrations` walks the
+// registry in ascending order, so a missing intermediate version is filled when v21 merges.
+import { v22SupplierParts } from './v22-supplier-parts';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -47,6 +51,7 @@ export const migrations: readonly Migration[] = [
   v18AttachmentOriginDevice,
   v19LocationDescriptionColor,
   v20ProjectBudgets,
+  v22SupplierParts,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

@@ -9,6 +9,7 @@ import {
   LocationRepository,
   MaintenanceRepository,
   ProjectRepository,
+  SupplierPartRepository,
   TagRepository,
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
@@ -24,6 +25,7 @@ async function makeDevice(): Promise<{
   checkouts: CheckoutRepository;
   maintenance: MaintenanceRepository;
   projects: ProjectRepository;
+  supplierParts: SupplierPartRepository;
 }> {
   const driver = createMemoryDriver();
   await runMigrations(driver, migrations);
@@ -36,6 +38,7 @@ async function makeDevice(): Promise<{
     checkouts: new CheckoutRepository(driver),
     maintenance: new MaintenanceRepository(driver),
     projects: new ProjectRepository(driver),
+    supplierParts: new SupplierPartRepository(driver),
   };
 }
 
@@ -235,6 +238,47 @@ describe('runSync round-trip (§7.3)', () => {
     expect(onB.uncategorisedExpenseTotal).toBe(12);
     const ledger = await b.projects.listExpenses(project.id);
     expect(ledger.rows.find((e) => e.id === expense.id)?.categoryId).toBeNull();
+  });
+
+  it('round-trips a supplier part to a peer and resolves a concurrent edit by LWW (Phase 60)', async () => {
+    const item = await a.items.create({ name: 'Resistor', locationId: UNASSIGNED_LOCATION_ID });
+    const sp = await a.supplierParts.create(item.id, {
+      supplierName: 'DigiKey',
+      orderCode: 'RES-1',
+      unitCost: 0.1,
+      isPreferred: true,
+    });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    const onB = (await b.supplierParts.listForItem(item.id))[0];
+    expect(onB?.supplierName).toBe('DigiKey');
+    expect(onB?.orderCode).toBe('RES-1');
+    expect(onB?.isPreferred).toBe(true);
+
+    // B edits the order code later than A's last write, then both sync — A adopts B's value.
+    await b.supplierParts.update(sp.id, { orderCode: 'RES-1-REV-B' });
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+    expect((await a.supplierParts.getById(sp.id))?.orderCode).toBe('RES-1-REV-B');
+  });
+
+  it('drops an incoming supplier part whose item did not survive the merge (§7.5)', async () => {
+    const item = await a.items.create({ name: 'Doomed', locationId: UNASSIGNED_LOCATION_ID });
+    await a.supplierParts.create(item.id, { supplierName: 'RS' });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect(await b.supplierParts.listForItem(item.id)).toHaveLength(1);
+
+    // A hard-deletes the item (cascading its supplier parts, leaving only the item tombstone)
+    // and pushes; B, still holding the orphaned supplier part, must drop it rather than trip
+    // the item FK on apply.
+    await a.items.hardDelete(item.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await b.items.getById(item.id)).toBeUndefined();
+    expect(await b.supplierParts.listForItem(item.id)).toHaveLength(0);
   });
 
   it('resolves a concurrent edit by Last-Write-Wins', async () => {
