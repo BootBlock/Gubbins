@@ -11,9 +11,21 @@ import type {
   InventoryValueReport,
   MovementReport,
 } from './reports';
+import type { AbcReport } from './abc-analysis';
+import type { TurnoverReport } from './turnover';
+import type { StockAgingReport } from './stock-aging';
+import type { ValuationTrendReport } from './valuation-trend';
 
 /** The reports a user can export as CSV from the Reports screen. */
-export type ReportCsvKind = 'VALUATION' | 'CONSUMPTION' | 'MOVEMENT' | 'DEAD_STOCK';
+export type ReportCsvKind =
+  | 'VALUATION'
+  | 'CONSUMPTION'
+  | 'MOVEMENT'
+  | 'DEAD_STOCK'
+  | 'ABC'
+  | 'TURNOVER'
+  | 'AGING'
+  | 'VALUATION_TREND';
 
 /** RFC-4180 cell quoting (mirrors the items-CSV exporter). */
 function cell(value: unknown): string {
@@ -67,4 +79,40 @@ export function buildMovementCsv(report: MovementReport): string {
 export function buildDeadStockCsv(report: DeadStockReport): string {
   const rows: unknown[][] = report.lines.map((l) => [l.name, l.quantity, l.idleDays, l.value]);
   return toCsv(['item', 'quantity', 'idleDays', 'value'], rows);
+}
+
+/** ABC CSV: one row per item, ranked A→C, with its annual value and cumulative share. */
+export function buildAbcCsv(report: AbcReport): string {
+  const rows: unknown[][] = report.lines.map((l) => [
+    l.tier,
+    l.name,
+    l.annualValue,
+    l.cumulativeShare,
+  ]);
+  return toCsv(['tier', 'item', 'annualValue', 'cumulativeShare'], rows);
+}
+
+/** Turnover CSV: one row per item (fastest movers first), then a portfolio total row. */
+export function buildTurnoverCsv(report: TurnoverReport): string {
+  const rows: unknown[][] = report.lines.map((l) => [
+    l.name,
+    l.cogs,
+    l.avgValue,
+    l.turnover,
+    l.daysOnHand,
+  ]);
+  rows.push(['Total', report.totalCogs, report.totalAvgValue, report.turnover, report.daysOnHand]);
+  return toCsv(['item', 'cogs', 'avgValue', 'turnover', 'daysOnHand'], rows);
+}
+
+/** Stock-aging CSV: one row per age bucket. */
+export function buildAgingCsv(report: StockAgingReport): string {
+  const rows: unknown[][] = report.buckets.map((b) => [b.label, b.itemCount, b.quantity, b.value]);
+  return toCsv(['bucket', 'itemCount', 'quantity', 'value'], rows);
+}
+
+/** Valuation-trend CSV: one row per reconstructed sample (chronological). */
+export function buildValuationTrendCsv(report: ValuationTrendReport): string {
+  const rows: unknown[][] = report.points.map((p) => [isoDate(p.at), p.value]);
+  return toCsv(['date', 'value'], rows);
 }

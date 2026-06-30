@@ -42,6 +42,10 @@ const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
   { value: 'CONSUMPTION', label: 'Consumption rate' },
   { value: 'MOVEMENT', label: 'Stock movement' },
   { value: 'DEAD_STOCK', label: 'Dead stock' },
+  { value: 'ABC', label: 'ABC analysis' },
+  { value: 'TURNOVER', label: 'Inventory turnover' },
+  { value: 'AGING', label: 'Stock aging' },
+  { value: 'VALUATION_TREND', label: 'Valuation over time' },
 ];
 
 export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => void }) {

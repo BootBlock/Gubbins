@@ -827,6 +827,15 @@ try {
     // The valuation breakdown and the movement chart legend are present.
     await page.getByTestId('value-breakdown').first().waitFor({ state: 'visible', timeout: 5000 });
 
+    // The Phase-74 advanced-analytics panels render. Turnover (any active item) and stock aging
+    // (any item with stock) are guaranteed by the non-zero-total assertion above; the valuation
+    // sparkline always renders; the selectable analytics-window control is present. (ABC needs
+    // recorded consumption, which this seeded flow may lack, so it is not asserted here.)
+    await page.getByTestId('turnover-table').waitFor({ state: 'visible', timeout: 5000 });
+    await page.getByTestId('stock-aging-chart').waitFor({ state: 'visible', timeout: 5000 });
+    await page.getByTestId('valuation-sparkline').waitFor({ state: 'visible', timeout: 5000 });
+    await page.getByRole('group', { name: 'Analytics window' }).waitFor({ state: 'visible', timeout: 5000 });
+
     // The CSV export flows through the shared Export Wizard's "Report CSV" format.
     await page.getByTestId('open-report-export').click();
     const exportDialog = page.getByRole('dialog', { name: 'Export' });

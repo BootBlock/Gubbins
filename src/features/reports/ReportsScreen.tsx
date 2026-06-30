@@ -9,17 +9,29 @@ import {
 } from '@/components/icons';
 import { BrandMark } from '@/components/BrandMark';
 import { ExportWizard } from '@/features/export/ExportWizard';
+import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
 import { MovementChart } from './components/MovementChart';
+import { AbcBreakdown } from './components/AbcBreakdown';
+import { TurnoverTable } from './components/TurnoverTable';
+import { StockAgingChart } from './components/StockAgingChart';
+import { ValuationSparkline } from './components/ValuationSparkline';
 import {
+  ABC_WINDOW_DAYS,
+  ANALYTICS_WINDOWS,
   DEAD_STOCK_SINCE_DAYS,
+  DEFAULT_ANALYTICS_WINDOW,
   REPORT_WINDOW_DAYS,
+  useAbcAnalysis,
   useConsumptionRate,
   useDeadStock,
   useInventoryValue,
   useLowStockCount,
   useMovement,
+  useStockAging,
+  useTurnover,
+  useValuationTrend,
 } from './queries';
 
 /**
@@ -32,12 +44,20 @@ import {
 export function ReportsScreen() {
   const f = useFormatters();
   const [exportOpen, setExportOpen] = useState(false);
+  // Selectable trailing window driving the turnover + valuation-trend analytics (ABC stays annual).
+  const [analyticsWindow, setAnalyticsWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
 
   const value = useInventoryValue();
   const consumption = useConsumptionRate();
   const movement = useMovement();
   const lowStock = useLowStockCount();
   const deadStock = useDeadStock();
+
+  // Phase 74 advanced analytics.
+  const abc = useAbcAnalysis();
+  const turnover = useTurnover(analyticsWindow);
+  const aging = useStockAging();
+  const trend = useValuationTrend(analyticsWindow);
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
@@ -62,6 +82,20 @@ export function ReportsScreen() {
       setAnnouncement(`Reports ready${total}.`);
     }
   }, [isAnyLoading, isAnyError, value.data, f]);
+
+  // The advanced-analytics block has its own once-only completion announcement (Phase 63 /
+  // WCAG 4.1.3), separate from the headline reports above so each section reports its own
+  // readiness. Tracked with its own ref so re-renders (and the window-toggle re-fetch) don't
+  // re-fire it once it has resolved.
+  const isAnalyticsLoading = abc.isLoading || turnover.isLoading || aging.isLoading || trend.isLoading;
+  const isAnalyticsError = abc.isError || turnover.isError || aging.isError || trend.isError;
+  const [analyticsAnnouncement, setAnalyticsAnnouncement] = useState('');
+  const analyticsAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (isAnalyticsLoading || analyticsAnnouncedRef.current) return;
+    analyticsAnnouncedRef.current = true;
+    setAnalyticsAnnouncement(isAnalyticsError ? 'Analytics failed to load.' : 'Analytics ready.');
+  }, [isAnalyticsLoading, isAnalyticsError]);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
@@ -173,6 +207,50 @@ export function ReportsScreen() {
             </p>
           )}
         </Panel>
+
+        {/* Advanced analytics (Phase 74) — ABC, turnover, stock aging & valuation over time. */}
+        <section className="flex flex-col gap-6" aria-labelledby="analytics-heading">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="analytics-heading" className="text-base font-semibold tracking-tight">
+              Advanced analytics
+            </h2>
+            <WindowToggle value={analyticsWindow} onChange={setAnalyticsWindow} formatters={f} />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Panel title={`ABC analysis (annual consumption, ${ABC_WINDOW_DAYS}d)`}>
+              {abc.isLoading ? (
+                <CentredSpinner />
+              ) : abc.data ? (
+                <AbcBreakdown report={abc.data} formatters={f} emptyLabel="No consumption recorded yet." />
+              ) : null}
+            </Panel>
+
+            <Panel title={`Inventory turnover (last ${analyticsWindow} days)`}>
+              {turnover.isLoading ? (
+                <CentredSpinner />
+              ) : turnover.data ? (
+                <TurnoverTable report={turnover.data} formatters={f} />
+              ) : null}
+            </Panel>
+
+            <Panel title="Stock aging">
+              {aging.isLoading ? (
+                <CentredSpinner />
+              ) : aging.data ? (
+                <StockAgingChart report={aging.data} formatters={f} />
+              ) : null}
+            </Panel>
+
+            <Panel title={`Valuation over time (last ${analyticsWindow} days)`}>
+              {trend.isLoading ? (
+                <CentredSpinner />
+              ) : trend.data ? (
+                <ValuationSparkline report={trend.data} formatters={f} />
+              ) : null}
+            </Panel>
+          </div>
+        </section>
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -187,11 +265,58 @@ export function ReportsScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="reports-error-live-region">
         {isAnyError && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
+
+      {/* The advanced-analytics block's own once-only completion region (Phase 74). */}
+      <LiveRegion visuallyHidden data-testid="analytics-live-region">
+        {!isAnalyticsError && analyticsAnnouncement ? <p>{analyticsAnnouncement}</p> : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="analytics-error-live-region">
+        {isAnalyticsError && analyticsAnnouncement ? <p>{analyticsAnnouncement}</p> : null}
+      </LiveRegion>
     </div>
   );
 }
 
-
+/**
+ * A small segmented control selecting the trailing window (days) for the turnover + valuation
+ * analytics. Tokens only; the active option uses the `primary` surface, the rest are muted.
+ */
+function WindowToggle({
+  value,
+  onChange,
+  formatters,
+}: {
+  value: number;
+  onChange: (days: number) => void;
+  formatters: Formatters;
+}) {
+  return (
+    <div
+      className="inline-flex items-center gap-1 rounded-lg bg-secondary/60 p-0.5"
+      role="group"
+      aria-label="Analytics window"
+    >
+      {ANALYTICS_WINDOWS.map((days) => {
+        const active = days === value;
+        return (
+          <button
+            key={days}
+            type="button"
+            onClick={() => onChange(days)}
+            aria-pressed={active}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors ${
+              active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {formatters.quantity(days)}d
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function StatCard({
   label,

@@ -15,6 +15,16 @@ export const REPORT_MOVEMENT_BUCKETS = 15;
 /** "No movement in N days" cutoff for the dead-stock report. */
 export const DEAD_STOCK_SINCE_DAYS = 90;
 
+// Phase 74 — advanced analytics ------------------------------------------------
+/** Annual window (days) for ABC analysis — the standard "annual consumption value" basis. */
+export const ABC_WINDOW_DAYS = 365;
+/** Selectable trailing windows (days) for the turnover + valuation-trend analytics. */
+export const ANALYTICS_WINDOWS = [30, 90, 365] as const;
+/** Default analytics window — a quarter reads well for both turnover and the value trend. */
+export const DEFAULT_ANALYTICS_WINDOW = 90;
+/** Number of reconstructed samples on the valuation-trend sparkline. */
+export const VALUATION_TREND_POINTS = 12;
+
 export function useInventoryValue() {
   return useQuery({
     queryKey: ['reports', 'inventory-value'],
@@ -49,5 +59,33 @@ export function useDeadStock(sinceDays: number = DEAD_STOCK_SINCE_DAYS) {
   return useQuery({
     queryKey: ['reports', 'dead-stock', sinceDays],
     queryFn: () => getReportRepository().deadStock(sinceDays),
+  });
+}
+
+export function useAbcAnalysis() {
+  return useQuery({
+    queryKey: ['reports', 'abc', ABC_WINDOW_DAYS],
+    queryFn: () => getReportRepository().abcAnalysis(ABC_WINDOW_DAYS),
+  });
+}
+
+export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+  return useQuery({
+    queryKey: ['reports', 'turnover', windowDays],
+    queryFn: () => getReportRepository().turnover(windowDays),
+  });
+}
+
+export function useStockAging() {
+  return useQuery({
+    queryKey: ['reports', 'stock-aging'],
+    queryFn: () => getReportRepository().stockAging(),
+  });
+}
+
+export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+  return useQuery({
+    queryKey: ['reports', 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
+    queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
   });
 }
