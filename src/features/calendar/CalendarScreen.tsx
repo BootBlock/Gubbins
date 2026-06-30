@@ -161,7 +161,7 @@ function KindFilter({
 // ---------------------------------------------------------------------------
 
 export function CalendarScreen() {
-  const { events, isLoading, isError } = useAgenda();
+  const { events, now, isLoading, isError } = useAgenda();
 
   // All kinds enabled by default; toggling a chip filters the agenda.
   const [enabledKinds, setEnabledKinds] = useState<Set<AgendaKind>>(() => new Set(AGENDA_KINDS));
@@ -173,7 +173,9 @@ export function CalendarScreen() {
       return next;
     });
 
-  const now = Date.now();
+  // Bucket against the SAME `now` the hook anchored date-less events at — a second
+  // `Date.now()` here would read marginally later and push reorder-now / due-USAGE events
+  // (anchored at exactly `now`) into "Overdue" instead of "Today".
   const visible = useMemo(() => filterByKind(events, enabledKinds), [events, enabledKinds]);
   const sections = useMemo(() => bucketAgenda(visible, now), [visible, now]);
 

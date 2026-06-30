@@ -25,11 +25,16 @@ import {
 
 /**
  * Lookahead window (days) for the warranty/expiry feeds — ~100 years, i.e. effectively
- * unbounded, so the "Later" bucket really is a catch-all and nothing future is hidden.
+ * unbounded in date terms, so the "Later" bucket is a true catch-all rather than a window.
  */
 const AGENDA_LOOKAHEAD_DAYS = 36_500;
 
-/** Upper bound on rows pulled per feed — generous, since the agenda shows everything pending. */
+/**
+ * Upper bound on rows pulled per feed — generous, since the agenda shows everything pending.
+ * The feeds order soonest-first, so in the extreme case of >500 pending date-driven events
+ * the cap drops only the most distant tail (deep inside "Later"); the nearer buckets that
+ * drive action stay complete.
+ */
 const AGENDA_FETCH_LIMIT = 500;
 
 /**
@@ -37,11 +42,16 @@ const AGENDA_FETCH_LIMIT = 500;
  *
  * @returns
  *   - `events`    — every pending event, soonest first.
+ *   - `now`       — the single wall-clock instant the events were anchored at; the screen
+ *                   MUST bucket against this same value so date-less events (anchored at
+ *                   `now`) land in "Today" rather than being pushed into "Overdue" by a
+ *                   marginally-later second clock read.
  *   - `isLoading` — true while any source query is still loading.
  *   - `isError`   — true when any source query errored.
  */
 export function useAgenda(): {
   readonly events: AgendaEvent[];
+  readonly now: number;
   readonly isLoading: boolean;
   readonly isError: boolean;
 } {
@@ -144,5 +154,5 @@ export function useAgenda(): {
 
   const events = buildAgenda(sources, now);
 
-  return { events, isLoading, isError };
+  return { events, now, isLoading, isError };
 }
