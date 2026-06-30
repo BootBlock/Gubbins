@@ -226,4 +226,68 @@ describe('ItemRepository', () => {
     await expect(gated.softDelete(item.id)).resolves.toMatchObject({ isActive: false });
     await expect(gated.hardDelete(item.id)).resolves.toBeUndefined();
   });
+
+  // --- Asset lifecycle round-trip (Phase 66, v24) ----------------------------
+
+  it('creates an item with all four asset-lifecycle fields and reads them back', async () => {
+    const created = await items.create({
+      name: 'Laser cutter',
+      trackingMode: 'SERIALISED',
+      acquiredAt: '2024-06-15',
+      warrantyExpiresAt: '2027-06-15',
+      purchasePrice: 1499.99,
+      depreciationMonths: 60,
+    });
+    expect(created.acquiredAt).toBe('2024-06-15');
+    expect(created.warrantyExpiresAt).toBe('2027-06-15');
+    expect(created.purchasePrice).toBeCloseTo(1499.99);
+    expect(created.depreciationMonths).toBe(60);
+
+    // Verify via a fresh DB read, not just the returned object.
+    const reread = await items.getById(created.id);
+    expect(reread?.acquiredAt).toBe('2024-06-15');
+    expect(reread?.warrantyExpiresAt).toBe('2027-06-15');
+    expect(reread?.purchasePrice).toBeCloseTo(1499.99);
+    expect(reread?.depreciationMonths).toBe(60);
+  });
+
+  it('creates an item without asset fields — all default to null (additive, no regression)', async () => {
+    const created = await items.create({ name: 'Generic widget' });
+    expect(created.acquiredAt).toBeNull();
+    expect(created.warrantyExpiresAt).toBeNull();
+    expect(created.purchasePrice).toBeNull();
+    expect(created.depreciationMonths).toBeNull();
+  });
+
+  it('updates the four asset-lifecycle fields and confirms they are persisted', async () => {
+    const item = await items.create({ name: 'Oscilloscope' });
+    expect(item.purchasePrice).toBeNull();
+
+    const updated = await items.update(item.id, {
+      acquiredAt: '2023-03-01',
+      warrantyExpiresAt: '2025-03-01',
+      purchasePrice: 899,
+      depreciationMonths: 48,
+    });
+    expect(updated.acquiredAt).toBe('2023-03-01');
+    expect(updated.warrantyExpiresAt).toBe('2025-03-01');
+    expect(updated.purchasePrice).toBe(899);
+    expect(updated.depreciationMonths).toBe(48);
+
+    // Confirm persistence via another read.
+    const reread = await items.getById(item.id);
+    expect(reread?.purchasePrice).toBe(899);
+    expect(reread?.depreciationMonths).toBe(48);
+  });
+
+  it('clears asset-lifecycle fields back to null by passing null', async () => {
+    const item = await items.create({
+      name: 'Multimeter',
+      acquiredAt: '2022-01-01',
+      purchasePrice: 50,
+    });
+    const cleared = await items.update(item.id, { acquiredAt: null, purchasePrice: null });
+    expect(cleared.acquiredAt).toBeNull();
+    expect(cleared.purchasePrice).toBeNull();
+  });
 });

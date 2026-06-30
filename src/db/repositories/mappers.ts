@@ -114,6 +114,11 @@ export function rowToItem(row: ItemRow): Item {
     reorderPoint: row.reorder_point,
     reorderGaugePercent: row.reorder_gauge_percent,
     reorderQty: row.reorder_qty,
+    // Asset lifecycle facet (Phase 66, v24); all null for pre-v24 items (additive).
+    acquiredAt: row.acquired_at,
+    warrantyExpiresAt: row.warranty_expires_at,
+    purchasePrice: row.purchase_price,
+    depreciationMonths: row.depreciation_months,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

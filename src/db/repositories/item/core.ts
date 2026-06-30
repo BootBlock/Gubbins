@@ -27,6 +27,9 @@ import type {
 import { historyStatement } from './history';
 import {
   normaliseExpiry,
+  normaliseIsoDate,
+  normalisePurchasePrice,
+  normaliseDepreciationMonths,
   normaliseReorderInt,
   normaliseReorderPercent,
   normaliseText,
@@ -183,6 +186,22 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.reorderQty !== undefined) {
       sets.push('reorder_qty = ?');
       params.push(normaliseReorderInt(input.reorderQty));
+    }
+    if (input.acquiredAt !== undefined) {
+      sets.push('acquired_at = ?');
+      params.push(normaliseIsoDate(input.acquiredAt));
+    }
+    if (input.warrantyExpiresAt !== undefined) {
+      sets.push('warranty_expires_at = ?');
+      params.push(normaliseIsoDate(input.warrantyExpiresAt));
+    }
+    if (input.purchasePrice !== undefined) {
+      sets.push('purchase_price = ?');
+      params.push(normalisePurchasePrice(input.purchasePrice));
+    }
+    if (input.depreciationMonths !== undefined) {
+      sets.push('depreciation_months = ?');
+      params.push(normaliseDepreciationMonths(input.depreciationMonths));
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here
