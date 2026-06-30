@@ -3129,6 +3129,59 @@ try {
     await searchBox.fill('');
   });
 
+  await step('imports a CSV custom-field column and the value lands on the item (Phase 72)', async () => {
+    // Builds on the Phase-70 item `Smoke Custom ${stamp}`, which is in the smoke
+    // category carrying the NUMBER custom field `fieldName`. Import a CSV that UPDATES
+    // that item (match by name) and sets the custom field via a column whose header is
+    // the field's name — the importer auto-maps it, validates through the Phase-70
+    // seam, and persists through CategoryRepository.setItemFieldValues (no second path).
+    const customItemName = `Smoke Custom ${stamp}`;
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+
+    // CSV header includes the custom field's name; '47.0' must canonicalise to '47'.
+    const csvContent = [
+      `name,${fieldName}`,
+      `${customItemName},47.0`,
+    ].join('\r\n');
+
+    await page.getByTestId('open-catalog-import').click();
+    await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
+    await page.getByTestId('catalog-import-file').setInputFiles({
+      name: 'smoke-custom-field.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csvContent, 'utf-8'),
+    });
+
+    // Auto-advance to the map step, then preview → apply.
+    await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
+    await page.getByTestId('catalog-import-preview').click();
+    const applyButton = page.getByTestId('catalog-import-apply');
+    await applyButton.waitFor({ state: 'visible', timeout: 5000 });
+    await applyButton.click();
+    await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: 8000 });
+    await page.getByTestId('catalog-import-done').click();
+
+    // Reopen the item → Classification tab and assert the imported value persisted in
+    // its canonical coerced form (proves it round-tripped through the worker DB).
+    const customCard = () =>
+      page
+        .locator('div')
+        .filter({ hasText: customItemName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+    await customCard().getByRole('button', { name: 'Item details' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
+    const reopened = dialog.getByLabel(fieldName, { exact: false }).first();
+    await reopened.waitFor({ state: 'visible', timeout: 5000 });
+    const persisted = await reopened.inputValue();
+    if (persisted !== '47') {
+      throw new Error(`imported custom field did not land canonically (got "${persisted}")`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
   await step('alert centre: low-stock item appears, dismiss hides it, "Show all" restores it (§3, Phase 68)', async () => {
     // This step builds on the low-stock item created during the Phase-65 step
     // (the item already has a reorder_point of 5 and quantity 3, so it appears in the

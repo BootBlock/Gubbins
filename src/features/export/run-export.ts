@@ -43,6 +43,7 @@ import {
   buildJsonBackup,
   buildProjectVault,
   buildVault,
+  type CatalogCustomFieldColumn,
   type VaultAsset,
   type VaultBuild,
   type VaultItem,
@@ -95,6 +96,42 @@ async function collectAllItems(includeInactive: boolean): Promise<Item[]> {
     if (!page.hasMore) break;
   }
   return all;
+}
+
+/**
+ * Resolve the catalogue's custom-field columns + per-item values for the export
+ * (Phase 72). Iterates each item's resolved fields via `resolveItemFields` (the
+ * existing lenient-defaulting read path) and accumulates: one column per field
+ * definition encountered (header = field name, dedup by field id, in first-seen
+ * order), plus a map of item id → { field id → stored value }. Only fields with a
+ * *stored* value contribute a value (lenient defaults are left blank so a re-import
+ * does not pin a default into a stored row).
+ */
+async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
+  columns: CatalogCustomFieldColumn[];
+  valuesByItem: Map<string, Record<string, string | null>>;
+}> {
+  const repo = getCategoryRepository();
+  const columns: CatalogCustomFieldColumn[] = [];
+  const seen = new Set<string>();
+  const valuesByItem = new Map<string, Record<string, string | null>>();
+
+  for (const item of items) {
+    if (!item.categoryId) continue; // no category → no custom fields
+    const resolved = await repo.resolveItemFields(item.id);
+    if (resolved.length === 0) continue;
+    const values: Record<string, string | null> = {};
+    for (const field of resolved) {
+      if (!seen.has(field.id)) {
+        seen.add(field.id);
+        columns.push({ fieldId: field.id, header: field.name });
+      }
+      if (field.hasStoredValue) values[field.id] = field.value;
+    }
+    if (Object.keys(values).length > 0) valuesByItem.set(item.id, values);
+  }
+
+  return { columns, valuesByItem };
 }
 
 /** The item ids referenced by a project's BOM lines (matched items only). */
@@ -196,8 +233,18 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   // reuses the existing `download` side-effect so no parallel path is introduced.
   if (format === 'CATALOG_CSV') {
     const allItems = await collectAllItems(options.includeInactive);
+    // Phase 72: resolve each item's category custom fields so the catalogue CSV
+    // carries one column per definition encountered (header = field name), with the
+    // stored value per item. Reads go through CategoryRepository.resolveItemFields —
+    // the existing lenient-defaulting read path, never raw SQL.
+    const { columns, valuesByItem } = await collectCustomFieldColumns(allItems);
     const name = `gubbins-catalog-${stamp()}.csv`;
-    download(new Blob([buildCatalogCsv(allItems)], { type: 'text/csv;charset=utf-8' }), name);
+    download(
+      new Blob([buildCatalogCsv(allItems, columns, valuesByItem)], {
+        type: 'text/csv;charset=utf-8',
+      }),
+      name,
+    );
     return name;
   }
 

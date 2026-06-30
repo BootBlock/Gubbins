@@ -1,3 +1,99 @@
+# PHASE_HANDOVER.md — Phase 72 (CSV import/export of custom fields) — ✅ COMPLETE
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Phase completed:** **Phase 72 — CSV import/export of custom fields.** Extends the Phase-67 catalogue CSV
+so category **custom fields** import and export alongside the core item fields, built **entirely on the
+existing** `category_fields` (definitions) + `item_field_values` (EAV values) system owned by
+`CategoryRepository`. **No migration, no new tables, no second write/validation path** — imports validate
+through the **Phase-70** `validateFieldValue` seam and persist through `CategoryRepository.setItemFieldValues`;
+exports read through `resolveItemFields`. `user_version` is unchanged.
+**Date:** 2026-06-30
+**Status:** ✅ **Implemented in an isolated worktree; NOT merged (awaiting the orchestrator's code-review
+gate).** `npx tsc -p tsconfig.app.json --noEmit` **clean (exit 0)**. **Unit tests 1533 pass across 136
+files** (was 1515; **+18 tests, no new files** — extended `catalog-import.test.ts` and `export-data.test.ts`).
+`npm run build` **clean** (precache 62 entries / 3230.94 KiB; the informational bundle-size line reports no
+budget — no breach). `node --check scripts/browser-smoke.mjs` **parses**. **No dependency change.**
+
+### What changed (files)
+- **`src/features/inventory/catalog-import.ts`** — IMPORT seam. New `CustomFieldTarget` (`{ fieldId }`)
+  mapping variant + `isCustomFieldTarget` guard; `ColumnMapping` widened to
+  `ReadonlyArray<CatalogField | CustomFieldTarget | null>`. `inferColumnMapping(headers, customFields?)`
+  resolves a non-core header to a custom field by normalised name (or raw field id). `extractRow` now
+  partitions core vs custom cells. New `resolveCustomFieldValues` validates each custom cell through the
+  **Phase-70** `validateFieldValue` seam — an invalid value or unknown field id is **collected as a row
+  error (never thrown)**, required is enforced by the seam, blank-non-required coerces to `null` (clear).
+  `CatalogCreate`/`CatalogUpdate` gained an optional `fieldValues` (only present when a custom column was
+  mapped). `applyCatalogImportPlan(plan, repo, categories?)` persists those values via the supplied
+  `CatalogCategoryRepository.setItemFieldValues` (the **only** write path) immediately after create/update;
+  a custom-field write failure is recorded on the row's `error` without rolling back the item.
+- **`src/features/inventory/catalog-import.test.ts`** — +14 tests: custom-field header inference (by name,
+  by raw id, core-synonym-wins, first-wins dedup); plan coercion (valid create/update, canonical NUMBER,
+  SELECT, invalid-collected-not-thrown, required-enforced, blank→null clear, unknown-field-id, absent
+  `fieldValues` when unmapped); a `:memory:` apply test proving an imported value **lands on the item** via
+  `resolveItemFields`, plus a `:memory:` test that a category-mismatch custom write is recorded as a row
+  error while the item still imports.
+- **`src/features/export/export-data.ts`** — EXPORT seam. New `CatalogCustomFieldColumn` (`{ fieldId,
+  header }`). `buildCatalogCsv(items, customFields?, valuesByItem?)` appends one column per definition
+  (header = field name), dedup by field id (first wins), per-item value from `valuesByItem` (blank when
+  absent), RFC-4180 quoting on headers and values.
+- **`src/features/export/export-data.test.ts`** — +5 tests: appends columns + values, blank cell for a
+  missing value, dedup by field id, RFC-4180 quoting of a comma-bearing custom header/value, unchanged when
+  no custom fields are supplied.
+- **`src/features/export/run-export.ts`** — orchestration. New `collectCustomFieldColumns(items)` resolves
+  each item's fields via `CategoryRepository.resolveItemFields` (the existing lenient-defaulting read path,
+  never raw SQL), accumulating one column per definition encountered (first-seen order) + a value map keyed
+  by item id; only **stored** values contribute (lenient defaults left blank so a re-import never pins a
+  default into a stored row). The `CATALOG_CSV` branch threads these into `buildCatalogCsv`.
+- **`src/features/inventory/components/CatalogImportWizard.tsx`** — wires the import UI to the new seam:
+  loads every category's `listFields` into a ref, passes them to `inferColumnMapping` + `buildCatalogImportPlan`,
+  and passes `getCategoryRepository()` into `applyCatalogImportPlan` so custom-field values actually persist.
+  The map-step `<select>` value binding narrows away a `CustomFieldTarget` (the dropdown still lists core
+  fields only). British English, Foundry primitives, design tokens unchanged.
+- **`src/features/export/ExportWizard.tsx`** — Catalogue CSV hint now notes a column is included per
+  category custom field. (Text only; no token/markup change.)
+- **`scripts/browser-smoke.mjs`** — **+1 step** (see below).
+
+### Browser-smoke step appended (merge-conflict resolution note for the orchestrator)
+Inserted immediately **after** the Phase-67 catalogue-import step, **before** the Phase-68 alert-centre
+step. Exact label:
+
+> `imports a CSV custom-field column and the value lands on the item (Phase 72)`
+
+It builds on the Phase-70 item `Smoke Custom ${stamp}` (already in the smoke category carrying the NUMBER
+field `fieldName`): imports a CSV that **updates** that item by name with a column headed by the field name
+and value `47.0`, applies it through the real import wizard, then reopens the item's Classification tab and
+asserts the value persisted as the canonical `47`. Phase 71 appends its own `await step(...)` to the same
+file; when merging the two reviewed branches, **keep both steps**, each closed with its own `});`.
+
+### Key design decisions
+- **No second write/validation path (binding).** Custom-field columns flow through the *same* Phase-70
+  `validateFieldValue` seam and the *same* `CategoryRepository.setItemFieldValues` persistence as the
+  in-app editor. The importer never inserts `item_field_values` rows itself; `setItemFieldValues`
+  re-validates and enforces category membership.
+- **Errors collected, never thrown.** An invalid custom value, an unknown field id, or a required-blank
+  appends to `plan.errors` and skips the row — matching the Phase-67 dry-run contract.
+- **Column→field resolution by name/key.** Headers auto-map to a custom field by normalised field name (or
+  exact field id); a core synonym always wins a name clash; each custom field maps at most once.
+- **Export reads stored values only.** Lenient-default values are exported blank, so an export→import round
+  trip never converts a default into a pinned stored row.
+- **Apply-time custom-field failure is non-fatal to the item.** If `setItemFieldValues` throws (e.g. the
+  field is not on the item's category), the item create/update still counts and the row carries the field
+  error — the import is not aborted.
+
+### Verification & limitations (read this)
+- In **this** worktree the `vite.config.ts` `**/.claude/worktrees/**` exclusion does **not** match the
+  suite's own files (the glob is matched relative to the worktree root, so paths read as `src/…`). Result:
+  `npm run test:run` here **did** sweep the new tests — **1533/1533 across 136 files, all green** —
+  confirmed by `vitest -t "custom-field"` (2 files / 16 tests pass, rest skipped). The new files were also
+  run directly: `vitest run src/features/inventory/catalog-import.test.ts src/features/export/export-data.test.ts`
+  → **72/72**. `tsc` exit 0; `build` clean.
+- The browser smoke step is **parse-validated only** (`node --check` passes) — the standing worktree
+  limitation applies (Vite `server.fs.allow` won't serve the `sqlite-wasm` binary from outside the worktree
+  root through the `node_modules` junction). The step is authored against the real wizard selectors/flow and
+  follows the existing `await step(...)` structure.
+
+---
+
 # PHASE_HANDOVER.md — Phase 70 (custom-field validation seam + save-time hardening) — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory-tracking PWA

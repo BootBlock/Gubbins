@@ -17,13 +17,19 @@ import { useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Surface, Spinner } from '@/components/foundry';
 import { ImportIcon } from '@/components/icons';
-import { getItemRepository, type Item } from '@/db/repositories';
+import {
+  getCategoryRepository,
+  getItemRepository,
+  type CategoryField,
+  type Item,
+} from '@/db/repositories';
 import {
   CATALOG_FIELD_LABELS,
   CATALOG_FIELDS,
   buildCatalogImportPlan,
   applyCatalogImportPlan,
   inferColumnMapping,
+  isCustomFieldTarget,
   parseCsv,
   type CatalogField,
   type CatalogImportPlan,
@@ -166,7 +172,7 @@ function MapStep({
                 <td className="px-3 py-2 font-mono text-xs text-foreground">{header || '(empty)'}</td>
                 <td className="px-3 py-2">
                   <select
-                    value={mapping[i] ?? ''}
+                    value={isCustomFieldTarget(mapping[i] ?? null) ? '' : ((mapping[i] as CatalogField | null) ?? '')}
                     onChange={(e) =>
                       onMappingChange(i, (e.target.value || null) as CatalogField | null)
                     }
@@ -410,6 +416,9 @@ export function CatalogImportWizard({
   const [applyError, setApplyError] = useState<string | null>(null);
   // Existing items snapshot loaded when the user reaches the map step.
   const existingItemsRef = useRef<Item[]>([]);
+  // All category custom-field definitions (Phase 72) — used to auto-map custom-field
+  // columns, validate their values through the Phase-70 seam, and persist them.
+  const customFieldsRef = useRef<CategoryField[]>([]);
 
   const reset = () => {
     setStep('upload');
@@ -423,6 +432,7 @@ export function CatalogImportWizard({
     setApplying(false);
     setApplyError(null);
     existingItemsRef.current = [];
+    customFieldsRef.current = [];
   };
 
   const handleClose = () => {
@@ -438,7 +448,19 @@ export function CatalogImportWizard({
     const allRows = parseCsv(text).filter((r) => r.some((c) => c.trim().length > 0));
     const headerRow: string[] = allRows[0] ?? [];
     setHeaders(headerRow);
-    const auto = inferColumnMapping(headerRow);
+
+    // Load every category's custom-field definitions so headers can auto-map to a
+    // custom field (Phase 72) and their values validate through the Phase-70 seam.
+    const categoryRepo = getCategoryRepository();
+    const customFields: CategoryField[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const cats = await categoryRepo.list({ limit: 100, offset });
+      for (const cat of cats.rows) customFields.push(...(await categoryRepo.listFields(cat.id)));
+      if (!cats.hasMore) break;
+    }
+    customFieldsRef.current = customFields;
+
+    const auto = inferColumnMapping(headerRow, customFields);
     setMapping(auto);
 
     // Load existing items for create-vs-update matching.
@@ -465,7 +487,10 @@ export function CatalogImportWizard({
 
   // Step 2 → 3: build the plan.
   const handlePreview = () => {
-    const p = buildCatalogImportPlan(csvText, mapping, existingItemsRef.current, { matchKey });
+    const p = buildCatalogImportPlan(csvText, mapping, existingItemsRef.current, {
+      matchKey,
+      customFields: customFieldsRef.current,
+    });
     setPlan(p);
     setStep('preview');
   };
@@ -477,7 +502,9 @@ export function CatalogImportWizard({
     setApplyError(null);
     try {
       const repo = getItemRepository();
-      const result = await applyCatalogImportPlan(plan, repo);
+      // Pass the category repository so custom-field values persist through the
+      // existing setItemFieldValues write path (Phase 72; no second write path).
+      const result = await applyCatalogImportPlan(plan, repo, getCategoryRepository());
       setApplyResult(result);
       setStep('result');
       // Invalidate the inventory list so new items appear immediately.

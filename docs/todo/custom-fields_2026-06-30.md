@@ -318,7 +318,28 @@ relevant) and report the result plainly.
   - [ ] +1 browser smoke step
   - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
 
-> **Outcome (pending).**
+> **Outcome (shipped).** Phase 72 extends the Phase-67 catalogue CSV so category custom fields import and
+> export alongside core fields, entirely on the existing `category_fields` + `item_field_values` tables —
+> **no migration, no new tables, no second write/validation path**. IMPORT: `catalog-import.ts` gained a
+> `CustomFieldTarget` (`{ fieldId }`) mapping variant; `inferColumnMapping(headers, customFields?)`
+> auto-maps a non-core header to a custom field by normalised name (or raw field id, core synonyms winning a
+> clash); each custom cell is validated + canonically coerced through the **Phase-70** `validateFieldValue`
+> seam, with an invalid value / unknown field id / required-blank **collected as a row error (never
+> thrown)** and a non-required blank coercing to `null` (clear); the plan carries an optional `fieldValues`
+> per create/update, persisted by `applyCatalogImportPlan(plan, repo, categories?)` through the existing
+> `CategoryRepository.setItemFieldValues` (the only write path) — a custom-field write failure (e.g. the
+> field is not on the item's category) is recorded on the row without rolling back the item.
+> `CatalogImportWizard.tsx` loads every category's `listFields` and threads the defs through inference,
+> plan-building and apply. EXPORT: `buildCatalogCsv(items, customFields?, valuesByItem?)` appends one column
+> per definition (header = field name, dedup by field id, RFC-4180-quoted), fed by a new
+> `collectCustomFieldColumns` in `run-export.ts` that resolves each item's fields via the existing
+> `resolveItemFields` read path and exports **stored** values only (lenient defaults left blank so an
+> export→import round-trip never pins a default). +18 unit tests (1515 → **1533**, no new files: 14 added to
+> `catalog-import.test.ts` incl. a `:memory:` apply test proving the value lands, 5 to `export-data.test.ts`);
+> +1 browser-smoke step (*"imports a CSV custom-field column and the value lands on the item (Phase 72)"*).
+> `tsc -p tsconfig.app.json --noEmit` **clean**; `npm run build` **clean** (precache 3230.94 KiB, no
+> budget); `node --check scripts/browser-smoke.mjs` parses. **No nits waived.** Smoke parse-validated only
+> (the standing worktree `sqlite-wasm` `server.fs.allow` limitation); all unit tests run green in-worktree.
 
 ## Deferred / explicitly out of scope
 

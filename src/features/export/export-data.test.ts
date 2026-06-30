@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Item, ItemHistoryEntry } from '@/db/repositories';
 import {
   BACKUP_FORMAT_VERSION,
+  buildCatalogCsv,
   buildItemsCsv,
   buildJsonBackup,
   buildProjectMasterNote,
@@ -9,6 +10,7 @@ import {
   buildVault,
   buildVaultFiles,
   sanitiseSegment,
+  type CatalogCustomFieldColumn,
   type VaultItem,
 } from './export-data';
 
@@ -81,6 +83,51 @@ describe('export-data builders', () => {
   it('sanitises path segments', () => {
     expect(sanitiseSegment('a/b:c*?')).toBe('a-b-c--');
     expect(sanitiseSegment('  ..hidden ')).toBe('hidden');
+  });
+});
+
+describe('buildCatalogCsv — custom-field columns (Phase 72)', () => {
+  it('appends one column per definition with per-item values', () => {
+    const cols: CatalogCustomFieldColumn[] = [
+      { fieldId: 'f-res', header: 'Resistance' },
+      { fieldId: 'f-tol', header: 'Tolerance' },
+    ];
+    const values = new Map([['i1', { 'f-res': '10000', 'f-tol': '1%' }]]);
+    const csv = buildCatalogCsv([makeItem()], cols, values);
+    const [header, row] = csv.split('\r\n');
+    expect(header.endsWith('Resistance,Tolerance')).toBe(true);
+    expect(row!.endsWith('10000,1%')).toBe(true);
+  });
+
+  it('leaves a blank cell when an item has no stored value for a field', () => {
+    const cols: CatalogCustomFieldColumn[] = [{ fieldId: 'f-res', header: 'Resistance' }];
+    const csv = buildCatalogCsv([makeItem()], cols, new Map());
+    const [, row] = csv.split('\r\n');
+    expect(row!.endsWith(',')).toBe(true);
+  });
+
+  it('deduplicates columns by field id (first header wins)', () => {
+    const cols: CatalogCustomFieldColumn[] = [
+      { fieldId: 'f-res', header: 'Resistance' },
+      { fieldId: 'f-res', header: 'Resistance (dup)' },
+    ];
+    const csv = buildCatalogCsv([makeItem()], cols, new Map());
+    const header = csv.split('\r\n')[0]!;
+    expect(header.match(/Resistance/g)).toHaveLength(1);
+  });
+
+  it('quotes a custom-field header/value containing a comma (RFC-4180)', () => {
+    const cols: CatalogCustomFieldColumn[] = [{ fieldId: 'f-x', header: 'A, B' }];
+    const values = new Map([['i1', { 'f-x': 'x, y' }]]);
+    const csv = buildCatalogCsv([makeItem()], cols, values);
+    const [header, row] = csv.split('\r\n');
+    expect(header).toContain('"A, B"');
+    expect(row).toContain('"x, y"');
+  });
+
+  it('is unchanged when no custom fields are supplied', () => {
+    const plain = buildCatalogCsv([makeItem()]);
+    expect(plain.split('\r\n')[0]).not.toContain('Resistance');
   });
 });
 
