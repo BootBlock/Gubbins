@@ -1,30 +1,29 @@
-# PHASE_HANDOVER.md — Phase 63 (aria-live status coverage) — ✅ COMPLETE · next: Phase 64
+# PHASE_HANDOVER.md — Phase 64 (aria-live Tier B) — ✅ COMPLETE · in flight: Wave 2 {65, 66, 67}
 
 **Project:** Gubbins — local-first inventory-tracking PWA
-**Phase completed:** **Phase 63 — broader `aria-live` status-message coverage** (accessibility, §3 / WCAG
-4.1.3). Actioned the long-carried "Further aria-live" Backlog item once an audit surfaced four genuinely
-silent in-place status surfaces. Built on the existing **P42 `LiveRegion` seam** — **no new primitive, no
-dependency, no migration** (`user_version` stays **23**).
+**Phase completed:** **Phase 64 — aria-live Tier B** (accessibility, §3 / WCAG 4.1.3). Finished the carried
+"Further aria-live" backlog item: always-mounted `aria-live="polite"` result-count regions on the **Projects**,
+**Contacts** (contacts count + on-loan/overdue) and **Purchase-order MASTER list** screens, mirroring the
+Phase-40 Inventory pattern. Reused the existing **P42 `LiveRegion`/`role="status"` seam** — **no new primitive,
+no dependency, no migration** (`user_version` stays **23**). The `ActivityLog` `isFetchingNextPage` spinner swap
+was **deferred** (no count ⇒ not a WCAG 4.1.3 status message) and re-scheduled to Backlog in
+`docs/dev/deferred-features.md`.
 **Date:** 2026-06-30
-**Status:** ✅ **Merged to `main` (`71324cc`).** `npm run type-check` clean · **1470/1470 unit tests**
-(150 files, +29) · 1 new browser-smoke step · `npm run build` clean (precache **3184.65 KiB**, no budget).
-**Surfaces:** Reports aggregate completion, PO status/receipt progress, cycle-count reconciliation result,
-export+backup completion — each an **always-mounted `<LiveRegion>` whose children mutate**, separate
-polite/assertive regions. Also folded in the held **report-cost follow-up** (reports valuation delegates to
-`supplier-cost.ts`) + the `tree-keyboard.ts` doc-comment NIT.
-**Execution model:** per-surface git worktrees + one implementation sub-agent each (`Agent
-isolation:"worktree"`), octopus-merged conflict-free; **mandatory code-review sub-agent gate** before merge
-(1 SHOULD + 3 NITs, all fixed). Worktree gotchas + the full surface list live in auto-memory
-[[aria-live-status-coverage]].
+**Status:** ✅ **Merged to `main` (`5560550`).** `npx tsc -p tsconfig.app.json --noEmit` clean · **1493/1493
+unit tests** (152 files, +23) · 1 new browser-smoke step.
+**Execution model:** one implementation sub-agent in an isolated git worktree + a **mandatory code-review
+sub-agent gate** before merge. Review verdict **CLEAN with NITs**: two fixed by the orchestrator pre-merge
+(contacts smoke `aria-live` assertions; contacts count region gated on `data == null` not `isLoading` for
+"don't-know-yet" precision); one waived (the `isLoading`-vs-`isSuccess` divergence from the Inventory pattern —
+both correct, informational). Full detail in auto-memory [[phase-64-scope-decisions]].
 
-**Next phase — Phase 64 (aria-live Tier B):** list result-count announcements on the Projects / Contacts /
-PO **master** lists (mirror Phase 40) + `ActivityLog` fetch status. Continuation prompt delivered to the
-developer as a raw fenced block; start it in a fresh chat.
+**In flight — Wave 2 of the inventory-breadth plan ({65 procurement automation, 66 asset lifecycle v24, 67
+bulk CSV import}, three parallel worktrees)**, then Wave 3 {68 alert centre} alone. Plan doc:
+`docs/todo/inventory-breadth_2026-06-30.md`. Only Phase 66 touches schema (**v24**).
 
-> **Numbering note.** This a11y lineage owns Phases **63–64**. A separate, unstarted **"inventory-breadth"**
-> plan (auto-memory `feature-gap-audit-2026-06-30b`: procurement automation / asset lifecycle + v24 / bulk
-> CSV import / alert centre), drafted in another session and also numbered 63–66, **renumbers to follow this
-> lineage (≥ 65)** per developer decision and starts from a fresh plan doc. It has not touched the repo.
+> **Numbering note.** This a11y lineage owns Phases **63–64**. The **"inventory-breadth"** plan (auto-memory
+> `feature-gap-audit-2026-06-30b`) **renumbers to follow it (≥ 65)** and lives in its own plan doc
+> (`docs/todo/inventory-breadth_2026-06-30.md`).
 
 ---
 
