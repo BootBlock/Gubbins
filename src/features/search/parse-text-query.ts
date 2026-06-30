@@ -15,6 +15,8 @@
  *   - `field>n` / `<n`  → numeric compare (`quantity>10`)
  *   - `cap:<key>`       → HAS_CAPABILITY (presence)
  *   - `cap:<key>>n`…    → capability compare / EQUALS (numeric or text)
+ *   - `field:<name>`    → custom-field CONTAINS (`field:Datasheet:rev2`)
+ *   - `field:<name>>n`… → custom-field compare / EQUALS (numeric or text)
  *   - bare word / "phrase" → name CONTAINS
  *   - `a b`             → AND (juxtaposition, or the explicit `AND` keyword)
  *   - `a OR b` / `a|b`  → OR (case-insensitive keyword, or the `|` operator)
@@ -42,7 +44,7 @@ import {
   type SearchAST,
 } from '@/db/search/ast';
 import { SearchAstError, parseASTtoSQL } from '@/db/search/parseASTtoSQL';
-import { toCapabilityField } from './fields';
+import { toCapabilityField, toCustomField } from './fields';
 
 export type ParseTextQueryResult =
   | { ok: true; ast: SearchAST }
@@ -78,6 +80,16 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
 };
 
 const CAPABILITY_ALIASES = new Set(['cap', 'capability']);
+
+/**
+ * Prefixes that introduce a category custom-field term, `field:<name>[op<value>]`
+ * (Phase 71). The remainder after the leading `field:`/`cf:` is itself a `<name>` and
+ * an optional comparison operator + value, mirroring the `cap:` form. The custom-field
+ * *name* may itself contain spaces only when quoted (the whole token is whitespace-
+ * delimited by the lexer), so unquoted multi-word names aren't expressible — the
+ * Visual Builder's free-text name input covers those.
+ */
+const CUSTOM_FIELD_ALIASES = new Set(['field', 'cf']);
 
 /** Separator characters that introduce a field term's operator. */
 const SEPARATORS = new Set([':', '=', '>', '<']);
@@ -270,6 +282,11 @@ function parseTerm(token: string): TermResult {
     return parseCapabilityTerm(rest);
   }
 
+  // Custom-field terms use the `field:<name>[op<value>]` form (separator is always ':').
+  if (CUSTOM_FIELD_ALIASES.has(fieldKey) && sep === ':') {
+    return parseCustomFieldTerm(rest);
+  }
+
   const meta = FIELD_ALIASES[fieldKey];
   // An unknown prefix isn't an error — treat the whole token as a name search, so a
   // pasted URL or a stray colon never blocks the query.
@@ -326,6 +343,53 @@ function parseCapabilityTerm(rest: string): TermResult {
   // `=` — numeric when the value is a number, otherwise an exact text match.
   const num = asFiniteNumber(value);
   return { condition: { field, operator: 'EQUALS', value: num ?? value } };
+}
+
+/**
+ * Parse the `<name>[op<value>]` remainder after a `field:` prefix (Phase 71).
+ *
+ * The operator set mirrors a scalar term: `:` → CONTAINS, `=` → EQUALS, `>`/`<` →
+ * numeric compare. A bare `field:<name>` (no operator) means "the item carries any
+ * value for this field" → HAS_CAPABILITY (reused as the generic presence operator).
+ * Resolution by name happens in the SQL layer, so an unknown name is not an error
+ * here — it simply matches nothing at query time.
+ */
+function parseCustomFieldTerm(rest: string): TermResult {
+  const opIndex = findCustomFieldOperator(rest);
+  const name = (opIndex < 0 ? rest : rest.slice(0, opIndex)).trim();
+  if (name.length === 0) return { error: 'A custom-field filter needs a name, e.g. field:Datasheet.' };
+
+  const field = toCustomField(name);
+  if (opIndex < 0) {
+    return { condition: { field, operator: 'HAS_CAPABILITY', value: '' } };
+  }
+
+  const op = rest[opIndex]!;
+  const value = unquote(rest.slice(opIndex + 1));
+  if (value.length === 0) return { error: `Custom-field filter "field:${name}${op}" is missing a value.` };
+
+  if (op === '>' || op === '<') {
+    const num = asFiniteNumber(value);
+    if (num === null) return { error: `Custom field "${name}" needs a number to compare, got "${value}".` };
+    return { condition: { field, operator: op === '>' ? 'GREATER_THAN' : 'LESS_THAN', value: num } };
+  }
+  if (op === '=') {
+    // Numeric when the value parses as a number, otherwise an exact text match.
+    const num = asFiniteNumber(value);
+    return { condition: { field, operator: 'EQUALS', value: num ?? value } };
+  }
+  // `:` — a substring (CONTAINS) match against the stored value.
+  return { condition: { field, operator: 'CONTAINS', value } };
+}
+
+/** Index of the first comparison/CONTAINS operator in a custom-field remainder. */
+function findCustomFieldOperator(rest: string): number {
+  for (let i = 0; i < rest.length; i++) {
+    const ch = rest[i]!;
+    if (QUOTES.has(ch)) return -1;
+    if (ch === ':' || ch === '>' || ch === '<' || ch === '=') return i;
+  }
+  return -1;
 }
 
 /** Index of the first top-level separator, or -1 (stops at a quote — see tokenize). */

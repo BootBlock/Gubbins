@@ -297,7 +297,31 @@ relevant) and report the result plainly.
   - [ ] +1 browser smoke step
   - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended; auto-memory updated
 
-> **Outcome (pending).**
+> **Outcome (Phase 71 — Search / filter on custom fields).** Shipped a `field:<name>` search
+> predicate that lets the existing §5.1 search filter the inventory by a category custom-field value,
+> **with no migration and no new SQL call-site** — the predicate is produced as a `FilterCondition` in
+> the §5.1 SearchAST and lowered through the **existing** `parseASTtoSQL`, exactly mirroring the
+> `capability:<key>` seam (the Phase 47/48 "produce the AST, never hand-build SQL" rule). A
+> custom-field condition lowers to an `EXISTS` over the join `item_field_values ⋈ category_fields`,
+> resolving the field by **definition name** (`cf.name` COLLATE NOCASE); since all values persist as
+> TEXT in the EAV table, numeric `>`/`<`/`=` cast `ifv.value` to REAL so they order numerically, not
+> lexically; CONTAINS escapes LIKE wildcards; presence reuses `HAS_CAPABILITY` ("has any value"). A
+> **missing/unknown field name resolves inside the subquery and so matches no rows — no-match, never an
+> error**, as required. The hybrid text parser gained the `field:<name>[op<value>]` form (plus the
+> `cf:` alias: `:` → CONTAINS, `=` → EQUALS/numeric, `>`/`<` → numeric), still gated through the real
+> `parseASTtoSQL` so it can never emit a tree it would reject. The Visual Builder surfaces a new
+> **"Custom field"** field option with a free-text "Custom field name" input (mirroring the capability
+> key affordance), and the inventory result-count `aria-live` region is untouched. British English,
+> Foundry primitives + design tokens only. **Tests +34 (1515→1549) across +1 new file (136→137):**
+> parseASTtoSQL AST + `:memory:` join tests (text/number/presence predicates, **case-insensitive name
+> resolution**, **unknown-field → no-match**, no-SQL-injection), parse-text-query parser + round-trip
+> tests, and a new `fields.test.ts` for the helper/label seam. `npx tsc -p tsconfig.app.json --noEmit`
+> **clean**; `npm run build` **clean** (precache 62 entries / 3231.57 KiB, no budget breach). +1 browser
+> smoke step (*"filters the inventory by a custom-field value (§5.1, Phase 71)"*) — **parse-validated
+> only** (`node --check` passes): run end-to-end it fails like every dev-server step because Vite's
+> `server.fs.allow` rejects the junctioned `sqlite-wasm` binary (resolved to the main checkout, outside
+> the worktree root) so the app's DB never boots — the documented Phase-69/70 worktree limitation, not a
+> Phase-71 defect. No waived nits.
 
 ## Phase 72 — CSV import/export of custom fields (no migration) — Wave 3, parallel with 71
 

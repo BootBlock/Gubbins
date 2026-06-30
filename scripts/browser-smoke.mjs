@@ -671,6 +671,41 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  // Phase 71 (§5.1): filter the inventory by a category custom-field value through the
+  // existing Visual-Builder AST → parseASTtoSQL path. The previous step persisted the
+  // NUMBER custom field `fieldName` = 12.5 on `Smoke Custom <stamp>`; a `field:<name>`
+  // EQUALS predicate must keep that item and drop a non-matching one (the screws, which
+  // are in a different category and carry no such field). The result-count aria-live
+  // region stays mounted throughout.
+  await step('filters the inventory by a custom-field value (§5.1, Phase 71)', async () => {
+    const customItemName = `Smoke Custom ${stamp}`;
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+
+    // The result-count aria-live region must be present before and after filtering.
+    const resultCount = page.locator('p[role="status"][aria-live="polite"]').first();
+    await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+
+    await page.getByRole('button', { name: 'Visual search' }).click();
+    await page.getByRole('button', { name: 'Add condition' }).click();
+    // Switch the condition to a custom-field EQUALS filter on the NUMBER field.
+    await page.getByLabel('Field').selectOption('customfield');
+    await page.getByLabel('Custom field name').fill(fieldName);
+    await page.getByLabel('Operator').selectOption('EQUALS');
+    await page.getByLabel('Value').fill('12.5');
+
+    // The list narrows to the item carrying that value; the screws drop out.
+    await page.getByText(customItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForFunction(
+      (name) => !document.body.textContent?.includes(name),
+      screwName,
+      { timeout: 5000 },
+    );
+
+    // The aria-live result-count region is still mounted after the filter applied.
+    await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+  });
+
   await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
     // The bulk screws were created with qty 100 — comfortably above the global default
     // (5), so they are NOT in the low-stock feed. Open the item and give it its own,

@@ -44,6 +44,15 @@ export type ParsedQuery = readonly [sql: string, params: SqlValue[]];
 /** The capability-field prefix the AST uses, e.g. `capability:voltage` (§4, §5.1). */
 const CAPABILITY_PREFIX = 'capability:';
 
+/**
+ * The custom-field prefix the AST uses, e.g. `field:Datasheet` (§4 "Categories &
+ * Schema Evolution", Phase 71). The remainder is a category custom-field **name**,
+ * matched case-insensitively against `category_fields.name`. Values live in the EAV
+ * `item_field_values` table (all stored as TEXT), so a custom-field condition lowers
+ * to an EXISTS over the join `item_field_values ⋈ category_fields`.
+ */
+const CUSTOM_FIELD_PREFIX = 'field:';
+
 type FieldKind = 'fts-text' | 'id-text' | 'numeric';
 
 /**
@@ -142,6 +151,10 @@ function translateCondition(condition: FilterCondition): Fragment {
     return translateCapability(field.slice(CAPABILITY_PREFIX.length).trim(), condition);
   }
 
+  if (field.toLowerCase().startsWith(CUSTOM_FIELD_PREFIX)) {
+    return translateCustomField(field.slice(CUSTOM_FIELD_PREFIX.length).trim(), condition);
+  }
+
   const meta = ITEM_FIELDS[field];
   if (!meta) {
     throw new SearchAstError(`Unknown search field "${condition.field}".`);
@@ -230,6 +243,61 @@ function translateCapability(key: string, condition: FilterCondition): Fragment 
       return {
         sql: `EXISTS (${base} AND c.value_text LIKE ? ESCAPE '\\')`,
         params: [key, `%${escapeLike(String(value))}%`],
+      };
+    }
+    default:
+      throw unsupported(operator, condition.field);
+  }
+}
+
+/**
+ * Translate a `field:<name>` condition into an EXISTS subquery over the join of the
+ * EAV `item_field_values` value rows and their `category_fields` definitions (spec §4
+ * "Categories & Schema Evolution", Phase 71). The custom field is resolved by its
+ * definition **name** (case-insensitive), both the name and the compared value are
+ * bound parameters.
+ *
+ * Because the field name is matched inside the subquery, an **unknown/missing** field
+ * name produces a valid predicate that simply matches no rows (no-match, never an
+ * error) — exactly the §5.1 requirement. All values persist as TEXT in
+ * `item_field_values.value`; numeric comparisons therefore cast the stored text to a
+ * REAL so `GREATER_THAN`/`LESS_THAN` order numerically rather than lexically.
+ */
+function translateCustomField(name: string, condition: FilterCondition): Fragment {
+  if (name.length === 0) {
+    throw new SearchAstError('A custom-field condition is missing its name (expected "field:<name>").');
+  }
+  const { operator, value } = condition;
+  // Join the value row to its definition by category-field name (case-insensitive).
+  const base =
+    'SELECT 1 FROM item_field_values ifv JOIN category_fields cf ON cf.id = ifv.field_id ' +
+    'WHERE ifv.item_id = items.id AND cf.name = ? COLLATE NOCASE';
+
+  switch (operator) {
+    case 'HAS_CAPABILITY':
+      // Presence: the item carries a non-NULL value for the named field.
+      return { sql: `EXISTS (${base} AND ifv.value IS NOT NULL)`, params: [name] };
+    case 'GREATER_THAN':
+    case 'LESS_THAN': {
+      const sign = operator === 'GREATER_THAN' ? '>' : '<';
+      return {
+        sql: `EXISTS (${base} AND CAST(ifv.value AS REAL) ${sign} ?)`,
+        params: [name, toNumber(value, condition.field)],
+      };
+    }
+    case 'EQUALS': {
+      if (typeof value === 'number') {
+        return { sql: `EXISTS (${base} AND CAST(ifv.value AS REAL) = ?)`, params: [name, value] };
+      }
+      return {
+        sql: `EXISTS (${base} AND ifv.value = ? COLLATE NOCASE)`,
+        params: [name, String(value)],
+      };
+    }
+    case 'CONTAINS': {
+      return {
+        sql: `EXISTS (${base} AND ifv.value LIKE ? ESCAPE '\\')`,
+        params: [name, `%${escapeLike(String(value))}%`],
       };
     }
     default:
