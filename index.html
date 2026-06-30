@@ -302,16 +302,19 @@
         color: #e7e7ee;
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.1);
+        /* Elevate on hover with box-shadow rather than a transform: animating `transform`
+           promotes the button to a transient compositing layer, and the browser re-rasterises
+           the rounded corners on that layer, which looks like the corner radius flickering. */
         transition:
           background-color 160ms ease,
           border-color 160ms ease,
-          transform 160ms ease;
+          box-shadow 160ms ease;
       }
 
       .gb-link:hover {
         background: rgba(255, 255, 255, 0.1);
         border-color: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
+        box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
       }
 
       .gb-link svg {
@@ -329,6 +332,7 @@
       .gb-link--primary:hover {
         background: linear-gradient(140deg, #6f72f3, #976ff7);
         border-color: transparent;
+        box-shadow: 0 8px 22px -8px rgba(99, 102, 241, 0.75);
       }
 
       @keyframes gb-fallback-in {
