@@ -62,28 +62,16 @@ export async function runMigrations(
   return { from, to, applied };
 }
 
-/**
- * Guard against authoring mistakes: versions must be **strictly ascending and unique**,
- * starting at 1 or higher.
- *
- * A *gap* in the sequence (e.g. v20 → v22 with no v21) is deliberately tolerated: the
- * inventory-depth parallel-phase workflow pre-allocates `user_version` numbers across
- * concurrent worktrees, so a single worktree legitimately appends only its own migration
- * and the missing intermediate version is supplied when the sibling phase merges. The
- * engine applies whatever it is given in ascending order, so a gap is harmless. What is
- * never valid — and still rejected — is a duplicate or out-of-order version, which always
- * signals a genuine authoring mistake (a clobbered or mis-numbered migration).
- */
+/** Guard against authoring mistakes: versions must be contiguous starting at 1. */
 function assertValidSequence(ordered: readonly Migration[]): void {
-  let previous = 0;
   for (let index = 0; index < ordered.length; index++) {
+    const expected = index + 1;
     const migration = ordered[index]!;
-    if (migration.version <= previous) {
+    if (migration.version !== expected) {
       throw new DbError(
         'INIT_FAILED',
-        `Migration versions must be strictly ascending and unique. Found v${migration.version} ("${migration.name}") at position ${index} after v${previous}.`,
+        `Migration versions must be contiguous from 1. Expected v${expected} at position ${index}, found v${migration.version} ("${migration.name}").`,
       );
     }
-    previous = migration.version;
   }
 }

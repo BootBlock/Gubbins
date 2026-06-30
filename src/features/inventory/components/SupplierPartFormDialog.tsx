@@ -43,12 +43,28 @@ function parseBreaks(text: string): PriceBreak[] {
   return breaks;
 }
 
-/** Coerce an optional numeric field: blank → null, else the parsed number. */
-function optionalNumber(value: string): number | null {
+/**
+ * Sentinel for an optional numeric field that was filled in but is not valid (as opposed
+ * to a blank field, which is a legitimate `null`). Lets {@link handleSubmit} tell "left
+ * empty" apart from "typed something nonsensical" and surface an error rather than silently
+ * coercing to `null` (or letting the repository's CHECK constraint throw with no feedback).
+ */
+const INVALID = Symbol('invalid');
+
+/** Coerce an optional non-negative cost: blank → null, a bad/negative value → INVALID. */
+function optionalCost(value: string): number | null | typeof INVALID {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
   const n = Number(trimmed);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) && n >= 0 ? n : INVALID;
+}
+
+/** Coerce an optional positive whole number (pack/MOQ): blank → null, otherwise INVALID. */
+function optionalCount(value: string): number | null | typeof INVALID {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const n = Number(trimmed);
+  return Number.isInteger(n) && n > 0 ? n : INVALID;
 }
 
 function optionalText(value: string): string | null {
@@ -77,17 +93,33 @@ export function SupplierPartFormDialog({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (supplierName.trim().length === 0) {
       setError('A supplier name is required.');
+      return;
+    }
+    const cost = optionalCost(unitCost);
+    if (cost === INVALID) {
+      setError('Unit cost must be zero or a positive amount.');
+      return;
+    }
+    const pack = optionalCount(packQty);
+    if (pack === INVALID) {
+      setError('Pack quantity must be a whole number greater than zero.');
+      return;
+    }
+    const minOrder = optionalCount(minOrderQty);
+    if (minOrder === INVALID) {
+      setError('Minimum order quantity must be a whole number greater than zero.');
       return;
     }
     onSubmit({
       supplierName: supplierName.trim(),
       orderCode: optionalText(orderCode),
-      unitCost: optionalNumber(unitCost),
+      unitCost: cost,
       currency: optionalText(currency),
-      packQty: optionalNumber(packQty),
-      minOrderQty: optionalNumber(minOrderQty),
+      packQty: pack,
+      minOrderQty: minOrder,
       url: optionalText(url),
       priceBreaks: parseBreaks(breaksText),
     });
@@ -101,7 +133,7 @@ export function SupplierPartFormDialog({
       description="A supplier's order code, pricing and quantity price-breaks for this item."
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="supplier-part-form">
-        <FormField label="Supplier" error={error ?? undefined}>
+        <FormField label="Supplier">
           <Input
             value={supplierName}
             onChange={(e) => {
@@ -191,6 +223,12 @@ export function SupplierPartFormDialog({
             data-testid="supplier-part-breaks"
           />
         </FormField>
+
+        {error !== null && (
+          <p role="alert" className="text-sm text-destructive" data-testid="supplier-part-error">
+            {error}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="outline" onClick={onClose} data-testid="supplier-part-cancel">

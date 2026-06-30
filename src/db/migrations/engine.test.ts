@@ -78,24 +78,12 @@ describe('migration engine', () => {
     expect(row?.updated_at).toBe(5000);
   });
 
-  it('tolerates a gap in the migration version sequence (pre-allocated parallel phases)', async () => {
-    // v20 → v22 with no v21 mirrors the inventory-depth parallel-phase pre-allocation:
-    // a worktree appends only its own migration; the missing version merges in later.
-    const gapped: Migration[] = [
+  it('rejects a non-contiguous migration version sequence', async () => {
+    const broken: Migration[] = [
       v1Initial,
-      { version: 3, name: 'gap', statements: [{ sql: 'CREATE TABLE gap_marker (id INTEGER);' }] },
+      { version: 3, name: 'gap', statements: [{ sql: 'SELECT 1;' }] },
     ];
-    const report = await runMigrations(driver, gapped);
-    expect(report.applied).toEqual([1, 3]);
-    expect(await getUserVersion(driver)).toBe(3);
-  });
-
-  it('rejects a duplicate or out-of-order migration version sequence', async () => {
-    const duplicate: Migration[] = [
-      v1Initial,
-      { version: 1, name: 'dupe', statements: [{ sql: 'SELECT 1;' }] },
-    ];
-    await expect(runMigrations(driver, duplicate)).rejects.toBeInstanceOf(DbError);
+    await expect(runMigrations(driver, broken)).rejects.toBeInstanceOf(DbError);
   });
 
   it('rolls back atomically and halts when a migration statement fails', async () => {
