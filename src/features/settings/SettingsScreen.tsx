@@ -133,8 +133,8 @@ export function SettingsScreen() {
 
       <SettingsSection icon={<HomeIcon />} title="Dashboard">
         <SettingRow
-          label="Quick search (Ctrl/⌘ K)"
-          description="Show a command palette for jumping straight to any item by name — opened from the dashboard or with Ctrl/⌘ K anywhere."
+          label="Quick search (Ctrl/⌘ /)"
+          description="Show a command palette for jumping straight to any item by name — opened from the dashboard or with Ctrl/⌘ / anywhere."
         >
           <Select
             aria-label="Quick search command palette"

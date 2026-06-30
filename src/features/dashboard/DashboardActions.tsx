@@ -35,7 +35,7 @@ export function DashboardActions() {
           <SearchIcon aria-hidden />
           <span>Search items…</span>
           <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
-            Ctrl K
+            Ctrl /
           </kbd>
         </button>
       ) : null}

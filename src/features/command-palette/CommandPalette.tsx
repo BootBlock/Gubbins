@@ -26,11 +26,11 @@ export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
   const setOpen = useCommandPaletteStore((s) => s.setOpen);
 
-  // Global shortcut: Cmd/Ctrl-K toggles the palette. Bound only while the feature is on.
+  // Global shortcut: Cmd/Ctrl-/ toggles the palette. Bound only while the feature is on.
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
         useCommandPaletteStore.getState().toggle();
       }
