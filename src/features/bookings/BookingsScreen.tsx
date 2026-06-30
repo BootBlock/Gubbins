@@ -13,7 +13,7 @@
  * each booking action (Phase 63 pattern). The screen carries `id={MAIN_CONTENT_ID}` for the
  * skip-to-content link (Phase 40).
  */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
@@ -291,22 +291,23 @@ export function BookingsScreen() {
   };
 
   // A single wall-clock instant for this render, so every status in the list is derived
-  // against the same `now` (mirrors the agenda's single-`now` discipline).
+  // against the same `now` (mirrors the agenda's single-`now` discipline). The grouping is a
+  // bounded (≤100-row) fold, so it is computed directly each render rather than memoised on a
+  // per-render `now` (which would never hit the cache anyway).
   const now = Date.now();
-  const bookings = useMemo(() => data?.rows ?? [], [data]);
+  const bookings = data?.rows ?? [];
 
-  const groups = useMemo(() => {
-    const byStatus = new Map<BookingStatus, AssetBookingWithNames[]>();
-    for (const booking of bookings) {
-      const status = deriveBookingStatus(booking, now);
-      const list = byStatus.get(status);
-      if (list) list.push(booking);
-      else byStatus.set(status, [booking]);
-    }
-    return BOOKING_STATUSES.map((status) => ({ status, rows: byStatus.get(status) ?? [] })).filter(
-      (g) => g.rows.length > 0,
-    );
-  }, [bookings, now]);
+  const byStatus = new Map<BookingStatus, AssetBookingWithNames[]>();
+  for (const booking of bookings) {
+    const status = deriveBookingStatus(booking, now);
+    const list = byStatus.get(status);
+    if (list) list.push(booking);
+    else byStatus.set(status, [booking]);
+  }
+  const groups = BOOKING_STATUSES.map((status) => ({
+    status,
+    rows: byStatus.get(status) ?? [],
+  })).filter((g) => g.rows.length > 0);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">

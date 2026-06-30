@@ -247,12 +247,11 @@ export class AssetBookingRepository extends BaseRepository {
   // --- internals -----------------------------------------------------------------
 
   /** Active (non-terminal) day-ranges for an asset, for the overlap check. */
-  private async activeRanges(itemId: string, excludeId?: string): Promise<OverlapCandidate[]> {
+  private async activeRanges(itemId: string): Promise<OverlapCandidate[]> {
     const rows = await this.driver.query<{ id: string; start_date: number; end_date: number }>(
       `SELECT id, start_date, end_date FROM asset_bookings
-       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL
-         ${excludeId ? 'AND id <> ?' : ''};`,
-      excludeId ? [itemId, excludeId] : [itemId],
+       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL;`,
+      [itemId],
     );
     return rows.map((r) => ({ id: r.id, start: Number(r.start_date), end: Number(r.end_date) }));
   }
