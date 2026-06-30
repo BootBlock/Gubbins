@@ -20,14 +20,17 @@ import {
 import {
   getItemRepository,
   getLocationRepository,
+  getSupplierPartRepository,
   type CreateItemInput,
   type CreateLocationInput,
+  type CreateSupplierPartInput,
   type GaugeAdjustment,
   type Item,
   type Page,
   type ScrapeApplyInput,
   type UpdateItemInput,
   type UpdateLocationInput,
+  type UpdateSupplierPartInput,
 } from '@/db/repositories';
 import { currentGrossWeight, percentageRemaining } from '@/db/repositories/gauge';
 import { inventoryKeys } from './queries';
@@ -246,6 +249,52 @@ export function useHardDeleteItem() {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
+  });
+}
+
+// --- Supplier-part mutations (§4 supplier facet; Phase 60) ----------------------
+// Invalidation-based: the editable table is low-frequency and re-reads cheaply; a
+// preferred-toggle also shifts row ordering, which a single optimistic patch can't express.
+
+/** Invalidate an item's supplier-part list (and the item, since cost precedence may shift). */
+function invalidateSupplierParts(client: QueryClient, itemId: string): void {
+  void client.invalidateQueries({ queryKey: inventoryKeys.itemSupplierParts(itemId) });
+  void client.invalidateQueries({ queryKey: inventoryKeys.item(itemId) });
+}
+
+export function useCreateSupplierPart() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, input }: { itemId: string; input: CreateSupplierPartInput }) =>
+      getSupplierPartRepository().create(itemId, input),
+    onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
+  });
+}
+
+export function useUpdateSupplierPart() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; itemId: string; input: UpdateSupplierPartInput }) =>
+      getSupplierPartRepository().update(id, input),
+    onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
+  });
+}
+
+export function useSetPreferredSupplierPart() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; itemId: string }) =>
+      getSupplierPartRepository().setPreferred(id),
+    onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
+  });
+}
+
+export function useDeleteSupplierPart() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; itemId: string }) =>
+      getSupplierPartRepository().delete(id),
+    onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
 

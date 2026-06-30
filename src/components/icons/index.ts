@@ -39,6 +39,8 @@ export {
   Minus as SubtractIcon,
   Trash2 as DeleteIcon,
   Pencil as EditIcon,
+  Star as PreferredIcon,
+  StarOff as NotPreferredIcon,
   FolderTree as MoveIcon,
   Search as SearchIcon,
   ChevronRight as ChevronRightIcon,

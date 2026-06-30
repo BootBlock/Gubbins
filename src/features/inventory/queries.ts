@@ -12,6 +12,7 @@ import {
   MAX_LIST_PAGES,
   getItemRepository,
   getLocationRepository,
+  getSupplierPartRepository,
   type ItemListFilters,
 } from '@/db/repositories';
 
@@ -46,6 +47,10 @@ export const inventoryKeys = {
   search: () => [...inventoryKeys.all, 'search'] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
+  // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
+  // invalidation refreshes it by prefix.
+  itemSupplierParts: (itemId: string) =>
+    [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
@@ -71,6 +76,15 @@ export function useItemAliases(itemId: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.itemAliases(itemId ?? ''),
     queryFn: () => getItemRepository().listAliases(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+/** An item's supplier parts (§4 supplier facet; Phase 60), preferred-first. */
+export function useItemSupplierParts(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemSupplierParts(itemId ?? ''),
+    queryFn: () => getSupplierPartRepository().listForItem(itemId!),
     enabled: Boolean(itemId),
   });
 }
