@@ -33,12 +33,11 @@ export function QrCodeDialog({
   itemMpn?: string | null;
 }) {
   const defaultSymbology = usePreferencesStore((s) => s.labelTemplate.symbology);
-  // 'none' is meaningless for a single-code dialog → fall back to QR.
-  const [symbology, setSymbology] = useState<LabelSymbology>(
-    defaultSymbology === 'none' ? 'qr' : defaultSymbology,
-  );
+  // Seed from the saved default, coercing 'none' (meaningless for a single-code dialog)
+  // and any stale/garbage persisted value to QR.
+  const [symbology, setSymbology] = useState<LabelSymbology>(() => seedSymbology(defaultSymbology));
   useEffect(() => {
-    if (open) setSymbology(defaultSymbology === 'none' ? 'qr' : defaultSymbology);
+    if (open) setSymbology(seedSymbology(defaultSymbology));
   }, [open, defaultSymbology]);
 
   const baseUrl = useMemo(() => {
@@ -154,6 +153,13 @@ export function QrCodeDialog({
       </div>
     </Modal>
   );
+}
+
+const SINGLE_CODE_SYMBOLOGIES = new Set<LabelSymbology>(['qr', 'barcode', 'both']);
+
+/** Coerce a stored symbology to one a single-code dialog can show, defaulting to QR. */
+function seedSymbology(value: unknown): LabelSymbology {
+  return SINGLE_CODE_SYMBOLOGIES.has(value as LabelSymbology) ? (value as LabelSymbology) : 'qr';
 }
 
 function escapeHtml(value: string): string {

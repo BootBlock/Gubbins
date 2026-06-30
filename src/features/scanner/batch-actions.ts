@@ -8,7 +8,7 @@
  * each), so it can partially fail; this pure module owns the partial-failure
  * partition ({@link runBatch}) and the screen-reader-friendly outcome summary
  * ({@link summariseBatch}), keeping the scanner-overlay glue thin and the result
- * logic unit-tested (mirrors the `cycle-count.ts` / `qr-label-sheet.ts` "logic out of
+ * logic unit-tested (mirrors the `cycle-count.ts` / `labels/label-sheet.ts` "logic out of
  * the glue" seam). Both queue actions route through it, so a single failed item never
  * aborts the rest and every batch reports what actually happened.
  */

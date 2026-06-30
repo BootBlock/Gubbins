@@ -86,11 +86,6 @@ function ScannerOverlayInner({
   // it definitively resolves to 'none' (§6.6).
   const [engine, setEngine] = useState<ScannerEngine | null>(null);
 
-  // Keep the location-scan handler in a ref so handleDecode's identity (and thus the
-  // useScanner subscription) doesn't churn when the parent passes a fresh closure.
-  const onLocationScannedRef = useRef(onLocationScanned);
-  onLocationScannedRef.current = onLocationScanned;
-
   // Open the camera once on mount; prime audio from this user gesture (§6.5).
   useEffect(() => {
     feedback.current.prime();
@@ -118,7 +113,7 @@ function ScannerOverlayInner({
         }
         setNotice(null);
         feedback.current.confirm(confirmOpts);
-        onLocationScannedRef.current?.(code.id);
+        onLocationScanned?.(code.id);
         return;
       }
 
@@ -137,7 +132,7 @@ function ScannerOverlayInner({
         setDiscreteResult(item);
       }
     },
-    [state.mode, queue, beepEnabled, hapticsEnabled, locationRows],
+    [state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
   );
 
   useScanner({
