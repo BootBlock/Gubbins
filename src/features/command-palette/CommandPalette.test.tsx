@@ -61,6 +61,19 @@ describe('CommandPalette', () => {
     await waitFor(() => expect(screen.queryByTestId('command-palette-input')).toBeNull());
   });
 
+  it('shows a clear button only when there is text, and clearing empties the box', async () => {
+    useCommandPaletteStore.setState({ open: true });
+    render(<CommandPalette />);
+    const input = screen.getByTestId('command-palette-input') as HTMLInputElement;
+    expect(screen.queryByTestId('command-palette-clear')).toBeNull();
+    fireEvent.change(input, { target: { value: 'resistor' } });
+    await screen.findAllByTestId('command-palette-result');
+    fireEvent.click(screen.getByTestId('command-palette-clear'));
+    expect(input.value).toBe('');
+    expect(screen.queryByTestId('command-palette-clear')).toBeNull();
+    expect(screen.queryAllByTestId('command-palette-result')).toHaveLength(0);
+  });
+
   it('arrow keys move the active result before Enter selects it', async () => {
     useCommandPaletteStore.setState({ open: true });
     render(<CommandPalette />);

@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Input, Modal, Spinner } from '@/components/foundry';
-import { SearchIcon, PackageIcon } from '@/components/icons';
+import { SearchIcon, PackageIcon, CloseIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems } from '@/features/inventory/queries';
@@ -110,7 +110,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
         <SearchIcon aria-hidden />
         <Input
           ref={inputRef}
-          type="search"
+          type="text"
           role="combobox"
           aria-expanded
           aria-controls={listId}
@@ -124,6 +124,22 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
           data-testid="command-palette-input"
         />
         {loading ? <Spinner className="size-4" /> : null}
+        {query.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              setDebounced('');
+              setActive(0);
+              inputRef.current?.focus();
+            }}
+            aria-label="Clear search"
+            data-testid="command-palette-clear"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <CloseIcon />
+          </button>
+        ) : null}
       </div>
 
       <ul id={listId} role="listbox" aria-label="Item results" className="mt-3 max-h-80 space-y-1 overflow-y-auto">
