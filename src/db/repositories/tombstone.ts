@@ -57,6 +57,7 @@ export const SYNC_TABLES = [
   'capabilities',
   'contacts',
   'checkouts',
+  'asset_bookings', // FK → items (CASCADE), contacts (SET NULL) — calendar reservations (Phase 78); ordered after both parents so its FKs never trip on an UPSERT batch
   'projects', // independent
   'project_bom_lines', // FK → projects, items
   'project_budget_categories', // FK → projects (ordered before project_expenses, its parent)

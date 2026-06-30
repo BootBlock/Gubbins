@@ -3,20 +3,23 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
+import { v2AssetBookings } from './v2-asset-bookings';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
 /**
- * Phase 69 migration-baseline consolidation: the proof of zero schema drift.
+ * Schema-baseline lock (Phase 69 consolidation + forward migrations).
  *
  * `schema-baseline.snapshot.json` is the committed GOLDEN fixture — the full,
- * deterministic schema dump (every `sqlite_master.sql`, every column / FK / index,
- * and `user_version`) of the ORIGINAL v1…v24 migration chain, captured once. These
- * tests build a fresh database from the NEW single `v1-initial` baseline and assert
- * the resulting schema reproduces that fixture exactly. If the squash had altered
- * any table, index, trigger, FK or column — by a byte — this fails.
+ * deterministic schema dump (every `sqlite_master.sql`, every column / FK / index, and
+ * `user_version`) the registered migration chain produces. These tests build a fresh
+ * database from the registered `migrations` and assert the resulting schema reproduces the
+ * fixture **byte-for-byte**, so any unintended schema change (an edited table, index,
+ * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture is
+ * regenerated only when the schema intentionally changes — e.g. the Phase-78 `v2`
+ * `asset_bookings` forward migration, which is what bumped the recorded `user_version` to 2.
  */
-describe('v1-initial consolidated baseline', () => {
+describe('schema baseline lock', () => {
   let driver: MemoryDriver;
 
   beforeEach(() => {
@@ -27,26 +30,26 @@ describe('v1-initial consolidated baseline', () => {
     await driver.close();
   });
 
-  it('is the only registered migration and targets schema version 1', () => {
-    expect(migrations).toHaveLength(1);
+  it('registers the v1 baseline plus the v2 forward migration, targeting version 2', () => {
+    expect(migrations).toHaveLength(2);
     expect(migrations[0]).toBe(v1Initial);
+    expect(migrations[1]).toBe(v2AssetBookings);
     expect(v1Initial.version).toBe(1);
-    expect(TARGET_SCHEMA_VERSION).toBe(1);
+    expect(v2AssetBookings.version).toBe(2);
+    expect(TARGET_SCHEMA_VERSION).toBe(2);
   });
 
-  it('reproduces the golden schema shape byte-for-byte (zero drift)', async () => {
+  it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
     await runMigrations(driver, migrations);
     const snapshot = await captureSchemaSnapshot(driver);
 
     // The schema SHAPE — every sqlite_master.sql object, and every table's columns,
-    // foreign keys and indexes — must be byte-for-byte identical to the original
-    // v1…v24 chain. (`user_version` is the one intentional difference: the squashed
-    // schema is re-baselined to 1; it is asserted separately below.)
+    // foreign keys and indexes — must be byte-for-byte identical to the committed golden.
     expect(snapshot.objects).toEqual(goldenSnapshot.objects);
     expect(snapshot.tables).toEqual(goldenSnapshot.tables);
   });
 
-  it('produces the same set of schema objects as the original chain', async () => {
+  it('produces the same set of schema objects as the golden fixture', async () => {
     await runMigrations(driver, migrations);
     const snapshot = await captureSchemaSnapshot(driver);
     const names = (snap: { objects: readonly { type: string; name: string }[] }) =>
@@ -54,20 +57,19 @@ describe('v1-initial consolidated baseline', () => {
     expect(names(snapshot)).toEqual(names(goldenSnapshot));
   });
 
-  it('boots a fresh database cleanly to user_version 1', async () => {
+  it('boots a fresh database cleanly through the chain to user_version 2', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(1);
-    expect(report.applied).toEqual([1]);
+    expect(report.to).toBe(2);
+    expect(report.applied).toEqual([1, 2]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(1);
+    expect(Number(row?.user_version)).toBe(2);
   });
 
-  it('records the original chain head in the golden fixture (user_version 24)', () => {
-    // The golden fixture is the v24 head; after the squash the same schema shape is
-    // produced at user_version 1 (asserted above). The fixture deliberately retains
-    // the original version so the one intentional difference is explicit and pinned.
-    expect(goldenSnapshot.userVersion).toBe(24);
+  it('records the current target schema version in the golden fixture', () => {
+    // The golden is the committed dump of the *current* target schema; its recorded
+    // user_version therefore tracks the highest registered migration.
+    expect(goldenSnapshot.userVersion).toBe(TARGET_SCHEMA_VERSION);
   });
 });

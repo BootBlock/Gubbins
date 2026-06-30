@@ -7,6 +7,8 @@ import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
   Capability,
   CapabilityRow,
+  AssetBooking,
+  AssetBookingRow,
   Checkout,
   CheckoutRow,
   Contact,
@@ -311,6 +313,21 @@ export function rowToCheckout(row: CheckoutRow): Checkout {
     note: row.note,
     sourceLocationId: row.source_location_id,
     sourceBatchKey: row.source_batch_key,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToBooking(row: AssetBookingRow): AssetBooking {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    contactId: row.contact_id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    note: row.note,
+    cancelledAt: row.cancelled_at,
+    convertedCheckoutId: row.converted_checkout_id,
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }

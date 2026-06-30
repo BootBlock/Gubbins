@@ -1,6 +1,18 @@
 {
-  "userVersion": 24,
+  "userVersion": 2,
   "objects": [
+    {
+      "type": "index",
+      "name": "idx_asset_bookings_item_id",
+      "tbl_name": "asset_bookings",
+      "sql": "CREATE INDEX idx_asset_bookings_item_id ON asset_bookings(item_id, start_date)"
+    },
+    {
+      "type": "index",
+      "name": "idx_asset_bookings_start_date",
+      "tbl_name": "asset_bookings",
+      "sql": "CREATE INDEX idx_asset_bookings_start_date ON asset_bookings(start_date)"
+    },
     {
       "type": "index",
       "name": "idx_capabilities_item_id",
@@ -249,6 +261,12 @@
     },
     {
       "type": "table",
+      "name": "asset_bookings",
+      "tbl_name": "asset_bookings",
+      "sql": "CREATE TABLE asset_bookings (\n          id                    TEXT    PRIMARY KEY NOT NULL,\n          item_id               TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          contact_id            TEXT    REFERENCES contacts(id) ON DELETE SET NULL,\n          start_date            INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)\n          end_date              INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)\n          note                  TEXT,\n          cancelled_at          INTEGER,                     -- set ⇒ derived 'cancelled'\n          converted_checkout_id TEXT,                        -- set ⇒ derived 'converted' (soft pointer, not FK)\n          created_at            INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at            INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (end_date >= start_date)\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "capabilities",
       "tbl_name": "capabilities",
       "sql": "CREATE TABLE capabilities (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          key        TEXT    NOT NULL,           -- e.g. 'voltage', 'package'\n          value_num  REAL,                       -- numeric magnitude (>/< comparisons)\n          value_text TEXT,                        -- text/categorical value (EQUALS/HAS)\n          weight     REAL    NOT NULL DEFAULT 1.0, -- relevance/salience (§4 weighted)\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (weight >= 0)\n        ) STRICT"
@@ -456,6 +474,12 @@
       "name": "trg_app_meta_updated_at",
       "tbl_name": "app_meta",
       "sql": "CREATE TRIGGER trg_app_meta_updated_at\n        AFTER UPDATE ON app_meta\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE app_meta SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE key = NEW.key;\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_asset_bookings_updated_at",
+      "tbl_name": "asset_bookings",
+      "sql": "CREATE TRIGGER trg_asset_bookings_updated_at\n        AFTER UPDATE ON asset_bookings\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE asset_bookings SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n        END"
     },
     {
       "type": "trigger",
@@ -677,6 +701,135 @@
         {
           "seq": 0,
           "name": "sqlite_autoindex_app_meta_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "asset_bookings": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "contact_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "start_date",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "end_date",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "cancelled_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "converted_checkout_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "contacts",
+          "from": "contact_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "items",
+          "from": "item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 1,
+          "name": "idx_asset_bookings_item_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 0,
+          "name": "idx_asset_bookings_start_date",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_asset_bookings_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

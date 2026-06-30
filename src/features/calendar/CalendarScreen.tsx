@@ -20,6 +20,7 @@ import {
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import {
+  BookingIcon,
   CheckoutIcon,
   DueDateIcon,
   ExpiryIcon,
@@ -50,6 +51,7 @@ const KIND_LABEL: Record<AgendaKind, string> = {
   expiry: 'Expiry',
   'checkout-due': 'Loans due',
   reorder: 'Reorder',
+  booking: 'Bookings',
 };
 
 function KindIcon({ kind }: { kind: AgendaKind }) {
@@ -59,6 +61,7 @@ function KindIcon({ kind }: { kind: AgendaKind }) {
     case 'expiry': return <ExpiryIcon aria-hidden />;
     case 'checkout-due': return <CheckoutIcon aria-hidden />;
     case 'reorder': return <LowStockIcon aria-hidden />;
+    case 'booking': return <BookingIcon aria-hidden />;
   }
 }
 
@@ -109,7 +112,11 @@ function EventCard({ event, bucket }: { event: AgendaEvent; bucket: AgendaBucket
         className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
         data-testid={`agenda-link-${event.id}`}
       >
-        {event.target.route === '/purchase-orders' ? 'View purchase orders' : 'View item'}
+        {event.target.route === '/purchase-orders'
+          ? 'View purchase orders'
+          : event.target.route === '/bookings'
+            ? 'View bookings'
+            : 'View item'}
       </Link>
     </Surface>
   );
@@ -247,8 +254,8 @@ export function CalendarScreen() {
             <DueDateIcon className="size-10 text-muted-foreground" />
             <p className="font-medium">Nothing upcoming</p>
             <p className="text-sm text-muted-foreground">
-              No maintenance, warranties, expiries, loans or reorders are pending. You're all
-              caught up.
+              No maintenance, warranties, expiries, loans, reorders or bookings are pending.
+              You're all caught up.
             </p>
           </Surface>
         )}

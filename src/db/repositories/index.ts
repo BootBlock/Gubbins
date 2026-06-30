@@ -9,6 +9,7 @@
 import { getDatabaseDriver } from '../client';
 import { isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
+import { AssetBookingRepository } from './AssetBookingRepository';
 import { AttachmentRepository } from './AttachmentRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { CheckoutRepository } from './CheckoutRepository';
@@ -39,6 +40,7 @@ export { ReportRepository } from './ReportRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
+export { AssetBookingRepository } from './AssetBookingRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';
 export {
   TombstoneRepository,
@@ -79,6 +81,7 @@ let reportRepository: ReportRepository | null = null;
 let storageRepository: StorageRepository | null = null;
 let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
+let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
 
@@ -150,6 +153,11 @@ export function getContactRepository(): ContactRepository {
 export function getCheckoutRepository(): CheckoutRepository {
   checkoutRepository ??= new CheckoutRepository(getDatabaseDriver(), productionOptions);
   return checkoutRepository;
+}
+
+export function getAssetBookingRepository(): AssetBookingRepository {
+  assetBookingRepository ??= new AssetBookingRepository(getDatabaseDriver(), productionOptions);
+  return assetBookingRepository;
 }
 
 export function getSupplierPartRepository(): SupplierPartRepository {

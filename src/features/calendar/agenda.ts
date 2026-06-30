@@ -22,13 +22,14 @@ import { maintenanceDueAtMs } from '@/features/alerts/alerts';
 // Types
 // ---------------------------------------------------------------------------
 
-/** The five date-driven event categories the agenda aggregates. */
+/** The six date-driven event categories the agenda aggregates. */
 export type AgendaKind =
   | 'maintenance'
   | 'warranty'
   | 'expiry'
   | 'checkout-due'
-  | 'reorder';
+  | 'reorder'
+  | 'booking';
 
 /** Chronological buckets, in display order. "Later" is a catch-all so nothing is hidden. */
 export type AgendaBucket = 'overdue' | 'today' | 'week' | 'month' | 'later';
@@ -113,13 +114,27 @@ export interface ReorderAgendaSource {
   readonly shortfall: number;
 }
 
-/** The five pre-fetched source arrays passed to {@link buildAgenda}. */
+/** An active asset booking (Phase 78) — a calendar reservation of one identifiable asset. */
+export interface BookingAgendaSource {
+  readonly id: string;
+  readonly itemId: string;
+  readonly itemName: string;
+  /** Optional contact the asset is reserved for. */
+  readonly contactName: string | null;
+  /** Day-start UNIX-ms of the first booked day (inclusive). */
+  readonly startDate: number;
+  /** Day-start UNIX-ms of the last booked day (inclusive). */
+  readonly endDate: number;
+}
+
+/** The six pre-fetched source arrays passed to {@link buildAgenda}. */
 export interface AgendaSources {
   readonly maintenance: readonly MaintenanceAgendaSource[];
   readonly warranty: readonly WarrantyAgendaSource[];
   readonly expiry: readonly ExpiryAgendaSource[];
   readonly checkouts: readonly CheckoutAgendaSource[];
   readonly reorder: readonly ReorderAgendaSource[];
+  readonly bookings: readonly BookingAgendaSource[];
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +253,34 @@ function buildReorderEvents(sources: readonly ReorderAgendaSource[], now: number
   }));
 }
 
+/**
+ * Asset bookings (Phase 78). A booking is anchored at its `start_date` so an upcoming
+ * reservation buckets by when it begins; a booking already under way (the window contains
+ * `now`, inclusive of the whole end day) is anchored at `now` so it reads as "happening now"
+ * (Today) rather than being pushed into Overdue by its past start. The hook only feeds active
+ * (non-cancelled, non-converted) bookings whose window has not entirely passed.
+ */
+function buildBookingEvents(sources: readonly BookingAgendaSource[], now: number): AgendaEvent[] {
+  const events: AgendaEvent[] = [];
+  for (const s of sources) {
+    const endExclusive = startOfLocalDay(s.endDate) + MS_PER_DAY;
+    const active = s.startDate <= now && now < endExclusive;
+    const forWhom = s.contactName ? ` for ${s.contactName}` : '';
+    events.push({
+      id: `booking:${s.id}`,
+      kind: 'booking',
+      title: `Booking — ${s.itemName}`,
+      detail: active
+        ? `Booked through ${isoDate(s.endDate)}${forWhom}.`
+        : `Booked ${isoDate(s.startDate)} – ${isoDate(s.endDate)}${forWhom}.`,
+      dueAt: active ? now : s.startDate,
+      hasDate: !active,
+      target: { route: '/bookings', itemId: s.itemId },
+    });
+  }
+  return events;
+}
+
 // ---------------------------------------------------------------------------
 // buildAgenda — flatten + sort
 // ---------------------------------------------------------------------------
@@ -255,6 +298,7 @@ export function buildAgenda(sources: AgendaSources, now: number): AgendaEvent[] 
     ...buildExpiryEvents(sources.expiry),
     ...buildCheckoutEvents(sources.checkouts),
     ...buildReorderEvents(sources.reorder, now),
+    ...buildBookingEvents(sources.bookings, now),
   ];
   return all.slice().sort((a, b) => {
     if (a.dueAt !== b.dueAt) return a.dueAt - b.dueAt;
@@ -354,6 +398,7 @@ export const AGENDA_KINDS: readonly AgendaKind[] = [
   'expiry',
   'checkout-due',
   'reorder',
+  'booking',
 ];
 
 /** Keep only events whose kind is in `enabled`. An empty set yields no events. */

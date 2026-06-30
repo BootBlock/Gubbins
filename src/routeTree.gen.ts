@@ -17,6 +17,7 @@ import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as ContactsRouteImport } from './routes/contacts'
+import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -61,6 +62,11 @@ const ContactsRoute = ContactsRouteImport.update({
   path: '/contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BookingsRoute = BookingsRouteImport.update({
+  id: '/bookings',
+  path: '/bookings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/alerts': typeof AlertsRoute
+  '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/alerts': typeof AlertsRoute
+  '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
@@ -108,6 +116,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/alerts': typeof AlertsRoute
+  '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
@@ -123,6 +132,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/alerts'
+    | '/bookings'
     | '/contacts'
     | '/inventory'
     | '/projects'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/alerts'
+    | '/bookings'
     | '/contacts'
     | '/inventory'
     | '/projects'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/alerts'
+    | '/bookings'
     | '/contacts'
     | '/inventory'
     | '/projects'
@@ -163,6 +175,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AlertsRoute: typeof AlertsRoute
+  BookingsRoute: typeof BookingsRoute
   ContactsRoute: typeof ContactsRoute
   InventoryRoute: typeof InventoryRoute
   ProjectsRoute: typeof ProjectsRoute
@@ -231,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bookings': {
+      id: '/bookings'
+      path: '/bookings'
+      fullPath: '/bookings'
+      preLoaderRoute: typeof BookingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alerts': {
       id: '/alerts'
       path: '/alerts'
@@ -259,6 +279,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AlertsRoute: AlertsRoute,
+  BookingsRoute: BookingsRoute,
   ContactsRoute: ContactsRoute,
   InventoryRoute: InventoryRoute,
   ProjectsRoute: ProjectsRoute,

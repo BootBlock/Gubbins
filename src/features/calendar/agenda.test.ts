@@ -24,6 +24,7 @@ const EMPTY: AgendaSources = {
   expiry: [],
   checkouts: [],
   reorder: [],
+  bookings: [],
 };
 
 describe('startOfLocalDay', () => {
@@ -171,6 +172,51 @@ describe('buildAgenda — lane builders', () => {
     expect(events.find((e) => e.id === 'reorder:i2')!.detail).toContain('5 units');
   });
 
+  it('emits an upcoming booking anchored at its start date', () => {
+    const start = SOD + 5 * MS_PER_DAY;
+    const end = SOD + 7 * MS_PER_DAY;
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        bookings: [
+          { id: 'b1', itemId: 'i1', itemName: 'Laser', contactName: 'Ada', startDate: start, endDate: end },
+        ],
+      },
+      NOW,
+    );
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    expect(event.id).toBe('booking:b1');
+    expect(event.kind).toBe('booking');
+    expect(event.dueAt).toBe(start);
+    expect(event.hasDate).toBe(true);
+    expect(event.detail).toContain('Ada');
+    expect(event.target.route).toBe('/bookings');
+  });
+
+  it('anchors a booking already under way at now (so it reads as Today)', () => {
+    // Window started yesterday and ends in three days — currently active.
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        bookings: [
+          {
+            id: 'b2',
+            itemId: 'i2',
+            itemName: 'Plotter',
+            contactName: null,
+            startDate: SOD - MS_PER_DAY,
+            endDate: SOD + 3 * MS_PER_DAY,
+          },
+        ],
+      },
+      NOW,
+    );
+    expect(events[0]!.dueAt).toBe(NOW);
+    expect(events[0]!.hasDate).toBe(false);
+    expect(bucketForDueAt(events[0]!.dueAt, NOW)).toBe('today');
+  });
+
   it('sorts every lane soonest-first with a deterministic id tie-break', () => {
     const events = buildAgenda(
       {
@@ -235,9 +281,9 @@ describe('filterByKind', () => {
     expect(filterByKind(events, new Set())).toEqual([]);
   });
 
-  it('exposes all five kinds', () => {
+  it('exposes all six kinds', () => {
     expect([...AGENDA_KINDS].sort()).toEqual(
-      ['checkout-due', 'expiry', 'maintenance', 'reorder', 'warranty'].sort(),
+      ['booking', 'checkout-due', 'expiry', 'maintenance', 'reorder', 'warranty'].sort(),
     );
   });
 });
