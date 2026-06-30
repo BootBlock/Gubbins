@@ -87,9 +87,12 @@ export default defineConfig({
   // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
   base: '/Gubbins/',
 
-  // Build-time constant consumed by src/lib/app-version.ts (About screen).
+  // Build-time constants consumed by src/lib/app-version.ts (About + Dashboard).
+  // The release date is the build date (each GitHub Pages deploy is a release), as an
+  // ISO `YYYY-MM-DD` string so the UI can format it without shipping a date library.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_RELEASE_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
 
   build: {
