@@ -70,33 +70,61 @@ const TONE_COUNT: Record<Tone, string> = {
   danger: 'text-destructive',
 };
 
-/** Shared widget card inner: an icon+title header, an optional count, and a body. */
+/** Shared widget card inner: an icon+title header, an optional count, and a body.
+ *
+ * `loading`/`error` distinguish a query still in flight (or failed) from a genuinely
+ * empty result — without them a brief load reads as "all clear", and a failed query
+ * silently shows the empty state (improvement #6). While loading or errored the count is
+ * suppressed (it isn't known yet) and the body shows a skeleton / quiet message. */
 function WidgetShell({
   icon,
   title,
   count,
   tone = 'quiet',
+  loading = false,
+  error = false,
   children,
 }: {
   icon: ReactNode;
   title: string;
   count?: number;
   tone?: Tone;
+  loading?: boolean;
+  error?: boolean;
   children: ReactNode;
 }) {
+  const showCount = count !== undefined && !loading && !error;
   return (
     <>
       <div className="flex items-center gap-2 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-        {count !== undefined ? (
+        {showCount ? (
           <ChangeFlash flashKey={count} className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}>
             {count}
           </ChangeFlash>
         ) : null}
       </div>
-      <div className="mt-2 space-y-1">{children}</div>
+      <div className="mt-2 space-y-1">
+        {error ? (
+          <p className="text-xs text-warning">Couldn’t load this widget.</p>
+        ) : loading ? (
+          <WidgetSkeleton />
+        ) : (
+          children
+        )}
+      </div>
     </>
+  );
+}
+
+/** A couple of muted pulsing bars while a widget's data is loading. */
+function WidgetSkeleton() {
+  return (
+    <div className="space-y-1.5" aria-hidden data-testid="widget-skeleton">
+      <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+      <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+    </div>
   );
 }
 
@@ -145,7 +173,7 @@ function LowStockWidget() {
   const rows = lowStock.data?.rows ?? [];
   const defaults = { qtyThreshold, gaugePercent };
   return (
-    <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={lowStock.isPending} error={lowStock.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Stock levels healthy.</EmptyRow>
       ) : (
@@ -178,7 +206,7 @@ function ExpiringWidget() {
   const expiring = useExpiringItems(expirySoonWindowDays);
   const rows = expiring.data?.rows ?? [];
   return (
-    <WidgetShell icon={<ExpiryIcon />} title="Soon to expire" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<ExpiryIcon />} title="Soon to expire" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={expiring.isPending} error={expiring.isError}>
       {rows.length === 0 ? (
         <EmptyRow>All clear.</EmptyRow>
       ) : (
@@ -194,7 +222,7 @@ function OverdueWidget() {
   const openCheckouts = useOpenCheckouts();
   const overdue = (openCheckouts.data?.rows ?? []).filter((c) => c.isOverdue);
   return (
-    <WidgetShell icon={<DueDateIcon />} title="Overdue items" count={overdue.length} tone={overdue.length > 0 ? 'danger' : 'quiet'}>
+    <WidgetShell icon={<DueDateIcon />} title="Overdue items" count={overdue.length} tone={overdue.length > 0 ? 'danger' : 'quiet'} loading={openCheckouts.isPending} error={openCheckouts.isError}>
       {overdue.length === 0 ? (
         <EmptyRow>Nothing overdue.</EmptyRow>
       ) : (
@@ -208,7 +236,7 @@ function MaintenanceWidget() {
   const dueMaintenance = useDueMaintenance();
   const rows = dueMaintenance.data?.rows ?? [];
   return (
-    <WidgetShell icon={<MaintenanceIcon />} title="Maintenance due" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<MaintenanceIcon />} title="Maintenance due" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={dueMaintenance.isPending} error={dueMaintenance.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Nothing due.</EmptyRow>
       ) : (
@@ -222,7 +250,7 @@ function InTransitWidget() {
   const inTransit = useInTransitLines();
   const rows = inTransit.data?.rows ?? [];
   return (
-    <WidgetShell icon={<TruckIcon />} title="In transit" count={rows.length} tone={rows.length > 0 ? 'info' : 'quiet'}>
+    <WidgetShell icon={<TruckIcon />} title="In transit" count={rows.length} tone={rows.length > 0 ? 'info' : 'quiet'} loading={inTransit.isPending} error={inTransit.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Nothing inbound.</EmptyRow>
       ) : (
@@ -241,7 +269,7 @@ function ProjectsWidget() {
   // Surface the live (non-archived) projects with their lifecycle status (§3).
   const active = (projects.data?.rows ?? []).filter((p) => p.status !== 'ARCHIVED');
   return (
-    <WidgetShell icon={<ProjectIcon />} title="Project statuses" count={active.length} tone={active.length > 0 ? 'info' : 'quiet'}>
+    <WidgetShell icon={<ProjectIcon />} title="Project statuses" count={active.length} tone={active.length > 0 ? 'info' : 'quiet'} loading={projects.isPending} error={projects.isError}>
       {active.length === 0 ? (
         <EmptyRow>No active projects.</EmptyRow>
       ) : (
@@ -274,7 +302,7 @@ function BudgetAlertsWidget() {
 
   const tone: Tone = flagged.some((a) => a.over) ? 'danger' : flagged.some((a) => a.warn) ? 'warning' : 'quiet';
   return (
-    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone}>
+    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone} loading={alerts.isPending} error={alerts.isError}>
       {flagged.length === 0 ? (
         <EmptyRow>All budgets on track.</EmptyRow>
       ) : (
@@ -331,8 +359,10 @@ function InventoryTotalsWidget() {
   const totalValue = value.data?.totalValue ?? 0;
   const locationCount = locations.data?.rows.length ?? 0;
   const categoryCount = categories.data?.rows.length ?? 0;
+  const loading = value.isPending || itemCount.isPending || locations.isPending || categories.isPending;
+  const error = value.isError || itemCount.isError || locations.isError || categories.isError;
   return (
-    <WidgetShell icon={<ValueIcon />} title="Inventory totals">
+    <WidgetShell icon={<ValueIcon />} title="Inventory totals" loading={loading} error={error}>
       <StatusRow label="Items">
         <span className="tabular-nums">{totalItems}</span>
       </StatusRow>
@@ -356,7 +386,7 @@ function RecentActivityWidget() {
   const feed = useActivityFeed(undefined);
   const rows = (feed.data?.pages.flatMap((p) => p.rows) ?? []).slice(0, 4);
   return (
-    <WidgetShell icon={<HistoryIcon />} title="Recent activity">
+    <WidgetShell icon={<HistoryIcon />} title="Recent activity" loading={feed.isPending} error={feed.isError}>
       {rows.length === 0 ? (
         <EmptyRow>No recent changes.</EmptyRow>
       ) : (
