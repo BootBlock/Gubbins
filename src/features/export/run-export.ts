@@ -26,15 +26,22 @@ import { getReportRepository } from '@/db/repositories';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { summariseBudget } from '@/features/projects/budget';
 import {
+  buildAbcCsv,
+  buildAgingCsv,
   buildConsumptionCsv,
   buildDeadStockCsv,
   buildMovementCsv,
+  buildTurnoverCsv,
   buildValuationCsv,
+  buildValuationTrendCsv,
 } from '@/features/reports/report-csv';
 import {
+  ABC_WINDOW_DAYS,
   DEAD_STOCK_SINCE_DAYS,
+  DEFAULT_ANALYTICS_WINDOW,
   REPORT_MOVEMENT_BUCKETS,
   REPORT_WINDOW_DAYS,
+  VALUATION_TREND_POINTS,
 } from '@/features/reports/queries';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
@@ -69,6 +76,10 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
   CONSUMPTION: 'consumption',
   MOVEMENT: 'movement',
   DEAD_STOCK: 'dead-stock',
+  ABC: 'abc-analysis',
+  TURNOVER: 'turnover',
+  AGING: 'stock-aging',
+  VALUATION_TREND: 'valuation-trend',
 };
 
 /** Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61). */
@@ -83,6 +94,16 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
       return buildMovementCsv(await repo.movement(REPORT_WINDOW_DAYS, REPORT_MOVEMENT_BUCKETS));
     case 'DEAD_STOCK':
       return buildDeadStockCsv(await repo.deadStock(DEAD_STOCK_SINCE_DAYS));
+    case 'ABC':
+      return buildAbcCsv(await repo.abcAnalysis(ABC_WINDOW_DAYS));
+    case 'TURNOVER':
+      return buildTurnoverCsv(await repo.turnover(DEFAULT_ANALYTICS_WINDOW));
+    case 'AGING':
+      return buildAgingCsv(await repo.stockAging());
+    case 'VALUATION_TREND':
+      return buildValuationTrendCsv(
+        await repo.valuationTrend(DEFAULT_ANALYTICS_WINDOW, VALUATION_TREND_POINTS),
+      );
   }
 }
 

@@ -21,6 +21,7 @@ import {
 } from './constants';
 import {
   bucketMovement,
+  effectiveUnitCost,
   groupValuation,
   selectDeadStock,
   summariseConsumption,
@@ -34,6 +35,19 @@ import {
   type MovementReport,
   type ValuationRow,
 } from '@/features/reports/reports';
+import { classifyAbc, type AbcInput, type AbcReport } from '@/features/reports/abc-analysis';
+import { summariseTurnover, type TurnoverInput, type TurnoverReport } from '@/features/reports/turnover';
+import {
+  bucketStockAging,
+  parseAcquiredAt,
+  type AgingInput,
+  type StockAgingReport,
+} from '@/features/reports/stock-aging';
+import {
+  buildValuationTrend,
+  type ValuationEvent,
+  type ValuationTrendReport,
+} from '@/features/reports/valuation-trend';
 import {
   buildReorderPlan,
   type ReorderPlanGroup,
@@ -43,6 +57,13 @@ import type { LowStockThresholds } from './types';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
 const DEFAULT_MOVEMENT_BUCKETS = 14;
+
+/**
+ * Default trailing window (days) for ABC analysis — a calendar year, since ABC ranks items by
+ * **annual** consumption value (the standard definition). The Reports screen pins this; callers
+ * may still override it (e.g. tests).
+ */
+const DEFAULT_ABC_WINDOW_DAYS = 365;
 
 /**
  * SQL fragment excluding abstract variant **parents** (an item that has children holds no
@@ -322,5 +343,190 @@ export class ReportRepository extends BaseRepository {
   async reorderPlan(thresholds: LowStockThresholds = {}): Promise<readonly ReorderPlanGroup[]> {
     const rows = await this.listReorderShortfall(thresholds);
     return buildReorderPlan(rows);
+  }
+
+  // Phase 74 — advanced analytics ------------------------------------------------
+
+  /**
+   * ABC (Pareto) classification (§3 advanced analytics): each active, non-parent item's
+   * **annual consumption value** = units consumed over the trailing `windowDays` (the positive
+   * magnitude of `item_history` stock-out deltas) × its {@link effectiveUnitCost}. The pure
+   * {@link classifyAbc} helper owns the cumulative-value split into A/B/C tiers; the repository
+   * only fetches the per-item consumed-units + cost rows. `windowDays` defaults to a calendar
+   * year (the annual definition); `now` defaults to the wall clock.
+   */
+  async abcAnalysis(
+    windowDays: number = DEFAULT_ABC_WINDOW_DAYS,
+    now: number = Date.now(),
+  ): Promise<AbcReport> {
+    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const rows = await this.driver.query<{
+      id: string;
+      name: string;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+      consumed: number;
+    }>(
+      // `-SUM(quantity_delta)` over the negative (stock-out) deltas is the positive consumed
+      // magnitude; COALESCE keeps an item that never moved at 0 rather than NULL.
+      `SELECT i.id AS id, i.name AS name, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
+                         WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
+                           AND h.quantity_delta < 0), 0) AS consumed
+         FROM items i
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+      [windowStart, now],
+    );
+    const inputs: AbcInput[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
+      consumedUnits: r.consumed,
+    }));
+    return classifyAbc(inputs);
+  }
+
+  /**
+   * Inventory turnover (§3 advanced analytics) over the trailing `windowDays`: per active,
+   * non-parent item the cost of goods consumed (`-SUM(MIN(quantity_delta, 0))` × cost) divided
+   * by the **average** on-hand value. Because no historical value snapshots exist, the pure
+   * {@link summariseTurnover} helper reconstructs the window-start quantity by reversing the net
+   * ledger movement (`netQtyDelta = SUM(quantity_delta)`); the repository supplies the current
+   * quantity, the consumed magnitude and that net delta. `now` defaults to the wall clock.
+   */
+  async turnover(windowDays: number, now: number = Date.now()): Promise<TurnoverReport> {
+    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const rows = await this.driver.query<{
+      id: string;
+      name: string;
+      quantity: number;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+      consumed: number;
+      net_delta: number;
+    }>(
+      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
+                         WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
+                           AND h.quantity_delta < 0), 0) AS consumed,
+              COALESCE((SELECT SUM(h.quantity_delta) FROM item_history h
+                         WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
+                           AND h.quantity_delta IS NOT NULL), 0) AS net_delta
+         FROM items i
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+      [windowStart, now, windowStart, now],
+    );
+    const inputs: TurnoverInput[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      currentQty: r.quantity,
+      unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
+      consumedUnits: r.consumed,
+      netQtyDelta: r.net_delta,
+    }));
+    return summariseTurnover(inputs, windowDays);
+  }
+
+  /**
+   * Stock aging (§3 advanced analytics): on-hand stock bucketed by the age of its **newest
+   * inbound** — the most recent `item_history` positive-quantity movement, else the parsed
+   * `items.acquired_at`, else `created_at` (resolved in the pure {@link bucketStockAging}). Only
+   * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
+   */
+  async stockAging(now: number = Date.now()): Promise<StockAgingReport> {
+    const rows = await this.driver.query<{
+      id: string;
+      name: string;
+      quantity: number;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+      acquired_at: string | null;
+      created_at: number;
+      last_inbound_at: number | null;
+    }>(
+      `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
+              i.acquired_at AS acquired_at, i.created_at AS created_at,
+              ( SELECT MAX(h.created_at) FROM item_history h
+                 WHERE h.item_id = i.id AND h.quantity_delta > 0 ) AS last_inbound_at
+         FROM items i
+        WHERE i.is_active = 1 AND i.quantity > 0 AND ${notAVariantParent('i.id')};`,
+    );
+    const inputs: AgingInput[] = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      quantity: r.quantity,
+      unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
+      lastInboundAt: r.last_inbound_at,
+      acquiredAtMs: parseAcquiredAt(r.acquired_at),
+      createdAt: r.created_at,
+    }));
+    return bucketStockAging(inputs, now);
+  }
+
+  /**
+   * Valuation over time (§3 advanced analytics): the total inventory value reconstructed across
+   * the trailing `windowDays` at `points` evenly-spaced samples, for a sparkline. The current
+   * total (`SUM(quantity × effectiveUnitCost)`) anchors the line; the pure
+   * {@link buildValuationTrend} helper reverses the value-tagged ledger from it. Each in-window
+   * `item_history` quantity delta is costed by its item here (so the single cost-precedence rule
+   * stays in {@link effectiveUnitCost}). Active, non-parent items only. `now` defaults to the
+   * wall clock.
+   */
+  async valuationTrend(
+    windowDays: number,
+    points: number,
+    now: number = Date.now(),
+  ): Promise<ValuationTrendReport> {
+    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+
+    // Current total value — the anchor the trend is reconstructed backward from.
+    const itemRows = await this.driver.query<{
+      quantity: number;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+    }>(
+      `SELECT i.quantity AS quantity, i.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+         FROM items i
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+    );
+    const currentValue = summariseValuation(
+      itemRows.map((r) => ({
+        quantity: r.quantity,
+        unitCost: r.unit_cost,
+        preferredSupplierCost: r.preferred_supplier_cost,
+      })),
+    ).totalValue;
+
+    // Value-tagged ledger events inside the window (half-open at the start; inclusive of now).
+    const eventRows = await this.driver.query<{
+      created_at: number;
+      quantity_delta: number;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+    }>(
+      `SELECT h.created_at AS created_at, h.quantity_delta AS quantity_delta,
+              i.unit_cost AS unit_cost, ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
+         FROM item_history h
+         JOIN items i ON i.id = h.item_id
+        WHERE h.created_at > ? AND h.created_at <= ?
+          AND h.quantity_delta IS NOT NULL AND h.quantity_delta <> 0
+          AND i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+      [windowStart, now],
+    );
+    const events: ValuationEvent[] = eventRows.map((r) => ({
+      createdAt: r.created_at,
+      valueDelta:
+        r.quantity_delta *
+        effectiveUnitCost({ unitCost: r.unit_cost, preferredSupplierCost: r.preferred_supplier_cost }),
+    }));
+
+    return buildValuationTrend(currentValue, events, windowStart, now, points);
   }
 }

@@ -288,4 +288,97 @@ describe('ReportRepository', () => {
       expect(plan[0]!.supplierName).toBe('DigiKey');
     });
   });
+
+  // Phase 74 — advanced analytics -----------------------------------------------
+  /** Insert one append-only consumption/movement ledger row. */
+  async function addHistory(itemId: string, delta: number, at: number): Promise<void> {
+    await driver.execute(
+      `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+       VALUES (?, ?, 'QUANTITY_CHANGE', ?, ?);`,
+      [crypto.randomUUID(), itemId, delta, at],
+    );
+  }
+
+  describe('abcAnalysis (Phase 74)', () => {
+    it('values annual consumption (units × cost) and classifies the consuming head as A', async () => {
+      const now = Date.now();
+      const big = await items.create({ name: 'BigUser', quantity: 100, unitCost: 3 });
+      const idle = await items.create({ name: 'Idle', quantity: 100, unitCost: 3 });
+      // BigUser consumed 10 units inside the annual window → annualValue 30; a positive
+      // (inbound) delta must not count toward consumption.
+      await addHistory(big.id, -10, now - 30 * MS_PER_DAY);
+      await addHistory(big.id, 5, now - 20 * MS_PER_DAY);
+      // A consumption far outside the 365-day window is excluded.
+      await addHistory(idle.id, -50, now - 400 * MS_PER_DAY);
+
+      const report = await reports.abcAnalysis(365, now);
+      const bigLine = report.lines.find((l) => l.id === big.id)!;
+      const idleLine = report.lines.find((l) => l.id === idle.id)!;
+      expect(bigLine.annualValue).toBe(30); // 10 × £3
+      expect(bigLine.tier).toBe('A');
+      expect(idleLine.annualValue).toBe(0); // out-of-window consumption ignored
+      expect(idleLine.tier).toBe('C');
+      expect(report.totalValue).toBe(30);
+    });
+  });
+
+  describe('turnover (Phase 74)', () => {
+    it('reconstructs the window-start holding and derives the turnover ratio', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Cycler', quantity: 10, unitCost: 2 });
+      // Inside a 30-day window: consume 40, receive 20 → consumed 40, netDelta −20.
+      await addHistory(item.id, -40, now - 10 * MS_PER_DAY);
+      await addHistory(item.id, 20, now - 5 * MS_PER_DAY);
+
+      const report = await reports.turnover(30, now);
+      const line = report.lines.find((l) => l.id === item.id)!;
+      // startQty = 10 − (−20) = 30; avgQty = 20; avgValue = £40; cogs = 40 × £2 = £80.
+      expect(line.cogs).toBe(80);
+      expect(line.avgValue).toBe(40);
+      expect(line.turnover).toBe(2); // 80 / 40
+      expect(report.turnover).toBe(2);
+    });
+  });
+
+  describe('stockAging (Phase 74)', () => {
+    it('ages stock by newest inbound, falling back to acquired_at then creation', async () => {
+      const now = Date.now();
+      const fresh = await items.create({ name: 'Fresh', quantity: 5, unitCost: 1 });
+      const old = await items.create({ name: 'Old', quantity: 5, unitCost: 1 });
+      const acquired = await items.create({ name: 'Acquired', quantity: 5, unitCost: 1 });
+
+      // Fresh: an inbound 10 days ago → 0–30 bucket (wins over its creation date).
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 200 * MS_PER_DAY, fresh.id]);
+      await addHistory(fresh.id, 5, now - 10 * MS_PER_DAY);
+      // Old: no inbound, created 120 days ago → 91–180 bucket.
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, old.id]);
+      // Acquired: acquired_at 60 days ago overrides a recent creation → 31–90 bucket.
+      const acquiredIso = new Date(now - 60 * MS_PER_DAY).toISOString();
+      await driver.execute('UPDATE items SET acquired_at = ? WHERE id = ?;', [acquiredIso, acquired.id]);
+
+      const report = await reports.stockAging(now);
+      const byLabel = Object.fromEntries(report.buckets.map((b) => [b.label, b.itemCount]));
+      expect(byLabel['0–30 days']).toBe(1); // Fresh
+      expect(byLabel['31–90 days']).toBe(1); // Acquired
+      expect(byLabel['91–180 days']).toBe(1); // Old
+      expect(report.totalQuantity).toBe(15);
+      expect(report.totalValue).toBe(15);
+    });
+  });
+
+  describe('valuationTrend (Phase 74)', () => {
+    it('reconstructs total value backward from the current value over the window', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Widget', quantity: 10, unitCost: 2 });
+      // Current value = 10 × £2 = £20. A −5 consumption (value −£10) happened mid-window,
+      // so the inventory was worth £30 before it.
+      await addHistory(item.id, -5, now - 15 * MS_PER_DAY);
+
+      const report = await reports.valuationTrend(30, 4, now);
+      expect(report.points).toHaveLength(4);
+      expect(report.endValue).toBe(20); // equals the current value
+      expect(report.startValue).toBe(30); // higher before the consumption
+      expect(report.changeValue).toBe(-10);
+    });
+  });
 });

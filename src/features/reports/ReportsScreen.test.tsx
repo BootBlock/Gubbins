@@ -41,6 +41,18 @@ vi.mock('./components/ValueBreakdown', () => ({
 vi.mock('./components/MovementChart', () => ({
   MovementChart: () => <div data-testid="movement-chart" />,
 }));
+vi.mock('./components/AbcBreakdown', () => ({
+  AbcBreakdown: () => <div data-testid="abc-breakdown" />,
+}));
+vi.mock('./components/TurnoverTable', () => ({
+  TurnoverTable: () => <div data-testid="turnover-table" />,
+}));
+vi.mock('./components/StockAgingChart', () => ({
+  StockAgingChart: () => <div data-testid="stock-aging-chart" />,
+}));
+vi.mock('./components/ValuationSparkline', () => ({
+  ValuationSparkline: () => <div data-testid="valuation-sparkline" />,
+}));
 vi.mock('@/features/export/ExportWizard', () => ({
   ExportWizard: () => null,
 }));
@@ -70,7 +82,7 @@ type FakeQueryState = {
 
 // Mutable state shared between the factory closures and each test.
 const queryState: Record<
-  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock',
+  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend',
   FakeQueryState
 > = {
   value:       { isLoading: true, isError: false },
@@ -78,6 +90,10 @@ const queryState: Record<
   movement:    { isLoading: true, isError: false },
   lowStock:    { isLoading: true, isError: false },
   deadStock:   { isLoading: true, isError: false },
+  abc:         { isLoading: true, isError: false },
+  turnover:    { isLoading: true, isError: false },
+  aging:       { isLoading: true, isError: false },
+  trend:       { isLoading: true, isError: false },
 };
 
 function makeAllLoaded() {
@@ -86,6 +102,10 @@ function makeAllLoaded() {
   queryState.movement    = { isLoading: false, isError: false, data: { buckets: [], totalIn: 0, totalOut: 0, windowDays: 30 } };
   queryState.lowStock    = { isLoading: false, isError: false, data: 0 };
   queryState.deadStock   = { isLoading: false, isError: false, data: { lines: [], totalValue: 0 } };
+  queryState.abc         = { isLoading: false, isError: false, data: { lines: [], tiers: {}, totalValue: 0 } };
+  queryState.turnover    = { isLoading: false, isError: false, data: { lines: [], turnover: null, daysOnHand: null } };
+  queryState.aging       = { isLoading: false, isError: false, data: { buckets: [], totalQuantity: 0, totalValue: 0 } };
+  queryState.trend       = { isLoading: false, isError: false, data: { points: [], startValue: 0, endValue: 0, changeValue: 0 } };
 }
 
 function makeAllErrored() {
@@ -94,6 +114,10 @@ function makeAllErrored() {
   queryState.movement    = { isLoading: false, isError: true };
   queryState.lowStock    = { isLoading: false, isError: true };
   queryState.deadStock   = { isLoading: false, isError: true };
+  queryState.abc         = { isLoading: false, isError: true };
+  queryState.turnover    = { isLoading: false, isError: true };
+  queryState.aging       = { isLoading: false, isError: true };
+  queryState.trend       = { isLoading: false, isError: true };
 }
 
 function makeAllLoading() {
@@ -102,17 +126,29 @@ function makeAllLoading() {
   queryState.movement    = { isLoading: true, isError: false };
   queryState.lowStock    = { isLoading: true, isError: false };
   queryState.deadStock   = { isLoading: true, isError: false };
+  queryState.abc         = { isLoading: true, isError: false };
+  queryState.turnover    = { isLoading: true, isError: false };
+  queryState.aging       = { isLoading: true, isError: false };
+  queryState.trend       = { isLoading: true, isError: false };
 }
 
 vi.mock('./queries', () => ({
   REPORT_WINDOW_DAYS: 30,
   DEAD_STOCK_SINCE_DAYS: 90,
   REPORT_MOVEMENT_BUCKETS: 15,
+  ABC_WINDOW_DAYS: 365,
+  ANALYTICS_WINDOWS: [30, 90, 365],
+  DEFAULT_ANALYTICS_WINDOW: 90,
+  VALUATION_TREND_POINTS: 12,
   useInventoryValue:   () => ({ ...queryState.value }),
   useConsumptionRate:  () => ({ ...queryState.consumption }),
   useMovement:         () => ({ ...queryState.movement }),
   useLowStockCount:    () => ({ ...queryState.lowStock }),
   useDeadStock:        () => ({ ...queryState.deadStock }),
+  useAbcAnalysis:      () => ({ ...queryState.abc }),
+  useTurnover:         () => ({ ...queryState.turnover }),
+  useStockAging:       () => ({ ...queryState.aging }),
+  useValuationTrend:   () => ({ ...queryState.trend }),
 }));
 
 // --------------------------------------------------------------------------
@@ -186,5 +222,45 @@ describe('ReportsScreen — aggregate-completion aria-live announcement (Phase 6
     expect(region).toBeTruthy();
     // visuallyHidden adds the sr-only class.
     expect(region.className).toContain('sr-only');
+  });
+});
+
+describe('ReportsScreen — advanced analytics (Phase 74)', () => {
+  it('mounts its own analytics live region, empty while the analytics queries load', () => {
+    render(<ReportsScreen />);
+    const region = screen.getByTestId('analytics-live-region');
+    expect(region).toBeTruthy();
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.textContent?.trim()).toBe('');
+  });
+
+  it('renders the four analytics panels and announces "Analytics ready" once resolved', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+
+    expect(screen.getByTestId('abc-breakdown')).toBeTruthy();
+    expect(screen.getByTestId('turnover-table')).toBeTruthy();
+    expect(screen.getByTestId('stock-aging-chart')).toBeTruthy();
+    expect(screen.getByTestId('valuation-sparkline')).toBeTruthy();
+
+    expect(screen.getByTestId('analytics-live-region').textContent).toContain('Analytics ready');
+  });
+
+  it('offers the selectable analytics window control', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    const group = screen.getByRole('group', { name: 'Analytics window' });
+    expect(group).toBeTruthy();
+    // The default 90-day window is pressed.
+    const active = group.querySelector('[aria-pressed="true"]');
+    expect(active?.textContent).toContain('90');
+  });
+
+  it('announces a failure once the analytics queries error', () => {
+    makeAllErrored();
+    render(<ReportsScreen />);
+    const alertRegions = screen.getAllByRole('alert');
+    const errorRegion = alertRegions.find((el) => el.textContent?.includes('Analytics failed'));
+    expect(errorRegion).toBeTruthy();
   });
 });

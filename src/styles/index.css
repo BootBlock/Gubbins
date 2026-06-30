@@ -101,6 +101,17 @@
   --loc-slate: oklch(0.52 0.03 255);
 
   /*
+   * ABC-analysis tier palette (spec §3 advanced analytics, Phase 74). A single-hue
+   * importance ramp — saturated violet for the high-value A tier, fading through B to
+   * a muted C — so the Pareto split reads as a sequence, not as success/danger. Colour
+   * is never the sole signal (each tier is always labelled A/B/C with its share), so
+   * this stays within WCAG 1.4.1; the .dark block lifts them for the near-black surface.
+   */
+  --abc-a: oklch(0.55 0.2 277);
+  --abc-b: oklch(0.62 0.13 250);
+  --abc-c: oklch(0.6 0.04 260);
+
+  /*
    * Decorative starfield (About screen). Theme-aware so the field reads on either
    * surface: on the near-white light theme the stars are *dark* dots; the .dark
    * block flips them to a cool near-white. `--star-flare` tints the occasional
@@ -181,6 +192,12 @@
   --loc-pink: oklch(0.8 0.13 350);
   --loc-slate: oklch(0.75 0.03 255);
 
+  /* ABC-analysis tier palette, dark-theme variant — lifted for the near-black surface
+   * (see :root for the rationale). */
+  --abc-a: oklch(0.7 0.18 277);
+  --abc-b: oklch(0.75 0.12 250);
+  --abc-c: oklch(0.72 0.04 260);
+
   /* Starfield, dark-theme variant — cool near-white stars and a cyan-tinted flare
    * glow on the near-black surface (see :root for the rationale). */
   --star: oklch(0.96 0.012 250);
@@ -253,6 +270,11 @@
   --color-loc-fuchsia: var(--loc-fuchsia);
   --color-loc-pink: var(--loc-pink);
   --color-loc-slate: var(--loc-slate);
+
+  /* ABC-analysis tiers → `bg-abc-a` / `text-abc-b` … utilities for the Pareto bars. */
+  --color-abc-a: var(--abc-a);
+  --color-abc-b: var(--abc-b);
+  --color-abc-c: var(--abc-c);
 
   /* Starfield tokens → exposed as `*-star` utilities for completeness; the
    * .gubbins-star / .gubbins-flare classes reference the raw vars directly. */

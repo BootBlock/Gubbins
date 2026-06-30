@@ -20,8 +20,16 @@ export type ExportFormat = 'JSON' | 'CSV' | 'VAULT' | 'REPORTS' | 'CATALOG_CSV';
  */
 export type ExportScope = 'ALL' | 'ITEM' | 'PROJECT';
 
-/** Which §3 aggregate report a `REPORTS`-format export serialises (Phase 61). */
-export type ReportExportKind = 'VALUATION' | 'CONSUMPTION' | 'MOVEMENT' | 'DEAD_STOCK';
+/** Which §3 aggregate report a `REPORTS`-format export serialises (Phase 61; analytics Phase 74). */
+export type ReportExportKind =
+  | 'VALUATION'
+  | 'CONSUMPTION'
+  | 'MOVEMENT'
+  | 'DEAD_STOCK'
+  | 'ABC'
+  | 'TURNOVER'
+  | 'AGING'
+  | 'VALUATION_TREND';
 
 interface ExportStore {
   readonly format: ExportFormat;
