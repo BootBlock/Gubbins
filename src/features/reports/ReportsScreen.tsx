@@ -17,6 +17,7 @@ import { AbcBreakdown } from './components/AbcBreakdown';
 import { TurnoverTable } from './components/TurnoverTable';
 import { StockAgingChart } from './components/StockAgingChart';
 import { ValuationSparkline } from './components/ValuationSparkline';
+import { HygieneChecklist } from './components/HygieneChecklist';
 import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
@@ -25,6 +26,7 @@ import {
   REPORT_WINDOW_DAYS,
   useAbcAnalysis,
   useConsumptionRate,
+  useDataHygiene,
   useDeadStock,
   useInventoryValue,
   useLowStockCount,
@@ -58,6 +60,9 @@ export function ReportsScreen() {
   const turnover = useTurnover(analyticsWindow);
   const aging = useStockAging();
   const trend = useValuationTrend(analyticsWindow);
+
+  // Phase 77 data-hygiene / quality report.
+  const hygiene = useDataHygiene();
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
@@ -96,6 +101,24 @@ export function ReportsScreen() {
     analyticsAnnouncedRef.current = true;
     setAnalyticsAnnouncement(isAnalyticsError ? 'Analytics failed to load.' : 'Analytics ready.');
   }, [isAnalyticsLoading, isAnalyticsError]);
+
+  // The data-hygiene block's own once-only completion announcement (Phase 63 / WCAG 4.1.3).
+  const [hygieneAnnouncement, setHygieneAnnouncement] = useState('');
+  const hygieneAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (hygiene.isLoading || hygieneAnnouncedRef.current) return;
+    hygieneAnnouncedRef.current = true;
+    if (hygiene.isError) {
+      setHygieneAnnouncement('Data hygiene report failed to load.');
+    } else {
+      const flagged = hygiene.data?.flaggedItems ?? 0;
+      setHygieneAnnouncement(
+        flagged === 0
+          ? 'Data hygiene ready — nothing needs tidying.'
+          : `Data hygiene ready — ${flagged} item${flagged === 1 ? '' : 's'} need attention.`,
+      );
+    }
+  }, [hygiene.isLoading, hygiene.isError, hygiene.data]);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
@@ -251,6 +274,33 @@ export function ReportsScreen() {
             </Panel>
           </div>
         </section>
+
+        {/* Data hygiene (Phase 77) — a "tidy up" checklist of records needing attention. */}
+        <section className="flex flex-col gap-3" aria-labelledby="hygiene-heading">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="hygiene-heading" className="text-base font-semibold tracking-tight">
+              Data hygiene
+            </h2>
+            {hygiene.data ? (
+              <p className="text-sm text-muted-foreground" data-testid="hygiene-summary">
+                {hygiene.data.flaggedItems === 0
+                  ? `All ${f.quantity(hygiene.data.totalItems)} items look tidy.`
+                  : `${f.quantity(hygiene.data.flaggedItems)} of ${f.quantity(hygiene.data.totalItems)} items need attention.`}
+              </p>
+            ) : null}
+          </div>
+          <Panel title="Quality checks">
+            {hygiene.isLoading ? (
+              <CentredSpinner />
+            ) : hygiene.data ? (
+              <HygieneChecklist report={hygiene.data} formatters={f} />
+            ) : (
+              <p className="py-6 text-center text-sm text-destructive">
+                The data hygiene report failed to load.
+              </p>
+            )}
+          </Panel>
+        </section>
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -272,6 +322,14 @@ export function ReportsScreen() {
       </LiveRegion>
       <LiveRegion urgency="assertive" visuallyHidden data-testid="analytics-error-live-region">
         {isAnalyticsError && analyticsAnnouncement ? <p>{analyticsAnnouncement}</p> : null}
+      </LiveRegion>
+
+      {/* The data-hygiene block's own once-only completion region (Phase 77). */}
+      <LiveRegion visuallyHidden data-testid="hygiene-live-region">
+        {!hygiene.isError && hygieneAnnouncement ? <p>{hygieneAnnouncement}</p> : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="hygiene-error-live-region">
+        {hygiene.isError && hygieneAnnouncement ? <p>{hygieneAnnouncement}</p> : null}
       </LiveRegion>
     </div>
   );

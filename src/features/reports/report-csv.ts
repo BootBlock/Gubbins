@@ -15,6 +15,7 @@ import type { AbcReport } from './abc-analysis';
 import type { TurnoverReport } from './turnover';
 import type { StockAgingReport } from './stock-aging';
 import type { ValuationTrendReport } from './valuation-trend';
+import type { HygieneReport } from './data-hygiene';
 
 /** The reports a user can export as CSV from the Reports screen. */
 export type ReportCsvKind =
@@ -25,7 +26,8 @@ export type ReportCsvKind =
   | 'ABC'
   | 'TURNOVER'
   | 'AGING'
-  | 'VALUATION_TREND';
+  | 'VALUATION_TREND'
+  | 'DATA_HYGIENE';
 
 /** RFC-4180 cell quoting (mirrors the items-CSV exporter). */
 function cell(value: unknown): string {
@@ -115,4 +117,18 @@ export function buildAgingCsv(report: StockAgingReport): string {
 export function buildValuationTrendCsv(report: ValuationTrendReport): string {
   const rows: unknown[][] = report.points.map((p) => [isoDate(p.at), p.value]);
   return toCsv(['date', 'value'], rows);
+}
+
+/**
+ * Data-hygiene CSV: one row per *sampled* flagged item — the issue, the item name and the
+ * sample's detail. The per-section count can exceed the rows present (samples are capped), so a
+ * leading summary block lists each check's exact total before the detail rows.
+ */
+export function buildDataHygieneCsv(report: HygieneReport): string {
+  const summary: unknown[][] = report.sections.map((s) => ['summary', s.label, s.count, '']);
+  const detail: unknown[][] = [];
+  for (const s of report.sections) {
+    for (const sample of s.samples) detail.push(['item', s.label, sample.name, sample.detail ?? '']);
+  }
+  return toCsv(['row', 'issue', 'item', 'detail'], [...summary, ...detail]);
 }

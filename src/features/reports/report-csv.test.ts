@@ -4,12 +4,14 @@ import {
   buildAbcCsv,
   buildAgingCsv,
   buildConsumptionCsv,
+  buildDataHygieneCsv,
   buildDeadStockCsv,
   buildMovementCsv,
   buildTurnoverCsv,
   buildValuationCsv,
   buildValuationTrendCsv,
 } from './report-csv';
+import { buildHygieneReport } from './data-hygiene';
 
 describe('report CSV builders', () => {
   it('valuation CSV tags each row by dimension and quotes names with commas', () => {
@@ -134,5 +136,21 @@ describe('report CSV builders', () => {
     expect(lines[0]).toBe('date,value');
     expect(lines[1]).toBe('1970-01-01,30');
     expect(lines[2]).toBe('1970-01-02,20');
+  });
+
+  it('data-hygiene CSV lists per-check totals then the sampled detail rows', () => {
+    const report = buildHygieneReport(
+      [
+        { id: 'a', name: 'No category', mpn: null, hasCategory: false, hasLocation: true, hasPrice: true, hasPhoto: true, everCounted: true, lastActivityAt: 0 },
+      ],
+      { now: 0, staleDays: 180 },
+    );
+    const csv = buildDataHygieneCsv(report);
+    const lines = csv.split('\r\n');
+    expect(lines[0]).toBe('row,issue,item,detail');
+    // A summary row per check, including the failing one with count 1.
+    expect(lines).toContain('summary,Missing category,1,');
+    // The detail row for the flagged item.
+    expect(lines).toContain('item,Missing category,No category,');
   });
 });

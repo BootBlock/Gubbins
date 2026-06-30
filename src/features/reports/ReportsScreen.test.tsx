@@ -53,6 +53,9 @@ vi.mock('./components/StockAgingChart', () => ({
 vi.mock('./components/ValuationSparkline', () => ({
   ValuationSparkline: () => <div data-testid="valuation-sparkline" />,
 }));
+vi.mock('./components/HygieneChecklist', () => ({
+  HygieneChecklist: () => <div data-testid="hygiene-checklist" />,
+}));
 vi.mock('@/features/export/ExportWizard', () => ({
   ExportWizard: () => null,
 }));
@@ -82,7 +85,7 @@ type FakeQueryState = {
 
 // Mutable state shared between the factory closures and each test.
 const queryState: Record<
-  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend',
+  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend' | 'hygiene',
   FakeQueryState
 > = {
   value:       { isLoading: true, isError: false },
@@ -94,6 +97,7 @@ const queryState: Record<
   turnover:    { isLoading: true, isError: false },
   aging:       { isLoading: true, isError: false },
   trend:       { isLoading: true, isError: false },
+  hygiene:     { isLoading: true, isError: false },
 };
 
 function makeAllLoaded() {
@@ -106,6 +110,7 @@ function makeAllLoaded() {
   queryState.turnover    = { isLoading: false, isError: false, data: { lines: [], turnover: null, daysOnHand: null } };
   queryState.aging       = { isLoading: false, isError: false, data: { buckets: [], totalQuantity: 0, totalValue: 0 } };
   queryState.trend       = { isLoading: false, isError: false, data: { points: [], startValue: 0, endValue: 0, changeValue: 0 } };
+  queryState.hygiene     = { isLoading: false, isError: false, data: { sections: [], totalItems: 0, flaggedItems: 0 } };
 }
 
 function makeAllErrored() {
@@ -118,6 +123,7 @@ function makeAllErrored() {
   queryState.turnover    = { isLoading: false, isError: true };
   queryState.aging       = { isLoading: false, isError: true };
   queryState.trend       = { isLoading: false, isError: true };
+  queryState.hygiene     = { isLoading: false, isError: true };
 }
 
 function makeAllLoading() {
@@ -130,6 +136,7 @@ function makeAllLoading() {
   queryState.turnover    = { isLoading: true, isError: false };
   queryState.aging       = { isLoading: true, isError: false };
   queryState.trend       = { isLoading: true, isError: false };
+  queryState.hygiene     = { isLoading: true, isError: false };
 }
 
 vi.mock('./queries', () => ({
@@ -140,6 +147,7 @@ vi.mock('./queries', () => ({
   ANALYTICS_WINDOWS: [30, 90, 365],
   DEFAULT_ANALYTICS_WINDOW: 90,
   VALUATION_TREND_POINTS: 12,
+  DATA_HYGIENE_STALE_DAYS: 180,
   useInventoryValue:   () => ({ ...queryState.value }),
   useConsumptionRate:  () => ({ ...queryState.consumption }),
   useMovement:         () => ({ ...queryState.movement }),
@@ -149,6 +157,7 @@ vi.mock('./queries', () => ({
   useTurnover:         () => ({ ...queryState.turnover }),
   useStockAging:       () => ({ ...queryState.aging }),
   useValuationTrend:   () => ({ ...queryState.trend }),
+  useDataHygiene:      () => ({ ...queryState.hygiene }),
 }));
 
 // --------------------------------------------------------------------------
