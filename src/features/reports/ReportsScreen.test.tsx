@@ -56,6 +56,9 @@ vi.mock('./components/ValuationSparkline', () => ({
 vi.mock('./components/HygieneChecklist', () => ({
   HygieneChecklist: () => <div data-testid="hygiene-checklist" />,
 }));
+vi.mock('./components/SpendBreakdown', () => ({
+  SpendBreakdown: () => <div data-testid="spend-breakdown" />,
+}));
 vi.mock('@/features/export/ExportWizard', () => ({
   ExportWizard: () => null,
 }));
@@ -85,7 +88,7 @@ type FakeQueryState = {
 
 // Mutable state shared between the factory closures and each test.
 const queryState: Record<
-  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend' | 'hygiene',
+  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend' | 'hygiene' | 'spend',
   FakeQueryState
 > = {
   value:       { isLoading: true, isError: false },
@@ -98,6 +101,7 @@ const queryState: Record<
   aging:       { isLoading: true, isError: false },
   trend:       { isLoading: true, isError: false },
   hygiene:     { isLoading: true, isError: false },
+  spend:       { isLoading: true, isError: false },
 };
 
 function makeAllLoaded() {
@@ -111,6 +115,7 @@ function makeAllLoaded() {
   queryState.aging       = { isLoading: false, isError: false, data: { buckets: [], totalQuantity: 0, totalValue: 0 } };
   queryState.trend       = { isLoading: false, isError: false, data: { points: [], startValue: 0, endValue: 0, changeValue: 0 } };
   queryState.hygiene     = { isLoading: false, isError: false, data: { sections: [], totalItems: 0, flaggedItems: 0 } };
+  queryState.spend       = { isLoading: false, isError: false, data: { total: 0, eventCount: 0, buckets: [], bySource: [], bySupplier: [], byCategory: [], windowStart: 0, windowEnd: 0 } };
 }
 
 function makeAllErrored() {
@@ -124,6 +129,7 @@ function makeAllErrored() {
   queryState.aging       = { isLoading: false, isError: true };
   queryState.trend       = { isLoading: false, isError: true };
   queryState.hygiene     = { isLoading: false, isError: true };
+  queryState.spend       = { isLoading: false, isError: true };
 }
 
 function makeAllLoading() {
@@ -137,6 +143,7 @@ function makeAllLoading() {
   queryState.aging       = { isLoading: true, isError: false };
   queryState.trend       = { isLoading: true, isError: false };
   queryState.hygiene     = { isLoading: true, isError: false };
+  queryState.spend       = { isLoading: true, isError: false };
 }
 
 vi.mock('./queries', () => ({
@@ -148,6 +155,7 @@ vi.mock('./queries', () => ({
   DEFAULT_ANALYTICS_WINDOW: 90,
   VALUATION_TREND_POINTS: 12,
   DATA_HYGIENE_STALE_DAYS: 180,
+  SPEND_BUCKETS: 15,
   useInventoryValue:   () => ({ ...queryState.value }),
   useConsumptionRate:  () => ({ ...queryState.consumption }),
   useMovement:         () => ({ ...queryState.movement }),
@@ -158,6 +166,7 @@ vi.mock('./queries', () => ({
   useStockAging:       () => ({ ...queryState.aging }),
   useValuationTrend:   () => ({ ...queryState.trend }),
   useDataHygiene:      () => ({ ...queryState.hygiene }),
+  useSpendAnalytics:   () => ({ ...queryState.spend }),
 }));
 
 // --------------------------------------------------------------------------

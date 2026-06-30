@@ -55,6 +55,11 @@ import {
   type ValuationTrendReport,
 } from '@/features/reports/valuation-trend';
 import {
+  buildSpendReport,
+  type SpendEvent,
+  type SpendReport,
+} from '@/features/reports/spend-analytics';
+import {
   buildReorderPlan,
   type ReorderPlanGroup,
   type ReorderShortfallRow,
@@ -583,5 +588,106 @@ export class ReportRepository extends BaseRepository {
     }));
 
     return buildHygieneReport(flags, { now, staleDays });
+  }
+
+  // Phase 79 — procurement / spend analytics -------------------------------------
+
+  /**
+   * Spend (cash out) over the trailing `windowDays`, bucketed into `buckets` equal spans and broken
+   * down by source, supplier and category (§3). Composed from three sources already stored, each
+   * **tagged** so the by-source view exposes any overlap (an item bought via a PO may also carry an
+   * acquisition price): received purchase-order lines (`received_qty × unit_cost`, dated by the PO's
+   * `ordered_at`/`created_at`), manual `project_expenses`, and item `purchase_price` at the parsed
+   * `acquired_at`. The pure {@link buildSpendReport} owns all window/bucket/grouping maths; the
+   * repository only fetches the raw events. No schema change. Distinct from the Phase-74
+   * valuation-trend (that tracks inventory *value*; this tracks *money out*). `now` defaults to the
+   * wall clock.
+   */
+  async spendAnalytics(
+    windowDays: number,
+    buckets: number,
+    now: number = Date.now(),
+  ): Promise<SpendReport> {
+    const windowEnd = now;
+    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+    const events: SpendEvent[] = [];
+
+    // 1. Received purchase-order lines, dated by the order (no per-line receipt timestamp exists).
+    const poRows = await this.driver.query<{
+      instant: number;
+      amount: number;
+      supplier: string | null;
+      category_id: string | null;
+      category_name: string | null;
+    }>(
+      `SELECT COALESCE(po.ordered_at, po.created_at) AS instant,
+              l.received_qty * l.unit_cost AS amount,
+              po.supplier_name AS supplier,
+              i.category_id AS category_id, c.name AS category_name
+         FROM purchase_order_lines l
+         JOIN purchase_orders po ON po.id = l.po_id
+         LEFT JOIN items i ON i.id = l.item_id
+         LEFT JOIN categories c ON c.id = i.category_id
+        WHERE l.received_qty > 0 AND l.unit_cost IS NOT NULL
+          AND COALESCE(po.ordered_at, po.created_at) >= ? AND COALESCE(po.ordered_at, po.created_at) < ?;`,
+      [windowStart, windowEnd],
+    );
+    for (const r of poRows) {
+      events.push({
+        instant: Number(r.instant),
+        amount: Number(r.amount),
+        source: 'PURCHASE_ORDER',
+        supplier: r.supplier,
+        categoryId: r.category_id,
+        categoryName: r.category_name,
+      });
+    }
+
+    // 2. Manual project expenses (no supplier; project budget categories are a separate taxonomy).
+    const expenseRows = await this.driver.query<{ instant: number; amount: number }>(
+      `SELECT incurred_at AS instant, amount AS amount
+         FROM project_expenses
+        WHERE amount > 0 AND incurred_at >= ? AND incurred_at < ?;`,
+      [windowStart, windowEnd],
+    );
+    for (const r of expenseRows) {
+      events.push({
+        instant: Number(r.instant),
+        amount: Number(r.amount),
+        source: 'PROJECT_EXPENSE',
+        supplier: null,
+        categoryId: null,
+        categoryName: null,
+      });
+    }
+
+    // 3. Item acquisition prices. `acquired_at` is ISO TEXT, so it is parsed + window-filtered in JS
+    // (the half-open window filter is then re-applied by buildSpendReport).
+    const acquisitionRows = await this.driver.query<{
+      amount: number;
+      acquired_at: string | null;
+      category_id: string | null;
+      category_name: string | null;
+    }>(
+      `SELECT i.purchase_price AS amount, i.acquired_at AS acquired_at,
+              i.category_id AS category_id, c.name AS category_name
+         FROM items i
+         LEFT JOIN categories c ON c.id = i.category_id
+        WHERE i.purchase_price IS NOT NULL AND i.acquired_at IS NOT NULL;`,
+    );
+    for (const r of acquisitionRows) {
+      const instant = parseAcquiredAt(r.acquired_at);
+      if (instant === null) continue;
+      events.push({
+        instant,
+        amount: Number(r.amount),
+        source: 'ACQUISITION',
+        supplier: null,
+        categoryId: r.category_id,
+        categoryName: r.category_name,
+      });
+    }
+
+    return buildSpendReport(events, windowStart, windowEnd, buckets);
   }
 }

@@ -30,7 +30,8 @@ export type ReportExportKind =
   | 'TURNOVER'
   | 'AGING'
   | 'VALUATION_TREND'
-  | 'DATA_HYGIENE';
+  | 'DATA_HYGIENE'
+  | 'SPEND';
 
 interface ExportStore {
   readonly format: ExportFormat;
