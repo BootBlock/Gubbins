@@ -28,6 +28,18 @@ const GROUP_LABELS: Record<NavGroup, string> = {
 };
 
 /**
+ * A whisper-faint background wash per group, so the three columns read as distinct
+ * regions at a glance. Each is a theme-aware semantic token at extremely low opacity
+ * (no colour literals): primary violet for the everyday workspaces, accent cyan for the
+ * manage column, and a neutral foreground tint for the system column.
+ */
+const GROUP_TINTS: Record<NavGroup, string> = {
+  primary: 'bg-primary/5',
+  manage: 'bg-accent/5',
+  system: 'bg-foreground/[0.04]',
+};
+
+/**
  * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
  * card. Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard
  * (`/`) is the current screen and never appears as a tile, so it has no entry.
@@ -77,8 +89,12 @@ export function DashboardNav() {
         if (destinations.length === 0) return null;
 
         return (
-          <section key={group} aria-label={GROUP_LABELS[group]}>
-            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+          <section
+            key={group}
+            aria-label={GROUP_LABELS[group]}
+            className={cn('rounded-2xl p-3', GROUP_TINTS[group])}
+          >
+            <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">
               {GROUP_LABELS[group]}
             </h2>
             <ul className="grid grid-cols-2 gap-3">
