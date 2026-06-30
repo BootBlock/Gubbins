@@ -120,9 +120,11 @@ export function DashboardGrid() {
   }
 
   return (
-    <section className="mt-8" aria-label="Dashboard widgets">
+    <section className="mt-8" aria-labelledby="dashboard-widgets-heading">
       <div className="mb-3 flex items-center gap-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">Dashboard</h2>
+        <h2 id="dashboard-widgets-heading" className="text-sm font-semibold text-muted-foreground">
+          Dashboard
+        </h2>
         {editing ? (
           // Reset to defaults: an empty stored layout reconciles to the row-major
           // default with every widget visible (see reconcileLayout / defaultLayout).

@@ -1,12 +1,15 @@
 import { cn } from '@/lib/utils';
-import { MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
+import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
 import { ExternalLinkIcon } from '@/components/icons';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
+import { useAlerts } from '@/features/alerts/useAlerts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
+import { DashboardActions } from './DashboardActions';
+import { DashboardGettingStarted } from './DashboardGettingStarted';
 
 /** The public GitHub repository — the brand hero links here on the landing page. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
@@ -31,6 +34,12 @@ export function DashboardScreen() {
   // is on (feature-detected, graceful). The matching touch/selection containment is
   // applied to the content landmark below.
   useWakeLock(kioskMode);
+
+  // Announce the number of items needing attention (low stock, expiring, overdue, …) so a
+  // change while the dashboard is open isn't a silent, visual-only badge update (WCAG
+  // 4.1.3). The badge in the nav carries the visible count; this is the announce-only twin.
+  const { alerts } = useAlerts();
+  const alertCount = alerts.length;
 
   return (
     <PageContainer>
@@ -69,6 +78,17 @@ export function DashboardScreen() {
           <dd className="tabular-nums">{RELEASE_LABEL}</dd>
         </dl>
       </header>
+
+      {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,
+          each independently toggleable from Settings → Dashboard. */}
+      <DashboardActions />
+
+      {/* First-run guidance — self-hides once the inventory has any items. */}
+      <DashboardGettingStarted />
+
+      <LiveRegion visuallyHidden>
+        {alertCount > 0 ? `${alertCount} item${alertCount === 1 ? '' : 's'} need attention` : ''}
+      </LiveRegion>
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the
           same NAV_DESTINATIONS source of truth the global AppNav menu uses on every other

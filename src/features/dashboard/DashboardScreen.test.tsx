@@ -18,6 +18,8 @@ vi.mock('@/components/BrandMark', () => ({
 // stays focused on the quick-nav grid driven by NAV_DESTINATIONS.
 vi.mock('./DashboardGrid', () => ({ DashboardGrid: () => <div data-testid="dashboard-grid" /> }));
 vi.mock('./useWakeLock', () => ({ useWakeLock: () => {} }));
+// Reads the item count via TanStack Query (no provider in this focused test) — stub it.
+vi.mock('./DashboardGettingStarted', () => ({ DashboardGettingStarted: () => null }));
 
 const alertsMock = vi.fn();
 vi.mock('@/features/alerts/useAlerts', () => ({ useAlerts: () => alertsMock() }));

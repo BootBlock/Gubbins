@@ -26,11 +26,12 @@ import {
   LowStockIcon,
   ProjectIcon,
   BudgetIcon,
-  LinkIcon,
-  PackageIcon,
-  ContactsIcon,
-  CloudIcon,
-  SettingsIcon,
+  HistoryIcon,
+  ValueIcon,
+  AddIcon,
+  ScanIcon,
+  ImportIcon,
+  ShoppingCartIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -42,6 +43,12 @@ import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenanc
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { budgetStatus } from '@/features/projects/budget';
+import { useItemCount, useLocations } from '@/features/inventory/queries';
+import { useCategories } from '@/features/inventory/categories';
+import { useInventoryValue } from '@/features/reports/queries';
+import { useActivityFeed } from '@/features/activity/queries';
+import { describeHistoryEntry } from '@/features/inventory/history-format';
+import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -63,33 +70,61 @@ const TONE_COUNT: Record<Tone, string> = {
   danger: 'text-destructive',
 };
 
-/** Shared widget card inner: an icon+title header, an optional count, and a body. */
+/** Shared widget card inner: an icon+title header, an optional count, and a body.
+ *
+ * `loading`/`error` distinguish a query still in flight (or failed) from a genuinely
+ * empty result — without them a brief load reads as "all clear", and a failed query
+ * silently shows the empty state (improvement #6). While loading or errored the count is
+ * suppressed (it isn't known yet) and the body shows a skeleton / quiet message. */
 function WidgetShell({
   icon,
   title,
   count,
   tone = 'quiet',
+  loading = false,
+  error = false,
   children,
 }: {
   icon: ReactNode;
   title: string;
   count?: number;
   tone?: Tone;
+  loading?: boolean;
+  error?: boolean;
   children: ReactNode;
 }) {
+  const showCount = count !== undefined && !loading && !error;
   return (
     <>
       <div className="flex items-center gap-2 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-        {count !== undefined ? (
+        {showCount ? (
           <ChangeFlash flashKey={count} className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}>
             {count}
           </ChangeFlash>
         ) : null}
       </div>
-      <div className="mt-2 space-y-1">{children}</div>
+      <div className="mt-2 space-y-1">
+        {error ? (
+          <p className="text-xs text-warning">Couldn’t load this widget.</p>
+        ) : loading ? (
+          <WidgetSkeleton />
+        ) : (
+          children
+        )}
+      </div>
     </>
+  );
+}
+
+/** A couple of muted pulsing bars while a widget's data is loading. */
+function WidgetSkeleton() {
+  return (
+    <div className="space-y-1.5" aria-hidden data-testid="widget-skeleton">
+      <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+      <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+    </div>
   );
 }
 
@@ -138,7 +173,7 @@ function LowStockWidget() {
   const rows = lowStock.data?.rows ?? [];
   const defaults = { qtyThreshold, gaugePercent };
   return (
-    <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={lowStock.isPending} error={lowStock.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Stock levels healthy.</EmptyRow>
       ) : (
@@ -171,7 +206,7 @@ function ExpiringWidget() {
   const expiring = useExpiringItems(expirySoonWindowDays);
   const rows = expiring.data?.rows ?? [];
   return (
-    <WidgetShell icon={<ExpiryIcon />} title="Soon to expire" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<ExpiryIcon />} title="Soon to expire" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={expiring.isPending} error={expiring.isError}>
       {rows.length === 0 ? (
         <EmptyRow>All clear.</EmptyRow>
       ) : (
@@ -187,7 +222,7 @@ function OverdueWidget() {
   const openCheckouts = useOpenCheckouts();
   const overdue = (openCheckouts.data?.rows ?? []).filter((c) => c.isOverdue);
   return (
-    <WidgetShell icon={<DueDateIcon />} title="Overdue items" count={overdue.length} tone={overdue.length > 0 ? 'danger' : 'quiet'}>
+    <WidgetShell icon={<DueDateIcon />} title="Overdue items" count={overdue.length} tone={overdue.length > 0 ? 'danger' : 'quiet'} loading={openCheckouts.isPending} error={openCheckouts.isError}>
       {overdue.length === 0 ? (
         <EmptyRow>Nothing overdue.</EmptyRow>
       ) : (
@@ -201,7 +236,7 @@ function MaintenanceWidget() {
   const dueMaintenance = useDueMaintenance();
   const rows = dueMaintenance.data?.rows ?? [];
   return (
-    <WidgetShell icon={<MaintenanceIcon />} title="Maintenance due" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'}>
+    <WidgetShell icon={<MaintenanceIcon />} title="Maintenance due" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={dueMaintenance.isPending} error={dueMaintenance.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Nothing due.</EmptyRow>
       ) : (
@@ -215,7 +250,7 @@ function InTransitWidget() {
   const inTransit = useInTransitLines();
   const rows = inTransit.data?.rows ?? [];
   return (
-    <WidgetShell icon={<TruckIcon />} title="In transit" count={rows.length} tone={rows.length > 0 ? 'info' : 'quiet'}>
+    <WidgetShell icon={<TruckIcon />} title="In transit" count={rows.length} tone={rows.length > 0 ? 'info' : 'quiet'} loading={inTransit.isPending} error={inTransit.isError}>
       {rows.length === 0 ? (
         <EmptyRow>Nothing inbound.</EmptyRow>
       ) : (
@@ -234,7 +269,7 @@ function ProjectsWidget() {
   // Surface the live (non-archived) projects with their lifecycle status (§3).
   const active = (projects.data?.rows ?? []).filter((p) => p.status !== 'ARCHIVED');
   return (
-    <WidgetShell icon={<ProjectIcon />} title="Project statuses" count={active.length} tone={active.length > 0 ? 'info' : 'quiet'}>
+    <WidgetShell icon={<ProjectIcon />} title="Project statuses" count={active.length} tone={active.length > 0 ? 'info' : 'quiet'} loading={projects.isPending} error={projects.isError}>
       {active.length === 0 ? (
         <EmptyRow>No active projects.</EmptyRow>
       ) : (
@@ -267,7 +302,7 @@ function BudgetAlertsWidget() {
 
   const tone: Tone = flagged.some((a) => a.over) ? 'danger' : flagged.some((a) => a.warn) ? 'warning' : 'quiet';
   return (
-    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone}>
+    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone} loading={alerts.isPending} error={alerts.isError}>
       {flagged.length === 0 ? (
         <EmptyRow>All budgets on track.</EmptyRow>
       ) : (
@@ -279,28 +314,86 @@ function BudgetAlertsWidget() {
   );
 }
 
-function QuickLinksWidget() {
-  const links = [
-    { to: '/inventory', label: 'Inventory', icon: <PackageIcon /> },
-    { to: '/projects', label: 'Projects', icon: <ProjectIcon /> },
-    { to: '/contacts', label: 'Contacts', icon: <ContactsIcon /> },
-    { to: '/sync', label: 'Cloud Sync', icon: <CloudIcon /> },
-    { to: '/settings', label: 'Settings', icon: <SettingsIcon /> },
+function QuickActionsWidget() {
+  // Action-oriented, not destinations — the destinations already appear as nav tiles
+  // directly above this board (improvement #8). Add/Scan/Import hand a one-shot intent to
+  // the Inventory screen (it opens the matching dialog on arrival); New PO navigates to
+  // where a purchase order is raised.
+  const actions = [
+    { to: '/inventory', label: 'Add item', icon: <AddIcon />, intent: 'add' as const },
+    { to: '/inventory', label: 'Scan', icon: <ScanIcon />, intent: 'scan' as const },
+    { to: '/inventory', label: 'Import CSV', icon: <ImportIcon />, intent: 'import' as const },
+    { to: '/purchase-orders', label: 'New PO', icon: <ShoppingCartIcon />, intent: null },
   ] as const;
   return (
-    <WidgetShell icon={<LinkIcon />} title="Quick links">
+    <WidgetShell icon={<AddIcon />} title="Quick actions">
       <div className="grid grid-cols-2 gap-1.5">
-        {links.map((l) => (
-          <Link
-            key={l.to}
-            to={l.to}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
-          >
-            {l.icon}
-            {l.label}
-          </Link>
-        ))}
+        {actions.map((a) => {
+          const { intent } = a;
+          return (
+            <Link
+              key={a.label}
+              to={a.to}
+              onClick={intent ? () => useInventoryEntry.getState().requestIntent(intent) : undefined}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
+            >
+              {a.icon}
+              {a.label}
+            </Link>
+          );
+        })}
       </div>
+    </WidgetShell>
+  );
+}
+
+function InventoryTotalsWidget() {
+  const fmt = useFormatters();
+  const value = useInventoryValue();
+  const itemCount = useItemCount();
+  const locations = useLocations();
+  const categories = useCategories();
+  // "How big is my inventory, and what's it worth" — the at-a-glance pulse the
+  // exception-list widgets don't provide. Values reuse the Reports valuation (Phase 74).
+  const totalItems = itemCount.data ?? 0;
+  const totalValue = value.data?.totalValue ?? 0;
+  const locationCount = locations.data?.rows.length ?? 0;
+  const categoryCount = categories.data?.rows.length ?? 0;
+  const loading = value.isPending || itemCount.isPending || locations.isPending || categories.isPending;
+  const error = value.isError || itemCount.isError || locations.isError || categories.isError;
+  return (
+    <WidgetShell icon={<ValueIcon />} title="Inventory totals" loading={loading} error={error}>
+      <StatusRow label="Items">
+        <span className="tabular-nums">{totalItems}</span>
+      </StatusRow>
+      <StatusRow label="Stock value">
+        <span className="tabular-nums">{fmt.currency(totalValue)}</span>
+      </StatusRow>
+      <StatusRow label="Locations">
+        <span className="tabular-nums">{locationCount}</span>
+      </StatusRow>
+      <StatusRow label="Categories">
+        <span className="tabular-nums">{categoryCount}</span>
+      </StatusRow>
+    </WidgetShell>
+  );
+}
+
+function RecentActivityWidget() {
+  // The global activity feed (Phase 80), newest-first — a *continuity* list so the user
+  // can pick up what they were last working on, unlike the exception trackers. Reuses the
+  // pure describeHistoryEntry seam (Phase 52) for each row's label.
+  const feed = useActivityFeed(undefined);
+  const rows = (feed.data?.pages.flatMap((p) => p.rows) ?? []).slice(0, 4);
+  return (
+    <WidgetShell icon={<HistoryIcon />} title="Recent activity" loading={feed.isPending} error={feed.isError}>
+      {rows.length === 0 ? (
+        <EmptyRow>No recent changes.</EmptyRow>
+      ) : (
+        rows.map((entry) => (
+          <WidgetRow key={entry.id} label={entry.itemName} meta={describeHistoryEntry(entry).label} />
+        ))
+      )}
     </WidgetShell>
   );
 }
@@ -387,6 +480,7 @@ function PlatformWidget() {
  * reorder, hide or re-pin any of them.
  */
 export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
+  { id: 'inventory-totals', title: 'Inventory totals', icon: <ValueIcon />, to: '/reports', Component: InventoryTotalsWidget },
   { id: 'low-stock', title: 'Low stock', icon: <LowStockIcon />, to: '/inventory', Component: LowStockWidget },
   { id: 'expiring', title: 'Soon to expire', icon: <ExpiryIcon />, to: '/inventory', Component: ExpiringWidget },
   { id: 'overdue', title: 'Overdue items', icon: <DueDateIcon />, to: '/contacts', Component: OverdueWidget },
@@ -394,7 +488,8 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   { id: 'in-transit', title: 'In transit', icon: <TruckIcon />, to: '/inventory', Component: InTransitWidget },
   { id: 'projects', title: 'Project statuses', icon: <ProjectIcon />, to: '/projects', Component: ProjectsWidget },
   { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
-  { id: 'quick-links', title: 'Quick links', icon: <LinkIcon />, Component: QuickLinksWidget },
+  { id: 'recent-activity', title: 'Recent activity', icon: <HistoryIcon />, to: '/activity', Component: RecentActivityWidget },
+  { id: 'quick-links', title: 'Quick actions', icon: <AddIcon />, Component: QuickActionsWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, to: '/settings', hash: 'danger-zone', Component: StorageWidget },
   { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },

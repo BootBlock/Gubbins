@@ -6,6 +6,7 @@ import {
   DarkThemeIcon,
   DatasheetIcon,
   ExpiryIcon,
+  HomeIcon,
   InfoIcon,
   InstallIcon,
   KioskIcon,
@@ -127,6 +128,54 @@ export function SettingsScreen() {
               Use your browser&apos;s menu
             </span>
           )}
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection icon={<HomeIcon />} title="Dashboard">
+        <SettingRow
+          label="Quick search (Ctrl/⌘ K)"
+          description="Show a command palette for jumping straight to any item by name — opened from the dashboard or with Ctrl/⌘ K anywhere."
+        >
+          <Select
+            aria-label="Quick search command palette"
+            data-testid="setting-dashboard-command-palette"
+            className="h-9 w-40"
+            value={prefs.dashboardCommandPalette ? 'on' : 'off'}
+            onChange={(e) => prefs.setDashboardCommandPalette(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label="Quick actions"
+          description="Show Add item and Scan buttons in the dashboard header for the most common tasks."
+        >
+          <Select
+            aria-label="Dashboard quick actions"
+            data-testid="setting-dashboard-quick-actions"
+            className="h-9 w-40"
+            value={prefs.dashboardQuickActions ? 'on' : 'off'}
+            onChange={(e) => prefs.setDashboardQuickActions(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label="Getting-started panel"
+          description="While your inventory is empty, show a short panel with first steps (add, import or scan) instead of the empty widgets."
+        >
+          <Select
+            aria-label="Getting-started panel"
+            data-testid="setting-dashboard-getting-started"
+            className="h-9 w-40"
+            value={prefs.dashboardGettingStarted ? 'on' : 'off'}
+            onChange={(e) => prefs.setDashboardGettingStarted(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </Select>
         </SettingRow>
       </SettingsSection>
 
