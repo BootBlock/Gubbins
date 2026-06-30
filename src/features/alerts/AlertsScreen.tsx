@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router';
 import {
   Button,
   LiveRegion,
+  PageHeader,
   Spinner,
   Surface,
   MAIN_CONTENT_ID,
@@ -34,7 +35,6 @@ import {
   PackageIcon,
   CloseIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
 import { groupByKind, type Alert, type AlertKind, type AlertSeverity } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { useAlerts } from './useAlerts';
@@ -182,27 +182,17 @@ export function AlertsScreen() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
       {/* Header ---------------------------------------------------------- */}
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <AlertIcon />
-          Alert centre
-        </h1>
-        {hasDismissed && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={clearAll}
-            className="ml-auto"
-            data-testid="alerts-show-all"
-          >
-            Show all ({hiddenCount} hidden)
-          </Button>
-        )}
-      </header>
+      <PageHeader
+        icon={<AlertIcon />}
+        title="Alert centre"
+        actions={
+          hasDismissed ? (
+            <Button variant="outline" size="sm" onClick={clearAll} data-testid="alerts-show-all">
+              Show all ({hiddenCount} hidden)
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* Main content ----------------------------------------------------- */}
       <main

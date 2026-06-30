@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { buttonVariants, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
-import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon, ReportIcon, ShoppingCartIcon, AlertIcon, DueDateIcon, BookingIcon, HistoryIcon } from '@/components/icons';
+import { buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
+import { NAV_DESTINATIONS } from '@/components/nav/nav-destinations';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
@@ -36,78 +36,44 @@ export function DashboardScreen() {
           </h1>
           <p className="text-sm text-muted-foreground">Local-first inventory · your dashboard</p>
         </div>
-        <Tooltip content="About Gubbins — version, links, author and licence." triggerTabIndex={-1} className="ml-auto">
-          <Link
-            to="/about"
-            aria-label="About"
-            className={cn(buttonVariants({ variant: 'outline', size: 'icon' }))}
-          >
-            <InfoIcon />
-          </Link>
-        </Tooltip>
-        <Tooltip content="App preferences — theme, currency, scanner, storage and more." triggerTabIndex={-1}>
-          <Link
-            to="/settings"
-            aria-label="Settings"
-            className={cn(buttonVariants({ variant: 'outline', size: 'icon' }))}
-          >
-            <SettingsIcon />
-          </Link>
-        </Tooltip>
-        <Link to="/sync" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <CloudIcon />
-          Sync
-        </Link>
-        <Link to="/projects" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <ProjectIcon />
-          Projects
-        </Link>
-        <Link to="/purchase-orders" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <ShoppingCartIcon />
-          Purchase orders
-        </Link>
-        <Link to="/reports" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <ReportIcon />
-          Reports
-        </Link>
-        <Link to="/upcoming" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <DueDateIcon />
-          Upcoming
-        </Link>
-        <Link to="/bookings" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <BookingIcon />
-          Bookings
-        </Link>
-        <Link to="/activity" className={cn(buttonVariants({ variant: 'outline' }))}>
-          <HistoryIcon />
-          Activity
-        </Link>
-        <Link
-          to="/alerts"
-          className={cn(buttonVariants({ variant: 'outline' }), 'relative')}
-          aria-label={
-            alertCount > 0
-              ? `Alerts — ${alertCount} active alert${alertCount === 1 ? '' : 's'}`
-              : 'Alerts'
-          }
-          data-testid="nav-alerts"
-        >
-          <AlertIcon />
-          Alerts
-          {alertCount > 0 && (
-            <span
-              aria-hidden
-              className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
-              data-testid="alerts-badge"
-            >
-              {alertCount > 99 ? '99+' : alertCount}
-            </span>
-          )}
-        </Link>
-        <Link to="/inventory" className={cn(buttonVariants())}>
-          <PackageIcon />
-          Open inventory
-        </Link>
+        {/* The landing hub shows every destination as a visible tile, mapped from the same
+            NAV_DESTINATIONS source of truth the global AppNav menu uses on every other
+            screen — so the two can never drift. Inventory is the primary call-to-action;
+            the Alerts tile carries the live badge. */}
+        <nav aria-label="Primary navigation" className="ml-auto flex flex-wrap items-center gap-2">
+          {NAV_DESTINATIONS.filter((dest) => dest.to !== '/').map((dest) => {
+            const isInventory = dest.to === '/inventory';
+            const isAlerts = dest.to === '/alerts';
+            return (
+              <Link
+                key={dest.to}
+                to={dest.to}
+                className={cn(
+                  buttonVariants({ variant: isInventory ? 'primary' : 'outline' }),
+                  isAlerts && 'relative',
+                )}
+                aria-label={
+                  isAlerts && alertCount > 0
+                    ? `Alerts — ${alertCount} active alert${alertCount === 1 ? '' : 's'}`
+                    : undefined
+                }
+                data-testid={isAlerts ? 'nav-alerts' : undefined}
+              >
+                <dest.Icon />
+                {isInventory ? 'Open inventory' : dest.label}
+                {isAlerts && alertCount > 0 && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
+                    data-testid="alerts-badge"
+                  >
+                    {alertCount > 99 ? '99+' : alertCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
       </header>
 
       <main

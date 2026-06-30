@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
-import { Button, LiveRegion, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, LiveRegion, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
   DeleteIcon,
   LowStockIcon,
-  PackageIcon,
   ShoppingCartIcon,
   TruckIcon,
 } from '@/components/icons';
 import { ReorderTab } from './ReorderTab';
-import { BrandMark } from '@/components/BrandMark';
 import { useFormatters } from '@/lib/useFormatters';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
@@ -66,30 +63,18 @@ export function PurchaseOrdersScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <ShoppingCartIcon /> Purchase orders
-        </h1>
-        <div className="ml-auto flex items-center gap-2">
-          {activeTab === 'orders' && (
+      <PageHeader
+        icon={<ShoppingCartIcon />}
+        title="Purchase orders"
+        actions={
+          activeTab === 'orders' ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)} data-testid="po-new">
               <AddIcon />
               New order
             </Button>
-          )}
-          <Link
-            to="/inventory"
-            className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-          >
-            <PackageIcon />
-            Inventory
-          </Link>
-        </div>
-      </header>
+          ) : undefined
+        }
+      />
 
       {/* Tab navigation — a plain div carries role="tablist" (a <nav> landmark is
           suppressed by the role override and inconsistent with the other tablists). */}

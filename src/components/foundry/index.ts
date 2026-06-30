@@ -25,6 +25,16 @@ export {
   type TooltipPlacement,
 } from './tooltip';
 export { SkipLink, MAIN_CONTENT_ID } from './skip-link';
+export { PageHeader, type PageHeaderProps } from './page-header';
+export {
+  Menu,
+  MenuLink,
+  MenuAction,
+  MenuSeparator,
+  type MenuProps,
+  type MenuLinkProps,
+  type MenuActionProps,
+} from './menu';
 export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-region';
 export { liveRegionAttrs, type LiveRegionAttrs } from './aria-live';
 export { ToastProvider, useToast, type ToastOptions, type ToastTone } from './toast';

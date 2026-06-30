@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   LiveRegion,
+  PageHeader,
   Spinner,
   Surface,
   MAIN_CONTENT_ID,
@@ -27,9 +28,7 @@ import {
   LowStockIcon,
   MaintenanceIcon,
   NotificationIcon,
-  PackageIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   AGENDA_KINDS,
@@ -207,23 +206,7 @@ export function CalendarScreen() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
       {/* Header ---------------------------------------------------------- */}
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <DueDateIcon />
-          Upcoming
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<DueDateIcon />} title="Upcoming" />
 
       {/* Kind filter ----------------------------------------------------- */}
       {!isLoading && !isError && events.length > 0 && (

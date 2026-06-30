@@ -45,6 +45,9 @@ export {
   Search as SearchIcon,
   ChevronRight as ChevronRightIcon,
   ChevronDown as ChevronDownIcon,
+  Menu as MenuIcon,
+  MoreHorizontal as MoreIcon,
+  House as HomeIcon,
   Undo2 as RestoreIcon,
   ArchiveRestore as ArchiveRestoreIcon,
 

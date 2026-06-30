@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, FormField, Input, LiveRegion, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Banner, Button, FormField, Input, LiveRegion, PageHeader, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   ArchiveIcon,
   CloudIcon,
@@ -9,10 +8,8 @@ import {
   ConnectIcon,
   DisconnectIcon,
   FolderSyncIcon,
-  PackageIcon,
   SyncIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
@@ -224,22 +221,7 @@ export function SyncScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <CloudIcon /> Cloud Sync &amp; backups
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<CloudIcon />} title="Cloud Sync & backups" />
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
       {/* Errors interrupt (assertive); a sync/restore/backup failure the user must hear

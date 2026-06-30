@@ -14,18 +14,17 @@
  * skip-to-content link (Phase 40).
  */
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import {
   Button,
   Input,
   LiveRegion,
   MAIN_CONTENT_ID,
+  PageHeader,
   Select,
   Spinner,
   Surface,
 } from '@/components/foundry';
-import { BookingIcon, CheckoutIcon, PackageIcon } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
+import { BookingIcon, CheckoutIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
@@ -311,23 +310,7 @@ export function BookingsScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <BookingIcon />
-          Bookings
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<BookingIcon />} title="Bookings" />
 
       <NewBookingForm onResult={onResult} />
 

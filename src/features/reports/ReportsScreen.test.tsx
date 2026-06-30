@@ -21,6 +21,12 @@ vi.mock('@tanstack/react-router', () => ({
     <a href={to} {...props}>{children}</a>,
 }));
 
+// The global nav menu has its own suite; stub it so this screen test needs no
+// router/alerts context for the header.
+vi.mock('@/components/nav/AppNav', () => ({
+  AppNav: () => <nav data-testid="app-nav" aria-label="Navigation" />,
+}));
+
 // Stub the Foundry BrandMark and icon-heavy sub-components so happy-dom
 // doesn't need real SVG / canvas support.
 vi.mock('@/components/BrandMark', () => ({

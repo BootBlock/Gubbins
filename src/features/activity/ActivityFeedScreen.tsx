@@ -16,9 +16,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { LiveRegion, MAIN_CONTENT_ID, Spinner, Surface } from '@/components/foundry';
-import { HistoryIcon, PackageIcon } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
+import { LiveRegion, MAIN_CONTENT_ID, PageHeader, Spinner, Surface } from '@/components/foundry';
+import { HistoryIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
@@ -158,23 +157,7 @@ export function ActivityFeedScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <HistoryIcon />
-          Activity
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<HistoryIcon />} title="Activity" />
 
       <p className="text-sm text-muted-foreground">
         Every recent change across your whole inventory, newest first.

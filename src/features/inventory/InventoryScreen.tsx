@@ -1,27 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
   BuilderIcon,
   CategoryIcon,
   CloseIcon,
-  CloudIcon,
-  ContactsIcon,
   CycleCountIcon,
   DuplicateTabIcon,
   EditIcon,
   ExportIcon,
   ImportIcon,
+  MoreIcon,
+  PackageIcon,
   PrintIcon,
-  ProjectIcon,
-  ReportIcon,
   ScanIcon,
   SearchIcon,
   SelectIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
-import { Tooltip } from '@/components/foundry';
+import { Menu, MenuAction, MenuSeparator, PageHeader, Tooltip } from '@/components/foundry';
 import { CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
@@ -184,124 +180,93 @@ function InventoryWorkspace() {
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
-      <header className="flex flex-wrap items-center gap-3 pb-4">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
+      <PageHeader
+        className="pb-4"
+        icon={<PackageIcon />}
+        title="Inventory"
+        actions={
+          <>
+            <div className="relative w-full max-w-xs">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search items…"
+                className="pl-9"
+                aria-label="Search items"
+                disabled={astActive}
+              />
+            </div>
 
-        <div className="relative ml-auto w-full max-w-xs">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search items…"
-            className="pl-9"
-            aria-label="Search items"
-            disabled={astActive}
-          />
-        </div>
+            <Tooltip content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active." triggerTabIndex={-1}>
+              <span>
+                <Button
+                  variant={builderOpen ? 'secondary' : 'outline'}
+                  onClick={() => setBuilderOpen((v) => !v)}
+                  aria-pressed={builderOpen}
+                >
+                  <BuilderIcon />
+                  Visual search
+                </Button>
+              </span>
+            </Tooltip>
 
-        <Tooltip content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active." triggerTabIndex={-1}>
-          <span>
-            <Button
-              variant={builderOpen ? 'secondary' : 'outline'}
-              onClick={() => setBuilderOpen((v) => !v)}
-              aria-pressed={builderOpen}
-            >
-              <BuilderIcon />
-              Visual search
+            <LayoutToggle />
+
+            <Button variant="outline" onClick={() => setScannerOpen(true)}>
+              <ScanIcon />
+              Scan
             </Button>
-          </span>
-        </Tooltip>
 
-        <LayoutToggle />
-
-        <Button variant="outline" onClick={() => setScannerOpen(true)}>
-          <ScanIcon />
-          Scan
-        </Button>
-
-        <Link
-          to="/projects"
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <ProjectIcon />
-          Projects
-        </Link>
-
-        <Link
-          to="/contacts"
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <ContactsIcon />
-          Contacts
-        </Link>
-
-        <Link
-          to="/reports"
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <ReportIcon />
-          Reports
-        </Link>
-
-        <Link
-          to="/sync"
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <CloudIcon />
-          Sync
-        </Link>
-
-        <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
-          <CategoryIcon />
-          Categories
-        </Button>
-
-        <Tooltip content={selectedLocationId ? 'Blind-count this location' : 'Select a location to cycle count'}>
-          <span>
-            <Button
-              variant="outline"
-              onClick={() => setCycleCountOpen(true)}
-              disabled={!selectedLocationId}
-              data-testid="open-cycle-count"
+            <Menu
+              label="More inventory actions"
+              trigger={
+                <>
+                  <MoreIcon />
+                  More
+                </>
+              }
             >
-              <CycleCountIcon />
-              Cycle count
+              <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
+                Categories
+              </MenuAction>
+              <MenuAction
+                icon={<CycleCountIcon />}
+                onSelect={() => setCycleCountOpen(true)}
+                disabled={!selectedLocationId}
+                data-testid="open-cycle-count"
+              >
+                Cycle count
+              </MenuAction>
+              <MenuSeparator />
+              <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
+                Export
+              </MenuAction>
+              <MenuAction
+                icon={<ImportIcon />}
+                onSelect={() => setImportOpen(true)}
+                data-testid="open-catalog-import"
+              >
+                Import CSV
+              </MenuAction>
+              <MenuSeparator />
+              <MenuAction
+                icon={<SelectIcon />}
+                onSelect={toggleSelecting}
+                selected={selecting}
+                data-testid="toggle-select"
+              >
+                Select items
+              </MenuAction>
+            </Menu>
+
+            <Button onClick={() => setAddOpen(true)}>
+              <AddIcon />
+              Add item
             </Button>
-          </span>
-        </Tooltip>
-
-        <Button variant="outline" onClick={() => setExportOpen(true)}>
-          <ExportIcon />
-          Export
-        </Button>
-
-        <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="open-catalog-import">
-          <ImportIcon />
-          Import CSV
-        </Button>
-
-        <Tooltip content="Tick multiple items to print a sheet of QR labels. Toggling off clears the selection." triggerTabIndex={-1}>
-          <span>
-            <Button
-              variant={selecting ? 'secondary' : 'outline'}
-              onClick={toggleSelecting}
-              aria-pressed={selecting}
-              data-testid="toggle-select"
-            >
-              <SelectIcon />
-              Select
-            </Button>
-          </span>
-        </Tooltip>
-
-        <Button onClick={() => setAddOpen(true)}>
-          <AddIcon />
-          Add item
-        </Button>
-      </header>
+          </>
+        }
+      />
 
       {builderOpen ? (
         <div className="pb-4">

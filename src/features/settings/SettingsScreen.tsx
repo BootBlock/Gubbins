@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Select, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
+import { Button, PageHeader, Select, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
 import {
   AppearanceIcon,
   DarkThemeIcon,
@@ -11,13 +11,11 @@ import {
   KioskIcon,
   LightThemeIcon,
   NotificationIcon,
-  PackageIcon,
   ScanIcon,
   SettingsIcon,
   StorageIcon,
   SystemThemeIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
@@ -64,22 +62,7 @@ export function SettingsScreen() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <SettingsIcon /> Settings
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<SettingsIcon />} title="Settings" />
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
       <SettingsSection icon={<AppearanceIcon />} title="Appearance">

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
-import { Button, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
-import { AddIcon, PackageIcon, ProjectIcon } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
+import { Button, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { AddIcon, ProjectIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
 import { PROJECT_STATUS_LABELS } from './components/projects-ui';
@@ -37,25 +35,17 @@ export function ProjectsScreen() {
 
   return (
     <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
-      <header className="flex flex-wrap items-center gap-3 pb-4">
-        <Link to="/" className="flex items-center gap-2 text-foreground [&_svg]:size-6">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-
-        <Button onClick={() => setCreateOpen(true)}>
-          <AddIcon />
-          New project
-        </Button>
-      </header>
+      <PageHeader
+        className="pb-4"
+        icon={<ProjectIcon />}
+        title="Projects"
+        actions={
+          <Button onClick={() => setCreateOpen(true)}>
+            <AddIcon />
+            New project
+          </Button>
+        }
+      />
 
       <div className="flex min-h-0 flex-1 gap-6">
         {/* Master list */}

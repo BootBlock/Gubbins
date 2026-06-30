@@ -1,15 +1,12 @@
 import { type ReactNode } from 'react';
-import { Link } from '@tanstack/react-router';
-import { Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
+import { PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   InfoIcon,
   LinkIcon,
   AlertIcon,
   SecureIcon,
-  PackageIcon,
   ContactsIcon,
 } from '@/components/icons';
-import { BrandMark } from '@/components/BrandMark';
 import { cn } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/app-version';
 import { Starfield } from './Starfield';
@@ -31,22 +28,7 @@ export function AboutScreen() {
   return (
     <div className="relative isolate mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
       <Starfield />
-      <header className="flex flex-wrap items-center gap-3">
-        <Link to="/" className="flex items-center gap-2 text-foreground">
-          <BrandMark className="size-9 rounded-xl" />
-          <span className="text-lg font-semibold tracking-tight">Gubbins</span>
-        </Link>
-        <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
-          <InfoIcon /> About
-        </h1>
-        <Link
-          to="/inventory"
-          className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
-        >
-          <PackageIcon />
-          Inventory
-        </Link>
-      </header>
+      <PageHeader icon={<InfoIcon />} title="About" />
 
       <main
         id={MAIN_CONTENT_ID}
