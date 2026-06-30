@@ -203,8 +203,9 @@ export function resolveSupplierPartWrite(
 
   if (plan.matchedId === null) {
     // A brand-new supplier row always carries the supplier name even if no field was filled.
-    return { kind: 'create', input: { supplierName: plan.supplierName, ...fields } };
+    // Tag the write as scrape-sourced so the Phase-81 price-history row is attributed correctly.
+    return { kind: 'create', input: { supplierName: plan.supplierName, ...fields, source: 'SCRAPE' } };
   }
   if (!wrote) return { kind: 'noop' };
-  return { kind: 'update', id: plan.matchedId, input: fields };
+  return { kind: 'update', id: plan.matchedId, input: { ...fields, source: 'SCRAPE' } };
 }

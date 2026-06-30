@@ -5,6 +5,7 @@
  * quantity price-breaks, with at most one marked preferred. `price_breaks` is stored as a
  * JSON TEXT column in SQLite and surfaced as a structured array on the domain object.
  */
+import type { PriceHistorySource } from './supplier-part-price-history';
 
 /** One quantity price-break: `unitCost` applies at `qty` and above. */
 export interface PriceBreak {
@@ -58,6 +59,8 @@ export interface CreateSupplierPartInput {
   readonly priceBreaks?: readonly PriceBreak[] | null;
   readonly url?: string | null;
   readonly isPreferred?: boolean;
+  /** Where this cost came from, for the Phase-81 price-history row. Defaults to `'MANUAL'`. */
+  readonly source?: PriceHistorySource;
 }
 
 /** Partial update; an omitted key is left unchanged, an explicit `null` clears it. */
@@ -71,4 +74,6 @@ export interface UpdateSupplierPartInput {
   readonly priceBreaks?: readonly PriceBreak[] | null;
   readonly url?: string | null;
   readonly isPreferred?: boolean;
+  /** Where a changed cost came from, for the Phase-81 price-history row. Defaults to `'MANUAL'`. */
+  readonly source?: PriceHistorySource;
 }

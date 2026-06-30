@@ -12,16 +12,39 @@
  */
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
-import { rowToSupplierPart } from './mappers';
+import { rowToSupplierPart, rowToSupplierPartPriceHistory } from './mappers';
 import { tombstoneStatement } from './tombstone';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import type {
   CreateSupplierPartInput,
+  PageParams,
   PriceBreak,
+  PriceHistorySource,
   SupplierPart,
+  SupplierPartPriceHistoryEntry,
+  SupplierPartPriceHistoryRow,
   SupplierPartRow,
   UpdateSupplierPartInput,
 } from './types';
+
+/**
+ * Build the price-history INSERT recording a supplier part's cost at this instant, to be
+ * batched in the *same* transaction as the create/update that set it (Phase 81). Only
+ * called when the cost is a genuine non-null change, so the series never carries a no-op or
+ * a cleared-to-null point.
+ */
+function priceHistoryStatement(
+  supplierPartId: string,
+  unitCost: number,
+  currency: string | null,
+  source: PriceHistorySource,
+): SqlStatement {
+  return {
+    sql: `INSERT INTO supplier_part_price_history (id, supplier_part_id, unit_cost, currency, source)
+          VALUES (?, ?, ?, ?, ?);`,
+    params: [crypto.randomUUID(), supplierPartId, unitCost, currency, source],
+  };
+}
 
 /** Trim a string field; an all-whitespace value becomes null (a genuinely absent field). */
 function cleanText(value: string | null | undefined): string | null {
@@ -105,6 +128,8 @@ export class SupplierPartRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     const wantsPreferred = input.isPreferred === true;
+    const cost = cleanCost(input.unitCost);
+    const currency = cleanText(input.currency);
 
     const statements: SqlStatement[] = [];
     // Single-winner: clear any existing preferred for this item before marking the new one.
@@ -126,8 +151,8 @@ export class SupplierPartRepository extends BaseRepository {
         itemId,
         supplierName,
         cleanText(input.orderCode),
-        cleanCost(input.unitCost),
-        cleanText(input.currency),
+        cost,
+        currency,
         cleanCount(input.packQty, 'A pack quantity'),
         cleanCount(input.minOrderQty, 'A minimum order quantity'),
         serialisePriceBreaks(input.priceBreaks),
@@ -136,6 +161,11 @@ export class SupplierPartRepository extends BaseRepository {
       ],
     });
 
+    // Phase 81: record the baseline price point when the part is created with a cost.
+    if (cost !== null) {
+      statements.push(priceHistoryStatement(id, cost, currency, input.source ?? 'MANUAL'));
+    }
+
     await this.driver.transaction(statements);
     return (await this.getById(id))!;
   }
@@ -143,6 +173,19 @@ export class SupplierPartRepository extends BaseRepository {
   async update(id: string, input: UpdateSupplierPartInput): Promise<SupplierPart> {
     this.assertWritable();
     const existing = await this.require(id);
+
+    // Phase 81: record a price-history point only when the cost is a *genuine* non-null
+    // change — a no-op write (same value) or a clear-to-null records nothing, so the series
+    // never carries a noise point. The currency tracked is the new one when supplied, else
+    // the existing one (the cost applies in whatever currency the row now carries).
+    let priceHistory: SqlStatement | null = null;
+    if (input.unitCost !== undefined) {
+      const newCost = cleanCost(input.unitCost);
+      if (newCost !== null && newCost !== existing.unitCost) {
+        const currency = input.currency !== undefined ? cleanText(input.currency) : existing.currency;
+        priceHistory = priceHistoryStatement(id, newCost, currency, input.source ?? 'MANUAL');
+      }
+    }
 
     const sets: string[] = [];
     const params: SqlValue[] = [];
@@ -194,6 +237,7 @@ export class SupplierPartRepository extends BaseRepository {
       sets.push('is_preferred = 1');
       params.push(id);
       statements.push({ sql: `UPDATE supplier_parts SET ${sets.join(', ')} WHERE id = ?;`, params });
+      if (priceHistory) statements.push(priceHistory);
       await this.driver.transaction(statements);
       return (await this.getById(id))!;
     }
@@ -203,9 +247,38 @@ export class SupplierPartRepository extends BaseRepository {
 
     if (sets.length > 0) {
       params.push(id);
-      await this.driver.execute(`UPDATE supplier_parts SET ${sets.join(', ')} WHERE id = ?;`, params);
+      const updateStmt: SqlStatement = {
+        sql: `UPDATE supplier_parts SET ${sets.join(', ')} WHERE id = ?;`,
+        params,
+      };
+      // Fold the price-history point into the *same* transaction as the cost write so the
+      // ledger can never drift from the supplier part.
+      if (priceHistory) {
+        await this.driver.transaction([updateStmt, priceHistory]);
+      } else {
+        await this.driver.execute(updateStmt.sql, updateStmt.params);
+      }
     }
     return (await this.getById(id))!;
+  }
+
+  /**
+   * A supplier part's recorded price points, newest first (Phase 81). Tiny per part, but
+   * strictly bounded per the §2.1 pagination mandate. The pure `buildPriceSeries` seam
+   * sorts ascending for the sparkline regardless of this order.
+   */
+  async listPriceHistory(
+    supplierPartId: string,
+    params: PageParams = {},
+  ): Promise<SupplierPartPriceHistoryEntry[]> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<SupplierPartPriceHistoryRow>(
+      `SELECT * FROM supplier_part_price_history WHERE supplier_part_id = ?
+       ORDER BY recorded_at DESC, rowid DESC
+       LIMIT ? OFFSET ?;`,
+      [supplierPartId, limit, offset],
+    );
+    return rows.map(rowToSupplierPartPriceHistory);
   }
 
   /**

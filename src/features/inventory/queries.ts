@@ -51,6 +51,10 @@ export const inventoryKeys = {
   // invalidation refreshes it by prefix.
   itemSupplierParts: (itemId: string) =>
     [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
+  // Phase 81 — a supplier part's recorded cost-over-time points; under item() so the
+  // existing supplier-part invalidation (which invalidates item()) refreshes it by prefix.
+  supplierPartPriceHistory: (itemId: string, supplierPartId: string) =>
+    [...inventoryKeys.item(itemId), 'supplier-part-price-history', supplierPartId] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
@@ -86,6 +90,18 @@ export function useItemSupplierParts(itemId: string | undefined) {
     queryKey: inventoryKeys.itemSupplierParts(itemId ?? ''),
     queryFn: () => getSupplierPartRepository().listForItem(itemId!),
     enabled: Boolean(itemId),
+  });
+}
+
+/** A supplier part's recorded cost-over-time points (Phase 81), newest-first. */
+export function useSupplierPartPriceHistory(
+  itemId: string | undefined,
+  supplierPartId: string | undefined,
+) {
+  return useQuery({
+    queryKey: inventoryKeys.supplierPartPriceHistory(itemId ?? '', supplierPartId ?? ''),
+    queryFn: () => getSupplierPartRepository().listPriceHistory(supplierPartId!),
+    enabled: Boolean(itemId) && Boolean(supplierPartId),
   });
 }
 

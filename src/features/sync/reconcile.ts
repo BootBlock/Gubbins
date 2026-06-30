@@ -362,6 +362,12 @@ const FK_REFS: Partial<
   // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
   // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
   supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
+  // Supplier price-history points (Phase 81). supplier_part_id mirrors the cascade children
+  // above — drop an incoming price point whose supplier part did not survive the merge
+  // (ON DELETE CASCADE, NOT NULL). supplier_parts is already in the `removed`-parents set.
+  supplier_part_price_history: [
+    { col: 'supplier_part_id', parent: 'supplier_parts', nullable: false },
+  ],
   item_field_values: [
     { col: 'item_id', parent: 'items', nullable: false },
     { col: 'field_id', parent: 'category_fields', nullable: false },

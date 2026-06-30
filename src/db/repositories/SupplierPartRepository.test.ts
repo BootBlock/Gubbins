@@ -146,4 +146,65 @@ describe('SupplierPartRepository (Phase 60)', () => {
     expect(effectiveUnitCost({ unitCost: null }, parts)).toBe(2.5);
     expect(effectiveUnitCost({ unitCost: 9 }, parts)).toBe(9); // manual override wins
   });
+
+  describe('price history (Phase 81)', () => {
+    it('records a baseline point on create with a cost (tagged by source + currency)', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 1.5, currency: 'GBP' });
+      const history = await repo.listPriceHistory(p.id);
+      expect(history).toHaveLength(1);
+      expect(history[0]?.unitCost).toBe(1.5);
+      expect(history[0]?.currency).toBe('GBP');
+      expect(history[0]?.source).toBe('MANUAL');
+    });
+
+    it('records no point when created without a cost', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS' });
+      expect(await repo.listPriceHistory(p.id)).toHaveLength(0);
+    });
+
+    it('records a point on a genuine cost change, and tags an explicit SCRAPE source', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 1.0 });
+      await repo.update(p.id, { unitCost: 1.25, source: 'SCRAPE' });
+      const history = await repo.listPriceHistory(p.id);
+      expect(history).toHaveLength(2);
+      // Newest first.
+      expect(history[0]?.unitCost).toBe(1.25);
+      expect(history[0]?.source).toBe('SCRAPE');
+      expect(history[1]?.unitCost).toBe(1.0);
+    });
+
+    it('does not record a no-op cost write (same value) or an unrelated field update', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 2.0 });
+      await repo.update(p.id, { unitCost: 2.0 }); // same value
+      await repo.update(p.id, { orderCode: 'ABC-123' }); // no cost touched
+      expect(await repo.listPriceHistory(p.id)).toHaveLength(1);
+    });
+
+    it('does not record a point when the cost is cleared to null', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 2.0 });
+      await repo.update(p.id, { unitCost: null });
+      expect(await repo.listPriceHistory(p.id)).toHaveLength(1);
+    });
+
+    it('records a point even when the cost change rides a preferred-toggle transaction', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 1.0 });
+      await repo.update(p.id, { unitCost: 1.5, isPreferred: true });
+      const history = await repo.listPriceHistory(p.id);
+      expect(history).toHaveLength(2);
+      expect(history[0]?.unitCost).toBe(1.5);
+    });
+
+    it('tracks the new currency when the cost and currency change together', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 1.0, currency: 'GBP' });
+      await repo.update(p.id, { unitCost: 1.2, currency: 'EUR' });
+      const history = await repo.listPriceHistory(p.id);
+      expect(history[0]?.currency).toBe('EUR');
+    });
+
+    it('cascades price-history rows when the supplier part is deleted', async () => {
+      const p = await repo.create(itemId, { supplierName: 'RS', unitCost: 1.0 });
+      await repo.delete(p.id);
+      expect(await repo.listPriceHistory(p.id)).toHaveLength(0);
+    });
+  });
 });

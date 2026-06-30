@@ -18,6 +18,7 @@ import {
 } from '../mutations';
 import { useItemSupplierParts } from '../queries';
 import { SupplierPartFormDialog } from './SupplierPartFormDialog';
+import { SupplierPartPriceHistory } from './SupplierPartPriceHistory';
 
 /**
  * Editable supplier-parts table (§4 supplier facet; Phase 60). Models N suppliers per item —
@@ -139,6 +140,8 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                     ))}
                   </div>
                 ) : null}
+
+                <SupplierPartPriceHistory itemId={item.id} supplierPartId={part.id} />
               </div>
 
               <div className="flex shrink-0 gap-1">
