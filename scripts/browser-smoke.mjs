@@ -613,6 +613,64 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('validates & round-trips a category custom field on an item (Phase 70)', async () => {
+    // Create an item assigned to the smoke category (which carries the NUMBER field
+    // `fieldName` added earlier), so its Classification tab renders the editor.
+    const customItemName = `Smoke Custom ${stamp}`;
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    let dialog = page.getByRole('dialog', { name: 'Add item' });
+    await dialog.getByLabel('Name').fill(customItemName);
+    await dialog.getByLabel('Tracking').selectOption('DISCRETE');
+    await dialog.getByLabel('Category (optional)').selectOption({ label: categoryName });
+    await dialog.getByRole('button', { name: 'Create item' }).click();
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    const customCard = () =>
+      page
+        .locator('div')
+        .filter({ hasText: customItemName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+
+    // Open the item → Classification tab → the custom-field editor.
+    await customCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
+    const field = dialog.getByLabel(fieldName, { exact: false }).first();
+    await field.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Note on the invalid-value-blocks-save path: the editor renders a native
+    // `<input type="number">`, which itself drops non-numeric text before it ever
+    // reaches the validation seam, so a DOM-level "type rubbish, assert blocked"
+    // check would prove nothing reliable. That block path (and the canonical
+    // coercion below) is exercised directly by the pure-seam tests
+    // (custom-fields.test.ts) and the repository `:memory:` tests
+    // (CategoryRepository.test.ts). This step proves the *reliable* end-to-end fact:
+    // a valid value coerces canonically on save and round-trips from the worker DB.
+
+    // A canonicalisable NUMBER ('12.50') saves; the worker persists it as '12.5'.
+    const saveBtn = dialog.getByRole('button', { name: /^Save \d+ change/ });
+    await field.fill('12.50');
+    await saveBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await saveBtn.click();
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+    // Reopen — the value must come back from the DB (proves it persisted through the
+    // worker, not just local state) in its canonical coerced form.
+    await customCard().getByRole('button', { name: 'Item details' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('tab', { name: 'Classification' }).click();
+    const reopened = dialog.getByLabel(fieldName, { exact: false }).first();
+    await reopened.waitFor({ state: 'visible', timeout: 5000 });
+    const persisted = await reopened.inputValue();
+    if (persisted !== '12.5') {
+      throw new Error(`custom NUMBER field did not round-trip canonically (got "${persisted}")`);
+    }
+    await page.keyboard.press('Escape');
+  });
+
   await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
     // The bulk screws were created with qty 100 — comfortably above the global default
     // (5), so they are NOT in the low-stock feed. Open the item and give it its own,

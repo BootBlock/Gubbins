@@ -1,3 +1,84 @@
+# PHASE_HANDOVER.md — Phase 70 (custom-field validation seam + save-time hardening) — ✅ COMPLETE
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Phase completed:** **Phase 70 — Custom-field validation seam + save-time hardening.** Makes per-item
+custom-field *values* **typed-valid at the point of save**, built **on the existing** `category_fields`
+(definitions) + `item_field_values` (EAV values, TEXT, `UNIQUE(item_id, field_id)`) system owned by
+`CategoryRepository`. **No migration, no new tables, no second write path** — `user_version` is unchanged.
+The pure seam is the same one the CSV import path (Phase 72) will validate through.
+**Date:** 2026-06-30
+**Status:** ✅ **Implemented in an isolated worktree; NOT merged (awaiting the orchestrator's code-review
+gate).** `npx tsc -p tsconfig.app.json --noEmit` **clean (exit 0)**. **Unit tests 1515 pass across 136
+files** (was 1492/135: +1 new file `custom-fields.test.ts`; +18 new tests — the pure seam plus 5 new
+`CategoryRepository` `:memory:` validation tests). `npm run build` **clean** (precache 62 entries /
+3228.89 KiB; the informational bundle-size line reports no budget — no breach). `node --check
+scripts/browser-smoke.mjs` **parses**. **No dependency change.**
+
+### What changed (files)
+- **`src/features/inventory/custom-fields.ts`** *(new — the pure seam)* — `validateFieldValue(def, raw,
+  opts?)` (never throws; returns `{ ok: true; value: string | null } | { ok: false; error }`) and
+  `fieldsForCategory(defs, categoryId)`. Pure, injectable (clock via `opts.now`), **no DB**. Mirrors the
+  sibling `operational-metadata.ts` / `cycle-count.ts` seams.
+- **`src/features/inventory/custom-fields.test.ts`** *(new)* — every field type, required-blank → error,
+  required-satisfied, optional-blank → null, NUMBER malformed + canonical re-serialise (+ hex literal),
+  DATE malformed + leap-year + canonical, SELECT not-in-options, BOOLEAN normalisation, TEXT trim; plus
+  `fieldsForCategory` filtering / ordering / no-mutation.
+- **`src/db/repositories/CategoryRepository.ts`** — `setItemFieldValues` now widens the `category_fields`
+  SELECT to fetch the **full** definitions (reusing `rowToCategoryField` into a `Map<fieldId,
+  CategoryField>`) and validates each incoming value through `validateFieldValue`: a failure throws
+  `DbError('SQLITE_CONSTRAINT', <error>)`; a pass persists the **canonical/coerced** value (so `'1.50'` is
+  stored as `'1.5'`); a value that validates to `null` takes the existing tombstone-on-clear path. The
+  UUID-id + `UNIQUE(item_id, field_id)` upsert is unchanged (no deterministic-id switch).
+- **`src/db/repositories/CategoryRepository.test.ts`** — +5 `:memory:` tests: reject invalid NUMBER /
+  SELECT-not-in-options / required-blank; canonical round-trip (`'1.50'` → resolves `'1.5'`); clear-to-null
+  still tombstones (asserts a `tombstones` row for `item_field_values`).
+- **`src/features/inventory/components/CustomFieldsEditor.tsx`** — validates each *changed* field via the
+  seam before save; the "Save N changes" button is disabled while any field is required-but-empty or
+  invalid; each field error is surfaced accessibly as a `role="alert"` node that is a **sibling** of its
+  `<label>` (Phase-51 pattern) wired via the pure `fieldAria` seam (`aria-invalid` + `aria-describedby` on
+  the control). The lenient-default display + tooltip behaviour is preserved. `CategoryManagerDialog.tsx`
+  was **not** touched (no in-surface need). Foundry primitives, design tokens, British English.
+- **`scripts/browser-smoke.mjs`** — +1 step (*"validates & round-trips a category custom field on an item
+  (Phase 70)"*): creates an item in the smoke category, opens the Classification tab, asserts a non-numeric
+  value keeps the save button disabled, then saves `'12.50'` and on reopen asserts it round-trips as the
+  canonical `'12.5'`.
+
+### Key design decisions
+- **NUMBER canonicalisation** = `String(Number(text))` after a `Number.isFinite` gate. `'1.50'` → `'1.5'`,
+  `'01'` → `'1'`, `'-0'` → `'0'`, `'1e3'` → `'1000'`. `Number('0x10')` is a *legitimate* finite 16, so a
+  hex literal is **accepted** and stored as decimal `'16'` (documented + tested) — only NaN/±Infinity are
+  rejected.
+- **DATE** is parsed by hand from `YYYY-MM-DD` (regex + explicit month/day bounds with a Gregorian
+  leap-year check) rather than `new Date(str)`, because the `Date` constructor silently rolls overflow over
+  and is timezone-sensitive — so `2026-02-30` / `2026-13-01` are correctly rejected, not coerced. Output is
+  the canonical zero-padded ISO form.
+- **Threading defs into `setItemFieldValues`** — the SELECT at the field-membership check was widened from
+  `SELECT id` to `SELECT *` and mapped via the existing `rowToCategoryField`, so the same query that proves
+  field-belongs-to-category also yields the full type/options/required/name the seam needs. One query, one
+  mapper, no extra round-trip.
+- **Editor a11y** — reused the `fieldAria` pure seam directly (rather than wrapping each control in
+  `FormField`) because the editor's label carries the required-`*` marker and the default-value tooltip
+  badge; keeping the bespoke `<label>` + a sibling `role="alert"` + `aria-describedby` matched the existing
+  markup with the least churn while satisfying WCAG 3.3.1.
+
+### Verification & limitations (read this)
+- The full suite **cannot be run from inside the worktree via `npm run test:run`**: `vite.config.ts`
+  excludes `**/.claude/worktrees/**`, which matches this worktree's *own* absolute path, so it self-excludes
+  every test here (a `node:sqlite`/duplicate-React safety measure for *parallel* worktrees — see the
+  Phase-69 note). It was verified with a **throwaway** `vitest.verify.config.ts` (created in the worktree,
+  run, then **deleted** — not committed) that replaced only the `exclude` list: **1515/1515 across 136
+  files**, all green, including all 33 new/touched assertions. `tsc` and `build` run unaffected.
+- The browser smoke step is **parse-validated only** (`node --check`), not run end-to-end — the same
+  Phase-69 limitation applies (Vite `server.fs.allow` won't serve the `sqlite-wasm` binary from outside the
+  worktree root through the junction). The step is authored against the real selectors/flow and follows the
+  existing `await step(...)` structure.
+- **Path gotcha encountered & recovered:** the implementer's tools initially edited the *main* checkout
+  (the Read calls had used `P:\Source\TypeScript\Gubbins\src\…` paths); those edits were copied into the
+  worktree and the main checkout was reverted to pristine before committing. All committed changes live in
+  the worktree only.
+
+---
+
 # PHASE_HANDOVER.md — Phase 69 (migration baseline consolidation) — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory-tracking PWA

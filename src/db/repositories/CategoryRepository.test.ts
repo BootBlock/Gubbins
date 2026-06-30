@@ -138,6 +138,76 @@ describe('CategoryRepository', () => {
     ).rejects.toBeInstanceOf(DbError);
   });
 
+  it('rejects an invalid NUMBER value (Phase 70 validation seam)', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER' });
+    const item = await items.create({ name: 'MLCC', categoryId: cat.id });
+
+    await expect(
+      categories.setItemFieldValues(item.id, { [voltage.id]: 'not-a-number' }),
+    ).rejects.toBeInstanceOf(DbError);
+    // The rejected write must not have persisted anything.
+    const resolved = await categories.resolveItemFields(item.id);
+    expect(resolved.find((f) => f.id === voltage.id)?.hasStoredValue).toBe(false);
+  });
+
+  it('rejects a SELECT value outside the option list', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const dielectric = await categories.addField(cat.id, {
+      name: 'Dielectric',
+      fieldType: 'SELECT',
+      options: ['X7R', 'C0G'],
+    });
+    const item = await items.create({ name: 'MLCC', categoryId: cat.id });
+
+    await expect(
+      categories.setItemFieldValues(item.id, { [dielectric.id]: 'NP0' }),
+    ).rejects.toBeInstanceOf(DbError);
+  });
+
+  it('rejects clearing a required field to blank', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const voltage = await categories.addField(cat.id, {
+      name: 'Voltage',
+      fieldType: 'NUMBER',
+      isRequired: true,
+    });
+    const item = await items.create({ name: 'MLCC', categoryId: cat.id });
+
+    await expect(
+      categories.setItemFieldValues(item.id, { [voltage.id]: '   ' }),
+    ).rejects.toBeInstanceOf(DbError);
+  });
+
+  it('persists the CANONICAL coerced value (1.50 → 1.5)', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER' });
+    const item = await items.create({ name: 'MLCC', categoryId: cat.id });
+
+    await categories.setItemFieldValues(item.id, { [voltage.id]: '1.50' });
+    const resolved = await categories.resolveItemFields(item.id);
+    const v = resolved.find((f) => f.id === voltage.id);
+    expect(v?.value).toBe('1.5');
+    expect(v?.hasStoredValue).toBe(true);
+  });
+
+  it('still tombstones a clear-to-null after the validation seam', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER' });
+    const item = await items.create({ name: 'MLCC', categoryId: cat.id });
+
+    await categories.setItemFieldValues(item.id, { [voltage.id]: '16' });
+    await categories.setItemFieldValues(item.id, { [voltage.id]: null });
+
+    const resolved = await categories.resolveItemFields(item.id);
+    expect(resolved.find((f) => f.id === voltage.id)?.hasStoredValue).toBe(false);
+    // A tombstone row exists so the deletion propagates on sync.
+    const tomb = await driver.queryOne<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM tombstones WHERE table_name = 'item_field_values';",
+    );
+    expect(Number(tomb?.n ?? 0)).toBeGreaterThanOrEqual(1);
+  });
+
   it('honours the storage Hard Stop on growth writes but never on deletes', async () => {
     const locked = new CategoryRepository(driver, { isWriteSuspended: () => true });
     await expect(locked.create({ name: 'Nope' })).rejects.toMatchObject({ code: 'WRITE_SUSPENDED' });
