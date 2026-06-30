@@ -82,20 +82,13 @@ export function ReorderTab() {
     void createDraft.mutate([effectiveGroup]);
   }
 
-  if (planQuery.isLoading) {
-    return (
-      <Surface className="flex items-center justify-center p-8">
-        <Spinner />
-      </Surface>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       {/*
        * WCAG 4.1.3 — always-mounted polite status region for the reorder list count.
-       * Announcing the number of items needing reordering lets SR users hear the list
-       * state without navigating into it.
+       * The region must stay in the DOM across loading → loaded → empty so screen
+       * readers pick up the text mutation; never early-return before it (the spinner
+       * renders as a branch beneath it, not in place of it).
        */}
       <p
         className="sr-only"
@@ -110,7 +103,11 @@ export function ReorderTab() {
             : `${totalLines} item${totalLines === 1 ? '' : 's'} need${totalLines === 1 ? 's' : ''} reordering.`}
       </p>
 
-      {plan.length === 0 ? (
+      {planQuery.isLoading ? (
+        <Surface className="flex items-center justify-center p-8">
+          <Spinner />
+        </Surface>
+      ) : plan.length === 0 ? (
         <Surface className="flex flex-col items-center gap-3 p-8 text-center text-muted-foreground" data-testid="reorder-empty">
           <LowStockIcon className="size-8 opacity-40" />
           <p className="text-sm">No items are currently below their reorder point.</p>

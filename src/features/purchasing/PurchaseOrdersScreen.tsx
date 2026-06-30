@@ -91,8 +91,9 @@ export function PurchaseOrdersScreen() {
         </div>
       </header>
 
-      {/* Tab navigation */}
-      <nav
+      {/* Tab navigation — a plain div carries role="tablist" (a <nav> landmark is
+          suppressed by the role override and inconsistent with the other tablists). */}
+      <div
         role="tablist"
         aria-label="Purchase orders sections"
         className="flex gap-1 border-b border-border"
@@ -116,7 +117,7 @@ export function PurchaseOrdersScreen() {
           <LowStockIcon className="size-4" aria-hidden="true" />
           Reorder / Shopping list
         </TabButton>
-      </nav>
+      </div>
 
       <main
         id={MAIN_CONTENT_ID}

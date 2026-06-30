@@ -116,6 +116,10 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
 
     const sp = row.preferredSupplier;
     const supplierName = sp ? sp.supplierName : UNASSIGNED_SUPPLIER_NAME;
+    // Group key is the case-folded supplier name. Safe because each supplier is one
+    // canonical `supplier_parts.supplier_name` row, so two items' preferred suppliers
+    // never differ only by case — do not add locale-sensitive name normalisation here
+    // without preserving that invariant.
     const supplierKey = sp ? supplierName.toLowerCase() : UNASSIGNED_SUPPLIER_KEY;
 
     let group = groups.get(supplierKey);
