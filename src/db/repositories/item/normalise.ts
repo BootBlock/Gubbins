@@ -53,3 +53,46 @@ export function normaliseExpiry(value: number | null | undefined): number | null
   }
   return Math.trunc(value);
 }
+
+/**
+ * Validate an optional ISO calendar-date string (Phase 66 asset lifecycle, v24).
+ * Null/empty clears the field. A non-parseable value is rejected so the DB never
+ * stores a string that `Date.parse` would return `NaN` on. Normalises to the
+ * `YYYY-MM-DD` slice only — no time component — matching `<input type="date">` format.
+ */
+export function normaliseIsoDate(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const ms = Date.parse(trimmed);
+  if (!Number.isFinite(ms)) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Date must be a valid ISO calendar date (YYYY-MM-DD).');
+  }
+  // Re-serialise to the canonical YYYY-MM-DD slice so callers don't rely on the
+  // exact string the user typed (the date-input value is always this format already).
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Validate an optional purchase price (Phase 66 asset lifecycle, v24): null clears
+ * it; otherwise it must be a finite, non-negative number.
+ */
+export function normalisePurchasePrice(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Purchase price must be a non-negative number.');
+  }
+  return value;
+}
+
+/**
+ * Validate an optional depreciation-months value (Phase 66 asset lifecycle, v24):
+ * null clears it (no depreciation); otherwise it must be a positive integer.
+ */
+export function normaliseDepreciationMonths(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Depreciation months must be a positive number.');
+  }
+  return Math.trunc(value);
+}

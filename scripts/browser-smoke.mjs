@@ -65,7 +65,10 @@
  * plus the Phase 65 flow (procurement automation, §4): an item is dropped below its
  * reorder point, the Reorder / Shopping-list tab is opened on the Purchase Orders
  * screen, and "Create draft PO" is clicked for a supplier group to produce a DRAFT
- * purchase order visible in the Orders tab.
+ * purchase order visible in the Orders tab;
+ * plus the Phase 66 flow (asset lifecycle, §4): opening an item's Lifecycle tab,
+ * entering a warranty-expiry date in the Asset section, saving it, and confirming
+ * the warranty-status badge renders.
  * Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
@@ -975,6 +978,45 @@ try {
     // The list should now have at least one order row.
     const poRow = page.getByTestId('po-list-row').first();
     await poRow.waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  // --- Phase 66: Asset lifecycle — warranty date → status badge ----------------
+  await step('opens the Asset section on an item, sets a warranty date, confirms the badge (§4, Phase 66)', async () => {
+    // Navigate to the inventory screen and open the item detail for the printer (a SERIALISED item).
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await printerCard().getByRole('button', { name: 'Item details' }).waitFor({ state: 'visible', timeout: 8000 });
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+
+    // Switch to the Lifecycle tab which hosts the Asset section.
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
+
+    // Scroll down to the Asset details section and fill in the warranty date
+    // (one year from now, so the badge should show "Under warranty").
+    const futureWarranty = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+    const warrantyInput = detail.getByTestId('asset-warranty-expires-at');
+    await warrantyInput.waitFor({ state: 'visible', timeout: 5000 });
+    await warrantyInput.fill(futureWarranty);
+
+    // Save the asset details.
+    await detail.getByTestId('save-asset').click();
+
+    // After saving, re-open to confirm the warranty badge is rendered.
+    // The badge is driven by warrantyStatus() on the persisted item.
+    await page.keyboard.press('Escape');
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
+
+    // The warranty status badge should be visible (active/expiring-soon/expired).
+    // A date a year out is 'active'; we just need the badge to appear.
+    const warrantyBadge = detail.locator('[aria-live="polite"]');
+    await warrantyBadge.first().waitFor({ state: 'visible', timeout: 5000 });
+    const badgeText = (await warrantyBadge.first().textContent()) ?? '';
+    if (!/(warranty|Warranty)/.test(badgeText)) {
+      throw new Error(`Expected a warranty status badge, got: "${badgeText}"`);
+    }
+
+    await page.keyboard.press('Escape');
   });
 
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {

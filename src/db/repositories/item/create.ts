@@ -13,6 +13,9 @@ import type { CreateItemInput } from '../types';
 import { historyStatement } from './history';
 import {
   normaliseExpiry,
+  normaliseIsoDate,
+  normalisePurchasePrice,
+  normaliseDepreciationMonths,
   normaliseReorderInt,
   normaliseReorderPercent,
   normaliseText,
@@ -35,6 +38,10 @@ export interface ResolvedCreate {
   readonly reorderPoint: number | null;
   readonly reorderGaugePercent: number | null;
   readonly reorderQty: number | null;
+  readonly acquiredAt: string | null;
+  readonly warrantyExpiresAt: string | null;
+  readonly purchasePrice: number | null;
+  readonly depreciationMonths: number | null;
   readonly trackingMode: string;
   readonly quantity: number;
   readonly unit: string | null;
@@ -101,6 +108,10 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     reorderPoint: normaliseReorderInt(input.reorderPoint),
     reorderGaugePercent: normaliseReorderPercent(input.reorderGaugePercent),
     reorderQty: normaliseReorderInt(input.reorderQty),
+    acquiredAt: normaliseIsoDate(input.acquiredAt),
+    warrantyExpiresAt: normaliseIsoDate(input.warrantyExpiresAt),
+    purchasePrice: normalisePurchasePrice(input.purchasePrice),
+    depreciationMonths: normaliseDepreciationMonths(input.depreciationMonths),
     trackingMode,
     quantity,
     unit,
@@ -124,8 +135,9 @@ export function buildInsert(
               (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
                mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition,
-               reorder_point, reorder_gauge_percent, reorder_qty, parent_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+               reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
+               acquired_at, warranty_expires_at, purchase_price, depreciation_months)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -151,6 +163,10 @@ export function buildInsert(
         r.reorderGaugePercent,
         r.reorderQty,
         parentId,
+        r.acquiredAt,
+        r.warrantyExpiresAt,
+        r.purchasePrice,
+        r.depreciationMonths,
       ],
     },
     // Seed the item's primary placement in the per-location ledger (Phase 25). The
