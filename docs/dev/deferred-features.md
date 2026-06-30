@@ -1554,3 +1554,49 @@ in-app scanner recognises and selects). Living plan + full detail:
 
 After this, **advanced analytics (ABC / turnover / stock aging)** is the sole remaining candidate
 from the second feature-gap audit.
+
+---
+
+## Phase 74 — Outcome (advanced analytics)
+
+The second feature-gap audit's final candidate (#6, advanced analytics) landed, **clearing the
+`feature-gap-audit-2026-06-30b` candidate list entirely**. The Phase-61 read-only `ReportRepository`
+and the Reports screen gained four analytics, all projections over data already stored —
+**no schema change, `user_version` stays 1**. Living plan + full detail:
+`docs/todo/advanced-analytics_2026-06-30.md`.
+
+- New pure, unit-tested seams under `src/features/reports/`: `abc-analysis.ts` (Pareto by annual
+  consumption value; 0.8/0.95 cumulative cutoffs; top priced item anchors the A "vital few"),
+  `turnover.ts` (COGS ÷ ledger-reconstructed average on-hand value; every ratio guarded so it never
+  emits NaN/∞), `stock-aging.ts` (`bucketStockAging` + `parseAcquiredAt`; reference = newest inbound
+  ?? acquired ?? created; 0–30/31–90/91–180/180+ buckets), and `valuation-trend.ts` (reverse the
+  value-tagged ledger from the current total; values clamped ≥ 0).
+- `ReportRepository.abcAnalysis/turnover/stockAging/valuationTrend` (correlated subqueries for
+  consumed/net deltas + newest-inbound; cost via the existing `preferredSupplierCostSql` fallback +
+  the single `effectiveUnitCost` seam). `queries.ts` hooks + a selectable 30/90/365-day analytics
+  window (default 90; ABC fixed 365).
+- UI: an **Advanced analytics** section on the Reports screen — `AbcBreakdown`, `TurnoverTable`,
+  `StockAgingChart`, `ValuationSparkline` (hand-rolled SVG, no chart dependency, §2.4.3) — a window
+  segmented control, and its own Phase-63 aria-live completion region. New design tokens
+  `--abc-a/b/c` (light + dark + Tailwind mapping). Four new report CSVs wired through the Export
+  Wizard (ABC / turnover / aging / valuation-trend).
+- **No schema/migration change** — `user_version` stays **1**. tsc clean · **1703 unit tests**
+  (146 files, +66) · build clean (precache 3320 KiB, no budget) · browser-smoke extended
+  (turnover/aging/sparkline + analytics-window assertions on the Reports screen) ·
+  code-reviewed (CLEAN-WITH-NITS; the one consistency nit was fixed before merge).
+
+**Deferred → Backlog (tracked, not dropped):**
+
+- [ ] **ABC/turnover thresholds & windows as Tier-2 preferences** — **→ Backlog** (the
+  Phase-46 "fixed constant → Tier-2 pref" lift; current 0.8/0.95 cutoffs and 30/90/365 windows are
+  sensible defaults with a UI window control; promote to persisted prefs if a user needs bespoke
+  bands). Trigger: a request to tune the ABC split or default window.
+- [ ] **Historical valuation snapshots** — **→ Backlog** (the trend reconstructs backward from the
+  current total via the ledger, which is exact for recorded movements; a periodic stored snapshot
+  would let the trend survive history pruning and value pure gauge consumption). Trigger: a need for
+  trends longer than the retained ledger.
+- [ ] Carried-forward Backlog items from Phase 73 (Avery label sizes, web push, NTP, leaner WASM,
+  multi-scrape UI) remain parked with their existing triggers.
+
+After this, the second feature-gap audit's candidate list is **fully cleared** — no analytics
+continuation is scheduled.
