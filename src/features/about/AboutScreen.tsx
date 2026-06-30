@@ -184,7 +184,7 @@ function AboutSection({
   readonly children: ReactNode;
 }) {
   return (
-    <Surface className="p-5">
+    <Surface className="bg-card/70 p-5">
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
