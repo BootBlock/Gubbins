@@ -170,7 +170,7 @@ function CycleCountBody({
         omitted; the region renders in place as a styled paragraph. Class and testid are stable
         across transitions so tests can assert the region before and after reconciliation.
       */}
-      <LiveRegion className="text-sm" data-testid="cycle-count-result">
+      <LiveRegion className="text-sm text-center" data-testid="cycle-count-result">
         {resultMessage ? <p>{resultMessage}</p> : null}
       </LiveRegion>
 

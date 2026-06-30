@@ -107,7 +107,7 @@ export function PurchaseOrdersScreen() {
         {/* Order detail */}
         <section aria-label="Order detail">
           {selected ? (
-            <PurchaseOrderDetail poId={selected} onDeleted={() => setSelectedId(null)} />
+            <PurchaseOrderDetail key={selected} poId={selected} onDeleted={() => setSelectedId(null)} />
           ) : (
             <Surface className="p-6 text-sm text-muted-foreground">
               Select or create a purchase order to view its lines.

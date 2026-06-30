@@ -510,7 +510,7 @@ function RestorePanel({
       <LiveRegion visuallyHidden data-testid="restore-live-region">
         {file && busy && !parsed ? (
           <p>Reading {file.name}…</p>
-        ) : file && busy && parsed ? (
+        ) : file && busy && parsed && confirming ? (
           <p>Restoring…</p>
         ) : null}
       </LiveRegion>

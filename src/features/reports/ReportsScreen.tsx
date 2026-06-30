@@ -184,7 +184,7 @@ export function ReportsScreen() {
       <LiveRegion visuallyHidden data-testid="reports-live-region">
         {!isAnyError && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
-      <LiveRegion urgency="assertive" visuallyHidden>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="reports-error-live-region">
         {isAnyError && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
     </div>
