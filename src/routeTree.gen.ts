@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SyncRouteImport } from './routes/sync'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as ContactsRouteImport } from './routes/contacts'
@@ -31,6 +32,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ReportsRoute = ReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PurchaseOrdersRoute = PurchaseOrdersRouteImport.update({
+  id: '/purchase-orders',
+  path: '/purchase-orders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/sync'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/sync'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/sync'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   ContactsRoute: typeof ContactsRoute
   InventoryRoute: typeof InventoryRoute
   ProjectsRoute: typeof ProjectsRoute
+  PurchaseOrdersRoute: typeof PurchaseOrdersRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SyncRoute: typeof SyncRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/purchase-orders': {
+      id: '/purchase-orders'
+      path: '/purchase-orders'
+      fullPath: '/purchase-orders'
+      preLoaderRoute: typeof PurchaseOrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactsRoute: ContactsRoute,
   InventoryRoute: InventoryRoute,
   ProjectsRoute: ProjectsRoute,
+  PurchaseOrdersRoute: PurchaseOrdersRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SyncRoute: SyncRoute,

@@ -27,6 +27,7 @@ import { v19LocationDescriptionColor } from './v19-location-description-color';
 import { v20ProjectBudgets } from './v20-project-budgets';
 import { v21ItemReorderPoint } from './v21-item-reorder-point';
 import { v22SupplierParts } from './v22-supplier-parts';
+import { v23PurchaseOrders } from './v23-purchase-orders';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -51,6 +52,7 @@ export const migrations: readonly Migration[] = [
   v20ProjectBudgets,
   v21ItemReorderPoint,
   v22SupplierParts,
+  v23PurchaseOrders,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

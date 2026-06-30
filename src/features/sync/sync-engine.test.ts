@@ -9,6 +9,7 @@ import {
   LocationRepository,
   MaintenanceRepository,
   ProjectRepository,
+  PurchaseOrderRepository,
   SupplierPartRepository,
   TagRepository,
   UNASSIGNED_LOCATION_ID,
@@ -26,6 +27,7 @@ async function makeDevice(): Promise<{
   maintenance: MaintenanceRepository;
   projects: ProjectRepository;
   supplierParts: SupplierPartRepository;
+  purchaseOrders: PurchaseOrderRepository;
 }> {
   const driver = createMemoryDriver();
   await runMigrations(driver, migrations);
@@ -39,6 +41,7 @@ async function makeDevice(): Promise<{
     maintenance: new MaintenanceRepository(driver),
     projects: new ProjectRepository(driver),
     supplierParts: new SupplierPartRepository(driver),
+    purchaseOrders: new PurchaseOrderRepository(driver),
   };
 }
 
@@ -279,6 +282,79 @@ describe('runSync round-trip (§7.3)', () => {
 
     expect(await b.items.getById(item.id)).toBeUndefined();
     expect(await b.supplierParts.listForItem(item.id)).toHaveLength(0);
+  });
+
+  it('round-trips a purchase order and its lines to a peer, resolving a concurrent edit by LWW (Phase 62)', async () => {
+    const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
+    const po = await a.purchaseOrders.create({ supplierName: 'DigiKey', reference: 'PO-100' });
+    const line = await a.purchaseOrders.addLine(po.id, { itemId: item.id, orderedQty: 10 });
+    await a.purchaseOrders.setStatus(po.id, 'ORDERED');
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    const onB = await b.purchaseOrders.getWithLines(po.id);
+    expect(onB?.supplierName).toBe('DigiKey');
+    expect(onB?.reference).toBe('PO-100');
+    expect(onB?.status).toBe('ORDERED');
+    expect(onB?.lines).toHaveLength(1);
+    expect(onB?.lines[0]?.orderedQty).toBe(10);
+
+    // B edits the reference later than A's last write, then both sync — A adopts B's value.
+    await b.purchaseOrders.update(po.id, { reference: 'PO-100-REV-B' });
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+    expect((await a.purchaseOrders.getById(po.id))?.reference).toBe('PO-100-REV-B');
+
+    // A removed supplier part (here the line carries none) is covered separately; an
+    // unrelated line edit still round-trips.
+    await b.purchaseOrders.updateLine(line.id, { orderedQty: 12 });
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+    expect((await a.purchaseOrders.getLine(line.id))?.orderedQty).toBe(12);
+  });
+
+  it('NULLs a PO line supplier_part_id whose supplier part did not survive the merge (§7.5 SET NULL)', async () => {
+    const item = await a.items.create({ name: 'Resistor', locationId: UNASSIGNED_LOCATION_ID });
+    const sp = await a.supplierParts.create(item.id, { supplierName: 'RS', orderCode: 'R-1' });
+    const po = await a.purchaseOrders.create({ supplierName: 'RS' });
+    const line = await a.purchaseOrders.addLine(po.id, {
+      itemId: item.id,
+      supplierPartId: sp.id,
+      orderedQty: 5,
+    });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect((await b.purchaseOrders.getLine(line.id))?.supplierPartId).toBe(sp.id);
+
+    // A deletes the supplier part (tombstoned) and pushes; B, still holding the line that
+    // references it, must NULL the link rather than trip the FK on apply.
+    await a.supplierParts.delete(sp.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    const onB = await b.purchaseOrders.getLine(line.id);
+    expect(onB).toBeDefined();
+    expect(onB?.supplierPartId).toBeNull();
+    // The line itself survives (the order is real).
+    expect(await b.purchaseOrders.getById(po.id)).toBeDefined();
+  });
+
+  it('drops PO lines whose order did not survive the merge (§7.5 CASCADE)', async () => {
+    const item = await a.items.create({ name: 'Diode', locationId: UNASSIGNED_LOCATION_ID });
+    const po = await a.purchaseOrders.create({ supplierName: 'Mouser' });
+    const line = await a.purchaseOrders.addLine(po.id, { itemId: item.id, orderedQty: 3 });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect((await b.purchaseOrders.listLines(po.id))).toHaveLength(1);
+
+    // A hard-deletes the whole PO (cascading its lines, leaving only the PO + line tombstones)
+    // and pushes; B, still holding the orphaned line, must drop it rather than trip the po_id FK.
+    await a.purchaseOrders.delete(po.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await b.purchaseOrders.getById(po.id)).toBeUndefined();
+    expect(await b.purchaseOrders.getLine(line.id)).toBeUndefined();
   });
 
   it('resolves a concurrent edit by Last-Write-Wins', async () => {
