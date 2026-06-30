@@ -1800,10 +1800,35 @@ migration (synced `asset_bookings` table → **`user_version` 2**, additive/forw
 Phase 79 was read-only. The suite grew 1750 → **1818** tests; each phase passed its own code-review
 gate (both PASS). Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
 
-**Add-ons remain tracked for a later wave (not started):**
-- [ ] **#6 Global activity feed** — read-only, **no migration** (composes `item_history` across
-  items; today the Phase-52 Activity Log is per-item only). Trigger: a request for a cross-item
-  recent-activity timeline.
+**Add-ons (Wave 3) — being picked up now:**
+- [x] **#6 Global activity feed** — read-only, **no migration** — ✅ **DONE** (Phase 80; see below).
 - [ ] **#7 Supplier price-history tracking** — a new lightweight history table → **`user_version` 3**
-  (the scraper already refreshes `supplier_parts.unit_cost`; this would record it over time).
-  Trigger: a request to chart a supplier part's cost over time.
+  (recorded on every genuine `supplier_parts.unit_cost` change; manual edit + scrape both flow through
+  `SupplierPartRepository.create`/`.update`). Trigger: a request to chart a supplier part's cost over time.
+
+---
+
+## Wave 3 of the third feature-gap audit — Phase 80 outcome (2026-06-30)
+
+### Phase 80 — Global activity feed (Wave 3 add-on #6) — MERGED (`7f3a295`)
+
+- **What:** one cross-item, newest-first, virtualised timeline that folds **every** `item_history`
+  event across all items into a single feed — the global counterpart to the per-item Phase-52
+  Activity Log (which is item-scoped only). Optional action-**kind** filter chips + a per-row
+  jump-to-item link. **Read-only — no migration** (`user_version` stays **2**).
+- **Repository:** `ItemRepository.getHistoryFeed` (in `item/feeds.ts`) — bounded, paginated,
+  newest-first (`created_at DESC, rowid DESC`) read of `item_history JOIN items`, with an
+  unambiguous action filter (**omitted** = full feed; **explicit `[]`** = match nothing, so
+  de-selecting every chip shows an empty feed). Pruned rows are physically gone from the table, so
+  reads already honour the §7.6.3-A watermark (a sync concern, not a read filter).
+- **Pure seam:** `src/features/activity/activity-kind.ts` folds the 21 `HISTORY_ACTIONS` into six
+  semantic kinds (created/stock/movement/loan/lifecycle/supplier) and maps enabled kinds → the SQL
+  action list (forward-compat default → `lifecycle`). Reuses the Phase-52 `describeHistoryEntry` /
+  `historyActionLabel` and the Phase-37 `list-window.ts` verbatim; the shared delta-tone badge was
+  hoisted to `history-format.ts` as `HISTORY_TONE_BADGE`.
+- **Surfaces:** `useActivityFeed` + a new `/activity` screen + route + dashboard nav (`HistoryIcon`),
+  with a token-styled kind-filter chip row and a Phase-63 aria-live count region.
+- Review gate: PASS after one fix (the no-kinds-enabled BLOCKER above). tsc clean · **1833 unit
+  tests** (158 files, +15 over Phase 79) · build green.
+
+Living plan: `docs/todo/activity-feed_2026-06-30.md`.
