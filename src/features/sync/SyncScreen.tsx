@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, FormField, Input, LiveRegion, PageHeader, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Banner, Button, FormField, Input, LiveRegion, PageContainer, PageHeader, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   ArchiveIcon,
   CloudIcon,
@@ -220,7 +220,7 @@ export function SyncScreen() {
   const configuredButOffline = !connected && auth.providerId !== null && !googleReconnectable;
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader icon={<CloudIcon />} title="Cloud Sync & backups" />
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
@@ -456,7 +456,7 @@ export function SyncScreen() {
           setNotice(message);
         }}
       />
-    </div>
+    </PageContainer>
   );
 }
 

@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router';
 import {
   Button,
   LiveRegion,
+  PageContainer,
   PageHeader,
   Spinner,
   Surface,
@@ -180,7 +181,7 @@ export function AlertsScreen() {
   }, [isLoading, isError, alerts.length]);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       {/* Header ---------------------------------------------------------- */}
       <PageHeader
         icon={<AlertIcon />}
@@ -261,6 +262,6 @@ export function AlertsScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="alerts-error-live-region">
         {isError && announcement ? <p>{announcement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }

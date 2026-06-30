@@ -17,7 +17,7 @@ import {
   SearchIcon,
   SelectIcon,
 } from '@/components/icons';
-import { Menu, MenuAction, MenuSeparator, PageHeader, Tooltip } from '@/components/foundry';
+import { Menu, MenuAction, MenuSeparator, PageContainer, PageHeader, Tooltip } from '@/components/foundry';
 import { CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
@@ -179,14 +179,14 @@ function InventoryWorkspace() {
   };
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-7xl flex-col px-4 pb-4 pt-4">
+    <PageContainer fullHeight>
       <PageHeader
         className="pb-4"
         icon={<PackageIcon />}
         title="Inventory"
         actions={
           <>
-            <div className="relative w-full max-w-xs">
+            <div className="relative w-full sm:w-64">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={searchInput}
@@ -236,7 +236,7 @@ function InventoryWorkspace() {
                 disabled={!selectedLocationId}
                 data-testid="open-cycle-count"
               >
-                Cycle count
+                {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
               </MenuAction>
               <MenuSeparator />
               <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
@@ -458,6 +458,6 @@ function InventoryWorkspace() {
       <LiveRegion visuallyHidden data-testid="inventory-action-live-region">
         {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
       </LiveRegion>
-    </div>
+    </PageContainer>
   );
 }

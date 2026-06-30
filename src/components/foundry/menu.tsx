@@ -127,6 +127,7 @@ export function Menu({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      // Escape is a keyboard dismissal, so focus returns to the trigger (close()).
       if (e.key === 'Escape') {
         e.stopPropagation();
         close();
@@ -135,6 +136,9 @@ export function Menu({
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      // Intentionally setOpen(false), not close(): a click outside should let focus
+      // follow the pointer to whatever was clicked — pulling it back to the trigger
+      // would steal it. (Escape, above, deliberately does restore focus.)
       setOpen(false);
     };
     document.addEventListener('keydown', onKey, true);

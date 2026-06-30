@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, LiveRegion, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, LiveRegion, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
   DeleteIcon,
@@ -62,7 +62,7 @@ export function PurchaseOrdersScreen() {
   const selected = selectedId ?? (orders.length > 0 ? orders[0]!.id : null);
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader
         icon={<ShoppingCartIcon />}
         title="Purchase orders"
@@ -195,7 +195,7 @@ export function PurchaseOrdersScreen() {
           });
         }}
       />
-    </div>
+    </PageContainer>
   );
 }
 

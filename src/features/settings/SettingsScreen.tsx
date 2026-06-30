@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, PageHeader, Select, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
+import { Button, PageContainer, PageHeader, Select, Tooltip, buttonVariants, MAIN_CONTENT_ID, useInstallPrompt } from '@/components/foundry';
 import {
   AppearanceIcon,
   DarkThemeIcon,
@@ -61,7 +61,7 @@ export function SettingsScreen() {
   const install = useInstallPrompt();
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-6">
+    <PageContainer>
       <PageHeader icon={<SettingsIcon />} title="Settings" />
 
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
@@ -386,7 +386,7 @@ export function SettingsScreen() {
           captured at open time (mirrors the banner entry-point). */}
       {triageOpen ? <StorageTriageDialog open onClose={() => setTriageOpen(false)} /> : null}
       </main>
-    </div>
+    </PageContainer>
   );
 }
 
