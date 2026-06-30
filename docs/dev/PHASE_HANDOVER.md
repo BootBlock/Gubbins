@@ -1,315 +1,241 @@
-# PHASE_HANDOVER.md — Phase 57 → Phase 58
+# PHASE_HANDOVER.md — Wave 1 (Phases 59–61) → Phase 62
 
 **Project:** Gubbins — local-first inventory tracking PWA
-**Phase completed:** Phase 57 — Backlog (developer-chosen, fresh investigation): **made the §6.5 scanner feedback user-mutable** — the Web-Audio **beep** + `navigator.vibrate` **haptic** confirmation fired on *every* successful scan and was completely unconfigurable; it is now two independent On/Off Tier-2 preferences (`scannerBeep`/`scannerHaptics`, default on).
-**Date:** 2026-06-29
-**Status:** ✅ Complete. `npm run type-check` clean (exit 0) · `npm run build` passes (bundle reporter prints **2940.99 KiB across 32 precache files, no budget — informational only**) · **1159/1159 unit tests pass** across **118 test files** on the **`threads`** pool, ~4 s · **94/94 browser-smoke steps pass** (incl. one new step: toggle + persist the beep/haptic preferences; the first smoke run flaked **2** steps on the documented "adds a weighted capability" `press('Enter')` / element-stability flake and went **94/94** on re-run; zero console/page errors). **No schema migration — `user_version` stays 19.** **No dependency change.** **`build:extension` NOT re-run** (no §9 / `extension/` edit).
+**Wave completed:** **Inventory-depth Wave 1 (Phases 59, 60, 61)** — competitor-gap closure, run as
+three parallel git worktrees (one implementation sub-agent each), code-reviewed per phase, and
+merged to `main` in ascending migration order by the orchestrator.
+**Date:** 2026-06-30
+**Status:** ✅ Complete. `npm run type-check` clean (exit 0) · `npm run build` passes (bundle reporter
+prints **~3054 KiB across 43 precache files, no budget — informational only**) · **1395/1395 unit
+tests pass** across **140 test files** on the **`threads`** pool · the browser smoke gained **3 new
+steps** (one per phase). **Schema: `PRAGMA user_version = 22`** (v21 reorder points, v22
+supplier-parts; Phase 61 added no migration). **No dependency change.** **`build:extension` NOT
+re-run** (no §9 / `extension/` edit in any phase).
 
-> ℹ️ **Scope decision (recorded for the next agent):** Phase 57 entered with **no pre-assigned slice** — every open item in `docs/dev/deferred-features.md` is a purely-conditional / YAGNI Backlog entry with **no live trigger**. A fresh-investigation audit confirmed the app is **essentially spec-complete** (composite assemblies, BOM costing toggle, reservation/procurement states, all §3 dashboard widgets, the CRITICAL no-overwrite scrape merge, the circular **and** linear gauge, KiCad-ish CSV BOM columns, the Export Wizard "remember last-used", and the §6.5 beep+haptic were all already built). The audit's first candidate was a **KiCad XML intermediate-netlist** importer; the developer correctly flagged it as **YAGNI** (KiCad 6/7/8 export BOMs as CSV directly, which `bom-import.ts` already maps, so an `.xml` netlist parser serves a hypothetical with no trigger) and it was **consciously deferred** to the Backlog (never dropped). The chosen pick — making the always-on §6.5 feedback mutable — fixes a concrete present-day annoyance instead.
-
-> ⚠️ **Smoke flake reminder:** the long-standing intermittent **"adds a weighted capability"** `press('Enter')` flake (sometimes manifesting as "element is not stable / detached from the DOM" retries) **did** fire on the first Phase-57 run (2 steps red) and cleared on re-run → **94/94**. **Re-run once** before investigating a smoke red. The Phase-37 deep-scroll step seeds 305 items; the Phase-53 datasheet step does a full `page.reload()` mid-suite + overwrites `localStorage['gubbins:device-id']` to `smoke-other-device` — keep any new pre-Phase-53 flow before it (the new Phase-57 step sits in the §6.6/§6.5 Settings cluster, well before the Phase-53 step).
-
-> ⚠️ **Node-25 cold-start unit flake reminder:** the full `npm run test:run` wrapper (`scripts/run-unit-tests.mjs`) auto-recovers the `Cannot read properties of undefined (reading 'config')` fingerprint; it did **not** fire this phase. A bare `npx vitest run <file>` lacks the wrapper — re-run it by hand if it hits the flake.
-
-> ✅ **What shipped (one pick, no migration).**
-> - **Made the §6.5 non-visual scan confirmation user-mutable.** `ScanFeedback.confirm()` previously *always* called `this.beep()` (Web Audio) **and** `this.vibrate(200)` (`navigator.vibrate`) on every successful scan, with **no toggle anywhere** in the app — a real annoyance in quiet/shared workshops or for users with a sensory preference. `confirm()` now accepts `{ beep?: boolean; haptics?: boolean }` (both default **true** — never a regression) and gates each channel.
-> - **Two boolean Tier-2 preferences.** `usePreferencesStore` gained `scannerBeep` / `scannerHaptics` (default `true`) + `setScannerBeep` / `setScannerHaptics`. Booleans need no normalisation, so these mirror the existing `kioskMode`/`setKioskMode` shape exactly — **deliberately no contrived pure module** (the handover's "don't invent a pure seam for thin glue" rule; the gating logic that *does* warrant a test lives in `ScanFeedback.confirm`).
-> - **Wiring.** `ScannerOverlay` reads both flags via selectors and threads `{ beep, haptics }` through **both** `feedback.current.confirm(...)` call sites (Discrete + Continuous), with the two flags added to the `handleDecode` `useCallback` deps so a mid-session settings change is honoured.
-> - **Settings UI.** Two **On/Off** `Select` controls — "Beep on scan" (`data-testid="setting-scanner-beep"`) and "Vibrate on scan" (`data-testid="setting-scanner-haptics"`) — added to the **existing "Scanner"** `SettingsSection`, beside the Phase-34 symbology control.
-> - **Tests:** new `src/features/scanner/feedback.test.ts` (+4) asserts `confirm` gating by spying on the browser-only `beep`/`vibrate` members (no real `AudioContext` / `navigator.vibrate` needed). Smoke: one new step toggles both controls off, asserts `gubbins:preferences` persists `scannerBeep:false`/`scannerHaptics:false`, then restores the defaults so later scan steps are unaffected. Step count **93 → 94**; unit **1153 → 1159 / 117 → 118 files** (the +6/+1 also reflects test counts that had drifted slightly above the prior-handover figure — all green).
-> - **Deferred (not dropped):** the KiCad-XML-netlist importer is now a tracked Backlog entry (consciously YAGNI). Every other open item remains a conditional/YAGNI Backlog entry with **no live trigger** (multi-scrape UI tray, true NTP/cross-origin time source, leaner/precache-excluded WASM decoder, live distributor selector maintenance, further `aria-live`). **No mandated spec gap remains and there is no "closest sibling" continuation.** Tracked in `docs/dev/deferred-features.md` (Phase-57 row + Backlog).
-
-> Protocol Alpha (§8.1.2): the incoming Phase 58 agent **must** read both the master specification
-> (`docs/todo/done/_specification.md`) and this document before writing any code, and must reuse the established
-> Repository/driver, 3-tier state, Foundry, icon-registry and testing patterns rather than inventing new ones.
-> **The spec's numbered phases end at Phase 9; Phases 10+ are consolidation phases delivering the explicitly
-> *deferred-not-dropped* work in `docs/dev/deferred-features.md`.** As of Phase 57 **every enumerated consolidation
-> phase (10–16) is complete, the developer-chosen Backlog items so far (P17–P56) are cleared, the last *mandated*
-> spec gap (§4 "Unlinked Local File", P53) is closed, P54/P55 finished the location-colour story, P56 surfaced the
-> §4.1.1 operational-metadata layer, and P57 made the §6.5 scanner feedback mutable.** **No remaining open item is a
-> mandated spec requirement** — they are all purely-conditional / YAGNI Backlog entries with **no live trigger today,
-> and there is no remaining "closest sibling" continuation of any kind.** Confirm the Phase-58 scope with the
-> developer before starting (see §9).
+> ℹ️ **Plan & execution model.** This wave is part of `docs/todo/inventory-depth_2026-06-30.md`
+> (Phases 59–62), a parallelised competitor-gap closure with **pre-allocated migration versions**
+> (59→v21, 60→v22, 61→none, 62→v23) so concurrent worktrees never claim the same `user_version`.
+> Each phase: its own worktree + implementation sub-agent, a **mandatory code-review gate before
+> merge**, then merge in ascending version order resolving the trivial array-append conflicts.
+> **Wave 2 = {62} (Formal Purchase Orders, v23) is the remaining, final phase** — see
+> `docs/todo/inventory-depth_2026-06-30.md` → "Continuation prompt".
 
 ---
 
-## 1. Locked decisions & toolchain (spec §1.2 — binding, restated)
+## 0. Wave-1 orchestration notes the Phase-62 agent should know
+
+- **Migration-engine contiguity guard.** Phase 60's worktree (run before Phase 59 merged)
+  legitimately lacked `v21`, so its agent temporarily relaxed `assertValidSequence`
+  (`src/db/migrations/engine.ts`) from strict-contiguity to ascending-unique to boot. On merge the
+  registry is contiguous again (v20→v21→v22), so the **strict-contiguity guard was restored**
+  (commit `730e93e`). **Phase 62 branches from a `main` already at v22 and appends v23 — that is
+  contiguous, so no engine change is needed or wanted.** Just append v23.
+- **Merge-conflict surface (as the plan predicted).** The only merge conflicts were trivial:
+  array-append clashes in `src/db/migrations/index.ts` and three new `scripts/browser-smoke.mjs`
+  steps inserted at the same spot. `mappers.ts`, `src/db/repositories/index.ts`, the icon registry,
+  `SYNC_TABLES`, and `FK_REFS` auto-merged. Expect the same shape for Phase 62 (resolve by keeping
+  both lines, ascending order; keep all smoke steps, each fully `})`-closed before the next).
+- **Worktree dir cleanup on Windows.** `git worktree remove --force` can hit `Permission denied`
+  if a file handle lingers; the branch still deletes and `git worktree prune` clears the admin
+  record. A leftover dir under `.claude/worktrees/` is harmless.
+- **Carried smoke flag (pre-existing, NOT a Wave-1 regression).** The §4 multi-level variants step
+  *"nests a sub-variant beneath a variant (Phase 18)"* was reported failing on `main`'s baseline by
+  the Phase-61 agent (a `locator.waitFor` timeout in the variants path; untouched by any Wave-1
+  diff). Verify and close this during Phase 62. The long-standing **"adds a weighted capability"
+  `press('Enter')` flake** also persists — **re-run the smoke once** before investigating a red.
+
+---
+
+## 1. Locked decisions & toolchain (spec §1.2 — binding, unchanged)
 
 | Area | Decision |
 | --- | --- |
-| SQLite WASM | `@sqlite.org/sqlite-wasm` — official build, FTS5 + **OPFS VFS** (`opfs`; the file at `/gubbins.sqlite3` **is** the raw DB). FTS5 verified at boot via `probeFts5`. |
-| Package manager | **npm** (only `package-lock.json`) |
-| Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP (via `src/sw.ts` injectManifest worker). PWA `registerType: 'prompt'` (`injectRegister: null` — registered in-app via `virtual:pwa-register` in `usePwaUpdate`, so the CSP stays inline-script-free); a new worker installs but **waits** (no install-time `skipWaiting`) until the user accepts the in-app `PwaUpdatePrompt` "Reload now", which posts `SKIP_WAITING` → the worker `skipWaiting`/`clients.claim()`s → `controllerchange` reloads. No surprise mid-session reload, so unsaved in-flight work is never lost. |
-| Cloud sync | **Provider-agnostic** — strict `CloudProvider` interface; in-memory + File System Access adapters. **Still no provider SDK** in the dep tree. |
-| Conflict resolution | Row-level **LWW** + tombstones (§7.2, 180-day TTL, watermark-aware); **Delta-CRDT** gauge replay (§7.3); §7.5 orphan re-parent + cycle rejection + child-FK guard. |
-| Extension bridge | **`window.postMessage`** Content-Script bridge (§9). `SCRAPE_ERROR` is the Phase-36 seven-member set (`DOM_DRIFT`/`NETWORK_TIMEOUT`/`RATE_LIMITED`/`BLOCKED`/`NOT_FOUND`/`SERVER_ERROR`/`CHALLENGE`); `requestId`-correlated, origin+Zod-validated, silent-drop. **Untouched since P36.** |
-| Test runner | **Vitest** · UUIDs via native `crypto.randomUUID()` · formatting via `Intl` · **`test.pool: 'threads'`** (P21) · **`npm run test:run` wraps `vitest run` with a surgical single auto-retry of the Node-25 cold-start flake** (P27 — `scripts/run-unit-tests.mjs`). |
-| E2E | **Playwright** (dev-only) driving **system Edge** (`channel: 'msedge'`, no download); a global fake camera so the §6 scanner reaches `STREAM_ACTIVE` headlessly. Connectivity emulated via `page.context().setOffline(…)`; a second device by overwriting `localStorage['gubbins:device-id']` + reload. A **custom `LocationSelect` combobox is driven by `getByRole('combobox',{name}).click()` + `getByRole('option',{name}).click()`, never `selectOption`** (native `<select>`s still use `selectOption`). |
-| Bundle size | **No budget (P44).** `scripts/check-bundle-size.mjs` is an **informational reporter only** — prints the precache total, exits 0, never warns/gates. |
-| Native-first | Web APIs over NPM bloat (§2.4.3); all behind feature-detection guards. Lists are **virtualised** with a **bounded infinite-query window** (P37/P52). Scanner: native **BarcodeDetector** → off-thread Web Worker zxing decode on an **adaptive cadence**, narrowable to a **single symbology** (P34), with a main-thread-capture tier for Safari < 16.4 (P33); the §6.5 **beep + haptic confirmation is now user-mutable** (P57). `Intl` via `makeFormatters`/`useFormatters` (P16); System theme via `matchMedia` (P16). Dialogs **focus-trap** (P38); location sidebar is an **APG `tree`** (P39); global **skip-link + per-screen `<main>`** (P40); **kiosk wake-lock + containment** (P41); silent status via **`LiveRegion`** (P42, incl. form-field errors + offline transition P51); **reduced-motion** honoured (P43); PWA **installable in one tap** (P44); dashboard is a **customisable DnD widget board** (P45) with **user-tunable low-stock thresholds** (P46); search has a **hybrid text syntax** (OR/parens + saved searches, P47/P48). **QR codes hand-rolled** → single labels + batch sheets (P49). **Continuous-Mode batch actions** (P50). **Accessible form controls via Foundry `FormField`** (P51). **Connectivity via `useOnlineStatus` + `OfflineIndicator`** (P51). **Per-item Activity Log via `ActivityLog` + pure `describeHistoryEntry`** (P52). **Foreign `LOCAL_POINTER` degrades via `resolveAttachmentLink` + `getDeviceId`** (P53). **Locations carry a description + colour swatch** (P54); **every location surface — incl. the Add Item picker (P55) — renders the swatch** via `LocationSelect` + `location-color.ts`. **§4.1.1 operational metadata edited via `OperationalMetadataEditor` + pure `operational-metadata.ts`** (P56). |
-| Base currency / locale | **GBP / en-GB** defaults (§1.2.1), user-configurable end-to-end (P16). |
+| SQLite WASM | `@sqlite.org/sqlite-wasm` — official build, FTS5 + **OPFS VFS** (`/gubbins.sqlite3`). FTS5 verified at boot via `probeFts5`. |
+| Package manager | **npm** (only `package-lock.json`). |
+| Hosting | **GitHub Pages** → Vite `base: '/Gubbins/'` + coi-serviceworker COOP/COEP (`src/sw.ts` injectManifest). PWA `registerType: 'prompt'` — a waiting worker installs but holds until the in-app `PwaUpdatePrompt` "Reload now". |
+| Cloud sync | **Provider-agnostic** `CloudProvider` interface; in-memory + File System Access adapters. **No provider SDK** in the dep tree. |
+| Conflict resolution | Row-level **LWW** + tombstones (§7.2, 180-day TTL); **Delta-CRDT** gauge replay (§7.3); §7.5 orphan re-parent + cycle rejection + child-FK guard. |
+| Extension bridge | **`window.postMessage`** Content-Script bridge (§9); seven-member `SCRAPE_ERROR` set. **Untouched since P36** (and untouched by Wave 1). |
+| Test runner | **Vitest**, native `crypto.randomUUID()`, `Intl`, **`test.pool: 'threads'`**, `npm run test:run` wraps `vitest run` with a single auto-retry of the Node-25 cold-start flake (`scripts/run-unit-tests.mjs`). |
+| E2E | **Playwright** driving system **Edge** (`channel: 'msedge'`); fake camera; `setOffline` for connectivity; a second device via `localStorage['gubbins:device-id']` + reload. Custom `LocationSelect` combobox driven by role+click, never `selectOption`. |
+| Bundle size | **No budget (P44).** `scripts/check-bundle-size.mjs` is informational only. |
+| Native-first | Web APIs over NPM bloat; virtualised bounded lists; native BarcodeDetector → off-thread zxing; `Intl` via `makeFormatters`/`useFormatters`; design tokens only. |
+| Base currency / locale | **GBP / en-GB** defaults, user-configurable. |
 
-**Installed majors:** React 19 · TS 6 · Vite 8 (Rolldown) · Vitest 4 · Tailwind 4 · TanStack Router / Query /
-Virtual · Zustand 5 · React Hook Form 7 + **Zod 4** · lucide-react · vite-plugin-pwa · react-error-boundary ·
-`fflate` · **`@zxing/library` (direct dep)** · happy-dom (test env) + `@testing-library/react`. Node on this
-machine: **v25.2.1**.
+**Installed majors (unchanged by Wave 1):** React 19 · TS 6 · Vite 8 (Rolldown) · Vitest 4 · Tailwind 4 ·
+TanStack Router/Query/Virtual · Zustand 5 · React Hook Form 7 + Zod 4 · lucide-react · vite-plugin-pwa ·
+react-error-boundary · `fflate` · `@zxing/library`. Node **v25.2.1**.
 
-**Commands:** `npm run dev` · `npm run build` (`tsc -b && vite build && node scripts/check-bundle-size.mjs`) ·
-`npm run type-check` · **`npm run test:run`** (unit/`:memory:`, **1159 tests**, `threads` pool — via the
-`scripts/run-unit-tests.mjs` auto-retry wrapper) · `npm run test:e2e` (real-browser smoke; needs a dev server up,
-**94 steps**) · `npm run check:bundle` (informational size report only) · `npm run build:extension`. **Local run:**
-`run.bat` / `run.ps1`. **Launch the dev server in a persistent background process** (the Bash tool's
-`run_in_background` works well; a PowerShell `Start-Job` does **not** survive into a later tool call, and
-`Start-Process npm` fails — npm is `npm.cmd`, so go via `Start-Process cmd.exe -ArgumentList '/c','npm run dev'`).
-**Stop it via its PID** (`Stop-Process` the owner of the listening port; confirm release via
-`Get-NetTCPConnection -LocalPort <port> -State Listen`). Phase 57's dev server fell back to **5174** (5173 was in
-use); pass `SMOKE_BASE=http://localhost:<port>/Gubbins/` when it isn't on 5173. `$pid` is a **read-only** PowerShell
-automatic variable — use a different loop variable.
+**Commands:** `npm run dev` · `npm run build` · `npm run type-check` · **`npm run test:run`** (1395) ·
+`npm run test:e2e` (live dev server) · `npm run check:bundle` · `npm run build:extension`. Launch the dev
+server in a persistent background process (Bash `run_in_background`, or `cmd.exe /c "npm run dev"` —
+`Start-Process npm` fails); pass `SMOKE_BASE=http://localhost:<port>/Gubbins/` if not on 5173; stop via PID.
+`$pid` is a read-only PowerShell automatic variable — use another loop variable.
 
-> ⚠️ **`npm run type-check` pipe trap:** `tsc` errors are masked if you pipe through `tail`/`head`. Capture
-> `${PIPESTATUS[0]}` (bash) / `"$LASTEXITCODE"` (pwsh).
-
-> ⚠️ **Route-tree generation:** `src/routeTree.gen.ts` is generated by `@tanstack/router-plugin` when **Vite** runs,
-> *not* `tsc`. **Phase 57 added NO route** (it edited `feedback.ts` + `usePreferencesStore.ts` + `ScannerOverlay.tsx`
-> + `SettingsScreen.tsx`, added `feedback.test.ts`, and edited the smoke). If Phase 58 adds a `src/routes/*` file,
-> run `npx vite build` once **before** `type-check`.
-
-> ⚠️ **`noUncheckedIndexedAccess` + `noUnusedLocals` are on.** A destructured/imported symbol you don't use is a
-> hard error.
-
-> ⚠️ **Foundry basename-collision trap (P42):** a pure `.ts` module and a `.tsx` component **must not share a
-> basename**. (Still true: pure `operational-metadata.ts` vs component `OperationalMetadataEditor.tsx`.)
-
-> ⚠️ **`FormField` can't name a custom combobox (P55):** name a `div[role="combobox"]` like `LocationSelect` via a
-> sibling `<span id>` + the control's `labelledBy`/`aria-labelledby`, and render any error as a `role="alert"`
-> **sibling** (P51).
-
-> ⚠️ **`ItemDetailDialog` is tabbed (P56):** a detail facet is only in the DOM when its tab is active, so any
-> smoke/component test must `getByRole('tab', { name }).click()` first; **two section editors can share a button
-> label** (CustomFields + operational-metadata both render "Saved") → scope by `data-testid`.
-
-> ⚠️ **Design tokens:** colours/motion come from tokens (`src/styles/index.css`), never raw hex / Tailwind palette
-> classes. Location swatches are **semantic keys** (`'teal'`) → `text-loc-*`/`bg-loc-*` tokens via the **static
-> literal** maps in `features/inventory/location-color.ts`. There is **no `glyph-warning` token** — use `text-warning`.
-
-> ⚠️ **Modal "Close" ambiguity (P49 smoke trap):** the Foundry `Modal` renders its own built-in close (X) named
-> **"Close"** — a dialog that *also* has a text "Close" button makes `getByRole('button', { name: 'Close' })`
-> resolve to two elements. In the smoke close such a dialog with `page.keyboard.press('Escape')` or a `data-testid`.
-
-> ⚠️ **The extension (`extension/`) is bundled by esbuild, NOT type-checked by `tsc -b` and NOT run by Vitest.** Put
-> any extension-shared logic in a pure `src/` module and unit-test it there. **`dist/` is unchanged since P36.**
+> ⚠️ **`npm run type-check` pipe trap:** capture `${PIPESTATUS[0]}` / `$LASTEXITCODE`; piping `tsc` through
+> `tail`/`head` masks the exit code. **Route-tree** (`src/routeTree.gen.ts`) is generated by Vite, not `tsc` —
+> if you add a `src/routes/*` file (Phase 61 added `reports.tsx`), run `npx vite build` once before type-check.
+> `noUnusedLocals` + `noUncheckedIndexedAccess` are on. A pure `.ts` and a component `.tsx` must not share a
+> basename (P42). Design tokens only — never raw hex / Tailwind palette classes.
 
 ---
 
-## 2. Database schema snapshot — `PRAGMA user_version = 19` (UNCHANGED this phase)
+## 2. Database schema snapshot — `PRAGMA user_version = 22`
 
-**Phase 57 added no migration** (it is a device-local Tier-2 preference change — no persistent bookkeeping). The
-registry (`src/db/migrations/index.ts`) ends at **v19** (`v19-location-description-color`, Phase 54): additive
-nullable `locations.description TEXT` + `locations.color TEXT` (`TARGET_SCHEMA_VERSION` = 19, derived as the max
-registered version).
+Migration registry (`src/db/migrations/index.ts`) is contiguous **v1 … v22**; `TARGET_SCHEMA_VERSION` is
+derived as the max registered version. New since the previous handover (v19/v20):
 
-⚠️ **`LocationRepository`'s `SELECT_WITH_COUNT` still lists columns explicitly**, so any *future* additive `locations`
-column must be added there too (`getById` uses `SELECT *`). `ItemRepository` reads items with explicit column lists
-too — any future additive `items` read column must be added to those lists.
+- **v20 `v20-project-budgets`** (Phase 58, pre-existing at the start of this wave): §4 project budgeting.
+- **v21 `v21-item-reorder-point`** (Phase 59): additive **nullable** `items` columns `reorder_point`
+  (INTEGER), `reorder_gauge_percent` (REAL), `reorder_qty` (INTEGER). NULL = "use the global default".
+  `items` already syncs, so these auto-join the LWW payload — **no** `SYNC_TABLES`/`FK_REFS` edit. They
+  round-trip through `mappers.rowToItem`, the `Item`/`ItemRow`/create/update types, and the item
+  create/update paths (all `items` reads use `SELECT items.*`, so no explicit read-column list needed).
+- **v22 `v22-supplier-parts`** (Phase 60): new **synced** table `supplier_parts` — `id` (UUID TEXT PK),
+  `item_id` (TEXT FK → items **ON DELETE CASCADE**), `supplier_name`, `order_code`, `unit_cost` (REAL
+  nullable), `currency` (TEXT nullable), `pack_qty`/`min_order_qty` (INTEGER nullable), `price_breaks`
+  (TEXT JSON nullable — `[{qty,unitCost}]`), `url` (nullable), `is_preferred` (0/1), `updated_at` + the
+  canonical §7.1 `WHEN NEW.updated_at = OLD.updated_at` auto-stamp trigger; STRICT + sane CHECKs. Added to
+  `SYNC_TABLES` immediately **after `items`** and to `FK_REFS` (`item_id → items`, non-nullable → an
+  incoming orphan is dropped, matching CASCADE). Covered by a two-device LWW + orphan-drop round-trip test.
 
-All earlier seams are exactly as left: `items.operational_metadata` (pre-existing v2 JSON column, now read as a
-top-level `Item.operationalMetadata` for all rows, P56); v18 `item_attachments.origin_device_id` (non-FK, synced;
-P53); v17 `maintenance_schedules.location_id`; v16 `checkouts.source_batch_key`; v15 `stock_batches` + the
-three-level guarded recompute triggers; v14 `checkouts.source_location_id`; v13 `item_stock`; v12 `received_qty`;
-v11 `accrue_checkout_hours` + the M:N/leaf/`item_history`/`item_images` sync-set expansion; v10 history watermark;
-the variant CTE guard; vault/archive seams; In-Transit/usage derived projections; formatter/theme seams; the
-bounded-list `maxPages` window; kiosk (P41); `LiveRegion`/`liveRegionAttrs` (P42); reduced-motion (P43);
-install-prompt (P44); dashboard-layout + `listLowStock` (P45); low-stock thresholds (P46); text-search parser +
-reducer `load` (P47); OR/parens parser + `useSavedSearchesStore` (P48); QR/printable batch (P49); Continuous-Mode
-batch-action (P50); `FormField`/`fieldAria` + `useOnlineStatus`/`OfflineIndicator` + gauge `clampNetValue`/`refill*`
-(P51); `describeHistoryEntry`/`historyActionLabel` + bounded `useItemHistory` (P52); `resolveAttachmentLink`/
-`getDeviceId` (P53); `location-color.ts` + `Textarea` + `ColorSwatchPicker` (P54); `LocationSelect`-via-`Controller`/
-`labelledBy` (P55); `operational-metadata.ts` + tabbed `ItemDetailDialog`/`tab-keyboard.ts` (P56). **The `items`
-auto-stamp + FTS triggers remain untouched.**
+The `items` auto-stamp + FTS triggers, and all earlier seams (v13 `item_stock`, v15 `stock_batches`,
+v12 `received_qty`, etc.), remain untouched.
 
----
-
-## 3. What shipped in Phase 57 (one pick; no migration)
-
-### 3.1 `ScanFeedback.confirm` is now gated by per-call flags
-`src/features/scanner/feedback.ts`: `confirm()` → `confirm({ beep = true, haptics = true } = {})` — it calls
-`this.beep()` only when `beep`, and `this.vibrate(200)` only when `haptics`. Both default `true`, so an unsupplied
-call is identical to the old always-fire behaviour. `prime()`/`beep()`/`vibrate()`/`dispose()` are unchanged.
-
-### 3.2 Two boolean Tier-2 preferences
-`src/state/stores/usePreferencesStore.ts`: added `scannerBeep: boolean` / `scannerHaptics: boolean` (default
-`true`) to the interface + initial state, and `setScannerBeep` / `setScannerHaptics` setters (`set({ scannerBeep })`
-— booleans need no clamp/normalise, mirroring `kioskMode`). Persisted device-local under the existing
-`gubbins:preferences` key (auto-joins the same store). **No pure module** — the only logic worth testing is the
-`confirm` gating, which is tested directly on the class.
-
-### 3.3 `ScannerOverlay` wiring
-`src/features/scanner/components/ScannerOverlay.tsx`: reads `scannerBeep`/`scannerHaptics` via selectors and passes
-`{ beep, haptics }` to **both** `feedback.current.confirm(...)` calls (Discrete result + Continuous queue offer); the
-two flags are added to the `handleDecode` `useCallback` dependency array so a settings change mid-session is honoured.
-
-### 3.4 Settings controls
-`src/features/settings/SettingsScreen.tsx`: two new **On/Off** `Select` `SettingRow`s in the existing **"Scanner"**
-`SettingsSection` — "Beep on scan" (`data-testid="setting-scanner-beep"`) and "Vibrate on scan"
-(`data-testid="setting-scanner-haptics"`), beside the P34 "Barcode symbology" control.
-
-### 3.5 Tests + smoke
-New `src/features/scanner/feedback.test.ts` (+4): spies on `beep`/`vibrate` to assert `confirm` fires both by
-default, suppresses each independently, and suppresses both. `scripts/browser-smoke.mjs` gained one step (in the
-§6.6/§6.5 Settings cluster, after the Phase-34 symbology step): set both controls off, assert `gubbins:preferences`
-persists `scannerBeep:false`/`scannerHaptics:false`, then restore the defaults. Step count **93 → 94**.
-
-### 3.6 No migration, no dependency, extension untouched
-`user_version` stays **19**; no `package.json` change; **`build:extension` NOT re-run**.
+> ⚠️ `LocationRepository.SELECT_WITH_COUNT` still lists `locations` columns explicitly — any future
+> additive `locations` column must be added there. `ItemRepository` item reads use `SELECT items.*`.
 
 ---
 
-## 4. Testing (TDD-first) — what's reusable (1159; smoke 94)
+## 3. What shipped in Wave 1 (new repositories, seams, UI)
 
-- **Phase-57 added +4 unit tests** (`feedback.test.ts`) → **1159 / 118 files**. The gating test spies on the
-  browser-only `beep`/`vibrate` members so it runs cleanly in happy-dom without a real `AudioContext` /
-  `navigator.vibrate` — the right tool for thin device glue (no contrived pure module).
-- **Established TDD seams unchanged:** `createMemoryDriver()` `:memory:`; the Repository pattern; pure helpers
-  extracted out of glue; injectable `lib/env/*` + `apiOverride` hook seams; the P56 `operational-metadata.ts`
-  rows↔record seam + `tab-keyboard.ts` `resolveTabKey`.
-- **Smoke pattern for a Settings toggle:** `page.goto(\`${BASE}settings\`)`, `getByTestId('setting-…').selectOption(…)`,
-  read `JSON.parse(localStorage.getItem('gubbins:preferences'))` to assert `…?.state?.<pref>`, then restore the
-  default so later steps are unaffected (mirrors the Phase-34 symbology step exactly).
+### Phase 59 — Per-item reorder points (v21)
+- **Pure seam** `src/features/inventory/reorder-policy.ts` (`isLow`, `shortfall`, `effectiveQtyThreshold`,
+  `effectiveGaugePercent`) — no DB/clock; unit-tested.
+- **`ItemRepository.listLowStock`** (`src/db/repositories/item/feeds.ts`) now `COALESCE`s the per-row
+  override over the global default (`MAX(COALESCE(reorder_point, :qty), 1)` zero-floor guard; gauge path
+  `current_net_value <= gross_capacity * COALESCE(pct, :pct) / 100.0`, `gross_capacity > 0` filtered).
+- **UI:** `ReorderPointEditor.tsx` on the item-detail "Supplier & ops" tab (with `InfoHint`); the Low
+  Stock dashboard widget surfaces "reorder N"; Settings relabels the globals as the **default**.
 
----
+### Phase 60 — Supplier-parts (v22)
+- **`SupplierPartRepository`** (`src/db/repositories/SupplierPartRepository.ts`): CRUD + `listForItem` +
+  `getPreferred` + `setPreferred` (atomic single-winner per item). Registered in the barrel as
+  `getSupplierPartRepository()`. Types in `src/db/repositories/types/supplier-parts.ts` (incl. `PriceBreak`).
+- **Pure cost-precedence helper** `src/features/inventory/supplier-cost.ts` → `effectiveUnitCost(item,
+  supplierParts)`: manual `items.unitCost` wins, else the preferred supplier-part's `unit_cost`, else null.
+  **This is the canonical cost source — Phase 62 valuation/line-cost defaults should reuse it** (and
+  Phase 61's report cost seam is the place to later adopt it; see below).
+- **Pure scrape-persist planner** `src/features/scraping/supplier-part-plan.ts`: §4 **no-overwrite** —
+  only FILLs blank fields or overwrites a CONFLICT field when explicitly opted in.
+- **UI:** `SupplierPartsTable.tsx` + `SupplierPartFormDialog.tsx` replace the read-only supplier `<dl>` in
+  `SupplierDataEditor.tsx`. The form **validates on submit** (positive-integer pack/MOQ, non-negative cost)
+  and renders an accessible `role="alert"` (`data-testid="supplier-part-error"`) rather than letting the
+  repository CHECK throw silently.
 
-## 5. Files touched (orientation map)
-
-- **New:** `src/features/scanner/feedback.test.ts` (+4 gating tests).
-- **Edit:** `src/features/scanner/feedback.ts` (`confirm` flags), `src/state/stores/usePreferencesStore.ts`
-  (`scannerBeep`/`scannerHaptics` + setters), `src/features/scanner/components/ScannerOverlay.tsx` (read flags +
-  thread through both `confirm` calls + deps), `src/features/settings/SettingsScreen.tsx` (two On/Off Scanner
-  controls).
-- **Smoke:** `scripts/browser-smoke.mjs` (one new step after the Phase-34 symbology step).
-- **Docs:** `docs/dev/deferred-features.md` (back-filled P54/P55/P56 rows that the concurrent location-UI work had
-  left out of the roadmap table, + new P57 row + Backlog note) and this file.
-- **Unchanged:** every migration; all Repositories; `protocol.ts` / `scrape-errors.ts` / the whole §9 path; the
-  extension `dist/*`; `package.json`; `vite.config.ts`; the flake-retry runner; every other component and seam.
-
----
-
-## 6. The companion extension (`extension/`) — UNCHANGED since Phase 36
-
-Phase 57 touched no §9 protocol and no `extension/` source, so `extension/dist/*` is exactly as Phase 36 left it
-(the seven-member `SCRAPE_ERROR` enum incl. `CHALLENGE`, `detectChallengePage` in `dist/content-script.js`). No
-`build:extension` re-run was needed.
-
----
-
-## 7. Technical debt, stubs & deferrals
-
-> Tracked in `docs/dev/deferred-features.md` — kept current. **Phase 57 added a "Phase 57" row, back-filled the
-> missing P54–P56 rows, and recorded the KiCad-XML-netlist importer as a conscious YAGNI deferral.**
-
-**Remaining Backlog (all triggered conditionals — none has a live trigger today):** KiCad XML intermediate-netlist
-import (trigger: a user actually arrives with a raw `.xml` netlist rather than a CSV BOM — KiCad's first-class BOM
-export is already CSV, which `bom-import.ts` maps); multi-scrape UI tray (trigger: a real concurrent-scrape
-entry-point, e.g. bulk BOM ingress); live distributor selector maintenance (trigger: a real scrape against a live
-supplier failing); true NTP / cross-origin time source (trigger: same-origin `Date` proves insufficient); leaner /
-precache-excluded WASM decoder (the ~442 KiB zxing scanner-fallback worker is ~15% of the precache — excluding it
-sacrifices *offline* fallback scanning; **no size gate forces it since the P44 budget removal**); further
-`aria-live` coverage (the silent surfaces are all done — any *new* region needs a genuinely silent in-place status
-surface). **No remaining open item is a *mandated* spec requirement, and there is no "closest sibling" continuation
-of any kind.**
-
-**Carried LWW-class limitation (not a Phase-57 change):** concurrent location-delete vs. offline stock edit — an
-additive re-home of a removed location's placement/batches to Unassigned can transiently over-count until the next
-reconcile (accepted, parallel to §7.5.2).
-
-**Carried attachment note (P53 design choice, not debt):** a *legacy* pre-v18 `LOCAL_POINTER` (NULL origin) is
-treated as `local` on every device — it cannot be attributed, so it keeps its prior behaviour.
-
-> **Working-tree note:** Phase 57's edits are currently **uncommitted in the working tree** — committing/branching is
-> the developer's call (no phase agent commits without being asked). Earlier location-UI work (Phase 54/55) and the
-> Phase-56 edits may also still be uncommitted; the P54–56 roadmap rows in `deferred-features.md` were back-filled
-> this phase. If schema/commits disagree with this file, **trust the migration registry + `git log`** and reconcile.
+### Phase 61 — Reporting & valuation (no migration)
+- **`ReportRepository`** (`src/db/repositories/ReportRepository.ts`, `getReportRepository()`): read-only
+  `inventoryValue()` (overall + by category + by location, reading the `item_stock` ledger for the
+  location split), `consumptionRate(window)`, `movement(window)`, `lowStockCount()`, `deadStock(sinceDays)`.
+- **Pure aggregation** in `src/features/reports/reports.ts` (grouping, consumption windows, movement
+  bucketing, dead-stock boundary) + `report-csv.ts` (RFC-4180 builders). Cost funnels through one internal
+  `effectiveUnitCost` seam using **`items.unitCost`** today (Phase 60 ran in parallel, so its
+  preferred-supplier helper is not yet wired here — **a worthwhile follow-up is to adopt
+  `supplier-cost.ts`'s `effectiveUnitCost` in the report cost seam now that both are on `main`**).
+- **UI:** `/reports` route (`src/routes/reports.tsx`) + `ReportsScreen.tsx` (headline value cards,
+  `ValueBreakdown` + `MovementChart` token-styled Tailwind/SVG, **no new chart dep**), `useFormatters()`,
+  a `<main id={MAIN_CONTENT_ID} tabIndex={-1}>` skip target, and nav entries on Dashboard + Inventory. CSV
+  export routes through the existing Export Wizard's remembered-settings path (new `reportKind`).
 
 ---
 
-## 8. Live consolidation roadmap (post-Phase-57)
+## 4. Testing (TDD-first) — 1395 unit / smoke +3 steps
 
-**Every enumerated consolidation phase (10–16) is complete**, the developer-chosen Backlog items so far (P17–P56)
-are cleared, the last *mandated* spec gap (§4 "Unlinked Local File", P53) is closed, P54/P55 finished the
-location-colour story, P56 surfaced the §4.1.1 operational-metadata layer, and **P57 made the §6.5 scanner feedback
-mutable**. No spec-numbered or roadmap-enumerated phase remains; **no remaining Backlog item has a concrete trigger
-today**, and **no remaining open item is a *mandated* spec requirement.** Phase 58 is therefore another
-**developer-chosen Backlog / polish** phase (or a no-op until a trigger fires). **There is no remaining "closest
-sibling" continuation of any kind.** Candidates remain the unrelated conditional Backlog entries (KiCad XML netlist
-import; multi-scrape UI tray; live distributor selector maintenance; a true NTP source; a leaner/precache-excluded
-WASM decoder; further `aria-live`), or a fresh investigation pick like Phases 37–57 were. **The audit in P57 found
-the app essentially spec-complete — a genuine "defer until a trigger appears" is a legitimate Phase-58 outcome.**
+- **+~91 unit tests** across the wave (reorder-policy + listLowStock override; supplier-part repo +
+  single-preferred + cost precedence + no-overwrite planner + sync round-trip; report aggregations + CSV +
+  `:memory:` ReportRepository). All over `createMemoryDriver()` (`:memory:`, §8.5.2).
+- **Smoke (+3 steps):** set a per-item reorder point and assert the Low Stock widget reacts (P59); add an
+  editable supplier part + star it preferred + persist round-trip (P60); open `/reports` and assert a
+  non-zero inventory value + the Export-Wizard "Report CSV" format (P61). Each is placed **before** the
+  Phase-53 datasheet step (which does a mid-suite `page.reload()` + device-id swap).
+- **Established seams unchanged:** Repository/driver; pure helpers out of glue; injectable `lib/env/*` +
+  `apiOverride`; the v13/v15 guarded-recompute stock pattern; the Phase-24 `planReceipt` /
+  `ProjectRepository.receiveLine` partial-receipt seam and Phase-28 batch landing (**Phase 62 must reuse
+  these for PO receiving — do not hand-roll a second stock-mutation path**); the Phase-20 derived
+  In-Transit projection pattern (**reuse for on-order qty**).
 
 ---
 
-## 9. Phase 58 entry checklist
+## 5. Files added/changed in Wave 1 (orientation map)
 
-- [ ] Read the master spec **and** this handover; restate the locked decisions.
-- [ ] **Confirm Phase-58 scope with the developer first** — no enumerated phase remains, no Backlog item has a live
-      trigger, and no remaining open item is a *mandated* spec requirement; pick one deliberately, propose a fresh
-      investigation (as Phases 37–57 were), or **agree there's nothing to land yet** (P57's audit found the app
-      essentially spec-complete, so deferral is a real option). **There is no "closest sibling" residual — choose
-      consciously, and weigh YAGNI honestly (P57 deferred the KiCad-XML-netlist pick for exactly this reason).**
-- [ ] **Reuse, don't reinvent:** the Repository/driver + `createMemoryDriver()` test path; 3-tier state; the Foundry
-      primitives & **Tooltip (not `title`)** + **Toast** + the **focus-trapping Modal** (built-in **"Close"** can
-      collide with a feature "Close"; a shared section-button label like "Saved" collides too — scope by
-      `data-testid`) + the **APG-tree LocationSidebar** + the **tabbed `ItemDetailDialog`** (`tab-keyboard.ts`;
-      active-tab-only mount) + the **`SkipLink` (+ `MAIN_CONTENT_ID`)** + the **`LiveRegion` (+ `liveRegionAttrs`)** +
-      the **`FormField` (+ `fieldAria`)** + the **`Textarea`** + the **`ColorSwatchPicker`** + the **`LocationSelect`
-      combobox** (name it via `labelledBy`, *not* `FormField`) + the
-      **`useReducedMotion`/`useInstallPrompt`/`useWakeLock`/`useOnlineStatus`/`getDeviceId`** injectable-seam hooks
-      (the `apiOverride` pattern + a pure `lib/env/*` probe); icons via the registry; RHF + Zod (drive a custom
-      control with a **`Controller`**); **the `makeFormatters` factory + `useFormatters()` hook**; the
-      `resolveTheme`/`applyTheme` seam; the export vault + archive seams; the recursive-ancestor-CTE cycle guard;
-      **the "derive a projection from the SSOT, never a stored counter" seam**; **the cycle-count / partial-receipt /
-      per-location-stock / batch seams**; **the off-thread scanner + adaptive-cadence + symbology + mutable-feedback
-      seams**; **the §9 scraping seam**; **the bounded-list seam** (`list-window.ts` + `MAX_LIST_PAGES`, also driving
-      the Activity Log); **the focus-trap / tree-keyboard / tab-keyboard / dashboard-layout seams**; **the text-search
-      + saved-search seams** (`parseASTtoSQL` is the single SQL translator — never hand-build SQL from text); **the
-      QR/printable + Continuous-Mode batch-action seams**; **the `describeHistoryEntry`/`historyActionLabel`
-      formatter**; **the `resolveAttachmentLink` + `getDeviceId` attachment seams**; **the `location-color.ts`
-      swatch-key→token seam**; **the `operational-metadata.ts` rows↔record seam** (rich per-item facets are edited as
-      `ItemDetailDialog` **tab sections** wired to their own hooks); **and the `usePreferencesStore` "fixed behaviour
-      → device-local Tier-2 toggle/clamp" pattern** (P34/P46/P57: a boolean needs no normalisation module; an enum/
-      number gets a pure clamp/normalise helper). **The bundle check no longer enforces a budget.**
-- [ ] **TDD-first over `createMemoryDriver()`** (Protocol Beta) for any logic; keep pure helpers pure, use an
-      **injectable dependency seam** for hard-to-unit-test glue. **For anything that runs in the extension, put the
-      logic in a pure `src/` module and unit-test it there.** **Don't invent a contrived pure module for thin DOM/
-      device glue** — a `@testing-library/react` component/hook test, a direct test on a small class (as P57 did for
-      `ScanFeedback.confirm`), or the browser smoke for pointer/camera/network/device glue is the right tool. **Don't
-      share a basename between a pure `.ts` and a component `.tsx`** (P42). **A control inside an existing `<form>`
-      must not be its own `<form>`** (P48). **Render a field's `role="alert"` error as a sibling of the label**
-      (P51). **Name a custom `role=combobox` via `labelledBy`, not `FormField`** (P55). **In the smoke, close a Modal
-      with Escape or a `data-testid`, scope a shared button label by `data-testid`, and click a detail facet's tab
-      first** (P49/P56). **`noUnusedLocals` is on.** **Use design tokens, never raw colour/motion values.**
-- [ ] **A schema migration is only needed if you add persistent bookkeeping** — register the next migration in
-      `src/db/migrations/index.ts`, bump `user_version` past **19**, add a migration test (additive pattern `v9`…`v19`;
-      `engine.test.ts` asserts the *derived* `TARGET_SCHEMA_VERSION` and per-version tests use `>=`, so neither needs
-      narrowing for an additive bump). A column on a `SYNC_TABLES` table auto-joins the LWW payload — add it to
-      `SYNC_EXCLUDED_COLUMNS` if device-local; a new synced **FK** column needs an `FK_REFS` entry +
-      `applyPlan`/`LocationRepository.delete` null-out (a non-FK synthetic id needs neither). **A new additive
-      `locations` column must also be added to `LocationRepository`'s explicit `SELECT_WITH_COUNT`** (and any new
-      `items` column to `ItemRepository`'s explicit read lists). (A device-local UI toggle/preference belongs in
-      `usePreferencesStore`/`useLayoutStore`/a dedicated Zustand `persist` store / `localStorage` — as P57's scanner
-      toggles do; a transient, workflow-scoped selection belongs in ephemeral Tier-3 React/Context state.)
-- [ ] ⚠️ **Trigger ordering & FTS5:** do **not** `DROP`/`CREATE` the `items` auto-stamp or FTS triggers. For a
-      quantity-like derived projection, copy the v13/v15 guarded separate-table recompute pattern.
-- [ ] **Extend `scripts/browser-smoke.mjs`** with any new flows. `SMOKE_BASE` if not on 5173. **Launch the dev
-      server in a persistent background process** (Bash `run_in_background`; `Start-Process npm` fails — go via
-      `cmd.exe /c "npm run dev"`), and **stop it via its PID** — verify the port is released. Connectivity →
-      `page.context().setOffline(…)`; a second device → overwrite `localStorage['gubbins:device-id']` + reload (note
-      the Phase-53 step does this near the end — keep new flows **before** it); a custom combobox → open + click
-      option; a detail facet → click its tab first. If you add a `src/routes/*` file, run `npx vite build` once
-      before `type-check`. **Vite bundles `new Worker(new URL('./x.worker.ts', import.meta.url), { type: 'module' })`
-      as a separate module graph** — use that exact form.
-- [ ] Verify four ways and keep all green: `npm run type-check` (check the exit code), `npm run test:run`
-      (`threads`-pool, **1159**), `npm run build` (reporter prints the precache size, no budget), and `npm run
-      test:e2e` against a live dev server (the "adds a weighted capability" step can flake on `press('Enter')` /
-      element-stability — **re-run once**; the Phase-37 deep-scroll step seeds 305 items; the Phase-53 datasheet step
-      does a mid-suite reload + device-id swap). **Run `npm run build:extension` only if you touch §9 / `extension/`**
-      (Phase 57 did **not**). Then generate the **Phase 58 → 59** handover and hand back the Phase 59 continuation
-      prompt in a raw markdown block.
+- **New (Phase 59):** `src/db/migrations/v21-item-reorder-point.ts` (+ test),
+  `src/features/inventory/reorder-policy.ts` (+ test), `ItemRepository.phase59.test.ts`,
+  `src/features/inventory/components/ReorderPointEditor.tsx`.
+- **New (Phase 60):** `src/db/migrations/v22-supplier-parts.ts` (+ test),
+  `src/db/repositories/SupplierPartRepository.ts` (+ test), `src/db/repositories/types/supplier-parts.ts`,
+  `src/features/inventory/supplier-cost.ts` (+ test), `src/features/scraping/supplier-part-plan.ts`
+  (+ test), `src/features/inventory/components/SupplierPartsTable.tsx` + `SupplierPartFormDialog.tsx`.
+- **New (Phase 61):** `src/db/repositories/ReportRepository.ts`, `src/features/reports/reports.ts` +
+  `report-csv.ts` (+ tests), `src/routes/reports.tsx`, `ReportsScreen.tsx` + `ValueBreakdown.tsx` +
+  `MovementChart.tsx`.
+- **Edited (shared):** `src/db/migrations/index.ts` (v21+v22 appended); `engine.ts`/`engine.test.ts`
+  (strict-contiguity guard restored post-merge); `mappers.ts`, `types/items.ts`, `types.ts`, repo barrel
+  `index.ts`; `item/{core,create,normalise,feeds}.ts`; `tombstone.ts` (SYNC_TABLES), `reconcile.ts`
+  (FK_REFS), `sync-engine.test.ts` (round-trip); `ItemDetailDialog.tsx`, `SupplierDataEditor.tsx`,
+  `dashboard/widgets.tsx`, `SettingsScreen.tsx`, the icon registry, the Export Wizard store/screen, nav
+  headers; `scripts/browser-smoke.mjs` (+3 steps).
+- **Unchanged:** every pre-v20 migration; `protocol.ts`/`scrape-errors.ts`/the §9 path; `extension/dist/*`;
+  `package.json`; `vite.config.ts`; the flake-retry runner.
+
+---
+
+## 6. Technical debt, stubs & deferrals
+
+> Tracked in `docs/dev/deferred-features.md` and the plan doc's per-phase Outcome notes.
+
+- **Adopt the Phase-60 cost helper in Phase-61 reports** (above) — `supplier-cost.ts`'s `effectiveUnitCost`
+  is now on `main`; the report cost seam still uses `items.unitCost`. A clean, isolated follow-up.
+- **Waived NITs (recorded):** P59 — curly-vs-straight apostrophe in the InfoHint copy; `shortfall` returns
+  0 for gauges by design. P60 — a redundant `getById` round-trip in `SupplierPartRepository.update`; no
+  explicit malformed-`price_breaks`-JSON repository test (the mapper is defensively covered). P61 — add the
+  explicit `notAVariantParent` predicate to the per-location valuation query for visible consistency
+  (already correct via the `item_stock`/`quantity>0` SSOT invariant); a one-line comment on the
+  `consumptionRate` per-row delta assumption.
+- **Carried smoke flag:** the §4 multi-level variants step ("nests a sub-variant beneath a variant",
+  Phase 18) failing on baseline `main` — verify/close in Phase 62.
+- **Carried LWW/attachment notes** (unchanged): concurrent location-delete vs offline stock edit can
+  transiently over-count until reconcile; a legacy pre-v18 `LOCAL_POINTER` (NULL origin) stays `local`.
+
+---
+
+## 7. Phase 62 entry checklist (Formal Purchase Orders, v23 — depends on Phase 60, now merged)
+
+- [ ] Read the master spec (§4 BOM/procurement, §7 sync) **and** this handover **and** the Phase 62 section
+      of `docs/todo/inventory-depth_2026-06-30.md`; restate the locked decisions before writing code.
+- [ ] **Migration `v23-purchase-orders`** (append, never renumber; `user_version` → 23 — contiguous, so
+      **do not touch the engine guard**): two synced tables — `purchase_orders` (`id`, `supplier_name`,
+      `reference`, `status` TEXT `DRAFT|ORDERED|PARTIAL|RECEIVED|CANCELLED`, `currency`, `created_at`,
+      `ordered_at` nullable, `updated_at` + auto-stamp) and `purchase_order_lines` (`id`, `po_id` FK →
+      purchase_orders CASCADE, `item_id` FK → items nullable, `supplier_part_id` FK → supplier_parts
+      nullable, `description`, `ordered_qty`, `received_qty` accumulates, `unit_cost`, `updated_at`). Add
+      both to `SYNC_TABLES` (`purchase_orders` **before** `purchase_order_lines`, both after
+      `supplier_parts`/`items`) and the matching `FK_REFS` entries; a removed supplier-part/item **NULLs**
+      the line's nullable FK (don't block the delete). Add a migration test (`>=` version asserts).
+- [ ] **Derive-don't-store:** ORDERED/PARTIAL/RECEIVED is derived from `SUM(received_qty)` vs
+      `SUM(ordered_qty)` via a pure `po-status.ts`; only DRAFT/CANCELLED are persisted. A pure
+      `planPoReceipt` **wraps** the Phase-24 `planReceipt` / `ProjectRepository.receiveLine` (+ Phase-28
+      batch landing) — **never** a second stock-mutation path. On-order qty is a derived per-item
+      projection (Phase-20 In-Transit pattern). Default a line's `unit_cost` from the Phase-60
+      `effectiveUnitCost`/preferred supplier where sensible.
+- [ ] **`PurchaseOrderRepository`** (`:memory:` tests: partial → PARTIAL, full → RECEIVED, receive-into-
+      stock); `po-status` + `planPoReceipt` pure tests; a sync round-trip; a smoke that creates a PO,
+      receives a line, and asserts on-hand rose (place it before the Phase-53 step; close each smoke step
+      fully). PO list + detail + per-line receive UI (partial allowed, optional destination location/batch);
+      design tokens only, British English.
+- [ ] Verify four ways green (type-check exit code; `test:run`; `build`; `test:e2e` on a live dev server —
+      re-run once for the known flakes; **also verify/close the carried variants-smoke flag**). Run
+      `build:extension` only if you touch §9/`extension/` (you should not). `npm install` first in the
+      worktree.
+- [ ] Code-review the diff before merge; fix or waive findings; merge resolving the trivial array-append
+      conflicts; remove the worktree; `test:run` green. Then append the Phase 62 Outcome note, update this
+      handover, and record that the inventory-depth plan (59–62) is **complete** (no Wave 3).
