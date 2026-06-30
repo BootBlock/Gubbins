@@ -214,6 +214,29 @@ try {
     await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
   });
 
+  await step('a clean boot migrates to the consolidated v1 baseline and serves a queryable DB (Phase 69)', async () => {
+    // The Phase 69 migration squash collapses the v1…v24 chain into one baseline.
+    // A fresh page load runs `runMigrations` in the DB worker before the app renders;
+    // a migration failure throws INIT_FAILED and the workspace would never paint. So
+    // reaching the workspace already proves the baseline applied — here we additionally
+    // confirm the DB is live and queryable by waiting for the inventory result-count
+    // region, which is only rendered once the worker has answered a real list() query
+    // against the freshly-migrated schema.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+    const dbReady = await page
+      .waitForFunction(
+        () => !!document.querySelector('#main-content [role="status"][aria-live="polite"]'),
+        undefined,
+        { timeout: 10000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    if (!dbReady) {
+      throw new Error('inventory DB-backed result region never rendered after a clean boot');
+    }
+  });
+
   await step('context is cross-origin isolated (OPFS/SharedArrayBuffer)', async () => {
     const isolated = await page.evaluate(() => self.crossOriginIsolated === true);
     if (!isolated) throw new Error('crossOriginIsolated is false');

@@ -1,3 +1,87 @@
+# PHASE_HANDOVER.md — Phase 69 (migration baseline consolidation) — ✅ COMPLETE
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Phase completed:** **Phase 69 — Migration baseline consolidation.** Collapsed the 24-step migration
+history (`v1-initial` … `v24-item-asset-lifecycle`) into a **single `v1-initial` baseline** that builds the
+entire current schema in one step. Gubbins is **pre-release with disposable developer-only data**, so no
+incremental upgrade path from an older on-disk version is needed. The migration **engine** and all its
+supporting machinery are **untouched**: `runMigrations` / `getUserVersion` / the strict-contiguity
+`assertValidSequence` guard (`engine.ts`), the `Migration` type + `SQL_NOW_MS` (`migration.ts`), the
+`run-unit-tests.mjs` cold-start retry wrapper, and the sync wiring (`tombstone.ts` `SYNC_TABLES`,
+`reconcile.ts` `FK_REFS`) — no schema change, so the sync surface is identical.
+**Date:** 2026-06-30
+**Status:** ✅ **Implemented in an isolated worktree; NOT merged (awaiting the orchestrator's code-review
+gate).** `npx tsc -p tsconfig.app.json --noEmit` **clean (exit 0)**. **Unit tests 1492/1492 pass across 135
+files** (was 1626/157; −23 per-step migration test files for v2…v24, +1 new equivalence test
+`v1-initial.test.ts` ⇒ −22 files net; the 134 fewer individual tests are the removed per-step migration
+assertions). **No dependency change. No runtime schema or behaviour change** — the squashed schema is
+byte-for-byte identical to the v24 head, proven by the golden-equivalence test.
+
+### What changed (files)
+- **`src/db/migrations/v1-initial.ts`** — rewritten as the single consolidated baseline (`version: 1`,
+  `name: 'initial-baseline'`). Its `statements` are the **exact, ordered concatenation** of the original
+  v1…v24 `statements` (minus the per-step `user_version` bumps — the engine still appends one, for v1).
+  Reuses the `updatedAtTrigger()` helper, the `SQL_NOW_MS` epoch expression, and the CHECK-list constants
+  (`FIELD_TYPES`, `ATTACHMENT_KINDS`, `TRACKING_MODES`, …) from `repositories/constants.ts`, so the enum
+  CHECKs stay in lock-step with the application constants. Tables precede the children that reference them,
+  triggers follow their tables, the v5 FTS5 index follows its `items` content table, and the v13
+  `item_stock` / v15 `stock_batches` recompute triggers follow their ledgers — the dependency order the
+  chain already ran in.
+- **`src/db/migrations/index.ts`** — registry pruned to `[v1Initial]`; v2…v24 imports/entries removed.
+  `TARGET_SCHEMA_VERSION` derives from the registry max ⇒ now **1** (verified by test).
+- **`src/db/migrations/v1-initial.test.ts`** *(new)* — the golden-equivalence proof.
+- **`src/db/migrations/__fixtures__/schema-baseline.snapshot.json`** *(new, the GOLDEN CONTRACT)* — the full
+  deterministic schema dump (every `sqlite_master.sql` object; per-table `table_info` / `foreign_key_list` /
+  `index_list`; `user_version`) of the **original v1…v24 chain**, captured once.
+- **`src/db/migrations/__fixtures__/schema-snapshot.ts`** *(new)* — the `captureSchemaSnapshot` helper used to
+  dump that shape (test-only; depends on the in-memory `node:sqlite` driver, never imported by production).
+- **Deleted:** `v2-*.ts … v24-*.ts` and their `*.test.ts` (46 files).
+- **`scripts/browser-smoke.mjs`** — +1 step (*"a clean boot migrates to the consolidated v1 baseline and
+  serves a queryable DB (Phase 69)"*): reloads the app and asserts it reaches the workspace and its
+  DB-backed inventory result-count region renders — proving a fresh boot migrates to v1 and the DB is
+  queryable.
+
+### Why a composed statement stream (key decision — scrutinise this)
+The golden snapshot's `sqlite_master.sql` is the **stored** schema text. SQLite stores an `ALTER TABLE ADD
+COLUMN` by appending the column verbatim at the *tail* of the original table's stored `CREATE` (after the
+last declared column, before the table-level CHECKs), preserving the original whitespace. So hand-folding
+those ALTER-added columns into a clean `CREATE` would **not** reproduce the stored text byte-for-byte. The
+only method that satisfies the hard "byte-for-byte identical" contract is to **re-issue the original
+statement stream** (original CREATE + original ALTERs, in order). That is what the new `v1-initial` does —
+it is genuinely one baseline that builds the whole schema in dependency order, and the equivalence test
+proves zero drift. (This is the one place the spec's "fold into each CREATE" wording was superseded by its
+overriding "must be byte-for-byte identical" constraint.)
+
+### Proof of zero drift
+`v1-initial.test.ts` builds a fresh DB from the new baseline, dumps the same snapshot, and asserts
+`snapshot.objects` and `snapshot.tables` **deep-equal** the committed golden fixture (all 107
+`sqlite_master` objects across 32 tables — every table, index, trigger, FK and column). `user_version` is
+the one intentional difference (the squashed schema re-baselines to **1**; the fixture records the original
+**24**), asserted separately: the new baseline boots `0 → 1`, `applied = [1]`.
+
+### ⚠️ Developer action required — WIPE the disposable dev DB
+A developer's existing dev database sits at `user_version = 24` and **cannot "upgrade" to a v1 baseline** —
+the engine only applies migrations *newer* than the current version, so against an existing v24 DB the new
+v1 baseline is a no-op (nothing runs) and a *fresh* DB now lands at v1. This is intended (pre-release,
+disposable data): **delete/clear the local OPFS database** (the app's "wipe" / storage-reset path, or clear
+site data) so it re-creates cleanly from the consolidated baseline. New installs are unaffected.
+
+### Browser smoke — could not run end-to-end in this worktree (environment limitation)
+The smoke harness needs a live dev server serving the `@sqlite.org/sqlite-wasm` WASM. In this **isolated
+worktree**, `node_modules` is a **junction** to the main checkout, and Vite's `server.fs.allow` will not
+serve the WASM binary from outside the worktree root — the `.wasm` request falls through to the SPA
+`index.html` (HTTP 200 `text/html`), so `WebAssembly.instantiate` fails ("expected magic word … found `0a
+20 20 20`") and the app never boots. Consequently the very first, pre-existing step ("loads and reaches the
+inventory workspace") — which I did not modify — already fails, and every DB-dependent step cascades; only
+the DB-independent "cross-origin isolated" step passes. This is **purely a junctioned-worktree artifact**,
+unrelated to the migration squash (my change touches only `src/db/migrations/**` and one smoke step). The
+added smoke step **parses cleanly** (`node --check scripts/browser-smoke.mjs` OK) and follows the existing
+`await step('label', async () => { … })` structure exactly; it should pass on a normal checkout where the
+WASM is served. The migration squash itself is fully validated by the **1492 passing unit tests**, which
+run the real `node:sqlite` engine (FTS5-capable) and include the byte-identical equivalence proof.
+
+---
+
 # PHASE_HANDOVER.md — inventory-breadth plan (Phases 64–68) — ✅ COMPLETE · no next phase
 
 **Project:** Gubbins — local-first inventory-tracking PWA
