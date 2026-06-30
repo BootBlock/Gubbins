@@ -1600,3 +1600,42 @@ and the Reports screen gained four analytics, all projections over data already 
 
 After this, the second feature-gap audit's candidate list is **fully cleared** — no analytics
 continuation is scheduled.
+
+## Phase 75 — Outcome (Unified "Upcoming" calendar / agenda) — 2026-06-30
+
+**Third feature-gap audit (`feature-gap-audit-2026-06-30c`), Wave 1, candidate #1 — MERGED**
+(merge `63c1a84`; feature `810c35c` + review-fix `9dbb38a`; pushed). Every date-driven event —
+maintenance due (time + usage), warranty expiry, perishable expiry, checkout due-back and
+reorder-now — is now folded into ONE chronological agenda at `/upcoming`, bucketed
+**Overdue / Today / This week / This month / Later**, each event tagged by kind with a
+jump-to-source link and a kind filter. Previously these were scattered across the alert centre
+and dashboard widgets with no single time-ordered view. **Read-only — no schema change,
+`user_version` stays 1.** Living plan: `docs/todo/calendar_2026-06-30.md`.
+
+- New pure, unit-tested seam `src/features/calendar/agenda.ts` (+17 tests): `buildAgenda` lane
+  builders, `startOfLocalDay`-anchored date bucketing (`bucketForDueAt`/`bucketAgenda`,
+  time-zone-robust), `filterByKind`. Date-less actionable events (reorder-now, currently-due
+  USAGE schedules) anchor at `now` so they bucket into **Today** rather than being hidden.
+- `useAgenda` hook composes five existing feeds — the only new SQL is the additive, read-only
+  `MaintenanceRepository.listUpcoming` (future schedules, unlike the overdue-only `listDue`);
+  maintenance due-ness is reused from `maintenanceDueAtMs` (TIME) + `maintenanceStatus` (USAGE).
+- `CalendarScreen` follows the Reports/Alerts screen pattern (header + skip target + a Phase-63
+  always-mounted aria-live completion region); design tokens only (reuses the destructive/warning
+  tints — **no new token**). New `/upcoming` route + dashboard nav entry.
+- tsc clean · **1720 unit tests** (147 files, +17) · build green · code-reviewed
+  (CHANGES-NEEDED → one SHOULD-FIX fixed: a single `now` is threaded from the hook so date-less
+  events bucket as "Today" not "Overdue" — then CLEAN).
+
+**Deferred → Backlog (tracked, not dropped):**
+
+- [ ] **Calendar grid view & ICS/calendar export** — **→ Backlog** (the agenda/list with date
+  buckets is the §2.4.3 mobile-first choice; a month-grid or an `.ics` feed would suit
+  desktop/external-calendar users). Trigger: a request to see events on a month grid or subscribe
+  externally.
+- [ ] **Compact "Upcoming" dashboard widget** — **→ Backlog** (the nav entry + screen suffices;
+  a pinnable next-N-events widget would fit the Phase-45 dashboard registry). Trigger: a request
+  to surface the soonest few events on the dashboard.
+- [ ] **Warranty UTC-vs-local-midnight off-by-one** — **→ Backlog** (the agenda parses
+  `warranty_expires_at` as UTC midnight while buckets use local midnight, mirroring the existing
+  app-wide `asset-lifecycle.ts` convention; fixing it is an app-wide change, out of scope here).
+  Trigger: a deliberate pass to normalise date-only fields to local time.
