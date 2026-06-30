@@ -214,6 +214,13 @@ function InventoryWorkspace() {
                 ref={searchRef}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => {
+                  // Escape clears the box (standard search-field behaviour), keeping focus.
+                  if (e.key === 'Escape' && searchInput) {
+                    e.preventDefault();
+                    setSearchInput('');
+                  }
+                }}
                 placeholder="Search items…"
                 className={`pl-9 ${searchInput ? 'pr-9' : ''}`}
                 aria-label="Search items"
