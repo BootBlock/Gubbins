@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { Banner, Button, Input, Modal, Surface } from '@/components/foundry';
+import { Banner, Button, Input, LiveRegion, Modal, Surface } from '@/components/foundry';
 import {
   DatabaseIcon,
   DownloadIcon,
@@ -196,6 +196,23 @@ function CreatePanel() {
         </Surface>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {/* Always-mounted polite region: "Preparing…" and the success summary are
+          in-place state changes that a screen reader would otherwise miss (WCAG 4.1.3).
+          A separate assertive region handles error outcomes. */}
+      <LiveRegion visuallyHidden data-testid="create-backup-live-region">
+        {busy ? (
+          <p>Preparing backup…</p>
+        ) : result ? (
+          <p>
+            Backup downloaded: {result.filename}, {fmt.bytes(result.size)},{' '}
+            {result.manifest.counts.items} items.
+          </p>
+        ) : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="create-backup-error-live-region">
+        {error ? <p>{error}</p> : null}
+      </LiveRegion>
 
       <div className="flex justify-end">
         <Button onClick={() => void run()} disabled={busy} data-testid="create-backup">
@@ -486,6 +503,20 @@ function RestorePanel({
       ) : error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : null}
+
+      {/* Always-mounted polite region: "Reading {filename}…" and "Restoring…" are
+          in-place state changes that a screen reader would otherwise miss (WCAG 4.1.3).
+          A separate assertive region handles error outcomes. */}
+      <LiveRegion visuallyHidden data-testid="restore-live-region">
+        {file && busy && !parsed ? (
+          <p>Reading {file.name}…</p>
+        ) : file && busy && parsed && confirming ? (
+          <p>Restoring…</p>
+        ) : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="restore-error-live-region">
+        {error ? <p>{error}</p> : null}
+      </LiveRegion>
     </div>
   );
 }

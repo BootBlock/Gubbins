@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Input, Modal, Tooltip } from '@/components/foundry';
+import { Button, Input, LiveRegion, Modal, Tooltip } from '@/components/foundry';
 import {
   getItemRepository,
   type ReconciliationAdjustment,
@@ -114,6 +114,16 @@ function CycleCountBody({
   const pending = reconcile.isPending || reconcileSerialised.isPending;
   const totalToApply = drift.length + missing.length;
 
+  // The completion message — null until reconciliation succeeds. Kept as a derived string so a
+  // single always-mounted LiveRegion (below) receives it as mutating children (WCAG 4.1.3).
+  // Using a string rather than JSX lets the region stay stable across view transitions: the
+  // same DOM node watches for changes in the form view and then receives content once applied
+  // is set, guaranteeing assistive tech will announce the update.
+  const resultMessage =
+    applied !== null
+      ? `Reconciliation complete — ${applied} adjustment${applied === 1 ? '' : 's'} applied to the ledger.`
+      : null;
+
   const authorise = async () => {
     // Build one adjustment per *drifted batch line* (Phase 28): the variance is absorbed at
     // that lot's `stock_batches` row at this placement, so a drawer's lots reconcile
@@ -147,133 +157,143 @@ function CycleCountBody({
     setApplied(updatedDiscrete.length + updatedSerialised.length);
   };
 
-  if (applied !== null) {
-    return (
-      <div className="space-y-4 py-2 text-center">
-        <p className="text-sm" data-testid="cycle-count-result">
-          Reconciliation complete — {applied} adjustment{applied === 1 ? '' : 's'} applied to the ledger.
-        </p>
-        <Button onClick={onClose}>Done</Button>
-      </div>
-    );
-  }
-
-  if (isLoading) return <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>;
-  if (lines.length === 0 && serialised.length === 0) {
-    return (
-      <div className="space-y-4 py-2">
-        <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
-        <div className="flex justify-end">
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
+  // Single return with one stable LiveRegion across ALL view states (form / result / loading).
+  // This satisfies the WCAG 4.1.3 / screen-reader contract: the region is always mounted, so
+  // when `resultMessage` changes from null → string the SR announces the mutation. If the
+  // LiveRegion only appeared inside the result view it would mount together with its content
+  // and many SRs would not announce it.
   return (
-    <div className="max-h-[70vh] space-y-4 dialog-scroll">
-      {lines.length > 0 && (
-        <ul className="space-y-1.5" data-testid="cycle-count-lines">
-          {lines.map((line) => {
-            const raw = counts[line.key] ?? '';
-            const counted = raw.trim().length ? Number(raw) : null;
-            const variance = counted !== null ? counted - line.expected : null;
-            return (
-              <li key={line.key} className="flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2">
-                <span className="flex-1 text-sm font-medium">{line.name}</span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={raw}
-                  onChange={(e) => setCount(line.key, e.target.value)}
-                  placeholder="count"
-                  className="w-24"
-                  data-testid={`count-${line.key}`}
-                />
-                <span
-                  className={
-                    variance === null
-                      ? 'w-16 text-right text-xs text-muted-foreground'
-                      : variance === 0
-                        ? 'w-16 text-right text-xs text-success'
-                        : 'w-16 text-right text-xs font-semibold text-warning'
-                  }
-                >
-                  {variance === null ? '—' : variance === 0 ? 'OK' : `${variance > 0 ? '+' : ''}${variance}`}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+    <>
+      {/*
+        Always-mounted polite live region — present in the form view (empty) and in the result
+        view (populated). The result message IS the visible feedback, so visuallyHidden is
+        omitted; the region renders in place as a styled paragraph. Class and testid are stable
+        across transitions so tests can assert the region before and after reconciliation.
+      */}
+      <LiveRegion className="text-sm text-center" data-testid="cycle-count-result">
+        {resultMessage ? <p>{resultMessage}</p> : null}
+      </LiveRegion>
 
-      {serialised.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Serialised instances
-          </p>
-          <ul className="space-y-1.5" data-testid="serialised-audit-lines">
-            {serialised.map((line) => {
-              const state = presence[line.itemId] ?? 'PRESENT';
-              const isMissing = state === 'MISSING';
-              return (
-                <li
-                  key={line.itemId}
-                  className="flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2"
-                >
-                  <span className="flex-1 text-sm font-medium">{serialisedLabel(line)}</span>
-                  <Tooltip
-                    content="Toggle this instance between **present** and **missing**. A missing instance is reconciled on authorisation by a *reversible* soft-delete — it leaves active inventory but can be restored."
-                    triggerTabIndex={-1}
-                  >
-                    <span>
-                      <Button
-                        type="button"
-                        variant={isMissing ? 'destructive' : 'ghost'}
-                        className="h-7 px-3 text-xs"
-                        onClick={() => setPresence(line.itemId, isMissing ? 'PRESENT' : 'MISSING')}
-                        data-testid={`presence-${line.itemId}`}
-                      >
-                        {isMissing ? 'Missing' : 'Present'}
-                      </Button>
+      {applied !== null ? (
+        // Result view — shown after a successful reconciliation.
+        <div className="space-y-4 py-2 text-center">
+          <Button onClick={onClose}>Done</Button>
+        </div>
+      ) : isLoading ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">Loading items…</p>
+      ) : lines.length === 0 && serialised.length === 0 ? (
+        <div className="space-y-4 py-2">
+          <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="max-h-[70vh] space-y-4 dialog-scroll">
+          {lines.length > 0 && (
+            <ul className="space-y-1.5" data-testid="cycle-count-lines">
+              {lines.map((line) => {
+                const raw = counts[line.key] ?? '';
+                const counted = raw.trim().length ? Number(raw) : null;
+                const variance = counted !== null ? counted - line.expected : null;
+                return (
+                  <li key={line.key} className="flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2">
+                    <span className="flex-1 text-sm font-medium">{line.name}</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={raw}
+                      onChange={(e) => setCount(line.key, e.target.value)}
+                      placeholder="count"
+                      className="w-24"
+                      data-testid={`count-${line.key}`}
+                    />
+                    <span
+                      className={
+                        variance === null
+                          ? 'w-16 text-right text-xs text-muted-foreground'
+                          : variance === 0
+                            ? 'w-16 text-right text-xs text-success'
+                            : 'w-16 text-right text-xs font-semibold text-warning'
+                      }
+                    >
+                      {variance === null ? '—' : variance === 0 ? 'OK' : `${variance > 0 ? '+' : ''}${variance}`}
                     </span>
-                  </Tooltip>
-                </li>
-              );
-            })}
-          </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {serialised.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Serialised instances
+              </p>
+              <ul className="space-y-1.5" data-testid="serialised-audit-lines">
+                {serialised.map((line) => {
+                  const state = presence[line.itemId] ?? 'PRESENT';
+                  const isMissing = state === 'MISSING';
+                  return (
+                    <li
+                      key={line.itemId}
+                      className="flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2"
+                    >
+                      <span className="flex-1 text-sm font-medium">{serialisedLabel(line)}</span>
+                      <Tooltip
+                        content="Toggle this instance between **present** and **missing**. A missing instance is reconciled on authorisation by a *reversible* soft-delete — it leaves active inventory but can be restored."
+                        triggerTabIndex={-1}
+                      >
+                        <span>
+                          <Button
+                            type="button"
+                            variant={isMissing ? 'destructive' : 'ghost'}
+                            className="h-7 px-3 text-xs"
+                            onClick={() => setPresence(line.itemId, isMissing ? 'PRESENT' : 'MISSING')}
+                            data-testid={`presence-${line.itemId}`}
+                          >
+                            {isMissing ? 'Missing' : 'Present'}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
+            <p className="text-xs text-muted-foreground">
+              {drift.length + missing.length} adjustment{drift.length + missing.length === 1 ? '' : 's'} to
+              authorise
+              {missing.length > 0 ? ` (${missing.length} missing)` : ''}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Tooltip
+                content="Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted."
+                triggerTabIndex={-1}
+              >
+                <span>
+                  <Button
+                    onClick={() => void authorise()}
+                    disabled={pending || totalToApply === 0}
+                    data-testid="authorise-reconciliation"
+                  >
+                    Authorise {totalToApply > 0 ? `(${totalToApply})` : ''}
+                  </Button>
+                </span>
+              </Tooltip>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="flex items-center justify-between pt-1">
-        <p className="text-xs text-muted-foreground">
-          {drift.length + missing.length} adjustment{drift.length + missing.length === 1 ? '' : 's'} to
-          authorise
-          {missing.length > 0 ? ` (${missing.length} missing)` : ''}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Tooltip
-            content="Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button
-                onClick={() => void authorise()}
-                disabled={pending || totalToApply === 0}
-                data-testid="authorise-reconciliation"
-              >
-                Authorise {totalToApply > 0 ? `(${totalToApply})` : ''}
-              </Button>
-            </span>
-          </Tooltip>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

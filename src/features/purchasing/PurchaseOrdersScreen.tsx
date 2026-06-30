@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, LiveRegion, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
   DeleteIcon,
@@ -107,7 +107,7 @@ export function PurchaseOrdersScreen() {
         {/* Order detail */}
         <section aria-label="Order detail">
           {selected ? (
-            <PurchaseOrderDetail poId={selected} onDeleted={() => setSelectedId(null)} />
+            <PurchaseOrderDetail key={selected} poId={selected} onDeleted={() => setSelectedId(null)} />
           ) : (
             <Surface className="p-6 text-sm text-muted-foreground">
               Select or create a purchase order to view its lines.
@@ -182,6 +182,15 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const [lineOpen, setLineOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrderLine | null>(null);
 
+  // WCAG 4.1.3 Status Messages — the badge transition and the receipt-progress
+  // counter both change silently; announce each change via the always-mounted
+  // LiveRegion so SR users hear the outcome of their explicit action.
+  const [statusAnnouncement, setStatusAnnouncement] = useState('');
+  const [receiptAnnouncement, setReceiptAnnouncement] = useState('');
+  // Track the previous received/ordered totals so a useEffect can detect a real
+  // change and announce it without firing on first render.
+  const prevReceivedRef = useRef<number | null>(null);
+
   const itemOptions = useMemo<LineItemOption[]>(() => {
     const pages = itemsQuery.data?.pages ?? [];
     return pages
@@ -208,6 +217,34 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
     for (const opt of itemOptions) map.set(opt.id, opt.name);
     return map;
   }, [itemOptions]);
+
+  // Announce receipt-progress changes (e.g. after "Receive" dialog completes).
+  // Keyed on the derived totals so every new receipt fires a fresh announcement.
+  // prevReceivedRef guards against announcing on first render or PO-switch.
+  const currentReceived = useMemo(
+    () => (poQuery.data?.lines ?? []).reduce((sum, l) => sum + Math.max(0, l.receivedQty), 0),
+    [poQuery.data?.lines],
+  );
+  const currentOrdered = useMemo(
+    () => (poQuery.data?.lines ?? []).reduce((sum, l) => sum + Math.max(0, l.orderedQty), 0),
+    [poQuery.data?.lines],
+  );
+  useEffect(() => {
+    if (prevReceivedRef.current === null) {
+      // First render — just record the baseline; don't announce.
+      prevReceivedRef.current = currentReceived;
+      return;
+    }
+    if (currentReceived !== prevReceivedRef.current) {
+      prevReceivedRef.current = currentReceived;
+      setReceiptAnnouncement(
+        `Receipt updated: ${f.quantity(currentReceived)} of ${f.quantity(currentOrdered)} received.`,
+      );
+    }
+  // f is stable between renders; including it satisfies exhaustive-deps without
+  // causing extra fires.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentReceived, currentOrdered]);
 
   if (poQuery.isLoading) {
     return (
@@ -243,7 +280,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           {po.effectiveStatus === 'DRAFT' && (
             <Button
               variant="primary"
-              onClick={() => setStatus.mutate({ id: po.id, status: 'ORDERED' })}
+              onClick={() =>
+                setStatus.mutate(
+                  { id: po.id, status: 'ORDERED' },
+                  { onSuccess: () => setStatusAnnouncement('Order status changed to Ordered.') },
+                )
+              }
               disabled={setStatus.isPending || po.lines.length === 0}
               data-testid="po-mark-ordered"
             >
@@ -254,7 +296,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           {po.effectiveStatus === 'CANCELLED' ? (
             <Button
               variant="outline"
-              onClick={() => setStatus.mutate({ id: po.id, status: 'DRAFT' })}
+              onClick={() =>
+                setStatus.mutate(
+                  { id: po.id, status: 'DRAFT' },
+                  { onSuccess: () => setStatusAnnouncement('Order status changed to Draft.') },
+                )
+              }
               disabled={setStatus.isPending}
             >
               Reopen as draft
@@ -262,7 +309,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           ) : (
             <Button
               variant="destructive"
-              onClick={() => setStatus.mutate({ id: po.id, status: 'CANCELLED' })}
+              onClick={() =>
+                setStatus.mutate(
+                  { id: po.id, status: 'CANCELLED' },
+                  { onSuccess: () => setStatusAnnouncement('Order status changed to Cancelled.') },
+                )
+              }
               disabled={setStatus.isPending}
               data-testid="po-cancel"
             >
@@ -374,6 +426,20 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           }}
         />
       )}
+
+      {/*
+       * WCAG 4.1.3 — always-mounted live regions for status-badge transitions and
+       * receipt-progress changes. `visuallyHidden` (sr-only) because the badge and
+       * the "X of Y received" counter are the visible feedback; these regions carry
+       * the same information to screen-reader users who can't see those updates.
+       * Two separate regions keep the two independent announcements from colliding.
+       */}
+      <LiveRegion visuallyHidden data-testid="po-status-live">
+        {statusAnnouncement ? <p>{statusAnnouncement}</p> : null}
+      </LiveRegion>
+      <LiveRegion visuallyHidden data-testid="po-receipt-live">
+        {receiptAnnouncement ? <p>{receiptAnnouncement}</p> : null}
+      </LiveRegion>
     </div>
   );
 }
