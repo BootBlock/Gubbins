@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Surface } from '@/components/foundry';
-import { ExportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
+import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
 import {
@@ -20,13 +20,15 @@ import {
  * items CSV, and an Obsidian Markdown vault (with image assets) zipped off-thread (§4.5).
  * Phase 61 adds a fourth format — a §3 aggregate **report CSV** (valuation / consumption /
  * movement / dead-stock) — routed through this same wizard so the remembered-settings and
- * download paths are shared, not duplicated.
+ * download paths are shared, not duplicated. Phase 67 adds a fifth format — a catalog CSV
+ * that round-trips through the import wizard without requiring manual column mapping.
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
   { value: 'JSON', label: 'JSON data export', hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.', icon: ExportIcon },
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
   { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
   { value: 'REPORTS', label: 'Report CSV', hint: 'A §3 aggregate report — valuation, consumption, movement or dead stock.', icon: ReportIcon },
+  { value: 'CATALOG_CSV', label: 'Catalogue CSV', hint: 'Whole-catalogue CSV that imports back without manual column mapping. Use this to migrate or back up your items as a spreadsheet.', icon: ImportIcon },
 ];
 
 const SCOPES: { value: ExportScope; label: string }[] = [
@@ -60,6 +62,9 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [error, setError] = useState<string | null>(null);
 
   const isReport = format === 'REPORTS';
+  // CATALOG_CSV always exports the whole catalogue — no scope picker needed.
+  const isCatalogCsv = format === 'CATALOG_CSV';
+  const hasScope = !isReport && !isCatalogCsv;
 
   const itemList = useQuery({
     queryKey: ['export', 'item-picker'],
@@ -72,7 +77,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     enabled: open && scope === 'PROJECT',
   });
 
-  const needsTarget = !isReport && scope !== 'ALL';
+  const needsTarget = hasScope && scope !== 'ALL';
   const targetMissing = needsTarget && !scopeTargetId;
 
   const run = async () => {
@@ -145,8 +150,8 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         ) : null}
 
-        {/* §4.5 scope (item/project/whole-inventory exports only) */}
-        {!isReport ? (
+        {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
+        {hasScope ? (
         <div className="space-y-2">
           <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Scope
@@ -198,7 +203,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
         </div>
         ) : null}
 
-        {!isReport && scope === 'ALL' ? (
+        {(hasScope && scope === 'ALL') || isCatalogCsv ? (
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <input
               type="checkbox"

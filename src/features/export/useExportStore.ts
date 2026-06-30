@@ -10,9 +10,10 @@ import { persist } from 'zustand/middleware';
 
 /**
  * JSON = §2 versioned backup; CSV = items spreadsheet; VAULT = §4.5 Markdown zip;
- * REPORTS = a §3 aggregate report CSV (Phase 61).
+ * REPORTS = a §3 aggregate report CSV (Phase 61);
+ * CATALOG_CSV = a catalog-ready CSV that round-trips through the import wizard (Phase 67).
  */
-export type ExportFormat = 'JSON' | 'CSV' | 'VAULT' | 'REPORTS';
+export type ExportFormat = 'JSON' | 'CSV' | 'VAULT' | 'REPORTS' | 'CATALOG_CSV';
 /**
  * §4.5 granularity: the whole inventory, a single item, or a Project/BOM scope. The chosen
  * target id (an item or project) lives in {@link ExportStore.scopeTargetId}.

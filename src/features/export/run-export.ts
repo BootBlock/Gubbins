@@ -38,6 +38,7 @@ import {
 } from '@/features/reports/queries';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
+  buildCatalogCsv,
   buildItemsCsv,
   buildJsonBackup,
   buildProjectVault,
@@ -185,6 +186,18 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
     const csv = await buildReportCsv(kind);
     const name = `gubbins-report-${REPORT_FILE_SLUG[kind]}-${stamp()}.csv`;
     download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), name);
+    return name;
+  }
+
+  // Catalogue CSV (Phase 67): a round-trip-ready spreadsheet whose headers auto-map
+  // in the import wizard. Ignores scope so it always exports all items (a whole-
+  // catalogue file is the common onboarding use-case), so it short-circuits before
+  // the shared item-scope plumbing rather than fetching the list twice. The download
+  // reuses the existing `download` side-effect so no parallel path is introduced.
+  if (format === 'CATALOG_CSV') {
+    const allItems = await collectAllItems(options.includeInactive);
+    const name = `gubbins-catalog-${stamp()}.csv`;
+    download(new Blob([buildCatalogCsv(allItems)], { type: 'text/csv;charset=utf-8' }), name);
     return name;
   }
 
