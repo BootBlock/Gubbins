@@ -19,10 +19,381 @@
     -->
     <script src="/Gubbins/coi-bootstrap.js"></script>
 
+    <!--
+      "Wrong way in" fallback guide (see the `.gb-fallback` block inside #root below).
+
+      Gubbins is a dev-server app: the page only works when served by Vite via run.bat /
+      run.ps1. Double-clicking this file opens it as file://, where the module script and
+      `/Gubbins/...` assets cannot resolve — so React never mounts and the user is left
+      staring at a blank page. The fallback explains how to launch it properly.
+
+      Two things make the guide appear ONLY in that failure case, with no JavaScript (the
+      CSP forbids inline scripts, and on file:// no external script would load anyway):
+
+        1. The markup lives *inside* #root. When the real app boots, React's
+           createRoot(#root).render() replaces #root's children, so the guide is wiped
+           before it is ever seen.
+        2. It starts at opacity:0 and only fades in after an 800ms animation delay. On a
+           working server React mounts well within that window and removes the node first;
+           on file:// nothing mounts, so the guide reveals itself.
+
+      The styles below are deliberately self-contained, inline literals rather than design
+      tokens (an explicit, documented exception to the tokens-only rule in CLAUDE.md): on
+      file:// the token stylesheet and the app bundle never load, so the guide has to carry
+      its own appearance. They are scoped to `.gb-fallback`/`gb-*` and never affect the app.
+    -->
+    <style>
+      html {
+        /* Match the dark theme-color so file:// shows no white flash before the guide fades in. */
+        background-color: #0b0b0f;
+      }
+
+      .gb-fallback {
+        /* Normal document flow (not fixed) so tall content scrolls the page itself and
+           nothing — the GitHub links especially — gets stranded below a clipped panel. */
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 24px;
+        box-sizing: border-box;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+          sans-serif;
+        color: #e7e7ee;
+        background:
+          radial-gradient(120% 90% at 50% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+          radial-gradient(90% 70% at 110% 110%, rgba(45, 212, 191, 0.12), transparent 55%),
+          #0b0b0f;
+        /* Reveal only if the app has NOT taken over #root within the delay window. */
+        opacity: 0;
+        animation: gb-fallback-in 360ms cubic-bezier(0.2, 0, 0, 1) 800ms both;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .gb-card {
+        width: 100%;
+        max-width: 620px;
+        padding: 40px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, rgba(24, 24, 33, 0.9), rgba(16, 16, 23, 0.9));
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.04) inset,
+          0 24px 60px -24px rgba(0, 0, 0, 0.7);
+        box-sizing: border-box;
+      }
+
+      .gb-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .gb-logo {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: linear-gradient(140deg, #6366f1, #8b5cf6);
+        box-shadow: 0 8px 24px -10px rgba(99, 102, 241, 0.8);
+        flex: none;
+      }
+
+      .gb-logo svg {
+        width: 26px;
+        height: 26px;
+      }
+
+      .gb-wordmark {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .gb-eyebrow {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #a5b4fc;
+      }
+
+      .gb-title {
+        margin: 18px 0 10px;
+        font-size: 26px;
+        line-height: 1.2;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .gb-lede {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.6;
+        color: #b6b6c4;
+      }
+
+      .gb-steps {
+        margin: 24px 0 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: gb-step;
+        display: grid;
+        gap: 14px;
+      }
+
+      .gb-step {
+        position: relative;
+        padding: 14px 16px 14px 54px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        font-size: 14px;
+        line-height: 1.55;
+        color: #d4d4de;
+      }
+
+      .gb-step::before {
+        counter-increment: gb-step;
+        content: counter(gb-step);
+        position: absolute;
+        left: 14px;
+        top: 14px;
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        background: rgba(99, 102, 241, 0.18);
+        color: #c7d2fe;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .gb-step strong {
+        color: #f4f4f8;
+        font-weight: 650;
+      }
+
+      .gb-code {
+        font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+        font-size: 0.92em;
+        padding: 2px 7px;
+        border-radius: 6px;
+        background: rgba(99, 102, 241, 0.16);
+        border: 1px solid rgba(99, 102, 241, 0.28);
+        color: #e0e7ff;
+        white-space: nowrap;
+      }
+
+      .gb-note {
+        margin: 22px 0 0;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(45, 212, 191, 0.22);
+        background: rgba(45, 212, 191, 0.08);
+        font-size: 13px;
+        line-height: 1.55;
+        color: #b9efe4;
+      }
+
+      .gb-note strong {
+        color: #e6fffa;
+      }
+
+      .gb-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+        padding-top: 22px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .gb-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        color: #e7e7ee;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition:
+          background-color 160ms ease,
+          border-color 160ms ease,
+          transform 160ms ease;
+      }
+
+      .gb-link:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateY(-1px);
+      }
+
+      .gb-link svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+
+      .gb-link--primary {
+        background: linear-gradient(140deg, #6366f1, #8b5cf6);
+        border-color: transparent;
+        color: #ffffff;
+      }
+
+      .gb-link--primary:hover {
+        background: linear-gradient(140deg, #6f72f3, #976ff7);
+        border-color: transparent;
+      }
+
+      @keyframes gb-fallback-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 540px) {
+        .gb-card {
+          padding: 28px 22px;
+        }
+        .gb-title {
+          font-size: 22px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .gb-fallback {
+          /* Keep the delay (so it never flashes on a working server) but drop the motion. */
+          animation: gb-fallback-fade 1ms linear 800ms both;
+        }
+        .gb-link {
+          transition: none;
+        }
+        @keyframes gb-fallback-fade {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+      }
+    </style>
+
     <title>Gubbins</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!--
+        Fallback shown only when the app is opened the wrong way (as a file:// page rather
+        than through the dev server). See the explanatory comment in <head>. React wipes
+        this the moment the real app mounts.
+      -->
+      <div class="gb-fallback" role="alert">
+        <div class="gb-card">
+          <div class="gb-brand">
+            <span class="gb-logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 2.5 21 7v10l-9 4.5L3 17V7l9-4.5Z"
+                  stroke="#ffffff"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                />
+                <path d="M3 7l9 4.5L21 7M12 11.5V21.5" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <span class="gb-wordmark">Gubbins</span>
+          </div>
+
+          <p class="gb-eyebrow">Local-first inventory tracker</p>
+          <h1 class="gb-title">Gubbins needs to be launched, not opened directly</h1>
+          <p class="gb-lede">
+            You're seeing this because <code class="gb-code">index.html</code> was opened on its own
+            (a <code class="gb-code">file://</code> page). Gubbins is a web app that has to be served
+            by a small local server — it relies on JavaScript modules, a cross-origin-isolated
+            context, and an in-browser SQLite database that simply can't load from a bare file. The
+            good news: starting it properly takes one double-click.
+          </p>
+
+          <ol class="gb-steps">
+            <li class="gb-step">
+              <strong>Make sure Node.js is installed.</strong> Gubbins needs Node.js 20 or newer.
+              If you don't have it, grab the LTS installer from
+              <a class="gb-link" style="padding: 0; border: 0; background: none; color: #a5b4fc" href="https://nodejs.org">nodejs.org</a>.
+            </li>
+            <li class="gb-step">
+              <strong>Launch it from the project folder.</strong> Double-click
+              <code class="gb-code">run.bat</code>, or right-click <code class="gb-code">run.ps1</code>
+              and choose <strong>“Run with PowerShell”</strong>. A terminal window opens and stays
+              open while the app is running.
+            </li>
+            <li class="gb-step">
+              <strong>First launch is slower.</strong> On the very first run it installs the app's
+              dependencies automatically — this can take a couple of minutes. Subsequent launches
+              start in seconds.
+            </li>
+            <li class="gb-step">
+              <strong>Your browser opens automatically.</strong> Once the local server is ready,
+              Gubbins opens in your default browser at
+              <code class="gb-code">http://localhost:5173/Gubbins/</code>. That tab — not this file —
+              is the real app.
+            </li>
+            <li class="gb-step">
+              <strong>To stop it, press <code class="gb-code">Ctrl + C</code></strong> in the terminal
+              window (avoid the <code class="gb-code">[X]</code> button, which can leave the server
+              running in the background).
+            </li>
+          </ol>
+
+          <p class="gb-note">
+            <strong>Tip:</strong> want a production-style build instead of the fast hot-reload dev
+            server? Run <code class="gb-code">run.bat preview</code> — it builds the app and serves
+            the optimised bundle.
+          </p>
+
+          <div class="gb-links">
+            <a class="gb-link gb-link--primary" href="https://github.com/BootBlock/Gubbins" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M12 1.5C6.2 1.5 1.5 6.2 1.5 12c0 4.6 3 8.5 7.2 9.9.5.1.7-.2.7-.5v-1.7c-2.9.6-3.5-1.4-3.5-1.4-.5-1.2-1.2-1.5-1.2-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.3-.3-4.7-1.2-4.7-5.1 0-1.1.4-2 1-2.7-.1-.3-.5-1.3.1-2.7 0 0 .9-.3 2.8 1a9.6 9.6 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.8-4.7 5.1.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5 4.2-1.4 7.2-5.3 7.2-9.9 0-5.8-4.7-10.5-10.5-10.5Z"
+                />
+              </svg>
+              Project on GitHub
+            </a>
+            <a class="gb-link" href="https://github.com/BootBlock/Gubbins/issues" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Report an issue
+            </a>
+            <a class="gb-link" href="https://github.com/BootBlock/Gubbins/wiki" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 0 4 20.5V5.5Z" />
+                <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 1 1.5 1.5V5.5Z" />
+              </svg>
+              Read the Wiki
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
