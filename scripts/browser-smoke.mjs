@@ -675,6 +675,44 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await step('opens the Reports screen and renders a non-zero inventory value (§3, Phase 61)', async () => {
+    // Give the inventory a priced item so the valuation headline is non-zero. (The earlier
+    // smoke items carry no unit cost.) Created on the inventory screen via the Add dialog.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const addDialog = page.getByRole('dialog', { name: 'Add item' });
+    await addDialog.getByLabel('Name').fill(`Smoke Priced ${stamp}`);
+    await addDialog.getByLabel('Tracking').selectOption('DISCRETE');
+    await addDialog.getByLabel('Initial quantity').fill('8');
+    await addDialog.getByLabel('Unit cost (optional)').fill('12.50');
+    await addDialog.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(`Smoke Priced ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
+
+    // Open the Reports screen and assert the headline value card shows a real total.
+    await page.goto(`${BASE}reports`, { waitUntil: 'domcontentloaded' });
+    const total = page.getByTestId('stat-total-value');
+    await total.waitFor({ state: 'visible', timeout: 8000 });
+    const totalText = (await total.textContent())?.trim() ?? '';
+    // Must be a currency figure, not the "—" placeholder or a zero total.
+    if (!/[1-9]/.test(totalText)) {
+      throw new Error(`Reports inventory value did not render a non-zero total (got "${totalText}")`);
+    }
+
+    // The valuation breakdown and the movement chart legend are present.
+    await page.getByTestId('value-breakdown').first().waitFor({ state: 'visible', timeout: 5000 });
+
+    // The CSV export flows through the shared Export Wizard's "Report CSV" format.
+    await page.getByTestId('open-report-export').click();
+    const exportDialog = page.getByRole('dialog', { name: 'Export' });
+    await exportDialog.getByRole('button', { name: 'Report CSV' }).click();
+    await exportDialog.getByTestId('export-report-kind').waitFor({ state: 'visible', timeout: 5000 });
+    // Restore the remembered format to the default so later export steps (which assume an
+    // items-scoped export) open the wizard on JSON, not the Report-CSV format (§3 last-used).
+    await exportDialog.getByRole('button', { name: 'JSON data export' }).click();
+    await exportDialog.getByTestId('export-scope').waitFor({ state: 'visible', timeout: 5000 });
+    await page.keyboard.press('Escape');
+  });
+
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
     const datasheetPath = `C:\\smoke\\${stamp}.pdf`;
     const datasheetUrl = `https://smoke.test/${stamp}.pdf`;

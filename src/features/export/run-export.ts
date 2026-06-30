@@ -22,8 +22,20 @@ import {
   type Contact,
   type Item,
 } from '@/db/repositories';
+import { getReportRepository } from '@/db/repositories';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { summariseBudget } from '@/features/projects/budget';
+import {
+  buildConsumptionCsv,
+  buildDeadStockCsv,
+  buildMovementCsv,
+  buildValuationCsv,
+} from '@/features/reports/report-csv';
+import {
+  DEAD_STOCK_SINCE_DAYS,
+  REPORT_MOVEMENT_BUCKETS,
+  REPORT_WINDOW_DAYS,
+} from '@/features/reports/queries';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   buildItemsCsv,
@@ -34,7 +46,7 @@ import {
   type VaultBuild,
   type VaultItem,
 } from './export-data';
-import type { ExportFormat, ExportScope } from './useExportStore';
+import type { ExportFormat, ExportScope, ReportExportKind } from './useExportStore';
 import type { VaultZipRequest, VaultZipResponse } from './export-vault.worker';
 
 const PAGE = 100;
@@ -45,6 +57,31 @@ export interface ExportOptions {
   readonly scope?: ExportScope;
   /** The chosen item id (scope `ITEM`) or project id (scope `PROJECT`). */
   readonly targetId?: string | null;
+  /** Which §3 aggregate report to serialise for the `REPORTS` format (Phase 61). */
+  readonly reportKind?: ReportExportKind;
+}
+
+/** Slug + label suffix for a report-CSV download name. */
+const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
+  VALUATION: 'valuation',
+  CONSUMPTION: 'consumption',
+  MOVEMENT: 'movement',
+  DEAD_STOCK: 'dead-stock',
+};
+
+/** Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61). */
+async function buildReportCsv(kind: ReportExportKind): Promise<string> {
+  const repo = getReportRepository();
+  switch (kind) {
+    case 'VALUATION':
+      return buildValuationCsv(await repo.inventoryValue());
+    case 'CONSUMPTION':
+      return buildConsumptionCsv(await repo.consumptionRate(REPORT_WINDOW_DAYS));
+    case 'MOVEMENT':
+      return buildMovementCsv(await repo.movement(REPORT_WINDOW_DAYS, REPORT_MOVEMENT_BUCKETS));
+    case 'DEAD_STOCK':
+      return buildDeadStockCsv(await repo.deadStock(DEAD_STOCK_SINCE_DAYS));
+  }
 }
 
 /** Page through a repository list to gather every row (full-export scope). */
@@ -115,7 +152,12 @@ async function collectCheckouts(items: readonly Item[]): Promise<Checkout[]> {
   return all;
 }
 
-function download(blob: Blob, filename: string): void {
+/**
+ * Trigger a browser download for `blob` under `filename` — the single download side-effect
+ * shared by every export path (the Export Wizard and the §3 Reports CSV export), so there is
+ * never a parallel hand-rolled download.
+ */
+export function download(blob: Blob, filename: string): void {
   const href = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = href;
@@ -137,6 +179,15 @@ function scopeSuffix(scope: ExportScope, items: readonly Item[]): string {
 
 /** Run an export of the chosen format & scope, returning the downloaded filename. */
 export async function runExport(format: ExportFormat, options: ExportOptions): Promise<string> {
+  // §3 Reports CSV (Phase 61): an aggregate report, independent of the item-scope plumbing.
+  if (format === 'REPORTS') {
+    const kind = options.reportKind ?? 'VALUATION';
+    const csv = await buildReportCsv(kind);
+    const name = `gubbins-report-${REPORT_FILE_SLUG[kind]}-${stamp()}.csv`;
+    download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), name);
+    return name;
+  }
+
   const scope = options.scope ?? 'ALL';
   const items = await collectItems(options);
   const suffix = scopeSuffix(scope, items);

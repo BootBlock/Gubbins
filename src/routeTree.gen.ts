@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SyncRouteImport } from './routes/sync'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as ContactsRouteImport } from './routes/contacts'
@@ -25,6 +26,11 @@ const SyncRoute = SyncRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/contacts': typeof ContactsRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sync'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sync'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/inventory'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sync'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   ContactsRoute: typeof ContactsRoute
   InventoryRoute: typeof InventoryRoute
   ProjectsRoute: typeof ProjectsRoute
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SyncRoute: typeof SyncRoute
 }
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactsRoute: ContactsRoute,
   InventoryRoute: InventoryRoute,
   ProjectsRoute: ProjectsRoute,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SyncRoute: SyncRoute,
 }
