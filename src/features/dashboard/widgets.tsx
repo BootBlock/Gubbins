@@ -49,6 +49,8 @@ export interface WidgetDefinition {
   readonly icon: ReactNode;
   /** Optional quick-link target — the whole tile navigates here in view mode. */
   readonly to?: string;
+  /** Optional `#anchor` (used with `to`) to deep-link a specific section of the target. */
+  readonly hash?: string;
   readonly Component: ComponentType;
 }
 
@@ -353,6 +355,9 @@ function StorageWidget() {
           </Tooltip>
         </span>
       </StatusRow>
+      <Tooltip content="Manage &amp; erase data" openDelayMs={INFO_OPEN_DELAY_MS} triggerTabIndex={-1}>
+        <p className="mt-1 text-[11px] text-muted-foreground/60">Manage storage &amp; erase data &rarr;</p>
+      </Tooltip>
     </WidgetShell>
   );
 }
@@ -391,7 +396,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
   { id: 'quick-links', title: 'Quick links', icon: <LinkIcon />, Component: QuickLinksWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
-  { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, Component: StorageWidget },
+  { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, to: '/settings', hash: 'danger-zone', Component: StorageWidget },
   { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },
 ];
 

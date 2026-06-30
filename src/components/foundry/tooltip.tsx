@@ -63,6 +63,13 @@ export const DEFAULT_OPEN_DELAY_MS = 1000;
  * solely to surface help — the user is asking for it, so don't make them wait.
  */
 export const INFO_OPEN_DELAY_MS = 300;
+/**
+ * Longer dwell for navigation controls that already carry a visible label — e.g. the
+ * tabs of a dialog rail. Their tooltip is purely supplementary, so it should appear only
+ * on a deliberate, lingering hover and never flash up as the pointer crosses the rail to
+ * reach a tab. Slower than {@link DEFAULT_OPEN_DELAY_MS} for exactly that reason.
+ */
+export const NAV_OPEN_DELAY_MS = 1500;
 const CLOSE_DELAY_MS = 120;
 
 export function Tooltip({
