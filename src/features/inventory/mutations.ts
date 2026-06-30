@@ -328,6 +328,12 @@ export function useBulkEditItems() {
  * the source, plans the {@link planItemClone} create seed (template fields copied, per-instance
  * identity stripped, stock reset), creates the new item, then copies the source's operational
  * metadata, stored custom-field values and supplier parts onto the clone. Invalidation-based.
+ *
+ * **Best-effort, not atomic.** The create and the follow-up child copies are separate
+ * transactions (they span several repositories), so a failure partway through can leave a
+ * created-but-partially-populated clone in the inventory. That is an acceptable trade-off here —
+ * the clone is a convenience seed the user edits anyway, and a stray copy is easily soft-deleted —
+ * rather than introducing a cross-repository transaction. The caller surfaces the failure.
  */
 export function useCloneItem() {
   const client = useQueryClient();

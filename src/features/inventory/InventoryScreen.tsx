@@ -483,9 +483,9 @@ function InventoryWorkspace() {
         onClose={() => setBulkEditOpen(false)}
         itemIds={selectedItemIds}
         locations={flatLocations}
-        onApplied={() => {
+        onApplied={(message) => {
           setSelected(new Map());
-          setActionAnnouncement('Selected items updated.');
+          setActionAnnouncement(message);
         }}
       />
 

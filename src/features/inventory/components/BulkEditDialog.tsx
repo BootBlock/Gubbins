@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button, Input, LiveRegion, Modal, Select } from '@/components/foundry';
+import { Button, Input, Modal, Select } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   CONDITIONS,
@@ -24,8 +24,10 @@ import {
  * field is genuinely left alone (distinct from "set to None"). The actual writes route through
  * the existing repository methods via `useBulkEditItems`; this is pure glue + design tokens.
  *
- * Accessibility: an always-mounted `<LiveRegion>` announces the outcome once the batch resolves
- * (Phase 63 / WCAG 4.1.3).
+ * Accessibility: the outcome (with the per-item succeeded/failed count) is handed back to the
+ * caller via {@link onApplied} so it can be announced from the screen's always-mounted
+ * `<LiveRegion>` — a region inside this dialog would unmount with the modal on close before any
+ * assistive tech could read it (Phase 63 / WCAG 4.1.3).
  */
 export function BulkEditDialog({
   open,
@@ -38,7 +40,8 @@ export function BulkEditDialog({
   onClose: () => void;
   itemIds: readonly string[];
   locations: readonly LocationWithCount[];
-  onApplied?: () => void;
+  /** Called with a human-readable result message once the batch resolves. */
+  onApplied?: (message: string) => void;
 }) {
   const f = useFormatters();
   const categories = useCategories();
@@ -63,8 +66,6 @@ export function BulkEditDialog({
   const [tagMode, setTagMode] = useState<TagEditMode>('add');
   const [tagText, setTagText] = useState('');
 
-  const [announcement, setAnnouncement] = useState('');
-
   // Reset the form each time the dialog opens.
   useEffect(() => {
     if (!open) return;
@@ -73,7 +74,6 @@ export function BulkEditDialog({
     setCondOn(false); setCondValue('');
     setActiveOn(false); setActiveValue('active');
     setTagsOn(false); setTagMode('add'); setTagText('');
-    setAnnouncement('');
   }, [open, firstLocationId]);
 
   const spec: BulkEditSpec = useMemo(() => {
@@ -92,12 +92,11 @@ export function BulkEditDialog({
   const apply = async () => {
     if (nothingToDo) return;
     const result = await bulkEdit.mutateAsync({ ids: itemIds, spec });
-    setAnnouncement(
+    const message =
       result.failed > 0
         ? `Updated ${result.succeeded} item${result.succeeded === 1 ? '' : 's'}; ${result.failed} failed.`
-        : `Updated ${result.succeeded} item${result.succeeded === 1 ? '' : 's'}.`,
-    );
-    onApplied?.();
+        : `Updated ${result.succeeded} item${result.succeeded === 1 ? '' : 's'}.`;
+    onApplied?.(message);
     onClose();
   };
 
@@ -187,10 +186,6 @@ export function BulkEditDialog({
           </Button>
         </div>
       </div>
-
-      <LiveRegion visuallyHidden data-testid="bulk-edit-live-region">
-        {announcement ? <p>{announcement}</p> : null}
-      </LiveRegion>
     </Modal>
   );
 }
