@@ -1,11 +1,12 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
-import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon, ReportIcon, ShoppingCartIcon } from '@/components/icons';
+import { PackageIcon, ProjectIcon, CloudIcon, SettingsIcon, InfoIcon, ReportIcon, ShoppingCartIcon, AlertIcon } from '@/components/icons';
 import { BrandMark } from '@/components/BrandMark';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
 import { DashboardGrid } from './DashboardGrid';
+import { useAlerts } from '@/features/alerts/useAlerts';
 
 /**
  * Landing screen — the §3 customisable widget board. The fixed status cards of the
@@ -20,6 +21,10 @@ export function DashboardScreen() {
   // is on (feature-detected, graceful). The matching touch/selection containment is
   // applied to the content landmark below.
   useWakeLock(kioskMode);
+
+  // Alert badge: count of undismissed alerts for the nav entry.
+  const { alerts: activeAlerts } = useAlerts();
+  const alertCount = activeAlerts.length;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6">
@@ -64,6 +69,28 @@ export function DashboardScreen() {
         <Link to="/reports" className={cn(buttonVariants({ variant: 'outline' }))}>
           <ReportIcon />
           Reports
+        </Link>
+        <Link
+          to="/alerts"
+          className={cn(buttonVariants({ variant: 'outline' }), 'relative')}
+          aria-label={
+            alertCount > 0
+              ? `Alerts — ${alertCount} active alert${alertCount === 1 ? '' : 's'}`
+              : 'Alerts'
+          }
+          data-testid="nav-alerts"
+        >
+          <AlertIcon />
+          Alerts
+          {alertCount > 0 && (
+            <span
+              aria-hidden
+              className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
+              data-testid="alerts-badge"
+            >
+              {alertCount > 99 ? '99+' : alertCount}
+            </span>
+          )}
         </Link>
         <Link to="/inventory" className={cn(buttonVariants())}>
           <PackageIcon />

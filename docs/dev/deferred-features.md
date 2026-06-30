@@ -1491,3 +1491,15 @@ re-triggers it.
 **Execution:** single worktree sub-agent. tsc clean · **1493 unit tests** (152 files, +23 tests / +2
 new test files + 1 extended) · 1 new browser-smoke step (covers all three screens). No schema
 change — `user_version` stays **23**. No new dependency.
+
+---
+
+## Phase 68 — Alert centre
+
+**Web push notifications — Backlog (no trigger yet).** The alert centre (Phase 68) is in-app only.
+Web push requires a server-side push subscription endpoint and service (push API, VAPID keys, a
+persistent server to hold subscriptions and fire `webpush.sendNotification`). This is a
+backend-less PWA — there is no server to send the push. Trigger: if a lightweight backend (e.g. a
+companion Bridge or a sync server) is added in a future phase, background push for the four alert
+lanes (low stock, expiry, maintenance-due, warranty-due) becomes possible. Until then, users check
+the in-app alert centre or the dashboard badge.
