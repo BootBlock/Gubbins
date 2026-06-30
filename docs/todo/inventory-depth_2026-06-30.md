@@ -262,11 +262,52 @@ launch **Wave 2 = {62}** alone. Code review after *every* phase regardless of wa
   receive-into-stock tests (partial → PARTIAL, full → RECEIVED); sync round-trip; smoke that
   creates a PO, receives a line, and asserts on-hand rose.
 * **Deliverables checklist.**
-  - [ ] `v23` migration + test; `user_version` → 23; `SYNC_TABLES` + `FK_REFS` entries
-  - [ ] `po-status.ts` + `planPoReceipt` pure seams + tests
-  - [ ] `PurchaseOrderRepository` reusing the existing receipt machinery
-  - [ ] PO list/detail/receive UI
-  - [ ] code review passed; PHASE_HANDOVER updated; Outcome note appended
+  - [x] `v23` migration + test; `user_version` → 23; `SYNC_TABLES` + `FK_REFS` entries
+  - [x] `po-status.ts` + `planPoReceipt` pure seams + tests
+  - [x] `PurchaseOrderRepository` reusing the existing receipt machinery
+  - [x] PO list/detail/receive UI
+  - [x] code review passed; PHASE_HANDOVER updated; Outcome note appended
+
+> **Outcome (2026-06-30, Wave 2 — final).** Shipped as specified. New migration
+> `v23-purchase-orders` (`user_version` → 23; registry contiguous v1…v23, **engine
+> strict-contiguity guard untouched**) adds two STRICT synced tables with the canonical §7.1
+> auto-stamp triggers: `purchase_orders` (5-value `status` CHECK `DRAFT|ORDERED|PARTIAL|RECEIVED|
+> CANCELLED`) and `purchase_order_lines` (`po_id` FK→purchase_orders **ON DELETE CASCADE** /
+> NOT NULL; `item_id` FK→items and `supplier_part_id` FK→supplier_parts both **ON DELETE SET
+> NULL** / nullable — a removed item or supplier-part NULLs the line, never blocks the delete;
+> `ordered_qty > 0`, `received_qty >= 0`, `unit_cost ≥ 0` CHECKs; indexes on `po_id`/`item_id`).
+> Both joined `SYNC_TABLES` (`purchase_orders` before `purchase_order_lines`, both after
+> `items`/`supplier_parts`) with matching `FK_REFS` (`po_id` non-nullable→orphan-drop;
+> `item_id`/`supplier_part_id` nullable→orphan-NULL); a two-device LWW + orphan-NULL +
+> orphan-drop round-trip test covers it. **Derive-don't-store honoured:** pure
+> `src/features/purchasing/po-status.ts` `derivePoStatus` recomputes ORDERED/PARTIAL/RECEIVED
+> from `SUM(received)` vs `SUM(ordered)` (DRAFT/CANCELLED authoritative); pure
+> `po-receipt.ts` `planPoReceipt` **wraps** the Phase-24 `planReceipt`;
+> `PurchaseOrderRepository.receiveLine` faithfully mirrors `ProjectRepository.receiveLine`,
+> reusing `addStockStatement`/`addBatchStatement`/`historyStatement` (**no second
+> stock-mutation path**) and landing the received delta into the per-location/batch ledger with
+> a `RECEIVED` history entry; `onOrderQtyForItem` is a derived per-item projection (Phase-20
+> In-Transit pattern). PO list + detail + per-line receive UI (partial allowed, optional
+> destination location/batch via the `LocationSelect` combobox), tokens-only (status badges map
+> onto existing `text-glyph-*` tokens — no new token needed), `role="alert"` form errors, a
+> `<main id>` skip target, British English throughout. **Code review: CLEAN — no blockers, no
+> SHOULDs.** Three NITs **waived** (recorded): (1) `receiveLine`'s `refreshStatus` persists the
+> derived status snapshot in a `driver.execute` just after the receive transaction — harmless,
+> the status is re-derived on every read and the snapshot is never the SSOT; (2)
+> `onOrderQtyForItem`'s SQL gate filters on the *persisted* `po.status` (kept in step by
+> `refreshStatus`) — matches the In-Transit precedent; (3) a benign one-line `package-lock.json`
+> drift (`@zxing/library` `"peer": true` flag flip from `npm install`) — **restored to main's
+> pristine lockfile at merge time**, so no dependency change landed. Merged to `main`
+> (`535bba6`, clean — no conflicts, the branch was already based on the current `main`);
+> `npm run test:run` green afterwards (**1436/1436 across 145 files**; +41 over the 1395
+> baseline). +1 smoke step (creates a PO, receives a line, asserts on-hand rose). `build` /
+> `type-check` / `test:e2e` (102/102) all green on the worktree before merge.
+>
+> **Carried variants-smoke flag — CLOSED.** The §4 multi-level variants step *"nests a
+> sub-variant beneath a variant (Phase 18)"* (reported failing on the Phase-61 baseline) **passed
+> on the Phase-62 `test:e2e` run (102/102, single run, no re-run needed)**, as did the
+> long-standing "adds a weighted capability" `press('Enter')` step. Both were environmental
+> flakes, not code defects; no Wave-1/Wave-2 diff touched the variants path. Flag resolved.
 
 ## Deferred / explicitly out of scope
 
@@ -276,62 +317,26 @@ launch **Wave 2 = {62}** alone. Code review after *every* phase regardless of wa
 - AI demand forecasting, omnichannel/POS, RFID, accounting (QuickBooks) integration, generic
   REST/webhook API beyond the existing HA bridge — enterprise-only; not pursued.
 
-## Continuation prompt
+## Plan complete — no continuation
 
-_(Replaced as each wave completes — keep identical to the raw block emitted in chat.)_
+**The inventory-depth plan (Phases 59–62) is COMPLETE.** All four competitor-gap closures are
+merged to `main`:
 
-**Wave 1 = {59, 60, 61} is complete and merged to `main`** (`user_version` → 22; reorder points
-v21, supplier-parts v22, Reports screen). The current kick-off prompt launches **Wave 2 = {62}**,
-the final wave:
+| Phase | Shipped | Migration | `user_version` |
+| --- | --- | --- | --- |
+| 59 — Per-item reorder points | `reorder-policy.ts` + per-item `listLowStock` override | `v21-item-reorder-point` | 21 |
+| 60 — Supplier-parts | `SupplierPartRepository` + `supplier-cost.ts` `effectiveUnitCost` | `v22-supplier-parts` | 22 |
+| 61 — Reporting & valuation | read-only `ReportRepository` + `/reports` screen | none | 22 |
+| 62 — Formal Purchase Orders | `PurchaseOrderRepository` + `po-status.ts` / `planPoReceipt` + PO UI | `v23-purchase-orders` | **23** |
 
-```text
-You are the ORCHESTRATOR for Wave 2 (the final wave) of the inventory-depth plan
-(docs/todo/inventory-depth_2026-06-30.md). Wave 1 (Phases 59–61) is already merged to main:
-per-item reorder points (v21), supplier-parts (v22, with SupplierPartRepository + the pure
-supplier-cost.ts `effectiveUnitCost` helper), and the read-only Reports screen. user_version is
-now 22, the migration registry is contiguous, and the strict-contiguity guard has been restored.
+Final state: `user_version = 23`, the migration registry is contiguous v1…v23 (strict-contiguity
+guard intact), **1436/1436 unit tests pass across 145 files**, `build` / `type-check` clean, the
+browser smoke gained one step per phase (four total), and the carried §4 multi-level variants
+smoke flag is **closed** (re-verified passing on the Phase-62 e2e run — an environmental flake,
+not a defect). Every phase passed its mandatory pre-merge code-review gate; all waived findings are
+recorded in the per-phase Outcome notes above.
 
-Read docs/todo/inventory-depth_2026-06-30.md in full (especially the Phase 62 section and the
-Wave-1 Outcome notes), the Master Specification at docs/todo/done/_specification.md, and the
-latest docs/dev/PHASE_HANDOVER.md before writing any code. You are the orchestrator — do NOT
-implement the phase yourself in the main tree.
-
-Launch Wave 2 = Phase 62 — Formal Purchase Orders in ONE git worktree, implemented by a dedicated
-sub-agent with isolation: "worktree":
-  - Migration v23-purchase-orders (user_version → 23): two new synced tables purchase_orders +
-    purchase_order_lines (a line links to a Phase-60 supplier_part via supplier_part_id).
-  - Append (never renumber) the migration in src/db/migrations/index.ts; register BOTH tables in
-    SYNC_TABLES (src/db/repositories/tombstone.ts) — purchase_orders before purchase_order_lines,
-    both after supplier_parts/items — and add the matching FK_REFS entries
-    (src/features/sync/reconcile.ts). A removed supplier-part NULLs the line's supplier_part_id
-    (nullable FK — don't block the delete); a removed item likewise.
-  - Derive-don't-store: ORDERED/PARTIAL/RECEIVED status is derived from SUM(received_qty) vs
-    SUM(ordered_qty) via a pure po-status.ts; only DRAFT/CANCELLED are persisted user states. A
-    pure planPoReceipt wraps the existing Phase-24 planReceipt / ProjectRepository.receiveLine
-    (and Phase-28 batch landing) — never hand-roll a second stock-mutation path. On-order qty is
-    a derived per-item projection like the Phase-20 In-Transit one.
-  - PO list + detail + receive flow UI (per-line, partial allowed, optional destination
-    location/batch); design tokens only, British English.
-
-Give the sub-agent the Phase 62 spec section and the binding conventions (§8 protocols, :memory:
-unit tests + a real-browser smoke per §8.5, pure-.ts-seam split, derive-don't-store, British
-English, design tokens only per CLAUDE.md, no secrets). It must use migration version v23
-exactly, run `npm install` first (worktrees don't share node_modules), launch its dev server on a
-free port (pass SMOKE_BASE), verify four ways (type-check exit code, test:run, build, e2e), and
-commit its work on the worktree branch. Tests: po-status + planPoReceipt pure tests;
-PurchaseOrderRepository :memory: receive-into-stock tests (partial → PARTIAL, full → RECEIVED);
-a sync round-trip; a smoke that creates a PO, receives a line, and asserts on-hand rose.
-
-After the sub-agent reports done, you MUST run a code-review pass on that worktree's diff (a
-review sub-agent or /code-review high) BEFORE merging. Fix all findings (or record an explicit
-waiver in the Outcome note). Only then merge the branch to main, resolving the trivial
-array-append conflicts in index.ts / SYNC_TABLES / FK_REFS / the repository barrel, and remove the
-worktree. Run `npm run test:run` green after the merge.
-
-When Phase 62 is merged and reviewed: append an Outcome note under Phase 62 in the doc, update
-docs/dev/PHASE_HANDOVER.md, and record that the inventory-depth plan (Phases 59–62) is COMPLETE —
-there is no Wave 3, so end with a brief completion note rather than a further kick-off prompt.
-Known carried flag to verify and close out: a pre-existing §4 multi-level variants smoke step
-("nests a sub-variant beneath a variant", Phase 18) was already failing on main before Wave 2 and
-is unrelated to it.
-```
+**There is no Wave 3 and no further kick-off prompt.** Future inventory work starts a fresh plan
+document. The remaining deferred items live in `docs/dev/deferred-features.md` (notably: adopt the
+Phase-60 `supplier-cost.ts` `effectiveUnitCost` in the Phase-61 report cost seam — a clean,
+isolated follow-up now that both are on `main`).

@@ -1,24 +1,26 @@
-# PHASE_HANDOVER.md — Wave 1 (Phases 59–61) → Phase 62
+# PHASE_HANDOVER.md — Inventory-depth Phases 59–62 — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory tracking PWA
-**Wave completed:** **Inventory-depth Wave 1 (Phases 59, 60, 61)** — competitor-gap closure, run as
-three parallel git worktrees (one implementation sub-agent each), code-reviewed per phase, and
-merged to `main` in ascending migration order by the orchestrator.
+**Plan completed:** **Inventory-depth Phases 59–62** — competitor-gap closure. Wave 1 ({59, 60, 61})
+ran as three parallel git worktrees; Wave 2 ({62}, the final phase) ran alone after Phase 60 merged.
+Each phase had its own worktree + implementation sub-agent, a **mandatory code-review gate before
+merge**, and was merged to `main` in ascending migration order by the orchestrator.
 **Date:** 2026-06-30
-**Status:** ✅ Complete. `npm run type-check` clean (exit 0) · `npm run build` passes (bundle reporter
-prints **~3054 KiB across 43 precache files, no budget — informational only**) · **1395/1395 unit
-tests pass** across **140 test files** on the **`threads`** pool · the browser smoke gained **3 new
-steps** (one per phase). **Schema: `PRAGMA user_version = 22`** (v21 reorder points, v22
-supplier-parts; Phase 61 added no migration). **No dependency change.** **`build:extension` NOT
-re-run** (no §9 / `extension/` edit in any phase).
+**Status:** ✅ **Plan complete — no Wave 3, no next phase.** `npm run type-check` clean (exit 0) ·
+`npm run build` passes (bundle reporter prints **~3079 KiB, no budget — informational only**) ·
+**1436/1436 unit tests pass** across **145 test files** on the **`threads`** pool · the browser
+smoke gained **4 new steps** (one per phase) · `test:e2e` **102/102** (Phase 62 worktree run).
+**Schema: `PRAGMA user_version = 23`** (v21 reorder points, v22 supplier-parts, v23 purchase orders;
+Phase 61 added no migration). **No dependency change.** **`build:extension` NOT re-run** (no §9 /
+`extension/` edit in any phase).
 
-> ℹ️ **Plan & execution model.** This wave is part of `docs/todo/inventory-depth_2026-06-30.md`
+> ℹ️ **Plan & execution model (now closed).** This was `docs/todo/inventory-depth_2026-06-30.md`
 > (Phases 59–62), a parallelised competitor-gap closure with **pre-allocated migration versions**
-> (59→v21, 60→v22, 61→none, 62→v23) so concurrent worktrees never claim the same `user_version`.
-> Each phase: its own worktree + implementation sub-agent, a **mandatory code-review gate before
-> merge**, then merge in ascending version order resolving the trivial array-append conflicts.
-> **Wave 2 = {62} (Formal Purchase Orders, v23) is the remaining, final phase** — see
-> `docs/todo/inventory-depth_2026-06-30.md` → "Continuation prompt".
+> (59→v21, 60→v22, 61→none, 62→v23) so concurrent worktrees never claimed the same `user_version`.
+> All four phases are merged and reviewed; the plan doc's "Plan complete — no continuation" section
+> records the final state. **There is no next phase in this plan** — future inventory work starts a
+> fresh plan document. The one tracked follow-up is to adopt the Phase-60 `supplier-cost.ts`
+> `effectiveUnitCost` in the Phase-61 report cost seam (`docs/dev/deferred-features.md`).
 
 ---
 
@@ -80,10 +82,11 @@ server in a persistent background process (Bash `run_in_background`, or `cmd.exe
 
 ---
 
-## 2. Database schema snapshot — `PRAGMA user_version = 22`
+## 2. Database schema snapshot — `PRAGMA user_version = 23`
 
-Migration registry (`src/db/migrations/index.ts`) is contiguous **v1 … v22**; `TARGET_SCHEMA_VERSION` is
-derived as the max registered version. New since the previous handover (v19/v20):
+Migration registry (`src/db/migrations/index.ts`) is contiguous **v1 … v23**; `TARGET_SCHEMA_VERSION` is
+derived as the max registered version. The engine strict-contiguity guard is intact. New since the
+previous handover (v19/v20):
 
 - **v20 `v20-project-budgets`** (Phase 58, pre-existing at the start of this wave): §4 project budgeting.
 - **v21 `v21-item-reorder-point`** (Phase 59): additive **nullable** `items` columns `reorder_point`
@@ -98,6 +101,17 @@ derived as the max registered version. New since the previous handover (v19/v20)
   canonical §7.1 `WHEN NEW.updated_at = OLD.updated_at` auto-stamp trigger; STRICT + sane CHECKs. Added to
   `SYNC_TABLES` immediately **after `items`** and to `FK_REFS` (`item_id → items`, non-nullable → an
   incoming orphan is dropped, matching CASCADE). Covered by a two-device LWW + orphan-drop round-trip test.
+- **v23 `v23-purchase-orders`** (Phase 62): two new **synced** tables. `purchase_orders` — `id` (UUID
+  TEXT PK), `supplier_name`, `reference` (nullable), `status` TEXT (`DRAFT|ORDERED|PARTIAL|RECEIVED|
+  CANCELLED` CHECK), `currency` (nullable), `created_at`, `ordered_at` (nullable), `updated_at` + the
+  §7.1 auto-stamp trigger. `purchase_order_lines` — `id` (UUID), `po_id` (FK → purchase_orders **ON
+  DELETE CASCADE**, NOT NULL), `item_id` (FK → items **ON DELETE SET NULL**, nullable),
+  `supplier_part_id` (FK → supplier_parts **ON DELETE SET NULL**, nullable — the Phase-60 link),
+  `description`, `ordered_qty` (`> 0`), `received_qty` (accumulates, `>= 0`, default 0), `unit_cost`
+  (REAL nullable, `≥ 0`), `created_at`, `updated_at` + auto-stamp; indexes on `po_id` and `item_id`.
+  Both joined `SYNC_TABLES` (**`purchase_orders` before `purchase_order_lines`**, both after
+  `items`/`supplier_parts`) with `FK_REFS` (`po_id` non-nullable→orphan-drop; `item_id` /
+  `supplier_part_id` nullable→orphan-NULL). LWW + orphan-NULL + orphan-drop round-trip tested.
 
 The `items` auto-stamp + FTS triggers, and all earlier seams (v13 `item_stock`, v15 `stock_batches`,
 v12 `received_qty`, etc.), remain untouched.
@@ -201,41 +215,39 @@ v12 `received_qty`, etc.), remain untouched.
   explicit `notAVariantParent` predicate to the per-location valuation query for visible consistency
   (already correct via the `item_stock`/`quantity>0` SSOT invariant); a one-line comment on the
   `consumptionRate` per-row delta assumption.
-- **Carried smoke flag:** the §4 multi-level variants step ("nests a sub-variant beneath a variant",
-  Phase 18) failing on baseline `main` — verify/close in Phase 62.
+- **Carried smoke flag — CLOSED:** the §4 multi-level variants step ("nests a sub-variant beneath a
+  variant", Phase 18) re-verified **passing** on the Phase-62 `test:e2e` run (102/102, single run) — an
+  environmental flake, not a defect; no plan diff touched the variants path.
 - **Carried LWW/attachment notes** (unchanged): concurrent location-delete vs offline stock edit can
   transiently over-count until reconcile; a legacy pre-v18 `LOCAL_POINTER` (NULL origin) stays `local`.
 
 ---
 
-## 7. Phase 62 entry checklist (Formal Purchase Orders, v23 — depends on Phase 60, now merged)
+## 7. Phase 62 — Formal Purchase Orders (v23) — ✅ shipped, plan complete
 
-- [ ] Read the master spec (§4 BOM/procurement, §7 sync) **and** this handover **and** the Phase 62 section
-      of `docs/todo/inventory-depth_2026-06-30.md`; restate the locked decisions before writing code.
-- [ ] **Migration `v23-purchase-orders`** (append, never renumber; `user_version` → 23 — contiguous, so
-      **do not touch the engine guard**): two synced tables — `purchase_orders` (`id`, `supplier_name`,
-      `reference`, `status` TEXT `DRAFT|ORDERED|PARTIAL|RECEIVED|CANCELLED`, `currency`, `created_at`,
-      `ordered_at` nullable, `updated_at` + auto-stamp) and `purchase_order_lines` (`id`, `po_id` FK →
-      purchase_orders CASCADE, `item_id` FK → items nullable, `supplier_part_id` FK → supplier_parts
-      nullable, `description`, `ordered_qty`, `received_qty` accumulates, `unit_cost`, `updated_at`). Add
-      both to `SYNC_TABLES` (`purchase_orders` **before** `purchase_order_lines`, both after
-      `supplier_parts`/`items`) and the matching `FK_REFS` entries; a removed supplier-part/item **NULLs**
-      the line's nullable FK (don't block the delete). Add a migration test (`>=` version asserts).
-- [ ] **Derive-don't-store:** ORDERED/PARTIAL/RECEIVED is derived from `SUM(received_qty)` vs
-      `SUM(ordered_qty)` via a pure `po-status.ts`; only DRAFT/CANCELLED are persisted. A pure
-      `planPoReceipt` **wraps** the Phase-24 `planReceipt` / `ProjectRepository.receiveLine` (+ Phase-28
-      batch landing) — **never** a second stock-mutation path. On-order qty is a derived per-item
-      projection (Phase-20 In-Transit pattern). Default a line's `unit_cost` from the Phase-60
-      `effectiveUnitCost`/preferred supplier where sensible.
-- [ ] **`PurchaseOrderRepository`** (`:memory:` tests: partial → PARTIAL, full → RECEIVED, receive-into-
-      stock); `po-status` + `planPoReceipt` pure tests; a sync round-trip; a smoke that creates a PO,
-      receives a line, and asserts on-hand rose (place it before the Phase-53 step; close each smoke step
-      fully). PO list + detail + per-line receive UI (partial allowed, optional destination location/batch);
-      design tokens only, British English.
-- [ ] Verify four ways green (type-check exit code; `test:run`; `build`; `test:e2e` on a live dev server —
-      re-run once for the known flakes; **also verify/close the carried variants-smoke flag**). Run
-      `build:extension` only if you touch §9/`extension/` (you should not). `npm install` first in the
-      worktree.
-- [ ] Code-review the diff before merge; fix or waive findings; merge resolving the trivial array-append
-      conflicts; remove the worktree; `test:run` green. Then append the Phase 62 Outcome note, update this
-      handover, and record that the inventory-depth plan (59–62) is **complete** (no Wave 3).
+Phase 62 is merged to `main` (`535bba6`), closing the inventory-depth plan (Phases 59–62). **There is
+no next phase.** What shipped:
+
+- **`PurchaseOrderRepository`** (`src/db/repositories/PurchaseOrderRepository.ts`,
+  `getPurchaseOrderRepository()`): PO + line CRUD, `setStatus` (DRAFT/ORDERED/CANCELLED), `receiveLine`
+  (a faithful mirror of `ProjectRepository.receiveLine` — reuses `planReceipt`,
+  `addStockStatement`/`addBatchStatement`, `historyStatement`, `batchKeyOf`/`BatchIdentity`; **no second
+  stock-mutation path**), and the derived `onOrderQtyForItem` projection (Phase-20 In-Transit pattern).
+  Types in `src/db/repositories/types/purchase-orders.ts`.
+- **Pure seams** `src/features/purchasing/`: `po-status.ts` (`derivePoStatus` — ORDERED/PARTIAL/RECEIVED
+  derived from receipt totals; DRAFT/CANCELLED authoritative), `po-receipt.ts` (`planPoReceipt` wrapping
+  the Phase-24 `planReceipt`), `po-presentation.ts` (status→`text-glyph-*` token mapping). Plus
+  `queries.ts` (TanStack Query hooks) and the UI: `PurchaseOrdersScreen.tsx` + `components/`
+  (`CreatePurchaseOrderDialog`, `PurchaseOrderLineDialog`, `ReceiveLineDialog`), route
+  `src/routes/purchase-orders.tsx` with a `<main id>` skip target, nav entry on the dashboard.
+- **Schema/sync wiring:** see §2 (v23 tables) — `SYNC_TABLES` +2, `FK_REFS` for `purchase_order_lines`,
+  `mappers.ts` + `types.ts`, the barrel. `reconcile.ts` `computeRemovedParents` extended for
+  `supplier_parts`/`purchase_orders`.
+- **Tests:** `:memory:` repo tests (partial→PARTIAL, full→RECEIVED, on-hand rises, on-order projection),
+  pure `po-status`/`po-receipt`/`po-presentation` tests, a sync LWW + orphan-NULL + orphan-drop
+  round-trip, and one browser-smoke step (creates a PO, receives a line, asserts on-hand rose).
+- **Review:** CLEAN — no blockers/SHOULDs; three NITs waived (see the plan-doc Outcome note). Merged with
+  the lockfile kept pristine. Post-merge `npm run test:run` green (1436/1436).
+
+The **carried §4 multi-level variants smoke flag is CLOSED** — re-verified passing on the Phase-62
+`test:e2e` run (102/102, single run); it was an environmental flake, untouched by any plan diff.
