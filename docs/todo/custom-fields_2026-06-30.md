@@ -378,7 +378,7 @@ relevant) and report the result plainly.
 > ("(ignore)") and the dropdown lists only core fields, so it looks identical to an ignored column and
 > can't be manually (re)assigned — cosmetic/UX only (the inferred mapping still applies; correctness
 > unaffected). Logged in `docs/dev/deferred-features.md` (Phase 72) as a backlog UX-cue follow-up. Merged
-> to `main` (`<this merge>`).
+> to `main` (`0922bb4`).
 
 ## Deferred / explicitly out of scope
 
@@ -394,102 +394,33 @@ relevant) and report the result plainly.
 - **Advanced analytics (ABC / turnover / aging)** and **label customisation** — confirmed audit
   candidates, parked for a possible later plan.
 
+
 ## Continuation prompt
 
 ```text
-Continue the Gubbins custom-field-templates plan (docs/todo/custom-fields_2026-06-30.md). Waves 1 & 2
-are COMPLETE and merged to main: Phase 69 (migration squash → single v1-initial baseline, 6275c36) and
-Phase 70 (custom-field validation seam + save-time hardening, 0f5c694). main now sits at user_version 1,
-1515 unit tests / 136 files, tsc + build clean (precache 3228.89 KiB, no budget). The pure seam
-src/features/inventory/custom-fields.ts exports validateFieldValue(def, raw) → { ok:true; value:string|
-null } | { ok:false; error } (NEVER throws; canonical coercion per field_type) and fieldsForCategory;
-CategoryRepository.setItemFieldValues now validates+coerces through it. Now run WAVE 3 = {Phase 71 +
-Phase 72} in TWO PARALLEL worktrees.
+Plan complete — no continuation.
 
-IMPORTANT CONTEXT (verified across the plan): category custom-field *templates already ship* — do NOT
-build new custom_field_* tables or a CustomFieldRepository. The foundation is `category_fields`
-(definitions) + `item_field_values` (values, EAV, lenient-defaulting, UNIQUE(item_id, field_id)) since
-the v1 baseline, synced (SYNC_TABLES + FK_REFS), owned by `CategoryRepository` (addField/updateField/
-deleteField + position reorder; resolveItemFields/setItemFieldValues, which now enforces the Phase-70
-validateFieldValue seam). FIELD_TYPES = TEXT|NUMBER|BOOLEAN|DATE|SELECT (src/db/repositories/
-constants.ts). Categories are FLAT (no parent_id) → no ancestor resolution. Phases 71 & 72 build ON
-these existing tables — NO migration.
+The Gubbins custom-field-templates plan (docs/todo/custom-fields_2026-06-30.md) is FINISHED. All
+four phases are implemented, reviewed and merged to main:
 
-OBEY THE STANDING PROTOCOLS (§8) AND CLAUDE.md: strict phasing, autonomous TDD (§8.2), :memory:
-node:sqlite unit tests + a real-browser smoke step per phase (§8.5), derive-don't-store seams, pure
-.ts logic split out of glue (mirror cycle-count.ts / asset-lifecycle.ts / operational-metadata.ts /
-the Phase-70 custom-fields.ts), British English, design tokens only — no raw colour/easing literals
-(reach for Foundry primitives first), a PHASE_HANDOVER per phase (§8.1), and NEVER COMMIT SECRETS
-(public repo).
+- Phase 69 — migration squash → single v1-initial baseline (merged 6275c36)
+- Phase 70 — custom-field validation seam + save-time hardening (merged 0f5c694)
+- Phase 71 — search/filter on custom fields: field:<name> token → SearchAST FilterCondition lowered
+  through the existing parseASTtoSQL (EXISTS join item_field_values⋈category_fields, name-resolved,
+  unknown→no-match, REAL-cast numeric compare, parameterised — no injection); Visual Builder
+  custom-field affordance; result-count aria-live intact (merged 4b84410)
+- Phase 72 — CSV import/export of custom fields: import validates via the Phase-70 validateFieldValue
+  seam through the existing CategoryRepository.setItemFieldValues (no second write path; invalid/
+  required collected as row errors, never thrown); export adds one column per definition (dedup by
+  field id, RFC-4180 quoted) via resolveItemFields (merged 0922bb4)
 
-EXECUTION MODEL (proven across phases 59–70): launch TWO implementation sub-agents CONCURRENTLY via the
-Agent tool, isolation: "worktree" — one for Phase 71, one for Phase 72 (independent surfaces: search vs
-CSV). Each agent, BEFORE any work, MUST: (1) verify its worktree base is current main and `git rebase
-main` if not (the harness may branch from an OLD commit); (2) if node_modules is absent, junction it
-from the main checkout via PowerShell `New-Item -ItemType Junction -Path node_modules -Target
-P:\Source\TypeScript\Gubbins\node_modules` (Git Bash mklink /J mangles the flag); (3) confirm the
-toolchain with `npx tsc -p tsconfig.app.json --noEmit` (build-mode tsc -b cannot write .tsbuildinfo
-through a junction). Strict file isolation: each agent touches ONLY its own phase's surface files +
-their tests. NOTE the worktree self-exclusion gotcha: `npm run test:run` from inside a worktree skips
-its own test files (vite.config.ts excludes **/.claude/worktrees/**); the full suite is authoritatively
-run on main AFTER merge.
+End state on main: user_version 1 (no migration after Phase 69); 1567 unit tests / 137 files all
+green; npx tsc -p tsconfig.app.json --noEmit clean; npm run build clean (precache 62 entries /
+3233.62 KiB, no budget breach). Both Wave-3 phases reviewed CLEAN-WITH-NITS; the only waived nit is
+the import-wizard MapStep custom-field column cue (cosmetic/UX — the inferred mapping still applies),
+logged in docs/dev/deferred-features.md (Phase 72) as a backlog UX-cue follow-up.
 
-SHARED-FILE CONFLICT (the ONLY overlap): both phases append one `await step('label', async () => { … });`
-to scripts/browser-smoke.mjs. When you sequentially merge the two reviewed branches, the appends
-conflict — resolve by KEEPING BOTH steps, each explicitly closed with its own `});` (a blind
-delete-the-markers union leaves the first step unclosed). `node --check scripts/browser-smoke.mjs` after
-resolving.
-
-CODE-REVIEW GATE AFTER EACH PHASE (hard requirement): when an implementation agent reports done, run a
-review sub-agent against THAT worktree's diff BEFORE merge. Fix every finding or explicitly waive it in
-that phase's Outcome note. No phase merges to main unreviewed. Merge the two reviewed branches
-sequentially to main (--no-ff "Merge Phase 71 …" / "Merge Phase 72 …", resolving the browser-smoke
-append per above), junction node_modules, run `npx tsc -p tsconfig.app.json --noEmit` + full `npm run
-test:run` (+ `npm run build`), report results plainly. Remove each worktree's node_modules junction
-(cmd /c rmdir …\node_modules) BEFORE `git worktree remove`; then `git worktree prune` and delete the
-merged branches.
-
-PHASE 71 — Search / filter on custom fields (no migration)
-* Objective. Let users filter the inventory by a custom-field value via the existing §5.1 search.
-* Seam. Extend parse-text-query (src/features/search/parse-text-query.ts) + the SearchAST (src/db/
-  search/ast.ts) so a `field:value`-style token resolves to a custom-field predicate, lowered through
-  the EXISTING src/db/search/parseASTtoSQL.ts (join item_field_values / category_fields by field name
-  or key; the §6.6 item search lives in src/db/repositories/item/search.ts). PRODUCE THE AST — never
-  hand-build SQL at the call site (the Phase 47/48 rule). Pure, unit-tested. Watch field-name
-  ambiguity/escaping and a missing/unknown field (resolve to no-match, not an error).
-* UI. Surface custom fields in the filter affordance where appropriate (src/features/search/
-  SearchBuilderContext.tsx + components/VisualBuilder.tsx / ConditionEditor.tsx / fields.ts); the
-  result-count aria-live region stays intact.
-* Tests. parser/AST unit tests (text / number / choice / date predicates, missing-field) + a :memory:
-  query test (the join returns the right items); smoke: filter by a custom field and assert the list
-  narrows.
-* Deliverables: field:value token → SearchAST predicate lowered through existing parseASTtoSQL + tests;
-  :memory: join query test; filter-affordance UI; result-count aria-live intact; +1 smoke step; review
-  passed; PHASE_HANDOVER + Outcome note + auto-memory (phase-71-scope-decisions).
-
-PHASE 72 — CSV import/export of custom fields (no migration)
-* Objective. Extend the Phase-67 catalogue CSV so custom fields import/export alongside core fields.
-* Seam. Extend src/features/inventory/catalog-import.ts's column-mapping + Zod dry-run so a CSV column
-  can target a custom field (validated via the Phase-70 validateFieldValue — import that seam; do NOT
-  re-implement validation), applied THROUGH the existing batch-apply + CategoryRepository.
-  setItemFieldValues (NO second write path). Export (src/features/export/export-data.ts / ExportWizard.
-  tsx) adds the defined custom-field columns (header = field name/key; one column per definition
-  encountered).
-* Tests. pure mapping/coercion/error tests (column → field resolution, invalid value collected not
-  thrown, required enforced) + :memory: batch-apply (the value lands on the item via the existing
-  path); smoke: import a CSV with a custom-field column and assert the value lands on the item.
-* Deliverables: catalog-import custom-field column mapping + Zod dry-run (validates via Phase-70 seam)
-  + tests; batch-apply persists via existing setItemFieldValues (no second path) + :memory: test;
-  Export Wizard catalogue CSV gains custom-field columns; +1 smoke step; review passed; PHASE_HANDOVER
-  + Outcome note + auto-memory (phase-72-scope-decisions).
-
-WHEN BOTH PHASES ARE REVIEWED, MERGED AND THEIR WORKTREES REMOVED, this is the FINAL wave — do BOTH
-before ending the session: (1) emit a "Plan complete — no continuation" note directly in the chat reply
-as a RAW, FENCED Markdown code block (the LAST thing in the reply), summarising the four-phase plan's
-end state (user_version 1, the final test count, tsc+build clean); (2) record that same note verbatim
-under the "Continuation prompt" heading at the foot of the plan doc (replacing this one), and update
-auto-memory (custom-fields-plan-69-72) to PLAN COMPLETE. After the merges run npm run test:run (+ npm
-run build) and report plainly.
+No further work is scheduled under this plan. Advanced analytics (ABC / turnover / aging) and label
+customisation remain parked for a possible separate later plan (see "Deferred / explicitly out of
+scope" above); pick those up only via a new plan doc if the developer prioritises them.
 ```
-</content>
-</invoke>
