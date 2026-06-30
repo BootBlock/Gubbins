@@ -4,10 +4,12 @@ import { Button, LiveRegion, Spinner, Surface, MAIN_CONTENT_ID } from '@/compone
 import {
   AddIcon,
   DeleteIcon,
+  LowStockIcon,
   PackageIcon,
   ShoppingCartIcon,
   TruckIcon,
 } from '@/components/icons';
+import { ReorderTab } from './ReorderTab';
 import { BrandMark } from '@/components/BrandMark';
 import { useFormatters } from '@/lib/useFormatters';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
@@ -34,17 +36,28 @@ import { CreatePurchaseOrderDialog } from './components/CreatePurchaseOrderDialo
 import { PurchaseOrderLineDialog, type LineItemOption } from './components/PurchaseOrderLineDialog';
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
 
+/** The two top-level tabs on the Purchase Orders screen. */
+type PoTab = 'orders' | 'reorder';
+
 /**
- * The Formal Purchase Orders screen (inventory-depth Phase 62): a list of supplier-keyed
- * orders, an order detail with its lines and receipt progress, and a per-line receive flow
- * that lands stock into the existing per-location / batch ledger. Status badges and the whole
- * surface use design tokens only; copy is British English.
+ * The Purchase Orders screen (inventory-depth Phase 62 + Phase 65).
+ *
+ * - **Orders tab**: the existing supplier-keyed DRAFT/ORDERED/RECEIVED order list +
+ *   detail panel (Phase 62).
+ * - **Reorder / Shopping list tab**: items below their reorder point grouped by
+ *   preferred supplier, with editable quantities and one-click DRAFT PO creation
+ *   (Phase 65).
+ *
+ * Both tabs live within the single `/purchase-orders` route (no new route file) so
+ * route-tree merges with parallel phases remain clean. Status badges and design tokens
+ * follow CLAUDE.md; copy is British English.
  */
 export function PurchaseOrdersScreen() {
   const f = useFormatters();
   const ordersQuery = usePurchaseOrders();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<PoTab>('orders');
 
   const createPo = useCreatePurchaseOrder();
 
@@ -62,10 +75,12 @@ export function PurchaseOrdersScreen() {
           <ShoppingCartIcon /> Purchase orders
         </h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="primary" onClick={() => setCreateOpen(true)} data-testid="po-new">
-            <AddIcon />
-            New order
-          </Button>
+          {activeTab === 'orders' && (
+            <Button variant="primary" onClick={() => setCreateOpen(true)} data-testid="po-new">
+              <AddIcon />
+              New order
+            </Button>
+          )}
           <Link
             to="/inventory"
             className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground [&_svg]:size-4"
@@ -76,63 +91,110 @@ export function PurchaseOrdersScreen() {
         </div>
       </header>
 
+      {/* Tab navigation — a plain div carries role="tablist" (a <nav> landmark is
+          suppressed by the role override and inconsistent with the other tablists). */}
+      <div
+        role="tablist"
+        aria-label="Purchase orders sections"
+        className="flex gap-1 border-b border-border"
+      >
+        <TabButton
+          id="po-tab-orders"
+          panelId="po-panel-orders"
+          active={activeTab === 'orders'}
+          onClick={() => setActiveTab('orders')}
+        >
+          <ShoppingCartIcon className="size-4" aria-hidden="true" />
+          Orders
+        </TabButton>
+        <TabButton
+          id="po-tab-reorder"
+          panelId="po-panel-reorder"
+          active={activeTab === 'reorder'}
+          onClick={() => setActiveTab('reorder')}
+          data-testid="po-tab-reorder"
+        >
+          <LowStockIcon className="size-4" aria-hidden="true" />
+          Reorder / Shopping list
+        </TabButton>
+      </div>
+
       <main
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
-        className="grid flex-1 animate-rise gap-6 outline-none lg:grid-cols-[20rem_1fr]"
+        className="flex-1 animate-rise outline-none"
       >
-        {/*
-         * WCAG 4.1.3 — always-mounted polite status region for the purchase-order
-         * master list. The list count changes silently when orders are created or
-         * deleted; this sr-only region announces it to screen-reader users. It is
-         * always mounted so that later text mutations are reliably picked up, and
-         * col-span-full keeps it out of the two-column grid flow.
-         */}
-        <p
-          className="sr-only col-span-full"
-          role="status"
-          aria-live="polite"
-          data-testid="po-list-count-live"
+        {/* Orders tab panel */}
+        <div
+          id="po-panel-orders"
+          role="tabpanel"
+          aria-labelledby="po-tab-orders"
+          hidden={activeTab !== 'orders'}
+          className="grid gap-6 lg:grid-cols-[20rem_1fr]"
         >
-          {ordersQuery.isLoading
-            ? 'Loading purchase orders…'
-            : orders.length === 0
-              ? 'No purchase orders yet.'
-              : `${orders.length} purchase order${orders.length === 1 ? '' : 's'}.`}
-        </p>
-        {/* Order list */}
-        <section aria-label="Purchase orders" className="flex flex-col gap-2">
-          {ordersQuery.isLoading ? (
-            <Surface className="flex items-center justify-center p-8">
-              <Spinner />
-            </Surface>
-          ) : orders.length === 0 ? (
-            <Surface className="p-6 text-sm text-muted-foreground" data-testid="po-empty">
-              No purchase orders yet. Create one to start ordering parts from a supplier.
-            </Surface>
-          ) : (
-            orders.map((po) => (
-              <OrderListRow
-                key={po.id}
-                po={po}
-                active={po.id === selected}
-                currency={f.currency}
-                onSelect={() => setSelectedId(po.id)}
-              />
-            ))
-          )}
-        </section>
+          {/*
+           * WCAG 4.1.3 — always-mounted polite status region for the purchase-order
+           * master list. The list count changes silently when orders are created or
+           * deleted; this sr-only region announces it to screen-reader users. It is
+           * always mounted so that later text mutations are reliably picked up, and
+           * col-span-full keeps it out of the two-column grid flow.
+           */}
+          <p
+            className="sr-only col-span-full"
+            role="status"
+            aria-live="polite"
+            data-testid="po-list-count-live"
+          >
+            {ordersQuery.isLoading
+              ? 'Loading purchase orders…'
+              : orders.length === 0
+                ? 'No purchase orders yet.'
+                : `${orders.length} purchase order${orders.length === 1 ? '' : 's'}.`}
+          </p>
+          {/* Order list */}
+          <section aria-label="Purchase orders" className="flex flex-col gap-2">
+            {ordersQuery.isLoading ? (
+              <Surface className="flex items-center justify-center p-8">
+                <Spinner />
+              </Surface>
+            ) : orders.length === 0 ? (
+              <Surface className="p-6 text-sm text-muted-foreground" data-testid="po-empty">
+                No purchase orders yet. Create one to start ordering parts from a supplier.
+              </Surface>
+            ) : (
+              orders.map((po) => (
+                <OrderListRow
+                  key={po.id}
+                  po={po}
+                  active={po.id === selected}
+                  currency={f.currency}
+                  onSelect={() => setSelectedId(po.id)}
+                />
+              ))
+            )}
+          </section>
 
-        {/* Order detail */}
-        <section aria-label="Order detail">
-          {selected ? (
-            <PurchaseOrderDetail key={selected} poId={selected} onDeleted={() => setSelectedId(null)} />
-          ) : (
-            <Surface className="p-6 text-sm text-muted-foreground">
-              Select or create a purchase order to view its lines.
-            </Surface>
-          )}
-        </section>
+          {/* Order detail */}
+          <section aria-label="Order detail">
+            {selected ? (
+              <PurchaseOrderDetail key={selected} poId={selected} onDeleted={() => setSelectedId(null)} />
+            ) : (
+              <Surface className="p-6 text-sm text-muted-foreground">
+                Select or create a purchase order to view its lines.
+              </Surface>
+            )}
+          </section>
+        </div>
+
+        {/* Reorder / Shopping list tab panel */}
+        <div
+          id="po-panel-reorder"
+          role="tabpanel"
+          aria-labelledby="po-tab-reorder"
+          hidden={activeTab !== 'reorder'}
+        >
+          <ReorderTab />
+        </div>
       </main>
 
       <CreatePurchaseOrderDialog
@@ -149,6 +211,42 @@ export function PurchaseOrdersScreen() {
         }}
       />
     </div>
+  );
+}
+
+/** Accessible tab button that follows the WAI-ARIA tabs pattern. */
+function TabButton({
+  id,
+  panelId,
+  active,
+  onClick,
+  children,
+  'data-testid': testId,
+}: {
+  id: string;
+  panelId: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  'data-testid'?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={id}
+      aria-controls={panelId}
+      aria-selected={active}
+      onClick={onClick}
+      data-testid={testId}
+      className={`flex items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-sm font-medium transition-colors [&_svg]:size-4 ${
+        active
+          ? 'border-ring text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
