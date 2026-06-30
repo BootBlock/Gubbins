@@ -96,6 +96,19 @@ interface PreferencesStore {
    */
   readonly kioskMode: boolean;
   /**
+   * Landing-page (Dashboard) optional features (§3 dashboard improvements). Each is a
+   * user-facing enhancement the user can switch off from the Settings "Dashboard" group;
+   * all default **on** so they're discoverable. The two extra widgets (Recent activity,
+   * Inventory totals) aren't here — they're enabled/disabled via the dashboard's own
+   * "Customise" show/hide like every other widget.
+   */
+  /** Show the Cmd/Ctrl-K command palette (global quick item search) and its hero trigger. */
+  readonly dashboardCommandPalette: boolean;
+  /** Show the quick-action buttons (Add item / Scan) in the dashboard hero. */
+  readonly dashboardQuickActions: boolean;
+  /** Show the first-run "getting started" panel while the inventory is still empty. */
+  readonly dashboardGettingStarted: boolean;
+  /**
    * "Push to bridge" target (Home Assistant query bridge). The base URL (e.g.
    * `http://127.0.0.1:8787`) of an optional companion bridge the user can push the dataset
    * to over HTTP, for those who don't use FS-Access folder sync. Empty until configured. The
@@ -126,6 +139,9 @@ interface PreferencesStore {
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
   setKioskMode: (kioskMode: boolean) => void;
+  setDashboardCommandPalette: (enabled: boolean) => void;
+  setDashboardQuickActions: (enabled: boolean) => void;
+  setDashboardGettingStarted: (enabled: boolean) => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
 }
@@ -151,6 +167,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
       kioskMode: false,
+      dashboardCommandPalette: true,
+      dashboardQuickActions: true,
+      dashboardGettingStarted: true,
       bridgeUrl: '',
       bridgeToken: '',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
@@ -180,6 +199,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),
       setKioskMode: (kioskMode) => set({ kioskMode }),
+      setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
+      setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
+      setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
     }),
