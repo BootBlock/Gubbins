@@ -1,3 +1,87 @@
+# PHASE_HANDOVER.md — Phase 71 (search / filter on custom fields) — ✅ COMPLETE
+
+**Project:** Gubbins — local-first inventory-tracking PWA
+**Phase completed:** **Phase 71 — Search / filter on custom fields.** Lets users filter the inventory by a
+category custom-field value through the **existing** §5.1 search. A new `field:<name>` term resolves to a
+§5.1 `FilterCondition` and is lowered through the **existing** `parseASTtoSQL` (the Phase 47/48 rule:
+produce the AST, never hand-build SQL at the call site). Built **on the existing** `category_fields`
+(definitions) + `item_field_values` (EAV values, TEXT, `UNIQUE(item_id, field_id)`) system — **no
+migration, no new tables, no second query path**; `user_version` is unchanged.
+**Date:** 2026-06-30
+**Status:** ✅ **Implemented in an isolated worktree; NOT merged (awaiting the orchestrator's code-review
+gate).** `npx tsc -p tsconfig.app.json --noEmit` **clean (exit 0)**. **Unit tests 1549 pass across 137
+files** (was 1515/136: +1 new file `src/features/search/fields.test.ts`; +34 tests — AST/`:memory:` join,
+text-parser, and helper/label coverage). `npm run build` **clean** (precache 62 entries / 3231.57 KiB; the
+informational bundle-size line reports no budget breach). `node --check scripts/browser-smoke.mjs` **parses**.
+**No dependency change.**
+
+### What changed (files)
+- **`src/db/search/parseASTtoSQL.ts`** — added the `field:` prefix and `translateCustomField(name,
+  condition)` (mirroring `translateCapability`): lowers a custom-field condition to `EXISTS (SELECT 1 FROM
+  item_field_values ifv JOIN category_fields cf ON cf.id = ifv.field_id WHERE ifv.item_id = items.id AND
+  cf.name = ? COLLATE NOCASE AND …)`. Presence (`HAS_CAPABILITY`) → `ifv.value IS NOT NULL`; CONTAINS →
+  `ifv.value LIKE ? ESCAPE '\\'` (reuses the existing `escapeLike`); text EQUALS → `= ? COLLATE NOCASE`;
+  numeric `>`/`<`/`=` → `CAST(ifv.value AS REAL) <op> ?` (values persist as TEXT, so the cast makes the
+  compare numeric not lexical). The field **name** and the value are both bound `?` params. An
+  **unknown/missing name** matches no rows inside the subquery (no-match, never an error).
+- **`src/db/search/parseASTtoSQL.test.ts`** — +8 AST-shape tests (each predicate, blank-name throws,
+  no-injection) and a +6-test `:memory:` join block (text CONTAINS/EQUALS, numeric REAL-cast compare,
+  presence, **unknown name → []**, **case-insensitive name resolution**), reusing the existing
+  memory-driver + `runMigrations` harness with new `addCategoryField` / `setFieldValue` helpers.
+- **`src/features/search/parse-text-query.ts`** — added the `field:<name>[op<value>]` form (+`cf:` alias)
+  via `parseCustomFieldTerm` / `findCustomFieldOperator`: `:` → CONTAINS, `=` → EQUALS (numeric when the
+  value parses), `>`/`<` → numeric compare, bare `field:<name>` → presence. Still gated through the real
+  `parseASTtoSQL`, so the text path can never emit a tree it would reject.
+- **`src/features/search/parse-text-query.test.ts`** — +9 parser tests + 4 new round-trip entries.
+- **`src/features/search/fields.ts`** — added the `customfield` `BuilderFieldKind`, the **"Custom field"**
+  `BUILDER_FIELDS` entry, its operator list, the `isCustomField` / `customFieldName` / `toCustomField`
+  helpers (mirroring the capability ones), wired `fieldSelectValue` / `kindOfField`, and added the
+  `operatorLabelFor(operator, kind)` seam ("has any value" for a custom field, else `OPERATOR_LABELS`).
+- **`src/features/search/fields.test.ts`** *(new)* — 8 tests for the custom-field helpers + label seam.
+- **`src/features/search/components/ConditionEditor.tsx`** — the Field dropdown now offers **"Custom
+  field"**; choosing it seeds `field:` + a free-text **"Custom field name"** input (Tooltip-wrapped,
+  mirroring the "Capability key" affordance) and the operator labels go through `operatorLabelFor`. Foundry
+  primitives, design tokens, British English. The inventory result-count `aria-live` region is untouched.
+- **`scripts/browser-smoke.mjs`** — +1 step (see below).
+
+### The browser-smoke step appended (for merge-conflict resolution)
+Inserted **immediately after** the Phase-70 step *"validates & round-trips a category custom field on an
+item (Phase 70)"* (which persisted the NUMBER custom field `fieldName` = `12.5` on `Smoke Custom <stamp>`):
+
+```js
+  await step('filters the inventory by a custom-field value (§5.1, Phase 71)', async () => {
+    const customItemName = `Smoke Custom ${stamp}`;
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+    const resultCount = page.locator('p[role="status"][aria-live="polite"]').first();
+    await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+    await page.getByRole('button', { name: 'Visual search' }).click();
+    await page.getByRole('button', { name: 'Add condition' }).click();
+    await page.getByLabel('Field').selectOption('customfield');
+    await page.getByLabel('Custom field name').fill(fieldName);
+    await page.getByLabel('Operator').selectOption('EQUALS');
+    await page.getByLabel('Value').fill('12.5');
+    await page.getByText(customItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForFunction((name) => !document.body.textContent?.includes(name), screwName, { timeout: 5000 });
+    await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+  });
+```
+
+### Verification & limitations (read this)
+- **The full suite runs fine from inside this worktree** via `npm run test:run`: when invoked with the cwd
+  set to the worktree root, Vitest's glob root is the worktree, so test paths are relative and do **not**
+  contain the `.claude/worktrees/` substring the `vite.config.ts` `exclude` keys on — every test here is
+  swept, including the new files. Result: **1549/1549 across 137 files**, all green. (The new files were
+  also confirmed individually with an explicit-path `npx vitest run … --config vite.config.ts` → 114/114.)
+- The browser smoke step is **parse-validated only** (`node --check` passes), not run end-to-end. Running
+  it confirmed the documented Phase-69/70 worktree limitation: Vite's `server.fs.allow` rejects the
+  junctioned `@sqlite.org/sqlite-wasm/dist/sqlite3.wasm` (it resolves to the **main** checkout, outside the
+  worktree root), so the app's DB worker never boots and **every** dev-server-dependent step times out —
+  an infrastructure constraint, not a Phase-71 defect. The step is authored against the real selectors/flow
+  and follows the existing `await step(...)` structure.
+
+---
+
 # PHASE_HANDOVER.md — Phase 70 (custom-field validation seam + save-time hardening) — ✅ COMPLETE
 
 **Project:** Gubbins — local-first inventory-tracking PWA

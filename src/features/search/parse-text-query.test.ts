@@ -204,6 +204,75 @@ describe('parseTextQuery — capabilities', () => {
   });
 });
 
+describe('parseTextQuery — custom fields (Phase 71)', () => {
+  it('field:<name> with no operator → presence (HAS_CAPABILITY)', () => {
+    expect(singleCondition('field:Datasheet')).toEqual({
+      field: 'field:Datasheet',
+      operator: 'HAS_CAPABILITY',
+      value: '',
+    });
+  });
+
+  it('field:<name>:value → text CONTAINS', () => {
+    expect(singleCondition('field:Notes:rev2')).toEqual({
+      field: 'field:Notes',
+      operator: 'CONTAINS',
+      value: 'rev2',
+    });
+  });
+
+  it('field:<name>=text → text EQUALS', () => {
+    expect(singleCondition('field:Colour=red')).toEqual({
+      field: 'field:Colour',
+      operator: 'EQUALS',
+      value: 'red',
+    });
+  });
+
+  it('field:<name>=n → numeric EQUALS', () => {
+    expect(singleCondition('field:Rating=5')).toEqual({
+      field: 'field:Rating',
+      operator: 'EQUALS',
+      value: 5,
+    });
+  });
+
+  it('field:<name>>n → GREATER_THAN numeric', () => {
+    expect(singleCondition('field:Rating>3.3')).toEqual({
+      field: 'field:Rating',
+      operator: 'GREATER_THAN',
+      value: 3.3,
+    });
+  });
+
+  it('field:<name><n → LESS_THAN numeric', () => {
+    expect(singleCondition('field:Rating<1')).toMatchObject({
+      field: 'field:Rating',
+      operator: 'LESS_THAN',
+      value: 1,
+    });
+  });
+
+  it('accepts the cf: alias', () => {
+    expect(singleCondition('cf:Notes:x')).toEqual({
+      field: 'field:Notes',
+      operator: 'CONTAINS',
+      value: 'x',
+    });
+  });
+
+  it('rejects field: with an empty name', () => {
+    const result = parseTextQuery('field:');
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a non-numeric comparison value', () => {
+    const result = parseTextQuery('field:Rating>high');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/number/i);
+  });
+});
+
 describe('parseTextQuery — composite queries (the spec example)', () => {
   it('parses `cap:voltage>3.3 quantity<10` into two AND-ed conditions', () => {
     const conditions = conditionsOf('cap:voltage>3.3 quantity<10');
@@ -339,6 +408,10 @@ describe('parseTextQuery — every output round-trips through parseASTtoSQL', ()
     'cap:voltage>3.3',
     'cap:material=fr4',
     'cap:voltage>3.3 quantity<10 esp32',
+    'field:Datasheet',
+    'field:Notes:rev2',
+    'field:Rating>3.3',
+    'field:Notes:rev2 OR cap:rohs',
     'blue OR widget',
     'cap:voltage>3.3 (qty<10 OR mfr:acme)',
     '(a OR (b OR (c OR (d OR e))))',

@@ -5,13 +5,16 @@ import { useSearchBuilder } from '../SearchBuilderContext';
 import type { BuilderPath } from '../builder-reducer';
 import {
   BUILDER_FIELDS,
-  OPERATOR_LABELS,
+  operatorLabelFor,
   capabilityKey,
+  customFieldName,
   fieldSelectValue,
   isCapabilityField,
+  isCustomField,
   kindOfField,
   operatorsForKind,
   toCapabilityField,
+  toCustomField,
 } from '../fields';
 
 /**
@@ -28,12 +31,14 @@ export function ConditionEditor({
 }) {
   const { dispatch } = useSearchBuilder();
   const isCapability = isCapabilityField(condition.field);
+  const isCustom = isCustomField(condition.field);
   const kind = kindOfField(condition.field);
   const operators = operatorsForKind(kind);
   const showValue = condition.operator !== 'HAS_CAPABILITY';
   const numericValue =
     kind === 'number' ||
-    (isCapability && (condition.operator === 'GREATER_THAN' || condition.operator === 'LESS_THAN'));
+    ((isCapability || isCustom) &&
+      (condition.operator === 'GREATER_THAN' || condition.operator === 'LESS_THAN'));
 
   const onFieldChange = (next: string) => {
     if (next === 'capability') {
@@ -41,6 +46,14 @@ export function ConditionEditor({
         type: 'updateCondition',
         path,
         patch: { field: 'capability:', operator: 'HAS_CAPABILITY', value: true },
+      });
+      return;
+    }
+    if (next === 'customfield') {
+      dispatch({
+        type: 'updateCondition',
+        path,
+        patch: { field: 'field:', operator: 'CONTAINS', value: '' },
       });
       return;
     }
@@ -94,6 +107,27 @@ export function ConditionEditor({
         </Tooltip>
       ) : null}
 
+      {isCustom ? (
+        <Tooltip
+          content="The custom-field **name** to match, e.g. `Datasheet` or `Voltage rating` — exactly as defined on the category. Unknown names simply match nothing."
+          triggerTabIndex={-1}
+        >
+          <Input
+            aria-label="Custom field name"
+            placeholder="Datasheet"
+            value={customFieldName(condition.field)}
+            onChange={(e) =>
+              dispatch({
+                type: 'updateCondition',
+                path,
+                patch: { field: toCustomField(e.target.value) },
+              })
+            }
+            className="h-9 w-32"
+          />
+        </Tooltip>
+      ) : null}
+
       <Select
         aria-label="Operator"
         value={condition.operator}
@@ -102,7 +136,7 @@ export function ConditionEditor({
       >
         {operators.map((op) => (
           <option key={op} value={op}>
-            {OPERATOR_LABELS[op]}
+            {operatorLabelFor(op, kind)}
           </option>
         ))}
       </Select>

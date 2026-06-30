@@ -143,6 +143,72 @@ describe('parseASTtoSQL — capabilities (spec §4 Weighted Capabilities)', () =
   });
 });
 
+describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolution, Phase 71)', () => {
+  it('translates a presence HAS_CAPABILITY to an EXISTS over the item_field_values join', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Datasheet', operator: 'HAS_CAPABILITY', value: '' }),
+    );
+    expect(sql).toBe(
+      '(EXISTS (SELECT 1 FROM item_field_values ifv JOIN category_fields cf ON cf.id = ifv.field_id ' +
+        'WHERE ifv.item_id = items.id AND cf.name = ? COLLATE NOCASE AND ifv.value IS NOT NULL))',
+    );
+    expect(params).toEqual(['Datasheet']);
+  });
+
+  it('translates a text CONTAINS to a LIKE with the field name bound first', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }),
+    );
+    expect(sql).toContain("AND ifv.value LIKE ? ESCAPE '\\'");
+    expect(params).toEqual(['Notes', '%rev2%']);
+  });
+
+  it('escapes LIKE wildcards in a custom-field CONTAINS value', () => {
+    const [, params] = parseASTtoSQL(
+      and({ field: 'field:Notes', operator: 'CONTAINS', value: '50%_x' }),
+    );
+    expect(params).toEqual(['Notes', '%50\\%\\_x%']);
+  });
+
+  it('translates a text EQUALS case-insensitively against the stored value', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Colour', operator: 'EQUALS', value: 'Red' }),
+    );
+    expect(sql).toContain('AND ifv.value = ? COLLATE NOCASE');
+    expect(params).toEqual(['Colour', 'Red']);
+  });
+
+  it('translates a numeric comparison casting the TEXT value to REAL', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 3.3 }),
+    );
+    expect(sql).toContain('AND CAST(ifv.value AS REAL) > ?');
+    expect(params).toEqual(['Rating', 3.3]);
+  });
+
+  it('translates a numeric EQUALS casting the TEXT value to REAL', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Rating', operator: 'EQUALS', value: 5 }),
+    );
+    expect(sql).toContain('AND CAST(ifv.value AS REAL) = ?');
+    expect(params).toEqual(['Rating', 5]);
+  });
+
+  it('rejects a custom-field reference with no name', () => {
+    expect(() =>
+      parseASTtoSQL(and({ field: 'field:', operator: 'HAS_CAPABILITY', value: '' })),
+    ).toThrow(SearchAstError);
+  });
+
+  it('never concatenates the field name or value into the SQL text', () => {
+    const [sql, params] = parseASTtoSQL(
+      and({ field: 'field:Notes', operator: 'EQUALS', value: "x'); DROP TABLE items;--" }),
+    );
+    expect(sql).not.toContain('DROP TABLE');
+    expect(params).toEqual(['Notes', "x'); DROP TABLE items;--"]);
+  });
+});
+
 describe('parseASTtoSQL — validation & the depth cap (spec §5.1)', () => {
   it('throws on an unknown field', () => {
     expect(() =>
@@ -218,6 +284,28 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
     );
   }
 
+  /** Define a category custom field and return its id. */
+  async function addCategoryField(
+    categoryId: string,
+    name: string,
+    fieldType: string,
+  ): Promise<string> {
+    const fieldId = crypto.randomUUID();
+    await driver.execute(
+      `INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);`,
+      [fieldId, categoryId, name, fieldType],
+    );
+    return fieldId;
+  }
+
+  /** Set an item's value for a defined custom field (TEXT EAV). */
+  async function setFieldValue(itemId: string, fieldId: string, value: string): Promise<void> {
+    await driver.execute(
+      `INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);`,
+      [crypto.randomUUID(), itemId, fieldId, value],
+    );
+  }
+
   /** Run a parsed AST as a real query and return the matched ids, sorted. */
   async function run(ast: ASTGroupNode): Promise<string[]> {
     const [where, params] = parseASTtoSQL(ast);
@@ -290,5 +378,55 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
 
   it('match-all returns every item', async () => {
     expect(await run(and())).toEqual(['mcu', 'reg']);
+  });
+
+  describe('custom-field predicates join item_field_values ⋈ category_fields (Phase 71)', () => {
+    beforeEach(async () => {
+      // A category with two custom fields; the two seeded items carry differing values.
+      await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', ['cat-1', 'Chips']);
+      const ratingId = await addCategoryField('cat-1', 'Rating', 'NUMBER');
+      const notesId = await addCategoryField('cat-1', 'Notes', 'TEXT');
+      await setFieldValue('reg', ratingId, '5');
+      await setFieldValue('reg', notesId, 'Datasheet rev2');
+      await setFieldValue('mcu', ratingId, '3.3');
+      // mcu deliberately has no Notes value.
+    });
+
+    it('matches a custom-field text CONTAINS', async () => {
+      expect(await run(and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }))).toEqual([
+        'reg',
+      ]);
+    });
+
+    it('matches a custom-field text EQUALS case-insensitively', async () => {
+      expect(
+        await run(and({ field: 'field:Notes', operator: 'EQUALS', value: 'datasheet rev2' })),
+      ).toEqual(['reg']);
+    });
+
+    it('matches a numeric custom-field comparison casting TEXT to REAL', async () => {
+      // 5 > 4 (reg) but 3.3 < 4 (mcu) — a lexical compare would wrongly include "3.3".
+      expect(await run(and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 4 }))).toEqual([
+        'reg',
+      ]);
+    });
+
+    it('matches custom-field presence (HAS_CAPABILITY) only where a value exists', async () => {
+      expect(
+        await run(and({ field: 'field:Notes', operator: 'HAS_CAPABILITY', value: '' })),
+      ).toEqual(['reg']);
+    });
+
+    it('an unknown custom-field name matches nothing (no error)', async () => {
+      expect(
+        await run(and({ field: 'field:DoesNotExist', operator: 'CONTAINS', value: 'x' })),
+      ).toEqual([]);
+    });
+
+    it('resolves the field name case-insensitively', async () => {
+      expect(await run(and({ field: 'field:rating', operator: 'EQUALS', value: 5 }))).toEqual([
+        'reg',
+      ]);
+    });
   });
 });
