@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
@@ -66,6 +66,7 @@ function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -210,13 +211,28 @@ function InventoryWorkspace() {
             <div className="relative w-full sm:w-64">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={searchRef}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search items…"
-                className="pl-9"
+                className={`pl-9 ${searchInput ? 'pr-9' : ''}`}
                 aria-label="Search items"
                 disabled={astActive}
               />
+              {searchInput && !astActive ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('');
+                    searchRef.current?.focus();
+                  }}
+                  aria-label="Clear search"
+                  data-testid="inventory-search-clear"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary [&_svg]:size-4"
+                >
+                  <CloseIcon />
+                </button>
+              ) : null}
             </div>
 
             <Tooltip content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active." triggerTabIndex={-1}>
