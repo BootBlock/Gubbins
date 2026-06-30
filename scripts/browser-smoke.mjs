@@ -640,17 +640,19 @@ try {
     const field = dialog.getByLabel(fieldName, { exact: false }).first();
     await field.waitFor({ state: 'visible', timeout: 5000 });
 
-    // A non-numeric value must block the save (Phase 70 validation seam): the editor
-    // disables the save button and the value never reaches the worker.
-    await field.fill('not-a-number');
-    const saveBtn = dialog.getByRole('button', { name: /^Save \d+ change/ });
-    await saveBtn.waitFor({ state: 'visible', timeout: 5000 });
-    if (await saveBtn.isEnabled()) {
-      throw new Error('save was not blocked for an invalid NUMBER custom field');
-    }
+    // Note on the invalid-value-blocks-save path: the editor renders a native
+    // `<input type="number">`, which itself drops non-numeric text before it ever
+    // reaches the validation seam, so a DOM-level "type rubbish, assert blocked"
+    // check would prove nothing reliable. That block path (and the canonical
+    // coercion below) is exercised directly by the pure-seam tests
+    // (custom-fields.test.ts) and the repository `:memory:` tests
+    // (CategoryRepository.test.ts). This step proves the *reliable* end-to-end fact:
+    // a valid value coerces canonically on save and round-trips from the worker DB.
 
     // A canonicalisable NUMBER ('12.50') saves; the worker persists it as '12.5'.
+    const saveBtn = dialog.getByRole('button', { name: /^Save \d+ change/ });
     await field.fill('12.50');
+    await saveBtn.waitFor({ state: 'visible', timeout: 5000 });
     await saveBtn.click();
     await page.keyboard.press('Escape');
     await dialog.waitFor({ state: 'hidden', timeout: 5000 });

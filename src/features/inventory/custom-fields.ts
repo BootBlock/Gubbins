@@ -106,10 +106,12 @@ export function validateFieldValue(
     }
 
     default: {
-      // Exhaustiveness guard: a new FieldType must extend this switch explicitly.
+      // Exhaustiveness guard: a new FieldType must extend this switch explicitly,
+      // or this assignment stops compiling. The runtime fallback keeps the contract
+      // (never throws) for an out-of-band value reaching us at runtime.
       const _never: never = def.fieldType;
-      return { ok: false, error: `${def.name} has an unsupported field type.` };
       void _never;
+      return { ok: false, error: `${def.name} has an unsupported field type.` };
     }
   }
 }
