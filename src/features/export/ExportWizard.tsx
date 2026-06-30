@@ -47,6 +47,7 @@ const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
   { value: 'AGING', label: 'Stock aging' },
   { value: 'VALUATION_TREND', label: 'Valuation over time' },
   { value: 'DATA_HYGIENE', label: 'Data hygiene' },
+  { value: 'SPEND', label: 'Spend analytics' },
 ];
 
 export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => void }) {

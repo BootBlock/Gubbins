@@ -18,6 +18,7 @@ import { TurnoverTable } from './components/TurnoverTable';
 import { StockAgingChart } from './components/StockAgingChart';
 import { ValuationSparkline } from './components/ValuationSparkline';
 import { HygieneChecklist } from './components/HygieneChecklist';
+import { SpendBreakdown } from './components/SpendBreakdown';
 import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
@@ -31,6 +32,7 @@ import {
   useInventoryValue,
   useLowStockCount,
   useMovement,
+  useSpendAnalytics,
   useStockAging,
   useTurnover,
   useValuationTrend,
@@ -63,6 +65,10 @@ export function ReportsScreen() {
 
   // Phase 77 data-hygiene / quality report.
   const hygiene = useDataHygiene();
+
+  // Phase 79 procurement / spend analytics — its own selectable trailing window.
+  const [spendWindow, setSpendWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
+  const spend = useSpendAnalytics(spendWindow);
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
@@ -119,6 +125,19 @@ export function ReportsScreen() {
       );
     }
   }, [hygiene.isLoading, hygiene.isError, hygiene.data]);
+
+  // The spend-analytics block's own once-only completion announcement (Phase 63 / WCAG 4.1.3).
+  const [spendAnnouncement, setSpendAnnouncement] = useState('');
+  const spendAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (spend.isLoading || spendAnnouncedRef.current) return;
+    spendAnnouncedRef.current = true;
+    setSpendAnnouncement(
+      spend.isError
+        ? 'Spend analytics failed to load.'
+        : `Spend analytics ready — ${f.currency(spend.data?.total ?? 0)} in the window.`,
+    );
+  }, [spend.isLoading, spend.isError, spend.data, f]);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-4 py-6">
@@ -301,6 +320,32 @@ export function ReportsScreen() {
             )}
           </Panel>
         </section>
+
+        {/* Spend analytics (Phase 79) — money OUT over time, by source/supplier/category.
+            Distinct from the valuation trend above (inventory value). */}
+        <section className="flex flex-col gap-3" aria-labelledby="spend-heading">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
+              Spend analytics
+            </h2>
+            <WindowToggle value={spendWindow} onChange={setSpendWindow} formatters={f} label="Spend window" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Cash out from received purchase orders, project expenses and asset acquisitions. An item
+            bought through a purchase order may also carry an acquisition price, so sources can overlap.
+          </p>
+          <Panel title={`Spend (last ${spendWindow} days)`}>
+            {spend.isLoading ? (
+              <CentredSpinner />
+            ) : spend.data ? (
+              <SpendBreakdown report={spend.data} formatters={f} />
+            ) : (
+              <p className="py-6 text-center text-sm text-destructive">
+                The spend analytics report failed to load.
+              </p>
+            )}
+          </Panel>
+        </section>
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -331,6 +376,14 @@ export function ReportsScreen() {
       <LiveRegion urgency="assertive" visuallyHidden data-testid="hygiene-error-live-region">
         {hygiene.isError && hygieneAnnouncement ? <p>{hygieneAnnouncement}</p> : null}
       </LiveRegion>
+
+      {/* The spend-analytics block's own once-only completion region (Phase 79). */}
+      <LiveRegion visuallyHidden data-testid="spend-live-region">
+        {!spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
+      </LiveRegion>
+      <LiveRegion urgency="assertive" visuallyHidden data-testid="spend-error-live-region">
+        {spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
+      </LiveRegion>
     </div>
   );
 }
@@ -343,16 +396,18 @@ function WindowToggle({
   value,
   onChange,
   formatters,
+  label = 'Analytics window',
 }: {
   value: number;
   onChange: (days: number) => void;
   formatters: Formatters;
+  label?: string;
 }) {
   return (
     <div
       className="inline-flex items-center gap-1 rounded-lg bg-secondary/60 p-0.5"
       role="group"
-      aria-label="Analytics window"
+      aria-label={label}
     >
       {ANALYTICS_WINDOWS.map((days) => {
         const active = days === value;

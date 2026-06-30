@@ -16,6 +16,7 @@ import type { TurnoverReport } from './turnover';
 import type { StockAgingReport } from './stock-aging';
 import type { ValuationTrendReport } from './valuation-trend';
 import type { HygieneReport } from './data-hygiene';
+import { SPEND_SOURCE_LABEL, type SpendReport } from './spend-analytics';
 
 /** The reports a user can export as CSV from the Reports screen. */
 export type ReportCsvKind =
@@ -27,7 +28,8 @@ export type ReportCsvKind =
   | 'TURNOVER'
   | 'AGING'
   | 'VALUATION_TREND'
-  | 'DATA_HYGIENE';
+  | 'DATA_HYGIENE'
+  | 'SPEND';
 
 /** RFC-4180 cell quoting (mirrors the items-CSV exporter). */
 function cell(value: unknown): string {
@@ -117,6 +119,20 @@ export function buildAgingCsv(report: StockAgingReport): string {
 export function buildValuationTrendCsv(report: ValuationTrendReport): string {
   const rows: unknown[][] = report.points.map((p) => [isoDate(p.at), p.value]);
   return toCsv(['date', 'value'], rows);
+}
+
+/**
+ * Spend CSV: the by-source / by-supplier / by-category breakdowns then the time buckets, each row
+ * tagged by dimension, with a leading window total. `share` is a 0..1 fraction (blank for buckets).
+ */
+export function buildSpendCsv(report: SpendReport): string {
+  const rows: unknown[][] = [];
+  rows.push(['Total', '', report.total, 1]);
+  for (const s of report.bySource) rows.push(['Source', SPEND_SOURCE_LABEL[s.source], s.total, s.share]);
+  for (const g of report.bySupplier) rows.push(['Supplier', g.name, g.total, g.share]);
+  for (const g of report.byCategory) rows.push(['Category', g.name, g.total, g.share]);
+  for (const b of report.buckets) rows.push(['Bucket', isoDate(b.start), b.total, '']);
+  return toCsv(['dimension', 'group', 'total', 'share'], rows);
 }
 
 /**

@@ -466,4 +466,82 @@ describe('ReportRepository', () => {
       expect(everyId.has(parent.id)).toBe(false); // abstract variant parent — excluded
     });
   });
+
+  describe('spendAnalytics (Phase 79)', () => {
+    // A fixed wall clock so the trailing window and the acquisition date are deterministic.
+    const NOW = Date.UTC(2026, 5, 15, 12);
+    const day = (n: number) => NOW + n * MS_PER_DAY;
+
+    it('composes spend from PO lines, project expenses and acquisitions, tagged by source', async () => {
+      // Category shared by the PO-line item and the acquisition.
+      await driver.execute("INSERT INTO categories (id, name) VALUES ('cat-r', 'Resistors');");
+      // An acquired asset: purchase_price 500 on 2026-06-10 (inside the 90-day window).
+      await driver.execute(
+        `INSERT INTO items (id, name, location_id, category_id, quantity, purchase_price, acquired_at)
+         VALUES ('it-1', 'Scope', ?, 'cat-r', 1, 500, '2026-06-10');`,
+        [UNASSIGNED_LOCATION_ID],
+      );
+      // A received PO line: 5 received @ £2 = £10 from supplier "RS", ordered 5 days ago.
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-1', 'RS', 'RECEIVED', ?);",
+        [day(-5)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-1', 'po-1', 'it-1', 5, 5, 2);`,
+      );
+      // A manual project expense: £30, incurred 3 days ago.
+      await driver.execute("INSERT INTO projects (id, name) VALUES ('pr-1', 'Build');");
+      await driver.execute(
+        "INSERT INTO project_expenses (id, project_id, amount, incurred_at) VALUES ('ex-1', 'pr-1', 30, ?);",
+        [day(-3)],
+      );
+      // An OUT-OF-WINDOW received PO (400 days ago) — must be excluded.
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-old', 'Old', 'RECEIVED', ?);",
+        [day(-400)],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-old', 'po-old', 'it-1', 100, 100, 9);`,
+      );
+
+      const report = await reports.spendAnalytics(90, 10, NOW);
+
+      expect(report.total).toBe(540); // 10 (PO) + 30 (expense) + 500 (acquisition)
+      expect(report.eventCount).toBe(3);
+      expect(report.bySource).toEqual([
+        { source: 'PURCHASE_ORDER', total: 10, share: 10 / 540 },
+        { source: 'PROJECT_EXPENSE', total: 30, share: 30 / 540 },
+        { source: 'ACQUISITION', total: 500, share: 500 / 540 },
+      ]);
+      // Suppliers: only the PO carries one; the expense + acquisition collapse to "No supplier".
+      expect(report.bySupplier.map((g) => [g.name, g.total])).toEqual([
+        ['No supplier', 530],
+        ['RS', 10],
+      ]);
+      // Categories: the PO line + the acquisition share Resistors (£510); the expense is uncategorised.
+      expect(report.byCategory.map((g) => [g.name, g.total])).toEqual([
+        ['Resistors', 510],
+        ['Uncategorised', 30],
+      ]);
+    });
+
+    it('ignores unreceived PO lines and zero-amount events, and yields an empty report when nothing is in window', async () => {
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-2', 'RS', 'ORDERED', ?);",
+        [day(-2)],
+      );
+      // received_qty 0 → no spend yet.
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, ordered_qty, received_qty, unit_cost)
+         VALUES ('pol-2', 'po-2', 5, 0, 2);`,
+      );
+      const report = await reports.spendAnalytics(90, 10, NOW);
+      expect(report.total).toBe(0);
+      expect(report.eventCount).toBe(0);
+      expect(report.bySupplier).toEqual([]);
+      expect(report.bySource.every((s) => s.total === 0)).toBe(true);
+    });
+  });
 });

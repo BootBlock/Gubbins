@@ -29,6 +29,10 @@ export const VALUATION_TREND_POINTS = 12;
 /** Records with no activity for at least this many days count as "stale" (≈ six months). */
 export const DATA_HYGIENE_STALE_DAYS = 180;
 
+// Phase 79 — procurement / spend analytics -------------------------------------
+/** Number of time buckets in the spend-over-time strip (≈ one bar per couple of days at 90d). */
+export const SPEND_BUCKETS = 15;
+
 export function useInventoryValue() {
   return useQuery({
     queryKey: ['reports', 'inventory-value'],
@@ -98,5 +102,12 @@ export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
   return useQuery({
     queryKey: ['reports', 'data-hygiene', staleDays],
     queryFn: () => getReportRepository().dataHygiene(staleDays),
+  });
+}
+
+export function useSpendAnalytics(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+  return useQuery({
+    queryKey: ['reports', 'spend', windowDays, SPEND_BUCKETS],
+    queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
   });
 }

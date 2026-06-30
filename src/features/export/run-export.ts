@@ -32,6 +32,7 @@ import {
   buildDataHygieneCsv,
   buildDeadStockCsv,
   buildMovementCsv,
+  buildSpendCsv,
   buildTurnoverCsv,
   buildValuationCsv,
   buildValuationTrendCsv,
@@ -43,6 +44,7 @@ import {
   DEFAULT_ANALYTICS_WINDOW,
   REPORT_MOVEMENT_BUCKETS,
   REPORT_WINDOW_DAYS,
+  SPEND_BUCKETS,
   VALUATION_TREND_POINTS,
 } from '@/features/reports/queries';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -83,6 +85,7 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
   AGING: 'stock-aging',
   VALUATION_TREND: 'valuation-trend',
   DATA_HYGIENE: 'data-hygiene',
+  SPEND: 'spend',
 };
 
 /** Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61). */
@@ -109,6 +112,8 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
       );
     case 'DATA_HYGIENE':
       return buildDataHygieneCsv(await repo.dataHygiene(DATA_HYGIENE_STALE_DAYS));
+    case 'SPEND':
+      return buildSpendCsv(await repo.spendAnalytics(DEFAULT_ANALYTICS_WINDOW, SPEND_BUCKETS));
   }
 }
 
