@@ -1677,3 +1677,50 @@ duplication**. **~No schema change** — every write reuses an existing reposito
 - [ ] **Atomic (all-or-nothing) clone** — **→ Backlog** (the clone is best-effort across
   repositories; a mid-sequence failure can leave a partial copy, documented on `useCloneItem` and
   easily soft-deleted). Trigger: a need for guaranteed transactional duplication.
+
+## Phase 77 — Outcome (Data-hygiene / quality report) — 2026-06-30
+
+**Third feature-gap audit (`feature-gap-audit-2026-06-30c`), Wave 1, candidate #4 (the LAST) —
+MERGED** (merge `5bf2f7c`; feature `e9c6678` + review-fix `63d1764`; pushed). A read-only "tidy
+up" checklist on the Reports screen, surfacing records needing attention with jump-to-fix links.
+Extends the Phase-61/74 `ReportRepository` + Reports screen. **No schema change — `user_version`
+stays 1.** Living plan: `docs/todo/data-hygiene_2026-06-30.md`.
+
+- Checks (active, non-parent items): missing category / real location / price / photo; never
+  cycle-counted (no `RECONCILED` ledger entry); stale (no activity for ≥180 days, inclusive);
+  possible duplicates (shared MPN, case-insensitive).
+- Pure seam `src/features/reports/data-hygiene.ts` (+7 tests): `buildHygieneReport` folds per-item
+  flags into ordered sections (a 0-count check reads as a green tick), groups duplicate MPNs, caps
+  samples while keeping the exact count, counts distinct flagged items; `now` injected.
+- `ReportRepository.dataHygiene`: one read with correlated sub-queries (`EXISTS item_images`,
+  `EXISTS RECONCILED`, `MAX(activity)`) reusing `preferredSupplierCostSql` + `notAVariantParent`;
+  covered by a new `dataHygiene` `ReportRepository.test.ts` block over the `:memory:` driver.
+- `queries.ts` `useDataHygiene` + `DATA_HYGIENE_STALE_DAYS`; a **Data hygiene** Reports section
+  (`HygieneChecklist` — expandable `<details>` rows with `/inventory` jump links, design tokens
+  only) + its own Phase-63 aria-live completion region. Optional CSV (`buildDataHygieneCsv`) wired
+  through the Export Wizard (the Phase-74 pattern).
+- tsc clean · **1750 unit tests** (150 files, +30 over Phase 76) · build green · code-reviewed
+  (CLEAN-WITH-NITS — the missing repository SQL test was added; plan-doc drift corrected).
+
+**Deferred → Backlog (tracked, not dropped):**
+
+- [ ] **One-click fixes from the report** (bulk-assign a category, etc.) — **→ Backlog** (the
+  jump-to-fix link + Phase-76 bulk edit cover the workflow). Trigger: a request to remediate inline.
+- [ ] **Item-level deep links from the checklist** — **→ Backlog** (links go to `/inventory`,
+  which defines no search params yet — matching every other cross-screen link). Trigger: route
+  `validateSearch` work to pre-filter/open the flagged item.
+- [ ] **Duplicate-by-name / fuzzy duplicate detection** — **→ Backlog** (MPN is the precise
+  signal). Trigger: a request to catch near-duplicates without a shared MPN.
+
+---
+
+## Wave 1 of the third feature-gap audit — COMPLETE (2026-06-30)
+
+All three Wave-1 phases are merged & pushed, every one **no-migration** (`user_version` stays **1**):
+**Phase 75** (upcoming agenda, `63c1a84`), **Phase 76** (bulk edit & item clone, `bfd0d2a`),
+**Phase 77** (data-hygiene report, `5bf2f7c`). The suite grew 1703 → **1750** tests; each phase
+passed its own code-review gate. Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
+
+**Still queued (not started)** in that audit: **Wave 2** = #2 time-based asset booking (the one
+genuinely-new table → `user_version` **2**) + #5 procurement/spend analytics; **add-ons** = #6
+global activity feed, #7 supplier price-history. These remain tracked for a future session.
