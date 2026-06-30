@@ -54,6 +54,9 @@ vi.mock('./queries', () => ({
   useAddPurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
   useRemovePurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
   useReceivePurchaseOrderLine: () => ({ mutate: receiveLineSpy, isPending: false }),
+  // Phase 65 — Reorder / Shopping-list tab
+  useReorderPlan: () => ({ isLoading: false, data: [] }),
+  useCreateDraftFromReorderPlan: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, isError: false }),
 }));
 
 vi.mock('@/features/inventory/queries', () => ({

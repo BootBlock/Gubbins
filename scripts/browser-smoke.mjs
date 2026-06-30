@@ -61,7 +61,14 @@
  * `prefers-color-scheme` live;
  * plus the Phase 64 flow (aria-live Tier B, §3 WCAG 4.1.3): the Projects, Contacts,
  * and Purchase-Orders master-list result-count regions are always-mounted polite
- * live regions that announce the list count or empty state once data loads.
+ * live regions that announce the list count or empty state once data loads;
+ * plus the Phase 65 flow (procurement automation, §4): an item is dropped below its
+ * reorder point, the Reorder / Shopping-list tab is opened on the Purchase Orders
+ * screen, and "Create draft PO" is clicked for a supplier group to produce a DRAFT
+ * purchase order visible in the Orders tab;
+ * plus the Phase 66 flow (asset lifecycle, §4): opening an item's Lifecycle tab,
+ * entering a warranty-expiry date in the Asset section, saving it, and confirming
+ * the warranty-status badge renders.
  * Asserts there are no console/page errors.
  *
  *   node scripts/browser-smoke.mjs            # headless
@@ -868,6 +875,148 @@ try {
       },
       { timeout: 5000 },
     );
+  });
+
+  // --- Phase 65: Procurement automation — reorder plan → draft PO --------------
+  // Creates an item below its reorder point (no preferred supplier → Unassigned group),
+  // then assigns a preferred supplier to it, opens the Reorder tab, and drafts a PO
+  // for the supplier group. Verifies a DRAFT PO appears in the Orders tab.
+
+  await step('reorder tab shows low-stock items and creates a draft PO (§4, Phase 65)', async () => {
+    const reorderItemName = `Smoke Reorder ${stamp}`;
+    const reorderSupplier = `Smoke Supplier ${stamp}`;
+
+    // Create a DISCRETE item with a reorder point of 10 and an initial quantity of 2
+    // so it is immediately below its reorder point.
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+    await page.getByRole('button', { name: 'Add item' }).click();
+    const addDlg = page.getByRole('dialog', { name: 'Add item' });
+    await addDlg.getByLabel('Name').fill(reorderItemName);
+    await addDlg.getByLabel('Tracking').selectOption('DISCRETE');
+    await addDlg.getByLabel('Initial quantity').fill('2');
+    await addDlg.getByLabel('Reorder point').fill('10');
+    await addDlg.getByRole('button', { name: 'Create item' }).click();
+    await page.getByText(reorderItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+
+    // Add a preferred supplier to the item so it lands in a named group.
+    const reorderCard = () =>
+      page
+        .locator('div')
+        .filter({ hasText: reorderItemName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+    await reorderCard().getByRole('button', { name: 'Item details' }).click();
+    const itemDlg = page.getByRole('dialog');
+    await itemDlg.getByRole('tab', { name: 'Supplier' }).click();
+    // Add supplier part — the "Add supplier" button opens the supplier form.
+    const addSupplierBtn = itemDlg.getByRole('button', { name: /add supplier/i });
+    await addSupplierBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await addSupplierBtn.click();
+    const supplierForm = itemDlg.getByTestId('supplier-part-form').or(itemDlg.getByRole('form', { name: /supplier/i }));
+    // Fill in the supplier name field; use the first visible text input in the dialog section
+    // (the supplier name field is first in the form).
+    const supplierNameInput = itemDlg.getByLabel(/supplier name/i).first();
+    await supplierNameInput.waitFor({ state: 'visible', timeout: 5000 });
+    await supplierNameInput.fill(reorderSupplier);
+    // Mark as preferred immediately.
+    const preferredToggle = itemDlg.getByLabel(/preferred/i).first();
+    if (await preferredToggle.isVisible()) await preferredToggle.check().catch(() => {});
+    // Save the supplier part.
+    const saveBtn = itemDlg.getByRole('button', { name: /save|add/i }).last();
+    await saveBtn.click();
+    // Close the item dialog.
+    await page.keyboard.press('Escape');
+    await itemDlg.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+
+    // Navigate to the Purchase Orders screen and open the Reorder tab.
+    await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
+    const reorderTab = page.getByTestId('po-tab-reorder');
+    await reorderTab.waitFor({ state: 'visible', timeout: 5000 });
+    await reorderTab.click();
+
+    // The Reorder tab panel must be active and show the reorder list region.
+    const reorderLive = page.getByTestId('reorder-list-count-live');
+    await reorderLive.waitFor({ state: 'attached', timeout: 5000 });
+    if ((await reorderLive.getAttribute('role')) !== 'status') {
+      throw new Error('reorder-list-count-live does not have role="status"');
+    }
+    if ((await reorderLive.getAttribute('aria-live')) !== 'polite') {
+      throw new Error('reorder-list-count-live is not aria-live="polite"');
+    }
+
+    // Wait for at least one reorder group to appear (the supplier group for our item).
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-testid="reorder-group"]').length > 0,
+      { timeout: 8000 },
+    );
+
+    // The named supplier group must show a "Create draft PO" button.
+    const supplierGroup = page
+      .locator('[data-testid="reorder-group"]')
+      .filter({ has: page.getByTestId('reorder-create-draft') })
+      .first();
+    await supplierGroup.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Click "Create draft PO" for the first named supplier group.
+    await supplierGroup.getByTestId('reorder-create-draft').click();
+
+    // Confirmation: the live region announces success.
+    const draftLive = page.getByTestId('reorder-draft-live');
+    await draftLive.waitFor({ state: 'attached', timeout: 5000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="reorder-draft-live"]');
+        return el != null && (el.textContent ?? '').toLowerCase().includes('draft');
+      },
+      { timeout: 8000 },
+    );
+
+    // Switch back to the Orders tab and confirm a new DRAFT PO is listed.
+    const ordersTab = page.getByRole('tab', { name: /orders/i }).first();
+    await ordersTab.click();
+    // The list should now have at least one order row.
+    const poRow = page.getByTestId('po-list-row').first();
+    await poRow.waitFor({ state: 'visible', timeout: 8000 });
+  });
+
+  // --- Phase 66: Asset lifecycle — warranty date → status badge ----------------
+  await step('opens the Asset section on an item, sets a warranty date, confirms the badge (§4, Phase 66)', async () => {
+    // Navigate to the inventory screen and open the item detail for the printer (a SERIALISED item).
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await printerCard().getByRole('button', { name: 'Item details' }).waitFor({ state: 'visible', timeout: 8000 });
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    const detail = page.getByRole('dialog');
+
+    // Switch to the Lifecycle tab which hosts the Asset section.
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
+
+    // Scroll down to the Asset details section and fill in the warranty date
+    // (one year from now, so the badge should show "Under warranty").
+    const futureWarranty = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+    const warrantyInput = detail.getByTestId('asset-warranty-expires-at');
+    await warrantyInput.waitFor({ state: 'visible', timeout: 5000 });
+    await warrantyInput.fill(futureWarranty);
+
+    // Save the asset details.
+    await detail.getByTestId('save-asset').click();
+
+    // After saving, re-open to confirm the warranty badge is rendered.
+    // The badge is driven by warrantyStatus() on the persisted item.
+    await page.keyboard.press('Escape');
+    await printerCard().getByRole('button', { name: 'Item details' }).click();
+    await detail.getByRole('tab', { name: 'Lifecycle' }).click();
+
+    // The warranty status badge should be visible (active/expiring-soon/expired).
+    // A date a year out is 'active'; we just need the badge to appear.
+    const warrantyBadge = detail.locator('[aria-live="polite"]');
+    await warrantyBadge.first().waitFor({ state: 'visible', timeout: 5000 });
+    const badgeText = (await warrantyBadge.first().textContent()) ?? '';
+    if (!/(warranty|Warranty)/.test(badgeText)) {
+      throw new Error(`Expected a warranty status badge, got: "${badgeText}"`);
+    }
+
+    await page.keyboard.press('Escape');
   });
 
   await step('degrades a foreign local-pointer datasheet to "Unlinked Local File" (§4, Phase 53)', async () => {
@@ -2846,6 +2995,57 @@ try {
 
     // Clear the filter so the screenshot / any later desktop assertion is unaffected.
     await search.fill('');
+  });
+
+  await step('imports a synthetic catalogue CSV and verifies new items appear in inventory (Phase 67)', async () => {
+    await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+
+    // Synthesise a tiny in-memory CSV (2 items; names are test-unique via `stamp`).
+    const csvContent = [
+      'name,quantity,unitCost',
+      `Smoke Gizmo ${stamp},3,1.50`,
+      `Smoke Thingamajig ${stamp},7,0.99`,
+    ].join('\r\n');
+
+    // Open the import wizard.
+    await page.getByTestId('open-catalog-import').click();
+    await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
+
+    // Inject the synthetic CSV directly via the file input (no real file needed).
+    const csvBytes = Buffer.from(csvContent, 'utf-8');
+    await page.getByTestId('catalog-import-file').setInputFiles({
+      name: 'smoke-catalog.csv',
+      mimeType: 'text/csv',
+      buffer: csvBytes,
+    });
+
+    // Wizard should auto-advance to the map step.
+    await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
+
+    // Advance to preview.
+    await page.getByTestId('catalog-import-preview').click();
+    await page.getByTestId('catalog-import-apply').waitFor({ state: 'visible', timeout: 5000 });
+
+    // The preview should show 2 creates and 0 errors.
+    const applyButton = page.getByTestId('catalog-import-apply');
+    const applyText = await applyButton.textContent();
+    if (!applyText?.includes('2')) {
+      throw new Error(`Expected "Import 2 rows" button but got: "${applyText}"`);
+    }
+
+    // Apply the import.
+    await applyButton.click();
+    await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: 8000 });
+
+    // Close the wizard.
+    await page.getByTestId('catalog-import-done').click();
+
+    // Verify both items appear in the inventory list via search.
+    const searchBox = page.getByRole('textbox', { name: 'Search items' });
+    await searchBox.fill(`Smoke Gizmo ${stamp}`);
+    await page.getByText(`Smoke Gizmo ${stamp}`).waitFor({ state: 'visible', timeout: 6000 });
+    await searchBox.fill('');
   });
 
   await page.screenshot({ path: 'scripts/.smoke-screenshot.png', fullPage: true });

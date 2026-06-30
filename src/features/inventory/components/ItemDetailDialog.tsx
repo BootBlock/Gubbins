@@ -3,6 +3,7 @@ import { Modal } from '@/components/foundry';
 import {
   CapabilityIcon,
   CategoryIcon,
+  CostIcon,
   DatasheetIcon,
   DueDateIcon,
   GaugeIcon,
@@ -22,6 +23,7 @@ import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
+import { AssetEditor } from './AssetEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
@@ -184,6 +186,7 @@ function buildTabs(item: Item): readonly TabDef[] {
       icon: <DueDateIcon />,
       sections: [
         { title: 'Lifecycle & variants', icon: <DueDateIcon />, content: <LifecycleEditor item={item} /> },
+        { title: 'Asset details', icon: <CostIcon />, content: <AssetEditor item={item} /> },
         { title: 'Maintenance', icon: <SettingsIcon />, content: <MaintenanceEditor itemId={item.id} /> },
       ],
     },

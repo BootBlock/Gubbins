@@ -39,6 +39,14 @@ export interface ItemRow {
   readonly reorder_gauge_percent: number | null;
   /** Optional suggested top-up quantity when re-ordering; null = use the shortfall (v21). */
   readonly reorder_qty: number | null;
+  /** Date the item was acquired (ISO calendar date string, e.g. `2024-03-15`); null = untracked (v24). */
+  readonly acquired_at: string | null;
+  /** Date the manufacturer/supplier warranty expires (ISO calendar date string); null = untracked (v24). */
+  readonly warranty_expires_at: string | null;
+  /** Original acquisition cost in the base currency; null = unpriced (v24). */
+  readonly purchase_price: number | null;
+  /** Useful life in months for straight-line depreciation; null = no depreciation (v24). */
+  readonly depreciation_months: number | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -104,6 +112,19 @@ export interface Item {
   readonly reorderPoint: number | null;
   readonly reorderGaugePercent: number | null;
   readonly reorderQty: number | null;
+  /**
+   * Asset lifecycle fields (Phase 66, v24). All four default to `null` for pre-v24
+   * items — an item with none of these set behaves exactly as before (no regression).
+   *
+   * - `acquiredAt`          — ISO date string (`YYYY-MM-DD`) when the item was acquired; null = untracked.
+   * - `warrantyExpiresAt`   — ISO date string when the warranty expires; null = untracked.
+   * - `purchasePrice`       — original acquisition cost in the base currency; null = unpriced.
+   * - `depreciationMonths`  — useful life for straight-line depreciation; null = no depreciation.
+   */
+  readonly acquiredAt: string | null;
+  readonly warrantyExpiresAt: string | null;
+  readonly purchasePrice: number | null;
+  readonly depreciationMonths: number | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -157,6 +178,14 @@ export interface CreateItemInput {
   readonly reorderGaugePercent?: number | null;
   /** Optional suggested top-up quantity when re-ordering (§4, v21). */
   readonly reorderQty?: number | null;
+  /** Date the item was acquired, as `YYYY-MM-DD`; omit/null for untracked (§4, v24). */
+  readonly acquiredAt?: string | null;
+  /** Date the manufacturer/supplier warranty expires, as `YYYY-MM-DD`; omit/null for untracked (§4, v24). */
+  readonly warrantyExpiresAt?: string | null;
+  /** Original acquisition cost in the base currency; omit/null for unpriced (§4, v24). */
+  readonly purchasePrice?: number | null;
+  /** Useful life in months for straight-line depreciation; omit/null for no depreciation (§4, v24). */
+  readonly depreciationMonths?: number | null;
   readonly trackingMode?: TrackingMode;
   /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
@@ -187,6 +216,14 @@ export interface UpdateItemInput {
   readonly reorderGaugePercent?: number | null;
   /** Optional suggested top-up quantity when re-ordering; null clears it (§4, v21). */
   readonly reorderQty?: number | null;
+  /** Date the item was acquired (`YYYY-MM-DD`); null clears it (§4, v24). */
+  readonly acquiredAt?: string | null;
+  /** Date the warranty expires (`YYYY-MM-DD`); null clears it (§4, v24). */
+  readonly warrantyExpiresAt?: string | null;
+  /** Original acquisition cost; null clears it (§4, v24). */
+  readonly purchasePrice?: number | null;
+  /** Useful life in months for straight-line depreciation; null clears it (§4, v24). */
+  readonly depreciationMonths?: number | null;
   /**
    * The §4.1.1 schema-less operational-parameter map. Pass a record to replace the
    * stored set wholesale, or `null` to clear it; omit to leave it untouched.

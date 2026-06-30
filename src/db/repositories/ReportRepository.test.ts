@@ -191,4 +191,101 @@ describe('ReportRepository', () => {
       expect(report.lines[0]?.idleDays).toBe(120);
     });
   });
+
+  // Phase 65 — reorder shortfall + plan ------------------------------------------
+  describe('listReorderShortfall (Phase 65)', () => {
+    it('returns an empty array when no items are below their reorder point', async () => {
+      await items.create({ name: 'Plentiful', quantity: 100 });
+      const rows = await reports.listReorderShortfall();
+      expect(rows).toHaveLength(0);
+    });
+
+    it('includes DISCRETE items at or below the effective reorder point', async () => {
+      await items.create({ name: 'Low', quantity: 2 }); // below default threshold (5)
+      await items.create({ name: 'OK', quantity: 50 });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.itemName).toBe('Low');
+      // shortfall = max(0, 5 - 2) = 3
+      expect(rows[0]!.shortfall).toBe(3);
+    });
+
+    it('uses per-item reorderPoint when set, ignoring the global default', async () => {
+      // The item has a bespoke floor of 20; global default is 5 → it is low vs its own floor.
+      const item = await items.create({ name: 'HighFloor', quantity: 10, reorderPoint: 20 });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      expect(rows.some((r) => r.itemId === item.id)).toBe(true);
+      const row = rows.find((r) => r.itemId === item.id)!;
+      // shortfall = 20 - 10 = 10
+      expect(row.shortfall).toBe(10);
+    });
+
+    it('uses per-item reorderQty when set (explicit top-up amount)', async () => {
+      // reorderQty=15 overrides the shortfall-to-floor calculation
+      const item = await items.create({
+        name: 'CustomTopUp',
+        quantity: 1,
+        reorderPoint: 5,
+        reorderQty: 15,
+      });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      const row = rows.find((r) => r.itemId === item.id)!;
+      expect(row.shortfall).toBe(15); // reorderQty wins
+    });
+
+    it('joins the preferred supplier part when one is marked', async () => {
+      const item = await items.create({ name: 'Chip', quantity: 0 });
+      await supplierParts.create(item.id, { supplierName: 'Non-preferred', unitCost: 1 });
+      await supplierParts.create(item.id, {
+        supplierName: 'DigiKey',
+        unitCost: 0.5,
+        packQty: 10,
+        minOrderQty: 5,
+        isPreferred: true,
+      });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      const row = rows.find((r) => r.itemId === item.id)!;
+      expect(row.preferredSupplier).not.toBeNull();
+      expect(row.preferredSupplier!.supplierName).toBe('DigiKey');
+      expect(row.preferredSupplier!.unitCost).toBe(0.5);
+      expect(row.preferredSupplier!.packQty).toBe(10);
+      expect(row.preferredSupplier!.minOrderQty).toBe(5);
+    });
+
+    it('returns null preferredSupplier when no supplier part is marked preferred', async () => {
+      const item = await items.create({ name: 'NoPreferred', quantity: 0 });
+      await supplierParts.create(item.id, { supplierName: 'Some Supplier', unitCost: 1 });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      const row = rows.find((r) => r.itemId === item.id)!;
+      expect(row.preferredSupplier).toBeNull();
+    });
+
+    it('excludes inactive items and abstract variant parents', async () => {
+      const parent = await items.create({ name: 'Parent', quantity: 0 });
+      await items.createVariant(parent.id, { name: 'Variant' });
+      const removed = await items.create({ name: 'Removed', quantity: 0 });
+      await items.softDelete(removed.id);
+
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      expect(rows.every((r) => r.itemName !== 'Parent')).toBe(true);
+      expect(rows.every((r) => r.itemName !== 'Removed')).toBe(true);
+    });
+  });
+
+  describe('reorderPlan (Phase 65)', () => {
+    it('delegates to buildReorderPlan, producing correct supplier groups', async () => {
+      const r1 = await items.create({ name: 'R1', quantity: 0 });
+      const r2 = await items.create({ name: 'R2', quantity: 1 });
+      await supplierParts.create(r1.id, { supplierName: 'DigiKey', unitCost: 0.1, isPreferred: true });
+      // r2 has no preferred supplier → goes to Unassigned.
+
+      const plan = await reports.reorderPlan({ qtyThreshold: 5 });
+      const dk = plan.find((g) => g.supplierName === 'DigiKey');
+      const ua = plan.find((g) => g.supplierName === 'Unassigned');
+      expect(dk).toBeDefined();
+      expect(ua).toBeDefined();
+      // DigiKey sorts before Unassigned.
+      expect(plan[0]!.supplierName).toBe('DigiKey');
+    });
+  });
 });

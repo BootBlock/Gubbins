@@ -1,18 +1,23 @@
 /**
  * TanStack Query hooks + write mutations for the Formal Purchase Orders screen
- * (inventory-depth Phase 62). Every read/write funnels through `PurchaseOrderRepository`
+ * (inventory-depth Phase 62) and the Reorder / Shopping-list tab (Phase 65).
+ *
+ * Every read/write funnels through `PurchaseOrderRepository` / `ReportRepository`
  * (never raw SQL in a component). Mutations invalidate the PO caches; a receive also
  * invalidates the item caches so on-hand stock and history refresh.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getPurchaseOrderRepository,
+  getReportRepository,
   type CreatePurchaseOrderInput,
   type CreatePurchaseOrderLineInput,
+  type LowStockThresholds,
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import { inventoryKeys } from '@/features/inventory/queries';
+import type { ReorderPlanGroup } from './reorder-plan';
 
 export const purchaseOrderKeys = {
   all: ['purchase-orders'] as const,
@@ -131,6 +136,36 @@ export function useReceivePurchaseOrderLine() {
       // Invalidating the `items()` prefix covers the detail, history, stock and list slices
       // (they all hang off it), so a per-item key is unnecessary.
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+    },
+  });
+}
+
+// --- Phase 65: Reorder / Shopping-list ----------------------------------------
+
+export const reorderKeys = {
+  all: ['reorder'] as const,
+  plan: (thresholds?: LowStockThresholds) => [...reorderKeys.all, 'plan', thresholds ?? {}] as const,
+};
+
+/** The full grouped reorder plan — shortfall items grouped by preferred supplier. */
+export function useReorderPlan(thresholds?: LowStockThresholds) {
+  return useQuery({
+    queryKey: reorderKeys.plan(thresholds),
+    queryFn: () => getReportRepository().reorderPlan(thresholds),
+  });
+}
+
+/**
+ * Create one DRAFT PO per named supplier group in the plan. Invalidates the PO list so
+ * the new orders appear immediately in the Orders tab.
+ */
+export function useCreateDraftFromReorderPlan() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (groups: readonly ReorderPlanGroup[]) =>
+      getPurchaseOrderRepository().createDraftFromReorderPlan(groups),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
     },
   });
 }

@@ -22,6 +22,7 @@ import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
 import { planPoReceipt } from '@/features/purchasing/po-receipt';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
+import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { historyStatement } from './item/history';
@@ -365,6 +366,49 @@ export class PurchaseOrderRepository extends BaseRepository {
       [itemId],
     );
     return Number(row?.qty ?? 0);
+  }
+
+  // --- reorder-plan bulk creation (Phase 65) -----------------------------------
+
+  /**
+   * Create one DRAFT purchase order per named supplier group in the given reorder plan,
+   * adding one line per item in the group. The **Unassigned** group is skipped — items
+   * without a preferred supplier have no supplier name to key a PO.
+   *
+   * This method composes the existing {@link create} + {@link addLine} path (no second
+   * PO-creation path) so all the same validation, Hard-Stop gating, and tombstone
+   * conventions apply. Returns the newly created POs with their lines.
+   *
+   * Status is left at DRAFT (`derivePoStatus` is authoritative — the caller must
+   * explicitly set ORDERED when the orders have been sent).
+   */
+  async createDraftFromReorderPlan(
+    groups: readonly ReorderPlanGroup[],
+  ): Promise<PurchaseOrderWithLines[]> {
+    this.assertWritable();
+    const created: PurchaseOrderWithLines[] = [];
+
+    for (const group of groups) {
+      // The Unassigned group has no supplier to key a PO — skip it.
+      if (group.supplierName === UNASSIGNED_SUPPLIER_NAME) continue;
+      if (group.lines.length === 0) continue;
+
+      const po = await this.create({ supplierName: group.supplierName });
+
+      for (const line of group.lines) {
+        await this.addLine(po.id, {
+          itemId: line.itemId,
+          supplierPartId: line.supplierPartId ?? undefined,
+          orderedQty: line.orderQty,
+          unitCost: line.unitCost ?? undefined,
+        });
+      }
+
+      const withLines = await this.getWithLines(po.id);
+      if (withLines) created.push(withLines);
+    }
+
+    return created;
   }
 
   // --- internals ---------------------------------------------------------------
