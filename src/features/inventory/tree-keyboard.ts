@@ -5,7 +5,7 @@
  * mirroring the Phase-38 `focus-trap.ts` and the `list-window.ts` / `cycle-count.ts`
  * "extract the logic out of the glue" seam. The DOM glue (roving tabindex, ref
  * focus, expand/collapse state, selection, delete confirmation) lives in
- * `LocationSidebar.tsx`.
+ * `useLocationSidebar.ts`.
  */
 
 /** One *visible* tree row, in render order (descendants of collapsed nodes omitted). */
