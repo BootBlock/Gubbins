@@ -6,15 +6,10 @@ import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { useItemHistory } from '../queries';
 import { listRowCount, resolveListRow } from '../list-window';
-import { describeHistoryEntry, type HistoryTone } from '../history-format';
+import { describeHistoryEntry, HISTORY_TONE_BADGE } from '../history-format';
 
 /** Estimated entry height — also the height of a not-yet-resident placeholder. */
 const ROW_HEIGHT = 56;
-
-const TONE_BADGE: Record<Exclude<HistoryTone, 'neutral'>, string> = {
-  positive: 'bg-success/15 text-success',
-  negative: 'bg-secondary text-muted-foreground',
-};
 
 /**
  * The per-item Activity Log (spec §4 "Activity Log", §4.1.3) — the immutable ledger
@@ -117,7 +112,7 @@ export function ActivityLog({ itemId }: { itemId: string }) {
                             <span
                               className={cn(
                                 'rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-                                TONE_BADGE[view.tone],
+                                HISTORY_TONE_BADGE[view.tone],
                               )}
                             >
                               {view.delta}

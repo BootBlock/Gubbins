@@ -47,6 +47,17 @@ export function historyActionLabel(action: string): string {
 
 export type HistoryTone = 'positive' | 'negative' | 'neutral';
 
+/**
+ * Design-token badge classes for a non-neutral delta tone — shared by the per-item
+ * Activity Log (Phase 52) and the global activity feed (Phase 80) so the styling never
+ * drifts between the two views. A gain reads as success; a loss is deliberately neutral
+ * (a depletion isn't an error) rather than destructive-red.
+ */
+export const HISTORY_TONE_BADGE: Record<Exclude<HistoryTone, 'neutral'>, string> = {
+  positive: 'bg-success/15 text-success',
+  negative: 'bg-secondary text-muted-foreground',
+};
+
 /** Everything the Activity Log row needs to render one ledger entry. */
 export interface HistoryEntryView {
   /** Short action title, e.g. "Quantity changed". */

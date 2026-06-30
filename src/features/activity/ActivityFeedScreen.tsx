@@ -22,7 +22,7 @@ import { BrandMark } from '@/components/BrandMark';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
-import { describeHistoryEntry, type HistoryTone } from '@/features/inventory/history-format';
+import { describeHistoryEntry, HISTORY_TONE_BADGE } from '@/features/inventory/history-format';
 import {
   ACTIVITY_KINDS,
   ACTIVITY_KIND_LABEL,
@@ -33,11 +33,6 @@ import { useActivityFeed } from './queries';
 
 /** Estimated entry height — also the height of a not-yet-resident placeholder. */
 const ROW_HEIGHT = 64;
-
-const TONE_BADGE: Record<Exclude<HistoryTone, 'neutral'>, string> = {
-  positive: 'bg-success/15 text-success',
-  negative: 'bg-secondary text-muted-foreground',
-};
 
 // ---------------------------------------------------------------------------
 // Kind filter — a token-styled toggle row (mirrors the agenda's kind filter)
@@ -254,7 +249,7 @@ export function ActivityFeedScreen() {
                                   <span
                                     className={cn(
                                       'rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-                                      TONE_BADGE[view.tone],
+                                      HISTORY_TONE_BADGE[view.tone],
                                     )}
                                   >
                                     {view.delta}

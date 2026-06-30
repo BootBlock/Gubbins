@@ -55,10 +55,17 @@ describe('ItemRepository.getHistoryFeed (Phase 80 global activity feed)', () => 
     expect(both.rows).toHaveLength(3);
   });
 
-  it('returns the full feed when actions is empty or omitted', async () => {
+  it('returns the full feed when actions is omitted', async () => {
     await items.create({ name: 'Solo' });
-    expect((await items.getHistoryFeed({ actions: [] })).rows).toHaveLength(1);
     expect((await items.getHistoryFeed()).rows).toHaveLength(1);
+    expect((await items.getHistoryFeed({})).rows).toHaveLength(1);
+  });
+
+  it('matches nothing when actions is an explicit empty array (all kinds de-selected)', async () => {
+    await items.create({ name: 'Solo' });
+    const none = await items.getHistoryFeed({ actions: [] });
+    expect(none.rows).toEqual([]);
+    expect(none.hasMore).toBe(false);
   });
 
   it('reflects the owning item active state', async () => {

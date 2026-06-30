@@ -143,13 +143,22 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * ({@link StorageRepository.pruneHistoryBefore}), so reading the table already honours
      * the §7.6.3-A prune watermark — that watermark is a *sync* concern, not a read filter.
      *
-     * `actions` (optional) restricts the feed to a subset of history actions for the
-     * kind-filter chips; an empty/omitted list returns the full feed.
+     * `actions` restricts the feed to a subset of history actions for the kind-filter
+     * chips. The empty-array sentinel is unambiguous: **omitted** (`undefined`) returns
+     * the full feed (no `WHERE`), while an **explicit empty array** matches nothing — so
+     * de-selecting every kind chip shows an empty feed rather than silently falling back
+     * to everything.
      */
     async getHistoryFeed(filters: ActivityFeedFilters = {}): Promise<Page<ActivityFeedEntry>> {
       const { limit, offset } = this.resolvePage(filters);
-      const actions = filters.actions ?? [];
-      const where = actions.length > 0 ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})` : '';
+      const actions = filters.actions;
+      // An explicit empty filter list means "match nothing" — return early without a query.
+      if (actions !== undefined && actions.length === 0) {
+        return this.toPage([], limit, offset);
+      }
+      const where = actions && actions.length > 0
+        ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})`
+        : '';
       const rows = await this.driver.query<ActivityFeedRow>(
         `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active
          FROM item_history h
@@ -157,7 +166,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
          ${where}
          ORDER BY h.created_at DESC, h.rowid DESC
          LIMIT ? OFFSET ?;`,
-        [...actions, limit, offset],
+        [...(actions ?? []), limit, offset],
       );
       return this.toPage(rows.map(rowToActivityFeedEntry), limit, offset);
     }
