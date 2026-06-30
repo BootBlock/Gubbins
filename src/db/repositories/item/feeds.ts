@@ -8,11 +8,30 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   MS_PER_DAY,
 } from '../constants';
-import { rowToItem } from '../mappers';
-import type { Item, ItemRow, LowStockThresholds, Page, PageParams } from '../types';
+import type { HistoryAction } from '../constants';
+import { rowToActivityFeedEntry, rowToItem } from '../mappers';
+import type {
+  ActivityFeedEntry,
+  ActivityFeedRow,
+  Item,
+  ItemRow,
+  LowStockThresholds,
+  Page,
+  PageParams,
+} from '../types';
 import { THUMBNAIL_SUBQUERY } from './sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+
+/** Filters for the cross-item global activity feed (Phase 80). */
+export interface ActivityFeedFilters extends PageParams {
+  /**
+   * Restrict the feed to these history actions. Omitted or empty = the full feed
+   * (no `WHERE`), so the common "show everything" case never builds a 21-placeholder
+   * `IN (…)`. The screen derives this list from the enabled kind chips.
+   */
+  readonly actions?: readonly HistoryAction[];
+}
 
 export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemFeedRepository extends Base {
@@ -110,6 +129,46 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         [cutoff, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
+    }
+
+    /**
+     * The cross-item global Activity Log (Phase 80) — every `item_history` entry across
+     * all items, newest-first, joined to `items` for the owning item's name + active
+     * flag. This is the global counterpart to the per-item {@link getHistory}; both order
+     * by `created_at DESC, rowid DESC` so same-millisecond inserts keep a deterministic
+     * order. Strictly paginated (§2.1) and bounded by the virtualised list window, so the
+     * feed stays light against 100,000+ ledger rows.
+     *
+     * Pruned rows are physically removed from `item_history`
+     * ({@link StorageRepository.pruneHistoryBefore}), so reading the table already honours
+     * the §7.6.3-A prune watermark — that watermark is a *sync* concern, not a read filter.
+     *
+     * `actions` restricts the feed to a subset of history actions for the kind-filter
+     * chips. The empty-array sentinel is unambiguous: **omitted** (`undefined`) returns
+     * the full feed (no `WHERE`), while an **explicit empty array** matches nothing — so
+     * de-selecting every kind chip shows an empty feed rather than silently falling back
+     * to everything.
+     */
+    async getHistoryFeed(filters: ActivityFeedFilters = {}): Promise<Page<ActivityFeedEntry>> {
+      const { limit, offset } = this.resolvePage(filters);
+      const actions = filters.actions;
+      // An explicit empty filter list means "match nothing" — return early without a query.
+      if (actions !== undefined && actions.length === 0) {
+        return this.toPage([], limit, offset);
+      }
+      const where = actions && actions.length > 0
+        ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})`
+        : '';
+      const rows = await this.driver.query<ActivityFeedRow>(
+        `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active
+         FROM item_history h
+         JOIN items i ON i.id = h.item_id
+         ${where}
+         ORDER BY h.created_at DESC, h.rowid DESC
+         LIMIT ? OFFSET ?;`,
+        [...(actions ?? []), limit, offset],
+      );
+      return this.toPage(rows.map(rowToActivityFeedEntry), limit, offset);
     }
   };
 }

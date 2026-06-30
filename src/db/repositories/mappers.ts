@@ -23,6 +23,8 @@ import type {
   ItemAliasRow,
   ItemAttachment,
   ItemAttachmentRow,
+  ActivityFeedEntry,
+  ActivityFeedRow,
   ItemHistoryEntry,
   ItemHistoryRow,
   ItemImage,
@@ -213,6 +215,15 @@ export function rowToHistoryEntry(row: ItemHistoryRow): ItemHistoryEntry {
     note: row.note,
     metadata: parseJson(row.metadata),
     createdAt: row.created_at,
+  };
+}
+
+/** Compose a joined activity-feed row (history + owning item name/state). */
+export function rowToActivityFeedEntry(row: ActivityFeedRow): ActivityFeedEntry {
+  return {
+    ...rowToHistoryEntry(row),
+    itemName: row.item_name,
+    itemIsActive: row.item_is_active === 1,
   };
 }
 
