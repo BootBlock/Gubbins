@@ -61,9 +61,9 @@ export function ItemActions({
           </Button>
         </span>
       </Tooltip>
-      <Tooltip content="Show a printable QR code that deep-links straight back to this item." triggerTabIndex={-1}>
+      <Tooltip content="Show a printable label — a QR that deep-links back to this item, and/or a Code 128 barcode of its MPN." triggerTabIndex={-1}>
         <span>
-          <Button variant="outline" size="icon" className={size} aria-label="QR code" onClick={() => setDialog('qr')}>
+          <Button variant="outline" size="icon" className={size} aria-label="Item label" onClick={() => setDialog('qr')}>
             <QrCodeIcon className="text-glyph-scan" />
           </Button>
         </span>
@@ -106,7 +106,13 @@ export function ItemActions({
         <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
       ) : null}
       <ItemDetailDialog item={item} open={dialog === 'details'} onClose={() => setDialog(null)} />
-      <QrCodeDialog itemId={item.id} itemName={item.name} open={dialog === 'qr'} onClose={() => setDialog(null)} />
+      <QrCodeDialog
+        itemId={item.id}
+        itemName={item.name}
+        itemMpn={item.mpn}
+        open={dialog === 'qr'}
+        onClose={() => setDialog(null)}
+      />
       <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
     </div>
   );

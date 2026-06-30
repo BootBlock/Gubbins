@@ -30,6 +30,8 @@ export interface TreeItemProps {
   readonly editLabel?: string;
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
+  readonly onPrintLabel?: () => void;
+  readonly printLabelLabel?: string;
   readonly ref: (el: HTMLDivElement | null) => void;
 }
 
@@ -60,6 +62,8 @@ export function LocationTreeItem({
   editLabel,
   onDelete,
   deleteLabel,
+  onPrintLabel,
+  printLabelLabel,
   ref,
 }: TreeItemProps) {
   return (
@@ -130,8 +134,10 @@ export function LocationTreeItem({
           </>
         )}
       </span>
-      {!editing && (onEdit || onDelete) ? (
+      {!editing && (onEdit || onDelete || onPrintLabel) ? (
         <LocationRowActions
+          onPrintLabel={onPrintLabel}
+          printLabelLabel={printLabelLabel}
           onEdit={onEdit}
           editLabel={editLabel}
           onDelete={onDelete}

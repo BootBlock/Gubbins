@@ -1,7 +1,9 @@
 import { cn } from '@/lib/utils';
-import { DeleteIcon, EditIcon } from '@/components/icons';
+import { DeleteIcon, EditIcon, QrCodeIcon } from '@/components/icons';
 
 interface LocationRowActionsProps {
+  readonly onPrintLabel?: () => void;
+  readonly printLabelLabel?: string;
   readonly onEdit?: () => void;
   readonly editLabel?: string;
   readonly onDelete?: () => void;
@@ -18,6 +20,8 @@ interface LocationRowActionsProps {
  * driven) so the treeitem itself stays the only tab stop.
  */
 export function LocationRowActions({
+  onPrintLabel,
+  printLabelLabel,
   onEdit,
   editLabel,
   onDelete,
@@ -28,10 +32,24 @@ export function LocationRowActions({
       className={cn(
         'flex shrink-0 items-center overflow-hidden opacity-0 max-w-0',
         'transition-[max-width,opacity] duration-300 ease-emphasized',
-        'group-hover:max-w-[3.5rem] group-hover:opacity-100',
-        'group-focus-within:max-w-[3.5rem] group-focus-within:opacity-100',
+        'group-hover:max-w-[5.5rem] group-hover:opacity-100',
+        'group-focus-within:max-w-[5.5rem] group-focus-within:opacity-100',
       )}
     >
+      {onPrintLabel ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={printLabelLabel}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrintLabel();
+          }}
+          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+        >
+          <QrCodeIcon className="text-glyph-scan" />
+        </button>
+      ) : null}
       {onEdit ? (
         <button
           type="button"

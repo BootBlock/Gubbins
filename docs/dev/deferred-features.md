@@ -1517,3 +1517,40 @@ correctly (it survives to apply via plan-building), so this is a UX-clarity gap,
 defect; surfaced by the Phase-72 code review (CLEAN-WITH-NITS) and waived for merge. **Trigger:** a
 future custom-fields UX-polish pass should add custom-field options (and a distinct label) to the
 MapStep dropdown so the mapping is visible and editable.
+
+---
+
+## Phase 73 — Outcome (label customisation)
+
+The second feature-gap audit's candidate #7 (label customisation) landed: Gubbins printed only
+fixed QR-plus-name sheets (Phase 49). Now a customisable, device-local **label template** drives
+the symbology (QR / **Code 128 barcode** / both / none), the text fields shown, and the columns;
+**location labels** are printable from the sidebar and **scannable** (a location deep-link the
+in-app scanner recognises and selects). Living plan + full detail:
+`docs/todo/label-customisation_2026-06-30.md`.
+
+- New pure `src/features/inventory/labels/` core: hand-rolled dependency-free **Code 128 encoder**
+  (`code128.ts`, §2.4.3 — the app already decodes Code 128, so prints round-trip), `label-template.ts`
+  (`LabelTemplate` + defensive `normaliseLabelTemplate` + `labelBarcodeValue` MPN→shortId),
+  template-aware `label-sheet.ts` (replaces `qr-label-sheet.ts`), and `location-label.ts`.
+- `usePreferencesStore.labelTemplate` (Tier-2, persisted, never synced); `LOCATION_QR_PARAM` +
+  `buildLocationQrUrl` + tagged `parseScannedCode` union (item|location).
+- UI: rebuilt `PrintLabelsDialog` (controls + live preview + "Save as default", raw colours →
+  tokens), symbology toggle in `QrCodeDialog`, new `PrintLocationLabelDialog` + a per-row
+  "Print label" action in `LocationSidebar`, and `ScannerOverlay.onLocationScanned` →
+  `InventoryScreen` selects the location.
+- **No schema/migration change** — `user_version` stays **1**. tsc clean · **1637 unit tests**
+  (142 files, +70) · build clean (precache 3303 KiB, no budget) · browser-smoke updated
+  (barcode-symbology + location-label steps; "Item label" dialog rename).
+
+**Deferred → Backlog (tracked, not dropped):**
+
+- [ ] **Custom label *sizes* (Avery presets / exact mm dimensions)** — **→ Backlog** (columns are
+  configurable; precise label-stock presets await a request for specific stock).
+- [ ] **Web push / background alerts** — **→ Backlog** (carried from Phase 68; needs a backend).
+- [ ] **True NTP / cross-origin time source** — **→ Backlog** (carried from Phase 14).
+- [ ] **Leaner / precache-excluded WASM decoder** — **→ Backlog** (carried from Phase 15).
+- [ ] **Multi-scrape UI tray / live distributor-selector maintenance** — **→ Backlog** (carried from Phase 13).
+
+After this, **advanced analytics (ABC / turnover / stock aging)** is the sole remaining candidate
+from the second feature-gap audit.

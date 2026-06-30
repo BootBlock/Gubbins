@@ -19,7 +19,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
 import type { ScannerEngine } from '../barcode-decoder';
-import { parseScannedItemId } from '../scan-payload';
+import { parseScannedCode } from '../scan-payload';
 import {
   initialScannerState,
   scannerReducer,
@@ -36,16 +36,31 @@ import { useScanner } from '../useScanner';
  * Barcode Detection API (§6.6). The Continuous queue lives in a Tier-3
  * {@link ScannerQueueProvider} mounted with the overlay.
  */
-export function ScannerOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ScannerOverlay({
+  open,
+  onClose,
+  onLocationScanned,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Called with a scanned location id (Phase 73) — the parent selects it and closes. */
+  onLocationScanned?: (locationId: string) => void;
+}) {
   if (!open) return null;
   return (
     <ScannerQueueProvider>
-      <ScannerOverlayInner onClose={onClose} />
+      <ScannerOverlayInner onClose={onClose} onLocationScanned={onLocationScanned} />
     </ScannerQueueProvider>
   );
 }
 
-function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
+function ScannerOverlayInner({
+  onClose,
+  onLocationScanned,
+}: {
+  onClose: () => void;
+  onLocationScanned?: (locationId: string) => void;
+}) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
@@ -71,6 +86,11 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
   // it definitively resolves to 'none' (§6.6).
   const [engine, setEngine] = useState<ScannerEngine | null>(null);
 
+  // Keep the location-scan handler in a ref so handleDecode's identity (and thus the
+  // useScanner subscription) doesn't churn when the parent passes a fresh closure.
+  const onLocationScannedRef = useRef(onLocationScanned);
+  onLocationScannedRef.current = onLocationScanned;
+
   // Open the camera once on mount; prime audio from this user gesture (§6.5).
   useEffect(() => {
     feedback.current.prime();
@@ -81,18 +101,33 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
 
   const handleDecode = useCallback(
     async (raw: string) => {
-      const itemId = parseScannedItemId(raw);
-      if (!itemId) {
-        setNotice('That code is not a Gubbins item.');
+      const code = parseScannedCode(raw);
+      if (!code) {
+        setNotice('That code is not a Gubbins code.');
         return;
       }
-      const item = await getItemRepository().getById(itemId);
+      const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
+
+      // A scanned location label jumps straight to that location (Phase 73). Validate
+      // it against the loaded list, then hand off to the parent to select it + close.
+      if (code.kind === 'location') {
+        const loc = locationRows.find((l) => l.id === code.id);
+        if (!loc) {
+          setNotice('No matching location found.');
+          return;
+        }
+        setNotice(null);
+        feedback.current.confirm(confirmOpts);
+        onLocationScannedRef.current?.(code.id);
+        return;
+      }
+
+      const item = await getItemRepository().getById(code.id);
       if (!item) {
         setNotice('No matching item found.');
         return;
       }
       setNotice(null);
-      const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
       if (state.mode === 'CONTINUOUS') {
         const added = queue.offer(item.id, item.name);
         if (added) feedback.current.confirm(confirmOpts);
@@ -102,7 +137,7 @@ function ScannerOverlayInner({ onClose }: { onClose: () => void }) {
         setDiscreteResult(item);
       }
     },
-    [state.mode, queue, beepEnabled, hapticsEnabled],
+    [state.mode, queue, beepEnabled, hapticsEnabled, locationRows],
   );
 
   useScanner({

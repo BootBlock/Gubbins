@@ -29,6 +29,11 @@ import {
   normaliseSymbology,
   type ScannerSymbology,
 } from '@/features/scanner/scanner-formats';
+import {
+  DEFAULT_LABEL_TEMPLATE,
+  normaliseLabelTemplate,
+  type LabelTemplate,
+} from '@/features/inventory/labels/label-template';
 
 /**
  * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme`
@@ -59,6 +64,13 @@ interface PreferencesStore {
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
   readonly scannerSymbology: ScannerSymbology;
+  /**
+   * Default printable-label template (Phase 73 "Label customisation") — the symbology,
+   * text fields and columns a label sheet uses. Device-local (label layout is a
+   * printer/paper concern, never synced); the Print-labels dialog seeds an editable
+   * working copy from this and can save changes back as the new default.
+   */
+  readonly labelTemplate: LabelTemplate;
   /** Play a synthesised confirmation beep on a successful scan (§6.5). On by default. */
   readonly scannerBeep: boolean;
   /** Trigger a haptic bump (`navigator.vibrate`) on a successful scan (§6.5). On by default. */
@@ -103,6 +115,7 @@ interface PreferencesStore {
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
+  setLabelTemplate: (template: LabelTemplate) => void;
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setExpirySoonWindowDays: (days: number) => void;
@@ -127,6 +140,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
+      labelTemplate: DEFAULT_LABEL_TEMPLATE,
       scannerBeep: true,
       scannerHaptics: true,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
@@ -148,6 +162,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
       setScannerSymbology: (symbology) =>
         set({ scannerSymbology: normaliseSymbology(symbology) }),
+      // Normalise so a stale/partial persisted template can never reach the renderer.
+      setLabelTemplate: (template) => set({ labelTemplate: normaliseLabelTemplate(template) }),
       setScannerBeep: (scannerBeep) => set({ scannerBeep }),
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
