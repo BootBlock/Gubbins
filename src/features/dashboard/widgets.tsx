@@ -31,6 +31,8 @@ import {
   ContactsIcon,
   CloudIcon,
   SettingsIcon,
+  HistoryIcon,
+  ValueIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -42,6 +44,11 @@ import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenanc
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { budgetStatus } from '@/features/projects/budget';
+import { useItemCount, useLocations } from '@/features/inventory/queries';
+import { useCategories } from '@/features/inventory/categories';
+import { useInventoryValue } from '@/features/reports/queries';
+import { useActivityFeed } from '@/features/activity/queries';
+import { describeHistoryEntry } from '@/features/inventory/history-format';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -305,6 +312,55 @@ function QuickLinksWidget() {
   );
 }
 
+function InventoryTotalsWidget() {
+  const fmt = useFormatters();
+  const value = useInventoryValue();
+  const itemCount = useItemCount();
+  const locations = useLocations();
+  const categories = useCategories();
+  // "How big is my inventory, and what's it worth" — the at-a-glance pulse the
+  // exception-list widgets don't provide. Values reuse the Reports valuation (Phase 74).
+  const totalItems = itemCount.data ?? 0;
+  const totalValue = value.data?.totalValue ?? 0;
+  const locationCount = locations.data?.rows.length ?? 0;
+  const categoryCount = categories.data?.rows.length ?? 0;
+  return (
+    <WidgetShell icon={<ValueIcon />} title="Inventory totals">
+      <StatusRow label="Items">
+        <span className="tabular-nums">{totalItems}</span>
+      </StatusRow>
+      <StatusRow label="Stock value">
+        <span className="tabular-nums">{fmt.currency(totalValue)}</span>
+      </StatusRow>
+      <StatusRow label="Locations">
+        <span className="tabular-nums">{locationCount}</span>
+      </StatusRow>
+      <StatusRow label="Categories">
+        <span className="tabular-nums">{categoryCount}</span>
+      </StatusRow>
+    </WidgetShell>
+  );
+}
+
+function RecentActivityWidget() {
+  // The global activity feed (Phase 80), newest-first — a *continuity* list so the user
+  // can pick up what they were last working on, unlike the exception trackers. Reuses the
+  // pure describeHistoryEntry seam (Phase 52) for each row's label.
+  const feed = useActivityFeed(undefined);
+  const rows = (feed.data?.pages.flatMap((p) => p.rows) ?? []).slice(0, 4);
+  return (
+    <WidgetShell icon={<HistoryIcon />} title="Recent activity">
+      {rows.length === 0 ? (
+        <EmptyRow>No recent changes.</EmptyRow>
+      ) : (
+        rows.map((entry) => (
+          <WidgetRow key={entry.id} label={entry.itemName} meta={describeHistoryEntry(entry).label} />
+        ))
+      )}
+    </WidgetShell>
+  );
+}
+
 // --- System-status widgets (Phase 1 board, now pinnable) -----------------------
 
 function DatabaseWidget() {
@@ -387,6 +443,7 @@ function PlatformWidget() {
  * reorder, hide or re-pin any of them.
  */
 export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
+  { id: 'inventory-totals', title: 'Inventory totals', icon: <ValueIcon />, to: '/reports', Component: InventoryTotalsWidget },
   { id: 'low-stock', title: 'Low stock', icon: <LowStockIcon />, to: '/inventory', Component: LowStockWidget },
   { id: 'expiring', title: 'Soon to expire', icon: <ExpiryIcon />, to: '/inventory', Component: ExpiringWidget },
   { id: 'overdue', title: 'Overdue items', icon: <DueDateIcon />, to: '/contacts', Component: OverdueWidget },
@@ -394,6 +451,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   { id: 'in-transit', title: 'In transit', icon: <TruckIcon />, to: '/inventory', Component: InTransitWidget },
   { id: 'projects', title: 'Project statuses', icon: <ProjectIcon />, to: '/projects', Component: ProjectsWidget },
   { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
+  { id: 'recent-activity', title: 'Recent activity', icon: <HistoryIcon />, to: '/activity', Component: RecentActivityWidget },
   { id: 'quick-links', title: 'Quick links', icon: <LinkIcon />, Component: QuickLinksWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, to: '/settings', hash: 'danger-zone', Component: StorageWidget },

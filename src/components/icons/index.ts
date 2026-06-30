@@ -86,6 +86,7 @@ export {
   Truck as TruckIcon,
   Wrench as AssemblyIcon,
   PoundSterling as CostIcon,
+  Coins as ValueIcon,
   BookmarkCheck as ReserveIcon,
   FileUp as ImportIcon,
   // Project budgeting (Phase 58, §4)
