@@ -81,7 +81,7 @@ export function DashboardNav() {
             <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
               {GROUP_LABELS[group]}
             </h2>
-            <ul className="flex flex-col gap-3">
+            <ul className="grid grid-cols-2 gap-3">
               {destinations.map((dest) => {
                 const isInventory = dest.to === '/inventory';
                 const isAlerts = dest.to === '/alerts';
@@ -91,7 +91,7 @@ export function DashboardNav() {
                       content={NAV_TOOLTIPS[dest.to as keyof typeof NAV_TOOLTIPS]}
                       triggerTabIndex={-1}
                       openDelayMs={NAV_OPEN_DELAY_MS}
-                      className="block"
+                      className="block h-full"
                     >
                       <Link
                         to={dest.to}
@@ -101,18 +101,18 @@ export function DashboardNav() {
                             ? `Alerts — ${alertCount} active alert${alertCount === 1 ? '' : 's'}`
                             : undefined
                         }
-                        className="block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        className="block h-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
                         <Surface
                           className={cn(
-                            'relative flex items-center gap-3 p-4 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-6',
+                            'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
                             isInventory
                               ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
                               : 'hover:shadow-primary/10',
                           )}
                         >
                           <dest.Icon aria-hidden />
-                          <span className="text-sm font-medium">
+                          <span className="min-w-0 text-sm font-medium leading-tight">
                             {isInventory ? 'Open inventory' : dest.label}
                           </span>
                           {isAlerts && alertCount > 0 && (
