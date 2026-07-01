@@ -118,6 +118,7 @@ const ERROR_HINTS: Partial<Record<DbErrorCode, string>> = {
   FTS5_UNAVAILABLE: "This browser's SQLite build is missing full-text search (FTS5).",
   OPFS_UNAVAILABLE: 'Secure on-device storage (OPFS) is unavailable here.',
   NOT_CROSS_ORIGIN_ISOLATED: 'The page is not cross-origin isolated, so secure storage is blocked.',
+  SCHEMA_TOO_NEW: 'Your local data is from a newer schema than this build. Reset local data to rebuild it.',
   INIT_FAILED: 'The database failed to initialise.',
 };
 

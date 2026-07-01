@@ -20,6 +20,7 @@ export type DbErrorCode =
   | 'OPFS_UNAVAILABLE'
   | 'NOT_CROSS_ORIGIN_ISOLATED'
   | 'MULTI_TAB_LOCKED'
+  | 'SCHEMA_TOO_NEW'
   | 'INIT_FAILED'
   | 'TRANSACTION_FAILED'
   // The storage Hard Stop (§7.6.1): writes are suspended at the locked tier.

@@ -36,6 +36,21 @@ export async function runMigrations(
   const to = ordered.length === 0 ? from : ordered[ordered.length - 1]!.version;
   const applied: number[] = [];
 
+  // A database whose version exceeds the highest migration this build knows about was
+  // written by a newer or now-incompatible schema — for example a pre-release baseline
+  // that has since been squashed, leaving a high `user_version` on disk (spec §2.3).
+  // We must refuse to run: the engine only applies migrations *newer* than `from`, so it
+  // would silently no-op and later surface as cryptic "no such table" failures against an
+  // expected-but-absent table. Halt with a clear, actionable error the boot screen can act
+  // on (the rescue actions offer a reset), rather than degrading downstream.
+  if (ordered.length > 0 && from > to) {
+    throw new DbError(
+      'SCHEMA_TOO_NEW',
+      `The on-device database is at schema v${from}, which is newer than this build supports (v${to}). ` +
+        'This happens when the local data predates a schema change. Reset local data to rebuild it from scratch.',
+    );
+  }
+
   for (const migration of ordered) {
     if (migration.version <= from) continue;
 

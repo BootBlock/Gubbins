@@ -86,6 +86,17 @@ describe('migration engine', () => {
     await expect(runMigrations(driver, broken)).rejects.toBeInstanceOf(DbError);
   });
 
+  it('refuses to run when the database version is newer than the highest migration', async () => {
+    // Simulate a stale pre-release baseline left at a high user_version (spec §2.3).
+    await driver.execute(`PRAGMA user_version = ${TARGET_SCHEMA_VERSION + 5};`);
+    await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
+      name: 'DbError',
+      code: 'SCHEMA_TOO_NEW',
+    });
+    // Guard is non-destructive: it neither writes nor rewinds the version.
+    expect(await getUserVersion(driver)).toBe(TARGET_SCHEMA_VERSION + 5);
+  });
+
   it('rolls back atomically and halts when a migration statement fails', async () => {
     const broken: Migration[] = [
       {
