@@ -135,8 +135,9 @@ Full instructions (Node / Docker / systemd, every config option, the security mo
    `GUBBINS_BRIDGE_HOST=0.0.0.0` (a deliberate, logged choice) and optionally enable mDNS
    auto-discovery with `GUBBINS_BRIDGE_MDNS=on`.
 
-3. **Add the Home Assistant integration.** Copy `homeassistant/custom_components/gubbins/` into
-   your HA config (or add this repo as a HACS custom repository), restart HA, then add the
+3. **Add the Home Assistant integration.** Copy `custom_components/gubbins/` (at the repo root)
+   into your HA config, or add this repo (`BootBlock/Gubbins`) as a HACS custom repository
+   (category: *Integration*), restart HA, then add the
    **Gubbins** integration — it either auto-discovers the bridge or asks for its host, port, and
    the **token** from step 2 (the token is stored by HA, never in YAML). Wire the
    *"Where are my {item}?"* sentences into Assist as described in

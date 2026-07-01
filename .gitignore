@@ -39,6 +39,13 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Python (Home Assistant integration under custom_components/)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
 # Environment
 .env
 .env.*

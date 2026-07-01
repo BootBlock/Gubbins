@@ -4,7 +4,7 @@
   "codeowners": ["@BootBlock"],
   "config_flow": true,
   "dependencies": ["conversation"],
-  "documentation": "https://github.com/BootBlock/Gubbins/tree/main/homeassistant",
+  "documentation": "https://github.com/BootBlock/Gubbins/blob/main/homeassistant/README.md",
   "integration_type": "service",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/BootBlock/Gubbins/issues",

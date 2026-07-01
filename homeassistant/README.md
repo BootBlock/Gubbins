@@ -3,8 +3,10 @@
 Ask your Home Assistant voice assistant **"Where are my M3 screws?"** and hear the answer
 from your Gubbins inventory.
 
-This folder contains a small, **read-only** Home Assistant custom integration
-(`custom_components/gubbins/`) plus a no-code YAML fallback. Both talk to the **Gubbins
+This folder documents a small, **read-only** Home Assistant custom integration plus a
+no-code YAML fallback. The integration itself lives at the **repository root**
+(`custom_components/gubbins/`) so that HACS can install it directly; this folder holds the
+voice sentences and this guide. Both talk to the **Gubbins
 bridge** — a separate local companion service (see [`../bridge/`](../bridge/README.md))
 that exposes a bearer-token-protected HTTP API over an exported Gubbins snapshot.
 
@@ -46,19 +48,25 @@ the voice intent). Both are documented below.
 
 ### 1. Install the files
 
-**Manual copy (simplest, always works).** Copy the integration into your Home Assistant
-configuration directory so you end up with:
+**Via HACS (recommended).** The integration lives at the **root** of the Gubbins repository
+(`custom_components/gubbins/`, with `hacs.json` alongside it), which is exactly the layout
+HACS requires. In HACS, open the menu → **Custom repositories**, add the repository using
+its `owner/repo` form — **`BootBlock/Gubbins`** (or the full `https://github.com/BootBlock/Gubbins`
+URL) — and choose category **Integration**, then install **Gubbins Inventory** from the list.
+
+> **Note:** point HACS at the *repository*, not a sub-path. A `…/tree/main/homeassistant/…`
+> URL is **not** a valid custom repository and produces a *"Repository structure … is not
+> compliant"* error — HACS always scans the repository root for
+> `custom_components/<domain>/manifest.json`.
+
+**Manual copy (no HACS).** Copy the integration folder from the repository root into your
+Home Assistant configuration directory so you end up with:
 
 ```
-<config>/custom_components/gubbins/      ← copy of homeassistant/custom_components/gubbins/
+<config>/custom_components/gubbins/      ← copy of custom_components/gubbins/ (repo root)
 ```
 
 Then restart Home Assistant.
-
-**Via HACS (optional).** This integration lives in a sub-folder of the main Gubbins repo
-rather than at its root, so the simplest path is the manual copy above. If you prefer HACS,
-add this repository as a **Custom repository** (category: *Integration*) and install from
-there; the integration's `manifest.json` and `hacs.json` meet HACS's requirements.
 
 ### 2. Add it from the UI
 
@@ -331,11 +339,13 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 
 ## Files
 
+HACS requires the integration and its `hacs.json` at the **repository root**, so they live
+there; the voice sentences and this guide stay under `homeassistant/`.
+
 ```
-homeassistant/
-  hacs.json                                  # HACS metadata (custom-repository install)
-  custom_sentences/en/gubbins.yaml           # voice sentences → copy to <config>/custom_sentences/en/
-  custom_components/gubbins/
+(repository root)
+  hacs.json                                  # HACS metadata (must be at the repo root)
+  custom_components/gubbins/                 # the integration (must be at the repo root)
     manifest.json                            # integration metadata (HACS-compatible)
     const.py                                 # domain + config keys
     api.py                                   # thin HTTP client (read-only + the opt-in adjust_quantity write)
@@ -345,5 +355,8 @@ homeassistant/
     sensor.py                                # optional /health item-count sensor
     services.yaml                            # gubbins.search + gubbins.adjust_quantity schemas
     strings.json / translations/en.json      # UI text
+
+homeassistant/
+  custom_sentences/en/gubbins.yaml           # voice sentences → copy to <config>/custom_sentences/en/
   README.md                                  # this file
 ```
