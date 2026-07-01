@@ -47,6 +47,11 @@ MemoryDenyWriteExecute=false
 # If your snapshot lives outside the (read-only) checkout — e.g. a NAS mount — grant the
 # service read access to just that directory:
 #   ReadOnlyPaths=/mnt/nas/gubbins
+# If you enable the opt-in "push to bridge" endpoint (GUBBINS_BRIDGE_ALLOW_PUSH=on), the
+# service also needs WRITE access to the snapshot's containing directory — it streams the
+# pushed snapshot to a temp file and atomically renames it into place, and ProtectSystem=strict
+# otherwise makes the whole filesystem read-only. Grant it only to that one directory:
+#   ReadWritePaths=/opt/gubbins/local
 
 [Install]
 WantedBy=multi-user.target

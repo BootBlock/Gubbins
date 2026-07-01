@@ -242,8 +242,12 @@ export async function handleRequest(
       default:
         sendError(res, 404, 'not_found', 'Not found', { v1: false });
     }
-  } catch {
-    // Never surface internals (SQL, paths, stack traces) to a caller.
+  } catch (err) {
+    // Never surface internals (SQL, paths, stack traces) to a *caller* — but do log the
+    // message server-side (stdout/journal only, never the response), so an unexpected 500
+    // is diagnosable from the logs rather than a silent, unexplained failure. No item data
+    // or secrets pass through this path — only Error#message from our own code.
+    console.error(`Internal error handling ${req.method} ${url.pathname}:`, err);
     if (!res.headersSent) sendError(res, 500, 'internal_error', 'Internal error', { v1 });
     else res.end();
   }
