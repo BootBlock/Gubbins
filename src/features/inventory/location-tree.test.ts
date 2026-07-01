@@ -4,6 +4,7 @@ import {
   defaultLocationForNewItem,
   defaultParentForNewLocation,
   locationPath,
+  pruneArchivedTree,
   type FlatNode,
   type FlatSystemNode,
 } from './location-tree';
@@ -98,5 +99,39 @@ describe('defaultLocationForNewItem', () => {
 
   it('falls back to Unassigned when the selection is no longer in the list', () => {
     expect(defaultLocationForNewItem('deleted', flat)).toBe(UNASSIGNED_LOCATION_ID);
+  });
+
+  it('uses the supplied fallback (the marked default) instead of Unassigned when idle', () => {
+    expect(defaultLocationForNewItem(null, flat, 'workshop')).toBe('workshop');
+    // An explicit, valid selection still wins over the fallback.
+    expect(defaultLocationForNewItem('cabinet', flat, 'workshop')).toBe('cabinet');
+  });
+});
+
+describe('pruneArchivedTree', () => {
+  interface Node {
+    id: string;
+    archivedAt: number | null;
+    children: Node[];
+  }
+  const n = (id: string, archivedAt: number | null, children: Node[] = []): Node => ({
+    id,
+    archivedAt,
+    children,
+  });
+
+  it('drops archived nodes and their whole subtree', () => {
+    const tree = [
+      n('a', null, [n('a1', null), n('a2', 123, [n('a2x', null)])]),
+      n('b', 456, [n('b1', null)]),
+    ];
+    const pruned = pruneArchivedTree(tree);
+    expect(pruned.map((x) => x.id)).toEqual(['a']);
+    expect(pruned[0]!.children.map((x) => x.id)).toEqual(['a1']);
+  });
+
+  it('is a no-op when nothing is archived', () => {
+    const tree = [n('a', null, [n('a1', null)])];
+    expect(pruneArchivedTree(tree)).toEqual(tree);
   });
 });

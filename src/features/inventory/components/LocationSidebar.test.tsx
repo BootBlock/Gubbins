@@ -9,11 +9,13 @@ import { LocationSidebar } from './LocationSidebar';
 const spies = vi.hoisted(() => ({
   update: vi.fn(),
   del: vi.fn(),
+  archive: vi.fn(),
 }));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateLocation: () => ({ mutate: spies.update, isPending: false }),
+  useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
 }));
 
 afterEach(cleanup);

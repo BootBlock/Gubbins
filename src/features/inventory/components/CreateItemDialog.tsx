@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,6 +23,7 @@ import {
 import { useCategories } from '../categories';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
+import { isLocationFull } from '../location-fullness';
 import { LocationSelect } from './LocationSelect';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
@@ -82,6 +83,9 @@ export function CreateItemDialog({
   const { data: categories } = useCategories();
   const fmt = useFormatters();
   const locationLabelId = useId();
+  // Focus the Name field on open so the dialog is ready to type into (the Modal otherwise
+  // parks focus on its container). RHF's own field ref is composed with this one below.
+  const nameRef = useRef<HTMLInputElement>(null);
   // Supplier MPNs to map onto the new item as aliases once it is created (§4).
   const [pendingAliases, setPendingAliases] = useState<readonly string[]>([]);
   const {
@@ -125,6 +129,14 @@ export function CreateItemDialog({
     () => buildItemLocationOptions(locations, fmt.quantity),
     [locations, fmt],
   );
+
+  // Soft, non-blocking heads-up when the chosen home is already at/over its capacity: the
+  // add is still allowed (capacity is a guideline, not a hard cap), but the user is warned.
+  const chosenLocationId = watch('locationId');
+  const fullLocation = useMemo(() => {
+    const loc = locations.find((l) => l.id === chosenLocationId);
+    return loc && isLocationFull(loc.itemCount, loc.capacity) ? loc : null;
+  }, [locations, chosenLocationId]);
 
   // §4 no-overwrite: a scrape only fills fields the user has left blank on the form.
   const onScrapeResult = (payload: ScrapeResultPayload) => {
@@ -228,7 +240,13 @@ export function CreateItemDialog({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Add item" description="Create a new inventory item.">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Add item"
+      description="Create a new inventory item."
+      initialFocusRef={nameRef}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="max-h-[78vh] space-y-4 dialog-scroll">
         <FormField
           label="Name"
@@ -239,7 +257,19 @@ export function CreateItemDialog({
             'Supplier part numbers go in **MPN** below, not here.'
           }
         >
-          <Input autoFocus placeholder="e.g. M3 × 10 socket screws" {...register('name')} />
+          <Input
+            placeholder="e.g. M3 × 10 socket screws"
+            {...(() => {
+              const { ref, ...rest } = register('name');
+              return {
+                ...rest,
+                ref: (el: HTMLInputElement | null) => {
+                  ref(el);
+                  nameRef.current = el;
+                },
+              };
+            })()}
+          />
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">
@@ -277,6 +307,11 @@ export function CreateItemDialog({
             {errors.locationId?.message ? (
               <span role="alert" className="mt-1 block text-xs text-destructive">
                 {errors.locationId.message}
+              </span>
+            ) : fullLocation ? (
+              <span className="mt-1 block text-xs text-warning">
+                {fullLocation.name} is at capacity ({fullLocation.itemCount}/
+                {fullLocation.capacity}). You can still add here.
               </span>
             ) : null}
           </div>

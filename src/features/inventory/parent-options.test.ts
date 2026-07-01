@@ -61,6 +61,15 @@ describe('buildParentOptions', () => {
     expect(opts.find((o) => o.value === 'workshop')?.colorClass).toBe('text-loc-teal');
     expect(opts.find((o) => o.value === 'cabinet')?.colorClass).toBeUndefined();
   });
+
+  it('never offers an archived location as a parent', () => {
+    const withArchived: ParentLocationRow[] = [
+      ...rows,
+      { id: 'attic', name: 'Attic', isSystem: false, itemCount: 0, color: null, archivedAt: 123 },
+    ];
+    const opts = buildParentOptions(withArchived, quantity);
+    expect(opts.some((o) => o.value === 'attic')).toBe(false);
+  });
 });
 
 describe('buildItemLocationOptions', () => {
@@ -73,5 +82,20 @@ describe('buildItemLocationOptions', () => {
   it('carries the colour tint and count hint', () => {
     const opts = buildItemLocationOptions(rows, quantity);
     expect(opts[0]).toMatchObject({ value: 'workshop', meta: '5 items', colorClass: 'text-loc-teal' });
+  });
+
+  it('hides archived locations, except the item’s current home (keepId)', () => {
+    const withArchived: ParentLocationRow[] = [
+      ...rows,
+      { id: 'attic', name: 'Attic', isSystem: false, itemCount: 2, color: null, archivedAt: 123 },
+    ];
+    // Not the current home → hidden.
+    expect(buildItemLocationOptions(withArchived, quantity).some((o) => o.value === 'attic')).toBe(
+      false,
+    );
+    // The current home is kept even though archived, so the picker can show it.
+    expect(
+      buildItemLocationOptions(withArchived, quantity, 'attic').some((o) => o.value === 'attic'),
+    ).toBe(true);
   });
 });

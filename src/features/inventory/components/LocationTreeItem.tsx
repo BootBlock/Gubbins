@@ -1,7 +1,8 @@
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
-import { ChevronDownIcon, ChevronRightIcon } from '@/components/icons';
+import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
+import { locationFullness } from '../location-fullness';
 import { LocationInlineRename } from './LocationInlineRename';
 import { LocationRowActions } from './LocationRowActions';
 
@@ -17,6 +18,12 @@ export interface TreeItemProps {
   /** Optional free-text description, surfaced as a hover/focus tooltip on the row. */
   readonly description?: string | null;
   readonly count: number;
+  /** Optional item-capacity limit; when set the count shows as `count / capacity`. */
+  readonly capacity?: number | null;
+  /** True ⇒ this is the default location for new items (shows a star). */
+  readonly isDefault?: boolean;
+  /** True ⇒ this location is archived (row dimmed; Restore replaces Archive). */
+  readonly archived?: boolean;
   /** `undefined` when the node has no children (no `aria-expanded`). */
   readonly expanded?: boolean;
   readonly onToggle?: () => void;
@@ -30,6 +37,10 @@ export interface TreeItemProps {
   readonly editLabel?: string;
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
+  readonly onArchive?: () => void;
+  readonly archiveLabel?: string;
+  readonly onRestore?: () => void;
+  readonly restoreLabel?: string;
   readonly onPrintLabel?: () => void;
   readonly printLabelLabel?: string;
   readonly ref: (el: HTMLDivElement | null) => void;
@@ -51,6 +62,9 @@ export function LocationTreeItem({
   colorClass,
   description,
   count,
+  capacity,
+  isDefault,
+  archived,
   expanded,
   onToggle,
   onSelect,
@@ -62,10 +76,15 @@ export function LocationTreeItem({
   editLabel,
   onDelete,
   deleteLabel,
+  onArchive,
+  archiveLabel,
+  onRestore,
+  restoreLabel,
   onPrintLabel,
   printLabelLabel,
   ref,
 }: TreeItemProps) {
+  const fullness = locationFullness(count, capacity);
   return (
     <div
       ref={ref}
@@ -82,6 +101,7 @@ export function LocationTreeItem({
         'group flex cursor-pointer items-center gap-1 rounded-lg pr-1 outline-none transition-colors',
         'focus-visible:ring-2 focus-visible:ring-primary/60',
         selected ? 'bg-primary/15' : 'hover:bg-secondary/60',
+        archived && 'opacity-60',
       )}
       style={{ paddingLeft: `${(level - 1) * 12}px` }}
     >
@@ -130,16 +150,37 @@ export function LocationTreeItem({
             ) : (
               <span className={cn('min-w-0 flex-1 truncate text-left', colorClass)}>{label}</span>
             )}
-            <span className="ml-auto pl-1 text-xs tabular-nums text-muted-foreground">{count}</span>
+            {isDefault ? (
+              <PreferredIcon
+                className="ml-1 size-3.5 shrink-0 text-warning"
+                aria-label="Default location"
+              />
+            ) : null}
+            <span
+              className={cn(
+                'ml-auto pl-1 text-xs tabular-nums',
+                fullness?.over
+                  ? 'text-glyph-danger'
+                  : fullness?.full
+                    ? 'text-warning'
+                    : 'text-muted-foreground',
+              )}
+            >
+              {capacity != null ? `${count}/${capacity}` : count}
+            </span>
           </>
         )}
       </span>
-      {!editing && (onEdit || onDelete || onPrintLabel) ? (
+      {!editing && (onEdit || onDelete || onPrintLabel || onArchive || onRestore) ? (
         <LocationRowActions
           onPrintLabel={onPrintLabel}
           printLabelLabel={printLabelLabel}
           onEdit={onEdit}
           editLabel={editLabel}
+          onArchive={onArchive}
+          archiveLabel={archiveLabel}
+          onRestore={onRestore}
+          restoreLabel={restoreLabel}
           onDelete={onDelete}
           deleteLabel={deleteLabel}
         />

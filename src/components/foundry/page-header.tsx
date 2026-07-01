@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { BrandMark } from '@/components/BrandMark';
 import { AppNav } from '@/components/nav/AppNav';
+import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 import { cn } from '@/lib/utils';
 
 export interface PageHeaderProps {
@@ -16,6 +17,11 @@ export interface PageHeaderProps {
    * header with no page actions of its own.
    */
   readonly actions?: ReactNode;
+  /**
+   * Suppress the built-in command-palette search field. The Inventory screen sets this — it
+   * carries its own search box and toolbar, so the shared header search would be redundant.
+   */
+  readonly hideSearch?: boolean;
   /** Where the brand "home" link points. Defaults to the dashboard (`/`). */
   readonly homeTo?: string;
   /** Extra classes merged onto the `<header>` (e.g. bottom padding for sticky layouts). */
@@ -32,7 +38,14 @@ export interface PageHeaderProps {
  * used to each hand-list a different subset of links, leaving some screens unreachable.
  * Pass `icon`, `title` and optional page-specific `actions`; the layout is owned here.
  */
-export function PageHeader({ icon, title, actions, homeTo = '/', className }: PageHeaderProps) {
+export function PageHeader({
+  icon,
+  title,
+  actions,
+  hideSearch,
+  homeTo = '/',
+  className,
+}: PageHeaderProps) {
   return (
     <header className={cn('flex flex-wrap items-center gap-3', className)}>
       <Link to={homeTo} className="flex items-center gap-2 text-foreground [&_svg]:size-6">
@@ -43,6 +56,10 @@ export function PageHeader({ icon, title, actions, homeTo = '/', className }: Pa
         {icon}
         {title}
       </h1>
+      {/* Full-width command-palette launcher, filling the gap between the title and the
+          right-aligned action row (which is the space each page reserves for its own
+          buttons). Omitted where the screen has its own search (Inventory). */}
+      {!hideSearch && <HeaderSearch className="min-w-[12rem] flex-1" />}
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {actions}
         <AppNav />

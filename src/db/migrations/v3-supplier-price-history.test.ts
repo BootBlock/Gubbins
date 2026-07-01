@@ -23,11 +23,11 @@ describe('v3 supplier-price-history migration', () => {
     await driver.close();
   });
 
-  it('is the third registered migration and targets schema version 3', () => {
-    expect(migrations).toHaveLength(3);
+  it('is the third registered migration (version 3)', () => {
     expect(migrations[2]).toBe(v3SupplierPriceHistory);
     expect(v3SupplierPriceHistory.version).toBe(3);
-    expect(TARGET_SCHEMA_VERSION).toBe(3);
+    // Later forward migrations may raise the target; v3 must never be the last-but-missing.
+    expect(TARGET_SCHEMA_VERSION).toBeGreaterThanOrEqual(3);
   });
 
   it('a v2 database has no supplier_part_price_history table', async () => {
@@ -43,7 +43,13 @@ describe('v3 supplier-price-history migration', () => {
     await runMigrations(driver, [v1Initial, v2AssetBookings]);
     await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', ['cat-1', 'Tools']);
 
-    const report = await runMigrations(driver, migrations);
+    // Apply the chain up to (and including) v3 in isolation, so this stays a v3-focused
+    // assertion even as later forward migrations are appended.
+    const report = await runMigrations(driver, [
+      v1Initial,
+      v2AssetBookings,
+      v3SupplierPriceHistory,
+    ]);
     expect(report.from).toBe(2);
     expect(report.to).toBe(3);
     expect(report.applied).toEqual([3]);

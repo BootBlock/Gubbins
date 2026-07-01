@@ -73,6 +73,10 @@ export function rowToLocation(row: LocationRow): Location {
     isSystem: row.is_system === 1,
     description: row.description,
     color: row.color,
+    kind: row.kind,
+    capacity: row.capacity,
+    isDefault: row.is_default === 1,
+    archivedAt: row.archived_at,
     updatedAt: row.updated_at,
   };
 }

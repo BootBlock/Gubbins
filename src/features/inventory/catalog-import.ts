@@ -490,20 +490,46 @@ export function buildCatalogImportPlan(
   existingItems: readonly Item[],
   options: BuildPlanOptions = {},
 ): CatalogImportPlan {
-  const creates: CatalogCreate[] = [];
-  const updates: CatalogUpdate[] = [];
-  const errors: CatalogError[] = [];
-
   if (csvText.trim().length === 0) {
-    return { create: creates, update: updates, errors };
+    return { create: [], update: [], errors: [] };
   }
 
   const allRows = parseCsv(csvText).filter((r) => r.some((c) => c.trim().length > 0));
   if (allRows.length === 0) {
-    return { create: creates, update: updates, errors };
+    return { create: [], update: [], errors: [] };
   }
 
   const [headerRow, ...dataRows] = allRows as [string[], ...string[][]];
+  return buildImportPlanFromRows(headerRow, dataRows, mapping, existingItems, options);
+}
+
+/**
+ * The core dry-run plan builder, working from an already-parsed header row and
+ * data rows rather than raw CSV text. This is the shared seam that lets multiple
+ * front-ends (comma CSV, tab-separated paste, free-form line lists — see
+ * `text-import.ts`) reach the same validation + create-vs-update logic without
+ * re-implementing it.
+ *
+ * @param headerRow     - The (already-parsed) header cells; used only to auto-infer
+ *                        the mapping when `mapping` is `null`.
+ * @param dataRows      - The (already-parsed) data rows, header excluded. Blank rows
+ *                        should be filtered out by the caller.
+ * @param mapping       - Column index → logical field, or `null` to auto-infer from
+ *                        `headerRow` + `options.customFields`.
+ * @param existingItems - The current catalogue used for create-vs-update matching.
+ * @param options       - {@link BuildPlanOptions}.
+ * @returns A {@link CatalogImportPlan} — never throws; all row errors are collected.
+ */
+export function buildImportPlanFromRows(
+  headerRow: readonly string[],
+  dataRows: readonly (readonly string[])[],
+  mapping: ColumnMapping | null,
+  existingItems: readonly Item[],
+  options: BuildPlanOptions = {},
+): CatalogImportPlan {
+  const creates: CatalogCreate[] = [];
+  const updates: CatalogUpdate[] = [];
+  const errors: CatalogError[] = [];
 
   const customFields = options.customFields ?? [];
   const resolvedMapping = mapping ?? inferColumnMapping(headerRow, customFields);
@@ -558,7 +584,13 @@ export function buildCatalogImportPlan(
     if (!matchValue) {
       // No match-key value: we can only create if a name is present.
       if (!data.name) {
-        errors.push({ sourceRow, message: `Row has no name and no ${matchKey === 'name' ? 'name' : 'SKU/MPN'} — cannot import.` });
+        // A name is required to create; when matching by SKU/MPN, a missing match
+        // value also rules out updating an existing item.
+        const message =
+          matchKey === 'name'
+            ? 'Row has no name — cannot import.'
+            : 'Row has no name to create an item, and no SKU/MPN to match an existing one — cannot import.';
+        errors.push({ sourceRow, message });
         continue;
       }
       // No match key but has a name — treat as create.

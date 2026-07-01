@@ -1,17 +1,14 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Button, Modal, Spinner, Tooltip } from '@/components/foundry';
-import {
-  AddIcon,
-  DeleteIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  PackageIcon,
-} from '@/components/icons';
+import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
+import { pruneArchivedTree } from '../location-tree';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
+import { useArchiveLocation } from '../mutations';
 import { LocationTreeItem } from './LocationTreeItem';
+import { LocationKindIcon } from './LocationKindIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
@@ -43,6 +40,20 @@ export function LocationSidebar({
   onSelect: (id: string | null) => void;
   totalCount: number;
 }) {
+  const archive = useArchiveLocation();
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = useMemo(() => flat.filter((l) => l.archivedAt).length, [flat]);
+  // Hide archived branches (and their subtrees) unless the user opts in; navigation,
+  // counts and rendering all operate on the same filtered view for consistency.
+  const visibleTree = useMemo(
+    () => (showArchived ? tree : pruneArchivedTree(tree as LocationTreeNode[])),
+    [tree, showArchived],
+  );
+  const visibleFlat = useMemo(
+    () => (showArchived ? flat : flat.filter((l) => !l.archivedAt)),
+    [flat, showArchived],
+  );
+
   const {
     addOpen,
     setAddOpen,
@@ -64,7 +75,7 @@ export function LocationSidebar({
     requestDelete,
     setRowRef,
     onKeyDown,
-  } = useLocationSidebar({ tree, flat, selectedId, onSelect });
+  } = useLocationSidebar({ tree: visibleTree, flat: visibleFlat, selectedId, onSelect });
 
   // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above.
   const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
@@ -98,8 +109,20 @@ export function LocationSidebar({
           onSelect={() => select(ALL_ITEMS_ID)}
           onFocus={() => setFocusedId(ALL_ITEMS_ID)}
         />
-        {renderNodes(tree, 1)}
+        {renderNodes(visibleTree, 1)}
       </div>
+
+      {archivedCount > 0 ? (
+        <label className="flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          Show archived ({archivedCount})
+        </label>
+      ) : null}
 
       {/* Mounted only while open so the parent default is re-seeded from the current
           selection on every open (the dialog captures `defaultParentId` on mount). */}
@@ -180,11 +203,14 @@ export function LocationSidebar({
           level={level}
           selected={selectedId === node.id}
           focused={focusedId === node.id}
-          icon={isExpanded && hasChildren ? <FolderOpenIcon /> : <FolderIcon />}
+          icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
           label={node.name}
           colorClass={locationColorTextClass(node.color)}
           description={node.description}
           count={node.itemCount}
+          capacity={node.capacity}
+          isDefault={node.isDefault}
+          archived={node.archivedAt != null}
           expanded={hasChildren ? isExpanded : undefined}
           onToggle={hasChildren ? () => toggle(node.id, !isExpanded) : undefined}
           onSelect={() => select(node.id)}
@@ -194,6 +220,18 @@ export function LocationSidebar({
           onRenameCancel={() => endRename(node.id)}
           onEdit={node.isSystem ? undefined : () => setEditLocation(node)}
           editLabel={`Edit ${node.name}`}
+          onArchive={
+            node.isSystem || node.archivedAt != null
+              ? undefined
+              : () => archive.mutate({ id: node.id, archived: true })
+          }
+          archiveLabel={`Archive ${node.name}`}
+          onRestore={
+            node.archivedAt != null
+              ? () => archive.mutate({ id: node.id, archived: false })
+              : undefined
+          }
+          restoreLabel={`Restore ${node.name}`}
           onDelete={node.isSystem ? undefined : () => requestDelete(node.id, node.name, node.itemCount)}
           deleteLabel={`Delete ${node.name}`}
           onPrintLabel={() => setPrintLabelNode(node)}

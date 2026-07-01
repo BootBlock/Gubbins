@@ -50,6 +50,19 @@ export interface FlatSystemNode extends FlatNode {
 }
 
 /**
+ * Drop every archived location — and its whole subtree — from a nested tree, so the
+ * sidebar can hide archived branches unless the user opts to "Show archived". Pure and
+ * generic over any self-referential node carrying an `archivedAt` (null = active).
+ */
+export function pruneArchivedTree<T extends { archivedAt?: number | null; children: T[] }>(
+  nodes: readonly T[],
+): T[] {
+  return nodes
+    .filter((node) => !node.archivedAt)
+    .map((node) => ({ ...node, children: pruneArchivedTree(node.children) }));
+}
+
+/**
  * The parent a freshly-added location should default to, given the current sidebar
  * selection. Adding *inside* a real, user-created location nests under it; but the
  * synthetic "All items" (a `null` selection) and the system-locked rows ("Unassigned",
@@ -71,14 +84,16 @@ export function defaultParentForNewLocation(
  * behaviour: starting "Add item" from a real, user-created location pre-fills that
  * location; but the synthetic "All items" (a `null` selection) and the system-locked
  * rows ("Unassigned", "In Transit") are not meaningful homes to seed, so those fall
- * back to the Unassigned holding pen. Unlike a top-level location (whose parent is
- * `null`), an item always needs a concrete home — hence the non-null return.
+ * back to `fallbackLocationId` — the user's marked **default** location when one is set,
+ * else the Unassigned holding pen. Unlike a top-level location (whose parent is `null`),
+ * an item always needs a concrete home — hence the non-null return.
  */
 export function defaultLocationForNewItem(
   selectedId: string | null,
   nodes: readonly FlatSystemNode[],
+  fallbackLocationId: string = UNASSIGNED_LOCATION_ID,
 ): string {
-  return defaultParentForNewLocation(selectedId, nodes) ?? UNASSIGNED_LOCATION_ID;
+  return defaultParentForNewLocation(selectedId, nodes) ?? fallbackLocationId;
 }
 
 /**

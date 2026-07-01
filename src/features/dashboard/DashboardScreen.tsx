@@ -9,6 +9,7 @@ import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
 import { DashboardActions } from './DashboardActions';
 import { DashboardGettingStarted } from './DashboardGettingStarted';
+import { DashboardBanner } from './DashboardBanner';
 import { DashboardVersion } from './DashboardVersion';
 
 /** The public GitHub repository — the brand hero links here on the landing page. */
@@ -62,9 +63,17 @@ export function DashboardScreen() {
           </div>
         </a>
 
-        {/* Version + release date — landing-page only (the other screens use PageHeader,
-            which has no version slot). Clicking it runs a manual update check. */}
-        <DashboardVersion />
+        {/* Right-aligned group: the pre-1.0 work-in-progress banner sits immediately to
+            the left of the version + release date. The wrapper is sized to its content, so
+            the version's own `ml-auto` collapses and the two stay adjacent. */}
+        <div className="ml-auto flex items-center gap-3">
+          {/* Pre-1.0 data-loss warning — gated behind SHOW_WIP_BANNER in DashboardBanner. */}
+          <DashboardBanner />
+
+          {/* Version + release date — landing-page only (the other screens use PageHeader,
+              which has no version slot). Clicking it runs a manual update check. */}
+          <DashboardVersion />
+        </div>
       </header>
 
       {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,

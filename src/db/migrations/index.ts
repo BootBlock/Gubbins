@@ -7,17 +7,20 @@
  * is needed). Forward migrations resume on top of that baseline and are appended here in
  * ascending version order; the target schema version Gubbins expects is simply the highest
  * registered version. `v2-asset-bookings` (Phase 78) was the first such forward step;
- * `v3-supplier-price-history` (Phase 81) is the second.
+ * `v3-supplier-price-history` (Phase 81) is the second; `v4-location-metadata` (richer
+ * location fields) is the third.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
 import { v2AssetBookings } from './v2-asset-bookings';
 import { v3SupplierPriceHistory } from './v3-supplier-price-history';
+import { v4LocationMetadata } from './v4-location-metadata';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
   v2AssetBookings,
   v3SupplierPriceHistory,
+  v4LocationMetadata,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

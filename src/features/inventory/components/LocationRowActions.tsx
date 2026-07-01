@@ -1,11 +1,21 @@
 import { cn } from '@/lib/utils';
-import { DeleteIcon, EditIcon, QrCodeIcon } from '@/components/icons';
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  DeleteIcon,
+  EditIcon,
+  QrCodeIcon,
+} from '@/components/icons';
 
 interface LocationRowActionsProps {
   readonly onPrintLabel?: () => void;
   readonly printLabelLabel?: string;
   readonly onEdit?: () => void;
   readonly editLabel?: string;
+  readonly onArchive?: () => void;
+  readonly archiveLabel?: string;
+  readonly onRestore?: () => void;
+  readonly restoreLabel?: string;
   readonly onDelete?: () => void;
   readonly deleteLabel?: string;
 }
@@ -24,6 +34,10 @@ export function LocationRowActions({
   printLabelLabel,
   onEdit,
   editLabel,
+  onArchive,
+  archiveLabel,
+  onRestore,
+  restoreLabel,
   onDelete,
   deleteLabel,
 }: LocationRowActionsProps) {
@@ -32,8 +46,8 @@ export function LocationRowActions({
       className={cn(
         'flex shrink-0 items-center overflow-hidden opacity-0 max-w-0',
         'transition-[max-width,opacity] duration-300 ease-emphasized',
-        'group-hover:max-w-[5.5rem] group-hover:opacity-100',
-        'group-focus-within:max-w-[5.5rem] group-focus-within:opacity-100',
+        'group-hover:max-w-[7.5rem] group-hover:opacity-100',
+        'group-focus-within:max-w-[7.5rem] group-focus-within:opacity-100',
       )}
     >
       {onPrintLabel ? (
@@ -62,6 +76,34 @@ export function LocationRowActions({
           className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
         >
           <EditIcon className="text-glyph-edit" />
+        </button>
+      ) : null}
+      {onRestore ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={restoreLabel}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestore();
+          }}
+          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+        >
+          <ArchiveRestoreIcon className="text-glyph-success" />
+        </button>
+      ) : null}
+      {onArchive ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={archiveLabel}
+          onClick={(e) => {
+            e.stopPropagation();
+            onArchive();
+          }}
+          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+        >
+          <ArchiveIcon className="text-glyph-neutral" />
         </button>
       ) : null}
       {onDelete ? (

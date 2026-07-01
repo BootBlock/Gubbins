@@ -11,6 +11,14 @@ export interface LocationRow {
   readonly description: string | null;
   /** Semantic colour swatch key (e.g. 'teal'); NULL = standard text colour (v19). */
   readonly color: string | null;
+  /** Semantic type key (e.g. 'cabinet'); NULL = generic/folder. Drives iconography. */
+  readonly kind: string | null;
+  /** Optional maximum item capacity; NULL = unbounded. Powers the fullness gauge. */
+  readonly capacity: number | null;
+  /** 1 ⇒ the default location pre-selected when adding new items (at most one row). */
+  readonly is_default: number;
+  /** Epoch-ms the location was soft-archived; NULL = active/visible. */
+  readonly archived_at: number | null;
   readonly updated_at: number;
 }
 
@@ -23,6 +31,14 @@ export interface Location {
   readonly description: string | null;
   /** Semantic colour swatch key; null = standard text colour (v19). */
   readonly color: string | null;
+  /** Semantic type key; null = generic/folder. Drives iconography. */
+  readonly kind: string | null;
+  /** Optional maximum item capacity; null = unbounded. */
+  readonly capacity: number | null;
+  /** True ⇒ the default location pre-selected when adding new items. */
+  readonly isDefault: boolean;
+  /** Epoch-ms the location was soft-archived; null = active/visible. */
+  readonly archivedAt: number | null;
   readonly updatedAt: number;
 }
 
@@ -41,6 +57,9 @@ export interface CreateLocationInput {
   readonly parentId?: string | null;
   readonly description?: string | null;
   readonly color?: string | null;
+  readonly kind?: string | null;
+  readonly capacity?: number | null;
+  readonly isDefault?: boolean;
 }
 
 export interface UpdateLocationInput {
@@ -48,4 +67,9 @@ export interface UpdateLocationInput {
   readonly parentId?: string | null;
   readonly description?: string | null;
   readonly color?: string | null;
+  readonly kind?: string | null;
+  readonly capacity?: number | null;
+  readonly isDefault?: boolean;
+  /** Epoch-ms to archive, or null to restore. Undefined leaves it unchanged. */
+  readonly archivedAt?: number | null;
 }

@@ -30,7 +30,8 @@ interface LocationCountRow extends LocationRow {
 }
 
 const SELECT_WITH_COUNT = `
-  SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color, l.updated_at,
+  SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
+         l.kind, l.capacity, l.is_default, l.archived_at, l.updated_at,
          COUNT(i.id) AS item_count
   FROM locations l
   LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1
@@ -85,10 +86,28 @@ export class LocationRepository extends BaseRepository {
     }
 
     const id = crypto.randomUUID();
-    await this.driver.execute(
-      'INSERT INTO locations (id, name, parent_id, description, color) VALUES (?, ?, ?, ?, ?);',
-      [id, name, parentId, normaliseText(input.description), normaliseText(input.color)],
-    );
+    const makeDefault = input.isDefault === true;
+    const statements: SqlStatement[] = [];
+    // Setting this new location as the default demotes any current default in the same
+    // transaction, so at most one row ever carries the flag (§4 single-default invariant).
+    if (makeDefault) {
+      statements.push({ sql: 'UPDATE locations SET is_default = 0 WHERE is_default = 1;' });
+    }
+    statements.push({
+      sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+      params: [
+        id,
+        name,
+        parentId,
+        normaliseText(input.description),
+        normaliseText(input.color),
+        normaliseText(input.kind),
+        normaliseCapacity(input.capacity),
+        makeDefault ? 1 : 0,
+      ],
+    });
+    await this.driver.transaction(statements);
     return (await this.getById(id))!;
   }
 
@@ -101,7 +120,7 @@ export class LocationRepository extends BaseRepository {
     }
 
     const sets: string[] = [];
-    const params: (string | null)[] = [];
+    const params: (string | number | null)[] = [];
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (name.length === 0) {
@@ -122,11 +141,54 @@ export class LocationRepository extends BaseRepository {
       sets.push('color = ?');
       params.push(normaliseText(input.color));
     }
+    if (input.kind !== undefined) {
+      sets.push('kind = ?');
+      params.push(normaliseText(input.kind));
+    }
+    if (input.capacity !== undefined) {
+      sets.push('capacity = ?');
+      params.push(normaliseCapacity(input.capacity));
+    }
+    if (input.isDefault !== undefined) {
+      sets.push('is_default = ?');
+      params.push(input.isDefault ? 1 : 0);
+    }
+    if (input.archivedAt !== undefined) {
+      sets.push('archived_at = ?');
+      params.push(input.archivedAt);
+    }
+
     if (sets.length > 0) {
-      params.push(id);
-      await this.driver.execute(`UPDATE locations SET ${sets.join(', ')} WHERE id = ?;`, params);
+      const statements: SqlStatement[] = [];
+      // Promoting this row to the default demotes any other default in the same
+      // transaction (§4 single-default invariant); exclude self so the flag survives.
+      if (input.isDefault === true) {
+        statements.push({
+          sql: 'UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;',
+          params: [id],
+        });
+      }
+      statements.push({
+        sql: `UPDATE locations SET ${sets.join(', ')} WHERE id = ?;`,
+        params: [...params, id],
+      });
+      await this.driver.transaction(statements);
     }
     return (await this.getById(id))!;
+  }
+
+  /**
+   * Mark a location as the single default (pre-selected when adding items), or clear the
+   * default entirely. Setting a new default demotes the previous one atomically; system
+   * locations may never be the default.
+   */
+  async setDefault(id: string): Promise<Location> {
+    return this.update(id, { isDefault: true });
+  }
+
+  /** Soft-archive a location (hide it from the tree/pickers) or restore it. */
+  async setArchived(id: string, archived: boolean): Promise<Location> {
+    return this.update(id, { archivedAt: archived ? Date.now() : null });
   }
 
   /**
@@ -286,6 +348,15 @@ function normaliseText(value: string | null | undefined): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Coerce a capacity to a non-negative integer, or NULL for "unbounded". A blank, NaN,
+ * negative or non-finite value collapses to NULL so a cleared field means "no limit".
+ */
+function normaliseCapacity(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return Math.floor(value);
 }
 
 /** Assemble flat rows into a parent/child tree, preserving input ordering. */

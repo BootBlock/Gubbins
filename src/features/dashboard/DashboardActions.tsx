@@ -13,10 +13,10 @@
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/foundry';
-import { SearchIcon, AddIcon, ScanIcon } from '@/components/icons';
+import { AddIcon, ScanIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
-import { useCommandPaletteStore } from '@/features/command-palette/useCommandPaletteStore';
+import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 
 export function DashboardActions() {
   const showSearch = usePreferencesStore((s) => s.dashboardCommandPalette);
@@ -25,20 +25,9 @@ export function DashboardActions() {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {showSearch ? (
-        <button
-          type="button"
-          onClick={() => useCommandPaletteStore.getState().setOpen(true)}
-          data-testid="dashboard-search-trigger"
-          className="flex h-10 w-full max-w-sm items-center gap-2 rounded-lg border border-border bg-input/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-input/60 hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 [&_svg]:size-4"
-        >
-          <SearchIcon aria-hidden />
-          <span>Search items…</span>
-          <kbd className="ml-auto rounded border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
-            Ctrl /
-          </kbd>
-        </button>
-      ) : null}
+      {/* The same header-search launcher used on every other screen, kept compact on the
+          hero. `HeaderSearch` self-gates on the `dashboardCommandPalette` preference. */}
+      <HeaderSearch className="max-w-sm" />
 
       {showQuickActions ? (
         <>

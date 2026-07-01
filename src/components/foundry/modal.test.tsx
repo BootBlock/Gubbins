@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { Modal } from './modal';
@@ -14,6 +14,20 @@ describe('Modal — accessible focus management', () => {
     );
     // Initial focus parks on the dialog container so the title is announced.
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  });
+
+  it('moves initial focus to initialFocusRef when provided (type-first dialogs)', () => {
+    function Harness() {
+      const inputRef = useRef<HTMLInputElement>(null);
+      return (
+        <Modal open onClose={() => {}} title="Add location" initialFocusRef={inputRef}>
+          <input ref={inputRef} aria-label="Name" />
+        </Modal>
+      );
+    }
+    render(<Harness />);
+    // Focus lands directly in the Name field, ready to type — not on the container.
+    expect(document.activeElement).toBe(screen.getByLabelText('Name'));
   });
 
   it('traps Tab within the dialog, wrapping off the last control to the first', () => {

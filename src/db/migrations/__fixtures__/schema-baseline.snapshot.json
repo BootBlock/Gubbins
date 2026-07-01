@@ -1,5 +1,5 @@
 {
-  "userVersion": 3,
+  "userVersion": 4,
   "objects": [
     {
       "type": "index",
@@ -383,7 +383,7 @@
       "type": "table",
       "name": "locations",
       "tbl_name": "locations",
-      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT,\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT, kind TEXT, capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0), is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)), archived_at INTEGER,\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -2477,6 +2477,38 @@
           "cid": 6,
           "name": "color",
           "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "capacity",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "is_default",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "archived_at",
+          "type": "INTEGER",
           "notnull": 0,
           "dflt_value": null,
           "pk": 0

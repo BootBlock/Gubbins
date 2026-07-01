@@ -54,6 +54,19 @@ export {
   // Inventory / domain
   Folder as FolderIcon,
   FolderOpen as FolderOpenIcon,
+
+  // Location types (semantic 'kind' — drives per-location iconography in the tree/pickers)
+  Building2 as LocationBuildingIcon,
+  DoorOpen as LocationRoomIcon,
+  Archive as LocationCabinetIcon,
+  Layers as LocationShelfIcon,
+  Inbox as LocationDrawerIcon,
+  Container as LocationBinIcon,
+  Box as LocationBoxIcon,
+  ShoppingBag as LocationBagIcon,
+  Car as LocationVehicleIcon,
+  MapPin as LocationOtherIcon,
+
   Gauge as GaugeIcon,
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,

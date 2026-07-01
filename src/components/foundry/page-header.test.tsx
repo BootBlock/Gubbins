@@ -22,6 +22,12 @@ vi.mock('@/components/nav/AppNav', () => ({
   AppNav: () => <button type="button" data-testid="app-nav" aria-label="Navigation menu" />,
 }));
 
+// Stub the command-palette search field (its own suite covers behaviour) so the layout
+// tests stay focused and independent of the preferences store.
+vi.mock('@/features/command-palette/HeaderSearch', () => ({
+  HeaderSearch: () => <button type="button" data-testid="header-search" />,
+}));
+
 import { PageHeader } from './page-header';
 
 afterEach(cleanup);
@@ -58,6 +64,14 @@ describe('PageHeader — the canonical screen header (spec §2.4.1)', () => {
     render(<PageHeader icon={<svg />} title="About" />);
     // Every screen can reach every other — the nav is never omitted.
     expect(screen.getByTestId('app-nav')).toBeTruthy();
+  });
+
+  it('renders the command-palette search field by default, and omits it when hideSearch is set', () => {
+    const { rerender } = render(<PageHeader icon={<svg />} title="Reports" />);
+    expect(screen.getByTestId('header-search')).toBeTruthy();
+
+    rerender(<PageHeader icon={<svg />} title="Inventory" hideSearch />);
+    expect(screen.queryByTestId('header-search')).toBeNull();
   });
 
   it('merges extra classes onto the <header> element', () => {

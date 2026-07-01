@@ -135,4 +135,50 @@ describe('LocationRepository', () => {
     // Deletes free space, so they must still work under the Hard Stop.
     await expect(gated.delete(doomed.id)).resolves.toBeUndefined();
   });
+
+  it('persists the richer metadata (type, capacity, default)', async () => {
+    const loc = await locations.create({
+      name: 'Cabinet',
+      kind: 'cabinet',
+      capacity: 20,
+      isDefault: true,
+    });
+    const read = await locations.getById(loc.id);
+    expect(read).toMatchObject({ kind: 'cabinet', capacity: 20, isDefault: true });
+  });
+
+  it('coerces a blank/negative capacity to null (unbounded)', async () => {
+    const loc = await locations.create({ name: 'Shelf', capacity: -5 });
+    expect((await locations.getById(loc.id))?.capacity).toBeNull();
+    const updated = await locations.update(loc.id, { capacity: 7.9 });
+    expect(updated.capacity).toBe(7); // floored
+  });
+
+  it('keeps at most one default — a new default demotes the previous one', async () => {
+    const a = await locations.create({ name: 'A', isDefault: true });
+    const b = await locations.create({ name: 'B' });
+    await locations.setDefault(b.id);
+
+    expect((await locations.getById(a.id))?.isDefault).toBe(false);
+    expect((await locations.getById(b.id))?.isDefault).toBe(true);
+    // Exactly one default row remains.
+    const list = await locations.list();
+    expect(list.rows.filter((l) => l.isDefault)).toHaveLength(1);
+  });
+
+  it('archives and restores a location', async () => {
+    const loc = await locations.create({ name: 'Attic' });
+    const archived = await locations.setArchived(loc.id, true);
+    expect(archived.archivedAt).toBeTypeOf('number');
+
+    const restored = await locations.setArchived(loc.id, false);
+    expect(restored.archivedAt).toBeNull();
+  });
+
+  it('refuses to make a system location the default or archive it', async () => {
+    await expect(locations.setDefault(UNASSIGNED_LOCATION_ID)).rejects.toBeInstanceOf(DbError);
+    await expect(locations.setArchived(UNASSIGNED_LOCATION_ID, true)).rejects.toBeInstanceOf(
+      DbError,
+    );
+  });
 });

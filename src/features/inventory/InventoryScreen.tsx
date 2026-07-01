@@ -42,7 +42,7 @@ import { defaultLocationForNewItem } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
-import { CatalogImportWizard } from './components/CatalogImportWizard';
+import { ImportDataDialog } from './components/ImportDataDialog';
 import { BulkEditDialog } from './components/BulkEditDialog';
 import { useCloneItem } from './mutations';
 import type { ItemSelection } from './components/inventory-ui';
@@ -204,6 +204,7 @@ function InventoryWorkspace() {
     <PageContainer fullHeight>
       <PageHeader
         className="pb-4"
+        hideSearch
         icon={<PackageIcon />}
         title="Inventory"
         actions={
@@ -291,7 +292,7 @@ function InventoryWorkspace() {
                 onSelect={() => setImportOpen(true)}
                 data-testid="open-catalog-import"
               >
-                Import CSV
+                Import…
               </MenuAction>
               <MenuSeparator />
               <MenuAction
@@ -461,7 +462,11 @@ function InventoryWorkspace() {
           open
           onClose={() => setAddOpen(false)}
           locations={flatLocations}
-          defaultLocationId={defaultLocationForNewItem(selectedLocationId, flatLocations)}
+          defaultLocationId={defaultLocationForNewItem(
+            selectedLocationId,
+            flatLocations,
+            flatLocations.find((l) => l.isDefault && !l.archivedAt)?.id,
+          )}
         />
       ) : null}
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
@@ -481,7 +486,7 @@ function InventoryWorkspace() {
         }}
       />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
-      <CatalogImportWizard open={importOpen} onClose={() => setImportOpen(false)} />
+      <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <PrintLabelsDialog
         open={printOpen}
         onClose={() => setPrintOpen(false)}

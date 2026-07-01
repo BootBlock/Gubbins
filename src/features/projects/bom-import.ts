@@ -26,11 +26,16 @@ export class BomImportError extends Error {
 }
 
 /**
- * Parse CSV text into a matrix of string cells. Handles quoted fields (with
- * embedded commas, doubled-quote escapes and embedded newlines) and CRLF/LF line
- * endings. A trailing blank line is ignored; other rows are preserved verbatim.
+ * Parse delimiter-separated text into a matrix of string cells. Handles quoted
+ * fields (with embedded delimiters, doubled-quote escapes and embedded newlines)
+ * and CRLF/LF line endings. A trailing blank line is ignored; other rows are
+ * preserved verbatim.
+ *
+ * The delimiter is a single character (`,` for CSV, `\t` for TSV). The same
+ * RFC-4180 quoting rules apply regardless of delimiter, so this one codec serves
+ * both the comma- and tab-separated import paths (Phase: generalised import).
  */
-export function parseCsv(text: string): string[][] {
+export function parseDelimited(text: string, delimiter = ','): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
@@ -68,7 +73,7 @@ export function parseCsv(text: string): string[][] {
 
     if (ch === '"') {
       inQuotes = true;
-    } else if (ch === ',') {
+    } else if (ch === delimiter) {
       pushField();
     } else if (ch === '\n') {
       pushRow();
@@ -85,6 +90,15 @@ export function parseCsv(text: string): string[][] {
   }
 
   return rows;
+}
+
+/**
+ * Parse CSV text into a matrix of string cells — the comma-delimited
+ * specialisation of {@link parseDelimited}. Kept as a named export because it is
+ * the canonical CSV codec re-used across the codebase (BOM + catalog import).
+ */
+export function parseCsv(text: string): string[][] {
+  return parseDelimited(text, ',');
 }
 
 /** Normalise a header cell to a comparison key: lowercase, alphanumeric only. */

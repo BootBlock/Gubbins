@@ -5,6 +5,7 @@ import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
 import { v2AssetBookings } from './v2-asset-bookings';
 import { v3SupplierPriceHistory } from './v3-supplier-price-history';
+import { v4LocationMetadata } from './v4-location-metadata';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
@@ -18,8 +19,9 @@ import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
  * fixture **byte-for-byte**, so any unintended schema change (an edited table, index,
  * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture is
  * regenerated only when the schema intentionally changes — e.g. the Phase-78 `v2`
- * `asset_bookings` forward migration and the Phase-81 `v3` `supplier_part_price_history`
- * forward migration, the latter of which bumped the recorded `user_version` to 3.
+ * `asset_bookings` forward migration, the Phase-81 `v3` `supplier_part_price_history`
+ * forward migration, and the `v4` `location-metadata` forward migration, each of which
+ * bumped the recorded `user_version`.
  */
 describe('schema baseline lock', () => {
   let driver: MemoryDriver;
@@ -32,15 +34,17 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the v1 baseline plus the v2 and v3 forward migrations, targeting version 3', () => {
-    expect(migrations).toHaveLength(3);
+  it('registers the v1 baseline plus the v2, v3 and v4 forward migrations, targeting version 4', () => {
+    expect(migrations).toHaveLength(4);
     expect(migrations[0]).toBe(v1Initial);
     expect(migrations[1]).toBe(v2AssetBookings);
     expect(migrations[2]).toBe(v3SupplierPriceHistory);
+    expect(migrations[3]).toBe(v4LocationMetadata);
     expect(v1Initial.version).toBe(1);
     expect(v2AssetBookings.version).toBe(2);
     expect(v3SupplierPriceHistory.version).toBe(3);
-    expect(TARGET_SCHEMA_VERSION).toBe(3);
+    expect(v4LocationMetadata.version).toBe(4);
+    expect(TARGET_SCHEMA_VERSION).toBe(4);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -61,14 +65,14 @@ describe('schema baseline lock', () => {
     expect(names(snapshot)).toEqual(names(goldenSnapshot));
   });
 
-  it('boots a fresh database cleanly through the chain to user_version 3', async () => {
+  it('boots a fresh database cleanly through the chain to user_version 4', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(3);
-    expect(report.applied).toEqual([1, 2, 3]);
+    expect(report.to).toBe(4);
+    expect(report.applied).toEqual([1, 2, 3, 4]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(3);
+    expect(Number(row?.user_version)).toBe(4);
   });
 
   it('records the current target schema version in the golden fixture', () => {

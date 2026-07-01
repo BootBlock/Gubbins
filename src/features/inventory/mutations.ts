@@ -461,6 +461,16 @@ export function useUpdateLocation() {
   });
 }
 
+/** Soft-archive a location (hide it) or restore it — a light wrapper over the repo. */
+export function useArchiveLocation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      getLocationRepository().setArchived(id, archived),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
+  });
+}
+
 export function useDeleteLocation() {
   const client = useQueryClient();
   return useMutation({

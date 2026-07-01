@@ -322,7 +322,7 @@ function QuickActionsWidget() {
   const actions = [
     { to: '/inventory', label: 'Add item', icon: <AddIcon />, intent: 'add' as const },
     { to: '/inventory', label: 'Scan', icon: <ScanIcon />, intent: 'scan' as const },
-    { to: '/inventory', label: 'Import CSV', icon: <ImportIcon />, intent: 'import' as const },
+    { to: '/inventory', label: 'Import', icon: <ImportIcon />, intent: 'import' as const },
     { to: '/purchase-orders', label: 'New PO', icon: <ShoppingCartIcon />, intent: null },
   ] as const;
   return (

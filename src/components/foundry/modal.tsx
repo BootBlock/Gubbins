@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Surface } from './surface';
@@ -19,9 +19,24 @@ export interface ModalProps {
   readonly description?: string;
   readonly children: ReactNode;
   readonly className?: string;
+  /**
+   * Opt-in: move initial focus to this element on open, rather than the dialog
+   * container. Use for a dialog whose first action is typing (e.g. a Name field) so the
+   * user can begin immediately. When omitted, focus parks on the container (the
+   * screen-reader-friendly default — the dialog is announced and the first Tab steps in).
+   */
+  readonly initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
-export function Modal({ open, onClose, title, description, children, className }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  className,
+  initialFocusRef,
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Honour the user's reduced-motion preference (§3 / WCAG 2.3.3): when set, the
   // dialog's decorative fade/zoom entrance is dropped (the global CSS catch-all does
@@ -31,6 +46,10 @@ export function Modal({ open, onClose, title, description, children, className }
   // closures that change every render — see the [open]-only dependency below).
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // Same treatment for the optional initial-focus target: read it at open time without
+  // making it a dependency of the [open]-only focus effect.
+  const initialFocusRefRef = useRef(initialFocusRef);
+  initialFocusRefRef.current = initialFocusRef;
 
   // Accessible dialog behaviour (spec §3 — aria-modal contract): on open, move
   // focus into the dialog; while open, trap Tab within it and close on Escape;
@@ -38,10 +57,13 @@ export function Modal({ open, onClose, title, description, children, className }
   useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    // Park initial focus on the dialog container so screen readers announce the
-    // dialog (via aria-label) and the first Tab steps into its controls — rather
-    // than landing on the Close button.
-    dialogRef.current?.focus();
+    // Move initial focus to the caller's chosen control (e.g. a Name field) when one is
+    // given, so a type-first dialog is ready to type into; otherwise park focus on the
+    // dialog container so screen readers announce the dialog (via aria-label) and the
+    // first Tab steps into its controls — rather than landing on the Close button.
+    const target = initialFocusRefRef.current?.current;
+    if (target) target.focus();
+    else dialogRef.current?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {

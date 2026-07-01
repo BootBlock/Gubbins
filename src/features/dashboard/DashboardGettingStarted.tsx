@@ -4,7 +4,7 @@
  * While the inventory is still empty, the actionable widgets all render "nothing here"
  * rows, which makes a fresh install read as a discouraging wall of emptiness and hides the
  * real next step. This panel takes that prime spot instead, pointing at the three ways to
- * get data in: add an item, import a CSV, or scan a barcode. It self-hides once any item
+ * get data in: add an item, import a file, or scan a barcode. It self-hides once any item
  * exists, while the count is still loading (to avoid a flash), or when the
  * `dashboardGettingStarted` preference is off. The action buttons reuse the same one-shot
  * intent handoff ({@link useInventoryEntry}) as the hero quick-actions.
@@ -53,7 +53,7 @@ export function DashboardGettingStarted() {
           data-testid="getting-started-import"
         >
           <ImportIcon />
-          Import CSV
+          Import
         </Link>
         <Link
           to="/inventory"

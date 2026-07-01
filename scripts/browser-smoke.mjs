@@ -3152,8 +3152,9 @@ try {
       `Smoke Thingamajig ${stamp},7,0.99`,
     ].join('\r\n');
 
-    // Open the import wizard.
+    // Open the import dialog and switch to the "Import file" tab.
     await page.getByTestId('open-catalog-import').click();
+    await page.getByTestId('import-tab-file').click();
     await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
 
     // Inject the synthetic CSV directly via the file input (no real file needed).
@@ -3164,11 +3165,9 @@ try {
       buffer: csvBytes,
     });
 
-    // Wizard should auto-advance to the map step.
+    // The shared workbench previews the extraction live — the mapping and the apply
+    // button appear together once the file is read (no separate preview step).
     await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
-
-    // Advance to preview.
-    await page.getByTestId('catalog-import-preview').click();
     await page.getByTestId('catalog-import-apply').waitFor({ state: 'visible', timeout: 5000 });
 
     // The preview should show 2 creates and 0 errors.
@@ -3209,6 +3208,7 @@ try {
     ].join('\r\n');
 
     await page.getByTestId('open-catalog-import').click();
+    await page.getByTestId('import-tab-file').click();
     await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
     await page.getByTestId('catalog-import-file').setInputFiles({
       name: 'smoke-custom-field.csv',
@@ -3216,9 +3216,8 @@ try {
       buffer: Buffer.from(csvContent, 'utf-8'),
     });
 
-    // Auto-advance to the map step, then preview → apply.
+    // The live workbench shows the mapping and apply button together.
     await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
-    await page.getByTestId('catalog-import-preview').click();
     const applyButton = page.getByTestId('catalog-import-apply');
     await applyButton.waitFor({ state: 'visible', timeout: 5000 });
     await applyButton.click();

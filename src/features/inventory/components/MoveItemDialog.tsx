@@ -4,6 +4,7 @@ import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useMoveItem } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
+import { isLocationFull } from '../location-fullness';
 import { LocationSelect } from './LocationSelect';
 
 /** Move an item to another location (spec §4), logging the move in the ledger. */
@@ -23,12 +24,21 @@ export function MoveItemDialog({
   const labelId = useId();
   const [locationId, setLocationId] = useState(item.locationId);
 
-  // Every location is a valid destination — including the system Unassigned / In Transit
-  // rows — each tinted with its colour and showing its item count.
+  // Every non-archived location is a valid destination — including the system Unassigned /
+  // In Transit rows — each tinted with its colour and showing its item count. The item's
+  // current home is always kept, even if it happens to be archived.
   const options = useMemo(
-    () => buildItemLocationOptions(locations, fmt.quantity),
-    [locations, fmt],
+    () => buildItemLocationOptions(locations, fmt.quantity, item.locationId),
+    [locations, fmt, item.locationId],
   );
+
+  // Soft heads-up when the destination is already at/over capacity (the move is allowed).
+  const fullLocation = useMemo(() => {
+    const loc = locations.find((l) => l.id === locationId);
+    return loc && locationId !== item.locationId && isLocationFull(loc.itemCount, loc.capacity)
+      ? loc
+      : null;
+  }, [locations, locationId, item.locationId]);
 
   const submit = () => {
     if (locationId === item.locationId) {
@@ -44,6 +54,12 @@ export function MoveItemDialog({
         Location
       </span>
       <LocationSelect labelledBy={labelId} value={locationId} onChange={setLocationId} options={options} />
+      {fullLocation ? (
+        <p className="mt-1 text-xs text-warning">
+          {fullLocation.name} is at capacity ({fullLocation.itemCount}/{fullLocation.capacity}).
+          You can still move it here.
+        </p>
+      ) : null}
       <div className="mt-6 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           Cancel
