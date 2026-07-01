@@ -2,9 +2,10 @@ name: Tests
 
 # Runs the unit tests on every push to main and on pull requests. Two jobs: the app suite
 # (root Vitest config) and the bridge suite (its own Node-only config + a type-check). Both
-# need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`
-# (Node >= 22.5), and the bridge additionally runs TypeScript directly via Node's built-in
-# type-stripping (Node >= 23.6) — so both jobs pin Node 24.
+# need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`,
+# and Gubbins' schema needs `node:sqlite`'s FTS5 support (Node >= 22.16 or >= 24 — NOT any
+# v23.x build, FTS5 was never backported there). The bridge additionally runs TypeScript
+# directly via Node's built-in type-stripping — so both jobs pin Node 24.
 on:
   push:
     branches: [main]
@@ -47,8 +48,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           # The bridge has no build step — it runs TypeScript directly, which needs
-          # Node >= 23.6 for unflagged type-stripping and node:sqlite. It has no deps
-          # of its own and borrows the repo-root toolchain (Vitest/TypeScript).
+          # Node >= 24 (or >= 22.16 LTS) for unflagged type-stripping and node:sqlite
+          # with FTS5 (the v23.x line never got FTS5). It has no deps of its own and
+          # borrows the repo-root toolchain (Vitest/TypeScript).
           node-version: 24
           cache: npm
 

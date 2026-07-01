@@ -3,7 +3,9 @@
 # This is a template; adjust the paths and the user to your install. Setup (as root):
 #
 #   1. Put a Gubbins checkout somewhere stable, e.g. /opt/gubbins, owned by a dedicated
-#      unprivileged user (e.g. `gubbins`). Node ≥ 23.6 must be on PATH (/usr/bin/node).
+#      unprivileged user (e.g. `gubbins`). Node ≥ 24 (or ≥ 22.16 LTS — NOT any v23.x
+#      build; see bridge/README.md -> Requirements for the FTS5 gap) must be on PATH
+#      (/usr/bin/node).
 #   2. Create /etc/gubbins-bridge.env from bridge/.env.example with your real
 #      GUBBINS_BRIDGE_TOKEN and GUBBINS_SNAPSHOT_PATH. It holds the bearer token, so:
 #         chown root:gubbins /etc/gubbins-bridge.env && chmod 640 /etc/gubbins-bridge.env

@@ -10,8 +10,9 @@
  *
  * This hook teaches Node both, so the bridge can import the app's PURE search/DB
  * modules directly — `parseASTtoSQL`, the migration engine, backup/snapshot — with
- * NO forking and NO build step. Node 23.6+ then strips the TypeScript types on the
- * fly, so `.ts` runs directly. There are no runtime dependencies.
+ * NO forking and NO build step. Node then strips the TypeScript types on the fly, so
+ * `.ts` runs directly (see README.md -> Requirements for the real minimum Node version).
+ * There are no runtime dependencies.
  *
  * It only ever rewrites a specifier when Node's own resolution fails, so npm/builtin
  * specifiers (`zustand`, `node:sqlite`, …) pass straight through untouched.

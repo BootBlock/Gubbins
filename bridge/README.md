@@ -12,7 +12,9 @@ app's *own* search code over it. Nothing is sent to any cloud.
 
 This package is **not** part of the PWA or the GitHub-Pages build — it has no React, no
 Vite, and ships nothing to the browser bundle. It has **no runtime dependencies** and runs
-TypeScript directly (no build step) on Node ≥ 23.6.
+TypeScript directly (no build step) on Node ≥ 23.6 — but see the
+[FTS5 caveat](#requirements) below: the **v23.x line never got FTS5** support, so in practice
+you need Node **≥ 24** (or the **22.16+ LTS** line).
 
 > **Status:** Complete (Phase HA-5 — packaging, docs, hardening) plus the generic
 > [versioned REST API](#versioned-rest-api-apiv1) and a read-only
@@ -33,7 +35,8 @@ TypeScript directly (no build step) on Node ≥ 23.6.
 
 ## Quick start
 
-You need **Node ≥ 23.6** and a checkout of this repository. From the **repository root**:
+You need **Node ≥ 24** (or **22.16+ LTS** — see the [FTS5 caveat](#requirements)) and a
+checkout of this repository. From the **repository root**:
 
 ```bash
 npm install                       # once — the bridge borrows the root toolchain, no deps of its own
@@ -239,8 +242,10 @@ and supply the snapshot path (the client stores it; nothing is committed):
 }
 ```
 
-> Needs **Node ≥ 23.6** on `PATH` (for built-in TypeScript + `node:sqlite`); on 22.6–23.5
-> add `--experimental-strip-types` to `args`.
+> Needs **Node ≥ 24** (or **22.16+ LTS**) on `PATH` — for built-in TypeScript type-stripping
+> plus `node:sqlite` **with FTS5** (the v23.x line never got FTS5; see the
+> [Requirements](#requirements) caveat below). An older Node can fall back to
+> `--experimental-strip-types`, but you still need FTS5 support for a working database.
 
 ### Tools
 
@@ -468,8 +473,15 @@ imported.
 
 ## Requirements
 
-- **Node ≥ 23.6** (for built-in, unflagged TypeScript type-stripping and `node:sqlite`).
-  On Node 22.6–23.5 you can run with `node --experimental-strip-types`.
+- **Node ≥ 24**, or **Node ≥ 22.16** (LTS) — **not** any Node v23.x build. The bridge needs
+  two things from Node: built-in, unflagged TypeScript type-stripping (available from
+  Node 22.6) and `node:sqlite` **with FTS5 support**, which Gubbins' schema requires
+  (`CREATE VIRTUAL TABLE … USING fts5`). FTS5 shipped in `node:sqlite` via
+  [nodejs/node#57621](https://github.com/nodejs/node/pull/57621), which landed in
+  **Node 22.16.0** and **Node 24.0.0** — but was **never backported to the v23.x line**, so
+  a v23.x Node (including 23.6+) will hydrate every snapshot with a migration failure
+  (`no such module: fts5`). On Node 22.6–22.15 you can run with
+  `node --experimental-strip-types`, but you still need ≥ 22.16 for FTS5 to work.
 - The repo-root dev toolchain (Vitest, TypeScript) — the bridge has **no `node_modules` of
   its own** and no runtime dependencies; it borrows the root install. Run `npm install`
   once at the repository root.
@@ -692,11 +704,11 @@ file's header comments for the full walkthrough.
 Anywhere that can see the synced folder and that Home Assistant can reach over the LAN:
 
 - **On the Home Assistant host.** Simplest if HA is on a general-purpose box (an Intel NUC,
-  a mini-PC) where you can also run Node ≥ 23.6 or Docker. Keep the bridge on `127.0.0.1`
+  a mini-PC) where you can also run Node ≥ 24 (or 22.16+ LTS) or Docker. Keep the bridge on `127.0.0.1`
   and point the integration at `127.0.0.1:8787` — nothing touches the LAN. (Home Assistant
   OS is a locked-down appliance; prefer one of the other two options there.)
 - **On a Raspberry Pi.** A Pi that already mounts the synced folder makes a tidy always-on
-  host. Use a 64-bit OS and a Node ≥ 23.6 build (or the Docker image, which is `arm64`-ready
+  host. Use a 64-bit OS and a Node ≥ 24 (or 22.16+ LTS) build (or the Docker image, which is `arm64`-ready
   via `node:slim`). Expose it with `GUBBINS_BRIDGE_HOST=0.0.0.0` only if HA runs elsewhere.
 - **On a NAS** (Synology, QNAP, etc.). If the NAS is where `gubbins-sync.json` already
   lands, run the bridge there in Docker so it reads the snapshot locally with no extra copy.

@@ -30,7 +30,9 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
 
-    // Type-check only; Node 23.6+ strips the types at runtime, so we never emit JS.
+    // Type-check only; Node strips the types at runtime, so we never emit JS (see
+    // README.md -> Requirements for the real minimum Node version — not all of "23.6+"
+    // actually works, due to an FTS5 gap in the v23.x line).
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

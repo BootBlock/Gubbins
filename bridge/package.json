@@ -7,7 +7,7 @@
   "license": "MIT",
   "author": "Joe Cox <BootBlock@users.noreply.github.com>",
   "engines": {
-    "node": ">=23.6.0"
+    "node": ">=22.16.0 <23.0.0 || >=24.0.0"
   },
   "scripts": {
     "cli": "node cli.mjs",

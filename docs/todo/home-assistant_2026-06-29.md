@@ -180,7 +180,8 @@ pure part rather than shimming the DOM.
 added to the browser bundle). **Shared-code mechanism:** a `tsconfig` path alias
 `@/* → ../src/*` honoured at runtime by a ~40-line zero-dependency ESM `resolve` hook
 (`bridge/loader.mjs`) that maps the alias and retries the app's extensionless
-bundler-mode imports — Node 23.6+ (dev env is Node 25) then strips the TypeScript types,
+bundler-mode imports — Node 22.16+/24+ (dev env is Node 25; NOT any v23.x build, which
+lacks node:sqlite's FTS5 support) then strips the TypeScript types,
 so the app's real modules run directly with **no build step and no bundler**. The chosen
 seam keeps `parseASTtoSQL` single-sourced — it is imported, never forked — and was picked
 over an npm-workspace export (the app's source is `@/`-aliased *internally*, so a package
@@ -901,7 +902,7 @@ src/features/sync/providers/file-system-provider.ts and src/features/sync/backup
 src/features/settings/SettingsScreen.tsx). Key facts you must reuse, NOT re-derive (and NOT
 regress):
 - The bridge is stdlib-only (zero runtime deps) and runs TypeScript directly with no build
-  step via bridge/loader.mjs (Node >= 23.6). Run the HTTP server: `node bridge/serve.mjs`
+  step via bridge/loader.mjs (Node >= 22.16 or >= 24). Run the HTTP server: `node bridge/serve.mjs`
   after copying bridge/.env.example → .env (git-ignored) and setting GUBBINS_BRIDGE_TOKEN +
   GUBBINS_SNAPSHOT_PATH. The server binds 127.0.0.1 (loopback) by DEFAULT; LAN exposure
   (GUBBINS_BRIDGE_HOST=0.0.0.0) and writes (GUBBINS_BRIDGE_ALLOW_WRITES=on) are explicit,

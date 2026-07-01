@@ -2,7 +2,8 @@
 #
 # Thin, build-free image for the Gubbins bridge.
 #
-# The bridge runs TypeScript *directly* via Node's built-in type-stripping (Node ≥ 23.6)
+# The bridge runs TypeScript *directly* via Node's built-in type-stripping (Node ≥ 24,
+# or ≥ 22.16 LTS — NOT any Node v23.x build; see README.md -> Requirements for why)
 # and a zero-dependency ESM loader — there is nothing to compile and there are no runtime
 # dependencies, so a single `node:slim` stage with no `npm install` is all it needs.
 #
