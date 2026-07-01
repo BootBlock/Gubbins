@@ -135,7 +135,30 @@ export async function handleRequest(
   const v1 = isApiV1Path(url.pathname);
   // Allow GET everywhere; POST only for the versioned write/ingest endpoints (and only when one
   // of those opt-ins is enabled). Anything else is a 405.
-  const allow = options.write || options.push ? 'GET, POST' : 'GET';
+  const allow = options.write || options.push ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
+
+  // CORS: the bridge authenticates with a bearer token (never a cookie), so the token itself
+  // — not the browser's same-origin policy — is the security boundary; a permissive origin is
+  // safe here and is what lets the PWA (almost always a *different* origin: a dev server, the
+  // GitHub-Pages build, etc.) call the bridge straight from the browser — in particular the
+  // "push to bridge" feature, whose POST triggers a CORS preflight. Applied to every response,
+  // including errors, so a browser can always read the body rather than swallowing it as an
+  // opaque network failure.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // A CORS preflight is a plain capability check the browser makes before the real request; it
+  // carries no Authorization header (browsers deliberately omit it on preflights), so it must be
+  // answered before the auth/rate-limit guards below, and never counted against the rate limit.
+  if (req.method === 'OPTIONS') {
+    req.resume();
+    res.writeHead(204, {
+      'access-control-allow-methods': allow,
+      'access-control-allow-headers': 'Authorization, Content-Type',
+      'access-control-max-age': '600',
+    });
+    res.end();
+    return;
+  }
 
   try {
     // Abuse guard first (before any work, including the token check), so a flood from one
