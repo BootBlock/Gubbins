@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # The app's `:memory:` test driver uses `node:sqlite` (Node >= 22.5), so the
           # test job needs a recent Node even though the shipped PWA runs in the browser.
@@ -41,10 +41,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # The bridge has no build step — it runs TypeScript directly, which needs
           # Node >= 23.6 for unflagged type-stripping and node:sqlite. It has no deps
