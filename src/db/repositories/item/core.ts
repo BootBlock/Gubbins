@@ -128,9 +128,7 @@ export class ItemCoreRepository extends BaseRepository {
       if (name !== existing.name) {
         sets.push('name = ?');
         params.push(name);
-        statements.push(
-          historyStatement(id, 'RENAMED', { note: `Renamed "${existing.name}" → "${name}".` }),
-        );
+        statements.push(historyStatement(id, 'RENAMED', { note: `Renamed "${existing.name}" → "${name}".` }));
       }
     }
     if (input.description !== undefined) {
@@ -240,9 +238,7 @@ export class ItemCoreRepository extends BaseRepository {
     const existing = await this.require(id);
     if (existing.locationId === locationId) return existing;
 
-    const target = await this.driver.queryOne('SELECT 1 AS ok FROM locations WHERE id = ?;', [
-      locationId,
-    ]);
+    const target = await this.driver.queryOne('SELECT 1 AS ok FROM locations WHERE id = ?;', [locationId]);
     if (!target) {
       throw new DbError('SQLITE_CONSTRAINT_FOREIGNKEY', `Location "${locationId}" does not exist.`);
     }

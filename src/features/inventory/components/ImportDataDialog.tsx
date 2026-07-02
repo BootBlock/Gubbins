@@ -24,12 +24,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Select, Spinner, Surface, Textarea } from '@/components/foundry';
 import { cn } from '@/lib/utils';
 import { DatasheetIcon, ImportIcon, UploadIcon } from '@/components/icons';
-import {
-  getCategoryRepository,
-  getItemRepository,
-  type CategoryField,
-  type Item,
-} from '@/db/repositories';
+import { getCategoryRepository, getItemRepository, type CategoryField, type Item } from '@/db/repositories';
 import {
   CATALOG_FIELD_LABELS,
   CATALOG_FIELDS,
@@ -89,11 +84,7 @@ interface Catalogue {
 // ---------------------------------------------------------------------------
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-      {children}
-    </h3>
-  );
+  return <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h3>;
 }
 
 /** Status pill for a previewed row, coloured via semantic tokens. */
@@ -105,9 +96,7 @@ function StatusBadge({ status }: { status: ImportPreviewRow['status'] }) {
         ? 'bg-primary/10 text-primary'
         : 'bg-destructive/10 text-destructive';
   const label = status === 'create' ? 'Create' : status === 'update' ? 'Update' : 'Error';
-  return (
-    <span className={cn('rounded px-1.5 py-0.5 text-[0.6875rem] font-medium', style)}>{label}</span>
-  );
+  return <span className={cn('rounded px-1.5 py-0.5 text-[0.6875rem] font-medium', style)}>{label}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +127,9 @@ function MappingTable({
               <td className="px-3 py-2 font-mono text-xs text-foreground">{header || '(empty)'}</td>
               <td className="px-3 py-2">
                 <select
-                  value={isCustomFieldTarget(mapping[i] ?? null) ? '' : ((mapping[i] as CatalogField | null) ?? '')}
+                  value={
+                    isCustomFieldTarget(mapping[i] ?? null) ? '' : ((mapping[i] as CatalogField | null) ?? '')
+                  }
                   onChange={(e) => onChange(i, (e.target.value || null) as CatalogField | null)}
                   className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
                   aria-label={`Field for column ${header || i + 1}`}
@@ -187,9 +178,7 @@ function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
                 <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{row.sourceRow}</td>
                 <td className="px-3 py-1.5 text-foreground">
                   {row.name || <span className="text-muted-foreground">(none)</span>}
-                  {row.message ? (
-                    <span className="block text-xs text-destructive">{row.message}</span>
-                  ) : null}
+                  {row.message ? <span className="block text-xs text-destructive">{row.message}</span> : null}
                 </td>
                 <td className="px-3 py-1.5 tabular-nums text-foreground">{row.quantity || '—'}</td>
                 <td className="px-3 py-1.5 font-mono text-xs text-foreground">{row.sku || '—'}</td>
@@ -201,9 +190,7 @@ function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
           </tbody>
         </table>
       </div>
-      {hidden > 0 ? (
-        <p className="mt-1 text-xs text-muted-foreground">…and {hidden} more row(s).</p>
-      ) : null}
+      {hidden > 0 ? <p className="mt-1 text-xs text-muted-foreground">…and {hidden} more row(s).</p> : null}
     </div>
   );
 }
@@ -540,13 +527,7 @@ function ImportWorkbench({
 // Tab inputs
 // ---------------------------------------------------------------------------
 
-function TextInputPanel({
-  text,
-  onTextChange,
-}: {
-  text: string;
-  onTextChange: (text: string) => void;
-}) {
+function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (text: string) => void }) {
   const inputId = useId();
   return (
     <div className="space-y-2">
@@ -554,9 +535,9 @@ function TextInputPanel({
         Paste or type your items
       </label>
       <p className="text-sm text-muted-foreground">
-        Paste tabular data from a spreadsheet, CSV/TSV, JSON, a Markdown table, or just one
-        item per line with shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>.
-        The format is detected automatically — override it with “Interpret as” below.
+        Paste tabular data from a spreadsheet, CSV/TSV, JSON, a Markdown table, or just one item per line with
+        shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>. The format is detected
+        automatically — override it with “Interpret as” below.
       </p>
       <Textarea
         id={inputId}
@@ -606,12 +587,9 @@ function FileInputPanel({
         Choose a file
       </label>
       <p className="text-sm text-muted-foreground">
-        A <span className="font-mono text-xs">.csv</span>,{' '}
-        <span className="font-mono text-xs">.tsv</span>,{' '}
-        <span className="font-mono text-xs">.json</span>,{' '}
-        <span className="font-mono text-xs">.md</span>, or plain{' '}
-        <span className="font-mono text-xs">.txt</span> file — the format is detected from the
-        contents.
+        A <span className="font-mono text-xs">.csv</span>, <span className="font-mono text-xs">.tsv</span>,{' '}
+        <span className="font-mono text-xs">.json</span>, <span className="font-mono text-xs">.md</span>, or
+        plain <span className="font-mono text-xs">.txt</span> file — the format is detected from the contents.
       </p>
       <label
         htmlFor={inputId}
@@ -790,12 +768,7 @@ export function ImportDataDialog({ open, onClose }: { open: boolean; onClose: ()
                 {loadError}
               </p>
             ) : catalogue ? (
-              <ImportWorkbench
-                text={text}
-                catalogue={catalogue}
-                client={client}
-                onClose={handleClose}
-              />
+              <ImportWorkbench text={text} catalogue={catalogue} client={client} onClose={handleClose} />
             ) : (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Spinner />

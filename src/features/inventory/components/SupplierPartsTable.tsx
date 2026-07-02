@@ -1,13 +1,6 @@
 import { useState } from 'react';
 import { Button, InfoHint } from '@/components/foundry';
-import {
-  AddIcon,
-  DeleteIcon,
-  EditIcon,
-  LinkIcon,
-  NotPreferredIcon,
-  PreferredIcon,
-} from '@/components/icons';
+import { AddIcon, DeleteIcon, EditIcon, LinkIcon, NotPreferredIcon, PreferredIcon } from '@/components/icons';
 import type { CreateSupplierPartInput, Item, SupplierPart } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import {
@@ -38,10 +31,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
 
   const handleSubmit = (input: CreateSupplierPartInput) => {
     if (editing && editing !== 'new') {
-      update.mutate(
-        { id: editing.id, itemId: item.id, input },
-        { onSuccess: () => setEditing(null) },
-      );
+      update.mutate({ id: editing.id, itemId: item.id, input }, { onSuccess: () => setEditing(null) });
     } else {
       create.mutate({ itemId: item.id, input }, { onSuccess: () => setEditing(null) });
     }
@@ -62,12 +52,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
             }
           />
         </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setEditing('new')}
-          data-testid="supplier-part-add"
-        >
+        <Button variant="outline" size="sm" onClick={() => setEditing('new')} data-testid="supplier-part-add">
           <AddIcon />
           Add supplier
         </Button>
@@ -76,7 +61,10 @@ export function SupplierPartsTable({ item }: { item: Item }) {
       {list.length === 0 ? (
         <p className="text-sm text-muted-foreground">No suppliers recorded yet.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border" data-testid="supplier-parts-list">
+        <ul
+          className="divide-y divide-border rounded-lg border border-border"
+          data-testid="supplier-parts-list"
+        >
           {list.map((part) => (
             <li key={part.id} className="flex items-start gap-3 p-3" data-testid="supplier-part-row">
               <button

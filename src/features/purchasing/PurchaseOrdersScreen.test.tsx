@@ -56,7 +56,12 @@ vi.mock('./queries', () => ({
   useReceivePurchaseOrderLine: () => ({ mutate: receiveLineSpy, isPending: false }),
   // Phase 65 — Reorder / Shopping-list tab
   useReorderPlan: () => ({ isLoading: false, data: [] }),
-  useCreateDraftFromReorderPlan: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false, isError: false }),
+  useCreateDraftFromReorderPlan: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+  }),
 }));
 
 vi.mock('@/features/inventory/queries', () => ({
@@ -77,7 +82,10 @@ vi.mock('@/lib/useFormatters', () => ({
 
 // Stub the router Link so the screen renders without a RouterProvider.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; children?: React.ReactNode }) => (
+  Link: ({
+    children,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; children?: React.ReactNode }) => (
     <a {...props}>{children}</a>
   ),
 }));
@@ -151,18 +159,14 @@ beforeEach(() => {
   };
 
   // setStatus spy: synchronously calls onSuccess when invoked.
-  setStatusSpy = vi.fn(
-    (_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
-      callbacks?.onSuccess?.();
-    },
-  );
+  setStatusSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
+    callbacks?.onSuccess?.();
+  });
 
   // receiveLine spy: synchronously calls onSuccess when invoked.
-  receiveLineSpy = vi.fn(
-    (_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
-      callbacks?.onSuccess?.();
-    },
-  );
+  receiveLineSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
+    callbacks?.onSuccess?.();
+  });
 });
 
 // ─── tests ───────────────────────────────────────────────────────────────────

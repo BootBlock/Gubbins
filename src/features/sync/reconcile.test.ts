@@ -8,15 +8,7 @@ import type { GaugeHistoryDelta, ItemTagEdge, SyncSnapshot, Tombstone } from './
 const DICTIONARY = {
   locations: ['id', 'name', 'parent_id', 'updated_at'],
   categories: ['id', 'name', 'updated_at'],
-  items: [
-    'id',
-    'name',
-    'location_id',
-    'tracking_mode',
-    'gross_capacity',
-    'current_net_value',
-    'updated_at',
-  ],
+  items: ['id', 'name', 'location_id', 'tracking_mode', 'gross_capacity', 'current_net_value', 'updated_at'],
   item_aliases: ['id', 'item_id', 'alias', 'updated_at'],
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
@@ -239,7 +231,13 @@ describe('reconcile (§7.3 / §7.5)', () => {
 
   describe('Phase 11 — Activity Ledger (item_history, union-by-id)', () => {
     // An item that exists on both sides so history rows have a surviving FK parent.
-    const item = { id: 'i1', name: 'Widget', location_id: UNASSIGNED_LOCATION_ID, tracking_mode: 'DISCRETE', updated_at: 1 };
+    const item = {
+      id: 'i1',
+      name: 'Widget',
+      location_id: UNASSIGNED_LOCATION_ID,
+      tracking_mode: 'DISCRETE',
+      updated_at: 1,
+    };
 
     it('unions a remote-only ledger row in; never duplicates one we already hold', () => {
       const local = snapshot({
@@ -294,7 +292,13 @@ describe('reconcile (§7.3 / §7.5)', () => {
   });
 
   describe('Phase 11 — M:N membership (item_tags, tombstone-wins union)', () => {
-    const item = { id: 'i1', name: 'W', location_id: UNASSIGNED_LOCATION_ID, tracking_mode: 'DISCRETE', updated_at: 1 };
+    const item = {
+      id: 'i1',
+      name: 'W',
+      location_id: UNASSIGNED_LOCATION_ID,
+      tracking_mode: 'DISCRETE',
+      updated_at: 1,
+    };
     const tag = { id: 't1', name: 'esp32', updated_at: 1 };
     const bothSides = { tables: { items: [item], tags: [tag] } };
 
@@ -348,7 +352,17 @@ describe('reconcile (§7.3 / §7.5)', () => {
     it('drops a remote child whose item was deleted on the peer (NOT-NULL FK)', () => {
       // Local holds the item; remote tombstones it and still carries a capability for it.
       const local = snapshot({
-        tables: { items: [{ id: 'i1', name: 'W', location_id: UNASSIGNED_LOCATION_ID, tracking_mode: 'DISCRETE', updated_at: 1 }] },
+        tables: {
+          items: [
+            {
+              id: 'i1',
+              name: 'W',
+              location_id: UNASSIGNED_LOCATION_ID,
+              tracking_mode: 'DISCRETE',
+              updated_at: 1,
+            },
+          ],
+        },
       });
       const remote = snapshot({
         tombstones: [{ tableName: 'items', id: 'i1', deletedAt: 99 }],
@@ -362,7 +376,15 @@ describe('reconcile (§7.3 / §7.5)', () => {
     it('nulls a nullable FK instead of dropping the row (BOM line whose item was removed)', () => {
       const local = snapshot({
         tables: {
-          items: [{ id: 'i1', name: 'W', location_id: UNASSIGNED_LOCATION_ID, tracking_mode: 'DISCRETE', updated_at: 1 }],
+          items: [
+            {
+              id: 'i1',
+              name: 'W',
+              location_id: UNASSIGNED_LOCATION_ID,
+              tracking_mode: 'DISCRETE',
+              updated_at: 1,
+            },
+          ],
           projects: [{ id: 'p1', name: 'Build', updated_at: 1 }],
         },
       });

@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { Button, Input, Modal, Select } from '@/components/foundry';
-import { ASSEMBLY_OUTCOMES, UNASSIGNED_LOCATION_ID, type AssemblyOutcome, type LocationWithCount } from '@/db/repositories';
+import {
+  ASSEMBLY_OUTCOMES,
+  UNASSIGNED_LOCATION_ID,
+  type AssemblyOutcome,
+  type LocationWithCount,
+} from '@/db/repositories';
 import { useFinaliseAssembly } from '../projects';
 import { ASSEMBLY_OUTCOME_DESCRIPTIONS, ASSEMBLY_OUTCOME_LABELS } from './projects-ui';
 
@@ -86,9 +91,7 @@ export function FinaliseAssemblyDialog({
             <Input
               value={resultName}
               onChange={(e) => setResultName(e.target.value)}
-              placeholder={
-                outcome === 'CONTAINER' ? projectName : `${projectName} Assembly`
-              }
+              placeholder={outcome === 'CONTAINER' ? projectName : `${projectName} Assembly`}
             />
           </label>
         ) : null}

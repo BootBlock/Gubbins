@@ -16,7 +16,7 @@ import { BackupDialog } from './BackupDialog';
 // createBackup and readBackup are the async IO boundaries — mock at the module
 // level so no DB, OPFS, or Web Workers are touched.
 const mockCreateBackup = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
-const mockReadBackup   = vi.hoisted(() => vi.fn<(f: File) => Promise<unknown>>());
+const mockReadBackup = vi.hoisted(() => vi.fn<(f: File) => Promise<unknown>>());
 const mockRestoreBackup = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 
 vi.mock('./build-backup', () => ({ createBackup: mockCreateBackup }));
@@ -116,7 +116,9 @@ describe('BackupDialog — Create panel aria-live coverage (Phase 63 / WCAG 4.1.
     expect(screen.getByTestId('create-backup-live-region').textContent).toBe('Preparing backup…');
 
     // Clean up — resolve so the component finishes.
-    await act(async () => { resolve(BACKUP_RESULT); });
+    await act(async () => {
+      resolve(BACKUP_RESULT);
+    });
   });
 
   it('announces the filename and stats on successful backup', async () => {
@@ -136,7 +138,9 @@ describe('BackupDialog — Create panel aria-live coverage (Phase 63 / WCAG 4.1.
   });
 
   it('announces the error message assertively on backup failure', async () => {
-    mockCreateBackup.mockImplementation(async () => { throw new Error('Out of space.'); });
+    mockCreateBackup.mockImplementation(async () => {
+      throw new Error('Out of space.');
+    });
 
     renderDialog('create');
 
@@ -188,11 +192,15 @@ describe('BackupDialog — Restore panel aria-live coverage (Phase 63 / WCAG 4.1
     expect(screen.getByTestId('restore-live-region').textContent).toContain('Reading my-backup.zip…');
 
     // Resolve so the component finishes.
-    await act(async () => { resolve(PARSED_BACKUP); });
+    await act(async () => {
+      resolve(PARSED_BACKUP);
+    });
   });
 
   it('announces the read error assertively when the file cannot be parsed', async () => {
-    mockReadBackup.mockImplementation(async () => { throw new Error('Not a valid backup.'); });
+    mockReadBackup.mockImplementation(async () => {
+      throw new Error('Not a valid backup.');
+    });
 
     renderDialog('restore');
 

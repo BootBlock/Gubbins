@@ -8,7 +8,12 @@ import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStor
  * A sliding segmented control with a fluid animated thumb — engaging visual
  * feedback per the Phase 2 brief — backed by the persisted `useLayoutStore`.
  */
-const OPTIONS: ReadonlyArray<{ value: LayoutDensity; label: string; hint: string; icon: typeof DataDensityIcon }> = [
+const OPTIONS: ReadonlyArray<{
+  value: LayoutDensity;
+  label: string;
+  hint: string;
+  icon: typeof DataDensityIcon;
+}> = [
   {
     value: 'visual',
     label: 'Visual',

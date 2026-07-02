@@ -100,12 +100,7 @@ export function ProjectsScreen() {
            * Inventory pattern and must be mounted before data loads so later text
            * mutations are announced by screen readers.
            */}
-          <p
-            className="sr-only"
-            role="status"
-            aria-live="polite"
-            data-testid="projects-count-live"
-          >
+          <p className="sr-only" role="status" aria-live="polite" data-testid="projects-count-live">
             {projects.isLoading
               ? 'Loading projects…'
               : rows.length === 0

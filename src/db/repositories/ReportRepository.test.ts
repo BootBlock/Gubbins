@@ -42,7 +42,13 @@ describe('ReportRepository', () => {
       const caps = await categories.create({ name: 'Capacitors' });
       const shelf = await locations.create({ name: 'Shelf A' });
 
-      await items.create({ name: 'Cap', categoryId: caps.id, locationId: shelf.id, quantity: 10, unitCost: 2 });
+      await items.create({
+        name: 'Cap',
+        categoryId: caps.id,
+        locationId: shelf.id,
+        quantity: 10,
+        unitCost: 2,
+      });
       await items.create({ name: 'Resistor', locationId: shelf.id, quantity: 100, unitCost: 1 });
       await items.create({ name: 'Mystery', quantity: 5, unitCost: null }); // unpriced
 
@@ -91,7 +97,10 @@ describe('ReportRepository', () => {
       const now = Date.now();
       const item = await items.create({ name: 'OldFan', quantity: 3, unitCost: null });
       await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 6, isPreferred: true });
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, item.id]);
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 120 * MS_PER_DAY,
+        item.id,
+      ]);
 
       const report = await reports.deadStock(30, now);
       expect(report.lines.map((l) => l.name)).toEqual(['OldFan']);
@@ -120,8 +129,14 @@ describe('ReportRepository', () => {
         `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
          VALUES (?, ?, 'QUANTITY_CHANGE', ?, ?), (?, ?, 'QUANTITY_CHANGE', ?, ?);`,
         [
-          crypto.randomUUID(), item.id, -30, now - 5 * MS_PER_DAY,
-          crypto.randomUUID(), item.id, -20, now - 2 * MS_PER_DAY,
+          crypto.randomUUID(),
+          item.id,
+          -30,
+          now - 5 * MS_PER_DAY,
+          crypto.randomUUID(),
+          item.id,
+          -20,
+          now - 2 * MS_PER_DAY,
         ],
       );
       // A positive (incoming) delta must not count toward consumption.
@@ -145,8 +160,12 @@ describe('ReportRepository', () => {
         `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
          VALUES (?, ?, 'RECEIVED', 50, ?), (?, ?, 'QUANTITY_CHANGE', -10, ?);`,
         [
-          crypto.randomUUID(), item.id, now - 6 * MS_PER_DAY,
-          crypto.randomUUID(), item.id, now - 1 * MS_PER_DAY,
+          crypto.randomUUID(),
+          item.id,
+          now - 6 * MS_PER_DAY,
+          crypto.randomUUID(),
+          item.id,
+          now - 1 * MS_PER_DAY,
         ],
       );
 
@@ -177,8 +196,14 @@ describe('ReportRepository', () => {
       const moved = await items.create({ name: 'Moved', quantity: 4, unitCost: 5 });
 
       // Backdate the idle item's creation well past the cutoff; it has no movement history.
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, idle.id]);
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, moved.id]);
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 120 * MS_PER_DAY,
+        idle.id,
+      ]);
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 120 * MS_PER_DAY,
+        moved.id,
+      ]);
       // The "moved" item moved yesterday → not dead.
       await driver.execute(
         `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at) VALUES (?, ?, 'QUANTITY_CHANGE', -1, ?);`,
@@ -275,7 +300,7 @@ describe('ReportRepository', () => {
   describe('reorderPlan (Phase 65)', () => {
     it('delegates to buildReorderPlan, producing correct supplier groups', async () => {
       const r1 = await items.create({ name: 'R1', quantity: 0 });
-      const r2 = await items.create({ name: 'R2', quantity: 1 });
+      await items.create({ name: 'R2', quantity: 1 });
       await supplierParts.create(r1.id, { supplierName: 'DigiKey', unitCost: 0.1, isPreferred: true });
       // r2 has no preferred supplier → goes to Unassigned.
 
@@ -348,7 +373,10 @@ describe('ReportRepository', () => {
       const acquired = await items.create({ name: 'Acquired', quantity: 5, unitCost: 1 });
 
       // Fresh: an inbound 10 days ago → 0–30 bucket (wins over its creation date).
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 200 * MS_PER_DAY, fresh.id]);
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 200 * MS_PER_DAY,
+        fresh.id,
+      ]);
       await addHistory(fresh.id, 5, now - 10 * MS_PER_DAY);
       // Old: no inbound, created 120 days ago → 91–180 bucket.
       await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [now - 120 * MS_PER_DAY, old.id]);
@@ -383,41 +411,69 @@ describe('ReportRepository', () => {
   });
 
   describe('dataHygiene', () => {
-    const sampleIds = (
-      report: Awaited<ReturnType<ReportRepository['dataHygiene']>>,
-      kind: string,
-    ) => report.sections.find((s) => s.kind === kind)!.samples.map((s) => s.id);
-    const countFor = (
-      report: Awaited<ReturnType<ReportRepository['dataHygiene']>>,
-      kind: string,
-    ) => report.sections.find((s) => s.kind === kind)!.count;
+    const sampleIds = (report: Awaited<ReturnType<ReportRepository['dataHygiene']>>, kind: string) =>
+      report.sections.find((s) => s.kind === kind)!.samples.map((s) => s.id);
+    const countFor = (report: Awaited<ReturnType<ReportRepository['dataHygiene']>>, kind: string) =>
+      report.sections.find((s) => s.kind === kind)!.count;
 
     it('flags each quality issue over real SQL and leaves a tidy item unflagged', async () => {
       const cat = await categories.create({ name: 'Capacitors' });
       const shelf = await locations.create({ name: 'Shelf A' });
 
       // Tidy: categorised, real location, priced, photographed, cycle-counted.
-      const tidy = await items.create({ name: 'Tidy', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: 2 });
-      await driver.execute(
-        'INSERT INTO item_images (id, item_id, full_res_opfs_path) VALUES (?, ?, ?);',
-        [crypto.randomUUID(), tidy.id, 'images/tidy.jpg'],
-      );
-      await driver.execute(
-        "INSERT INTO item_history (id, item_id, action) VALUES (?, ?, 'RECONCILED');",
-        [crypto.randomUUID(), tidy.id],
-      );
+      const tidy = await items.create({
+        name: 'Tidy',
+        categoryId: cat.id,
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: 2,
+      });
+      await driver.execute('INSERT INTO item_images (id, item_id, full_res_opfs_path) VALUES (?, ?, ?);', [
+        crypto.randomUUID(),
+        tidy.id,
+        'images/tidy.jpg',
+      ]);
+      await driver.execute("INSERT INTO item_history (id, item_id, action) VALUES (?, ?, 'RECONCILED');", [
+        crypto.randomUUID(),
+        tidy.id,
+      ]);
 
       const noCat = await items.create({ name: 'NoCat', locationId: shelf.id, quantity: 1, unitCost: 2 });
       // Unassigned: omit locationId so it lands in the holding pen.
-      const unassigned = await items.create({ name: 'Homeless', categoryId: cat.id, quantity: 1, unitCost: 2 });
-      const unpriced = await items.create({ name: 'Unpriced', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: null });
+      const unassigned = await items.create({
+        name: 'Homeless',
+        categoryId: cat.id,
+        quantity: 1,
+        unitCost: 2,
+      });
+      const unpriced = await items.create({
+        name: 'Unpriced',
+        categoryId: cat.id,
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+      });
 
       // Two items sharing an MPN (case/space-insensitively) — possible duplicates. The first
       // is unpriced manually but carries a preferred supplier cost, so it must NOT be flagged
       // as missing-price (exercises preferredSupplierCostSql).
-      const dupA = await items.create({ name: 'DupA', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: null, mpn: 'NE555P' });
+      const dupA = await items.create({
+        name: 'DupA',
+        categoryId: cat.id,
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+        mpn: 'NE555P',
+      });
       await supplierParts.create(dupA.id, { supplierName: 'Pref Co', unitCost: 0.5, isPreferred: true });
-      const dupB = await items.create({ name: 'DupB', categoryId: cat.id, locationId: shelf.id, quantity: 1, unitCost: 2, mpn: ' ne555p ' });
+      const dupB = await items.create({
+        name: 'DupB',
+        categoryId: cat.id,
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: 2,
+        mpn: ' ne555p ',
+      });
 
       const report = await reports.dataHygiene(180);
 

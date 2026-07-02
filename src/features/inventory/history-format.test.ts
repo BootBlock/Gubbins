@@ -77,9 +77,7 @@ describe('describeHistoryEntry — one ledger row for the Activity Log view', ()
   });
 
   it('prefers the quantity delta over the net-value delta when both are present', () => {
-    const view = describeHistoryEntry(
-      entry({ action: 'RECONCILED', quantityDelta: 4, netValueDelta: 9 }),
-    );
+    const view = describeHistoryEntry(entry({ action: 'RECONCILED', quantityDelta: 4, netValueDelta: 9 }));
     expect(view.delta).toBe('+4');
   });
 

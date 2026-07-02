@@ -41,10 +41,9 @@ export function isArchiveDue(
 /** Zip a path→bytes map in the existing fflate vault worker (reused for the archive). */
 function zipInWorker(assets: Record<string, Uint8Array>, files: Record<string, string>): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL('@/features/export/export-vault.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    const worker = new Worker(new URL('@/features/export/export-vault.worker.ts', import.meta.url), {
+      type: 'module',
+    });
     worker.onmessage = (event: MessageEvent<VaultZipResponse>) => {
       resolve(event.data.zip);
       worker.terminate();

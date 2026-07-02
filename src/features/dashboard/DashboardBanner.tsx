@@ -25,8 +25,8 @@ export function DashboardBanner() {
       heading="Work in progress"
       className="max-w-md px-3 py-2 text-xs"
     >
-      Updates may not be backwards compatible, so data loss is expected. Backwards
-      compatibility will be maintained once Gubbins reaches its 1.0 release.
+      Updates may not be backwards compatible, so data loss is expected. Backwards compatibility will be
+      maintained once Gubbins reaches its 1.0 release.
     </Banner>
   );
 }

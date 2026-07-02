@@ -34,9 +34,7 @@ describe('buildCloneStatements — §7.6.3-A clone-path history watermark (Phase
   ]);
 
   it('clones the whole remote ledger when no watermark is set (default 0)', () => {
-    expect(clonedHistoryCreatedAt(buildCloneStatements(remote, DICTIONARY)).sort()).toEqual([
-      100, 200, 300,
-    ]);
+    expect(clonedHistoryCreatedAt(buildCloneStatements(remote, DICTIONARY)).sort()).toEqual([100, 200, 300]);
   });
 
   it('skips remote ledger rows older than the local prune watermark', () => {
@@ -45,8 +43,6 @@ describe('buildCloneStatements — §7.6.3-A clone-path history watermark (Phase
   });
 
   it('keeps rows exactly at the watermark (the cut is strict <)', () => {
-    expect(clonedHistoryCreatedAt(buildCloneStatements(remote, DICTIONARY, 200)).sort()).toEqual([
-      200, 300,
-    ]);
+    expect(clonedHistoryCreatedAt(buildCloneStatements(remote, DICTIONARY, 200)).sort()).toEqual([200, 300]);
   });
 });

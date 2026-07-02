@@ -17,12 +17,7 @@ import {
   getReportRepository,
 } from '@/db/repositories';
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
-import {
-  buildAgenda,
-  maintenanceDueAtMs,
-  type AgendaEvent,
-  type AgendaSources,
-} from './agenda';
+import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
 
 /**
  * Lookahead window (days) for the warranty/expiry feeds — ~100 years, i.e. effectively

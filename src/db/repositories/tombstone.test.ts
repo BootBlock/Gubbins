@@ -70,12 +70,8 @@ describe('TombstoneRepository & hard-delete wiring (§7.2)', () => {
   });
 
   it('lists tombstones recorded at or after a timestamp (for sync push)', async () => {
-    await driver.execute(
-      "INSERT INTO tombstones (table_name, id, deleted_at) VALUES ('items', 'a', 100);",
-    );
-    await driver.execute(
-      "INSERT INTO tombstones (table_name, id, deleted_at) VALUES ('items', 'b', 300);",
-    );
+    await driver.execute("INSERT INTO tombstones (table_name, id, deleted_at) VALUES ('items', 'a', 100);");
+    await driver.execute("INSERT INTO tombstones (table_name, id, deleted_at) VALUES ('items', 'b', 300);");
     const since = await tombstones.listSince(200);
     expect(since.map((t) => t.id)).toEqual(['b']);
   });

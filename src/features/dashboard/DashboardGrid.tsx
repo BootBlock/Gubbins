@@ -235,11 +235,7 @@ export function DashboardGrid() {
               const def = widgetById(p.id);
               if (!def) return null;
               return (
-                <Tooltip
-                  key={p.id}
-                  content={`Add **${def.title}** back to the board.`}
-                  triggerTabIndex={-1}
-                >
+                <Tooltip key={p.id} content={`Add **${def.title}** back to the board.`} triggerTabIndex={-1}>
                   <button
                     type="button"
                     onClick={() => apply(setWidgetVisible(layout, p.id, true))}

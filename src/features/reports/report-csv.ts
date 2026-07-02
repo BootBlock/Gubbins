@@ -5,12 +5,7 @@
  * path. Kept free of the DOM/repositories so the serialisation is unit-tested directly;
  * the wizard wires these to its existing `download` side-effect.
  */
-import type {
-  ConsumptionRateReport,
-  DeadStockReport,
-  InventoryValueReport,
-  MovementReport,
-} from './reports';
+import type { ConsumptionRateReport, DeadStockReport, InventoryValueReport, MovementReport } from './reports';
 import type { AbcReport } from './abc-analysis';
 import type { TurnoverReport } from './turnover';
 import type { StockAgingReport } from './stock-aging';
@@ -87,24 +82,13 @@ export function buildDeadStockCsv(report: DeadStockReport): string {
 
 /** ABC CSV: one row per item, ranked A→C, with its annual value and cumulative share. */
 export function buildAbcCsv(report: AbcReport): string {
-  const rows: unknown[][] = report.lines.map((l) => [
-    l.tier,
-    l.name,
-    l.annualValue,
-    l.cumulativeShare,
-  ]);
+  const rows: unknown[][] = report.lines.map((l) => [l.tier, l.name, l.annualValue, l.cumulativeShare]);
   return toCsv(['tier', 'item', 'annualValue', 'cumulativeShare'], rows);
 }
 
 /** Turnover CSV: one row per item (fastest movers first), then a portfolio total row. */
 export function buildTurnoverCsv(report: TurnoverReport): string {
-  const rows: unknown[][] = report.lines.map((l) => [
-    l.name,
-    l.cogs,
-    l.avgValue,
-    l.turnover,
-    l.daysOnHand,
-  ]);
+  const rows: unknown[][] = report.lines.map((l) => [l.name, l.cogs, l.avgValue, l.turnover, l.daysOnHand]);
   rows.push(['Total', report.totalCogs, report.totalAvgValue, report.turnover, report.daysOnHand]);
   return toCsv(['item', 'cogs', 'avgValue', 'turnover', 'daysOnHand'], rows);
 }

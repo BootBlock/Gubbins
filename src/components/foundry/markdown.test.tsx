@@ -16,9 +16,7 @@ describe('Markdown renderer', () => {
   });
 
   it('renders safe links with security attributes and drops unsafe schemes', () => {
-    render(
-      <Markdown content="[ok](https://example.com) and [bad](javascript:alert(1))" />,
-    );
+    render(<Markdown content="[ok](https://example.com) and [bad](javascript:alert(1))" />);
     const link = screen.getByRole('link', { name: 'ok' });
     expect(link).toHaveAttribute('href', 'https://example.com');
     expect(link).toHaveAttribute('rel', 'noreferrer noopener');

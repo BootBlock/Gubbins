@@ -78,9 +78,7 @@ describe('whereIs (HA-2)', () => {
   it('attaches the per-location breakdown for a multi-location item', async () => {
     const result = await whereIs(hydrated.driver, 'ESP32');
     expect(result.matches).toHaveLength(1);
-    const byLocation = new Map(
-      result.matches[0]!.placements.map((p) => [p.locationName, p.quantity]),
-    );
+    const byLocation = new Map(result.matches[0]!.placements.map((p) => [p.locationName, p.quantity]));
     expect(byLocation.get('Shelf 2')).toBe(5);
     expect(byLocation.get('Bin 4')).toBe(2);
   });

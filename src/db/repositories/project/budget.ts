@@ -54,8 +54,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
      */
     async getBudget(projectId: string): Promise<ProjectBudget> {
       const project = await this.requireProject(projectId);
-      const costExpr =
-        project.costingMode === 'POINT_IN_TIME' ? 'l.unit_cost_snapshot' : 'i.unit_cost';
+      const costExpr = project.costingMode === 'POINT_IN_TIME' ? 'l.unit_cost_snapshot' : 'i.unit_cost';
 
       const bom = await this.driver.queryOne<{ estimated: number; committed: number }>(
         `SELECT
@@ -260,13 +259,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
       const categoryId = await this.resolveCategoryRef(projectId, input.categoryId);
       const id = crypto.randomUUID();
       const sets = ['id', 'project_id', 'category_id', 'description', 'amount'];
-      const values: SqlValue[] = [
-        id,
-        projectId,
-        categoryId,
-        normaliseText(input.description),
-        amount,
-      ];
+      const values: SqlValue[] = [id, projectId, categoryId, normaliseText(input.description), amount];
       if (input.incurredAt !== undefined) {
         sets.push('incurred_at');
         values.push(input.incurredAt);
@@ -302,10 +295,7 @@ export function withBudget<TBase extends Constructor<ProjectCoreRepository>>(Bas
       }
       if (sets.length > 0) {
         params.push(expenseId);
-        await this.driver.execute(
-          `UPDATE project_expenses SET ${sets.join(', ')} WHERE id = ?;`,
-          params,
-        );
+        await this.driver.execute(`UPDATE project_expenses SET ${sets.join(', ')} WHERE id = ?;`, params);
       }
       return (await this.requireExpense(expenseId)).expense;
     }

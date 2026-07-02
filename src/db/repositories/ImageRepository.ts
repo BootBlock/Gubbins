@@ -38,9 +38,7 @@ export class ImageRepository extends BaseRepository {
        VALUES (?, ?, ?, ?, ?);`,
       [id, input.itemId, input.thumbnailBlob, path, input.position ?? 0],
     );
-    const row = await this.driver.queryOne<ItemImageRow>('SELECT * FROM item_images WHERE id = ?;', [
-      id,
-    ]);
+    const row = await this.driver.queryOne<ItemImageRow>('SELECT * FROM item_images WHERE id = ?;', [id]);
     return rowToItemImage(row!);
   }
 

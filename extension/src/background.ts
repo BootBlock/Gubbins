@@ -21,9 +21,7 @@ interface FetchRequest {
   url: string;
 }
 
-type FetchResponse =
-  | { ok: true; text: string }
-  | { ok: false; errorType: ScrapeErrorType; reason: string };
+type FetchResponse = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 const FETCH_TIMEOUT_MS = 15000;
 

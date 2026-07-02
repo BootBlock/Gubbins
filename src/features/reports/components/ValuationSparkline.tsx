@@ -28,10 +28,7 @@ export function ValuationSparkline({
   // Map each point into the padded viewBox. A flat line (range 0) sits on the vertical centre.
   const coords = report.points.map((p, i) => {
     const x = n > 1 ? PAD + (i / (n - 1)) * (VIEW_W - 2 * PAD) : VIEW_W / 2;
-    const y =
-      range > 0
-        ? VIEW_H - PAD - ((p.value - min) / range) * (VIEW_H - 2 * PAD)
-        : VIEW_H / 2;
+    const y = range > 0 ? VIEW_H - PAD - ((p.value - min) / range) * (VIEW_H - 2 * PAD) : VIEW_H / 2;
     return `${Math.round(x * 100) / 100},${Math.round(y * 100) / 100}`;
   });
 
@@ -57,10 +54,16 @@ export function ValuationSparkline({
       </svg>
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
         <span className="text-muted-foreground">
-          Start <span className="font-medium text-foreground tabular-nums">{formatters.currency(report.startValue)}</span>
+          Start{' '}
+          <span className="font-medium text-foreground tabular-nums">
+            {formatters.currency(report.startValue)}
+          </span>
         </span>
         <span className="text-muted-foreground">
-          Now <span className="font-medium text-foreground tabular-nums">{formatters.currency(report.endValue)}</span>
+          Now{' '}
+          <span className="font-medium text-foreground tabular-nums">
+            {formatters.currency(report.endValue)}
+          </span>
         </span>
         <span className={`font-medium tabular-nums ${rising ? 'text-success' : 'text-destructive'}`}>
           {rising ? '+' : '−'}

@@ -3,11 +3,7 @@
  * projections over the item table that power the dashboard widgets and surface the
  * items needing attention soonest.
  */
-import {
-  LOW_STOCK_GAUGE_PERCENT,
-  LOW_STOCK_QTY_THRESHOLD,
-  MS_PER_DAY,
-} from '../constants';
+import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD, MS_PER_DAY } from '../constants';
 import type { HistoryAction } from '../constants';
 import { rowToActivityFeedEntry, rowToItem } from '../mappers';
 import type {
@@ -111,7 +107,11 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * `withinDays` window should match {@link WARRANTY_EXPIRING_SOON_DAYS} from
      * `asset-lifecycle.ts` so the SQL pre-filter and the pure status function agree.
      */
-    async listWarrantyExpiring(withinDays: number, now: number, params: PageParams = {}): Promise<Page<Item>> {
+    async listWarrantyExpiring(
+      withinDays: number,
+      now: number,
+      params: PageParams = {},
+    ): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
       // ISO date string for now + window. `warranty_expires_at` is stored as TEXT
       // 'YYYY-MM-DD' so ISO-ordered string comparison gives correct date ordering.
@@ -156,9 +156,8 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       if (actions !== undefined && actions.length === 0) {
         return this.toPage([], limit, offset);
       }
-      const where = actions && actions.length > 0
-        ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})`
-        : '';
+      const where =
+        actions && actions.length > 0 ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})` : '';
       const rows = await this.driver.query<ActivityFeedRow>(
         `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active
          FROM item_history h

@@ -142,7 +142,12 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
         ) : null}
       </div>
 
-      <ul id={listId} role="listbox" aria-label="Item results" className="mt-3 max-h-80 space-y-1 overflow-y-auto">
+      <ul
+        id={listId}
+        role="listbox"
+        aria-label="Item results"
+        className="mt-3 max-h-80 space-y-1 overflow-y-auto"
+      >
         {!hasQuery ? (
           <li className="px-2 py-6 text-center text-sm text-muted-foreground">
             Start typing to find an item by name.

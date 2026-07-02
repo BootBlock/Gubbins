@@ -64,10 +64,7 @@ export async function buildBackupJson(driver: IDatabaseDriver): Promise<string> 
  * Restore the database from a backup JSON string (§2). **Destructive** — replaces all
  * syncable data. The caller must confirm with the user first.
  */
-export async function restoreFromBackupJson(
-  driver: IDatabaseDriver,
-  text: string,
-): Promise<SyncSnapshot> {
+export async function restoreFromBackupJson(driver: IDatabaseDriver, text: string): Promise<SyncSnapshot> {
   const snapshot = parseBackupJson(text);
   await restoreSnapshot(driver, snapshot);
   return snapshot;

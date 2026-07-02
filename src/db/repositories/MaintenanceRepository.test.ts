@@ -42,9 +42,9 @@ describe('MaintenanceRepository — Phase 9 (§4.3 Tool Maintenance)', () => {
   });
 
   it('rejects schedules missing the required interval for their basis', async () => {
-    await expect(
-      maintenance.create({ itemId: printerId, name: 'X', basis: 'TIME' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(maintenance.create({ itemId: printerId, name: 'X', basis: 'TIME' })).rejects.toBeInstanceOf(
+      DbError,
+    );
     await expect(
       maintenance.create({ itemId: printerId, name: 'X', basis: 'USAGE', intervalUsage: 0 }),
     ).rejects.toBeInstanceOf(DbError);
@@ -114,10 +114,10 @@ describe('MaintenanceRepository — Phase 9 (§4.3 Tool Maintenance)', () => {
     });
     await maintenance.remove(sched.id);
     expect(await maintenance.getById(sched.id)).toBeUndefined();
-    const tomb = await driver.queryOne(
-      'SELECT 1 AS ok FROM tombstones WHERE table_name = ? AND id = ?;',
-      ['maintenance_schedules', sched.id],
-    );
+    const tomb = await driver.queryOne('SELECT 1 AS ok FROM tombstones WHERE table_name = ? AND id = ?;', [
+      'maintenance_schedules',
+      sched.id,
+    ]);
     expect(tomb).toBeDefined();
   });
 
@@ -264,7 +264,10 @@ describe('MaintenanceRepository — per-location scheduling (§4.3, Phase 30)', 
     maintenance = new MaintenanceRepository(driver);
     toolId = (await items.create({ name: 'Multimeter', trackingMode: 'SERIALISED' })).id;
     await driver.execute('INSERT INTO locations (id, name) VALUES (?, ?), (?, ?);', [
-      'bench', 'Workshop bench', 'store', 'Storeroom',
+      'bench',
+      'Workshop bench',
+      'store',
+      'Storeroom',
     ]);
     await driver.execute('INSERT INTO contacts (id, name) VALUES (?, ?);', ['c1', 'Alex']);
   });

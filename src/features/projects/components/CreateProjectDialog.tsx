@@ -60,7 +60,12 @@ export function CreateProjectDialog({
   };
 
   return (
-    <Modal open={open} onClose={close} title="New project" description="Plan a build and its bill of materials.">
+    <Modal
+      open={open}
+      onClose={close}
+      title="New project"
+      description="Plan a build and its bill of materials."
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <FormField label="Name" error={errors.name?.message}>
           <Input autoFocus placeholder="e.g. Bench power supply" {...register('name')} />

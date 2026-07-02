@@ -398,7 +398,7 @@ describe('applyCatalogImportPlan — :memory: DB', () => {
   });
 
   it('updates matched items', async () => {
-    const existing = await repo.create({ name: 'LED Red', quantity: 50, unitCost: 0.10 });
+    const existing = await repo.create({ name: 'LED Red', quantity: 50, unitCost: 0.1 });
     const csv = 'name,unitCost\r\nLED Red,0.08\r\n';
     const plan = buildCatalogImportPlan(csv, null, [existing]);
     const result = await applyCatalogImportPlan(plan, repo);

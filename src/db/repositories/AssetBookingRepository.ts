@@ -62,10 +62,9 @@ export class AssetBookingRepository extends BaseRepository {
   }
 
   async getById(id: string): Promise<AssetBooking | undefined> {
-    const row = await this.driver.queryOne<AssetBookingRow>(
-      'SELECT * FROM asset_bookings WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<AssetBookingRow>('SELECT * FROM asset_bookings WHERE id = ?;', [
+      id,
+    ]);
     return row ? rowToBooking(row) : undefined;
   }
 
@@ -100,10 +99,7 @@ export class AssetBookingRepository extends BaseRepository {
     const existing = await this.activeRanges(input.itemId);
     const clash = findFirstOverlap({ start, end }, existing);
     if (clash) {
-      throw new DbError(
-        'SQLITE_CONSTRAINT',
-        'This asset is already booked for an overlapping date range.',
-      );
+      throw new DbError('SQLITE_CONSTRAINT', 'This asset is already booked for an overlapping date range.');
     }
 
     const contactId = await this.resolveContactRef(input.contactId, input.contactName);
@@ -124,10 +120,7 @@ export class AssetBookingRepository extends BaseRepository {
     if (booking.convertedCheckoutId !== null) {
       throw new DbError('SQLITE_CONSTRAINT', 'A booking that was checked out cannot be cancelled.');
     }
-    await this.driver.execute(
-      `UPDATE asset_bookings SET cancelled_at = (${SQL_NOW_MS}) WHERE id = ?;`,
-      [id],
-    );
+    await this.driver.execute(`UPDATE asset_bookings SET cancelled_at = (${SQL_NOW_MS}) WHERE id = ?;`, [id]);
     return (await this.getById(id))!;
   }
 
@@ -158,10 +151,7 @@ export class AssetBookingRepository extends BaseRepository {
     const contactId = input.contactId ?? booking.contactId ?? undefined;
     const contactName = input.contactName ?? undefined;
     if (!contactId && !contactName) {
-      throw new DbError(
-        'SQLITE_CONSTRAINT',
-        'Add a contact to the booking before checking it out.',
-      );
+      throw new DbError('SQLITE_CONSTRAINT', 'Add a contact to the booking before checking it out.');
     }
 
     const checkout = await this.checkouts.checkout({
@@ -172,10 +162,10 @@ export class AssetBookingRepository extends BaseRepository {
       note: input.note?.trim() || booking.note,
     });
 
-    await this.driver.execute(
-      'UPDATE asset_bookings SET converted_checkout_id = ? WHERE id = ?;',
-      [checkout.id, id],
-    );
+    await this.driver.execute('UPDATE asset_bookings SET converted_checkout_id = ? WHERE id = ?;', [
+      checkout.id,
+      id,
+    ]);
     return { booking: (await this.getById(id))!, checkout };
   }
 
@@ -212,10 +202,7 @@ export class AssetBookingRepository extends BaseRepository {
    * the §3 "Upcoming" agenda + bookings-screen feed. `now` is injected so the start-of-today
    * cut-off is deterministic and testable; ordered by soonest start.
    */
-  async listUpcoming(
-    now: number,
-    params: PageParams = {},
-  ): Promise<Page<AssetBookingWithNames>> {
+  async listUpcoming(now: number, params: PageParams = {}): Promise<Page<AssetBookingWithNames>> {
     // Keep a booking until the end of its last booked day (start-of-day + one day).
     const cutoff = startOfLocalDay(now);
     return this.listJoined(

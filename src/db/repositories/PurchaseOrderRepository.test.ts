@@ -49,7 +49,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     const item = await items.create({ name: 'Cap' });
     const po = await pos.create({ supplierName: 'Mouser' });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 10, unitCost: 0.2 });
-    expect((await pos.listLines(po.id))).toHaveLength(1);
+    expect(await pos.listLines(po.id)).toHaveLength(1);
 
     const updated = await pos.updateLine(line.id, { orderedQty: 12 });
     expect(updated.orderedQty).toBe(12);
@@ -190,16 +190,12 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
       {
         supplierName: 'Mouser',
         supplierKey: 'mouser',
-        lines: [
-          { itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, unitCost: 0.2 },
-        ],
+        lines: [{ itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, unitCost: 0.2 }],
       },
       {
         supplierName: 'Unassigned',
         supplierKey: '~unassigned',
-        lines: [
-          { itemId: res.id, itemName: 'Another', supplierPartId: null, orderQty: 1, unitCost: null },
-        ],
+        lines: [{ itemId: res.id, itemName: 'Another', supplierPartId: null, orderQty: 1, unitCost: null }],
       },
     ] as const;
 

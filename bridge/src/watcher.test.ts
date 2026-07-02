@@ -42,9 +42,7 @@ afterEach(async () => {
 function modifiedSnapshot(): string {
   const snap = JSON.parse(fixtureText);
   snap.generatedAt = snap.generatedAt + 60_000;
-  snap.tables.items = snap.tables.items.filter(
-    (item: { id: string }) => item.id !== 'item-resistor',
-  );
+  snap.tables.items = snap.tables.items.filter((item: { id: string }) => item.id !== 'item-resistor');
   snap.tables.item_stock = snap.tables.item_stock.filter(
     (row: { item_id: string }) => row.item_id !== 'item-resistor',
   );

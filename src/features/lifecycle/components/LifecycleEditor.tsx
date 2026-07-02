@@ -78,7 +78,9 @@ export function LifecycleEditor({ item }: { item: Item }) {
       <StockBreakdown item={item} />
 
       {item.expiryDate !== null ? (
-        <p className={cn('flex items-center gap-1.5 text-sm font-medium [&_svg]:size-4', EXPIRY_TONE[status])}>
+        <p
+          className={cn('flex items-center gap-1.5 text-sm font-medium [&_svg]:size-4', EXPIRY_TONE[status])}
+        >
           {status === 'EXPIRED' ? <WarningIcon /> : <DueDateIcon />}
           {status === 'EXPIRED'
             ? `Expired ${fmt.date(item.expiryDate)}`
@@ -94,7 +96,12 @@ export function LifecycleEditor({ item }: { item: Item }) {
             'dashboard **Soon to expire** widget. Changing it re-evaluates the expiry status shown above.'
           }
         >
-          <Input type="date" data-testid="detail-expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+          <Input
+            type="date"
+            data-testid="detail-expiry"
+            value={expiry}
+            onChange={(e) => setExpiry(e.target.value)}
+          />
         </LField>
         <LField
           label="Condition"
@@ -149,7 +156,10 @@ function VariantsSection({ item }: { item: Item }) {
     if (name.trim().length === 0) return;
     setError(null);
     createVariant.mutate(
-      { parentId: item.id, input: { name: name.trim(), quantity: Math.max(0, Math.floor(Number(qty) || 0)) } },
+      {
+        parentId: item.id,
+        input: { name: name.trim(), quantity: Math.max(0, Math.floor(Number(qty) || 0)) },
+      },
       {
         onSuccess: () => {
           setName('');
@@ -182,7 +192,10 @@ function VariantsSection({ item }: { item: Item }) {
       {variants && variants.rows.length > 0 ? (
         <ul className="mb-3 space-y-1" data-testid="variant-list">
           {variants.rows.map((v) => (
-            <li key={v.id} className="flex items-center justify-between rounded-lg bg-secondary/30 px-2.5 py-1.5 text-sm">
+            <li
+              key={v.id}
+              className="flex items-center justify-between rounded-lg bg-secondary/30 px-2.5 py-1.5 text-sm"
+            >
               <span className="font-medium">{v.name}</span>
               <span className="text-xs text-muted-foreground">qty {v.quantity}</span>
             </li>
@@ -210,20 +223,16 @@ function VariantsSection({ item }: { item: Item }) {
           Add
         </Button>
       </div>
-      {error ? <p role="alert" className="mt-1.5 text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-1.5 text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function LField({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function LField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="relative">
       <label className="block">

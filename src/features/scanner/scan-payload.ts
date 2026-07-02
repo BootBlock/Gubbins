@@ -21,8 +21,7 @@ const NAMESPACED_LOCATION_PREFIX = 'gubbins:location:';
 
 /** A decoded Gubbins code: an item deep-link or a location deep-link. */
 export type ScannedCode =
-  | { readonly kind: 'item'; readonly id: string }
-  | { readonly kind: 'location'; readonly id: string };
+  { readonly kind: 'item'; readonly id: string } | { readonly kind: 'location'; readonly id: string };
 
 /** True when `value` is a syntactically valid UUID. */
 export function isUuid(value: string): boolean {

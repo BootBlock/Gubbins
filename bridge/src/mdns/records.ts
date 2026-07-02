@@ -104,7 +104,7 @@ export function encodeAnnouncement(
   params: AdvertisementParams,
   { goodbye = false }: { goodbye?: boolean } = {},
 ): Buffer {
-  const ttl = goodbye ? 0 : params.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+  const ttl = goodbye ? 0 : (params.ttlSeconds ?? DEFAULT_TTL_SECONDS);
   const instance = params.instanceName ?? DEFAULT_INSTANCE_NAME;
   const target = `${params.hostLabel}.local`;
   const fqdn = instanceFqdn(instance);
@@ -218,7 +218,10 @@ export function sanitizeHostLabel(hostname: string): string {
 
 /** Encode a dotted DNS name (no compression — always valid for receivers). */
 export function encodeName(name: string): Buffer {
-  const labels = name.replace(/\.$/, '').split('.').filter((l) => l.length > 0);
+  const labels = name
+    .replace(/\.$/, '')
+    .split('.')
+    .filter((l) => l.length > 0);
   const parts: Buffer[] = [];
   for (const label of labels) {
     const bytes = Buffer.from(label, 'utf8');

@@ -113,10 +113,7 @@ function safeRatio(numerator: number, denominator: number): number | null {
  * Lines are sorted by turnover descending with `null` turnover forced last; ties break by
  * `cogs` descending, then by `name` (locale-aware) so the order is stable and meaningful.
  */
-export function summariseTurnover(
-  items: readonly TurnoverInput[],
-  windowDays: number,
-): TurnoverReport {
+export function summariseTurnover(items: readonly TurnoverInput[], windowDays: number): TurnoverReport {
   const days = Math.max(1, Math.round(windowDays));
   const lines: TurnoverLine[] = [];
   let totalCogs = 0;

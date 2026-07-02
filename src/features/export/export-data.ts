@@ -4,12 +4,7 @@
  * the DOM so the serialisation is unit-tested in isolation; the wizard wires these
  * to repository reads and the download/zip side-effects.
  */
-import type {
-  Checkout,
-  Contact,
-  Item,
-  ItemHistoryEntry,
-} from '@/db/repositories';
+import type { Checkout, Contact, Item, ItemHistoryEntry } from '@/db/repositories';
 
 /** Schema version of the JSON backup payload (§2 "Versioned JSON File"). */
 export const BACKUP_FORMAT_VERSION = 1;
@@ -125,13 +120,9 @@ export function buildCatalogCsv(
   valuesByItem: ReadonlyMap<string, Readonly<Record<string, string | null>>> = new Map(),
 ): string {
   const seen = new Set<string>();
-  const columns = customFields.filter((c) =>
-    seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true),
-  );
+  const columns = customFields.filter((c) => (seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true)));
 
-  const header = [...CATALOG_CSV_COLUMNS, ...columns.map((c) => c.header)]
-    .map((h) => csvCell(h))
-    .join(',');
+  const header = [...CATALOG_CSV_COLUMNS, ...columns.map((c) => c.header)].map((h) => csvCell(h)).join(',');
   const rows = items.map((item) => {
     const core = CATALOG_CSV_COLUMNS.map((col) => csvCell(catalogCsvValue(item, col)));
     const values = valuesByItem.get(item.id);
@@ -211,10 +202,7 @@ function extOf(path: string): string {
  * images **and** thumbnails are extracted into `/assets` (§4.5). Returns the `path → text`
  * map plus the {@link VaultAsset} descriptors the orchestrator fills with bytes.
  */
-export function buildVault(
-  vaultItems: readonly VaultItem[],
-  options: VaultOptions = {},
-): VaultBuild {
+export function buildVault(vaultItems: readonly VaultItem[], options: VaultOptions = {}): VaultBuild {
   const files: Record<string, string> = {};
   const assets: VaultAsset[] = [];
   const used = new Set<string>();

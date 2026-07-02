@@ -47,6 +47,7 @@ export function activePlacements(placements: readonly StockPlacement[]): StockPl
     .slice()
     .sort(
       (a, b) =>
-        b.quantity - a.quantity || a.locationName.localeCompare(b.locationName, undefined, { sensitivity: 'base' }),
+        b.quantity - a.quantity ||
+        a.locationName.localeCompare(b.locationName, undefined, { sensitivity: 'base' }),
     );
 }

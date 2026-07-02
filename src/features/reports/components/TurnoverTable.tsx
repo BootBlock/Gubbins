@@ -20,17 +20,9 @@ function formatDays(value: number | null, formatters: Formatters): string {
  * cover) over a per-item table sorted fastest-movers-first. Pure presentation — all maths is in
  * the `summariseTurnover` seam — composed with Tailwind + tokens only (no chart dependency).
  */
-export function TurnoverTable({
-  report,
-  formatters,
-}: {
-  report: TurnoverReport;
-  formatters: Formatters;
-}) {
+export function TurnoverTable({ report, formatters }: { report: TurnoverReport; formatters: Formatters }) {
   if (report.lines.length === 0) {
-    return (
-      <p className="py-6 text-center text-sm text-muted-foreground">No stock to analyse yet.</p>
-    );
+    return <p className="py-6 text-center text-sm text-muted-foreground">No stock to analyse yet.</p>;
   }
 
   return (
@@ -40,7 +32,10 @@ export function TurnoverTable({
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Portfolio turnover
           </span>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums" data-testid="turnover-headline">
+          <span
+            className="text-2xl font-semibold tracking-tight tabular-nums"
+            data-testid="turnover-headline"
+          >
             {formatRatio(report.turnover)}
           </span>
         </div>

@@ -43,9 +43,7 @@ export interface ValuedUnit {
 export function effectiveUnitCost(unit: ValuedUnit): number {
   const resolved = resolveCostPrecedence(
     { unitCost: unit.unitCost },
-    unit.preferredSupplierCost != null
-      ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }]
-      : [],
+    unit.preferredSupplierCost != null ? [{ unitCost: unit.preferredSupplierCost, isPreferred: true }] : [],
   );
   return resolved ?? 0;
 }

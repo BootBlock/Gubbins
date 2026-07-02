@@ -29,8 +29,7 @@ export const usePwaUpdateSnoozeStore = create<PwaUpdateSnoozeStore>()(
   persist(
     (set) => ({
       snoozedUntil: 0,
-      snooze: (durationMs = DEFAULT_SNOOZE_MS) =>
-        set({ snoozedUntil: Date.now() + durationMs }),
+      snooze: (durationMs = DEFAULT_SNOOZE_MS) => set({ snoozedUntil: Date.now() + durationMs }),
       surface: () => set({ snoozedUntil: 0 }),
     }),
     { name: 'gubbins:pwa-update-snooze' },

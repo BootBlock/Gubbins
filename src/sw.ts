@@ -31,9 +31,7 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 // worker `redundant`, so no update could ever activate. A `Set` over the URLs keeps
 // `addAll` happy while precaching exactly the same asset set.
 const PRECACHE_URLS = [
-  ...new Set(
-    (self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => entry.url),
-  ),
+  ...new Set((self as unknown as { __WB_MANIFEST: PrecacheEntry[] }).__WB_MANIFEST.map((entry) => entry.url)),
 ];
 
 const CACHE = 'gubbins-precache-v1';
@@ -63,7 +61,7 @@ sw.addEventListener('install', (event) => {
 // page onto the new version. This is vite-plugin-pwa's supported `prompt` handshake.
 sw.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') {
-    sw.skipWaiting();
+    void sw.skipWaiting();
   }
 });
 

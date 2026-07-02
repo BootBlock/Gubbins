@@ -30,7 +30,10 @@ function toPrefixPhrase(token: string): string {
  * @param column Optional indexed column to scope the match to (§4.2.4 style).
  */
 export function buildFtsMatch(text: string, column?: FtsItemColumn): string | null {
-  const tokens = text.trim().split(/\s+/).filter((t) => t.length > 0);
+  const tokens = text
+    .trim()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
   if (tokens.length === 0) return null;
   const query = tokens.map(toPrefixPhrase).join(' ');
   return column ? `${column} : (${query})` : query;

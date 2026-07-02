@@ -48,9 +48,9 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
   });
 
   it('rejects an unknown condition at the database level', async () => {
-    await expect(
-      items.create({ name: 'X', condition: 'SPARKLING' as never }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(items.create({ name: 'X', condition: 'SPARKLING' as never })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('lists perishables expiring within a window, soonest first, active only', async () => {
@@ -122,7 +122,11 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     const widget = await items.create({ name: 'Widget', quantity: 10 });
     const gadget = await items.create({ name: 'Gadget', quantity: 5 });
     const updated = await items.reconcile([
-      { itemId: widget.id, counted: 8, note: 'Cycle count of Drawer A2: counted 8, expected 10 (adjustment -2).' },
+      {
+        itemId: widget.id,
+        counted: 8,
+        note: 'Cycle count of Drawer A2: counted 8, expected 10 (adjustment -2).',
+      },
       { itemId: gadget.id, counted: 5, note: 'unchanged' }, // zero variance → skipped
     ]);
     expect(updated).toHaveLength(1);
@@ -176,8 +180,8 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
     expect(await items.reconcileSerialised([{ itemId: a.id, note: 'x' }])).toHaveLength(0);
 
     const widget = await items.create({ name: 'Widget', quantity: 3 }); // DISCRETE
-    await expect(
-      items.reconcileSerialised([{ itemId: widget.id, note: 'x' }]),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(items.reconcileSerialised([{ itemId: widget.id, note: 'x' }])).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 });

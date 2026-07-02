@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  ERASE_SECTIONS,
-  ERASE_TARGETS,
-  eraseTargetById,
-  type EraseTargetId,
-} from './erase-targets';
+import { ERASE_SECTIONS, ERASE_TARGETS, eraseTargetById, type EraseTargetId } from './erase-targets';
 
 /** Every id the contract pins — the catalog must expose exactly these. */
 const ALL_IDS: EraseTargetId[] = [

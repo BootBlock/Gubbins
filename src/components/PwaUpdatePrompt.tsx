@@ -92,8 +92,8 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
           </div>
         }
       >
-        Reload to get the latest update. Your saved data stays intact — finish anything
-        in progress first, then reload when you&apos;re ready.
+        Reload to get the latest update. Your saved data stays intact — finish anything in progress first,
+        then reload when you&apos;re ready.
       </Banner>
     </div>
   );

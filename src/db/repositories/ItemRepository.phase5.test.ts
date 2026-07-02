@@ -107,9 +107,7 @@ describe('ItemRepository — weighted capabilities (spec §4)', () => {
   });
 
   it('rejects a blank key and a negative weight', async () => {
-    await expect(items.setCapability(itemId, { key: '  ', value: '5' })).rejects.toBeInstanceOf(
-      DbError,
-    );
+    await expect(items.setCapability(itemId, { key: '  ', value: '5' })).rejects.toBeInstanceOf(DbError);
     await expect(
       items.setCapability(itemId, { key: 'voltage', value: '5', weight: -1 }),
     ).rejects.toBeInstanceOf(DbError);
@@ -117,9 +115,7 @@ describe('ItemRepository — weighted capabilities (spec §4)', () => {
 
   it('refuses capability writes while storage is locked (Hard Stop)', async () => {
     const locked = new ItemRepository(driver, { isWriteSuspended: () => true });
-    await expect(locked.setCapability(itemId, { key: 'voltage', value: '5' })).rejects.toThrow(
-      /suspended/,
-    );
+    await expect(locked.setCapability(itemId, { key: 'voltage', value: '5' })).rejects.toThrow(/suspended/);
   });
 
   it('lists the distinct capability vocabulary, busiest key first, with value kinds', async () => {
@@ -170,9 +166,7 @@ describe('ItemRepository.searchByAst (spec §5.1)', () => {
   });
 
   it('paginates items matching a parsed AST', async () => {
-    const page = await items.searchByAst(
-      and(leaf('capability:voltage', 'GREATER_THAN', 4)),
-    );
+    const page = await items.searchByAst(and(leaf('capability:voltage', 'GREATER_THAN', 4)));
     expect(page.rows.map((r) => r.name)).toEqual(['LM7805 Regulator']);
   });
 
@@ -223,10 +217,7 @@ describe('ItemRepository.searchByAst — weighted "best match" ranking (spec §4
     await items.setCapability(one.id, { key: 'voltage', value: '5', weight: 3 });
 
     const page = await items.searchByAst(
-      or(
-        leaf('capability:voltage', 'HAS_CAPABILITY', ''),
-        leaf('capability:package', 'HAS_CAPABILITY', ''),
-      ),
+      or(leaf('capability:voltage', 'HAS_CAPABILITY', ''), leaf('capability:package', 'HAS_CAPABILITY', '')),
     );
     // "Both caps" totals 4 > "Aaa one cap" totals 3, so it wins despite the later name.
     expect(page.rows.map((r) => r.name)).toEqual(['Both caps', 'Aaa one cap']);

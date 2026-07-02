@@ -22,11 +22,7 @@
  * canvas degrades to manual entry (`engine: 'none'`).
  */
 import { hasBarcodeDetector } from '@/lib/env/feature-detection';
-import {
-  DEFAULT_SCANNER_SYMBOLOGY,
-  nativeFormatsFor,
-  type ScannerSymbology,
-} from './scanner-formats';
+import { DEFAULT_SCANNER_SYMBOLOGY, nativeFormatsFor, type ScannerSymbology } from './scanner-formats';
 
 /** Which decoding engine backs the live scanner. `none` → manual entry only. */
 export type ScannerEngine = 'native' | 'wasm' | 'wasm-canvas' | 'none';

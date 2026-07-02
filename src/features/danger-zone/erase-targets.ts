@@ -235,14 +235,14 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'maintenance',
     section: 'inventory',
     label: 'Maintenance schedules',
-    tooltip:
-      'Removes every maintenance and calibration schedule. The items they were attached to are kept.',
+    tooltip: 'Removes every maintenance and calibration schedule. The items they were attached to are kept.',
     scope: 'db',
     countSql: 'SELECT COUNT(*) AS n FROM maintenance_schedules',
     buildStatements: ({ tombstone }) => {
       const statements: SqlStatement[] = [];
-      if (tombstone)
+      if (tombstone) {
         statements.push(tombstoneSelect('maintenance_schedules', 'FROM maintenance_schedules'));
+      }
       statements.push({ sql: 'DELETE FROM maintenance_schedules;' });
       return statements;
     },
@@ -286,8 +286,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'tags',
     section: 'inventory',
     label: 'Tags',
-    tooltip:
-      'Deletes every tag and removes it from all items. The items themselves are kept.',
+    tooltip: 'Deletes every tag and removes it from all items. The items themselves are kept.',
     scope: 'db',
     countSql: 'SELECT COUNT(*) AS n FROM tags',
     buildStatements: ({ tombstone }) => {
@@ -454,8 +453,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'dismissed-alerts',
     section: 'local',
     label: 'Dismissed alerts',
-    tooltip:
-      'Forgets which alerts you dismissed on this device, so any still-relevant alerts reappear.',
+    tooltip: 'Forgets which alerts you dismissed on this device, so any still-relevant alerts reappear.',
     scope: 'local',
     localKeys: ['gubbins:dismissed-alerts'],
   },
@@ -490,8 +488,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'local-ui',
     section: 'local',
     label: 'Drafts & reminders',
-    tooltip:
-      'Clears local-only odds and ends on this device: export drafts and app-update reminders.',
+    tooltip: 'Clears local-only odds and ends on this device: export drafts and app-update reminders.',
     scope: 'local',
     localKeys: ['gubbins:export', 'gubbins:pwa-update-snooze'],
   },

@@ -47,9 +47,9 @@ describe('AttachmentRepository', () => {
 
   it('rejects a blank value and an invalid URL', async () => {
     const item = await items.create({ name: 'NE555' });
-    await expect(
-      attachments.add({ itemId: item.id, kind: 'URL', value: '   ' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(attachments.add({ itemId: item.id, kind: 'URL', value: '   ' })).rejects.toBeInstanceOf(
+      DbError,
+    );
     await expect(
       attachments.add({ itemId: item.id, kind: 'URL', value: 'not a url' }),
     ).rejects.toBeInstanceOf(DbError);
@@ -121,9 +121,9 @@ describe('AttachmentRepository', () => {
     expect(asUrl.originDeviceId).toBeNull();
 
     // Switching to a URL validates against the *new* kind.
-    await expect(
-      attachments.update(att.id, { kind: 'URL', value: 'not a url' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(attachments.update(att.id, { kind: 'URL', value: 'not a url' })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('gates attachment growth on the storage Hard Stop, but allows removal', async () => {

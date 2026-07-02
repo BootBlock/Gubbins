@@ -132,8 +132,8 @@ function mapHeaders(header: readonly string[]): Partial<Record<LogicalColumn, nu
   header.forEach((cell, index) => {
     const key = headerKey(cell);
     for (const [logical, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
-      if (map[logical as LogicalColumn] === undefined && synonyms.includes(key)) {
-        map[logical as LogicalColumn] = index;
+      if (map[logical] === undefined && synonyms.includes(key)) {
+        map[logical] = index;
       }
     }
   });
@@ -167,11 +167,7 @@ export function parseBom(text: string): ParsedBomLine[] {
   const columns = mapHeaders(header);
 
   // We need at least one identifying column to make a usable BOM line.
-  if (
-    columns.mpn === undefined &&
-    columns.description === undefined &&
-    columns.designator === undefined
-  ) {
+  if (columns.mpn === undefined && columns.description === undefined && columns.designator === undefined) {
     throw new BomImportError(
       'No recognisable BOM columns found. Expected a header with Reference/MPN/Description (or similar).',
     );

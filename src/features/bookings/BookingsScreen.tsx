@@ -162,11 +162,7 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">Asset</span>
-          <Select
-            value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-            data-testid="booking-asset"
-          >
+          <Select value={itemId} onChange={(e) => setItemId(e.target.value)} data-testid="booking-asset">
             <option value="">Choose an asset…</option>
             {assets.data?.map((a) => (
               <option key={a.id} value={a.id}>
@@ -190,24 +186,41 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
             placeholder="Type a name — new names are added automatically"
           />
           <datalist id="booking-contact-suggestions">
-            {contacts.data?.rows.map((c) => <option key={c.id} value={c.name} />)}
+            {contacts.data?.rows.map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
           </datalist>
         </label>
 
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">From</span>
-          <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} data-testid="booking-start" />
+          <Input
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            data-testid="booking-start"
+          />
         </label>
 
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">To</span>
-          <Input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} data-testid="booking-end" />
+          <Input
+            type="date"
+            value={end}
+            min={start || undefined}
+            onChange={(e) => setEnd(e.target.value)}
+            data-testid="booking-end"
+          />
         </label>
       </div>
 
       <label className="block">
         <span className="mb-field-gap block text-sm font-medium">Note (optional)</span>
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. for the trade-show build" />
+        <Input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="e.g. for the trade-show build"
+        />
       </label>
 
       <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
@@ -356,7 +369,12 @@ export function BookingsScreen() {
 
       <NewBookingForm onResult={onResult} />
 
-      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-col gap-6 outline-none" data-testid="bookings-main">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-col gap-6 outline-none"
+        data-testid="bookings-main"
+      >
         {isLoading && (
           <div className="flex justify-center py-12">
             <Spinner />
@@ -369,9 +387,7 @@ export function BookingsScreen() {
             <p className="text-sm text-destructive" data-testid="bookings-load-error-reason">
               {describeBookingsLoadError(error).reason}
             </p>
-            <p className="text-sm text-muted-foreground">
-              {describeBookingsLoadError(error).guidance}
-            </p>
+            <p className="text-sm text-muted-foreground">{describeBookingsLoadError(error).guidance}</p>
             <div className="flex justify-start">
               <Button
                 variant="outline"

@@ -79,10 +79,7 @@ describe('migration engine', () => {
   });
 
   it('rejects a non-contiguous migration version sequence', async () => {
-    const broken: Migration[] = [
-      v1Initial,
-      { version: 3, name: 'gap', statements: [{ sql: 'SELECT 1;' }] },
-    ];
+    const broken: Migration[] = [v1Initial, { version: 3, name: 'gap', statements: [{ sql: 'SELECT 1;' }] }];
     await expect(runMigrations(driver, broken)).rejects.toBeInstanceOf(DbError);
   });
 
@@ -111,9 +108,7 @@ describe('migration engine', () => {
     await expect(runMigrations(driver, broken)).rejects.toBeInstanceOf(DbError);
     // Atomic: neither the 'good' table nor the version bump may survive.
     expect(await getUserVersion(driver)).toBe(0);
-    const survivors = await driver.query(
-      "SELECT name FROM sqlite_master WHERE name = 'good';",
-    );
+    const survivors = await driver.query("SELECT name FROM sqlite_master WHERE name = 'good';");
     expect(survivors).toHaveLength(0);
   });
 });

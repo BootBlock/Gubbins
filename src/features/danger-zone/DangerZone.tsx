@@ -24,11 +24,7 @@ export function DangerZone() {
           label="Erase data"
           description="Selectively wipe inventory, photos, settings, sign-in or sync links from this device — or factory-reset everything."
         >
-          <Button
-            variant="destructive"
-            data-testid="open-erase-data"
-            onClick={() => setOpen(true)}
-          >
+          <Button variant="destructive" data-testid="open-erase-data" onClick={() => setOpen(true)}>
             <CriticalIcon />
             Erase data&hellip;
           </Button>

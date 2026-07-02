@@ -15,11 +15,7 @@
  */
 
 export type ScannerStatus =
-  | 'IDLE'
-  | 'REQUESTING_PERMISSIONS'
-  | 'STREAM_ACTIVE'
-  | 'PROCESSING_QUEUE'
-  | 'ERROR_STATE';
+  'IDLE' | 'REQUESTING_PERMISSIONS' | 'STREAM_ACTIVE' | 'PROCESSING_QUEUE' | 'ERROR_STATE';
 
 /** Discrete = scan one then act; Continuous = batch to a working queue (§6.3). */
 export type ScannerMode = 'DISCRETE' | 'CONTINUOUS';
@@ -89,15 +85,11 @@ export function scannerReducer(state: ScannerState, action: ScannerAction): Scan
 
     case 'REVIEW_QUEUE':
       // Pause the live view to review a batch (Continuous Mode, §6.3).
-      return state.status === 'STREAM_ACTIVE'
-        ? { ...state, status: 'PROCESSING_QUEUE' }
-        : state;
+      return state.status === 'STREAM_ACTIVE' ? { ...state, status: 'PROCESSING_QUEUE' } : state;
 
     case 'RESUME_SCANNING':
       // Back to the live viewfinder from the review pane.
-      return state.status === 'PROCESSING_QUEUE'
-        ? { ...state, status: 'STREAM_ACTIVE' }
-        : state;
+      return state.status === 'PROCESSING_QUEUE' ? { ...state, status: 'STREAM_ACTIVE' } : state;
 
     default:
       return state;

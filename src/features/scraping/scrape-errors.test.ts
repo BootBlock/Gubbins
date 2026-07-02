@@ -123,7 +123,11 @@ describe('describeScrapeError (§9.4.3)', () => {
   });
 
   it('falls back to the raw reason for an unrecognised (forward-compat) type', () => {
-    const future = { domain: 'mouser.com', error_type: 'METEOR_STRIKE', reason: 'cosmic' } as unknown as ScrapeErrorPayload;
+    const future = {
+      domain: 'mouser.com',
+      error_type: 'METEOR_STRIKE',
+      reason: 'cosmic',
+    } as unknown as ScrapeErrorPayload;
     expect(describeScrapeError(future)).toBe('mouser.com: cosmic');
   });
 });

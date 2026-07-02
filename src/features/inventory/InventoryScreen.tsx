@@ -165,7 +165,7 @@ function InventoryWorkspace() {
           setSelected((prev) => {
             const next = new Map(prev);
             if (next.has(item.id)) next.delete(item.id);
-            else
+            else {
               next.set(item.id, {
                 id: item.id,
                 name: item.name,
@@ -173,6 +173,7 @@ function InventoryWorkspace() {
                 locationName: locationName(item.locationId),
                 quantity: item.quantity,
               });
+            }
             return next;
           }),
       }
@@ -243,7 +244,10 @@ function InventoryWorkspace() {
               ) : null}
             </div>
 
-            <Tooltip content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active." triggerTabIndex={-1}>
+            <Tooltip
+              content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active."
+              triggerTabIndex={-1}
+            >
               <span>
                 <Button
                   variant={builderOpen ? 'secondary' : 'outline'}
@@ -385,7 +389,10 @@ function InventoryWorkspace() {
                   <EditIcon />
                   Bulk edit
                 </Button>
-                <Tooltip content="Seed a new item from this one (item-as-template). Select exactly one item." triggerTabIndex={-1}>
+                <Tooltip
+                  content="Seed a new item from this one (item-as-template). Select exactly one item."
+                  triggerTabIndex={-1}
+                >
                   <span>
                     <Button
                       variant="outline"
@@ -487,11 +494,7 @@ function InventoryWorkspace() {
       />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
       <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} />
-      <PrintLabelsDialog
-        open={printOpen}
-        onClose={() => setPrintOpen(false)}
-        items={selectedLabels}
-      />
+      <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
       <BulkEditDialog
         open={bulkEditOpen}
         onClose={() => setBulkEditOpen(false)}

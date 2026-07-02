@@ -82,8 +82,7 @@ export function useLocationSidebar({
     else rowRefs.current.delete(id);
   };
 
-  const toggle = (id: string, open: boolean) =>
-    setOverrides((current) => new Map(current).set(id, open));
+  const toggle = (id: string, open: boolean) => setOverrides((current) => new Map(current).set(id, open));
 
   const select = (id: string) => {
     setFocusedId(id);

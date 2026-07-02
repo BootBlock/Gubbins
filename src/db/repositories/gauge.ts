@@ -70,11 +70,7 @@ export function refillToFullAmount(currentNetValue: number, grossCapacity: numbe
  * tops it off to capacity, so the returned delta is the *clamped* difference — the
  * value the Activity Log and CRDT replay must record, never the raw requested add.
  */
-export function refillDelta(
-  addedAmount: number,
-  currentNetValue: number,
-  grossCapacity: number,
-): number {
+export function refillDelta(addedAmount: number, currentNetValue: number, grossCapacity: number): number {
   const clampedNext = clampNetValue(currentNetValue + addedAmount, grossCapacity);
   return clampedNext - currentNetValue;
 }

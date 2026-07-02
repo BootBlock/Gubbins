@@ -32,11 +32,9 @@ export const useAuthStore = create<AuthStore>()(
       providerLabel: null,
       connectedAt: null,
       lastSyncedAt: null,
-      setProvider: (providerId, providerLabel) =>
-        set({ providerId, providerLabel, connectedAt: Date.now() }),
+      setProvider: (providerId, providerLabel) => set({ providerId, providerLabel, connectedAt: Date.now() }),
       markSynced: (at = Date.now()) => set({ lastSyncedAt: at }),
-      disconnect: () =>
-        set({ providerId: null, providerLabel: null, connectedAt: null, lastSyncedAt: null }),
+      disconnect: () => set({ providerId: null, providerLabel: null, connectedAt: null, lastSyncedAt: null }),
     }),
     { name: 'gubbins:auth' },
   ),

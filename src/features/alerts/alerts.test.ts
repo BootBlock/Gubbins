@@ -184,26 +184,20 @@ describe('buildAlerts — warranty lane', () => {
   };
 
   it('skips items without warrantyExpiresAt (Phase-66 field absent)', () => {
-    const items: WarrantySource[] = [
-      { ...baseAsset, warrantyExpiresAt: null },
-    ];
+    const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: null }];
     expect(buildAlerts(sources({ warrantyItems: items }), NOW)).toHaveLength(0);
   });
 
   it('skips items whose warranty is still active', () => {
     const futureExpiry = new Date(NOW + 90 * 86_400_000).toISOString().slice(0, 10);
-    const items: WarrantySource[] = [
-      { ...baseAsset, warrantyExpiresAt: futureExpiry },
-    ];
+    const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: futureExpiry }];
     expect(buildAlerts(sources({ warrantyItems: items }), NOW)).toHaveLength(0);
   });
 
   it('produces a warning alert for warranty expiring-soon', () => {
     // Within 30 days but not yet expired.
     const soonDate = new Date(NOW + 10 * 86_400_000).toISOString().slice(0, 10);
-    const items: WarrantySource[] = [
-      { ...baseAsset, warrantyExpiresAt: soonDate },
-    ];
+    const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: soonDate }];
     const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
     expect(alert.kind).toBe('warranty-due');
     expect(alert.severity).toBe('warning');
@@ -213,9 +207,7 @@ describe('buildAlerts — warranty lane', () => {
 
   it('produces a critical alert for expired warranties', () => {
     const expiredDate = new Date(NOW - 86_400_000).toISOString().slice(0, 10);
-    const items: WarrantySource[] = [
-      { ...baseAsset, warrantyExpiresAt: expiredDate },
-    ];
+    const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: expiredDate }];
     const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
     expect(alert.kind).toBe('warranty-due');
     expect(alert.severity).toBe('critical');
@@ -272,11 +264,17 @@ describe('buildAlerts — severity ordering', () => {
 describe('buildAlerts — dueAt ordering', () => {
   it('sorts soonest dueAt first within the same severity', () => {
     const due1: MaintenanceDueSource = {
-      id: 's1', name: 'Late task', itemId: 'i1', itemName: 'Tool A',
+      id: 's1',
+      name: 'Late task',
+      itemId: 'i1',
+      itemName: 'Tool A',
       dueAtMs: ms('2025-06-25'),
     };
     const due2: MaintenanceDueSource = {
-      id: 's2', name: 'Very late task', itemId: 'i2', itemName: 'Tool B',
+      id: 's2',
+      name: 'Very late task',
+      itemId: 'i2',
+      itemName: 'Tool B',
       dueAtMs: ms('2025-06-20'),
     };
     const alerts = buildAlerts(sources({ maintenanceDue: [due1, due2] }), NOW);

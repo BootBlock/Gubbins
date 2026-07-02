@@ -103,10 +103,7 @@ export interface IngestOptions {
  */
 export async function ingestSnapshot(options: IngestOptions): Promise<PushSummary> {
   const dir = path.dirname(options.snapshotPath);
-  const tmp = path.join(
-    dir,
-    `.${path.basename(options.snapshotPath)}.push-${process.pid}-${Date.now()}.tmp`,
-  );
+  const tmp = path.join(dir, `.${path.basename(options.snapshotPath)}.push-${process.pid}-${Date.now()}.tmp`);
 
   const handle = await open(tmp, 'w');
   let total = 0;

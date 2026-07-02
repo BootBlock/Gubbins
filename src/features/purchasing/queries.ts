@@ -89,14 +89,8 @@ export function useAddPurchaseOrderLine() {
 export function useUpdatePurchaseOrderLine() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      lineId,
-      input,
-    }: {
-      poId: string;
-      lineId: string;
-      input: UpdatePurchaseOrderLineInput;
-    }) => getPurchaseOrderRepository().updateLine(lineId, input),
+    mutationFn: ({ lineId, input }: { poId: string; lineId: string; input: UpdatePurchaseOrderLineInput }) =>
+      getPurchaseOrderRepository().updateLine(lineId, input),
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
     },

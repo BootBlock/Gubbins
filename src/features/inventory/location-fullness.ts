@@ -18,10 +18,7 @@ export interface Fullness {
 }
 
 /** Fullness of a location, or `null` when it has no (positive) capacity limit. */
-export function locationFullness(
-  itemCount: number,
-  capacity: number | null | undefined,
-): Fullness | null {
+export function locationFullness(itemCount: number, capacity: number | null | undefined): Fullness | null {
   if (capacity == null || !Number.isFinite(capacity) || capacity <= 0) return null;
   const ratio = itemCount / capacity;
   return {
@@ -32,11 +29,7 @@ export function locationFullness(
 }
 
 /** Would adding `adding` item(s) meet or exceed the location's capacity? */
-export function isLocationFull(
-  itemCount: number,
-  capacity: number | null | undefined,
-  adding = 1,
-): boolean {
+export function isLocationFull(itemCount: number, capacity: number | null | undefined, adding = 1): boolean {
   if (capacity == null || !Number.isFinite(capacity) || capacity <= 0) return false;
   return itemCount + adding > capacity;
 }

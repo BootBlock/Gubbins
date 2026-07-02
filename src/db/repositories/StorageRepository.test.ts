@@ -14,10 +14,12 @@ describe('StorageRepository (spec §7.6.2, §7.6.3)', () => {
 
   /** Append a history row with an explicit created_at (bypasses the repo for control). */
   async function addHistory(itemId: string, createdAt: number): Promise<void> {
-    await driver.execute(
-      `INSERT INTO item_history (id, item_id, action, created_at) VALUES (?, ?, ?, ?);`,
-      [crypto.randomUUID(), itemId, 'QUANTITY_CHANGE', createdAt],
-    );
+    await driver.execute(`INSERT INTO item_history (id, item_id, action, created_at) VALUES (?, ?, ?, ?);`, [
+      crypto.randomUUID(),
+      itemId,
+      'QUANTITY_CHANGE',
+      createdAt,
+    ]);
   }
 
   beforeEach(async () => {

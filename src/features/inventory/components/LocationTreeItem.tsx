@@ -151,10 +151,7 @@ export function LocationTreeItem({
               <span className={cn('min-w-0 flex-1 truncate text-left', colorClass)}>{label}</span>
             )}
             {isDefault ? (
-              <PreferredIcon
-                className="ml-1 size-3.5 shrink-0 text-warning"
-                aria-label="Default location"
-              />
+              <PreferredIcon className="ml-1 size-3.5 shrink-0 text-warning" aria-label="Default location" />
             ) : null}
             <span
               className={cn(

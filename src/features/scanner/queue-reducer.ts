@@ -22,9 +22,7 @@ export interface QueueState {
 }
 
 export type QueueAction =
-  | { type: 'ADD'; entry: ScannedEntry }
-  | { type: 'REMOVE'; itemId: string }
-  | { type: 'CLEAR' };
+  { type: 'ADD'; entry: ScannedEntry } | { type: 'REMOVE'; itemId: string } | { type: 'CLEAR' };
 
 export const emptyQueue: QueueState = { entries: [] };
 

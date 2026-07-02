@@ -198,8 +198,16 @@ export class MaintenanceRepository extends BaseRepository {
          (id, item_id, name, basis, interval_days, interval_usage, usage_unit, accrue_checkout_hours, location_id, note)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
-        id, input.itemId, name, input.basis, intervalDays, intervalUsage, usageUnit,
-        accrueCheckoutHours ? 1 : 0, locationId, input.note?.trim() || null,
+        id,
+        input.itemId,
+        name,
+        input.basis,
+        intervalDays,
+        intervalUsage,
+        usageUnit,
+        accrueCheckoutHours ? 1 : 0,
+        locationId,
+        input.note?.trim() || null,
       ],
     );
     return (await this.getById(id))!;

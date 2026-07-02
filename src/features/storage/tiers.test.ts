@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  classifyStorageTier,
-  isWriteSuspended,
-  areNonEssentialFeaturesDisabled,
-} from './tiers';
+import { classifyStorageTier, isWriteSuspended, areNonEssentialFeaturesDisabled } from './tiers';
 
 describe('storage tier classification (spec §7.6.1)', () => {
   it('classifies below 80% usage as ok', () => {

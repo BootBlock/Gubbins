@@ -12,12 +12,7 @@
 export type LogicalOperator = 'AND' | 'OR';
 
 /** The comparison a single condition applies to its field (spec §5.1). */
-export type FilterOperator =
-  | 'EQUALS'
-  | 'CONTAINS'
-  | 'GREATER_THAN'
-  | 'LESS_THAN'
-  | 'HAS_CAPABILITY';
+export type FilterOperator = 'EQUALS' | 'CONTAINS' | 'GREATER_THAN' | 'LESS_THAN' | 'HAS_CAPABILITY';
 
 /** A single leaf predicate, e.g. `{ field: 'capability:voltage', operator: 'GREATER_THAN', value: 3.3 }`. */
 export interface FilterCondition {

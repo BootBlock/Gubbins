@@ -24,9 +24,7 @@ const bannerVariants = cva(
   },
 );
 
-export interface BannerProps
-  extends HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof bannerVariants> {
+export interface BannerProps extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof bannerVariants> {
   icon?: ReactNode;
   /** Optional bold heading rendered above the message (named `heading`, not `title`, to avoid the native tooltip attribute). */
   heading?: ReactNode;
@@ -39,9 +37,7 @@ export const Banner = forwardRef<HTMLDivElement, BannerProps>(
       {icon ? <span className="mt-0.5 shrink-0 [&_svg]:size-5">{icon}</span> : null}
       <div className="min-w-0 flex-1">
         {heading ? <p className="leading-tight font-semibold">{heading}</p> : null}
-        {children ? (
-          <div className={cn('text-muted-foreground', heading && 'mt-1')}>{children}</div>
-        ) : null}
+        {children ? <div className={cn('text-muted-foreground', heading && 'mt-1')}>{children}</div> : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

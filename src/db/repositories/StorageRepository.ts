@@ -80,9 +80,7 @@ export class StorageRepository extends BaseRepository {
    * remote history row older than `history_pruned_before`.
    */
   async pruneHistoryBefore(cutoff: number): Promise<number> {
-    const result = await this.driver.execute('DELETE FROM item_history WHERE created_at < ?;', [
-      cutoff,
-    ]);
+    const result = await this.driver.execute('DELETE FROM item_history WHERE created_at < ?;', [cutoff]);
     await this.driver.execute(
       'UPDATE sync_meta SET history_pruned_before = MAX(history_pruned_before, ?) WHERE id = 1;',
       [cutoff],
@@ -106,10 +104,7 @@ export class StorageRepository extends BaseRepository {
    * created before `cutoff` and not already downgraded. The caller deletes each raw
    * OPFS file, then calls {@link markImageDowngraded}.
    */
-  async listDowngradableBefore(
-    cutoff: number,
-    params: PageParams = {},
-  ): Promise<Page<DowngradableImage>> {
+  async listDowngradableBefore(cutoff: number, params: PageParams = {}): Promise<Page<DowngradableImage>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<{ id: string; full_res_opfs_path: string }>(
       `SELECT id, full_res_opfs_path FROM item_images
@@ -132,9 +127,6 @@ export class StorageRepository extends BaseRepository {
    * never propagated to cloud sync (§7.6.3 B).
    */
   async markImageDowngraded(id: string, at: number = Date.now()): Promise<void> {
-    await this.driver.execute('UPDATE item_images SET full_res_downgraded_at = ? WHERE id = ?;', [
-      at,
-      id,
-    ]);
+    await this.driver.execute('UPDATE item_images SET full_res_downgraded_at = ? WHERE id = ?;', [at, id]);
   }
 }

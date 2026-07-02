@@ -139,7 +139,7 @@ export function AssetEditor({ item }: { item: Item }) {
           hint={
             'The date on which the manufacturer or supplier warranty expires. Once set, the ' +
             'badge above shows **Under warranty**, **Expiring soon** (within 30 days), ' +
-            'or **Expired** depending on today\'s date.'
+            "or **Expired** depending on today's date."
           }
         >
           <Input
@@ -153,7 +153,7 @@ export function AssetEditor({ item }: { item: Item }) {
         <LField
           label="Purchase price"
           hint={
-            'The original acquisition cost in the base currency. Shown as the item\'s current ' +
+            "The original acquisition cost in the base currency. Shown as the item's current " +
             '**book value** (decreasing over time when a depreciation term is set).'
           }
         >
@@ -193,12 +193,7 @@ export function AssetEditor({ item }: { item: Item }) {
       </div>
 
       <div className="flex justify-end">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={!dirty || update.isPending}
-          data-testid="save-asset"
-        >
+        <Button size="sm" onClick={save} disabled={!dirty || update.isPending} data-testid="save-asset">
           {dirty ? 'Save asset details' : 'Saved'}
         </Button>
       </div>
@@ -226,15 +221,7 @@ function toOptionalInt(raw: string): number | null {
  * Compact labelled-field wrapper that mirrors the {@link LField} in LifecycleEditor —
  * a label with an optional inline {@link InfoHint} positioned at the top-right.
  */
-function LField({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function LField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="relative">
       <label className="block">
@@ -251,4 +238,3 @@ function LField({
     </div>
   );
 }
-

@@ -28,11 +28,7 @@ export interface PoReceiptPlan {
  *   outstanding remainder so a receipt can never overshoot the ordered quantity.
  * - `fullyReceived` flips only once cumulative receipts reach `orderedQty`.
  */
-export function planPoReceipt(
-  orderedQty: number,
-  receivedQty: number,
-  requestedQty?: number,
-): PoReceiptPlan {
+export function planPoReceipt(orderedQty: number, receivedQty: number, requestedQty?: number): PoReceiptPlan {
   const plan: ReceiptPlan = planReceipt(orderedQty, receivedQty, requestedQty);
   return {
     receivedDelta: plan.receivedDelta,

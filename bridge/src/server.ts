@@ -327,11 +327,7 @@ async function handleHealth(res: ServerResponse, options: BridgeServerOptions): 
 }
 
 /** `GET /search?q=&limit=` — compact item DTOs (limit clamped by the query core). */
-async function handleSearch(
-  res: ServerResponse,
-  options: BridgeServerOptions,
-  url: URL,
-): Promise<void> {
+async function handleSearch(res: ServerResponse, options: BridgeServerOptions, url: URL): Promise<void> {
   const q = readQueryParam(res, url, false);
   if (q === null) return;
 
@@ -346,11 +342,7 @@ async function handleSearch(
 }
 
 /** `GET /where?q=` — the "where is X?" answer plus a spoken sentence. */
-async function handleWhere(
-  res: ServerResponse,
-  options: BridgeServerOptions,
-  url: URL,
-): Promise<void> {
+async function handleWhere(res: ServerResponse, options: BridgeServerOptions, url: URL): Promise<void> {
   const q = readQueryParam(res, url, false);
   if (q === null) return;
 

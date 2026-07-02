@@ -53,7 +53,7 @@ export class AttachmentRepository extends BaseRepository {
        VALUES (?, ?, ?, ?, ?, ?, ?);`,
       [id, input.itemId, input.kind, value, input.label ?? null, input.position ?? 0, originDeviceId],
     );
-    return (await this.requireById(id));
+    return await this.requireById(id);
   }
 
   async update(id: string, input: UpdateAttachmentInput): Promise<ItemAttachment> {
@@ -88,10 +88,7 @@ export class AttachmentRepository extends BaseRepository {
     }
     if (sets.length > 0) {
       params.push(id);
-      await this.driver.execute(
-        `UPDATE item_attachments SET ${sets.join(', ')} WHERE id = ?;`,
-        params,
-      );
+      await this.driver.execute(`UPDATE item_attachments SET ${sets.join(', ')} WHERE id = ?;`, params);
     }
     return this.requireById(id);
   }

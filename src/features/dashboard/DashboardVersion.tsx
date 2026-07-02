@@ -28,16 +28,12 @@ export function DashboardVersion() {
     setStatus('checking');
     // Keep "Checking…" on screen briefly even if the check resolves instantly (a no-op in
     // dev / unsupported browsers), so the click visibly registers.
-    await Promise.all([
-      checkForAppUpdate().catch(() => {}),
-      new Promise((r) => setTimeout(r, 600)),
-    ]);
+    await Promise.all([checkForAppUpdate().catch(() => {}), new Promise((r) => setTimeout(r, 600))]);
     setStatus('checked');
     resetTimer.current = setTimeout(() => setStatus('idle'), 2500);
   };
 
-  const subtitle =
-    status === 'checking' ? 'Checking…' : status === 'checked' ? 'Up to date' : RELEASE_LABEL;
+  const subtitle = status === 'checking' ? 'Checking…' : status === 'checked' ? 'Up to date' : RELEASE_LABEL;
 
   return (
     <Tooltip

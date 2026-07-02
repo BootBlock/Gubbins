@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  handlePermission,
-  reconnectAction,
-  type PersistableDirectoryHandle,
-} from './fs-handle-store';
+import { handlePermission, reconnectAction, type PersistableDirectoryHandle } from './fs-handle-store';
 
 describe('reconnectAction (FS Access persistence policy, Phase 14)', () => {
   it('reconnects silently when the grant survives', () => {

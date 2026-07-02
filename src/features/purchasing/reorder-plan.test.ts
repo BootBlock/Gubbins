@@ -91,9 +91,7 @@ describe('buildReorderPlan', () => {
   });
 
   it('places items with no preferred supplier into the Unassigned group', () => {
-    const rows: ReorderShortfallRow[] = [
-      { itemId: 'x', itemName: 'Widget', shortfall: 3 },
-    ];
+    const rows: ReorderShortfallRow[] = [{ itemId: 'x', itemName: 'Widget', shortfall: 3 }];
     const plan = buildReorderPlan(rows);
     expect(plan).toHaveLength(1);
     expect(plan[0]!.supplierName).toBe(UNASSIGNED_SUPPLIER_NAME);
@@ -135,12 +133,16 @@ describe('buildReorderPlan', () => {
   it('sorts named suppliers alphabetically, with Unassigned last', () => {
     const rows: ReorderShortfallRow[] = [
       {
-        itemId: 'a', itemName: 'A', shortfall: 1,
+        itemId: 'a',
+        itemName: 'A',
+        shortfall: 1,
         preferredSupplier: { supplierPartId: 'sp1', supplierName: 'RS Components' },
       },
       { itemId: 'b', itemName: 'B', shortfall: 1 }, // no supplier
       {
-        itemId: 'c', itemName: 'C', shortfall: 1,
+        itemId: 'c',
+        itemName: 'C',
+        shortfall: 1,
         preferredSupplier: { supplierPartId: 'sp2', supplierName: 'Farnell' },
       },
     ];
@@ -211,13 +213,17 @@ describe('buildReorderPlan', () => {
   it('mixed: supplier and unassigned items in one pass', () => {
     const rows: ReorderShortfallRow[] = [
       {
-        itemId: 'a', itemName: 'Part A', shortfall: 5,
+        itemId: 'a',
+        itemName: 'Part A',
+        shortfall: 5,
         preferredSupplier: { supplierPartId: 'sp1', supplierName: 'Alpha Supply' },
       },
       { itemId: 'b', itemName: 'Part B', shortfall: 3 },
       { itemId: 'c', itemName: 'Part C', shortfall: 0 }, // zero shortfall — ignored
       {
-        itemId: 'd', itemName: 'Part D', shortfall: 1,
+        itemId: 'd',
+        itemName: 'Part D',
+        shortfall: 1,
         preferredSupplier: { supplierPartId: 'sp2', supplierName: 'Alpha Supply' },
       },
     ];

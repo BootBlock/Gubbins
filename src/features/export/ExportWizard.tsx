@@ -4,12 +4,7 @@ import { Button, LiveRegion, Modal, Surface } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
-import {
-  useExportStore,
-  type ExportFormat,
-  type ExportScope,
-  type ReportExportKind,
-} from './useExportStore';
+import { useExportStore, type ExportFormat, type ExportScope, type ReportExportKind } from './useExportStore';
 
 /**
  * The Granular Export Wizard (spec §3, §2 JSON backup, §4.5 Markdown vault).
@@ -24,11 +19,31 @@ import {
  * that round-trips through the import wizard without requiring manual column mapping.
  */
 const FORMATS: { value: ExportFormat; label: string; hint: string; icon: typeof ExportIcon }[] = [
-  { value: 'JSON', label: 'JSON data export', hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.', icon: ExportIcon },
+  {
+    value: 'JSON',
+    label: 'JSON data export',
+    hint: 'Items, contacts & loans only — not a full backup. For everything, use Sync → Backup & restore.',
+    icon: ExportIcon,
+  },
   { value: 'CSV', label: 'Items CSV', hint: 'Spreadsheet of the selected items.', icon: PackageIcon },
-  { value: 'VAULT', label: 'Markdown vault', hint: 'Obsidian-ready .zip with image assets.', icon: VaultIcon },
-  { value: 'REPORTS', label: 'Report CSV', hint: 'A §3 aggregate report — valuation, consumption, movement or dead stock.', icon: ReportIcon },
-  { value: 'CATALOG_CSV', label: 'Catalogue CSV', hint: 'Whole-catalogue CSV that imports back without manual column mapping — including a column for each category custom field. Use this to migrate or back up your items as a spreadsheet.', icon: ImportIcon },
+  {
+    value: 'VAULT',
+    label: 'Markdown vault',
+    hint: 'Obsidian-ready .zip with image assets.',
+    icon: VaultIcon,
+  },
+  {
+    value: 'REPORTS',
+    label: 'Report CSV',
+    hint: 'A §3 aggregate report — valuation, consumption, movement or dead stock.',
+    icon: ReportIcon,
+  },
+  {
+    value: 'CATALOG_CSV',
+    label: 'Catalogue CSV',
+    hint: 'Whole-catalogue CSV that imports back without manual column mapping — including a column for each category custom field. Use this to migrate or back up your items as a spreadsheet.',
+    icon: ImportIcon,
+  },
 ];
 
 const SCOPES: { value: ExportScope; label: string }[] = [
@@ -91,7 +106,12 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
     setDone(null);
     setError(null);
     try {
-      const filename = await runExport(format, { includeInactive, scope, targetId: scopeTargetId, reportKind });
+      const filename = await runExport(format, {
+        includeInactive,
+        scope,
+        targetId: scopeTargetId,
+        reportKind,
+      });
       setDone(filename);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The export failed.');
@@ -158,55 +178,55 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
 
         {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
         {hasScope ? (
-        <div className="space-y-2">
-          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Scope
-          </label>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as ExportScope)}
-            data-testid="export-scope"
-            className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-          >
-            {SCOPES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-
-          {scope === 'ITEM' ? (
+          <div className="space-y-2">
+            <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Scope
+            </label>
             <select
-              value={scopeTargetId ?? ''}
-              onChange={(e) => setScopeTargetId(e.target.value || null)}
-              data-testid="export-target-item"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as ExportScope)}
+              data-testid="export-scope"
               className="w-full rounded-lg border border-border bg-background p-2 text-sm"
             >
-              <option value="">Choose an item…</option>
-              {(itemList.data?.rows ?? []).map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.name}
+              {SCOPES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
                 </option>
               ))}
             </select>
-          ) : null}
 
-          {scope === 'PROJECT' ? (
-            <select
-              value={scopeTargetId ?? ''}
-              onChange={(e) => setScopeTargetId(e.target.value || null)}
-              data-testid="export-target-project"
-              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-            >
-              <option value="">Choose a project…</option>
-              {(projectList.data?.rows ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </div>
+            {scope === 'ITEM' ? (
+              <select
+                value={scopeTargetId ?? ''}
+                onChange={(e) => setScopeTargetId(e.target.value || null)}
+                data-testid="export-target-item"
+                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+              >
+                <option value="">Choose an item…</option>
+                {(itemList.data?.rows ?? []).map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            {scope === 'PROJECT' ? (
+              <select
+                value={scopeTargetId ?? ''}
+                onChange={(e) => setScopeTargetId(e.target.value || null)}
+                data-testid="export-target-project"
+                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
+              >
+                <option value="">Choose a project…</option>
+                {(projectList.data?.rows ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
         ) : null}
 
         {(hasScope && scope === 'ALL') || isCatalogCsv ? (
@@ -234,11 +254,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
             errors so they interrupt immediately. Both regions must pre-exist so the
             later content change is actually announced (see LiveRegion). */}
         <LiveRegion visuallyHidden data-testid="export-live-region">
-          {busy ? (
-            <p>Exporting…</p>
-          ) : done ? (
-            <p>Exported {done} to your downloads.</p>
-          ) : null}
+          {busy ? <p>Exporting…</p> : done ? <p>Exported {done} to your downloads.</p> : null}
         </LiveRegion>
         <LiveRegion urgency="assertive" visuallyHidden data-testid="export-error-live-region">
           {error ? <p>{error}</p> : null}

@@ -108,7 +108,12 @@ export function buildScrapeMergePlan(
     : null;
 
   const proposals: FieldProposal[] = [
-    { field: 'mpn', current: existing.mpn, scraped: scrapedMpn, status: classifyString(existing.mpn, scrapedMpn) },
+    {
+      field: 'mpn',
+      current: existing.mpn,
+      scraped: scrapedMpn,
+      status: classifyString(existing.mpn, scrapedMpn),
+    },
     {
       field: 'manufacturer',
       current: existing.manufacturer,

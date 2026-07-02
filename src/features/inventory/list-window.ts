@@ -24,11 +24,7 @@
  * window (trimmed off the front) are still counted so their absolute positions —
  * and the scroll offset — never shift.
  */
-export function listRowCount(
-  firstItemIndex: number,
-  residentCount: number,
-  columns: number,
-): number {
+export function listRowCount(firstItemIndex: number, residentCount: number, columns: number): number {
   if (columns <= 0) return 0;
   return Math.ceil((firstItemIndex + residentCount) / columns);
 }

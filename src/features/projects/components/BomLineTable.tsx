@@ -98,13 +98,7 @@ function ReceiveControl({
  * "In Transit" state is the liminal procurement space of §4; an In-Transit line can
  * be received into stock whole or in partial instalments (Phase 24).
  */
-export function BomLineTable({
-  projectId,
-  lines,
-}: {
-  projectId: string;
-  lines: readonly ProjectBomLine[];
-}) {
+export function BomLineTable({ projectId, lines }: { projectId: string; lines: readonly ProjectBomLine[] }) {
   const setReservation = useSetReservation(projectId);
   const setProcurement = useSetProcurement(projectId);
   const receiveLine = useReceiveLine(projectId);
@@ -134,7 +128,9 @@ export function BomLineTable({
           {lines.map((line) => (
             <tr key={line.id} className="border-t border-border/60 align-middle">
               <td className="px-3 py-2">
-                <div className="font-medium">{line.description ?? line.mpn ?? line.designator ?? 'Unnamed part'}</div>
+                <div className="font-medium">
+                  {line.description ?? line.mpn ?? line.designator ?? 'Unnamed part'}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   {[line.designator, line.mpn, line.manufacturer].filter(Boolean).join(' · ') || '—'}
                   {line.itemId ? null : <span className="ml-1 text-warning">· unmatched</span>}
@@ -198,7 +194,10 @@ export function BomLineTable({
                 </div>
               </td>
               <td className="px-3 py-2 text-right">
-                <Tooltip content="Remove this part from the bill of materials. Any matched inventory stock is unaffected." triggerTabIndex={-1}>
+                <Tooltip
+                  content="Remove this part from the bill of materials. Any matched inventory stock is unaffected."
+                  triggerTabIndex={-1}
+                >
                   <span>
                     <Button
                       size="icon"

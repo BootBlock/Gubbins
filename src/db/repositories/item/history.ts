@@ -15,11 +15,7 @@ export interface HistoryFields {
 }
 
 /** Build an append-only Activity Log INSERT for inclusion in a write transaction. */
-export function historyStatement(
-  itemId: string,
-  action: string,
-  fields: HistoryFields = {},
-): SqlStatement {
+export function historyStatement(itemId: string, action: string, fields: HistoryFields = {}): SqlStatement {
   return {
     sql: `INSERT INTO item_history (id, item_id, action, quantity_delta, net_value_delta, note, metadata)
           VALUES (?, ?, ?, ?, ?, ?, ?);`,

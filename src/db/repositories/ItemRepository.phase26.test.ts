@@ -5,7 +5,6 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
-import { ContactRepository } from './ContactRepository';
 import { CheckoutRepository } from './CheckoutRepository';
 
 /**
@@ -99,7 +98,6 @@ describe('CheckoutRepository — per-location source (Phase 26)', () => {
   let driver: MemoryDriver;
   let items: ItemRepository;
   let locations: LocationRepository;
-  let contacts: ContactRepository;
   let checkouts: CheckoutRepository;
 
   beforeEach(async () => {
@@ -107,7 +105,6 @@ describe('CheckoutRepository — per-location source (Phase 26)', () => {
     await runMigrations(driver, migrations);
     items = new ItemRepository(driver);
     locations = new LocationRepository(driver);
-    contacts = new ContactRepository(driver);
     checkouts = new CheckoutRepository(driver);
   });
 
@@ -160,7 +157,7 @@ describe('CheckoutRepository — per-location source (Phase 26)', () => {
   });
 
   it('falls back to primary when the source location is deleted mid-loan', async () => {
-    const { a, b, item } = await splitItem();
+    const { b, item } = await splitItem();
     const loan = await checkouts.checkout({
       itemId: item.id,
       contactName: 'Sam',

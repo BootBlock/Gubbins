@@ -12,11 +12,7 @@ import { Button, Surface, Spinner, LiveRegion } from '@/components/foundry';
 import { DownloadIcon, LowStockIcon, TruckIcon, WarningIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { buildReorderCsv } from './reorder-csv';
-import {
-  UNASSIGNED_SUPPLIER_NAME,
-  type ReorderPlanGroup,
-  type ReorderPlanLine,
-} from './reorder-plan';
+import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup, type ReorderPlanLine } from './reorder-plan';
 import { useCreateDraftFromReorderPlan, useReorderPlan } from './queries';
 
 /** Clamp a user-entered order quantity to a sensible range. */
@@ -90,12 +86,7 @@ export function ReorderTab() {
        * readers pick up the text mutation; never early-return before it (the spinner
        * renders as a branch beneath it, not in place of it).
        */}
-      <p
-        className="sr-only"
-        role="status"
-        aria-live="polite"
-        data-testid="reorder-list-count-live"
-      >
+      <p className="sr-only" role="status" aria-live="polite" data-testid="reorder-list-count-live">
         {planQuery.isLoading
           ? 'Loading reorder list…'
           : totalLines === 0
@@ -108,12 +99,15 @@ export function ReorderTab() {
           <Spinner />
         </Surface>
       ) : plan.length === 0 ? (
-        <Surface className="flex flex-col items-center gap-3 p-8 text-center text-muted-foreground" data-testid="reorder-empty">
+        <Surface
+          className="flex flex-col items-center gap-3 p-8 text-center text-muted-foreground"
+          data-testid="reorder-empty"
+        >
           <LowStockIcon className="size-8 opacity-40" />
           <p className="text-sm">No items are currently below their reorder point.</p>
           <p className="text-xs opacity-70">
-            Items appear here when on-hand quantity falls at or below their reorder point.
-            Set a reorder point on each item in the inventory.
+            Items appear here when on-hand quantity falls at or below their reorder point. Set a reorder point
+            on each item in the inventory.
           </p>
         </Surface>
       ) : (
@@ -182,9 +176,7 @@ function ReorderGroup({
             {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
           </span>
           {estimatedTotal > 0 && (
-            <span className="text-xs text-muted-foreground">
-              · est. {currency(estimatedTotal)}
-            </span>
+            <span className="text-xs text-muted-foreground">· est. {currency(estimatedTotal)}</span>
           )}
         </div>
         {isUnassigned ? (

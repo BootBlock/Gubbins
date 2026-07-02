@@ -86,10 +86,12 @@ describe('eraseTargets (memory-driver integration)', () => {
       const cat = nextId('cat');
       await exec('INSERT INTO categories (id, name) VALUES (?, ?);', [cat, 'Resistors']);
       const field = nextId('field');
-      await exec(
-        'INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);',
-        [field, cat, 'Resistance', 'NUMBER'],
-      );
+      await exec('INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);', [
+        field,
+        cat,
+        'Resistance',
+        'NUMBER',
+      ]);
       const item = await makeItem(loc, cat);
 
       // Children that should cascade away.
@@ -98,10 +100,11 @@ describe('eraseTargets (memory-driver integration)', () => {
         item,
         'CREATED',
       ]);
-      await exec(
-        'INSERT INTO item_images (id, item_id, full_res_opfs_path) VALUES (?, ?, ?);',
-        [nextId('img'), item, 'images/x.webp'],
-      );
+      await exec('INSERT INTO item_images (id, item_id, full_res_opfs_path) VALUES (?, ?, ?);', [
+        nextId('img'),
+        item,
+        'images/x.webp',
+      ]);
       await exec('INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);', [
         nextId('ifv'),
         item,
@@ -122,10 +125,11 @@ describe('eraseTargets (memory-driver integration)', () => {
         'INSERT INTO maintenance_schedules (id, item_id, name, basis, interval_days) VALUES (?, ?, ?, ?, ?);',
         [nextId('ms'), item, 'Calibrate', 'TIME', 30],
       );
-      await exec(
-        'INSERT INTO supplier_parts (id, item_id, supplier_name) VALUES (?, ?, ?);',
-        [nextId('sp'), item, 'Acme'],
-      );
+      await exec('INSERT INTO supplier_parts (id, item_id, supplier_name) VALUES (?, ?, ?);', [
+        nextId('sp'),
+        item,
+        'Acme',
+      ]);
 
       // Lines that should SURVIVE but be unlinked.
       const project = nextId('proj');
@@ -136,10 +140,12 @@ describe('eraseTargets (memory-driver integration)', () => {
       );
       const po = nextId('po');
       await exec('INSERT INTO purchase_orders (id, supplier_name) VALUES (?, ?);', [po, 'Acme']);
-      await exec(
-        'INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty) VALUES (?, ?, ?, ?);',
-        [nextId('pol'), po, item, 5],
-      );
+      await exec('INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty) VALUES (?, ?, ?, ?);', [
+        nextId('pol'),
+        po,
+        item,
+        5,
+      ]);
     });
 
     it('removes all items and cascades their children, but keeps unlinked BOM/PO lines and advances the watermark', async () => {
@@ -207,10 +213,12 @@ describe('eraseTargets (memory-driver integration)', () => {
       const cat = nextId('cat');
       await exec('INSERT INTO categories (id, name) VALUES (?, ?);', [cat, 'Caps']);
       const field = nextId('field');
-      await exec(
-        'INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);',
-        [field, cat, 'Voltage', 'NUMBER'],
-      );
+      await exec('INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);', [
+        field,
+        cat,
+        'Voltage',
+        'NUMBER',
+      ]);
       const item = await makeItem(loc, cat);
       await exec('INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);', [
         nextId('ifv'),
@@ -261,13 +269,9 @@ describe('eraseTargets (memory-driver integration)', () => {
       await eraseTargets(['locations'], { tombstone: false }, ports());
 
       // Empty custom location gone.
-      expect(
-        await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [empty]),
-      ).toBeUndefined();
+      expect(await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [empty])).toBeUndefined();
       // Stock-holding custom location kept.
-      expect(
-        await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [holding]),
-      ).toBeDefined();
+      expect(await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [holding])).toBeDefined();
       // System location untouched.
       expect(
         await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [UNASSIGNED_LOCATION_ID]),
@@ -281,9 +285,7 @@ describe('eraseTargets (memory-driver integration)', () => {
       await eraseTargets(['items', 'locations'], { tombstone: false, now: 1 }, ports());
 
       expect(await count('items')).toBe(0);
-      expect(
-        await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [holding]),
-      ).toBeUndefined();
+      expect(await driver.queryOne('SELECT 1 FROM locations WHERE id = ?;', [holding])).toBeUndefined();
     });
   });
 
@@ -318,7 +320,9 @@ describe('eraseTargets (memory-driver integration)', () => {
     it('sync-links deletes gubbins-fs, clears tombstones and zeroes the sync cursor', async () => {
       // Seed a tombstone + non-zero sync cursor.
       await exec("INSERT INTO tombstones (table_name, id) VALUES ('items', 'x');");
-      await exec('UPDATE sync_meta SET last_sync_timestamp = 99, clock_offset = 5, history_pruned_before = 42 WHERE id = 1;');
+      await exec(
+        'UPDATE sync_meta SET last_sync_timestamp = 99, clock_offset = 5, history_pruned_before = 42 WHERE id = 1;',
+      );
 
       await eraseTargets(['sync-links'], { tombstone: false }, ports());
 
@@ -349,10 +353,7 @@ describe('countTargets', () => {
   });
 
   it('counts DB rows for db targets and present keys for local targets', async () => {
-    await driver.execute('INSERT INTO locations (id, name, is_system) VALUES (?, ?, 0);', [
-      'l1',
-      'Shelf',
-    ]);
+    await driver.execute('INSERT INTO locations (id, name, is_system) VALUES (?, ?, 0);', ['l1', 'Shelf']);
     await driver.execute('INSERT INTO items (id, name, location_id) VALUES (?, ?, ?);', [
       'i1',
       'Widget',

@@ -97,7 +97,12 @@ describe('ItemRepository — batch-aware stock (Phase 28)', () => {
     const contact = await contacts.create({ name: 'Alex' });
 
     // Lend 7: the soonest-expiring lot (JUN, 5) goes first, then 2 from AUG.
-    await checkouts.checkout({ itemId: item.id, contactId: contact.id, quantity: 7, fromLocationId: drawer.id });
+    await checkouts.checkout({
+      itemId: item.id,
+      contactId: contact.id,
+      quantity: 7,
+      fromLocationId: drawer.id,
+    });
 
     const batches = await items.listItemBatches(item.id);
     const byNum = new Map(batches.map((b) => [b.batchNumber, b.quantity]));

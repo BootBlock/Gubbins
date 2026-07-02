@@ -28,18 +28,12 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * and is recorded in the matched item's Activity Log (§4). The reserved quantity
      * defaults to the full requirement and is clamped to it. NONE clears the hold.
      */
-    async setReservation(
-      lineId: string,
-      status: ReservationStatus,
-      qty?: number,
-    ): Promise<ProjectBomLine> {
+    async setReservation(lineId: string, status: ReservationStatus, qty?: number): Promise<ProjectBomLine> {
       this.assertWritable();
       const { line } = await this.requireLine(lineId);
 
       const reservedQty =
-        status === 'NONE'
-          ? 0
-          : Math.max(0, Math.min(line.requiredQty, Math.floor(qty ?? line.requiredQty)));
+        status === 'NONE' ? 0 : Math.max(0, Math.min(line.requiredQty, Math.floor(qty ?? line.requiredQty)));
 
       const statements: SqlStatement[] = [
         {
@@ -129,10 +123,11 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
       ];
 
       if (line.itemId && plan.receivedDelta > 0) {
-        const item = await this.driver.queryOne<{ tracking_mode: string; quantity: number; location_id: string }>(
-          'SELECT tracking_mode, quantity, location_id FROM items WHERE id = ?;',
-          [line.itemId],
-        );
+        const item = await this.driver.queryOne<{
+          tracking_mode: string;
+          quantity: number;
+          location_id: string;
+        }>('SELECT tracking_mode, quantity, location_id FROM items WHERE id = ?;', [line.itemId]);
         if (item && item.tracking_mode === 'DISCRETE') {
           const qty = plan.receivedDelta;
           const nextQty = item.quantity + qty;
@@ -145,7 +140,8 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
           // with their manufacturing batch and expiry, so they enter that `stock_batches` row.
           // With no batch given they fall into the placement's untracked default batch.
           const batchKey = opts.batch ? batchKeyOf(opts.batch) : '';
-          const batchNote = batchKey !== '' ? ` [batch ${opts.batch!.batchNumber ?? opts.batch!.lotNumber ?? '—'}]` : '';
+          const batchNote =
+            batchKey !== '' ? ` [batch ${opts.batch!.batchNumber ?? opts.batch!.lotNumber ?? '—'}]` : '';
           statements.push(
             opts.batch
               ? addBatchStatement(line.itemId, targetLocation, opts.batch, qty)
@@ -157,10 +153,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
               note: plan.fullyReceived
                 ? `Received ${qty} from procurement (now ${nextQty})${batchNote}.`
                 : `Received ${qty} of ${line.requiredQty} from procurement (now ${nextQty}; ${plan.outstandingQty} still arriving)${batchNote}.`,
-              metadata:
-                targetLocation !== item.location_id
-                  ? { toLocationId: targetLocation }
-                  : undefined,
+              metadata: targetLocation !== item.location_id ? { toLocationId: targetLocation } : undefined,
             }),
           );
         }

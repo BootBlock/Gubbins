@@ -141,7 +141,17 @@ describe('report CSV builders', () => {
   it('data-hygiene CSV lists per-check totals then the sampled detail rows', () => {
     const report = buildHygieneReport(
       [
-        { id: 'a', name: 'No category', mpn: null, hasCategory: false, hasLocation: true, hasPrice: true, hasPhoto: true, everCounted: true, lastActivityAt: 0 },
+        {
+          id: 'a',
+          name: 'No category',
+          mpn: null,
+          hasCategory: false,
+          hasLocation: true,
+          hasPrice: true,
+          hasPhoto: true,
+          everCounted: true,
+          lastActivityAt: 0,
+        },
       ],
       { now: 0, staleDays: 180 },
     );

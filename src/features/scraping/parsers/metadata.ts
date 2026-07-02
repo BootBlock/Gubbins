@@ -126,7 +126,9 @@ export function makeSupplierParser(config: SupplierParserConfig): SupplierParser
       }
 
       const manufacturer =
-        (selectors.manufacturer ? optionalText(doc, selectors.manufacturer) : null) ?? meta.manufacturer ?? '';
+        (selectors.manufacturer ? optionalText(doc, selectors.manufacturer) : null) ??
+        meta.manufacturer ??
+        '';
       const description =
         (selectors.description ? optionalText(doc, selectors.description) : null) ?? meta.description ?? '';
 

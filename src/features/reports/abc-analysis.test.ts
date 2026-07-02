@@ -46,8 +46,7 @@ describe('classifyAbc', () => {
     expect(report.tiers.C).toEqual({ tier: 'C', itemCount: 2, totalValue: 50, valueShare: 0.05 });
 
     // Shares partition the whole.
-    const shareSum =
-      report.tiers.A.valueShare + report.tiers.B.valueShare + report.tiers.C.valueShare;
+    const shareSum = report.tiers.A.valueShare + report.tiers.B.valueShare + report.tiers.C.valueShare;
     expect(shareSum).toBeCloseTo(1, 10);
   });
 

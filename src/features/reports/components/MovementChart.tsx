@@ -8,13 +8,7 @@ import type { MovementReport } from '../reports';
  * across the window. Composed with Tailwind + tokens only (no chart dependency, §2.4.3); the
  * legend and totals give the accessible non-visual summary.
  */
-export function MovementChart({
-  report,
-  formatters,
-}: {
-  report: MovementReport;
-  formatters: Formatters;
-}) {
+export function MovementChart({ report, formatters }: { report: MovementReport; formatters: Formatters }) {
   const peak = Math.max(1, ...report.buckets.map((b) => Math.max(b.in, b.out)));
 
   if (report.totalIn === 0 && report.totalOut === 0) {

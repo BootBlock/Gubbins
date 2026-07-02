@@ -190,10 +190,7 @@ export function toCategoryField(field: CategoryField): CategoryFieldDto {
   };
 }
 
-export function toCategoryDetail(
-  category: Category,
-  fields: readonly CategoryField[],
-): CategoryDetailDto {
+export function toCategoryDetail(category: Category, fields: readonly CategoryField[]): CategoryDetailDto {
   return { id: category.id, name: category.name, fields: fields.map(toCategoryField) };
 }
 

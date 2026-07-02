@@ -11,7 +11,13 @@ import {
 const lookups: BulkEditLookups = {
   categoryName: (id) => ({ c1: 'Resistors', c2: 'Capacitors' })[id] ?? id,
   locationName: (id) => ({ l1: 'Drawer A' })[id] ?? id,
-  conditionLabel: (c) => ({ MINT: 'Mint', GOOD: 'Good', NEEDS_REPAIR: 'Needs repair', OUT_FOR_CALIBRATION: 'Out for calibration' })[c],
+  conditionLabel: (c) =>
+    ({
+      MINT: 'Mint',
+      GOOD: 'Good',
+      NEEDS_REPAIR: 'Needs repair',
+      OUT_FOR_CALIBRATION: 'Out for calibration',
+    })[c],
 };
 
 describe('isBulkEditEmpty', () => {
@@ -38,15 +44,18 @@ describe('parseTagInput', () => {
 
 describe('resolveItemTagNames', () => {
   it('add merges current + new, deduping case-insensitively (current casing wins)', () => {
-    expect(
-      resolveItemTagNames(['Alpha', 'Beta'], { mode: 'add', names: ['beta', 'Gamma'] }),
-    ).toEqual(['Alpha', 'Beta', 'Gamma']);
+    expect(resolveItemTagNames(['Alpha', 'Beta'], { mode: 'add', names: ['beta', 'Gamma'] })).toEqual([
+      'Alpha',
+      'Beta',
+      'Gamma',
+    ]);
   });
 
   it('replace uses only the new names, deduped', () => {
-    expect(
-      resolveItemTagNames(['Alpha', 'Beta'], { mode: 'replace', names: ['x', 'X', 'y'] }),
-    ).toEqual(['x', 'y']);
+    expect(resolveItemTagNames(['Alpha', 'Beta'], { mode: 'replace', names: ['x', 'X', 'y'] })).toEqual([
+      'x',
+      'y',
+    ]);
   });
 
   it('ignores blank names', () => {

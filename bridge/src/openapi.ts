@@ -13,12 +13,7 @@
 
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 const SERVER_URL = 'http://127.0.0.1:8787';
 
@@ -101,8 +96,14 @@ const errorResponses = (...codes: number[]): JsonValue => {
       content: jsonContent('#/components/schemas/Error'),
     },
     404: response('Resource not found.', '#/components/schemas/Error'),
-    413: response('The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).', '#/components/schemas/Error'),
-    422: response('The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build).', '#/components/schemas/Error'),
+    413: response(
+      'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
+      '#/components/schemas/Error',
+    ),
+    422: response(
+      'The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build).',
+      '#/components/schemas/Error',
+    ),
     429: {
       description: 'Rate limit exceeded for this client.',
       headers: {
@@ -452,7 +453,10 @@ export const openapiDocument: JsonValue = {
           version: { type: 'string', example: '1.0.0' },
           openapi: { type: 'string', example: '/api/v1/openapi.json' },
           writable: { type: 'boolean', description: 'Whether the opt-in write endpoints are enabled.' },
-          pushable: { type: 'boolean', description: 'Whether the opt-in snapshot-ingest endpoint is enabled.' },
+          pushable: {
+            type: 'boolean',
+            description: 'Whether the opt-in snapshot-ingest endpoint is enabled.',
+          },
           endpoints: { type: 'array', items: { type: 'string' } },
         },
       },

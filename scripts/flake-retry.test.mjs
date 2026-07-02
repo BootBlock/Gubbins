@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  COLD_START_FLAKE_SIGNATURE,
-  isColdStartFlake,
-  runWithRetry,
-} from './flake-retry.mjs';
+import { COLD_START_FLAKE_SIGNATURE, isColdStartFlake, runWithRetry } from './flake-retry.mjs';
 
 /** Build a fake `runOnce` that returns the supplied results in sequence. */
 function sequenceRunner(results) {
@@ -35,9 +31,7 @@ describe('isColdStartFlake', () => {
 
   it('never retries a clean (exit 0) run, even if the string somehow appears', () => {
     // Defensive: a passing run is authoritative and must never be re-run.
-    expect(
-      isColdStartFlake({ exitCode: 0, output: COLD_START_FLAKE_SIGNATURE }),
-    ).toBe(false);
+    expect(isColdStartFlake({ exitCode: 0, output: COLD_START_FLAKE_SIGNATURE })).toBe(false);
   });
 
   it('does NOT retry a genuine test failure (no fingerprint)', () => {
@@ -66,9 +60,7 @@ describe('isColdStartFlake', () => {
   });
 
   it('exposes the exact fingerprint string', () => {
-    expect(COLD_START_FLAKE_SIGNATURE).toBe(
-      "Cannot read properties of undefined (reading 'config')",
-    );
+    expect(COLD_START_FLAKE_SIGNATURE).toBe("Cannot read properties of undefined (reading 'config')");
   });
 });
 

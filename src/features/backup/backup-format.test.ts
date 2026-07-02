@@ -114,7 +114,12 @@ describe('buildManifest', () => {
     expect(manifest.kind).toBe('gubbins-backup');
     expect(manifest.appVersion).toBe('9.9.9');
     expect(manifest.createdAt).toBe(42);
-    expect(manifest.contents).toMatchObject({ rawSqlite: true, images: true, settings: false, history: false });
+    expect(manifest.contents).toMatchObject({
+      rawSqlite: true,
+      images: true,
+      settings: false,
+      history: false,
+    });
     expect(manifest.counts).toEqual({ items: 4, images: 3 });
   });
 });

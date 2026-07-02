@@ -18,12 +18,7 @@ import { z } from 'zod';
 import { parseCsv } from '../projects/bom-import';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
-import type {
-  CategoryField,
-  CreateItemInput,
-  UpdateItemInput,
-  Item,
-} from '@/db/repositories/types';
+import type { CategoryField, CreateItemInput, UpdateItemInput, Item } from '@/db/repositories/types';
 
 // Re-export so callers import from one place.
 export { parseCsv };
@@ -231,7 +226,11 @@ const catalogRowSchema = z.object({
   description: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   sku: z.string().trim().optional().nullable(),
-  quantity: z.number().int('Quantity must be a whole number.').min(0, 'Quantity cannot be negative.').optional(),
+  quantity: z
+    .number()
+    .int('Quantity must be a whole number.')
+    .min(0, 'Quantity cannot be negative.')
+    .optional(),
   locationId: z.string().trim().optional(),
   categoryId: z.string().trim().optional().nullable(),
   trackingMode: trackingModeSchema,
@@ -454,9 +453,7 @@ function resolveCustomFieldValues(
  * custom-field column was mapped, so existing entries (and their tests) keep their
  * exact shape when no custom fields are in play.
  */
-function withFieldValues(
-  values: Record<string, string | null>,
-): { fieldValues?: CustomFieldValues } {
+function withFieldValues(values: Record<string, string | null>): { fieldValues?: CustomFieldValues } {
   return Object.keys(values).length > 0 ? { fieldValues: values } : {};
 }
 
@@ -587,9 +584,7 @@ export function buildImportPlanFromRows(
 
     // Determine the match-key value for this row.
     const matchValue: string | null | undefined =
-      matchKey === 'name'
-        ? data.name
-        : (data.sku ?? data.mpn ?? null);
+      matchKey === 'name' ? data.name : (data.sku ?? data.mpn ?? null);
 
     if (!matchValue) {
       // No match-key value: we can only create if a name is present.
@@ -665,10 +660,7 @@ export interface CatalogItemRepository {
  * re-validates and enforces that each field belongs to the item's current category.
  */
 export interface CatalogCategoryRepository {
-  setItemFieldValues(
-    itemId: string,
-    values: Readonly<Record<string, string | null>>,
-  ): Promise<void>;
+  setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void>;
 }
 
 /** Outcome of a single applied row. */
@@ -723,7 +715,11 @@ export async function applyCatalogImportPlan(
     try {
       const created = await repo.create(entry.input);
       const fieldError = await applyFieldValues(categories, created.id, entry.fieldValues);
-      rows.push({ sourceRow: entry.sourceRow, kind: 'created', ...(fieldError ? { error: fieldError } : {}) });
+      rows.push({
+        sourceRow: entry.sourceRow,
+        kind: 'created',
+        ...(fieldError ? { error: fieldError } : {}),
+      });
     } catch (err) {
       rows.push({
         sourceRow: entry.sourceRow,
@@ -737,7 +733,11 @@ export async function applyCatalogImportPlan(
     try {
       await repo.update(entry.itemId, entry.input);
       const fieldError = await applyFieldValues(categories, entry.itemId, entry.fieldValues);
-      rows.push({ sourceRow: entry.sourceRow, kind: 'updated', ...(fieldError ? { error: fieldError } : {}) });
+      rows.push({
+        sourceRow: entry.sourceRow,
+        kind: 'updated',
+        ...(fieldError ? { error: fieldError } : {}),
+      });
     } catch (err) {
       rows.push({
         sourceRow: entry.sourceRow,

@@ -73,10 +73,9 @@ export class PurchaseOrderRepository extends BaseRepository {
   // --- purchase orders ---------------------------------------------------------
 
   async getById(id: string): Promise<PurchaseOrder | undefined> {
-    const row = await this.driver.queryOne<PurchaseOrderRow>(
-      'SELECT * FROM purchase_orders WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<PurchaseOrderRow>('SELECT * FROM purchase_orders WHERE id = ?;', [
+      id,
+    ]);
     return row ? rowToPurchaseOrder(row) : undefined;
   }
 
@@ -93,10 +92,9 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   /** A purchase order with its lines and effective status, or undefined. */
   async getWithLines(id: string): Promise<PurchaseOrderWithLines | undefined> {
-    const row = await this.driver.queryOne<PurchaseOrderRow>(
-      'SELECT * FROM purchase_orders WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<PurchaseOrderRow>('SELECT * FROM purchase_orders WHERE id = ?;', [
+      id,
+    ]);
     return row ? this.attachLines(row) : undefined;
   }
 
@@ -254,10 +252,7 @@ export class PurchaseOrderRepository extends BaseRepository {
     }
     if (sets.length > 0) {
       params.push(lineId);
-      await this.driver.execute(
-        `UPDATE purchase_order_lines SET ${sets.join(', ')} WHERE id = ?;`,
-        params,
-      );
+      await this.driver.execute(`UPDATE purchase_order_lines SET ${sets.join(', ')} WHERE id = ?;`, params);
     }
     return (await this.getLine(lineId))!;
   }
@@ -314,9 +309,7 @@ export class PurchaseOrderRepository extends BaseRepository {
         // With no batch given they fall into the placement's untracked default batch.
         const batchKey = opts.batch ? batchKeyOf(opts.batch) : '';
         const batchNote =
-          batchKey !== ''
-            ? ` [batch ${opts.batch!.batchNumber ?? opts.batch!.lotNumber ?? '—'}]`
-            : '';
+          batchKey !== '' ? ` [batch ${opts.batch!.batchNumber ?? opts.batch!.lotNumber ?? '—'}]` : '';
         statements.push(
           opts.batch
             ? addBatchStatement(line.itemId, targetLocation, opts.batch, qty)
@@ -328,8 +321,7 @@ export class PurchaseOrderRepository extends BaseRepository {
             note: plan.fullyReceived
               ? `Received ${qty} from a purchase order (now ${nextQty})${batchNote}.`
               : `Received ${qty} of ${line.orderedQty} from a purchase order (now ${nextQty}; ${plan.outstandingQty} still arriving)${batchNote}.`,
-            metadata:
-              targetLocation !== item.location_id ? { toLocationId: targetLocation } : undefined,
+            metadata: targetLocation !== item.location_id ? { toLocationId: targetLocation } : undefined,
           }),
         );
       }
@@ -382,9 +374,7 @@ export class PurchaseOrderRepository extends BaseRepository {
    * Status is left at DRAFT (`derivePoStatus` is authoritative — the caller must
    * explicitly set ORDERED when the orders have been sent).
    */
-  async createDraftFromReorderPlan(
-    groups: readonly ReorderPlanGroup[],
-  ): Promise<PurchaseOrderWithLines[]> {
+  async createDraftFromReorderPlan(groups: readonly ReorderPlanGroup[]): Promise<PurchaseOrderWithLines[]> {
     this.assertWritable();
     const created: PurchaseOrderWithLines[] = [];
 

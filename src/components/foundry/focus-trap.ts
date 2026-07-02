@@ -28,11 +28,7 @@ export const FOCUSABLE_SELECTOR = [
  * Returns `null` when there is nothing focusable, in which case the caller keeps
  * focus parked on the dialog container itself.
  */
-export function nextTrapIndex(
-  count: number,
-  currentIndex: number,
-  backwards: boolean,
-): number | null {
+export function nextTrapIndex(count: number, currentIndex: number, backwards: boolean): number | null {
   if (count <= 0) return null;
   if (backwards) {
     return currentIndex <= 0 ? count - 1 : currentIndex - 1;

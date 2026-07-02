@@ -117,9 +117,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       // makes the dispatch below idempotent under React StrictMode's double-invocation.)
       if (exitTimers.current.has(id)) return;
 
-      setToasts((current) =>
-        current.map((t) => (t.id === id && !t.exiting ? { ...t, exiting: true } : t)),
-      );
+      setToasts((current) => current.map((t) => (t.id === id && !t.exiting ? { ...t, exiting: true } : t)));
 
       exitTimers.current.set(
         id,

@@ -56,7 +56,10 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
 
   return (
     <div className="inline-flex items-center gap-1.5">
-      <Tooltip content="Remove one from stock. The change is saved instantly and logged." triggerTabIndex={-1}>
+      <Tooltip
+        content="Remove one from stock. The change is saved instantly and logged."
+        triggerTabIndex={-1}
+      >
         <span>
           <Button
             variant="outline"
@@ -87,7 +90,10 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
           className="h-8 w-16 rounded-md border border-border bg-input/40 px-2 text-center text-sm font-semibold tabular-nums text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
         />
       ) : (
-        <Tooltip content="Click to type an exact quantity. The change is saved instantly and logged." triggerTabIndex={-1}>
+        <Tooltip
+          content="Click to type an exact quantity. The change is saved instantly and logged."
+          triggerTabIndex={-1}
+        >
           <button
             type="button"
             onClick={startEdit}

@@ -137,11 +137,7 @@ function CategoryRow({
           <DeleteIcon />
         </Button>
       </div>
-      <BudgetMeter
-        className="mt-2"
-        fraction={summary.spentFraction}
-        status={summary.status}
-      />
+      <BudgetMeter className="mt-2" fraction={summary.spentFraction} status={summary.status} />
     </li>
   );
 }

@@ -64,8 +64,16 @@ describe('asset_bookings sync round-trip (§7.3)', () => {
 
   it('reconciles a cancellation (LWW) and a deletion (tombstone) to the peer', async () => {
     const [asset] = await a.items.createSerialised({ name: 'Plotter', trackingMode: 'SERIALISED' });
-    const keep = await a.bookings.create({ itemId: asset!.id, startDate: Date.now() + DAY, endDate: Date.now() + 2 * DAY });
-    const drop = await a.bookings.create({ itemId: asset!.id, startDate: Date.now() + 4 * DAY, endDate: Date.now() + 5 * DAY });
+    const keep = await a.bookings.create({
+      itemId: asset!.id,
+      startDate: Date.now() + DAY,
+      endDate: Date.now() + 2 * DAY,
+    });
+    const drop = await a.bookings.create({
+      itemId: asset!.id,
+      startDate: Date.now() + 4 * DAY,
+      endDate: Date.now() + 5 * DAY,
+    });
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
     expect(await b.bookings.getById(keep.id)).toBeDefined();

@@ -75,15 +75,36 @@ export function GaugeAdjustDialog({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Update ${item.name}`} description="Record usage or recalibrate against a scale.">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Update ${item.name}`}
+      description="Record usage or recalibrate against a scale."
+    >
       <div className="mb-4">
         <GaugeBar gauge={gauge} />
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-2">
-        <ModeButton active={mode === 'consume'} onClick={() => setMode('consume')} title="Consumption" subtitle="I know how much I used" />
-        <ModeButton active={mode === 'weighin'} onClick={() => setMode('weighin')} title="Weigh-In" subtitle="Read total off a scale" />
-        <ModeButton active={mode === 'refill'} onClick={() => setMode('refill')} title="Refill" subtitle="Topped up / fresh unit" testid="gauge-mode-refill" />
+        <ModeButton
+          active={mode === 'consume'}
+          onClick={() => setMode('consume')}
+          title="Consumption"
+          subtitle="I know how much I used"
+        />
+        <ModeButton
+          active={mode === 'weighin'}
+          onClick={() => setMode('weighin')}
+          title="Weigh-In"
+          subtitle="Read total off a scale"
+        />
+        <ModeButton
+          active={mode === 'refill'}
+          onClick={() => setMode('refill')}
+          title="Refill"
+          subtitle="Topped up / fresh unit"
+          testid="gauge-mode-refill"
+        />
       </div>
 
       <label className="block text-sm font-medium" htmlFor="gauge-value">
@@ -114,7 +135,8 @@ export function GaugeAdjustDialog({
           onClick={() => setValue(String(refillToFullAmount(gauge.currentNetValue, gauge.grossCapacity)))}
           className="mt-2 text-xs font-medium text-primary hover:underline"
         >
-          Fill to full ({fmt.measure(refillToFullAmount(gauge.currentNetValue, gauge.grossCapacity), gauge.unitOfMeasure)})
+          Fill to full (
+          {fmt.measure(refillToFullAmount(gauge.currentNetValue, gauge.grossCapacity), gauge.unitOfMeasure)})
         </button>
       ) : null}
 
@@ -143,7 +165,11 @@ export function GaugeAdjustDialog({
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button data-testid="gauge-apply" onClick={submit} disabled={!valid || delta === 0 || adjust.isPending}>
+        <Button
+          data-testid="gauge-apply"
+          onClick={submit}
+          disabled={!valid || delta === 0 || adjust.isPending}
+        >
           Apply update
         </Button>
       </div>

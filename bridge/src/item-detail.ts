@@ -16,10 +16,7 @@ import { toCapability, toItemSummary, type ItemDetailDto } from './api/dto.ts';
  * stable {@link ItemDetailDto}. Returns `null` when no item has that id (the caller decides
  * how to surface "not found" for its transport).
  */
-export async function loadItemDetail(
-  driver: IDatabaseDriver,
-  id: string,
-): Promise<ItemDetailDto | null> {
+export async function loadItemDetail(driver: IDatabaseDriver, id: string): Promise<ItemDetailDto | null> {
   const items = new ItemRepository(driver);
   const item = await items.getById(id);
   if (item === undefined) return null;

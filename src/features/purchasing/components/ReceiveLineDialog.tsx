@@ -17,11 +17,7 @@ export interface ReceiveLineDialogProps {
   /** Selectable destination locations (value = id). Empty value = the item's primary home. */
   readonly locationOptions: readonly LocationOption[];
   readonly isSaving: boolean;
-  readonly onSubmit: (input: {
-    quantity?: number;
-    locationId?: string;
-    batch?: BatchIdentity;
-  }) => void;
+  readonly onSubmit: (input: { quantity?: number; locationId?: string; batch?: BatchIdentity }) => void;
   readonly onClose: () => void;
 }
 
@@ -57,9 +53,7 @@ export function ReceiveLineDialog({
     const bn = optionalText(batchNumber);
     const ln = optionalText(lotNumber);
     const batch: BatchIdentity | undefined =
-      bn !== null || ln !== null
-        ? { batchNumber: bn, lotNumber: ln, expiryDate: null }
-        : undefined;
+      bn !== null || ln !== null ? { batchNumber: bn, lotNumber: ln, expiryDate: null } : undefined;
     onSubmit({
       quantity: qty,
       locationId: locationId.length === 0 ? undefined : locationId,
@@ -75,7 +69,10 @@ export function ReceiveLineDialog({
       description={`${outstanding} of ${line.orderedQty} still to arrive. Receiving lands the units in your inventory.`}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-receive-form">
-        <FormField label="Quantity to receive" hint="Defaults to the whole outstanding remainder; a partial receipt is fine.">
+        <FormField
+          label="Quantity to receive"
+          hint="Defaults to the whole outstanding remainder; a partial receipt is fine."
+        >
           <Input
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}

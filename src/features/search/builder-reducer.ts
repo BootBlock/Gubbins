@@ -34,10 +34,7 @@ export function defaultCondition(): FilterCondition {
 
 /** Count the leaf conditions in a tree — used to tell whether a search is "active". */
 export function countConditions(node: ASTGroupNode): number {
-  return node.conditions.reduce(
-    (sum, child) => sum + (isGroupNode(child) ? countConditions(child) : 1),
-    0,
-  );
+  return node.conditions.reduce((sum, child) => sum + (isGroupNode(child) ? countConditions(child) : 1), 0);
 }
 
 /** Can a *new* group be nested inside the group at `path` without breaching the cap? */

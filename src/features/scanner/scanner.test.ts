@@ -7,12 +7,7 @@ import {
   parseScannedItemId,
 } from './scan-payload';
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
-import {
-  initialScannerState,
-  scannerReducer,
-  isStreaming,
-  type ScannerState,
-} from './scanner-machine';
+import { initialScannerState, scannerReducer, isStreaming, type ScannerState } from './scanner-machine';
 import { dueDateFromDays, daysUntil, dueStatus, isOverdue, MS_PER_DAY } from './due-date';
 import { encodeQr, qrSvg, QrError } from './qr-code';
 import { emptyQueue, queueReducer } from './queue-reducer';

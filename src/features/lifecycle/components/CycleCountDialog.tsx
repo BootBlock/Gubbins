@@ -220,7 +220,11 @@ function CycleCountBody({
                             : 'w-16 text-right text-xs font-semibold text-warning'
                       }
                     >
-                      {variance === null ? '—' : variance === 0 ? 'OK' : `${variance > 0 ? '+' : ''}${variance}`}
+                      {variance === null
+                        ? '—'
+                        : variance === 0
+                          ? 'OK'
+                          : `${variance > 0 ? '+' : ''}${variance}`}
                     </span>
                   </li>
                 );

@@ -2,11 +2,7 @@
  * Test-only builders for the Visual-Search AST (spec §5.1). Keeps the verbose
  * `{ type: 'GROUP', logicalOperator, conditions }` shape out of test bodies.
  */
-import type {
-  ASTGroupNode,
-  FilterCondition,
-  FilterOperator,
-} from '@/db/search/ast';
+import type { ASTGroupNode, FilterCondition, FilterOperator } from '@/db/search/ast';
 
 export function and(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode {
   return { type: 'GROUP', logicalOperator: 'AND', conditions };

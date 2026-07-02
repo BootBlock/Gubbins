@@ -15,8 +15,11 @@ describe('parseHttpDate', () => {
 
 describe('httpTimeSource (§7.3 fallback)', () => {
   function fetchReturning(dateHeader: string | null): typeof fetch {
-    return vi.fn(async () =>
-      ({ headers: { get: (k: string) => (k.toLowerCase() === 'date' ? dateHeader : null) } }) as unknown as Response,
+    return vi.fn(
+      async () =>
+        ({
+          headers: { get: (k: string) => (k.toLowerCase() === 'date' ? dateHeader : null) },
+        }) as unknown as Response,
     ) as unknown as typeof fetch;
   }
 
@@ -32,9 +35,9 @@ describe('httpTimeSource (§7.3 fallback)', () => {
   });
 
   it('degrades to null when the fetch throws (offline / CORS)', async () => {
-    const fetchImpl = (vi.fn(async () => {
+    const fetchImpl = vi.fn(async () => {
       throw new Error('network');
-    }) as unknown) as typeof fetch;
+    }) as unknown as typeof fetch;
     await expect(httpTimeSource({ url: 'https://x/', fetchImpl })).resolves.toBeNull();
   });
 });

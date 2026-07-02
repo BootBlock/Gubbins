@@ -83,19 +83,28 @@ export function LocationSidebar({
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-2">
       <div className="flex items-center justify-between px-1">
-        <h2 id="locations-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2
+          id="locations-heading"
+          className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Locations
         </h2>
         <Tooltip content="Create a new location. Locations can be nested to any depth." triggerTabIndex={-1}>
           <span>
-            <Button variant="ghost" size="icon" className="size-7" aria-label="Add location" onClick={() => setAddOpen(true)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              aria-label="Add location"
+              onClick={() => setAddOpen(true)}
+            >
               <AddIcon className="text-glyph-success" />
             </Button>
           </span>
         </Tooltip>
       </div>
 
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- APG tree: a single keydown handler on the role="tree" container drives roving-tabindex navigation. */}
+      {/* APG tree: a single keydown handler on the role="tree" container drives roving-tabindex navigation. */}
       <div role="tree" aria-labelledby="locations-heading" className="space-y-0.5" onKeyDown={onKeyDown}>
         <LocationTreeItem
           id={ALL_ITEMS_ID}
@@ -162,18 +171,12 @@ export function LocationSidebar({
           confirmDelete
             ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} item${
                 confirmDelete.itemCount === 1 ? '' : 's'
-              }. Deleting it will move ${
-                confirmDelete.itemCount === 1 ? 'it' : 'them'
-              } to Unassigned.`
+              }. Deleting it will move ${confirmDelete.itemCount === 1 ? 'it' : 'them'} to Unassigned.`
             : undefined
         }
       >
         <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            onClick={() => setConfirmDelete(null)}
-            disabled={deleteLocation.isPending}
-          >
+          <Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteLocation.isPending}>
             Cancel
           </Button>
           <Button
@@ -227,9 +230,7 @@ export function LocationSidebar({
           }
           archiveLabel={`Archive ${node.name}`}
           onRestore={
-            node.archivedAt != null
-              ? () => archive.mutate({ id: node.id, archived: false })
-              : undefined
+            node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
           }
           restoreLabel={`Restore ${node.name}`}
           onDelete={node.isSystem ? undefined : () => requestDelete(node.id, node.name, node.itemCount)}

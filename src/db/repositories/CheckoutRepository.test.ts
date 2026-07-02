@@ -63,9 +63,7 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       expect(item?.quantity).toBe(7);
 
       const history = await items.getHistory(itemId);
-      expect(history.rows.some((h) => h.action === 'CHECKED_OUT' && h.quantityDelta === -3)).toBe(
-        true,
-      );
+      expect(history.rows.some((h) => h.action === 'CHECKED_OUT' && h.quantityDelta === -3)).toBe(true);
     });
 
     it('auto-creates the contact from a typed name', async () => {
@@ -77,9 +75,9 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
 
     it('refuses to over-borrow', async () => {
       const itemId = await makeItem('Last one', 1);
-      await expect(
-        checkouts.checkout({ itemId, contactName: 'Bob', quantity: 2 }),
-      ).rejects.toBeInstanceOf(DbError);
+      await expect(checkouts.checkout({ itemId, contactName: 'Bob', quantity: 2 })).rejects.toBeInstanceOf(
+        DbError,
+      );
     });
 
     it('refuses to borrow a consumable-gauge item', async () => {
@@ -88,9 +86,9 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
         trackingMode: 'CONSUMABLE_GAUGE',
         gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 200 },
       });
-      await expect(
-        checkouts.checkout({ itemId: gauge.id, contactName: 'Bob' }),
-      ).rejects.toBeInstanceOf(DbError);
+      await expect(checkouts.checkout({ itemId: gauge.id, contactName: 'Bob' })).rejects.toBeInstanceOf(
+        DbError,
+      );
     });
 
     it('lends a serialised item as one whole unit without breaking its quantity pin', async () => {
@@ -100,9 +98,9 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       // SERIALISED quantity is CHECK-pinned to 1; the loan does not decrement it.
       expect((await items.getById(serial.id))?.quantity).toBe(1);
       // ...but it cannot be borrowed twice while still out.
-      await expect(
-        checkouts.checkout({ itemId: serial.id, contactName: 'Carol' }),
-      ).rejects.toBeInstanceOf(DbError);
+      await expect(checkouts.checkout({ itemId: serial.id, contactName: 'Carol' })).rejects.toBeInstanceOf(
+        DbError,
+      );
     });
 
     it('lets a returned serialised item be borrowed again', async () => {

@@ -103,9 +103,9 @@ describe('ProjectRepository budgeting (spec §4)', () => {
   it('rejects a blank category name and a negative amount', async () => {
     const p = await projects.create({ name: 'Build' });
     await expect(projects.addBudgetCategory(p.id, { name: '  ' })).rejects.toBeInstanceOf(DbError);
-    await expect(
-      projects.addBudgetCategory(p.id, { name: 'Bad', amount: -1 }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(projects.addBudgetCategory(p.id, { name: 'Bad', amount: -1 })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('un-categorises (keeps) expenses when their category is removed', async () => {
@@ -153,9 +153,9 @@ describe('ProjectRepository budgeting (spec §4)', () => {
     const p1 = await projects.create({ name: 'One' });
     const p2 = await projects.create({ name: 'Two' });
     const foreign = await projects.addBudgetCategory(p2.id, { name: 'Parts', amount: 10 });
-    await expect(
-      projects.addExpense(p1.id, { amount: 5, categoryId: foreign.id }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(projects.addExpense(p1.id, { amount: 5, categoryId: foreign.id })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('cascades categories and expenses when the project is deleted', async () => {
@@ -165,9 +165,7 @@ describe('ProjectRepository budgeting (spec §4)', () => {
 
     await projects.delete(p.id);
 
-    const cats = await driver.query('SELECT id FROM project_budget_categories WHERE project_id = ?;', [
-      p.id,
-    ]);
+    const cats = await driver.query('SELECT id FROM project_budget_categories WHERE project_id = ?;', [p.id]);
     const exps = await driver.query('SELECT id FROM project_expenses WHERE project_id = ?;', [p.id]);
     expect(cats).toHaveLength(0);
     expect(exps).toHaveLength(0);

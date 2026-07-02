@@ -74,9 +74,7 @@ describe('loadConfig (HA-3)', () => {
   });
 
   it('rejects a non-boolean mDNS flag', () => {
-    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_MDNS: 'maybe' })).toThrow(
-      /GUBBINS_BRIDGE_MDNS/,
-    );
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_MDNS: 'maybe' })).toThrow(/GUBBINS_BRIDGE_MDNS/);
   });
 
   it('honours an explicit host and port', () => {
@@ -102,9 +100,7 @@ describe('loadConfig (HA-3)', () => {
   });
 
   it('rejects an out-of-range port', () => {
-    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_PORT: '70000' })).toThrow(
-      /GUBBINS_BRIDGE_PORT/,
-    );
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_PORT: '70000' })).toThrow(/GUBBINS_BRIDGE_PORT/);
   });
 
   it('honours explicit rate-limit values', () => {

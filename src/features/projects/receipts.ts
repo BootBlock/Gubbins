@@ -31,14 +31,9 @@ export interface ReceiptPlan {
  * - The line is `fullyReceived` only once cumulative receipts reach the requirement;
  *   until then it stays open for further instalments.
  */
-export function planReceipt(
-  requiredQty: number,
-  receivedQty: number,
-  requestedQty?: number,
-): ReceiptPlan {
+export function planReceipt(requiredQty: number, receivedQty: number, requestedQty?: number): ReceiptPlan {
   const remaining = Math.max(0, requiredQty - receivedQty);
-  const requested =
-    requestedQty === undefined ? remaining : Math.max(0, Math.floor(requestedQty));
+  const requested = requestedQty === undefined ? remaining : Math.max(0, Math.floor(requestedQty));
   const receivedDelta = Math.min(requested, remaining);
   const nextReceivedQty = receivedQty + receivedDelta;
   return {
@@ -50,9 +45,6 @@ export function planReceipt(
 }
 
 /** The still-incoming quantity of a line — its requirement less what has arrived. */
-export function outstandingQty(line: {
-  readonly requiredQty: number;
-  readonly receivedQty: number;
-}): number {
+export function outstandingQty(line: { readonly requiredQty: number; readonly receivedQty: number }): number {
   return Math.max(0, line.requiredQty - line.receivedQty);
 }

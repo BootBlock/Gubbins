@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  bridgeReducer,
-  initialBridgeState,
-  pendingScrapeCount,
-  type BridgeState,
-} from './bridge-reducer';
+import { bridgeReducer, initialBridgeState, pendingScrapeCount, type BridgeState } from './bridge-reducer';
 import type { ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
 
 const result: ScrapeResultPayload = {

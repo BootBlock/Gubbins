@@ -66,7 +66,6 @@ export {
   ShoppingBag as LocationBagIcon,
   Car as LocationVehicleIcon,
   MapPin as LocationOtherIcon,
-
   Gauge as GaugeIcon,
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,

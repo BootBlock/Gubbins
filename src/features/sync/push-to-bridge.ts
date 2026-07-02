@@ -115,7 +115,10 @@ export async function pushSnapshotToBridge(options: {
     payload = await response.json().catch(() => undefined);
   } catch {
     // Network error, CORS, or the bridge is offline — never expose the raw error/token.
-    return { ok: false, message: `Could not reach the bridge at ${request.url}. Check it is running and the URL is correct.` };
+    return {
+      ok: false,
+      message: `Could not reach the bridge at ${request.url}. Check it is running and the URL is correct.`,
+    };
   }
 
   return mapPushResponse(status, payload, request.url);
@@ -137,7 +140,10 @@ export function mapPushResponse(status: number, payload: unknown, url: string): 
   const bridgeMessage = readErrorMessage(payload);
   switch (status) {
     case 401:
-      return { ok: false, message: 'The bridge rejected the access token. Check it matches GUBBINS_BRIDGE_TOKEN.' };
+      return {
+        ok: false,
+        message: 'The bridge rejected the access token. Check it matches GUBBINS_BRIDGE_TOKEN.',
+      };
     case 404:
       return {
         ok: false,
@@ -145,13 +151,26 @@ export function mapPushResponse(status: number, payload: unknown, url: string): 
           'This bridge does not accept pushes. Enable it with GUBBINS_BRIDGE_ALLOW_PUSH=on (a JSON snapshot source is required), then try again.',
       };
     case 413:
-      return { ok: false, message: bridgeMessage ?? 'The snapshot is larger than the bridge allows. Raise GUBBINS_BRIDGE_MAX_PUSH_BYTES on the bridge.' };
+      return {
+        ok: false,
+        message:
+          bridgeMessage ??
+          'The snapshot is larger than the bridge allows. Raise GUBBINS_BRIDGE_MAX_PUSH_BYTES on the bridge.',
+      };
     case 422:
-      return { ok: false, message: bridgeMessage ?? 'The bridge could not accept this snapshot. It may be running an older Gubbins build.' };
+      return {
+        ok: false,
+        message:
+          bridgeMessage ??
+          'The bridge could not accept this snapshot. It may be running an older Gubbins build.',
+      };
     case 429:
       return { ok: false, message: 'The bridge is rate-limiting requests. Wait a moment and try again.' };
     default:
-      return { ok: false, message: bridgeMessage ?? `The bridge returned an unexpected error (HTTP ${status}) from ${url}.` };
+      return {
+        ok: false,
+        message: bridgeMessage ?? `The bridge returned an unexpected error (HTTP ${status}) from ${url}.`,
+      };
   }
 }
 

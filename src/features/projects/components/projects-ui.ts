@@ -3,12 +3,7 @@
  * Kept separate from the constants so the repository/migration layer stays free of
  * UI strings.
  */
-import type {
-  CostingMode,
-  ProcurementStatus,
-  ProjectStatus,
-  ReservationStatus,
-} from '@/db/repositories';
+import type { CostingMode, ProcurementStatus, ProjectStatus, ReservationStatus } from '@/db/repositories';
 import type { BudgetStatus } from '../budget';
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {

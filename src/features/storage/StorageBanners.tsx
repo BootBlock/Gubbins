@@ -83,13 +83,19 @@ export function StorageBanners() {
         icon={<DownloadIcon />}
         heading="Time for a weekly backup"
         action={
-          <Button size="sm" variant="outline" onClick={() => void archiveNow()} disabled={archiving} data-testid="run-archive">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void archiveNow()}
+            disabled={archiving}
+            data-testid="run-archive"
+          >
             {archiving ? 'Preparing…' : 'Download archive'}
           </Button>
         }
       >
-        Without Cloud Sync, download a full archive (database + images) so a browser clear-out
-        can&apos;t lose your inventory.
+        Without Cloud Sync, download a full archive (database + images) so a browser clear-out can&apos;t lose
+        your inventory.
       </Banner>,
     );
   }
@@ -135,16 +141,30 @@ export function StorageBanners() {
 
   if (tier === 'locked') {
     banners.push(
-      <Banner key="locked" tone="danger" role="alert" icon={<CriticalIcon />} heading="Storage full — saving paused" action={manageStorage}>
-        Gubbins has paused all writes to protect your data ({usage} of {quota}, {percent}). Reclaim space
-        to continue.
+      <Banner
+        key="locked"
+        tone="danger"
+        role="alert"
+        icon={<CriticalIcon />}
+        heading="Storage full — saving paused"
+        action={manageStorage}
+      >
+        Gubbins has paused all writes to protect your data ({usage} of {quota}, {percent}). Reclaim space to
+        continue.
       </Banner>,
     );
   } else if (tier === 'critical') {
     banners.push(
-      <Banner key="critical" tone="danger" role="alert" icon={<CriticalIcon />} heading="Storage critically full" action={manageStorage}>
-        {percent} of your local storage is used. New high-resolution image uploads are disabled until you
-        free space.
+      <Banner
+        key="critical"
+        tone="danger"
+        role="alert"
+        icon={<CriticalIcon />}
+        heading="Storage critically full"
+        action={manageStorage}
+      >
+        {percent} of your local storage is used. New high-resolution image uploads are disabled until you free
+        space.
       </Banner>,
     );
   } else if (tier === 'warning' && !warningDismissed) {

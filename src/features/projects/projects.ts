@@ -123,10 +123,7 @@ export function useBudgetAlerts() {
 // --- write helpers -------------------------------------------------------------
 
 /** Invalidate every derived view of a single project (lines, costing, shopping, budget). */
-function invalidateProject(
-  client: ReturnType<typeof useQueryClient>,
-  projectId: string,
-): void {
+function invalidateProject(client: ReturnType<typeof useQueryClient>, projectId: string): void {
   void client.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
   void client.invalidateQueries({ queryKey: projectKeys.list() });
   // Budget figures feed the cross-project dashboard alerts feed too.
@@ -266,15 +263,8 @@ export function useRemoveBomLine(projectId: string) {
 export function useSetReservation(projectId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      lineId,
-      status,
-      qty,
-    }: {
-      lineId: string;
-      status: ReservationStatus;
-      qty?: number;
-    }) => getProjectRepository().setReservation(lineId, status, qty),
+    mutationFn: ({ lineId, status, qty }: { lineId: string; status: ReservationStatus; qty?: number }) =>
+      getProjectRepository().setReservation(lineId, status, qty),
     onSettled: (_data, _err, vars) => {
       invalidateProject(client, projectId);
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
@@ -365,8 +355,7 @@ export function useImportBom(projectId: string) {
 export function useFinaliseAssembly(projectId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: FinaliseAssemblyInput) =>
-      getProjectRepository().finaliseAssembly(projectId, input),
+    mutationFn: (input: FinaliseAssemblyInput) => getProjectRepository().finaliseAssembly(projectId, input),
     onSettled: () => {
       invalidateProject(client, projectId);
       // Assembly creates/moves/consumes items and may create a location.

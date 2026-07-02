@@ -37,8 +37,7 @@ export async function resolve(specifier, context, nextResolve) {
   } catch (err) {
     // Bundler-mode extensionless import: retry with each known suffix. Only attempt
     // this for file/relative specifiers so we never shadow a genuine bare-package miss.
-    const relativeOrFile =
-      spec.startsWith('file:') || spec.startsWith('./') || spec.startsWith('../');
+    const relativeOrFile = spec.startsWith('file:') || spec.startsWith('./') || spec.startsWith('../');
     if (relativeOrFile) {
       for (const suffix of SUFFIXES) {
         try {

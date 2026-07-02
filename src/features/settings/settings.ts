@@ -53,16 +53,37 @@ export const CURRENCY_OPTIONS = [
  * locked {@link DEFAULT_CURRENCY}. Eurozone members all map to `EUR`.
  */
 const REGION_CURRENCY: Readonly<Record<string, string>> = {
-  GB: 'GBP', IM: 'GBP', JE: 'GBP', GG: 'GBP',
+  GB: 'GBP',
+  IM: 'GBP',
+  JE: 'GBP',
+  GG: 'GBP',
   US: 'USD',
   // Eurozone members.
-  AT: 'EUR', BE: 'EUR', CY: 'EUR', DE: 'EUR', EE: 'EUR', ES: 'EUR', FI: 'EUR',
-  FR: 'EUR', GR: 'EUR', IE: 'EUR', IT: 'EUR', LT: 'EUR', LU: 'EUR', LV: 'EUR',
-  MT: 'EUR', NL: 'EUR', PT: 'EUR', SI: 'EUR', SK: 'EUR', HR: 'EUR',
+  AT: 'EUR',
+  BE: 'EUR',
+  CY: 'EUR',
+  DE: 'EUR',
+  EE: 'EUR',
+  ES: 'EUR',
+  FI: 'EUR',
+  FR: 'EUR',
+  GR: 'EUR',
+  IE: 'EUR',
+  IT: 'EUR',
+  LT: 'EUR',
+  LU: 'EUR',
+  LV: 'EUR',
+  MT: 'EUR',
+  NL: 'EUR',
+  PT: 'EUR',
+  SI: 'EUR',
+  SK: 'EUR',
+  HR: 'EUR',
   AU: 'AUD',
   CA: 'CAD',
   JP: 'JPY',
-  CH: 'CHF', LI: 'CHF',
+  CH: 'CHF',
+  LI: 'CHF',
   CN: 'CNY',
   IN: 'INR',
   NZ: 'NZD',
@@ -106,9 +127,7 @@ function readNavigatorLocales(): readonly string[] {
  * taking the first match; anything unknown falls back to the locked
  * {@link DEFAULT_CURRENCY} (GBP). Never throws.
  */
-export function guessBaseCurrency(
-  locales: readonly string[] = readNavigatorLocales(),
-): string {
+export function guessBaseCurrency(locales: readonly string[] = readNavigatorLocales()): string {
   for (const locale of locales) {
     const region = regionOf(locale);
     const currency = region ? REGION_CURRENCY[region] : undefined;
@@ -166,10 +185,7 @@ export function clampLowStockQty(value: number): number {
  */
 export function clampLowStockGaugePercent(value: number): number {
   if (!Number.isFinite(value)) return LOW_STOCK_GAUGE_PERCENT;
-  return Math.min(
-    LOW_STOCK_GAUGE_BOUNDS.max,
-    Math.max(LOW_STOCK_GAUGE_BOUNDS.min, Math.round(value)),
-  );
+  return Math.min(LOW_STOCK_GAUGE_BOUNDS.max, Math.max(LOW_STOCK_GAUGE_BOUNDS.min, Math.round(value)));
 }
 
 /**
@@ -200,7 +216,5 @@ export const DEFAULT_WINDOW_MONTHS = 6;
 
 /** Coerce an arbitrary value to one of {@link WINDOW_MONTH_OPTIONS} (default 6). */
 export function normaliseWindowMonths(value: number): number {
-  return (WINDOW_MONTH_OPTIONS as readonly number[]).includes(value)
-    ? value
-    : DEFAULT_WINDOW_MONTHS;
+  return (WINDOW_MONTH_OPTIONS as readonly number[]).includes(value) ? value : DEFAULT_WINDOW_MONTHS;
 }

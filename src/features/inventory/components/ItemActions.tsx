@@ -38,49 +38,95 @@ export function ItemActions({
 
   return (
     <div className="flex items-center gap-1">
-      <Tooltip content="Open the full item record — edit its details, images, tags, capabilities, custom fields & datasheets." triggerTabIndex={-1}>
+      <Tooltip
+        content="Open the full item record — edit its details, images, tags, capabilities, custom fields & datasheets."
+        triggerTabIndex={-1}
+      >
         <span>
-          <Button variant="outline" size="icon" className={size} aria-label="Item details" onClick={() => setDialog('details')}>
+          <Button
+            variant="outline"
+            size="icon"
+            className={size}
+            aria-label="Item details"
+            onClick={() => setDialog('details')}
+          >
             <EditIcon className="text-glyph-edit" />
           </Button>
         </span>
       </Tooltip>
       {item.trackingMode === 'CONSUMABLE_GAUGE' ? (
-        <Tooltip content="Record usage or weigh-in against a scale to update the remaining level." triggerTabIndex={-1}>
+        <Tooltip
+          content="Record usage or weigh-in against a scale to update the remaining level."
+          triggerTabIndex={-1}
+        >
           <span>
-            <Button variant="outline" size="icon" className={size} aria-label="Update gauge" onClick={() => setDialog('gauge')}>
+            <Button
+              variant="outline"
+              size="icon"
+              className={size}
+              aria-label="Update gauge"
+              onClick={() => setDialog('gauge')}
+            >
               <GaugeIcon className="text-glyph-gauge" />
             </Button>
           </span>
         </Tooltip>
       ) : null}
-      <Tooltip content="Move this item to another location. The move is recorded in the activity log." triggerTabIndex={-1}>
+      <Tooltip
+        content="Move this item to another location. The move is recorded in the activity log."
+        triggerTabIndex={-1}
+      >
         <span>
-          <Button variant="outline" size="icon" className={size} aria-label="Move item" onClick={() => setDialog('move')}>
+          <Button
+            variant="outline"
+            size="icon"
+            className={size}
+            aria-label="Move item"
+            onClick={() => setDialog('move')}
+          >
             <MoveIcon className="text-glyph-move" />
           </Button>
         </span>
       </Tooltip>
-      <Tooltip content="Show a printable label — a QR that deep-links back to this item, and/or a Code 128 barcode of its MPN." triggerTabIndex={-1}>
+      <Tooltip
+        content="Show a printable label — a QR that deep-links back to this item, and/or a Code 128 barcode of its MPN."
+        triggerTabIndex={-1}
+      >
         <span>
-          <Button variant="outline" size="icon" className={size} aria-label="Item label" onClick={() => setDialog('qr')}>
+          <Button
+            variant="outline"
+            size="icon"
+            className={size}
+            aria-label="Item label"
+            onClick={() => setDialog('qr')}
+          >
             <QrCodeIcon className="text-glyph-scan" />
           </Button>
         </span>
       </Tooltip>
-      {item.isActive &&
-      item.trackingMode !== 'CONSUMABLE_GAUGE' &&
-      item.trackingMode !== 'UNTRACKED' ? (
-        <Tooltip content="Loan this item to a contact, tracking who has it and when it is due back." triggerTabIndex={-1}>
+      {item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' && item.trackingMode !== 'UNTRACKED' ? (
+        <Tooltip
+          content="Loan this item to a contact, tracking who has it and when it is due back."
+          triggerTabIndex={-1}
+        >
           <span>
-            <Button variant="outline" size="icon" className={size} aria-label="Check out" onClick={() => setDialog('checkout')}>
+            <Button
+              variant="outline"
+              size="icon"
+              className={size}
+              aria-label="Check out"
+              onClick={() => setDialog('checkout')}
+            >
               <CheckoutIcon className="text-glyph-checkout" />
             </Button>
           </span>
         </Tooltip>
       ) : null}
       {item.isActive ? (
-        <Tooltip content="**Soft-delete** — hides the item but keeps its history. Tick *Show removed* to restore it later." triggerTabIndex={-1}>
+        <Tooltip
+          content="**Soft-delete** — hides the item but keeps its history. Tick *Show removed* to restore it later."
+          triggerTabIndex={-1}
+        >
           <span>
             <Button
               variant="ghost"
@@ -96,14 +142,25 @@ export function ItemActions({
       ) : (
         <Tooltip content="Bring this removed item back into active inventory." triggerTabIndex={-1}>
           <span>
-            <Button variant="ghost" size="icon" className={size} aria-label="Restore item" onClick={() => restore.mutate(item.id)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={size}
+              aria-label="Restore item"
+              onClick={() => restore.mutate(item.id)}
+            >
               <RestoreIcon className="text-glyph-success" />
             </Button>
           </span>
         </Tooltip>
       )}
 
-      <MoveItemDialog item={item} open={dialog === 'move'} onClose={() => setDialog(null)} locations={locations} />
+      <MoveItemDialog
+        item={item}
+        open={dialog === 'move'}
+        onClose={() => setDialog(null)}
+        locations={locations}
+      />
       {item.gauge ? (
         <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
       ) : null}

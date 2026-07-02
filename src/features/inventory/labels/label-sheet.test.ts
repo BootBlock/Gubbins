@@ -38,14 +38,22 @@ describe('toLabelCells', () => {
   });
 
   it('renders a barcode and no QR for the barcode-only symbology', () => {
-    const cells = toLabelCells([{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }], BASE, template({ symbology: 'barcode' }));
+    const cells = toLabelCells(
+      [{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }],
+      BASE,
+      template({ symbology: 'barcode' }),
+    );
     expect(cells[0]!.qrSvg).toBeNull();
     expect(cells[0]!.barcodeSvg).toContain('<svg');
     expect(cells[0]!.barcodeValue).toBe('RC0805-10K');
   });
 
   it('renders both codes for the both symbology', () => {
-    const cells = toLabelCells([{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }], BASE, template({ symbology: 'both' }));
+    const cells = toLabelCells(
+      [{ id: ID_A, name: 'Res', mpn: 'RC0805-10K' }],
+      BASE,
+      template({ symbology: 'both' }),
+    );
     expect(cells[0]!.qrSvg).toContain('<svg');
     expect(cells[0]!.barcodeSvg).toContain('<svg');
   });
@@ -57,41 +65,58 @@ describe('toLabelCells', () => {
   });
 
   it('caps the set at MAX_LABELS', () => {
-    const many: LabelItem[] = Array.from({ length: MAX_LABELS + 25 }, (_, i) => ({ id: ID_A, name: `Item ${i}` }));
+    const many: LabelItem[] = Array.from({ length: MAX_LABELS + 25 }, (_, i) => ({
+      id: ID_A,
+      name: `Item ${i}`,
+    }));
     expect(toLabelCells(many, BASE, template())).toHaveLength(MAX_LABELS);
   });
 });
 
 describe('itemLabelLines', () => {
-  const item: LabelItem = { id: ID_A, name: 'Resistor', mpn: 'RC0805', locationName: 'Drawer A', quantity: 42 };
+  const item: LabelItem = {
+    id: ID_A,
+    name: 'Resistor',
+    mpn: 'RC0805',
+    locationName: 'Drawer A',
+    quantity: 42,
+  };
 
   it('includes only the fields the template enables, in order', () => {
-    expect(itemLabelLines(item, template({ showName: true, showMpn: true, showLocation: true, showQuantity: true }))).toEqual([
-      'Resistor',
-      'MPN: RC0805',
-      'Drawer A',
-      'Qty: 42',
-    ]);
-    expect(itemLabelLines(item, template({ showName: true, showMpn: false, showLocation: false, showQuantity: false }))).toEqual([
-      'Resistor',
-    ]);
+    expect(
+      itemLabelLines(
+        item,
+        template({ showName: true, showMpn: true, showLocation: true, showQuantity: true }),
+      ),
+    ).toEqual(['Resistor', 'MPN: RC0805', 'Drawer A', 'Qty: 42']);
+    expect(
+      itemLabelLines(
+        item,
+        template({ showName: true, showMpn: false, showLocation: false, showQuantity: false }),
+      ),
+    ).toEqual(['Resistor']);
   });
 
   it('omits a flagged field whose value is missing/blank', () => {
     const sparse: LabelItem = { id: ID_A, name: 'X', mpn: '  ', locationName: null };
-    expect(itemLabelLines(sparse, template({ showMpn: true, showLocation: true, showQuantity: true }))).toEqual(['X']);
+    expect(
+      itemLabelLines(sparse, template({ showMpn: true, showLocation: true, showQuantity: true })),
+    ).toEqual(['X']);
   });
 
   it('renders a zero quantity (0 is a real value)', () => {
-    expect(itemLabelLines({ id: ID_A, name: 'X', quantity: 0 }, template({ showName: false, showQuantity: true }))).toEqual([
-      'Qty: 0',
-    ]);
+    expect(
+      itemLabelLines({ id: ID_A, name: 'X', quantity: 0 }, template({ showName: false, showQuantity: true })),
+    ).toEqual(['Qty: 0']);
   });
 });
 
 describe('clampLabels', () => {
   it('truncates to MAX_LABELS, keeping the first labels', () => {
-    const many: LabelItem[] = Array.from({ length: MAX_LABELS + 1 }, (_, i) => ({ id: ID_A, name: `Item ${i}` }));
+    const many: LabelItem[] = Array.from({ length: MAX_LABELS + 1 }, (_, i) => ({
+      id: ID_A,
+      name: `Item ${i}`,
+    }));
     const clamped = clampLabels(many);
     expect(clamped).toHaveLength(MAX_LABELS);
     expect(clamped[0]!.name).toBe('Item 0');
@@ -123,7 +148,11 @@ describe('buildLabelSheetHtml', () => {
   });
 
   it('renders two SVGs per label for the both symbology', () => {
-    const html = buildLabelSheetHtml([{ id: ID_A, name: 'R', mpn: 'RC0805' }], BASE, template({ symbology: 'both' }));
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'R', mpn: 'RC0805' }],
+      BASE,
+      template({ symbology: 'both' }),
+    );
     expect(countOccurrences(html, '<svg')).toBe(2);
   });
 

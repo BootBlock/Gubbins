@@ -35,9 +35,7 @@ export interface PriceSeries {
  * (`direction: 'flat'`, null change). The percentage change is null when the first cost is
  * 0 (no meaningful ratio) rather than dividing by zero.
  */
-export function buildPriceSeries(
-  entries: readonly SupplierPartPriceHistoryEntry[],
-): PriceSeries {
+export function buildPriceSeries(entries: readonly SupplierPartPriceHistoryEntry[]): PriceSeries {
   const points = [...entries].sort((a, b) => a.recordedAt - b.recordedAt);
   const count = points.length;
   if (count === 0) {
@@ -76,11 +74,7 @@ export function buildPriceSeries(
  * screen). A flat or single-value series renders as a mid-height line. Returns an empty
  * string for no values. Pure — no DOM.
  */
-export function sparklinePolyline(
-  values: readonly number[],
-  width: number,
-  height: number,
-): string {
+export function sparklinePolyline(values: readonly number[], width: number, height: number): string {
   if (values.length === 0) return '';
   if (values.length === 1) {
     const mid = height / 2;

@@ -54,35 +54,35 @@ export function TagEditor({ itemId }: { itemId: string }) {
       </div>
 
       <div className="flex items-start gap-2">
-      <div className="relative flex-1">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-              e.preventDefault();
-              add(input);
-            }
-          }}
-          placeholder="Add a tag and press Enter…"
-          aria-label="Add a tag"
-        />
-        {unusedSuggestions.length > 0 ? (
-          <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-            {unusedSuggestions.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => add(s.name)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-secondary [&_svg]:size-3.5 [&_svg]:text-muted-foreground"
-              >
-                <TagIcon />
-                {s.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+        <div className="relative flex-1">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                add(input);
+              }
+            }}
+            placeholder="Add a tag and press Enter…"
+            aria-label="Add a tag"
+          />
+          {unusedSuggestions.length > 0 ? (
+            <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+              {unusedSuggestions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => add(s.name)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-secondary [&_svg]:size-3.5 [&_svg]:text-muted-foreground"
+                >
+                  <TagIcon />
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="pt-2.5">
           <InfoHint
             content={

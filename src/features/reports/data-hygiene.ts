@@ -87,7 +87,7 @@ const SECTION_META: Record<HygieneIssueKind, { label: string; description: strin
   'missing-price': { label: 'Missing price', description: 'No unit cost or supplier price.' },
   'missing-photo': { label: 'Missing photo', description: 'No image attached.' },
   'never-counted': { label: 'Never counted', description: 'Stock never verified by a cycle count.' },
-  'stale': { label: 'Stale records', description: 'No activity for a long time.' },
+  stale: { label: 'Stale records', description: 'No activity for a long time.' },
   'duplicate-mpn': { label: 'Possible duplicates', description: 'Share an MPN with another item.' },
 };
 
@@ -199,7 +199,10 @@ export function buildHygieneReport(
     for (const item of group) {
       flag(item);
       dupOffenders.push(
-        toSample(item, `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} other${group.length - 1 === 1 ? '' : 's'}`),
+        toSample(
+          item,
+          `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} other${group.length - 1 === 1 ? '' : 's'}`,
+        ),
       );
     }
   }

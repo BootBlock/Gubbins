@@ -132,10 +132,7 @@ export interface ConsumptionPlan {
  * unmet remainder is reported as `shortfall` rather than overdrawing a batch, so the caller
  * (and the `CHECK (quantity >= 0)` safety net) can reject an impossible decrement.
  */
-export function planBatchConsumption(
-  batches: readonly BatchLine[],
-  amount: number,
-): ConsumptionPlan {
+export function planBatchConsumption(batches: readonly BatchLine[], amount: number): ConsumptionPlan {
   let remaining = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
   const consumed: BatchConsumption[] = [];
   for (const batch of sortFefo(batches)) {

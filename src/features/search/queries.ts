@@ -31,10 +31,8 @@ export function useAstSearch(ast: SearchAST, enabled: boolean, pageSize = DEFAUL
     queryKey: [...inventoryKeys.search(), 'ast', ast] as const,
     enabled,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam }),
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    queryFn: ({ pageParam }) => getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam }),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     // Bound the resident window exactly as the plain list does (spec §2.1) so a
     // long AST result set never accumulates every page's thumbnail BLOBs.
     getPreviousPageParam: (firstPage) =>

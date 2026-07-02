@@ -9,10 +9,7 @@
  *
  * Runs exclusively inside the database Web Worker (§2.2.2).
  */
-import sqlite3InitModule, {
-  type Sqlite3Static,
-  type OpfsDatabase,
-} from '@sqlite.org/sqlite-wasm';
+import sqlite3InitModule, { type Sqlite3Static, type OpfsDatabase } from '@sqlite.org/sqlite-wasm';
 import { DbError } from '../errors';
 import type { DbDiagnostics } from '../rpc/protocol';
 

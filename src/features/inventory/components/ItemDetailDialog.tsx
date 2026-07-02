@@ -174,9 +174,7 @@ function buildTabs(item: Item): readonly TabDef[] {
       id: 'details',
       label: 'Details',
       icon: <EditIcon />,
-      sections: [
-        { title: 'Item details', icon: <EditIcon />, content: <ItemDetailsEditor item={item} /> },
-      ],
+      sections: [{ title: 'Item details', icon: <EditIcon />, content: <ItemDetailsEditor item={item} /> }],
     },
     {
       id: 'supplier',

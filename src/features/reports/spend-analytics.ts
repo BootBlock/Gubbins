@@ -20,11 +20,7 @@
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
 
 /** Fixed display order for the by-source breakdown. */
-export const SPEND_SOURCES: readonly SpendSource[] = [
-  'PURCHASE_ORDER',
-  'PROJECT_EXPENSE',
-  'ACQUISITION',
-];
+export const SPEND_SOURCES: readonly SpendSource[] = ['PURCHASE_ORDER', 'PROJECT_EXPENSE', 'ACQUISITION'];
 
 /** Human-readable source labels (British English). */
 export const SPEND_SOURCE_LABEL: Record<SpendSource, string> = {
@@ -148,7 +144,10 @@ export function buildSpendReport(
     total += amount;
     eventCount += 1;
 
-    const index = Math.min(count - 1, Math.max(0, Math.floor(((event.instant - windowStart) / span) * count)));
+    const index = Math.min(
+      count - 1,
+      Math.max(0, Math.floor(((event.instant - windowStart) / span) * count)),
+    );
     buckets[index]!.total += amount;
 
     sourceTotals.set(event.source, (sourceTotals.get(event.source) ?? 0) + amount);

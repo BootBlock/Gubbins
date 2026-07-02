@@ -12,12 +12,7 @@ import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { APP_VERSION } from '@/lib/app-version';
 import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
-import {
-  assembleBackup,
-  filterSnapshot,
-  type BackupManifest,
-  type BackupSelection,
-} from './backup-format';
+import { assembleBackup, filterSnapshot, type BackupManifest, type BackupSelection } from './backup-format';
 import { collectSettings } from './backup-settings';
 
 /** The outcome of a successful backup, for the success summary in the dialog. */
@@ -72,15 +67,11 @@ export async function createBackup(
 }
 
 /** Zip a text + binary entry map in the shared fflate worker (off the main thread). */
-function zipInWorker(
-  files: Record<string, string>,
-  assets: Record<string, Uint8Array>,
-): Promise<Uint8Array> {
+function zipInWorker(files: Record<string, string>, assets: Record<string, Uint8Array>): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL('@/features/export/export-vault.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    const worker = new Worker(new URL('@/features/export/export-vault.worker.ts', import.meta.url), {
+      type: 'module',
+    });
     worker.onmessage = (event: MessageEvent<VaultZipResponse>) => {
       resolve(event.data.zip);
       worker.terminate();

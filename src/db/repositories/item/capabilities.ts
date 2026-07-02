@@ -66,10 +66,7 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
           params: [id, itemId, key, valueNum, valueText, weight],
         },
       ]);
-      const row = await this.driver.queryOne<CapabilityRow>(
-        'SELECT * FROM capabilities WHERE id = ?;',
-        [id],
-      );
+      const row = await this.driver.queryOne<CapabilityRow>('SELECT * FROM capabilities WHERE id = ?;', [id]);
       return rowToCapability(row!);
     }
 
@@ -114,10 +111,10 @@ export function withCapabilities<TBase extends Constructor<ItemCoreRepository>>(
 
     /** Remove a capability by key (case-insensitive). Deletions bypass the Hard Stop. */
     async removeCapability(itemId: string, key: string): Promise<void> {
-      await this.driver.execute(
-        'DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;',
-        [itemId, key.trim()],
-      );
+      await this.driver.execute('DELETE FROM capabilities WHERE item_id = ? AND key = ? COLLATE NOCASE;', [
+        itemId,
+        key.trim(),
+      ]);
     }
   };
 }

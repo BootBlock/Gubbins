@@ -82,12 +82,7 @@ export function ImportBomDialog({
     >
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => fileRef.current?.click()}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
             <UploadIcon />
             Upload file
           </Button>

@@ -20,11 +20,7 @@
  * @param height Frame height in pixels.
  * @returns A `Uint8ClampedArray` of length `width · height`, one luminance byte per pixel.
  */
-export function rgbaToLuminance(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-): Uint8ClampedArray {
+export function rgbaToLuminance(data: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
   const luminances = new Uint8ClampedArray(width * height);
   for (let i = 0; i < luminances.length; i++) {
     const o = i * 4;

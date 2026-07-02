@@ -1,22 +1,13 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Input, Modal, Select } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
-import {
-  CONDITIONS,
-  type Condition,
-  type LocationWithCount,
-} from '@/db/repositories';
+import { CONDITIONS, type Condition, type LocationWithCount } from '@/db/repositories';
 import { CONDITION_LABELS } from './inventory-ui';
 import { useCategories } from '../categories';
 import { useBulkEditItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
 import { LocationSelect } from './LocationSelect';
-import {
-  isBulkEditEmpty,
-  parseTagInput,
-  type BulkEditSpec,
-  type TagEditMode,
-} from '../bulk-edit';
+import { isBulkEditEmpty, parseTagInput, type BulkEditSpec, type TagEditMode } from '../bulk-edit';
 
 /**
  * Bulk-edit dialog (Phase 76) — apply category / location / condition / active-state / tags
@@ -46,10 +37,7 @@ export function BulkEditDialog({
   const f = useFormatters();
   const categories = useCategories();
   const bulkEdit = useBulkEditItems();
-  const locationOptions = useMemo(
-    () => buildItemLocationOptions(locations, f.quantity),
-    [locations, f],
-  );
+  const locationOptions = useMemo(() => buildItemLocationOptions(locations, f.quantity), [locations, f]);
   const firstLocationId = locationOptions[0]?.value ?? '';
   const locationLabelId = useId();
 
@@ -69,11 +57,17 @@ export function BulkEditDialog({
   // Reset the form each time the dialog opens.
   useEffect(() => {
     if (!open) return;
-    setCatOn(false); setCatValue('');
-    setLocOn(false); setLocValue(firstLocationId);
-    setCondOn(false); setCondValue('');
-    setActiveOn(false); setActiveValue('active');
-    setTagsOn(false); setTagMode('add'); setTagText('');
+    setCatOn(false);
+    setCatValue('');
+    setLocOn(false);
+    setLocValue(firstLocationId);
+    setCondOn(false);
+    setCondValue('');
+    setActiveOn(false);
+    setActiveValue('active');
+    setTagsOn(false);
+    setTagMode('add');
+    setTagText('');
   }, [open, firstLocationId]);
 
   const spec: BulkEditSpec = useMemo(() => {
@@ -110,17 +104,26 @@ export function BulkEditDialog({
       <div className="max-h-[72vh] space-y-3 dialog-scroll">
         {/* Category ----------------------------------------------------- */}
         <FieldRow enabled={catOn} onToggle={setCatOn} label="Category" testId="bulk-field-category">
-          <Select value={catValue} onChange={(e) => setCatValue(e.target.value)} disabled={!catOn} aria-label="New category">
+          <Select
+            value={catValue}
+            onChange={(e) => setCatValue(e.target.value)}
+            disabled={!catOn}
+            aria-label="New category"
+          >
             <option value="">— Clear (uncategorised) —</option>
             {(categories.data?.rows ?? []).map((cat) => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
             ))}
           </Select>
         </FieldRow>
 
         {/* Location ----------------------------------------------------- */}
         <FieldRow enabled={locOn} onToggle={setLocOn} label="Location" testId="bulk-field-location">
-          <span id={locationLabelId} className="sr-only">New location</span>
+          <span id={locationLabelId} className="sr-only">
+            New location
+          </span>
           <LocationSelect
             labelledBy={locationLabelId}
             value={locValue}
@@ -131,10 +134,17 @@ export function BulkEditDialog({
 
         {/* Condition ---------------------------------------------------- */}
         <FieldRow enabled={condOn} onToggle={setCondOn} label="Condition" testId="bulk-field-condition">
-          <Select value={condValue} onChange={(e) => setCondValue(e.target.value)} disabled={!condOn} aria-label="New condition">
+          <Select
+            value={condValue}
+            onChange={(e) => setCondValue(e.target.value)}
+            disabled={!condOn}
+            aria-label="New condition"
+          >
             <option value="">— Clear (untracked) —</option>
             {CONDITIONS.map((c) => (
-              <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
+              <option key={c} value={c}>
+                {CONDITION_LABELS[c]}
+              </option>
             ))}
           </Select>
         </FieldRow>
@@ -175,7 +185,9 @@ export function BulkEditDialog({
         </FieldRow>
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             type="button"
             onClick={apply}

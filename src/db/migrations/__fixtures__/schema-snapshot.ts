@@ -85,18 +85,14 @@ function num(value: unknown): number {
  * output is byte-stable across runs and devices.
  */
 export async function captureSchemaSnapshot(driver: IDatabaseDriver): Promise<SchemaSnapshot> {
-  const userVersionRow = await driver.queryOne<{ user_version: number | bigint }>(
-    'PRAGMA user_version;',
-  );
+  const userVersionRow = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
 
   const rawObjects = await driver.query<{
     type: string;
     name: string;
     tbl_name: string;
     sql: string;
-  }>(
-    'SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name;',
-  );
+  }>('SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name;');
   const objects: SchemaObject[] = rawObjects.map((o) => ({
     type: o.type,
     name: o.name,
@@ -117,46 +113,38 @@ export async function captureSchemaSnapshot(driver: IDatabaseDriver): Promise<Sc
   for (const { name } of tableNames) {
     const columns = (
       await driver.query<Record<string, unknown>>(`PRAGMA table_info(${quoteIdent(name)});`)
-    ).map(
-      (c): ColumnInfo => ({
-        cid: num(c.cid),
-        name: String(c.name),
-        type: String(c.type),
-        notnull: num(c.notnull),
-        dflt_value: c.dflt_value == null ? null : String(c.dflt_value),
-        pk: num(c.pk),
-      }),
-    );
+    ).map((c): ColumnInfo => ({
+      cid: num(c.cid),
+      name: String(c.name),
+      type: String(c.type),
+      notnull: num(c.notnull),
+      dflt_value: c.dflt_value == null ? null : String(c.dflt_value),
+      pk: num(c.pk),
+    }));
 
     const foreignKeys = (
       await driver.query<Record<string, unknown>>(`PRAGMA foreign_key_list(${quoteIdent(name)});`)
     )
-      .map(
-        (f): ForeignKeyInfo => ({
-          id: num(f.id),
-          seq: num(f.seq),
-          table: String(f.table),
-          from: String(f.from),
-          to: f.to == null ? null : String(f.to),
-          on_update: String(f.on_update),
-          on_delete: String(f.on_delete),
-          match: String(f.match),
-        }),
-      )
+      .map((f): ForeignKeyInfo => ({
+        id: num(f.id),
+        seq: num(f.seq),
+        table: String(f.table),
+        from: String(f.from),
+        to: f.to == null ? null : String(f.to),
+        on_update: String(f.on_update),
+        on_delete: String(f.on_delete),
+        match: String(f.match),
+      }))
       .sort((a, b) => a.id - b.id || a.seq - b.seq);
 
-    const indexes = (
-      await driver.query<Record<string, unknown>>(`PRAGMA index_list(${quoteIdent(name)});`)
-    )
-      .map(
-        (i): IndexInfo => ({
-          seq: num(i.seq),
-          name: String(i.name),
-          unique: num(i.unique),
-          origin: String(i.origin),
-          partial: num(i.partial),
-        }),
-      )
+    const indexes = (await driver.query<Record<string, unknown>>(`PRAGMA index_list(${quoteIdent(name)});`))
+      .map((i): IndexInfo => ({
+        seq: num(i.seq),
+        name: String(i.name),
+        unique: num(i.unique),
+        origin: String(i.origin),
+        partial: num(i.partial),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     tables[name] = { columns, foreignKeys, indexes };

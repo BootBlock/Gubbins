@@ -44,7 +44,6 @@ function renderWizard(open = true) {
   );
 }
 
-
 afterEach(cleanup);
 beforeEach(() => mockRunExport.mockReset());
 
@@ -84,7 +83,9 @@ describe('ExportWizard — aria-live status-message coverage (Phase 63 / WCAG 4.
     expect(screen.getByTestId('export-live-region').textContent).toBe('Exporting…');
 
     // Resolve the export so the component can finish.
-    await act(async () => { resolve('gubbins-export-2026-06-30.json'); });
+    await act(async () => {
+      resolve('gubbins-export-2026-06-30.json');
+    });
   });
 
   it('announces the filename on successful export', async () => {

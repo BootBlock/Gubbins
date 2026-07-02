@@ -46,9 +46,7 @@ import {
 import { SearchAstError, parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 import { toCapabilityField, toCustomField } from './fields';
 
-export type ParseTextQueryResult =
-  | { ok: true; ast: SearchAST }
-  | { ok: false; error: string };
+export type ParseTextQueryResult = { ok: true; ast: SearchAST } | { ok: false; error: string };
 
 /** A parsed sub-expression: a group, a leaf condition, or "matched nothing". */
 type Node = ASTGroupNode | FilterCondition | null;
@@ -102,11 +100,7 @@ type TermResult = { condition: FilterCondition } | { skip: true } | { error: str
 
 /** A lexical token: the boolean/paren structure, plus opaque leaf `TERM` text. */
 type LexToken =
-  | { kind: 'TERM'; text: string }
-  | { kind: 'OR' }
-  | { kind: 'AND' }
-  | { kind: 'LPAREN' }
-  | { kind: 'RPAREN' };
+  { kind: 'TERM'; text: string } | { kind: 'OR' } | { kind: 'AND' } | { kind: 'LPAREN' } | { kind: 'RPAREN' };
 
 /**
  * Parse a text query into the Visual-Builder {@link SearchAST}. Lexes into a token
@@ -294,7 +288,9 @@ function parseTerm(token: string): TermResult {
   // pasted URL or a stray colon never blocks the query.
   if (!meta) {
     const value = unquote(token);
-    return value.length === 0 ? { skip: true } : { condition: { field: 'name', operator: 'CONTAINS', value } };
+    return value.length === 0
+      ? { skip: true }
+      : { condition: { field: 'name', operator: 'CONTAINS', value } };
   }
 
   return meta.kind === 'numeric'
@@ -304,7 +300,9 @@ function parseTerm(token: string): TermResult {
 
 function parseTextTerm(field: string, sep: string, rawValue: string): TermResult {
   if (sep === '>' || sep === '<') {
-    return { error: `The "${field}" field holds text, so it can't be compared with ${sep}; use ${field}: to match it.` };
+    return {
+      error: `The "${field}" field holds text, so it can't be compared with ${sep}; use ${field}: to match it.`,
+    };
   }
   const value = unquote(rawValue);
   if (value.length === 0) return { error: `Search term "${field}${sep}" is missing a value.` };

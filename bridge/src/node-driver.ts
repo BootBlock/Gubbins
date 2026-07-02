@@ -18,13 +18,7 @@
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { DbError } from '@/db/errors';
-import type {
-  IDatabaseDriver,
-  SqlExecuteResult,
-  SqlParams,
-  SqlRow,
-  SqlValue,
-} from '@/db/rpc/driver';
+import type { IDatabaseDriver, SqlExecuteResult, SqlParams, SqlRow, SqlValue } from '@/db/rpc/driver';
 
 export interface NodeDriver extends IDatabaseDriver {
   /** The underlying synchronous handle, for white-box assertions in tests. */

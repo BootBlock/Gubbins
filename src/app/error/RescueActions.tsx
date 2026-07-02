@@ -1,12 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/foundry';
-import {
-  ArchiveRestoreIcon,
-  DatabaseIcon,
-  DownloadIcon,
-  ResetIcon,
-  RestoreIcon,
-} from '@/components/icons';
+import { ArchiveRestoreIcon, DatabaseIcon, DownloadIcon, ResetIcon, RestoreIcon } from '@/components/icons';
 import { restoreArchive } from '@/features/archive/restore-archive';
 import {
   downloadJsonDump,
@@ -44,13 +38,12 @@ export function RescueActions() {
     }
   };
 
-  const onFileChosen =
-    (kind: PendingRestore['kind']) => (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0] ?? null;
-      event.target.value = '';
-      setRestoreError(null);
-      setPending(file ? { kind, file } : null);
-    };
+  const onFileChosen = (kind: PendingRestore['kind']) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    setRestoreError(null);
+    setPending(file ? { kind, file } : null);
+  };
 
   const confirmRestore = async () => {
     if (!pending) return;
@@ -94,9 +87,7 @@ export function RescueActions() {
       {pending ? (
         <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2 text-sm">
           <p>
-            {pending.kind === 'archive'
-              ? 'Restore the full archive '
-              : 'Replace the live database with '}
+            {pending.kind === 'archive' ? 'Restore the full archive ' : 'Replace the live database with '}
             <span className="font-medium">{pending.file.name}</span>?
             {pending.kind === 'archive'
               ? ' This overwrites all local data and re-imports the full-resolution images.'
@@ -119,18 +110,10 @@ export function RescueActions() {
         </div>
       ) : (
         <>
-          <Button
-            variant="outline"
-            onClick={() => sqliteRef.current?.click()}
-            disabled={busy !== null}
-          >
+          <Button variant="outline" onClick={() => sqliteRef.current?.click()} disabled={busy !== null}>
             <RestoreIcon /> Restore raw .sqlite binary
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => archiveRef.current?.click()}
-            disabled={busy !== null}
-          >
+          <Button variant="outline" onClick={() => archiveRef.current?.click()} disabled={busy !== null}>
             <ArchiveRestoreIcon /> Restore full archive (.zip)
           </Button>
         </>

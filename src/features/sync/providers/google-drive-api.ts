@@ -77,11 +77,7 @@ export async function readSnapshotText(api: DriveApi, fileId: string): Promise<s
  * parented into `appDataFolder`) when `fileId` is null, otherwise replaces its content
  * (media PATCH). The metadata is set once at creation, so updates ship content only.
  */
-export async function writeSnapshot(
-  api: DriveApi,
-  fileId: string | null,
-  content: string,
-): Promise<string> {
+export async function writeSnapshot(api: DriveApi, fileId: string | null, content: string): Promise<string> {
   if (fileId) {
     const res = await authedFetch(
       api,

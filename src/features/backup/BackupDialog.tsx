@@ -92,7 +92,11 @@ export function BackupDialog({
       description="Save everything to a file, or restore from one."
     >
       <div className="space-y-4">
-        <div role="tablist" aria-label="Backup or restore" className="flex gap-1 rounded-lg bg-secondary/40 p-1">
+        <div
+          role="tablist"
+          aria-label="Backup or restore"
+          className="flex gap-1 rounded-lg bg-secondary/40 p-1"
+        >
           <TabButton active={tab === 'create'} onClick={() => setTab('create')}>
             <DownloadIcon /> Create backup
           </TabButton>
@@ -140,8 +144,7 @@ function CreatePanel() {
   const [result, setResult] = useState<BackupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const toggle = (key: keyof BackupSelection) =>
-    setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: keyof BackupSelection) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const run = async () => {
     setBusy(true);
@@ -159,8 +162,8 @@ function CreatePanel() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Your inventory and all records are <strong>always included</strong> as a portable,
-        restorable data file. Choose what else to add:
+        Your inventory and all records are <strong>always included</strong> as a portable, restorable data
+        file. Choose what else to add:
       </p>
 
       <fieldset className="space-y-1">
@@ -205,8 +208,8 @@ function CreatePanel() {
           <p>Preparing backup…</p>
         ) : result ? (
           <p>
-            Backup downloaded: {result.filename}, {fmt.bytes(result.size)},{' '}
-            {result.manifest.counts.items} items.
+            Backup downloaded: {result.filename}, {fmt.bytes(result.size)}, {result.manifest.counts.items}{' '}
+            items.
           </p>
         ) : null}
       </LiveRegion>
@@ -276,7 +279,9 @@ function RestorePanel({
         estimateStorage().catch(() => null),
       ]);
       setCurrentItems(count);
-      setStorage(estimate ? { usage: estimate.usage, quota: estimate.quota, supported: estimate.supported } : null);
+      setStorage(
+        estimate ? { usage: estimate.usage, quota: estimate.quota, supported: estimate.supported } : null,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That file could not be read as a backup.');
     } finally {
@@ -336,8 +341,8 @@ function RestorePanel({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Restore from a Gubbins backup (<code className="rounded bg-secondary/60 px-1">.zip</code>)
-        or an older data file (<code className="rounded bg-secondary/60 px-1">.json</code>).
+        Restore from a Gubbins backup (<code className="rounded bg-secondary/60 px-1">.zip</code>) or an older
+        data file (<code className="rounded bg-secondary/60 px-1">.json</code>).
       </p>
 
       <input
@@ -404,16 +409,15 @@ function RestorePanel({
                 {mode === 'replace' ? (
                   <>
                     <p>
-                      This erases all current data on this device and restores the backup exactly,
-                      then reloads.{' '}
-                      <strong>A safety copy of your current data is downloaded first</strong> so this
+                      This erases all current data on this device and restores the backup exactly, then
+                      reloads. <strong>A safety copy of your current data is downloaded first</strong> so this
                       can be undone.
                     </p>
                     {impact ? (
                       <p data-testid="restore-impact">
                         Replacing <strong>{impact.currentItems}</strong> current item
-                        {impact.currentItems === 1 ? '' : 's'} with <strong>{impact.backupItems}</strong>{' '}
-                        from the backup.
+                        {impact.currentItems === 1 ? '' : 's'} with <strong>{impact.backupItems}</strong> from
+                        the backup.
                       </p>
                     ) : null}
                     {impact?.empty ? (
@@ -427,8 +431,8 @@ function RestorePanel({
                     ) : null}
                     {quota && !quota.willFit ? (
                       <p className="font-medium" data-testid="restore-quota-warning">
-                        This backup (~{fmt.bytes(quota.incomingBytes)}) may not fit in the storage
-                        still available (~{fmt.bytes(quota.availableBytes)}).
+                        This backup (~{fmt.bytes(quota.incomingBytes)}) may not fit in the storage still
+                        available (~{fmt.bytes(quota.availableBytes)}).
                       </p>
                     ) : null}
                     <label className="block space-y-1">
@@ -452,8 +456,8 @@ function RestorePanel({
                     <p>This adds and updates records from the backup.</p>
                     {quota && !quota.willFit ? (
                       <p className="font-medium" data-testid="restore-quota-warning">
-                        This backup (~{fmt.bytes(quota.incomingBytes)}) may not fit in the storage
-                        still available (~{fmt.bytes(quota.availableBytes)}).
+                        This backup (~{fmt.bytes(quota.incomingBytes)}) may not fit in the storage still
+                        available (~{fmt.bytes(quota.availableBytes)}).
                       </p>
                     ) : null}
                   </>
@@ -523,9 +527,7 @@ function RestorePanel({
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full bg-secondary/70 px-2 py-0.5 text-xs text-muted-foreground">
-      {children}
-    </span>
+    <span className="rounded-full bg-secondary/70 px-2 py-0.5 text-xs text-muted-foreground">{children}</span>
   );
 }
 

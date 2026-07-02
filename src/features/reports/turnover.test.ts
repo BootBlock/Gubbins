@@ -125,8 +125,22 @@ describe('summariseTurnover — inventory turnover (COGS ÷ average on-hand valu
         // turnover null (unpriced) — must sort last.
         input({ id: 'null', name: 'Zinc', unitCost: null, currentQty: 10, consumedUnits: 4 }),
         // turnover 1.0 each (cogs 100 vs cogs 50) — tie on turnover, cogs breaks it.
-        input({ id: 'hi-cogs', name: 'Bravo', unitCost: 1, currentQty: 100, netQtyDelta: 0, consumedUnits: 100 }),
-        input({ id: 'lo-cogs', name: 'Alpha', unitCost: 1, currentQty: 50, netQtyDelta: 0, consumedUnits: 50 }),
+        input({
+          id: 'hi-cogs',
+          name: 'Bravo',
+          unitCost: 1,
+          currentQty: 100,
+          netQtyDelta: 0,
+          consumedUnits: 100,
+        }),
+        input({
+          id: 'lo-cogs',
+          name: 'Alpha',
+          unitCost: 1,
+          currentQty: 50,
+          netQtyDelta: 0,
+          consumedUnits: 50,
+        }),
         // turnover 2.0 — highest, sorts first.
         input({ id: 'top', name: 'Charlie', unitCost: 1, currentQty: 10, netQtyDelta: 0, consumedUnits: 20 }),
       ],

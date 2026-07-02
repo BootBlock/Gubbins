@@ -1,11 +1,5 @@
 import { cn } from '@/lib/utils';
-import {
-  ArchiveIcon,
-  ArchiveRestoreIcon,
-  DeleteIcon,
-  EditIcon,
-  QrCodeIcon,
-} from '@/components/icons';
+import { ArchiveIcon, ArchiveRestoreIcon, DeleteIcon, EditIcon, QrCodeIcon } from '@/components/icons';
 
 interface LocationRowActionsProps {
   readonly onPrintLabel?: () => void;

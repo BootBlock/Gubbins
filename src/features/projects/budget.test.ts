@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ProjectBudget } from '@/db/repositories';
-import {
-  budgetStatus,
-  spentFraction,
-  summariseBudget,
-  summariseBudgetCategory,
-} from './budget';
+import { budgetStatus, spentFraction, summariseBudget, summariseBudgetCategory } from './budget';
 
 const facts = (over: Partial<ProjectBudget> = {}): ProjectBudget => ({
   budget: 500,
@@ -123,20 +118,14 @@ describe('summariseBudget', () => {
 
 describe('summariseBudgetCategory', () => {
   it('computes remaining and status against the allocation', () => {
-    const c = summariseBudgetCategory(
-      { id: 'c1', name: 'Labour', amount: 100, spent: 90, position: 0 },
-      80,
-    );
+    const c = summariseBudgetCategory({ id: 'c1', name: 'Labour', amount: 100, spent: 90, position: 0 }, 80);
     expect(c.remaining).toBe(10);
     expect(c.spentFraction).toBeCloseTo(0.9);
     expect(c.status).toBe('WARN');
   });
 
   it('is OVER when a category is overspent', () => {
-    const c = summariseBudgetCategory(
-      { id: 'c1', name: 'Tools', amount: 50, spent: 75, position: 0 },
-      80,
-    );
+    const c = summariseBudgetCategory({ id: 'c1', name: 'Tools', amount: 50, spent: 75, position: 0 }, 80);
     expect(c.remaining).toBe(-25);
     expect(c.status).toBe('OVER');
   });

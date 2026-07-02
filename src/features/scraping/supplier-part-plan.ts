@@ -103,9 +103,7 @@ export function buildSupplierPartPlan(
   const scrapedUrl = cleanString(payload.distributor_url);
   const scrapedOrderCode = cleanString(payload.mpn);
   const scrapedCost = payload.scraped_pricing ? payload.scraped_pricing.value : null;
-  const scrapedCurrency = payload.scraped_pricing
-    ? cleanString(payload.scraped_pricing.currency)
-    : null;
+  const scrapedCurrency = payload.scraped_pricing ? cleanString(payload.scraped_pricing.currency) : null;
 
   const supplierName = scrapedUrl ? supplierNameFromUrl(scrapedUrl) : 'Supplier';
   const scrapedHost = scrapedUrl ? hostOf(scrapedUrl) : '';
@@ -181,8 +179,7 @@ export function resolveSupplierPartWrite(
   let wrote = false;
 
   for (const p of plan.proposals) {
-    const include =
-      p.status === 'FILL' || (p.status === 'CONFLICT' && overwriteFields.has(p.field));
+    const include = p.status === 'FILL' || (p.status === 'CONFLICT' && overwriteFields.has(p.field));
     if (!include || p.scraped === null) continue;
     wrote = true;
     switch (p.field) {

@@ -8,7 +8,16 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateMock }));
 // Item search returns a fixed page of rows; the palette only reads id + name.
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({
-    data: { pages: [{ rows: [{ id: 'i1', name: '10k resistor' }, { id: 'i2', name: '220 ohm resistor' }] }] },
+    data: {
+      pages: [
+        {
+          rows: [
+            { id: 'i1', name: '10k resistor' },
+            { id: 'i2', name: '220 ohm resistor' },
+          ],
+        },
+      ],
+    },
     isPending: false,
   }),
 }));

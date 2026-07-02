@@ -51,8 +51,18 @@ export const MAX_NOTE_LENGTH = 500;
  * repository method — nothing else is exposed.
  */
 export type WriteOperation =
-  | { readonly kind: 'adjust-quantity'; readonly itemId: string; readonly delta: number; readonly note?: string }
-  | { readonly kind: 'adjust-gauge'; readonly itemId: string; readonly delta: number; readonly note?: string };
+  | {
+      readonly kind: 'adjust-quantity';
+      readonly itemId: string;
+      readonly delta: number;
+      readonly note?: string;
+    }
+  | {
+      readonly kind: 'adjust-gauge';
+      readonly itemId: string;
+      readonly delta: number;
+      readonly note?: string;
+    };
 
 /**
  * A write failure carrying the HTTP status + v1 error code the transport should surface. Domain
@@ -104,7 +114,10 @@ export async function applyOperation(driver: IDatabaseDriver, op: WriteOperation
 
 /** Map a repository error to a {@link WriteError}, or rethrow so it becomes a generic 500. */
 function toWriteError(err: unknown): unknown {
-  if (err instanceof DbError && (err.code === 'SQLITE_CONSTRAINT' || err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY')) {
+  if (
+    err instanceof DbError &&
+    (err.code === 'SQLITE_CONSTRAINT' || err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY')
+  ) {
     // These messages are safe domain text (e.g. "Quantity cannot fall below zero.") — no SQL,
     // paths, or PII — so they are surfaced to help the caller correct the request.
     return new WriteError(422, 'unprocessable', err.message);

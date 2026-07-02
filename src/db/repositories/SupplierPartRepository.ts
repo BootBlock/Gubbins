@@ -94,10 +94,9 @@ function serialisePriceBreaks(breaks: readonly PriceBreak[] | null | undefined):
 
 export class SupplierPartRepository extends BaseRepository {
   async getById(id: string): Promise<SupplierPart | undefined> {
-    const row = await this.driver.queryOne<SupplierPartRow>(
-      'SELECT * FROM supplier_parts WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<SupplierPartRow>('SELECT * FROM supplier_parts WHERE id = ?;', [
+      id,
+    ]);
     return row ? rowToSupplierPart(row) : undefined;
   }
 

@@ -90,9 +90,7 @@ function runExecute(active: BootstrapResult, sql: string, params?: SqlParams): S
   active.db.exec(sql, { bind: bindOf(params) });
   const rowsModified = active.db.changes(false, false);
   const pointer = active.db.pointer;
-  const lastInsertRowId = pointer
-    ? active.sqlite3.capi.sqlite3_last_insert_rowid(pointer)
-    : 0n;
+  const lastInsertRowId = pointer ? active.sqlite3.capi.sqlite3_last_insert_rowid(pointer) : 0n;
   return {
     rowsModified,
     lastInsertRowId: lastInsertRowId === 0n ? null : Number(lastInsertRowId),
@@ -132,7 +130,7 @@ function exportBinary(active: BootstrapResult): Uint8Array {
 }
 
 function bindOf(params?: SqlParams): BindingSpec | undefined {
-  return params as BindingSpec | undefined;
+  return params;
 }
 
 function sqlOf(request: DbRequest): string | undefined {

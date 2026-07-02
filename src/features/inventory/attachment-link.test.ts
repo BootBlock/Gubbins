@@ -33,8 +33,6 @@ describe('resolveAttachmentLink', () => {
   });
 
   it('preserves the literal path/value verbatim', () => {
-    expect(resolveAttachmentLink(localOn('dev-A'), 'dev-B').value).toBe(
-      'C:\\Datasheets\\NE555.pdf',
-    );
+    expect(resolveAttachmentLink(localOn('dev-A'), 'dev-B').value).toBe('C:\\Datasheets\\NE555.pdf');
   });
 });

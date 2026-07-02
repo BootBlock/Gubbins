@@ -84,12 +84,7 @@ export function normaliseDayRange(startMs: number, endMs: number): DayRange {
  * 4, b starts day 4 → `true`), while two that merely abut on adjacent days do not (a ends day
  * 3, b starts day 4 → `false`).
  */
-export function rangesOverlap(
-  aStart: number,
-  aEnd: number,
-  bStart: number,
-  bEnd: number,
-): boolean {
+export function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
   return aStart <= bEnd && bStart <= aEnd;
 }
 

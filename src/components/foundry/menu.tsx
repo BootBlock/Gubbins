@@ -81,9 +81,8 @@ export function Menu({
   const menuItems = useCallback(
     () =>
       Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>(
-          '[role="menuitem"]:not([aria-disabled="true"])',
-        ) ?? [],
+        panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ??
+          [],
       ),
     [],
   );
@@ -252,8 +251,7 @@ export function MenuLink({ to, icon, children, current, trailing, ...rest }: Men
   const ctx = useContext(MenuContext);
   return (
     <Link
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- typed route union lives in nav-destinations
-      to={to as any}
+      to={to}
       role="menuitem"
       tabIndex={-1}
       aria-current={current ? 'page' : undefined}
@@ -279,14 +277,7 @@ export interface MenuActionProps {
 }
 
 /** A button menu row. Runs `onSelect` then closes the menu. */
-export function MenuAction({
-  icon,
-  children,
-  onSelect,
-  disabled,
-  selected,
-  ...rest
-}: MenuActionProps) {
+export function MenuAction({ icon, children, onSelect, disabled, selected, ...rest }: MenuActionProps) {
   const ctx = useContext(MenuContext);
   return (
     <button

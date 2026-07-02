@@ -39,7 +39,12 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { ChangeFlash } from '@/features/inventory/components/ChangeFlash';
 import { shortfall } from '@/features/inventory/reorder-policy';
-import { useExpiringItems, useLowStockItems, useInTransitLines, useDueMaintenance } from '@/features/lifecycle';
+import {
+  useExpiringItems,
+  useLowStockItems,
+  useInTransitLines,
+  useDueMaintenance,
+} from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { budgetStatus } from '@/features/projects/budget';
@@ -100,7 +105,10 @@ function WidgetShell({
         {icon}
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
         {showCount ? (
-          <ChangeFlash flashKey={count} className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}>
+          <ChangeFlash
+            flashKey={count}
+            className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}
+          >
             {count}
           </ChangeFlash>
         ) : null}
@@ -173,7 +181,14 @@ function LowStockWidget() {
   const rows = lowStock.data?.rows ?? [];
   const defaults = { qtyThreshold, gaugePercent };
   return (
-    <WidgetShell icon={<LowStockIcon />} title="Low stock" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={lowStock.isPending} error={lowStock.isError}>
+    <WidgetShell
+      icon={<LowStockIcon />}
+      title="Low stock"
+      count={rows.length}
+      tone={rows.length > 0 ? 'warning' : 'quiet'}
+      loading={lowStock.isPending}
+      error={lowStock.isError}
+    >
       {rows.length === 0 ? (
         <EmptyRow>Stock levels healthy.</EmptyRow>
       ) : (
@@ -206,13 +221,26 @@ function ExpiringWidget() {
   const expiring = useExpiringItems(expirySoonWindowDays);
   const rows = expiring.data?.rows ?? [];
   return (
-    <WidgetShell icon={<ExpiryIcon />} title="Soon to expire" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={expiring.isPending} error={expiring.isError}>
+    <WidgetShell
+      icon={<ExpiryIcon />}
+      title="Soon to expire"
+      count={rows.length}
+      tone={rows.length > 0 ? 'warning' : 'quiet'}
+      loading={expiring.isPending}
+      error={expiring.isError}
+    >
       {rows.length === 0 ? (
         <EmptyRow>All clear.</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((item) => (
-          <WidgetRow key={item.id} label={item.name} meta={item.expiryDate ? fmt.date(item.expiryDate) : undefined} />
-        ))
+        rows
+          .slice(0, 3)
+          .map((item) => (
+            <WidgetRow
+              key={item.id}
+              label={item.name}
+              meta={item.expiryDate ? fmt.date(item.expiryDate) : undefined}
+            />
+          ))
       )}
     </WidgetShell>
   );
@@ -222,11 +250,20 @@ function OverdueWidget() {
   const openCheckouts = useOpenCheckouts();
   const overdue = (openCheckouts.data?.rows ?? []).filter((c) => c.isOverdue);
   return (
-    <WidgetShell icon={<DueDateIcon />} title="Overdue items" count={overdue.length} tone={overdue.length > 0 ? 'danger' : 'quiet'} loading={openCheckouts.isPending} error={openCheckouts.isError}>
+    <WidgetShell
+      icon={<DueDateIcon />}
+      title="Overdue items"
+      count={overdue.length}
+      tone={overdue.length > 0 ? 'danger' : 'quiet'}
+      loading={openCheckouts.isPending}
+      error={openCheckouts.isError}
+    >
       {overdue.length === 0 ? (
         <EmptyRow>Nothing overdue.</EmptyRow>
       ) : (
-        overdue.slice(0, 3).map((c) => <WidgetRow key={c.id} label={c.itemName} meta={`with ${c.contactName}`} />)
+        overdue
+          .slice(0, 3)
+          .map((c) => <WidgetRow key={c.id} label={c.itemName} meta={`with ${c.contactName}`} />)
       )}
     </WidgetShell>
   );
@@ -236,7 +273,14 @@ function MaintenanceWidget() {
   const dueMaintenance = useDueMaintenance();
   const rows = dueMaintenance.data?.rows ?? [];
   return (
-    <WidgetShell icon={<MaintenanceIcon />} title="Maintenance due" count={rows.length} tone={rows.length > 0 ? 'warning' : 'quiet'} loading={dueMaintenance.isPending} error={dueMaintenance.isError}>
+    <WidgetShell
+      icon={<MaintenanceIcon />}
+      title="Maintenance due"
+      count={rows.length}
+      tone={rows.length > 0 ? 'warning' : 'quiet'}
+      loading={dueMaintenance.isPending}
+      error={dueMaintenance.isError}
+    >
       {rows.length === 0 ? (
         <EmptyRow>Nothing due.</EmptyRow>
       ) : (
@@ -250,14 +294,25 @@ function InTransitWidget() {
   const inTransit = useInTransitLines();
   const rows = inTransit.data?.rows ?? [];
   return (
-    <WidgetShell icon={<TruckIcon />} title="In transit" count={rows.length} tone={rows.length > 0 ? 'info' : 'quiet'} loading={inTransit.isPending} error={inTransit.isError}>
+    <WidgetShell
+      icon={<TruckIcon />}
+      title="In transit"
+      count={rows.length}
+      tone={rows.length > 0 ? 'info' : 'quiet'}
+      loading={inTransit.isPending}
+      error={inTransit.isError}
+    >
       {rows.length === 0 ? (
         <EmptyRow>Nothing inbound.</EmptyRow>
       ) : (
         rows.slice(0, 3).map((line) => (
           // Show the quantity still to arrive — part-received lines surface only their
           // outstanding remainder (§4 split receipts, Phase 24).
-          <WidgetRow key={line.lineId} label={line.label} meta={`×${Math.max(0, line.requiredQty - line.receivedQty)}`} />
+          <WidgetRow
+            key={line.lineId}
+            label={line.label}
+            meta={`×${Math.max(0, line.requiredQty - line.receivedQty)}`}
+          />
         ))
       )}
     </WidgetShell>
@@ -269,7 +324,14 @@ function ProjectsWidget() {
   // Surface the live (non-archived) projects with their lifecycle status (§3).
   const active = (projects.data?.rows ?? []).filter((p) => p.status !== 'ARCHIVED');
   return (
-    <WidgetShell icon={<ProjectIcon />} title="Project statuses" count={active.length} tone={active.length > 0 ? 'info' : 'quiet'} loading={projects.isPending} error={projects.isError}>
+    <WidgetShell
+      icon={<ProjectIcon />}
+      title="Project statuses"
+      count={active.length}
+      tone={active.length > 0 ? 'info' : 'quiet'}
+      loading={projects.isPending}
+      error={projects.isError}
+    >
       {active.length === 0 ? (
         <EmptyRow>No active projects.</EmptyRow>
       ) : (
@@ -300,15 +362,32 @@ function BudgetAlertsWidget() {
     // Surface the worst offenders first: over-budget before merely-warning.
     .sort((a, b) => Number(b.over) - Number(a.over));
 
-  const tone: Tone = flagged.some((a) => a.over) ? 'danger' : flagged.some((a) => a.warn) ? 'warning' : 'quiet';
+  const tone: Tone = flagged.some((a) => a.over)
+    ? 'danger'
+    : flagged.some((a) => a.warn)
+      ? 'warning'
+      : 'quiet';
   return (
-    <WidgetShell icon={<BudgetIcon />} title="Budget alerts" count={flagged.length} tone={tone} loading={alerts.isPending} error={alerts.isError}>
+    <WidgetShell
+      icon={<BudgetIcon />}
+      title="Budget alerts"
+      count={flagged.length}
+      tone={tone}
+      loading={alerts.isPending}
+      error={alerts.isError}
+    >
       {flagged.length === 0 ? (
         <EmptyRow>All budgets on track.</EmptyRow>
       ) : (
-        flagged.slice(0, 3).map((a) => (
-          <WidgetRow key={a.projectId} label={a.projectName} meta={`${fmt.currency(a.spentSoFar)} / ${fmt.currency(a.budget)}`} />
-        ))
+        flagged
+          .slice(0, 3)
+          .map((a) => (
+            <WidgetRow
+              key={a.projectId}
+              label={a.projectName}
+              meta={`${fmt.currency(a.spentSoFar)} / ${fmt.currency(a.budget)}`}
+            />
+          ))
       )}
     </WidgetShell>
   );
@@ -427,15 +506,14 @@ function StorageWidget() {
   const ratio = useStorageStore((state) => state.ratio);
   const fmt = useFormatters();
   return (
-    <WidgetShell
-      icon={<StorageIcon />}
-      title="Storage"
-    >
+    <WidgetShell icon={<StorageIcon />} title="Storage">
       <StatusRow label="Persistence">
         <Pill ok={persisted}>{persisted ? 'Persistent' : 'Ephemeral'}</Pill>
       </StatusRow>
       <StatusRow label="Used">
-        {estimate && estimate.supported ? `${fmt.bytes(estimate.usage)} / ${fmt.bytes(estimate.quota)}` : 'Unknown'}
+        {estimate && estimate.supported
+          ? `${fmt.bytes(estimate.usage)} / ${fmt.bytes(estimate.quota)}`
+          : 'Unknown'}
       </StatusRow>
       <StatusRow label="Capacity">
         <span className="flex items-center gap-1">
@@ -480,18 +558,73 @@ function PlatformWidget() {
  * reorder, hide or re-pin any of them.
  */
 export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
-  { id: 'inventory-totals', title: 'Inventory totals', icon: <ValueIcon />, to: '/reports', Component: InventoryTotalsWidget },
-  { id: 'low-stock', title: 'Low stock', icon: <LowStockIcon />, to: '/inventory', Component: LowStockWidget },
-  { id: 'expiring', title: 'Soon to expire', icon: <ExpiryIcon />, to: '/inventory', Component: ExpiringWidget },
+  {
+    id: 'inventory-totals',
+    title: 'Inventory totals',
+    icon: <ValueIcon />,
+    to: '/reports',
+    Component: InventoryTotalsWidget,
+  },
+  {
+    id: 'low-stock',
+    title: 'Low stock',
+    icon: <LowStockIcon />,
+    to: '/inventory',
+    Component: LowStockWidget,
+  },
+  {
+    id: 'expiring',
+    title: 'Soon to expire',
+    icon: <ExpiryIcon />,
+    to: '/inventory',
+    Component: ExpiringWidget,
+  },
   { id: 'overdue', title: 'Overdue items', icon: <DueDateIcon />, to: '/contacts', Component: OverdueWidget },
-  { id: 'maintenance', title: 'Maintenance due', icon: <MaintenanceIcon />, to: '/inventory', Component: MaintenanceWidget },
-  { id: 'in-transit', title: 'In transit', icon: <TruckIcon />, to: '/inventory', Component: InTransitWidget },
-  { id: 'projects', title: 'Project statuses', icon: <ProjectIcon />, to: '/projects', Component: ProjectsWidget },
-  { id: 'budget-alerts', title: 'Budget alerts', icon: <BudgetIcon />, to: '/projects', Component: BudgetAlertsWidget },
-  { id: 'recent-activity', title: 'Recent activity', icon: <HistoryIcon />, to: '/activity', Component: RecentActivityWidget },
+  {
+    id: 'maintenance',
+    title: 'Maintenance due',
+    icon: <MaintenanceIcon />,
+    to: '/inventory',
+    Component: MaintenanceWidget,
+  },
+  {
+    id: 'in-transit',
+    title: 'In transit',
+    icon: <TruckIcon />,
+    to: '/inventory',
+    Component: InTransitWidget,
+  },
+  {
+    id: 'projects',
+    title: 'Project statuses',
+    icon: <ProjectIcon />,
+    to: '/projects',
+    Component: ProjectsWidget,
+  },
+  {
+    id: 'budget-alerts',
+    title: 'Budget alerts',
+    icon: <BudgetIcon />,
+    to: '/projects',
+    Component: BudgetAlertsWidget,
+  },
+  {
+    id: 'recent-activity',
+    title: 'Recent activity',
+    icon: <HistoryIcon />,
+    to: '/activity',
+    Component: RecentActivityWidget,
+  },
   { id: 'quick-links', title: 'Quick actions', icon: <AddIcon />, Component: QuickActionsWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
-  { id: 'system-storage', title: 'Storage', icon: <StorageIcon />, to: '/settings', hash: 'danger-zone', Component: StorageWidget },
+  {
+    id: 'system-storage',
+    title: 'Storage',
+    icon: <StorageIcon />,
+    to: '/settings',
+    hash: 'danger-zone',
+    Component: StorageWidget,
+  },
   { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },
 ];
 

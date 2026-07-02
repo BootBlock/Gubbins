@@ -24,10 +24,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
       this.assertWritable();
       const existing = await this.require(id);
       if (existing.trackingMode !== 'CONSUMABLE_GAUGE' || !existing.gauge) {
-        throw new DbError(
-          'SQLITE_CONSTRAINT',
-          'Gauge adjustment applies only to CONSUMABLE_GAUGE items.',
-        );
+        throw new DbError('SQLITE_CONSTRAINT', 'Gauge adjustment applies only to CONSUMABLE_GAUGE items.');
       }
       if (!Number.isFinite(adjustment.delta)) {
         throw new DbError('SQLITE_CONSTRAINT', 'Gauge delta must be a finite number.');

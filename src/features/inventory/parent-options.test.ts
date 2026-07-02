@@ -90,12 +90,10 @@ describe('buildItemLocationOptions', () => {
       { id: 'attic', name: 'Attic', isSystem: false, itemCount: 2, color: null, archivedAt: 123 },
     ];
     // Not the current home → hidden.
-    expect(buildItemLocationOptions(withArchived, quantity).some((o) => o.value === 'attic')).toBe(
-      false,
-    );
+    expect(buildItemLocationOptions(withArchived, quantity).some((o) => o.value === 'attic')).toBe(false);
     // The current home is kept even though archived, so the picker can show it.
-    expect(
-      buildItemLocationOptions(withArchived, quantity, 'attic').some((o) => o.value === 'attic'),
-    ).toBe(true);
+    expect(buildItemLocationOptions(withArchived, quantity, 'attic').some((o) => o.value === 'attic')).toBe(
+      true,
+    );
   });
 });

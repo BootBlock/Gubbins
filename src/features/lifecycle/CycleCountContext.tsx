@@ -6,14 +6,7 @@
  * authorised Reconciliation Adjustments are persisted (by `useReconcile`); the
  * variance arithmetic itself lives in the pure, unit-tested `cycle-count` module.
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import type { SerialisedPresence } from './cycle-count';
 
@@ -78,9 +71,7 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
       setCounts({}); // blind: no pre-filled expected values (§4.4)
       setSerialised(serialisedLines);
       // Default every instance present; the auditor actively flags any not found.
-      setPresenceMap(
-        Object.fromEntries(serialisedLines.map((l) => [l.itemId, 'PRESENT' as SerialisedPresence])),
-      );
+      setPresenceMap(Object.fromEntries(serialisedLines.map((l) => [l.itemId, 'PRESENT'])));
     },
     [],
   );

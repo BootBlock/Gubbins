@@ -50,9 +50,7 @@ describe('PageHeader — the canonical screen header (spec §2.4.1)', () => {
   });
 
   it('renders page actions alongside the global nav in the right-aligned row', () => {
-    render(
-      <PageHeader icon={<svg />} title="Reports" actions={<button type="button">Export CSV</button>} />,
-    );
+    render(<PageHeader icon={<svg />} title="Reports" actions={<button type="button">Export CSV</button>} />);
     const action = screen.getByRole('button', { name: 'Export CSV' });
     const row = action.parentElement;
     // Actions live in the ml-auto row, immediately before the global nav menu.

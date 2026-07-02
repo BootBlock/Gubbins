@@ -16,8 +16,12 @@ import {
 
 describe('resolveBridgeIngestUrl', () => {
   it('appends the ingest path to a base URL and tolerates trailing slashes', () => {
-    expect(resolveBridgeIngestUrl('http://127.0.0.1:8787')).toBe(`http://127.0.0.1:8787${SNAPSHOT_INGEST_PATH}`);
-    expect(resolveBridgeIngestUrl('http://127.0.0.1:8787/')).toBe(`http://127.0.0.1:8787${SNAPSHOT_INGEST_PATH}`);
+    expect(resolveBridgeIngestUrl('http://127.0.0.1:8787')).toBe(
+      `http://127.0.0.1:8787${SNAPSHOT_INGEST_PATH}`,
+    );
+    expect(resolveBridgeIngestUrl('http://127.0.0.1:8787/')).toBe(
+      `http://127.0.0.1:8787${SNAPSHOT_INGEST_PATH}`,
+    );
   });
 
   it('respects a URL that already ends in the ingest path', () => {
@@ -57,8 +61,12 @@ describe('mapPushResponse', () => {
   it('maps 401/404/413/422/429 to distinct, token-free guidance', () => {
     expect(mapPushResponse(401, undefined, 'u').message).toMatch(/token/i);
     expect(mapPushResponse(404, undefined, 'u').message).toMatch(/GUBBINS_BRIDGE_ALLOW_PUSH/);
-    expect(mapPushResponse(413, { error: { code: 'payload_too_large', message: 'too big' } }, 'u').message).toBe('too big');
-    expect(mapPushResponse(422, { error: { code: 'unprocessable', message: 'newer build' } }, 'u').message).toBe('newer build');
+    expect(
+      mapPushResponse(413, { error: { code: 'payload_too_large', message: 'too big' } }, 'u').message,
+    ).toBe('too big');
+    expect(
+      mapPushResponse(422, { error: { code: 'unprocessable', message: 'newer build' } }, 'u').message,
+    ).toBe('newer build');
     expect(mapPushResponse(429, undefined, 'u').message).toMatch(/rate-limit/i);
   });
 
@@ -69,7 +77,8 @@ describe('mapPushResponse', () => {
 
 describe('pushSnapshotToBridge', () => {
   it('POSTs the JSON with the right shape and reports success', async () => {
-    const seen: { url: string; init: { method: string; headers: Record<string, string>; body: string } }[] = [];
+    const seen: { url: string; init: { method: string; headers: Record<string, string>; body: string } }[] =
+      [];
     const fetchImpl: FetchLike = async (url, init) => {
       seen.push({ url, init });
       return { status: 200, json: async () => ({ ok: true, formatVersion: 2 }) };

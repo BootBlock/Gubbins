@@ -13,13 +13,7 @@ import {
   type DbRequest,
   type RpcRequestEnvelope,
 } from './protocol';
-import type {
-  IDatabaseDriver,
-  SqlExecuteResult,
-  SqlParams,
-  SqlRow,
-  SqlStatement,
-} from './driver';
+import type { IDatabaseDriver, SqlExecuteResult, SqlParams, SqlRow, SqlStatement } from './driver';
 
 interface PendingCall {
   readonly resolve: (value: unknown) => void;

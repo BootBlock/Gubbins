@@ -82,7 +82,6 @@ describe('warrantyStatus', () => {
 
   it('returns "active" for a warranty expiring a year from now', () => {
     const now = ms('2025-01-01');
-    const expiry = ms('2026-01-01');
     expect(warrantyStatus(item({ warrantyExpiresAt: '2026-01-01' }), now)).toBe('active');
   });
 });

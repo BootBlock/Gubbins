@@ -31,11 +31,7 @@ export function daysUntil(dueDate: number, now: number = Date.now()): number {
  * Classify a checkout's urgency. `dueDate` of `null` is `NONE`. Past due is
  * `OVERDUE`; within `dueSoonDays` (default 2) is `DUE_SOON`; otherwise `UPCOMING`.
  */
-export function dueStatus(
-  dueDate: number | null,
-  now: number = Date.now(),
-  dueSoonDays = 2,
-): DueStatus {
+export function dueStatus(dueDate: number | null, now: number = Date.now(), dueSoonDays = 2): DueStatus {
   if (dueDate === null) return 'NONE';
   if (dueDate < now) return 'OVERDUE';
   if (dueDate - now <= dueSoonDays * MS_PER_DAY) return 'DUE_SOON';

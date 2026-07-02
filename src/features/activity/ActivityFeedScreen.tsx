@@ -16,18 +16,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { LiveRegion, MAIN_CONTENT_ID, PageContainer, PageHeader, Spinner, Surface } from '@/components/foundry';
+import {
+  LiveRegion,
+  MAIN_CONTENT_ID,
+  PageContainer,
+  PageHeader,
+  Spinner,
+  Surface,
+} from '@/components/foundry';
 import { HistoryIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
 import { describeHistoryEntry, HISTORY_TONE_BADGE } from '@/features/inventory/history-format';
-import {
-  ACTIVITY_KINDS,
-  ACTIVITY_KIND_LABEL,
-  actionsForKinds,
-  type ActivityKind,
-} from './activity-kind';
+import { ACTIVITY_KINDS, ACTIVITY_KIND_LABEL, actionsForKinds, type ActivityKind } from './activity-kind';
 import { useActivityFeed } from './queries';
 
 /** Estimated entry height — also the height of a not-yet-resident placeholder. */
@@ -61,9 +63,7 @@ function KindFilter({
             data-testid={`activity-filter-${kind}`}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-              active
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {ACTIVITY_KIND_LABEL[kind]}
@@ -131,7 +131,7 @@ export function ActivityFeedScreen() {
   useEffect(() => {
     if (!lastRow) return;
     if (lastRow.index >= rowCount - 1 && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
+      void fetchNextPage();
     }
   }, [lastRow, rowCount, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
@@ -141,7 +141,7 @@ export function ActivityFeedScreen() {
   useEffect(() => {
     if (!firstRow) return;
     if (firstRow.index < firstItemIndex && hasPreviousPage && !isFetchingPreviousPage) {
-      fetchPreviousPage();
+      void fetchPreviousPage();
     }
   }, [firstRow, firstItemIndex, hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 
@@ -165,7 +165,12 @@ export function ActivityFeedScreen() {
 
       <KindFilter enabled={enabledKinds} onToggle={toggleKind} />
 
-      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-col gap-4 outline-none" data-testid="activity-main">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-col gap-4 outline-none"
+        data-testid="activity-main"
+      >
         {isLoading && (
           <div className="flex justify-center py-12">
             <Spinner />
@@ -199,7 +204,12 @@ export function ActivityFeedScreen() {
           >
             <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
               {virtualRows.map((virtualRow) => {
-                const { start, resident } = resolveListRow(virtualRow.index, 1, firstItemIndex, entries.length);
+                const { start, resident } = resolveListRow(
+                  virtualRow.index,
+                  1,
+                  firstItemIndex,
+                  entries.length,
+                );
                 const entry = resident ? entries[start] : undefined;
                 return (
                   <div

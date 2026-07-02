@@ -56,9 +56,6 @@ export function addSavedSearch(
 }
 
 /** Remove a saved search by id (no-op if it isn't there). */
-export function removeSavedSearch(
-  list: readonly SavedSearch[],
-  id: string,
-): readonly SavedSearch[] {
+export function removeSavedSearch(list: readonly SavedSearch[], id: string): readonly SavedSearch[] {
   return list.filter((s) => s.id !== id);
 }

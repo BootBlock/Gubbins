@@ -1,10 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-import {
-  useReducedMotion,
-  type MediaQueryLike,
-  type MediaQueryProvider,
-} from './useReducedMotion';
+import { useReducedMotion, type MediaQueryLike, type MediaQueryProvider } from './useReducedMotion';
 
 afterEach(cleanup);
 

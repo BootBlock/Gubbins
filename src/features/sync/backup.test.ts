@@ -2,12 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
-import {
-  ImageRepository,
-  ItemRepository,
-  TagRepository,
-  UNASSIGNED_LOCATION_ID,
-} from '@/db/repositories';
+import { ImageRepository, ItemRepository, TagRepository, UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { buildBackupJson, parseBackupJson, restoreFromBackupJson } from './backup';
 
 describe('backup parse/validate (§2)', () => {

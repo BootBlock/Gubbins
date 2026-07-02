@@ -54,19 +54,14 @@ export function EditLocationDialog({
   const [color, setColor] = useState<LocationColor | null>(
     isLocationColor(location.color) ? location.color : null,
   );
-  const [kind, setKind] = useState<LocationKind | null>(
-    isLocationKind(location.kind) ? location.kind : null,
-  );
+  const [kind, setKind] = useState<LocationKind | null>(isLocationKind(location.kind) ? location.kind : null);
   const [capacity, setCapacity] = useState(location.capacity != null ? String(location.capacity) : '');
   const [isDefault, setIsDefault] = useState(location.isDefault);
   const [error, setError] = useState<string | null>(null);
 
   // A location may not move under itself or any of its own descendants (the repo
   // guards this too, but excluding them from the picker is the kinder UX).
-  const forbidden = useMemo(
-    () => collectDescendantIds(location.id, locations),
-    [location.id, locations],
-  );
+  const forbidden = useMemo(() => collectDescendantIds(location.id, locations), [location.id, locations]);
   const parentOptions = useMemo(
     () => buildParentOptions(locations, fmt.quantity, forbidden),
     [locations, fmt, forbidden],
@@ -82,7 +77,8 @@ export function EditLocationDialog({
   // value the way the repository persists it (it collapses blanks to NULL).
   const descValue = description.trim() || null;
   const capacityValue = capacity.trim() === '' ? null : Math.floor(Number(capacity));
-  const capacityValid = capacity.trim() === '' || (Number.isFinite(Number(capacity)) && Number(capacity) >= 0);
+  const capacityValid =
+    capacity.trim() === '' || (Number.isFinite(Number(capacity)) && Number(capacity) >= 0);
   const dirty =
     trimmed !== location.name ||
     (parentId || null) !== location.parentId ||
@@ -113,8 +109,7 @@ export function EditLocationDialog({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) =>
-          setError(e instanceof Error ? e.message : 'Could not save changes to this location.'),
+        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save changes to this location.'),
       },
     );
   };
@@ -280,15 +275,7 @@ export function EditLocationDialog({
   );
 }
 
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div>
       <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">

@@ -103,14 +103,8 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
       })}
 
       <div className="flex justify-end">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={changed.length === 0 || hasErrors || setValues.isPending}
-        >
-          {changed.length > 0
-            ? `Save ${changed.length} change${changed.length > 1 ? 's' : ''}`
-            : 'Saved'}
+        <Button size="sm" onClick={save} disabled={changed.length === 0 || hasErrors || setValues.isPending}>
+          {changed.length > 0 ? `Save ${changed.length} change${changed.length > 1 ? 's' : ''}` : 'Saved'}
         </Button>
       </div>
     </div>
@@ -143,14 +137,7 @@ function FieldInput({
         />
       );
     case 'DATE':
-      return (
-        <Input
-          type="date"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          {...controlProps}
-        />
-      );
+      return <Input type="date" value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
     case 'BOOLEAN':
       return (
         <label className="flex items-center gap-2 text-sm">

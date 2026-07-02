@@ -38,9 +38,7 @@ export function SetBudgetDialog({
             tone: 'success',
             heading: budget == null ? 'Budget cleared' : 'Budget set',
             message:
-              budget == null
-                ? 'This project no longer has a budget.'
-                : 'The project budget was updated.',
+              budget == null ? 'This project no longer has a budget.' : 'The project budget was updated.',
           });
           onClose();
         },

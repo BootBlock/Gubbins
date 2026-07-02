@@ -40,7 +40,14 @@ export function AddBomLineDialog({
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { itemId: '', designator: '', description: '', mpn: '', manufacturer: '', requiredQty: '1' },
+    defaultValues: {
+      itemId: '',
+      designator: '',
+      description: '',
+      mpn: '',
+      manufacturer: '',
+      requiredQty: '1',
+    },
   });
 
   const close = () => {
@@ -69,7 +76,12 @@ export function AddBomLineDialog({
   };
 
   return (
-    <Modal open={open} onClose={close} title="Add BOM line" description="Add a required part to this project.">
+    <Modal
+      open={open}
+      onClose={close}
+      title="Add BOM line"
+      description="Add a required part to this project."
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">Inventory item (optional)</span>

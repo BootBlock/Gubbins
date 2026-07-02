@@ -100,7 +100,6 @@ export function useSetItemFieldValues(itemId: string) {
   return useMutation({
     mutationFn: (values: Record<string, string | null>) =>
       getCategoryRepository().setItemFieldValues(itemId, values),
-    onSettled: () =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) }),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) }),
   });
 }

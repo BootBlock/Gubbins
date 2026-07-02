@@ -22,13 +22,7 @@ import {
  * key) · operator · value. All edits dispatch immutable `updateCondition` actions
  * against the Tier-3 AST; nothing here writes SQL.
  */
-export function ConditionEditor({
-  condition,
-  path,
-}: {
-  condition: FilterCondition;
-  path: BuilderPath;
-}) {
+export function ConditionEditor({ condition, path }: { condition: FilterCondition; path: BuilderPath }) {
   const { dispatch } = useSearchBuilder();
   const isCapability = isCapabilityField(condition.field);
   const isCustom = isCustomField(condition.field);

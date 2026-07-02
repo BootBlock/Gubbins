@@ -27,15 +27,7 @@ function lotLabel(b: ItemBatchPlacement): string {
  * several units; serialised/gauge are pinned. A due date is optional (§4 Due Dates),
  * set via quick presets or a date picker.
  */
-export function CheckoutDialog({
-  open,
-  onClose,
-  item,
-}: {
-  open: boolean;
-  onClose: () => void;
-  item: Item;
-}) {
+export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose: () => void; item: Item }) {
   const contacts = useContacts();
   const checkout = useCheckoutItem();
   const stock = useItemStock(item.id);
@@ -57,11 +49,10 @@ export function CheckoutDialog({
   // location when split, else the item's primary). When any is a tracked lot, the user may lend
   // a specific one rather than the FEFO default; the available figure then follows that lot.
   const sourceLocId = isSplit ? fromLocationId : item.locationId;
-  const lotsHere = (itemBatches.data ?? []).filter(
-    (b) => b.locationId === sourceLocId && b.quantity > 0,
-  );
+  const lotsHere = (itemBatches.data ?? []).filter((b) => b.locationId === sourceLocId && b.quantity > 0);
   const canPickLot = isDiscrete && lotsHere.some((b) => !isDefaultBatch(b.batchKey));
-  const selectedLot = fromBatchKey !== ANY_LOT ? lotsHere.find((b) => b.batchKey === fromBatchKey) : undefined;
+  const selectedLot =
+    fromBatchKey !== ANY_LOT ? lotsHere.find((b) => b.batchKey === fromBatchKey) : undefined;
   const placementHere = isSplit
     ? (placements.find((p) => p.locationId === fromLocationId)?.quantity ?? 0)
     : item.quantity;
@@ -140,7 +131,9 @@ export function CheckoutDialog({
             placeholder="Type a name — new names are added automatically"
           />
           <datalist id="contact-suggestions">
-            {contacts.data?.rows.map((c) => <option key={c.id} value={c.name} />)}
+            {contacts.data?.rows.map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
           </datalist>
         </label>
 
@@ -226,7 +219,11 @@ export function CheckoutDialog({
           </div>
         </div>
 
-        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

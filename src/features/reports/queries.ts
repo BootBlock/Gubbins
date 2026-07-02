@@ -47,7 +47,10 @@ export function useConsumptionRate(windowDays: number = REPORT_WINDOW_DAYS) {
   });
 }
 
-export function useMovement(windowDays: number = REPORT_WINDOW_DAYS, buckets: number = REPORT_MOVEMENT_BUCKETS) {
+export function useMovement(
+  windowDays: number = REPORT_WINDOW_DAYS,
+  buckets: number = REPORT_MOVEMENT_BUCKETS,
+) {
   return useQuery({
     queryKey: ['reports', 'movement', windowDays, buckets],
     queryFn: () => getReportRepository().movement(windowDays, buckets),

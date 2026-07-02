@@ -30,14 +30,7 @@ import {
 } from './stock-batches';
 import { batchIdentityFromKey, planBatchSelection } from '@/features/inventory/batches';
 import { rowToCheckout } from './mappers';
-import type {
-  CheckoutItemInput,
-  Checkout,
-  CheckoutRow,
-  CheckoutWithNames,
-  Page,
-  PageParams,
-} from './types';
+import type { CheckoutItemInput, Checkout, CheckoutRow, CheckoutWithNames, Page, PageParams } from './types';
 
 interface CheckoutJoinRow extends CheckoutRow {
   readonly item_name: string;
@@ -53,9 +46,7 @@ export class CheckoutRepository extends BaseRepository {
   }
 
   async getById(id: string): Promise<Checkout | undefined> {
-    const row = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
-      id,
-    ]);
+    const row = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [id]);
     return row ? rowToCheckout(row) : undefined;
   }
 
@@ -103,14 +94,12 @@ export class CheckoutRepository extends BaseRepository {
     // placement; the return restores there. SERIALISED instances are single-placement, so
     // the source is simply the item's location. Validate against — and decrement — the
     // chosen placement's on-hand, not the primary's.
-    const fromLocationId =
-      !isSerialised && input.fromLocationId ? input.fromLocationId : item.location_id;
+    const fromLocationId = !isSerialised && input.fromLocationId ? input.fromLocationId : item.location_id;
 
     // Per-batch source (Phase 29): a DISCRETE loan may pick a *specific* lot at the placement
     // (the empty string = the untracked default batch); the return restores to that exact lot.
     // Omitted = the Phase-28 FEFO draw. SERIALISED instances have no batch dimension.
-    const fromBatchKey =
-      !isSerialised && input.fromBatchKey !== undefined ? input.fromBatchKey : null;
+    const fromBatchKey = !isSerialised && input.fromBatchKey !== undefined ? input.fromBatchKey : null;
 
     if (isSerialised) {
       const open = await this.driver.queryOne<{ ok: number }>(
@@ -176,7 +165,16 @@ export class CheckoutRepository extends BaseRepository {
       {
         sql: `INSERT INTO checkouts (id, item_id, contact_id, quantity, due_date, note, source_location_id, source_batch_key)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-        params: [id, input.itemId, contact.id, quantity, dueDate, input.note?.trim() || null, fromLocationId, fromBatchKey],
+        params: [
+          id,
+          input.itemId,
+          contact.id,
+          quantity,
+          dueDate,
+          input.note?.trim() || null,
+          fromLocationId,
+          fromBatchKey,
+        ],
       },
       historyStatement(input.itemId, 'CHECKED_OUT', {
         quantityDelta: stockDelta === 0 ? null : -stockDelta,
@@ -189,10 +187,9 @@ export class CheckoutRepository extends BaseRepository {
 
   /** Return an open checkout: restore stock, stamp `returned_at`, log `CHECKED_IN`. */
   async checkIn(checkoutId: string, note?: string): Promise<Checkout> {
-    const existing = await this.driver.queryOne<CheckoutRow>(
-      'SELECT * FROM checkouts WHERE id = ?;',
-      [checkoutId],
-    );
+    const existing = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
+      checkoutId,
+    ]);
     if (!existing) {
       throw new DbError('SQLITE_CONSTRAINT', `Checkout "${checkoutId}" does not exist.`);
     }
@@ -295,7 +292,11 @@ export class CheckoutRepository extends BaseRepository {
       [...whereParams, limit, offset],
     );
     const now = Date.now();
-    return this.toPage(rows.map((r) => toCheckoutWithNames(r, now)), limit, offset);
+    return this.toPage(
+      rows.map((r) => toCheckoutWithNames(r, now)),
+      limit,
+      offset,
+    );
   }
 }
 

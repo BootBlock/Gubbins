@@ -23,8 +23,7 @@ export function BudgetMeter({
   className?: string;
 }) {
   const pct = fraction == null ? 0 : Math.min(100, Math.max(0, fraction * 100));
-  const projectedPct =
-    projectedFraction == null ? null : Math.min(100, Math.max(0, projectedFraction * 100));
+  const projectedPct = projectedFraction == null ? null : Math.min(100, Math.max(0, projectedFraction * 100));
   const showProjected = projectedPct != null && projectedPct > pct;
 
   return (

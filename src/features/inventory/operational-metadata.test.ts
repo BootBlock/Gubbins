@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  coerceMetadataValue,
-  buildMetadata,
-  metadataToRows,
-  type MetadataRow,
-} from './operational-metadata';
+import { coerceMetadataValue, buildMetadata, metadataToRows, type MetadataRow } from './operational-metadata';
 
 describe('coerceMetadataValue', () => {
   it('coerces a canonical numeric string to a number', () => {
@@ -100,9 +95,7 @@ describe('metadataToRows', () => {
   });
 
   it('stringifies primitive values for editing', () => {
-    expect(
-      metadataToRows({ bed_temp_celsius: 60, material: 'PLA', dried: true }),
-    ).toEqual([
+    expect(metadataToRows({ bed_temp_celsius: 60, material: 'PLA', dried: true })).toEqual([
       { key: 'bed_temp_celsius', value: '60' },
       { key: 'material', value: 'PLA' },
       { key: 'dried', value: 'true' },
@@ -110,9 +103,7 @@ describe('metadataToRows', () => {
   });
 
   it('JSON-stringifies a nested value rather than dropping it', () => {
-    expect(metadataToRows({ profile: { layer: 0.2 } })).toEqual([
-      { key: 'profile', value: '{"layer":0.2}' },
-    ]);
+    expect(metadataToRows({ profile: { layer: 0.2 } })).toEqual([{ key: 'profile', value: '{"layer":0.2}' }]);
   });
 
   it('round-trips a primitive record through rows and back', () => {

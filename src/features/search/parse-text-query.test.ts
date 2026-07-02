@@ -365,9 +365,7 @@ describe('parseTextQuery — OR / parentheses (grammar depth, Phase 48)', () => 
   });
 
   it('ignores an empty group, an empty query still matches everything', () => {
-    expect(rootOf('esp32 ()').conditions).toEqual([
-      { field: 'name', operator: 'CONTAINS', value: 'esp32' },
-    ]);
+    expect(rootOf('esp32 ()').conditions).toEqual([{ field: 'name', operator: 'CONTAINS', value: 'esp32' }]);
     expect(rootOf('()').conditions).toHaveLength(0);
   });
 

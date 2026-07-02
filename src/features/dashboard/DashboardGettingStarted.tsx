@@ -30,11 +30,13 @@ export function DashboardGettingStarted() {
     <Surface className="flex flex-col gap-4 p-5" data-testid="dashboard-getting-started">
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-5">
         <PackageIcon aria-hidden />
-        <h2 className="text-sm font-semibold text-foreground">Welcome to Gubbins — let’s add your first item</h2>
+        <h2 className="text-sm font-semibold text-foreground">
+          Welcome to Gubbins — let’s add your first item
+        </h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Your inventory is empty. Add something by hand, bring in an existing list as a CSV, or scan a
-        barcode to get started.
+        Your inventory is empty. Add something by hand, bring in an existing list as a CSV, or scan a barcode
+        to get started.
       </p>
       <div className="flex flex-wrap gap-2">
         <Link

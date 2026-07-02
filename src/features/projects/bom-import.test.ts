@@ -50,9 +50,7 @@ describe('parseBom — KiCad / generic column mapping', () => {
   });
 
   it('recognises generic synonyms (Qty, Mfr Part Number, Mfr)', () => {
-    const csv = ['Qty,Mfr Part Number,Mfr,Description', '5,GRM188R71H104KA93D,Murata,0.1uF cap'].join(
-      '\n',
-    );
+    const csv = ['Qty,Mfr Part Number,Mfr,Description', '5,GRM188R71H104KA93D,Murata,0.1uF cap'].join('\n');
     const lines = parseBom(csv);
     expect(lines[0]).toMatchObject({
       requiredQty: 5,

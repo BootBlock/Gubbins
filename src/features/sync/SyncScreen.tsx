@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Banner, Button, FormField, Input, LiveRegion, PageContainer, PageHeader, Surface, Tooltip, MAIN_CONTENT_ID } from '@/components/foundry';
+import {
+  Banner,
+  Button,
+  FormField,
+  Input,
+  LiveRegion,
+  PageContainer,
+  PageHeader,
+  Surface,
+  Tooltip,
+  MAIN_CONTENT_ID,
+} from '@/components/foundry';
 import {
   ArchiveIcon,
   CloudIcon,
@@ -119,7 +130,10 @@ export function SyncScreen() {
     }
   }
 
-  function connect(provider: { id: string; label: string }, instance: NonNullable<ReturnType<typeof getActiveProvider>>) {
+  function connect(
+    provider: { id: string; label: string },
+    instance: NonNullable<ReturnType<typeof getActiveProvider>>,
+  ) {
     setActiveProvider(instance);
     auth.setProvider(provider.id, provider.label);
     setConnected(true);
@@ -223,229 +237,238 @@ export function SyncScreen() {
     <PageContainer>
       <PageHeader icon={<CloudIcon />} title="Cloud Sync & backups" />
 
-      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
-      {/* Errors interrupt (assertive); a sync/restore/backup failure the user must hear
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-1 animate-rise flex-col gap-6 outline-none"
+      >
+        {/* Errors interrupt (assertive); a sync/restore/backup failure the user must hear
           now. role="alert" also announces reliably on insertion, unlike a polite status. */}
-      {error ? <Banner tone="danger" role="alert" data-testid="sync-error">{error}</Banner> : null}
-      {notice ? <Banner tone="info" data-testid="sync-notice">{notice}</Banner> : null}
+        {error ? (
+          <Banner tone="danger" role="alert" data-testid="sync-error">
+            {error}
+          </Banner>
+        ) : null}
+        {notice ? (
+          <Banner tone="info" data-testid="sync-notice">
+            {notice}
+          </Banner>
+        ) : null}
 
-      {/* Initial Handshake */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Connection
-        </h2>
-        {connected ? (
-          <Surface className="flex flex-wrap items-center gap-3 p-4">
-            <span className="grid size-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 [&_svg]:size-5">
-              <CloudIcon />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium" data-testid="sync-provider-label">
-                {auth.providerLabel}
+        {/* Initial Handshake */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Connection</h2>
+          {connected ? (
+            <Surface className="flex flex-wrap items-center gap-3 p-4">
+              <span className="grid size-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 [&_svg]:size-5">
+                <CloudIcon />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium" data-testid="sync-provider-label">
+                  {auth.providerLabel}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {auth.lastSyncedAt ? `Last synced ${fmt.dateTime(auth.lastSyncedAt)}` : 'Not yet synced.'}
+                </p>
+              </div>
+              <Tooltip
+                content="Stop syncing and forget this provider. Your local inventory is untouched; the synced copy stays in place."
+                triggerTabIndex={-1}
+              >
+                <span>
+                  <Button variant="outline" size="sm" onClick={disconnect}>
+                    <DisconnectIcon />
+                    Disconnect
+                  </Button>
+                </span>
+              </Tooltip>
+            </Surface>
+          ) : (
+            <Surface className="space-y-3 p-4">
+              <p className="text-sm text-muted-foreground">
+                Choose where to synchronise. Gubbins is provider-agnostic — sign in to
+                <strong> Google Drive</strong> (an app-private folder), connect a local folder (shared via
+                your own cloud drive), or use the in-memory provider to try it out.
               </p>
-              <p className="text-xs text-muted-foreground">
-                {auth.lastSyncedAt
-                  ? `Last synced ${fmt.dateTime(auth.lastSyncedAt)}`
-                  : 'Not yet synced.'}
-              </p>
-            </div>
+              {reconnectable ? (
+                <Banner tone="info">
+                  <div className="space-y-2">
+                    <p>
+                      Found your previous sync folder ({auth.providerLabel}). Re-grant access to resume
+                      syncing through it.
+                    </p>
+                    <Button size="sm" onClick={reconnectFolder} data-testid="reconnect-folder">
+                      <FolderSyncIcon />
+                      Reconnect folder
+                    </Button>
+                  </div>
+                </Banner>
+              ) : googleReconnectable ? (
+                <Banner tone="info">
+                  <div className="space-y-2">
+                    <p>Your Google Drive sign-in has expired. Reconnect to resume syncing.</p>
+                    <Button size="sm" onClick={connectGoogle} data-testid="reconnect-google-drive">
+                      <CloudIcon />
+                      Reconnect Google Drive
+                    </Button>
+                  </div>
+                </Banner>
+              ) : configuredButOffline ? (
+                <Banner tone="warning">
+                  Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
+                </Banner>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Tooltip
+                  content={
+                    driveConfigured
+                      ? 'Sign in to Google to sync through an **app-private** folder in your Drive. Gubbins can only see that folder — never your other files.'
+                      : 'Google Drive sync is not configured for this build. Set `VITE_GOOGLE_CLIENT_ID` and register your OAuth client (see docs/dev/google-drive-sync.md).'
+                  }
+                >
+                  <span>
+                    <Button
+                      onClick={connectGoogle}
+                      disabled={!driveConfigured}
+                      data-testid="connect-google-drive"
+                    >
+                      <CloudIcon />
+                      Google Drive…
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    fsSupported
+                      ? 'Pick a folder to sync through (e.g. inside a cloud-drive mount).'
+                      : 'This browser does not support the File System Access API.'
+                  }
+                >
+                  <span>
+                    <Button variant="outline" onClick={connectFolder} disabled={!fsSupported}>
+                      <FolderSyncIcon />
+                      Local folder…
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
+                  <ConnectIcon />
+                  In-memory (test)
+                </Button>
+              </div>
+            </Surface>
+          )}
+        </section>
+
+        {/* Sync */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Synchronise</h2>
+          <div className="flex flex-wrap items-center gap-3">
             <Tooltip
-              content="Stop syncing and forget this provider. Your local inventory is untouched; the synced copy stays in place."
+              content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
               triggerTabIndex={-1}
             >
               <span>
-                <Button variant="outline" size="sm" onClick={disconnect}>
-                  <DisconnectIcon />
-                  Disconnect
+                <Button onClick={syncNow} disabled={!connected || busy} data-testid="sync-now">
+                  <SyncIcon />
+                  Sync now
                 </Button>
               </span>
             </Tooltip>
-          </Surface>
-        ) : (
-          <Surface className="space-y-3 p-4">
-            <p className="text-sm text-muted-foreground">
-              Choose where to synchronise. Gubbins is provider-agnostic — sign in to
-              <strong> Google Drive</strong> (an app-private folder), connect a local folder
-              (shared via your own cloud drive), or use the in-memory provider to try it out.
-            </p>
-            {reconnectable ? (
-              <Banner tone="info">
-                <div className="space-y-2">
-                  <p>
-                    Found your previous sync folder ({auth.providerLabel}). Re-grant access to resume
-                    syncing through it.
-                  </p>
-                  <Button size="sm" onClick={reconnectFolder} data-testid="reconnect-folder">
-                    <FolderSyncIcon />
-                    Reconnect folder
-                  </Button>
-                </div>
-              </Banner>
-            ) : googleReconnectable ? (
-              <Banner tone="info">
-                <div className="space-y-2">
-                  <p>Your Google Drive sign-in has expired. Reconnect to resume syncing.</p>
-                  <Button size="sm" onClick={connectGoogle} data-testid="reconnect-google-drive">
-                    <CloudIcon />
-                    Reconnect Google Drive
-                  </Button>
-                </div>
-              </Banner>
-            ) : configuredButOffline ? (
-              <Banner tone="warning">
-                Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
-              </Banner>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Tooltip
-                content={
-                  driveConfigured
-                    ? 'Sign in to Google to sync through an **app-private** folder in your Drive. Gubbins can only see that folder — never your other files.'
-                    : 'Google Drive sync is not configured for this build. Set `VITE_GOOGLE_CLIENT_ID` and register your OAuth client (see docs/dev/google-drive-sync.md).'
-                }
-              >
-                <span>
-                  <Button onClick={connectGoogle} disabled={!driveConfigured} data-testid="connect-google-drive">
-                    <CloudIcon />
-                    Google Drive…
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip
-                content={
-                  fsSupported
-                    ? 'Pick a folder to sync through (e.g. inside a cloud-drive mount).'
-                    : 'This browser does not support the File System Access API.'
-                }
-              >
-                <span>
-                  <Button variant="outline" onClick={connectFolder} disabled={!fsSupported}>
-                    <FolderSyncIcon />
-                    Local folder…
-                  </Button>
-                </span>
-              </Tooltip>
-              <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
-                <ConnectIcon />
-                In-memory (test)
-              </Button>
-            </div>
-          </Surface>
-        )}
-      </section>
+            {/* Always-mounted polite region: the sync outcome appears in place after an
+              explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
+              The region must pre-exist for the later content change to be announced. */}
+            <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
+              {result && result.status !== 'HARD_STOP'
+                ? `${result.status} · pulled ${result.pulled} · deleted ${result.deleted}` +
+                  (result.reparented > 0 ? ` · re-parented ${result.reparented}` : '') +
+                  (result.rejectedCycles > 0 ? ` · cycles blocked ${result.rejectedCycles}` : '')
+                : null}
+            </LiveRegion>
+          </div>
+        </section>
 
-      {/* Sync */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Synchronise
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Backup & restore */}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Backup &amp; restore
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Save a complete backup — your inventory and records, full-resolution images, and settings — to a
+            single file, then restore it later on this or another device. Choose exactly what to include.
+          </p>
           <Tooltip
-            content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
+            content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
             triggerTabIndex={-1}
           >
             <span>
-              <Button onClick={syncNow} disabled={!connected || busy} data-testid="sync-now">
-                <SyncIcon />
-                Sync now
+              <Button variant="outline" onClick={() => setBackupOpen(true)} data-testid="open-backup">
+                <ArchiveIcon />
+                Backup &amp; restore…
               </Button>
             </span>
           </Tooltip>
-          {/* Always-mounted polite region: the sync outcome appears in place after an
-              explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
-              The region must pre-exist for the later content change to be announced. */}
-          <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
-            {result && result.status !== 'HARD_STOP'
-              ? `${result.status} · pulled ${result.pulled} · deleted ${result.deleted}` +
-                (result.reparented > 0 ? ` · re-parented ${result.reparented}` : '') +
-                (result.rejectedCycles > 0 ? ` · cycles blocked ${result.rejectedCycles}` : '')
-              : null}
-          </LiveRegion>
-        </div>
-      </section>
+        </section>
 
-      {/* Backup & restore */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Backup &amp; restore
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Save a complete backup — your inventory and records, full-resolution images, and
-          settings — to a single file, then restore it later on this or another device. Choose
-          exactly what to include.
-        </p>
-        <Tooltip
-          content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
-          triggerTabIndex={-1}
-        >
-          <span>
-            <Button variant="outline" onClick={() => setBackupOpen(true)} data-testid="open-backup">
-              <ArchiveIcon />
-              Backup &amp; restore…
-            </Button>
-          </span>
-        </Tooltip>
-      </section>
-
-      {/* Push to bridge — for users without folder sync, hand the dataset straight to the
+        {/* Push to bridge — for users without folder sync, hand the dataset straight to the
           optional Home Assistant query bridge over HTTP (the bridge re-hydrates it). */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Push to bridge
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your
-          local network, without needing a shared folder. The bridge must have pushes enabled
-          (<code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your
-          URL and token are stored only on this device.
-        </p>
-        <Surface className="space-y-4 p-4">
-          <FormField
-            label="Bridge URL"
-            hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
-          >
-            <Input
-              type="url"
-              inputMode="url"
-              placeholder="http://127.0.0.1:8787"
-              value={bridgeUrl}
-              onChange={(e) => setBridgeUrl(e.target.value)}
-              data-testid="bridge-url"
-            />
-          </FormField>
-          <FormField
-            label="Access token"
-            hint="The bridge's `GUBBINS_BRIDGE_TOKEN`. Treated as a secret — stored only on this device and never synced."
-          >
-            <Input
-              type="password"
-              autoComplete="off"
-              placeholder="Bridge access token"
-              value={bridgeToken}
-              onChange={(e) => setBridgeToken(e.target.value)}
-              data-testid="bridge-token"
-            />
-          </FormField>
-          <div className="flex flex-wrap items-center gap-3">
-            <Tooltip
-              content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
-              triggerTabIndex={-1}
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Push to bridge
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your local
+            network, without needing a shared folder. The bridge must have pushes enabled (
+            <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your URL and
+            token are stored only on this device.
+          </p>
+          <Surface className="space-y-4 p-4">
+            <FormField
+              label="Bridge URL"
+              hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
             >
-              <span>
-                <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
-                  <CloudUploadIcon />
-                  Push now
-                </Button>
-              </span>
-            </Tooltip>
-            {!canPush ? (
-              <span className="text-xs text-muted-foreground">
-                Enter the bridge URL and token to enable pushing.
-              </span>
-            ) : null}
-          </div>
-        </Surface>
-      </section>
+              <Input
+                type="url"
+                inputMode="url"
+                placeholder="http://127.0.0.1:8787"
+                value={bridgeUrl}
+                onChange={(e) => setBridgeUrl(e.target.value)}
+                data-testid="bridge-url"
+              />
+            </FormField>
+            <FormField
+              label="Access token"
+              hint="The bridge's `GUBBINS_BRIDGE_TOKEN`. Treated as a secret — stored only on this device and never synced."
+            >
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder="Bridge access token"
+                value={bridgeToken}
+                onChange={(e) => setBridgeToken(e.target.value)}
+                data-testid="bridge-token"
+              />
+            </FormField>
+            <div className="flex flex-wrap items-center gap-3">
+              <Tooltip
+                content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
+                triggerTabIndex={-1}
+              >
+                <span>
+                  <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
+                    <CloudUploadIcon />
+                    Push now
+                  </Button>
+                </span>
+              </Tooltip>
+              {!canPush ? (
+                <span className="text-xs text-muted-foreground">
+                  Enter the bridge URL and token to enable pushing.
+                </span>
+              ) : null}
+            </div>
+          </Surface>
+        </section>
       </main>
 
       <BackupDialog

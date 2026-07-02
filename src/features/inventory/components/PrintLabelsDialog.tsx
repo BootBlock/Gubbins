@@ -122,8 +122,16 @@ export function PrintLabelsDialog({
             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               <FieldToggle label="Name" checked={template.showName} onChange={(v) => set('showName', v)} />
               <FieldToggle label="MPN" checked={template.showMpn} onChange={(v) => set('showMpn', v)} />
-              <FieldToggle label="Location" checked={template.showLocation} onChange={(v) => set('showLocation', v)} />
-              <FieldToggle label="Quantity" checked={template.showQuantity} onChange={(v) => set('showQuantity', v)} />
+              <FieldToggle
+                label="Location"
+                checked={template.showLocation}
+                onChange={(v) => set('showLocation', v)}
+              />
+              <FieldToggle
+                label="Quantity"
+                checked={template.showQuantity}
+                onChange={(v) => set('showQuantity', v)}
+              />
               {templateHasBarcode(template) ? (
                 <FieldToggle
                   label="Barcode text"

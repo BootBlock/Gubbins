@@ -143,7 +143,7 @@ export function LocationSelect({
 
   return (
     <div ref={rootRef} className="relative">
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- APG select-only combobox: the role="combobox" element is intentionally the focusable, keyboard-driven trigger. */}
+      {/* APG select-only combobox: the role="combobox" element is intentionally the focusable, keyboard-driven trigger. */}
       <div
         ref={comboRef}
         id={baseId}

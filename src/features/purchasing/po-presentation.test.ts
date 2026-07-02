@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  estimatedValue,
-  poStatusPresentation,
-  totalOrdered,
-  totalReceived,
-} from './po-presentation';
+import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
 
 describe('poStatusPresentation', () => {
   it('maps every status to a British-English label and a glyph token (never a raw colour)', () => {

@@ -42,8 +42,7 @@ export const useLayoutStore = create<LayoutStore>()(
       sidebarCollapsed: false,
       dashboardLayout: [],
       setDensity: (density) => set({ density }),
-      toggleDensity: () =>
-        set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
+      toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setDashboardLayout: (dashboardLayout) => set({ dashboardLayout }),
     }),

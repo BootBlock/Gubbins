@@ -54,11 +54,7 @@ function plural(n: number): string {
  * destination label — the location name for a `MOVE`, the contact name for a
  * `CHECKOUT`. A non-zero failure count is appended so a partial success is honest.
  */
-export function summariseBatch(
-  action: ContinuousBatchAction,
-  outcome: BatchOutcome,
-  target: string,
-): string {
+export function summariseBatch(action: ContinuousBatchAction, outcome: BatchOutcome, target: string): string {
   const n = outcome.succeeded.length;
   const base =
     n === 0

@@ -57,10 +57,7 @@ export interface MaintenanceStatus {
  * Classify a maintenance schedule against the current instant. Pure: callers pass
  * `now` (the repository injects `Date.now()`), so tests are deterministic.
  */
-export function maintenanceStatus(
-  state: MaintenanceScheduleState,
-  now: number,
-): MaintenanceStatus {
+export function maintenanceStatus(state: MaintenanceScheduleState, now: number): MaintenanceStatus {
   if (state.basis === 'TIME') {
     const anchor = state.lastPerformedAt ?? state.createdAt;
     const dueAt = anchor + (state.intervalDays ?? 0) * MS_PER_DAY;
@@ -134,11 +131,7 @@ export function accruedCheckoutHours(
  * Compose the standard "maintenance performed" ledger note (§4.3 → Activity Log).
  * e.g. "Lubricate rails performed (reset 112h of usage)" or "… (was 4 days overdue)".
  */
-export function maintenancePerformedNote(
-  name: string,
-  state: MaintenanceScheduleState,
-  now: number,
-): string {
+export function maintenancePerformedNote(name: string, state: MaintenanceScheduleState, now: number): string {
   if (state.basis === 'USAGE') {
     if (state.accrueCheckoutHours) {
       const hours = Math.round((state.autoUsage ?? 0) * 10) / 10;

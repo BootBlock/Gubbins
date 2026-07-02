@@ -290,10 +290,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   }
 
   if (format === 'JSON') {
-    const [contacts, checkouts] = await Promise.all([
-      collectContacts(),
-      collectCheckouts(items),
-    ]);
+    const [contacts, checkouts] = await Promise.all([collectContacts(), collectCheckouts(items)]);
     const name = `gubbins-export${suffix}-${stamp()}.json`;
     const json = buildJsonBackup({ items, contacts, checkouts });
     download(new Blob([json], { type: 'application/json' }), name);
@@ -383,10 +380,7 @@ async function resolveAssets(assets: readonly VaultAsset[]): Promise<Record<stri
 }
 
 /** Zip the vault files + assets in the fflate Web Worker (§4.5). */
-function zipInWorker(
-  files: Record<string, string>,
-  assets: Record<string, Uint8Array>,
-): Promise<Uint8Array> {
+function zipInWorker(files: Record<string, string>, assets: Record<string, Uint8Array>): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./export-vault.worker.ts', import.meta.url), {
       type: 'module',

@@ -1,12 +1,6 @@
 import { type ReactNode } from 'react';
 import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
-import {
-  InfoIcon,
-  LinkIcon,
-  AlertIcon,
-  SecureIcon,
-  ContactsIcon,
-} from '@/components/icons';
+import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { APP_VERSION } from '@/lib/app-version';
 import { Starfield } from './Starfield';
@@ -38,9 +32,9 @@ export function AboutScreen() {
         <AboutSection icon={<InfoIcon />} title="About Gubbins">
           <p className="text-sm text-muted-foreground">
             Gubbins is a local-first, offline-capable app for tracking{' '}
-            <span className="text-foreground">anything you own</span> — electronics, 3D-printing
-            supplies, tools, collections, and general inventory. Everything is stored privately on
-            this device; nothing is sent to a server.
+            <span className="text-foreground">anything you own</span> — electronics, 3D-printing supplies,
+            tools, collections, and general inventory. Everything is stored privately on this device; nothing
+            is sent to a server.
           </p>
           <dl className="mt-4 flex items-center gap-2 text-sm">
             <dt className="text-muted-foreground">Version</dt>
@@ -52,8 +46,8 @@ export function AboutScreen() {
 
         <AboutSection icon={<LinkIcon />} title="Project &amp; support">
           <p className="text-sm text-muted-foreground">
-            Source code, issue tracking and releases live on GitHub. Found a bug or have an idea?
-            Please open an issue.
+            Source code, issue tracking and releases live on GitHub. Found a bug or have an idea? Please open
+            an issue.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <ExternalLink href={REPO_URL}>
@@ -89,10 +83,9 @@ export function AboutScreen() {
 
         <AboutSection icon={<SecureIcon />} title="Privacy">
           <p className="text-sm text-muted-foreground">
-            Local-first by design: all data is processed and stored entirely within your browser on
-            this device. There is no account and no server-side data collection. Use the same
-            browser profile to find your data again, and install the app or sync to a folder you
-            control to keep a backup.
+            Local-first by design: all data is processed and stored entirely within your browser on this
+            device. There is no account and no server-side data collection. Use the same browser profile to
+            find your data again, and install the app or sync to a folder you control to keep a backup.
           </p>
         </AboutSection>
 
@@ -112,9 +105,8 @@ export function AboutScreen() {
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
             This software is provided “as is”, without warranty of any kind. You use it{' '}
-            <span className="text-foreground">entirely at your own risk</span>; the developers accept
-            no responsibility or liability for any loss, damage, data loss, or other issues arising
-            from its use.
+            <span className="text-foreground">entirely at your own risk</span>; the developers accept no
+            responsibility or liability for any loss, damage, data loss, or other issues arising from its use.
           </p>
         </AboutSection>
       </main>
@@ -145,12 +137,7 @@ function ExternalLink({
     );
   }
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={cn(buttonVariants({ variant: 'outline' }))}
-    >
+    <a href={href} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: 'outline' }))}>
       {children}
     </a>
   );

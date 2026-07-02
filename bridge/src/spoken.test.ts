@@ -60,9 +60,7 @@ describe('speakWhereIs', () => {
 
   it('handles a found item with no stock recorded', () => {
     const m = match({ name: 'Ghost Part', quantity: 0, locationName: 'Drawer A', placements: [] });
-    expect(speakWhereIs('ghost', [m])).toBe(
-      'Your Ghost Part is in Drawer A, but there\'s none in stock.',
-    );
+    expect(speakWhereIs('ghost', [m])).toBe("Your Ghost Part is in Drawer A, but there's none in stock.");
   });
 
   it('lists several matches with their primary location', () => {

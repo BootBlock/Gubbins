@@ -74,10 +74,7 @@ export function PrintLocationLabelDialog({
     [symbology, columns, showPath],
   );
 
-  const cell = useMemo(
-    () => toLocationLabelCell(location, baseUrl, template),
-    [location, baseUrl, template],
-  );
+  const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
 
   const print = () => {
     const w = window.open('', '_blank', 'width=900,height=700');

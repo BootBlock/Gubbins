@@ -1,10 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
-import type {
-  CreateSupplierPartInput,
-  PriceBreak,
-  SupplierPart,
-} from '@/db/repositories';
+import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 
 /**
  * Add/edit dialog for a single supplier part (§4 supplier facet; Phase 60). Local controlled
@@ -84,9 +80,7 @@ export function SupplierPartFormDialog({
   const [unitCost, setUnitCost] = useState(part?.unitCost != null ? String(part.unitCost) : '');
   const [currency, setCurrency] = useState(part?.currency ?? '');
   const [packQty, setPackQty] = useState(part?.packQty != null ? String(part.packQty) : '');
-  const [minOrderQty, setMinOrderQty] = useState(
-    part?.minOrderQty != null ? String(part.minOrderQty) : '',
-  );
+  const [minOrderQty, setMinOrderQty] = useState(part?.minOrderQty != null ? String(part.minOrderQty) : '');
   const [url, setUrl] = useState(part?.url ?? '');
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);

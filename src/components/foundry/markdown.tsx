@@ -145,7 +145,10 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
 
     if (match[1]) {
       nodes.push(
-        <code key={key} className="rounded bg-secondary/70 px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+        <code
+          key={key}
+          className="rounded bg-secondary/70 px-1 py-0.5 font-mono text-[0.85em] text-foreground"
+        >
           {token.slice(1, -1)}
         </code>,
       );

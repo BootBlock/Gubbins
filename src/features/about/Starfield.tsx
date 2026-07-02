@@ -100,11 +100,7 @@ export function Starfield() {
   return (
     <div aria-hidden className="gubbins-starfield pointer-events-none fixed inset-0 -z-10">
       {stars.map((star, i) => (
-        <span
-          key={`s${i}`}
-          className="gubbins-star"
-          style={{ ...driftVars(star), ...glyphVars(star) } as CSSProperties}
-        />
+        <span key={`s${i}`} className="gubbins-star" style={{ ...driftVars(star), ...glyphVars(star) }} />
       ))}
       {flares.map((flare, i) => (
         // Wrapper drifts horizontally; the core owns the glow + scale pulse.

@@ -155,10 +155,7 @@ export interface MessageOriginContext {
  * otherwise returns `null` so the caller silently drops it. Never throws; never
  * logs; this is the sole entry point the PWA listener should use.
  */
-export function parseExtensionMessage(
-  raw: unknown,
-  context: MessageOriginContext,
-): ExtensionMessage | null {
+export function parseExtensionMessage(raw: unknown, context: MessageOriginContext): ExtensionMessage | null {
   // (1) Origin verification (§9.1.1) — drop anything from an untrusted frame.
   if (!context.trustedOrigins.includes(context.origin)) return null;
   // (2) Strict schema validation (§9.1.2) — drop anything malformed.

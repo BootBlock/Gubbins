@@ -96,11 +96,7 @@ export function ItemList({
   }
 
   return (
-    <div
-      ref={parentRef}
-      data-testid="item-list-scroll"
-      className="min-h-0 flex-1 overflow-auto px-1 pt-2"
-    >
+    <div ref={parentRef} data-testid="item-list-scroll" className="min-h-0 flex-1 overflow-auto px-1 pt-2">
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualRows.map((virtualRow) => {
           const { start, end, resident } = resolveListRow(

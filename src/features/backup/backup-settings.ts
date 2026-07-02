@@ -78,10 +78,7 @@ export function collectSettings(storage: Storage = localStorage): Record<string,
  * is re-sanitised first), so a malformed backup can never clobber an arbitrary key. Returns
  * the number of keys written. A reload is required for the stores to re-hydrate.
  */
-export function applySettings(
-  record: Record<string, string>,
-  storage: Storage = localStorage,
-): number {
+export function applySettings(record: Record<string, string>, storage: Storage = localStorage): number {
   const clean = sanitiseSettingsRecord(record);
   let written = 0;
   for (const [key, value] of Object.entries(clean)) {

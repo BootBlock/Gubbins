@@ -38,12 +38,8 @@ describe('consumable gauge maths (§4.1)', () => {
   });
 
   it('formats the canonical weigh-in ledger note (§4.1.3)', () => {
-    expect(weighInNote(650, -45, 'g')).toBe(
-      'Calibrated gross weight to 650g (Calculated usage: -45g)',
-    );
-    expect(weighInNote(900, 250, 'g')).toBe(
-      'Calibrated gross weight to 900g (Calculated usage: +250g)',
-    );
+    expect(weighInNote(650, -45, 'g')).toBe('Calibrated gross weight to 650g (Calculated usage: -45g)');
+    expect(weighInNote(900, 250, 'g')).toBe('Calibrated gross weight to 900g (Calculated usage: +250g)');
   });
 
   it('clamps a net value to [0, grossCapacity]', () => {

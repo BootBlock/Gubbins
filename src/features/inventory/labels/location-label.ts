@@ -44,11 +44,7 @@ export function clampCopies(value: unknown): number {
  * the location itself), e.g. `Workshop / Shelf B`. Returns `''` for a top-level
  * location. Cycle-safe: a malformed parent chain stops at the first repeat.
  */
-export function locationPath(
-  id: string,
-  nodes: readonly LocationPathNode[],
-  separator = ' / ',
-): string {
+export function locationPath(id: string, nodes: readonly LocationPathNode[], separator = ' / '): string {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const ancestors: string[] = [];
   const seen = new Set<string>([id]);

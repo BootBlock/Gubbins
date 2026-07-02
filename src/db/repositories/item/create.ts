@@ -89,9 +89,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     if (tareWeight < 0 || netValue < 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'Gauge weights cannot be negative.');
     }
-    operationalMetadata = gauge.operationalMetadata
-      ? JSON.stringify(gauge.operationalMetadata)
-      : null;
+    operationalMetadata = gauge.operationalMetadata ? JSON.stringify(gauge.operationalMetadata) : null;
   }
 
   return {

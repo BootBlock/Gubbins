@@ -23,13 +23,7 @@ import { maintenanceDueAtMs } from '@/features/alerts/alerts';
 // ---------------------------------------------------------------------------
 
 /** The six date-driven event categories the agenda aggregates. */
-export type AgendaKind =
-  | 'maintenance'
-  | 'warranty'
-  | 'expiry'
-  | 'checkout-due'
-  | 'reorder'
-  | 'booking';
+export type AgendaKind = 'maintenance' | 'warranty' | 'expiry' | 'checkout-due' | 'reorder' | 'booking';
 
 /** Chronological buckets, in display order. "Later" is a catch-all so nothing is hidden. */
 export type AgendaBucket = 'overdue' | 'today' | 'week' | 'month' | 'later';
@@ -150,10 +144,7 @@ function isoDate(ms: number): string {
 // Lane builders (pure; each emits zero or one event per source row)
 // ---------------------------------------------------------------------------
 
-function buildMaintenanceEvents(
-  sources: readonly MaintenanceAgendaSource[],
-  now: number,
-): AgendaEvent[] {
+function buildMaintenanceEvents(sources: readonly MaintenanceAgendaSource[], now: number): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     let dueAt: number;
@@ -241,7 +232,7 @@ function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[]): AgendaEv
 function buildReorderEvents(sources: readonly ReorderAgendaSource[], now: number): AgendaEvent[] {
   return sources.map((s) => ({
     id: `reorder:${s.itemId}`,
-    kind: 'reorder' as AgendaKind,
+    kind: 'reorder',
     title: `Reorder — ${s.itemName}`,
     detail:
       s.shortfall > 0
@@ -311,13 +302,7 @@ export function buildAgenda(sources: AgendaSources, now: number): AgendaEvent[] 
 // ---------------------------------------------------------------------------
 
 /** Display order of the agenda buckets. */
-export const AGENDA_BUCKET_ORDER: readonly AgendaBucket[] = [
-  'overdue',
-  'today',
-  'week',
-  'month',
-  'later',
-];
+export const AGENDA_BUCKET_ORDER: readonly AgendaBucket[] = ['overdue', 'today', 'week', 'month', 'later'];
 
 /** Human-readable bucket headings. */
 export const AGENDA_BUCKET_LABEL: Record<AgendaBucket, string> = {

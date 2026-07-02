@@ -14,18 +14,11 @@ import { inventoryKeys } from '@/features/inventory/queries';
 import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
-import {
-  buildAlerts,
-  applyDismissals,
-  maintenanceDueAtMs,
-  type Alert,
-  type AlertSources,
-} from './alerts';
+import { buildAlerts, applyDismissals, maintenanceDueAtMs, type Alert, type AlertSources } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 
 /** TanStack Query key for the warranty-expiring feed. */
-const warrantyExpiringKey = () =>
-  [...inventoryKeys.all, 'warranty-expiring'] as const;
+const warrantyExpiringKey = () => [...inventoryKeys.all, 'warranty-expiring'] as const;
 
 /**
  * Combines the four alert source feeds into a sorted, dismissal-filtered `Alert[]`.
@@ -61,8 +54,7 @@ export function useAlerts(): {
 
   const warrantyQuery = useQuery({
     queryKey: warrantyExpiringKey(),
-    queryFn: () =>
-      getItemRepository().listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now, { limit: 100 }),
+    queryFn: () => getItemRepository().listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now, { limit: 100 }),
   });
 
   const isLoading =
@@ -72,10 +64,7 @@ export function useAlerts(): {
     warrantyQuery.isLoading;
 
   const isError =
-    lowStockQuery.isError ||
-    expiringQuery.isError ||
-    maintenanceDueQuery.isError ||
-    warrantyQuery.isError;
+    lowStockQuery.isError || expiringQuery.isError || maintenanceDueQuery.isError || warrantyQuery.isError;
 
   // --- Build alert sources from query data ---
 
@@ -96,12 +85,7 @@ export function useAlerts(): {
       name: sched.name,
       itemId: sched.itemId,
       itemName: sched.itemName,
-      dueAtMs: maintenanceDueAtMs(
-        sched.basis,
-        sched.lastPerformedAt,
-        sched.createdAt,
-        sched.intervalDays,
-      ),
+      dueAtMs: maintenanceDueAtMs(sched.basis, sched.lastPerformedAt, sched.createdAt, sched.intervalDays),
     })),
 
     warrantyItems: (warrantyQuery.data?.rows ?? []).map((item) => ({

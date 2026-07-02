@@ -35,8 +35,7 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
 
   const watcher = createSnapshotWatcher({
     snapshotPath,
-    onReload: (state) =>
-      log(`Snapshot loaded (generated ${state.snapshotGeneratedAt ?? 'unknown'}).`),
+    onReload: (state) => log(`Snapshot loaded (generated ${state.snapshotGeneratedAt ?? 'unknown'}).`),
     onError: (error) => log(`Snapshot reload failed: ${error.message}`),
   });
   await watcher.start();

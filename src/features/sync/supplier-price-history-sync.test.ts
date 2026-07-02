@@ -59,7 +59,7 @@ describe('supplier_part_price_history sync round-trip (§7.3)', () => {
     expect(onB.find((p) => p.unitCost === 1.4)?.source).toBe('SCRAPE');
   });
 
-  it("drops an incoming price point whose supplier part did not survive the merge (FK guard)", async () => {
+  it('drops an incoming price point whose supplier part did not survive the merge (FK guard)', async () => {
     // A creates an item + supplier part + price point and syncs them out.
     const item = await a.items.create({ name: 'Cap' });
     const part = await a.parts.create(item.id, { supplierName: 'RS', unitCost: 2.0 });

@@ -128,9 +128,7 @@ function translateGroup(node: ASTGroupNode, depth: number): Fragment | null {
   const parts: string[] = [];
   const params: SqlValue[] = [];
   for (const child of node.conditions) {
-    const fragment = isGroupNode(child)
-      ? translateGroup(child, depth + 1)
-      : translateCondition(child);
+    const fragment = isGroupNode(child) ? translateGroup(child, depth + 1) : translateCondition(child);
     if (!fragment) continue;
     parts.push(fragment.sql);
     params.push(...fragment.params);
@@ -200,9 +198,7 @@ function translateItemField(column: string, kind: FieldKind, condition: FilterCo
       return { sql: `${column} ${sign} ?`, params: [toNumber(value, condition.field)] };
     }
     case 'HAS_CAPABILITY':
-      throw new SearchAstError(
-        `HAS_CAPABILITY applies only to capability fields, not "${condition.field}".`,
-      );
+      throw new SearchAstError(`HAS_CAPABILITY applies only to capability fields, not "${condition.field}".`);
     default:
       throw unsupported(operator, condition.field);
   }

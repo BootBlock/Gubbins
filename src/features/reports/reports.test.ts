@@ -140,9 +140,23 @@ describe('selectDeadStock — dead-stock boundary', () => {
         // exactly 30 days idle → qualifies (boundary inclusive)
         { id: 'a', name: 'Idle', quantity: 4, unitCost: 5, lastMovedAt: now - 30 * MS_PER_DAY, createdAt: 0 },
         // 29 days idle → still live, excluded
-        { id: 'b', name: 'Fresh', quantity: 9, unitCost: 1, lastMovedAt: now - 29 * MS_PER_DAY, createdAt: 0 },
+        {
+          id: 'b',
+          name: 'Fresh',
+          quantity: 9,
+          unitCost: 1,
+          lastMovedAt: now - 29 * MS_PER_DAY,
+          createdAt: 0,
+        },
         // never moved; created 90 days ago → uses createdAt → qualifies
-        { id: 'c', name: 'Never', quantity: 2, unitCost: 10, lastMovedAt: null, createdAt: now - 90 * MS_PER_DAY },
+        {
+          id: 'c',
+          name: 'Never',
+          quantity: 2,
+          unitCost: 10,
+          lastMovedAt: null,
+          createdAt: now - 90 * MS_PER_DAY,
+        },
         // zero stock → excluded regardless of idleness
         { id: 'd', name: 'Empty', quantity: 0, unitCost: 5, lastMovedAt: 0, createdAt: 0 },
       ],

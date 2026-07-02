@@ -18,10 +18,7 @@ export interface FlatNode {
  * one of its descendants (moving a node beneath its own child would create a cycle,
  * §7.5.3). The id itself is always included so the picker can exclude "self".
  */
-export function collectDescendantIds(
-  id: string,
-  nodes: readonly FlatNode[],
-): ReadonlySet<string> {
+export function collectDescendantIds(id: string, nodes: readonly FlatNode[]): ReadonlySet<string> {
   const childrenByParent = new Map<string, FlatNode[]>();
   for (const node of nodes) {
     if (node.parentId === null) continue;

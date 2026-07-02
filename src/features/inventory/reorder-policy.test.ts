@@ -81,7 +81,16 @@ describe('reorder-policy — isLow', () => {
   });
 
   it('never flags a gauge with no usable capacity', () => {
-    const empty = gauge(0, { gauge: { unitOfMeasure: 'g', grossCapacity: 0, tareWeight: 0, currentNetValue: 0, percentageRemaining: 0, currentGrossWeight: 0 } });
+    const empty = gauge(0, {
+      gauge: {
+        unitOfMeasure: 'g',
+        grossCapacity: 0,
+        tareWeight: 0,
+        currentNetValue: 0,
+        percentageRemaining: 0,
+        currentGrossWeight: 0,
+      },
+    });
     expect(isLow(empty, DEFAULTS)).toBe(false);
   });
 

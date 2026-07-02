@@ -34,7 +34,9 @@ function BootShell({
       <div className="pointer-events-none absolute top-[-30%] left-1/2 size-[55rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
       <Surface className="relative w-full max-w-md p-8">
         <div className="flex flex-col items-center text-center">
-          <span className={cn('grid size-14 place-items-center rounded-2xl [&_svg]:size-7', ACCENT_CLASS[accent])}>
+          <span
+            className={cn('grid size-14 place-items-center rounded-2xl [&_svg]:size-7', ACCENT_CLASS[accent])}
+          >
             {icon}
           </span>
           <h1 className="mt-4 text-xl font-semibold tracking-tight">{title}</h1>
@@ -49,7 +51,12 @@ function BootShell({
 
 export function StartingScreen() {
   return (
-    <BootShell accent="brand" icon={<BrandMark className="size-9" />} title="Gubbins" subtitle="Local-first inventory tracking">
+    <BootShell
+      accent="brand"
+      icon={<BrandMark className="size-9" />}
+      title="Gubbins"
+      subtitle="Local-first inventory tracking"
+    >
       <div className="flex items-center justify-center gap-3 text-sm text-muted-foreground">
         <Spinner className="size-4 border-2" />
         <span>Opening database &amp; verifying storage…</span>
@@ -104,8 +111,8 @@ export function MultiTabScreen({ whenReleased }: { whenReleased: Promise<void> }
       subtitle="Gubbins is running in another tab or window."
     >
       <p className="text-center text-sm text-muted-foreground">
-        Your database can only be open in one place at a time, to protect it. Close the other tab — we
-        will switch over here automatically.
+        Your database can only be open in one place at a time, to protect it. Close the other tab — we will
+        switch over here automatically.
       </p>
       <Button variant="outline" className="mt-5 w-full" onClick={() => location.reload()}>
         Use this tab

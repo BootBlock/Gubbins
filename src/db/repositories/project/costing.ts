@@ -17,8 +17,7 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
      */
     async getCosting(projectId: string): Promise<ProjectCosting> {
       const project = await this.requireProject(projectId);
-      const costExpr =
-        project.costingMode === 'POINT_IN_TIME' ? 'l.unit_cost_snapshot' : 'i.unit_cost';
+      const costExpr = project.costingMode === 'POINT_IN_TIME' ? 'l.unit_cost_snapshot' : 'i.unit_cost';
 
       const row = await this.driver.queryOne<{
         line_count: number;

@@ -27,7 +27,7 @@ function filenameOf(path: string): string | undefined {
 
 /**
  * Write a compressed image blob to OPFS as a new raw file, returning its relative
- * path (e.g. `images/3f2c…​.webp`) for storage via the ImageRepository.
+ * path (e.g. `images/3f2c….webp`) for storage via the ImageRepository.
  */
 export async function saveImageFile(blob: Blob, extension = 'webp'): Promise<string> {
   const dir = await imagesDirectory(true);
@@ -74,9 +74,11 @@ export async function readAllImages(): Promise<OpfsImageFile[]> {
   try {
     const dir = await imagesDirectory(false);
     // `entries()` is async-iterable on a FileSystemDirectoryHandle (not yet in lib.dom).
-    const iterable = (dir as unknown as {
-      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-    }).entries;
+    const iterable = (
+      dir as unknown as {
+        entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+      }
+    ).entries;
     if (typeof iterable !== 'function') return files;
     for await (const [name, handle] of iterable.call(dir)) {
       if (handle.kind !== 'file') continue;
@@ -99,9 +101,11 @@ export async function readAllImages(): Promise<OpfsImageFile[]> {
 export async function imagesBytesOnDisk(): Promise<number | null> {
   try {
     const dir = await imagesDirectory(false);
-    const iterable = (dir as unknown as {
-      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-    }).entries;
+    const iterable = (
+      dir as unknown as {
+        entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+      }
+    ).entries;
     if (typeof iterable !== 'function') return null;
     let total = 0;
     for await (const [, handle] of iterable.call(dir)) {

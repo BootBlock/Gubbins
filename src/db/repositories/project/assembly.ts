@@ -31,10 +31,7 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
      *   new is created.
      * The project is marked COMPLETED. Atomic.
      */
-    async finaliseAssembly(
-      projectId: string,
-      input: FinaliseAssemblyInput,
-    ): Promise<AssemblyResult> {
+    async finaliseAssembly(projectId: string, input: FinaliseAssemblyInput): Promise<AssemblyResult> {
       this.assertWritable();
       const project = await this.requireProject(projectId);
 

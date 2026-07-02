@@ -196,9 +196,7 @@ export class TombstoneRepository extends BaseRepository {
 
   /** Every tombstone (small table; the sync engine needs the full set to diff). */
   async listAll(): Promise<Tombstone[]> {
-    const rows = await this.driver.query<TombstoneRow>(
-      'SELECT * FROM tombstones ORDER BY deleted_at ASC;',
-    );
+    const rows = await this.driver.query<TombstoneRow>('SELECT * FROM tombstones ORDER BY deleted_at ASC;');
     return rows.map(rowToTombstone);
   }
 
@@ -207,9 +205,7 @@ export class TombstoneRepository extends BaseRepository {
    * Returns how many were removed. A DELETE, so it bypasses the storage Hard Stop.
    */
   async pruneOlderThan(cutoff: number): Promise<number> {
-    const result = await this.driver.execute('DELETE FROM tombstones WHERE deleted_at < ?;', [
-      cutoff,
-    ]);
+    const result = await this.driver.execute('DELETE FROM tombstones WHERE deleted_at < ?;', [cutoff]);
     return result.rowsModified;
   }
 }

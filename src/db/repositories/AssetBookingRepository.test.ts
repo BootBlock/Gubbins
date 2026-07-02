@@ -76,26 +76,22 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     const itemId = await serialisedAsset();
     await bookings.create({ itemId, startDate: day(5), endDate: day(7) });
     // Overlaps day 6–7.
-    await expect(
-      bookings.create({ itemId, startDate: day(6), endDate: day(8) }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(bookings.create({ itemId, startDate: day(6), endDate: day(8) })).rejects.toBeInstanceOf(
+      DbError,
+    );
     // Same-day touch (day 7) is a clash.
-    await expect(
-      bookings.create({ itemId, startDate: day(7), endDate: day(9) }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(bookings.create({ itemId, startDate: day(7), endDate: day(9) })).rejects.toBeInstanceOf(
+      DbError,
+    );
     // Adjacent (starts day 8, the day after) is allowed.
-    await expect(
-      bookings.create({ itemId, startDate: day(8), endDate: day(9) }),
-    ).resolves.toBeDefined();
+    await expect(bookings.create({ itemId, startDate: day(8), endDate: day(9) })).resolves.toBeDefined();
   });
 
   it('a cancelled booking no longer blocks an overlapping range', async () => {
     const itemId = await serialisedAsset();
     const first = await bookings.create({ itemId, startDate: day(5), endDate: day(7) });
     await bookings.cancel(first.id);
-    await expect(
-      bookings.create({ itemId, startDate: day(6), endDate: day(8) }),
-    ).resolves.toBeDefined();
+    await expect(bookings.create({ itemId, startDate: day(6), endDate: day(8) })).resolves.toBeDefined();
   });
 
   it('cancels a booking idempotently and refuses to cancel a converted one', async () => {
@@ -137,7 +133,12 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     await bookings.create({ itemId: a, startDate: day(3), endDate: day(5) }); // upcoming
     const toCancel = await bookings.create({ itemId: b, startDate: day(4), endDate: day(6) });
     await bookings.cancel(toCancel.id);
-    const toConvert = await bookings.create({ itemId: c, startDate: day(2), endDate: day(4), contactName: 'Ada' });
+    const toConvert = await bookings.create({
+      itemId: c,
+      startDate: day(2),
+      endDate: day(4),
+      contactName: 'Ada',
+    });
     await bookings.convertToCheckout(toConvert.id);
     await bookings.create({ itemId: past, startDate: day(-5), endDate: day(-3) }); // ended in the past
 

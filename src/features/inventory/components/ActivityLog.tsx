@@ -51,7 +51,7 @@ export function ActivityLog({ itemId }: { itemId: string }) {
   useEffect(() => {
     if (!lastRow) return;
     if (lastRow.index >= rowCount - 1 && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
+      void fetchNextPage();
     }
   }, [lastRow, rowCount, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
@@ -61,7 +61,7 @@ export function ActivityLog({ itemId }: { itemId: string }) {
   useEffect(() => {
     if (!firstRow) return;
     if (firstRow.index < firstItemIndex && hasPreviousPage && !isFetchingPreviousPage) {
-      fetchPreviousPage();
+      void fetchPreviousPage();
     }
   }, [firstRow, firstItemIndex, hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 

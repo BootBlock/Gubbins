@@ -49,7 +49,9 @@ try {
 }
 
 const kib = result.total / 1024;
-console.log(`[bundle-size] ${kib.toFixed(2)} KiB across ${result.count} precache files (no budget — informational only).`);
+console.log(
+  `[bundle-size] ${kib.toFixed(2)} KiB across ${result.count} precache files (no budget — informational only).`,
+);
 
 // Informational only: never fail the build.
 process.exit(0);

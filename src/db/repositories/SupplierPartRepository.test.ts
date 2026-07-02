@@ -2,12 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
-import {
-  ItemRepository,
-  SupplierPartRepository,
-  TombstoneRepository,
-  UNASSIGNED_LOCATION_ID,
-} from './index';
+import { ItemRepository, SupplierPartRepository, TombstoneRepository, UNASSIGNED_LOCATION_ID } from './index';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
 
 describe('SupplierPartRepository (Phase 60)', () => {

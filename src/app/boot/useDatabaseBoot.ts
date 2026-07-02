@@ -43,10 +43,7 @@ export function useDatabaseBoot(): BootState {
   return state;
 }
 
-async function runBoot(
-  isMounted: () => boolean,
-  setState: (state: BootState) => void,
-): Promise<void> {
+async function runBoot(isMounted: () => boolean, setState: (state: BootState) => void): Promise<void> {
   const commit = (next: BootState) => {
     if (isMounted()) setState(next);
   };
@@ -78,8 +75,7 @@ async function runBoot(
     // (§8.5.5) can force a storage tier to drive the §7.6 Triage Dashboard, which is
     // otherwise only reachable under genuine OPFS pressure.
     if (import.meta.env.DEV) {
-      (window as unknown as { __storageStore?: typeof useStorageStore }).__storageStore =
-        useStorageStore;
+      (window as unknown as { __storageStore?: typeof useStorageStore }).__storageStore = useStorageStore;
     }
 
     commit({ status: 'ready', result });

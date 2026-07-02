@@ -179,24 +179,19 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
-      setScannerSymbology: (symbology) =>
-        set({ scannerSymbology: normaliseSymbology(symbology) }),
+      setScannerSymbology: (symbology) => set({ scannerSymbology: normaliseSymbology(symbology) }),
       // Normalise so a stale/partial persisted template can never reach the renderer.
       setLabelTemplate: (template) => set({ labelTemplate: normaliseLabelTemplate(template) }),
       setScannerBeep: (scannerBeep) => set({ scannerBeep }),
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
-      setExpirySoonWindowDays: (days) =>
-        set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
+      setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
       setLowStockQtyThreshold: (qty) => set({ lowStockQtyThreshold: clampLowStockQty(qty) }),
-      setLowStockGaugePercent: (percent) =>
-        set({ lowStockGaugePercent: clampLowStockGaugePercent(percent) }),
-      setBudgetWarnPercent: (percent) =>
-        set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
+      setLowStockGaugePercent: (percent) => set({ lowStockGaugePercent: clampLowStockGaugePercent(percent) }),
+      setBudgetWarnPercent: (percent) => set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
       setPruneWindowMonths: (months) => set({ pruneWindowMonths: normaliseWindowMonths(months) }),
-      setDowngradeWindowMonths: (months) =>
-        set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
+      setDowngradeWindowMonths: (months) => set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),
       setKioskMode: (kioskMode) => set({ kioskMode }),
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),

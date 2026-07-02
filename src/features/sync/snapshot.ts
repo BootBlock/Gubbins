@@ -48,10 +48,10 @@ async function readAllRows(driver: IDatabaseDriver, table: SyncTable): Promise<S
   const where = TABLE_FILTER[table] ?? '';
   const all: SqlRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
-    const rows = await driver.query<SqlRow>(
-      `SELECT * FROM ${table} ${where} ORDER BY id LIMIT ? OFFSET ?;`,
-      [PAGE, offset],
-    );
+    const rows = await driver.query<SqlRow>(`SELECT * FROM ${table} ${where} ORDER BY id LIMIT ? OFFSET ?;`, [
+      PAGE,
+      offset,
+    ]);
     all.push(...rows);
     if (rows.length < PAGE) break;
   }
@@ -185,10 +185,7 @@ export function tombstoneDeleteStatement(tableName: string, id: string): SqlStat
 }
 
 /** Build the INSERT OR IGNORE for an append-only `item_history` row (union-by-id). */
-export function historyInsertStatement(
-  row: SqlRow,
-  columns: readonly string[] | undefined,
-): SqlStatement {
+export function historyInsertStatement(row: SqlRow, columns: readonly string[] | undefined): SqlStatement {
   const cols = (columns ?? Object.keys(row)).filter((c) => c in row);
   const placeholders = cols.map(() => '?').join(', ');
   return {
@@ -344,10 +341,7 @@ export function buildCloneStatements(
   statements.push({ sql: `DELETE FROM ${ITEM_TAGS_TABLE};` });
   for (const table of [...SYNC_TABLES].reverse()) {
     statements.push({
-      sql:
-        table === 'locations'
-          ? 'DELETE FROM locations WHERE is_system = 0;'
-          : `DELETE FROM ${table};`,
+      sql: table === 'locations' ? 'DELETE FROM locations WHERE is_system = 0;' : `DELETE FROM ${table};`,
     });
   }
   statements.push({ sql: 'DELETE FROM tombstones;' });
@@ -397,10 +391,7 @@ export function buildCloneStatements(
  * backup's tombstone view replaces the local one so an imported row is not re-deleted by
  * a stale local tombstone on the next sync.
  */
-export async function restoreSnapshot(
-  driver: IDatabaseDriver,
-  snapshot: SyncSnapshot,
-): Promise<void> {
+export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSnapshot): Promise<void> {
   const dictionary = await buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
   const statements: SqlStatement[] = [];
 

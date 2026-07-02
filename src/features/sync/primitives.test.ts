@@ -99,10 +99,7 @@ describe('cyclical-nesting prevention (§7.5.3)', () => {
 
 describe('schema-dictionary sanitisation (§7.3)', () => {
   it('strips keys the local schema does not have', () => {
-    const clean = sanitiseRow(
-      { id: '1', name: 'Widget', future_column: 'boom' },
-      ['id', 'name'],
-    );
+    const clean = sanitiseRow({ id: '1', name: 'Widget', future_column: 'boom' }, ['id', 'name']);
     expect(clean).toEqual({ id: '1', name: 'Widget' });
   });
   it('keeps every allowed key, including nulls', () => {

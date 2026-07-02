@@ -20,11 +20,7 @@ import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
 import type { ScannerEngine } from '../barcode-decoder';
 import { parseScannedCode } from '../scan-payload';
-import {
-  initialScannerState,
-  scannerReducer,
-  type ScannerMode,
-} from '../scanner-machine';
+import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
 import { useScanner } from '../useScanner';
 
@@ -139,7 +135,7 @@ function ScannerOverlayInner({
     videoRef,
     status: state.status,
     dispatch,
-    onDecode: handleDecode,
+    onDecode: (raw) => void handleDecode(raw),
     onEngine: setEngine,
     symbology,
   });
@@ -205,7 +201,11 @@ function ScannerOverlayInner({
             content="Scan **one** code, then act on it immediately (check out or look up)."
             triggerTabIndex={-1}
           >
-            <ModeButton mode="DISCRETE" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
+            <ModeButton
+              mode="DISCRETE"
+              current={state.mode}
+              onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+            >
               <DiscreteIcon /> Discrete
             </ModeButton>
           </Tooltip>
@@ -213,12 +213,22 @@ function ScannerOverlayInner({
             content="Scan **many** codes into a queue, then apply one action (move or check out) to them all at once."
             triggerTabIndex={-1}
           >
-            <ModeButton mode="CONTINUOUS" current={state.mode} onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}>
+            <ModeButton
+              mode="CONTINUOUS"
+              current={state.mode}
+              onSelect={(m) => dispatch({ type: 'SET_MODE', mode: m })}
+            >
               <SerialisedIcon /> Continuous
             </ModeButton>
           </Tooltip>
         </div>
-        <Button variant="ghost" size="icon" onClick={close} aria-label="Close scanner" className="text-white hover:bg-white/10">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={close}
+          aria-label="Close scanner"
+          className="text-white hover:bg-white/10"
+        >
           <CloseIcon />
         </Button>
       </div>
@@ -274,12 +284,17 @@ function ScannerOverlayInner({
         {state.status === 'PROCESSING_QUEUE' && !discreteResult ? (
           <div className="absolute inset-x-0 bottom-0 p-4">
             <Surface className="space-y-3 p-4 text-foreground">
-              <p className="text-sm font-semibold">{queue.count} item{queue.count === 1 ? '' : 's'} in the queue</p>
+              <p className="text-sm font-semibold">
+                {queue.count} item{queue.count === 1 ? '' : 's'} in the queue
+              </p>
               <ul className="max-h-40 space-y-1 overflow-auto text-sm">
                 {queue.entries.map((e) => (
                   <li key={e.itemId} className="flex items-center justify-between gap-2">
                     <span className="truncate">{e.name ?? e.itemId}</span>
-                    <button className="text-xs text-muted-foreground hover:text-destructive" onClick={() => queue.remove(e.itemId)}>
+                    <button
+                      className="text-xs text-muted-foreground hover:text-destructive"
+                      onClick={() => queue.remove(e.itemId)}
+                    >
                       remove
                     </button>
                   </li>

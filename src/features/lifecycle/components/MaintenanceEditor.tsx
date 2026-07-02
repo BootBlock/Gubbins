@@ -11,11 +11,7 @@ import { SettingsIcon, AddIcon, DeleteIcon, CheckIcon, WarningIcon } from '@/com
 import { MAINTENANCE_BASES, type MaintenanceBasis, type MaintenanceSchedule } from '@/db/repositories';
 import { cn } from '@/lib/utils';
 import { MAINTENANCE_BASIS_LABELS } from '@/features/inventory/components/inventory-ui';
-import {
-  maintenanceStatus,
-  maintenancePerformedNote,
-  type MaintenanceScheduleState,
-} from '../maintenance';
+import { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from '../maintenance';
 import {
   useAddMaintenanceUsage,
   useCreateMaintenance,
@@ -183,7 +179,11 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
               Add schedule
             </Button>
           </div>
-          {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -256,13 +256,22 @@ function ScheduleRow({ schedule, itemId }: { schedule: MaintenanceSchedule; item
             triggerTabIndex={-1}
           >
             <span>
-              <Button size="sm" variant="outline" onClick={performed} disabled={log.isPending} data-testid="log-maintenance">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={performed}
+                disabled={log.isPending}
+                data-testid="log-maintenance"
+              >
                 <CheckIcon />
                 Done
               </Button>
             </span>
           </Tooltip>
-          <Tooltip content="Delete this maintenance schedule. Past service history is kept." triggerTabIndex={-1}>
+          <Tooltip
+            content="Delete this maintenance schedule. Past service history is kept."
+            triggerTabIndex={-1}
+          >
             <span>
               <Button
                 size="icon"

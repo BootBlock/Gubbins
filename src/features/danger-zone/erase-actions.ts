@@ -93,7 +93,9 @@ export async function eraseTargets(
   }
 
   // 3. Post-commit, non-transactional cleanup — only after the DB write has durably landed.
-  const targets = ids.map((id) => eraseTargetById(id)).filter((t): t is NonNullable<typeof t> => t !== undefined);
+  const targets = ids
+    .map((id) => eraseTargetById(id))
+    .filter((t): t is NonNullable<typeof t> => t !== undefined);
 
   // Remove the OPFS images directory once if any selected target clears it.
   if (targets.some((target) => target.clearsImages)) {

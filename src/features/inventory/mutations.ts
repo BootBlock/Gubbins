@@ -11,12 +11,7 @@
  * low-frequency, so they use straightforward invalidation rather than optimistic
  * patching — a deliberate, scoped simplification.
  */
-import {
-  useMutation,
-  useQueryClient,
-  type InfiniteData,
-  type QueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import {
   getCategoryRepository,
   getItemRepository,
@@ -37,11 +32,7 @@ import {
 import { currentGrossWeight, percentageRemaining } from '@/db/repositories/gauge';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
-import {
-  clonedFieldValues,
-  clonedSupplierPartInput,
-  planItemClone,
-} from './clone';
+import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
 
@@ -72,9 +63,7 @@ function patchItem(client: QueryClient, id: string, patch: (item: Item) => Item)
         }
       : data,
   );
-  client.setQueryData<Item | undefined>(inventoryKeys.item(id), (item) =>
-    item ? patch(item) : item,
-  );
+  client.setQueryData<Item | undefined>(inventoryKeys.item(id), (item) => (item ? patch(item) : item));
 }
 
 /** Cancel in-flight list fetches and snapshot them so onError can restore. */
@@ -245,8 +234,7 @@ export function useAdjustGauge() {
 export function useSoftDeleteItem() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      getItemRepository().softDelete(id, note),
+    mutationFn: ({ id, note }: { id: string; note?: string }) => getItemRepository().softDelete(id, note),
     onMutate: async ({ id }) => {
       const lists = await snapshotLists(client);
       patchItem(client, id, (item) => ({ ...item, isActive: false }));
@@ -325,7 +313,10 @@ export function useBulkEditItems() {
 
           if (spec.tags && spec.tags.names.length > 0) {
             const current = await tags.getForItem(id);
-            const next = resolveItemTagNames(current.map((t) => t.name), spec.tags);
+            const next = resolveItemTagNames(
+              current.map((t) => t.name),
+              spec.tags,
+            );
             await tags.setForItem(id, next);
           }
           succeeded += 1;
@@ -427,8 +418,7 @@ export function useUpdateSupplierPart() {
 export function useSetPreferredSupplierPart() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ id }: { id: string; itemId: string }) =>
-      getSupplierPartRepository().setPreferred(id),
+    mutationFn: ({ id }: { id: string; itemId: string }) => getSupplierPartRepository().setPreferred(id),
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
@@ -436,8 +426,7 @@ export function useSetPreferredSupplierPart() {
 export function useDeleteSupplierPart() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ id }: { id: string; itemId: string }) =>
-      getSupplierPartRepository().delete(id),
+    mutationFn: ({ id }: { id: string; itemId: string }) => getSupplierPartRepository().delete(id),
     onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
   });
 }
@@ -485,7 +474,5 @@ export function useDeleteLocation() {
 
 /** Drop keys whose value is `undefined` so an optimistic spread doesn't blank fields. */
 function stripUndefined<T extends object>(input: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(input).filter(([, v]) => v !== undefined),
-  ) as Partial<T>;
+  return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as Partial<T>;
 }

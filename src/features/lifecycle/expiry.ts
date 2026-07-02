@@ -31,10 +31,7 @@ export function expiryStatus(
  * means it expires within the next 24 hours; a fresh item one full day out reads
  * "1". Returns `null` when no expiry date is set.
  */
-export function daysUntilExpiry(
-  expiryDate: number | null | undefined,
-  now: number,
-): number | null {
+export function daysUntilExpiry(expiryDate: number | null | undefined, now: number): number | null {
   if (expiryDate == null) return null;
   return Math.floor((expiryDate - now) / MS_PER_DAY);
 }

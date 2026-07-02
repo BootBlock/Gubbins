@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, ResolvedItemField, SupplierPart } from '@/db/repositories';
-import {
-  CLONE_NAME_SUFFIX,
-  clonedFieldValues,
-  clonedSupplierPartInput,
-  planItemClone,
-} from './clone';
+import { CLONE_NAME_SUFFIX, clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
 
 function makeItem(overrides: Partial<Item> = {}): Item {
   return {
@@ -139,9 +134,19 @@ describe('clonedSupplierPartInput', () => {
 
   it('passes null price breaks when there are none', () => {
     const part = {
-      id: 'sp', itemId: 'src', supplierName: 'S', orderCode: null, unitCost: null,
-      currency: null, packQty: null, minOrderQty: null, priceBreaks: [], url: null,
-      isPreferred: false, createdAt: 1, updatedAt: 2,
+      id: 'sp',
+      itemId: 'src',
+      supplierName: 'S',
+      orderCode: null,
+      unitCost: null,
+      currency: null,
+      packQty: null,
+      minOrderQty: null,
+      priceBreaks: [],
+      url: null,
+      isPreferred: false,
+      createdAt: 1,
+      updatedAt: 2,
     } satisfies SupplierPart;
     expect(clonedSupplierPartInput(part).priceBreaks).toBeNull();
   });
@@ -150,9 +155,18 @@ describe('clonedSupplierPartInput', () => {
 describe('clonedFieldValues', () => {
   const field = (over: Partial<ResolvedItemField>): ResolvedItemField =>
     ({
-      id: 'f', categoryId: 'cat-1', name: 'Voltage', type: 'NUMBER', position: 0,
-      required: false, options: null, defaultValue: null, updatedAt: 0,
-      value: null, hasStoredValue: false, ...over,
+      id: 'f',
+      categoryId: 'cat-1',
+      name: 'Voltage',
+      type: 'NUMBER',
+      position: 0,
+      required: false,
+      options: null,
+      defaultValue: null,
+      updatedAt: 0,
+      value: null,
+      hasStoredValue: false,
+      ...over,
     }) as ResolvedItemField;
 
   it('keeps only stored, non-null values keyed by field id', () => {

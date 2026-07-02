@@ -26,9 +26,9 @@ const trustedOrigins = [window.location.origin];
 
 declare const chrome: {
   runtime: {
-    sendMessage: (message: unknown) => Promise<
-      { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string }
-    >;
+    sendMessage: (
+      message: unknown,
+    ) => Promise<{ ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string }>;
   };
 };
 
@@ -55,14 +55,26 @@ async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
   try {
     const fetched = await chrome.runtime.sendMessage({ kind: 'FETCH', url });
     if (!fetched.ok) {
-      post(makeMessage('SCRAPE_ERROR', { domain, error_type: fetched.errorType, reason: fetched.reason }, requestId));
+      post(
+        makeMessage(
+          'SCRAPE_ERROR',
+          { domain, error_type: fetched.errorType, reason: fetched.reason },
+          requestId,
+        ),
+      );
       return;
     }
     // A 200-OK body can still be an anti-bot interstitial (Cloudflare/etc.). Flag it as a
     // precise CHALLENGE before parsing, so it never mis-marshals as a DOM_DRIFT (§9.4.2).
     const challenge = detectChallengePage(fetched.text);
     if (challenge) {
-      post(makeMessage('SCRAPE_ERROR', { domain, error_type: challenge.errorType, reason: challenge.reason }, requestId));
+      post(
+        makeMessage(
+          'SCRAPE_ERROR',
+          { domain, error_type: challenge.errorType, reason: challenge.reason },
+          requestId,
+        ),
+      );
       return;
     }
     const doc = new DOMParser().parseFromString(fetched.text, 'text/html');
@@ -73,7 +85,9 @@ async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
         : makeMessage('SCRAPE_ERROR', outcome.error, requestId),
     );
   } catch (err) {
-    post(makeMessage('SCRAPE_ERROR', { domain, error_type: 'NETWORK_TIMEOUT', reason: String(err) }, requestId));
+    post(
+      makeMessage('SCRAPE_ERROR', { domain, error_type: 'NETWORK_TIMEOUT', reason: String(err) }, requestId),
+    );
   }
 }
 

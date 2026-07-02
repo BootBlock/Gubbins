@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { emptyAst, isGroupNode, type ASTGroupNode } from '@/db/search/ast';
-import {
-  builderReducer,
-  canAddGroup,
-  countConditions,
-  type BuilderAction,
-} from './builder-reducer';
+import { builderReducer, canAddGroup, countConditions, type BuilderAction } from './builder-reducer';
 
 /** Apply a sequence of actions to an empty tree. */
 function run(...actions: BuilderAction[]): ASTGroupNode {
@@ -59,10 +54,13 @@ describe('builderReducer (spec §5.1, Tier 3)', () => {
   });
 
   it('resetting (or removing the root) yields an empty group keeping the operator', () => {
-    const seeded = run({ type: 'setOperator', path: [], operator: 'OR' }, {
-      type: 'addCondition',
-      path: [],
-    });
+    const seeded = run(
+      { type: 'setOperator', path: [], operator: 'OR' },
+      {
+        type: 'addCondition',
+        path: [],
+      },
+    );
     expect(builderReducer(seeded, { type: 'reset' })).toEqual(emptyAst('OR'));
     expect(builderReducer(seeded, { type: 'remove', path: [] })).toEqual(emptyAst('OR'));
   });

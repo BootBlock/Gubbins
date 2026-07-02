@@ -6,12 +6,7 @@
  * through the Phase-37 `list-window.ts` seam so a deep scroll never retains every page.
  */
 import { useInfiniteQuery } from '@tanstack/react-query';
-import {
-  DEFAULT_PAGE_SIZE,
-  MAX_LIST_PAGES,
-  getItemRepository,
-  type HistoryAction,
-} from '@/db/repositories';
+import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository, type HistoryAction } from '@/db/repositories';
 
 export const activityKeys = {
   all: ['activity'] as const,
@@ -34,8 +29,7 @@ export function useActivityFeed(actions: readonly HistoryAction[] | undefined) {
         limit: DEFAULT_PAGE_SIZE,
         offset: pageParam,
       }),
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,

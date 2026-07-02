@@ -117,7 +117,10 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
 
       const statements: SqlStatement[] = [];
       if (sets.length > 0) {
-        statements.push({ sql: `UPDATE items SET ${sets.join(', ')} WHERE id = ?;`, params: [...params, id] });
+        statements.push({
+          sql: `UPDATE items SET ${sets.join(', ')} WHERE id = ?;`,
+          params: [...params, id],
+        });
       }
       for (const raw of write.aliasAdditions) {
         const alias = raw.trim();
@@ -132,7 +135,9 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
       if (statements.length === 0) return existing;
 
       statements.push(
-        historyStatement(id, 'SCRAPE_APPLIED', { note: `Applied scraped supplier data: ${changed.join(', ')}.` }),
+        historyStatement(id, 'SCRAPE_APPLIED', {
+          note: `Applied scraped supplier data: ${changed.join(', ')}.`,
+        }),
       );
       await this.driver.transaction(statements);
       return (await this.getById(id))!;

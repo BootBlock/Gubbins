@@ -65,7 +65,11 @@ describe('parseExtensionMessage — signature & schema (§9.1.2, §9.2)', () => 
   });
 
   it('does not throw on hostile input', () => {
-    const hostile = { source: EXTENSION_SOURCE, type: 'SCRAPE_RESULT', payload: { __proto__: { polluted: true } } };
+    const hostile = {
+      source: EXTENSION_SOURCE,
+      type: 'SCRAPE_RESULT',
+      payload: { __proto__: { polluted: true } },
+    };
     expect(() => parseExtensionMessage(hostile, ctx)).not.toThrow();
     expect(parseExtensionMessage(hostile, ctx)).toBeNull();
   });
@@ -82,7 +86,11 @@ describe('parseExtensionMessage — payload validation (§9.4.2 no NaN/garbage)'
   });
 
   it('rejects a result with a non-URL distributor_url', () => {
-    const msg = { source: EXTENSION_SOURCE, type: 'SCRAPE_RESULT', payload: { ...validResult, distributor_url: 'not-a-url' } };
+    const msg = {
+      source: EXTENSION_SOURCE,
+      type: 'SCRAPE_RESULT',
+      payload: { ...validResult, distributor_url: 'not-a-url' },
+    };
     expect(parseExtensionMessage(msg, ctx)).toBeNull();
   });
 
@@ -103,15 +111,22 @@ describe('parseExtensionMessage — payload validation (§9.4.2 no NaN/garbage)'
   });
 
   it('rejects a SCRAPE_ERROR with an unknown error_type', () => {
-    const msg = { source: EXTENSION_SOURCE, type: 'SCRAPE_ERROR', payload: { domain: 'x', error_type: 'METEOR_STRIKE', reason: 'r' } };
+    const msg = {
+      source: EXTENSION_SOURCE,
+      type: 'SCRAPE_ERROR',
+      payload: { domain: 'x', error_type: 'METEOR_STRIKE', reason: 'r' },
+    };
     expect(parseExtensionMessage(msg, ctx)).toBeNull();
   });
 
-  it.each(SCRAPE_ERROR_TYPES)('accepts a SCRAPE_ERROR carrying the %s taxonomy member (Phase 35)', (error_type) => {
-    const msg = makeMessage('SCRAPE_ERROR', { domain: 'mouser.com', error_type, reason: 'r' }, 'req-1');
-    const parsed = parseExtensionMessage(msg, ctx);
-    expect(parsed?.type).toBe('SCRAPE_ERROR');
-  });
+  it.each(SCRAPE_ERROR_TYPES)(
+    'accepts a SCRAPE_ERROR carrying the %s taxonomy member (Phase 35)',
+    (error_type) => {
+      const msg = makeMessage('SCRAPE_ERROR', { domain: 'mouser.com', error_type, reason: 'r' }, 'req-1');
+      const parsed = parseExtensionMessage(msg, ctx);
+      expect(parsed?.type).toBe('SCRAPE_ERROR');
+    },
+  );
 
   it('exposes the deepened taxonomy (the new HTTP-status members are wire-valid)', () => {
     for (const member of ['BLOCKED', 'NOT_FOUND', 'SERVER_ERROR'] as const) {

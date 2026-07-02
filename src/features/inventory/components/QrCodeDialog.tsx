@@ -4,11 +4,7 @@ import { DownloadIcon, PrintIcon } from '@/components/icons';
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import { qrSvg } from '@/features/scanner/qr-code';
 import { code128Svg } from '../labels/code128';
-import {
-  LABEL_SYMBOLOGY_OPTIONS,
-  labelBarcodeValue,
-  type LabelSymbology,
-} from '../labels/label-template';
+import { LABEL_SYMBOLOGY_OPTIONS, labelBarcodeValue, type LabelSymbology } from '../labels/label-template';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /**
@@ -163,11 +159,17 @@ function seedSymbology(value: unknown): LabelSymbology {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+  return value.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
 }
 
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'item'
+  );
 }

@@ -133,13 +133,7 @@ describe('display metadata', () => {
   });
 
   it('lists the open states first in display order', () => {
-    expect(BOOKING_STATUSES).toEqual([
-      'upcoming',
-      'active',
-      'overdue',
-      'converted',
-      'cancelled',
-    ]);
+    expect(BOOKING_STATUSES).toEqual(['upcoming', 'active', 'overdue', 'converted', 'cancelled']);
   });
 
   it('uses British-English labels', () => {
@@ -151,10 +145,7 @@ describe('display metadata', () => {
   });
 
   it('uses design tokens, not raw colour literals', () => {
-    const classes = [
-      ...Object.values(BOOKING_STATUS_TONE),
-      ...Object.values(BOOKING_STATUS_BADGE),
-    ].join(' ');
+    const classes = [...Object.values(BOOKING_STATUS_TONE), ...Object.values(BOOKING_STATUS_BADGE)].join(' ');
     // No Tailwind palette classes (e.g. text-red-500, bg-blue-600) and no raw hex.
     expect(classes).not.toMatch(/(?:text|bg)-(?:red|blue|green|amber|zinc|gray|slate)-\d/);
     expect(classes).not.toMatch(/#[0-9a-f]{3,6}/i);

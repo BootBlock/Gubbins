@@ -39,10 +39,7 @@ const SELECT_WITH_COUNT = `
 
 export class LocationRepository extends BaseRepository {
   async getById(id: string): Promise<Location | undefined> {
-    const row = await this.driver.queryOne<LocationRow>(
-      'SELECT * FROM locations WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?;', [id]);
     return row ? rowToLocation(row) : undefined;
   }
 

@@ -60,7 +60,7 @@ describe('ItemRepository — per-location stock ledger (Phase 25)', () => {
     const item = await items.create({ name: 'Cap', quantity: 5, locationId: a.id });
 
     await items.transferStock(item.id, a.id, b.id, 999); // clamped to 5
-    let placements = await items.listStock(item.id);
+    const placements = await items.listStock(item.id);
     expect(placements.find((p) => p.locationId === b.id)?.quantity).toBe(5);
     expect(placements.find((p) => p.locationId === a.id)).toBeUndefined(); // emptied → filtered
 

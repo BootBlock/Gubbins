@@ -55,7 +55,16 @@ describe('export-data builders', () => {
 
   it('builds a vault file with YAML frontmatter and an activity table', () => {
     const history: ItemHistoryEntry[] = [
-      { id: 'h1', itemId: 'i1', action: 'CREATED', quantityDelta: null, netValueDelta: null, note: 'Added', metadata: null, createdAt: 0 },
+      {
+        id: 'h1',
+        itemId: 'i1',
+        action: 'CREATED',
+        quantityDelta: null,
+        netValueDelta: null,
+        note: 'Added',
+        metadata: null,
+        createdAt: 0,
+      },
     ];
     const vaultItems: VaultItem[] = [
       { item: makeItem(), history, locationName: 'Workshop/Cabinet A', categoryName: 'ICs' },
@@ -73,8 +82,18 @@ describe('export-data builders', () => {
 
   it('disambiguates colliding item names', () => {
     const vaultItems: VaultItem[] = [
-      { item: makeItem({ id: 'aaaaaaaa-1', name: 'Widget' }), history: [], locationName: 'Box', categoryName: null },
-      { item: makeItem({ id: 'bbbbbbbb-2', name: 'Widget' }), history: [], locationName: 'Box', categoryName: null },
+      {
+        item: makeItem({ id: 'aaaaaaaa-1', name: 'Widget' }),
+        history: [],
+        locationName: 'Box',
+        categoryName: null,
+      },
+      {
+        item: makeItem({ id: 'bbbbbbbb-2', name: 'Widget' }),
+        history: [],
+        locationName: 'Box',
+        categoryName: null,
+      },
     ];
     const paths = Object.keys(buildVaultFiles(vaultItems));
     expect(new Set(paths).size).toBe(2);
@@ -272,8 +291,18 @@ describe('buildVault rootFolder — §4.5 project sub-folders (Phase 19)', () =>
 describe('buildProjectVault — §4.5 project folder + sub-folders (Phase 19)', () => {
   it('packs the master note and component sub-folders inside one project folder', () => {
     const vaultItems: VaultItem[] = [
-      { item: makeItem({ id: 'a', name: 'Servo' }), history: [], locationName: 'Workshop', categoryName: null },
-      { item: makeItem({ id: 'b', name: 'Bracket' }), history: [], locationName: 'Drawer A2', categoryName: null },
+      {
+        item: makeItem({ id: 'a', name: 'Servo' }),
+        history: [],
+        locationName: 'Workshop',
+        categoryName: null,
+      },
+      {
+        item: makeItem({ id: 'b', name: 'Bracket' }),
+        history: [],
+        locationName: 'Drawer A2',
+        categoryName: null,
+      },
     ];
     const { files } = buildProjectVault('Robot Arm', vaultItems);
     const paths = Object.keys(files);

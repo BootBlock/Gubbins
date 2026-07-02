@@ -1,24 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, LiveRegion, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
-  AddIcon,
-  DeleteIcon,
-  LowStockIcon,
-  ShoppingCartIcon,
-  TruckIcon,
-} from '@/components/icons';
+  Button,
+  LiveRegion,
+  PageContainer,
+  PageHeader,
+  Spinner,
+  Surface,
+  MAIN_CONTENT_ID,
+} from '@/components/foundry';
+import { AddIcon, DeleteIcon, LowStockIcon, ShoppingCartIcon, TruckIcon } from '@/components/icons';
 import { ReorderTab } from './ReorderTab';
 import { useFormatters } from '@/lib/useFormatters';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
-import {
-  estimatedValue,
-  poStatusPresentation,
-  totalOrdered,
-  totalReceived,
-} from './po-presentation';
+import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
 import {
   useAddPurchaseOrderLine,
   useCreatePurchaseOrder,
@@ -78,11 +75,7 @@ export function PurchaseOrdersScreen() {
 
       {/* Tab navigation — a plain div carries role="tablist" (a <nav> landmark is
           suppressed by the role override and inconsistent with the other tablists). */}
-      <div
-        role="tablist"
-        aria-label="Purchase orders sections"
-        className="flex gap-1 border-b border-border"
-      >
+      <div role="tablist" aria-label="Purchase orders sections" className="flex gap-1 border-b border-border">
         <TabButton
           id="po-tab-orders"
           panelId="po-panel-orders"
@@ -104,11 +97,7 @@ export function PurchaseOrdersScreen() {
         </TabButton>
       </div>
 
-      <main
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        className="flex-1 animate-rise outline-none"
-      >
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex-1 animate-rise outline-none">
         {/* Orders tab panel */}
         <div
           id="po-panel-orders"
@@ -343,9 +332,9 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         `Receipt updated: ${f.quantity(currentReceived)} of ${f.quantity(currentOrdered)} received.`,
       );
     }
-  // f is stable between renders; including it satisfies exhaustive-deps without
-  // causing extra fires.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // f is stable between renders; including it satisfies exhaustive-deps without
+    // causing extra fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentReceived, currentOrdered]);
 
   if (poQuery.isLoading) {
@@ -446,16 +435,14 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         </div>
 
         {po.lines.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">
-            No lines yet. Add the parts you are ordering.
-          </p>
+          <p className="py-4 text-sm text-muted-foreground">No lines yet. Add the parts you are ordering.</p>
         ) : (
           <ul className="flex flex-col divide-y divide-border">
             {po.lines.map((line) => {
               const outstanding = Math.max(0, line.orderedQty - line.receivedQty);
               const label = line.itemId
-                ? itemNameById.get(line.itemId) ?? line.description ?? 'Linked item'
-                : line.description ?? 'Unnamed line';
+                ? (itemNameById.get(line.itemId) ?? line.description ?? 'Linked item')
+                : (line.description ?? 'Unnamed line');
               return (
                 <li
                   key={line.id}
@@ -499,10 +486,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         isSaving={addLine.isPending}
         onClose={() => setLineOpen(false)}
         onSubmit={(input) => {
-          addLine.mutate(
-            { poId: po.id, input },
-            { onSuccess: () => setLineOpen(false) },
-          );
+          addLine.mutate({ poId: po.id, input }, { onSuccess: () => setLineOpen(false) });
         }}
       />
 

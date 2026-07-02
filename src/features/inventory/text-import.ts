@@ -41,14 +41,7 @@ import type { CategoryField, Item } from '@/db/repositories/types';
 export type ImportFormat = 'csv' | 'ssv' | 'tsv' | 'json' | 'markdown' | 'lines';
 
 /** All formats in the order the "Interpret as" picker should list them. */
-export const IMPORT_FORMATS: readonly ImportFormat[] = [
-  'csv',
-  'ssv',
-  'tsv',
-  'json',
-  'markdown',
-  'lines',
-];
+export const IMPORT_FORMATS: readonly ImportFormat[] = ['csv', 'ssv', 'tsv', 'json', 'markdown', 'lines'];
 
 /** Human-readable label for each format (used in the import dialog UI). */
 export const IMPORT_FORMAT_LABELS: Record<ImportFormat, string> = {
@@ -225,7 +218,10 @@ const TRAILING_QTY_PATTERNS: readonly RegExp[] = [
 
 /** Strip leading / trailing separator punctuation left behind after extraction. */
 function cleanName(text: string): string {
-  return text.replace(/^[\s,;:\-–—|]+/, '').replace(/[\s,;:\-–—|]+$/, '').trim();
+  return text
+    .replace(/^[\s,;:\-–—|]+/, '')
+    .replace(/[\s,;:\-–—|]+$/, '')
+    .trim();
 }
 
 /** Pull a labelled SKU out of the line, returning it and the remaining text. */
@@ -526,13 +522,7 @@ export function buildImportPlan(
   existingItems: readonly Item[],
   options: BuildPlanOptions = {},
 ): CatalogImportPlan {
-  return buildImportPlanFromRows(
-    extraction.headerRow,
-    extraction.dataRows,
-    mapping,
-    existingItems,
-    options,
-  );
+  return buildImportPlanFromRows(extraction.headerRow, extraction.dataRows, mapping, existingItems, options);
 }
 
 /** The outcome of a single input row, for the "extracted items" preview table. */

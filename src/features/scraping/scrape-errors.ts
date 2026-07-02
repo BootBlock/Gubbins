@@ -93,10 +93,12 @@ const MESSAGE_BY_TYPE: Record<ScrapeErrorType, (domain: string) => string> = {
   DOM_DRIFT: (d) => `${d}: the page layout changed. Manual entry required.`,
   NETWORK_TIMEOUT: (d) => `${d}: the request timed out. Check your connection, or enter manually.`,
   RATE_LIMITED: (d) => `${d}: too many requests — wait a moment and try again, or enter manually.`,
-  BLOCKED: (d) => `${d}: the supplier blocked the request. Try opening the page in a tab first, or enter manually.`,
+  BLOCKED: (d) =>
+    `${d}: the supplier blocked the request. Try opening the page in a tab first, or enter manually.`,
   NOT_FOUND: (d) => `${d}: product page not found — check the URL, or enter manually.`,
   SERVER_ERROR: (d) => `${d}: the supplier is having problems — try again later, or enter manually.`,
-  CHALLENGE: (d) => `${d}: the supplier showed an anti-bot challenge. Open the page in a browser tab to clear it, then retry — or enter manually.`,
+  CHALLENGE: (d) =>
+    `${d}: the supplier showed an anti-bot challenge. Open the page in a browser tab to clear it, then retry — or enter manually.`,
 };
 
 /**

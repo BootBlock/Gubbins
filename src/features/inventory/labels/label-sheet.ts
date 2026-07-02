@@ -16,12 +16,7 @@
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import { qrSvg } from '@/features/scanner/qr-code';
 import { code128Svg } from './code128';
-import {
-  labelBarcodeValue,
-  templateHasBarcode,
-  templateHasQr,
-  type LabelTemplate,
-} from './label-template';
+import { labelBarcodeValue, templateHasBarcode, templateHasQr, type LabelTemplate } from './label-template';
 
 /** The item fields a label may surface (all but id/name optional). */
 export interface LabelItem {

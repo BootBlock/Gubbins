@@ -44,8 +44,7 @@ export function browserInstallPromptApi(): InstallPromptApi {
     isStandalone: () => isStandaloneDisplay(),
     subscribe: (handlers) => {
       if (typeof window === 'undefined') return () => {};
-      const onPrompt = (event: Event) =>
-        handlers.onPrompt(event as unknown as BeforeInstallPromptEventLike);
+      const onPrompt = (event: Event) => handlers.onPrompt(event as unknown as BeforeInstallPromptEventLike);
       const onInstalled = () => handlers.onInstalled();
       window.addEventListener('beforeinstallprompt', onPrompt);
       window.addEventListener('appinstalled', onInstalled);

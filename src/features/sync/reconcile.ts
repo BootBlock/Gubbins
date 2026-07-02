@@ -17,12 +17,7 @@
  * The engine never touches the database — the orchestrator applies the plan and
  * re-reads the merged state to push — so it is exhaustively unit-tested in isolation.
  */
-import {
-  UNASSIGNED_LOCATION_ID,
-  SYNC_TABLES,
-  ITEM_HISTORY_TABLE,
-  itemTagEdgeId,
-} from '@/db/repositories';
+import { UNASSIGNED_LOCATION_ID, SYNC_TABLES, ITEM_HISTORY_TABLE, itemTagEdgeId } from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { reconcileGauge } from './delta-crdt';
@@ -101,11 +96,7 @@ export function reconcile(
   resolveAliasCollisions(local, localUpserts, localDeletes, offset);
 
   // --- §7.5.2 orphan re-parenting ------------------------------------------------
-  const { reparented, finalItems, activeLocationIds } = reparentOrphans(
-    local,
-    localUpserts,
-    localDeletes,
-  );
+  const { reparented, finalItems, activeLocationIds } = reparentOrphans(local, localUpserts, localDeletes);
 
   // --- §7.5.3 cyclical-nesting rejection ----------------------------------------
   const rejectedCycles = rejectLocationCycles(local, localUpserts);
@@ -299,8 +290,18 @@ function computeRemovedParents(
     // FK would reject it (Phase 25). The active set already drives the §7.5.2 item re-parent.
     locations: removedIds('locations', local, remote, activeLocationIds),
     categories: removedCategories,
-    contacts: removedIds('contacts', local, remote, survivingIds('contacts', local, localUpserts, localDeletes)),
-    projects: removedIds('projects', local, remote, survivingIds('projects', local, localUpserts, localDeletes)),
+    contacts: removedIds(
+      'contacts',
+      local,
+      remote,
+      survivingIds('contacts', local, localUpserts, localDeletes),
+    ),
+    projects: removedIds(
+      'projects',
+      local,
+      remote,
+      survivingIds('projects', local, localUpserts, localDeletes),
+    ),
     // §7.5 cascade-of-cascade (Phase 14): deleting a category cascades its category_fields
     // (which themselves leave no tombstone), so a field belonging to a removed category is
     // *also* removed — fold those in so item_field_values referencing them are guarded too.
@@ -335,102 +336,99 @@ function computeRemovedParents(
  * keeps the child with the reference cleared. `items.location_id` is intentionally absent
  * — the §7.5.2 re-parent already re-homes orphaned items to Unassigned.
  */
-const FK_REFS: Partial<
-  Record<SyncTable, readonly { col: string; parent: SyncTable; nullable: boolean }[]>
-> = {
-  items: [{ col: 'category_id', parent: 'categories', nullable: true }],
-  // Per-location stock ledger (Phase 25). item_id mirrors the cascade children above —
-  // drop a placement whose item was removed. location_id drops an *incoming* placement at
-  // a removed location (it would trip the location's RESTRICT FK); the device's *own*
-  // surviving placement at that location is instead re-homed to Unassigned by `applyPlan`
-  // before the location tombstone DELETE, so local stock is preserved rather than lost.
-  item_stock: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    { col: 'location_id', parent: 'locations', nullable: false },
-  ],
-  // Per-batch ledger (Phase 28), the SSOT below item_stock. Same guards as item_stock: a
-  // batch whose item was removed is dropped (CASCADE), and an *incoming* batch at a removed
-  // location is dropped (its RESTRICT FK would reject it) while the device's own surviving
-  // batches at that location are re-homed to Unassigned by `applyPlan` before the location
-  // tombstone DELETE.
-  stock_batches: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    { col: 'location_id', parent: 'locations', nullable: false },
-  ],
-  category_fields: [{ col: 'category_id', parent: 'categories', nullable: false }],
-  item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
-  // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
-  // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
-  supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
-  // Supplier price-history points (Phase 81). supplier_part_id mirrors the cascade children
-  // above — drop an incoming price point whose supplier part did not survive the merge
-  // (ON DELETE CASCADE, NOT NULL). supplier_parts is already in the `removed`-parents set.
-  supplier_part_price_history: [
-    { col: 'supplier_part_id', parent: 'supplier_parts', nullable: false },
-  ],
-  item_field_values: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    { col: 'field_id', parent: 'category_fields', nullable: false },
-  ],
-  item_images: [{ col: 'item_id', parent: 'items', nullable: false }],
-  item_attachments: [{ col: 'item_id', parent: 'items', nullable: false }],
-  capabilities: [{ col: 'item_id', parent: 'items', nullable: false }],
-  checkouts: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    // §7.5 (Phase 14): a peer hard-deleting a contact cascades its loans (ON DELETE
-    // CASCADE, NOT NULL). Without this the deleting device would re-download an orphaned
-    // checkout and trip the FK on its next sync.
-    { col: 'contact_id', parent: 'contacts', nullable: false },
-    // Phase 26: the per-location lend-from pointer. Nullable (NO ACTION) — an incoming
-    // checkout whose source location did not survive the merge keeps the loan but clears
-    // the pointer (the return then falls back to the item's primary location), mirroring
-    // the location-delete null-out in `applyPlan` / `LocationRepository.delete`.
-    { col: 'source_location_id', parent: 'locations', nullable: true },
-  ],
-  // Asset bookings (Phase 78). item_id mirrors the item-child cascade — drop an incoming
-  // booking whose asset was removed (ON DELETE CASCADE, NOT NULL). contact_id is nullable
-  // (ON DELETE SET NULL): an incoming booking whose contact did not survive the merge keeps
-  // the reservation but clears the "booked for" reference, mirroring the checkout
-  // source-location / expense-category null-out. (`converted_checkout_id` is a soft pointer,
-  // not a synced FK, so it needs no guard — a dangling pointer only affects a derived label.)
-  asset_bookings: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    { col: 'contact_id', parent: 'contacts', nullable: true },
-  ],
-  maintenance_schedules: [
-    { col: 'item_id', parent: 'items', nullable: false },
-    // Phase 30: the optional per-location scope. Nullable (NO ACTION) — an incoming
-    // schedule whose scope location did not survive the merge keeps the schedule but
-    // clears the pointer (it reverts to item-level), mirroring the location-delete
-    // null-out in `applyPlan` / `LocationRepository.delete`.
-    { col: 'location_id', parent: 'locations', nullable: true },
-  ],
-  project_bom_lines: [
-    { col: 'project_id', parent: 'projects', nullable: false },
-    { col: 'item_id', parent: 'items', nullable: true },
-  ],
-  // Budget categories (Phase 58): drop an incoming category whose project did not survive
-  // the merge (it would trip the project's cascade FK), mirroring the BOM-line guard.
-  project_budget_categories: [{ col: 'project_id', parent: 'projects', nullable: false }],
-  // Expenses (Phase 58): the project_id guard mirrors the BOM line. category_id is nullable
-  // (ON DELETE SET NULL) — an incoming expense whose category did not survive the merge keeps
-  // the spend but clears the reference (it falls back to "uncategorised"), mirroring the
-  // checkout source-location null-out.
-  project_expenses: [
-    { col: 'project_id', parent: 'projects', nullable: false },
-    { col: 'category_id', parent: 'project_budget_categories', nullable: true },
-  ],
-  // Purchase-order lines (Phase 62). po_id mirrors the cascade children above — drop a line
-  // whose order did not survive (ON DELETE CASCADE, NOT NULL). item_id and supplier_part_id
-  // are nullable (ON DELETE SET NULL): an incoming line whose item / supplier-part did not
-  // survive keeps the line (the order history is real) with the reference cleared, mirroring
-  // the checkout source-location / expense-category null-out.
-  purchase_order_lines: [
-    { col: 'po_id', parent: 'purchase_orders', nullable: false },
-    { col: 'item_id', parent: 'items', nullable: true },
-    { col: 'supplier_part_id', parent: 'supplier_parts', nullable: true },
-  ],
-};
+const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTable; nullable: boolean }[]>> =
+  {
+    items: [{ col: 'category_id', parent: 'categories', nullable: true }],
+    // Per-location stock ledger (Phase 25). item_id mirrors the cascade children above —
+    // drop a placement whose item was removed. location_id drops an *incoming* placement at
+    // a removed location (it would trip the location's RESTRICT FK); the device's *own*
+    // surviving placement at that location is instead re-homed to Unassigned by `applyPlan`
+    // before the location tombstone DELETE, so local stock is preserved rather than lost.
+    item_stock: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      { col: 'location_id', parent: 'locations', nullable: false },
+    ],
+    // Per-batch ledger (Phase 28), the SSOT below item_stock. Same guards as item_stock: a
+    // batch whose item was removed is dropped (CASCADE), and an *incoming* batch at a removed
+    // location is dropped (its RESTRICT FK would reject it) while the device's own surviving
+    // batches at that location are re-homed to Unassigned by `applyPlan` before the location
+    // tombstone DELETE.
+    stock_batches: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      { col: 'location_id', parent: 'locations', nullable: false },
+    ],
+    category_fields: [{ col: 'category_id', parent: 'categories', nullable: false }],
+    item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
+    // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
+    // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
+    supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
+    // Supplier price-history points (Phase 81). supplier_part_id mirrors the cascade children
+    // above — drop an incoming price point whose supplier part did not survive the merge
+    // (ON DELETE CASCADE, NOT NULL). supplier_parts is already in the `removed`-parents set.
+    supplier_part_price_history: [{ col: 'supplier_part_id', parent: 'supplier_parts', nullable: false }],
+    item_field_values: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      { col: 'field_id', parent: 'category_fields', nullable: false },
+    ],
+    item_images: [{ col: 'item_id', parent: 'items', nullable: false }],
+    item_attachments: [{ col: 'item_id', parent: 'items', nullable: false }],
+    capabilities: [{ col: 'item_id', parent: 'items', nullable: false }],
+    checkouts: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      // §7.5 (Phase 14): a peer hard-deleting a contact cascades its loans (ON DELETE
+      // CASCADE, NOT NULL). Without this the deleting device would re-download an orphaned
+      // checkout and trip the FK on its next sync.
+      { col: 'contact_id', parent: 'contacts', nullable: false },
+      // Phase 26: the per-location lend-from pointer. Nullable (NO ACTION) — an incoming
+      // checkout whose source location did not survive the merge keeps the loan but clears
+      // the pointer (the return then falls back to the item's primary location), mirroring
+      // the location-delete null-out in `applyPlan` / `LocationRepository.delete`.
+      { col: 'source_location_id', parent: 'locations', nullable: true },
+    ],
+    // Asset bookings (Phase 78). item_id mirrors the item-child cascade — drop an incoming
+    // booking whose asset was removed (ON DELETE CASCADE, NOT NULL). contact_id is nullable
+    // (ON DELETE SET NULL): an incoming booking whose contact did not survive the merge keeps
+    // the reservation but clears the "booked for" reference, mirroring the checkout
+    // source-location / expense-category null-out. (`converted_checkout_id` is a soft pointer,
+    // not a synced FK, so it needs no guard — a dangling pointer only affects a derived label.)
+    asset_bookings: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      { col: 'contact_id', parent: 'contacts', nullable: true },
+    ],
+    maintenance_schedules: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      // Phase 30: the optional per-location scope. Nullable (NO ACTION) — an incoming
+      // schedule whose scope location did not survive the merge keeps the schedule but
+      // clears the pointer (it reverts to item-level), mirroring the location-delete
+      // null-out in `applyPlan` / `LocationRepository.delete`.
+      { col: 'location_id', parent: 'locations', nullable: true },
+    ],
+    project_bom_lines: [
+      { col: 'project_id', parent: 'projects', nullable: false },
+      { col: 'item_id', parent: 'items', nullable: true },
+    ],
+    // Budget categories (Phase 58): drop an incoming category whose project did not survive
+    // the merge (it would trip the project's cascade FK), mirroring the BOM-line guard.
+    project_budget_categories: [{ col: 'project_id', parent: 'projects', nullable: false }],
+    // Expenses (Phase 58): the project_id guard mirrors the BOM line. category_id is nullable
+    // (ON DELETE SET NULL) — an incoming expense whose category did not survive the merge keeps
+    // the spend but clears the reference (it falls back to "uncategorised"), mirroring the
+    // checkout source-location null-out.
+    project_expenses: [
+      { col: 'project_id', parent: 'projects', nullable: false },
+      { col: 'category_id', parent: 'project_budget_categories', nullable: true },
+    ],
+    // Purchase-order lines (Phase 62). po_id mirrors the cascade children above — drop a line
+    // whose order did not survive (ON DELETE CASCADE, NOT NULL). item_id and supplier_part_id
+    // are nullable (ON DELETE SET NULL): an incoming line whose item / supplier-part did not
+    // survive keeps the line (the order history is real) with the reference cleared, mirroring
+    // the checkout source-location / expense-category null-out.
+    purchase_order_lines: [
+      { col: 'po_id', parent: 'purchase_orders', nullable: false },
+      { col: 'item_id', parent: 'items', nullable: true },
+      { col: 'supplier_part_id', parent: 'supplier_parts', nullable: true },
+    ],
+  };
 
 /**
  * Ids of `table` that are **known** (present in either snapshot) but will not survive
@@ -638,7 +636,10 @@ function resolveAliasCollisions(
   for (const row of local.tables[TABLE] ?? []) {
     const id = String(row.id);
     if (deletedIds.has(id)) continue;
-    localByText.set(String(row.alias).toLowerCase(), { id, updatedAt: applyOffset(num(row.updated_at), offset) });
+    localByText.set(String(row.alias).toLowerCase(), {
+      id,
+      updatedAt: applyOffset(num(row.updated_at), offset),
+    });
   }
 
   for (let i = localUpserts.length - 1; i >= 0; i -= 1) {

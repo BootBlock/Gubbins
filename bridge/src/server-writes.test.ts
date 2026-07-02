@@ -67,7 +67,11 @@ afterAll(async () => {
 function post(base: string, path: string, body?: unknown, init: RequestInit = {}): Promise<Response> {
   return fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      'content-type': 'application/json',
+      ...(init.headers ?? {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     ...init,
   });
@@ -81,9 +85,14 @@ describe('writes disabled (default)', () => {
   });
 
   it('still rejects a POST with a missing token before anything else (401)', async () => {
-    const res = await post(readonlyBase, '/api/v1/items/item-m3-bolt/adjust-quantity', { delta: -1 }, {
-      headers: { 'content-type': 'application/json' },
-    });
+    const res = await post(
+      readonlyBase,
+      '/api/v1/items/item-m3-bolt/adjust-quantity',
+      { delta: -1 },
+      {
+        headers: { 'content-type': 'application/json' },
+      },
+    );
     expect(res.status).toBe(401);
   });
 
@@ -96,7 +105,10 @@ describe('writes disabled (default)', () => {
 describe('writes enabled', () => {
   it('forwards a valid adjust-quantity and returns the updated item', async () => {
     calls.length = 0;
-    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/adjust-quantity', { delta: -1, note: 'lent one' });
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/adjust-quantity', {
+      delta: -1,
+      note: 'lent one',
+    });
     expect(res.status).toBe(200);
     expect((await res.json()).id).toBe('item-m3-bolt');
     expect(calls).toEqual([{ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: -1, note: 'lent one' }]);
@@ -122,7 +134,9 @@ describe('writes enabled', () => {
   });
 
   it('rejects a malformed JSON body with 400', async () => {
-    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/adjust-quantity', undefined, { body: '{ not json' });
+    const res = await post(writableBase, '/api/v1/items/item-m3-bolt/adjust-quantity', undefined, {
+      body: '{ not json',
+    });
     expect(res.status).toBe(400);
   });
 

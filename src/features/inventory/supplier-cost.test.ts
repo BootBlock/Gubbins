@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  effectiveUnitCost,
-  preferredSupplierPart,
-  type CostSupplierPartLike,
-} from './supplier-cost';
+import { effectiveUnitCost, preferredSupplierPart, type CostSupplierPartLike } from './supplier-cost';
 
 const part = (unitCost: number | null, isPreferred: boolean): CostSupplierPartLike => ({
   unitCost,

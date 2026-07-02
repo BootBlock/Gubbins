@@ -128,11 +128,7 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
       groups.set(supplierKey, group);
     }
 
-    const orderQty = computeOrderQty(
-      row.shortfall,
-      sp?.packQty,
-      sp?.minOrderQty,
-    );
+    const orderQty = computeOrderQty(row.shortfall, sp?.packQty, sp?.minOrderQty);
 
     group.lines.push({
       itemId: row.itemId,

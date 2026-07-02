@@ -25,11 +25,7 @@
  *   GUBBINS_BRIDGE_MAX_PUSH_BYTES (optional) — hard cap on a pushed snapshot's size in bytes;
  *                                  defaults to {@link DEFAULT_MAX_PUSH_BYTES} (64 MiB).
  */
-import {
-  DEFAULT_RATE_CAPACITY,
-  DEFAULT_RATE_REFILL_PER_SEC,
-  type RateLimiterOptions,
-} from './rate-limit.ts';
+import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 
 /** Default bind address: loopback only, so the bridge is **not** LAN-reachable unless
  * the operator deliberately opts in via {@link LAN_HOST}. */
@@ -101,9 +97,7 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export function loadConfig(env: Env = process.env): BridgeConfig {
   const token = (env.GUBBINS_BRIDGE_TOKEN ?? '').trim();
   if (token.length === 0) {
-    throw new Error(
-      'GUBBINS_BRIDGE_TOKEN is required (set it in a git-ignored .env — see .env.example).',
-    );
+    throw new Error('GUBBINS_BRIDGE_TOKEN is required (set it in a git-ignored .env — see .env.example).');
   }
 
   const snapshotPath = loadSnapshotPath(env);
@@ -116,9 +110,14 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const allowWrites = parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
   const allowPush = parseBool(env.GUBBINS_BRIDGE_ALLOW_PUSH, false, 'GUBBINS_BRIDGE_ALLOW_PUSH');
   const maxPushBytes = Math.floor(
-    parsePositive(env.GUBBINS_BRIDGE_MAX_PUSH_BYTES, DEFAULT_MAX_PUSH_BYTES, 'GUBBINS_BRIDGE_MAX_PUSH_BYTES', {
-      allowZero: false,
-    }),
+    parsePositive(
+      env.GUBBINS_BRIDGE_MAX_PUSH_BYTES,
+      DEFAULT_MAX_PUSH_BYTES,
+      'GUBBINS_BRIDGE_MAX_PUSH_BYTES',
+      {
+        allowZero: false,
+      },
+    ),
   );
 
   return {
@@ -192,9 +191,7 @@ function parsePositive(
   const value = Number(trimmed);
   const floor = allowZero ? 0 : Number.EPSILON;
   if (!Number.isFinite(value) || value < floor) {
-    throw new Error(
-      `${name} must be a ${allowZero ? 'non-negative' : 'positive'} number; got "${trimmed}".`,
-    );
+    throw new Error(`${name} must be a ${allowZero ? 'non-negative' : 'positive'} number; got "${trimmed}".`);
   }
   return value;
 }

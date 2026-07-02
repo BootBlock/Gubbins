@@ -1,0 +1,18 @@
+# Baseline whitespace conventions, applied by editors before Prettier ever runs.
+# Keeps non-JS files (JSON, CSS, Markdown, YAML, shell) consistent too.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Markdown uses trailing spaces for hard line breaks — don't strip them.
+trim_trailing_whitespace = false
+
+[*.{bat,ps1}]
+end_of_line = crlf

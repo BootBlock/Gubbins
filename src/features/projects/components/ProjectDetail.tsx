@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Button, Modal, Select, Spinner, Surface, Tooltip, useToast, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import {
+  Button,
+  Modal,
+  Select,
+  Spinner,
+  Surface,
+  Tooltip,
+  useToast,
+  INFO_OPEN_DELAY_MS,
+} from '@/components/foundry';
 import {
   AddIcon,
   AssemblyIcon,
@@ -47,10 +56,7 @@ export function ProjectDetail({
 
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
-  const items = useMemo(
-    () => itemsQuery.data?.pages.flatMap((p) => p.rows) ?? [],
-    [itemsQuery.data],
-  );
+  const items = useMemo(() => itemsQuery.data?.pages.flatMap((p) => p.rows) ?? [], [itemsQuery.data]);
   const locations = locationsQuery.data?.rows ?? [];
 
   const [addOpen, setAddOpen] = useState(false);
@@ -158,9 +164,7 @@ export function ProjectDetail({
             content={`${costing.data.unpricedLineCount} line(s) have no unit cost under this mode and are excluded.`}
             openDelayMs={INFO_OPEN_DELAY_MS}
           >
-            <span className="text-xs text-warning">
-              {costing.data.unpricedLineCount} unpriced
-            </span>
+            <span className="text-xs text-warning">{costing.data.unpricedLineCount} unpriced</span>
           </Tooltip>
         ) : null}
         <label className="ml-auto flex items-center gap-2 text-sm">
@@ -169,9 +173,7 @@ export function ProjectDetail({
             className="h-8 w-auto text-xs"
             value={project.data.costingMode}
             aria-label="Costing mode"
-            onChange={(e) =>
-              setCostingMode.mutate({ id: projectId, mode: e.target.value as CostingMode })
-            }
+            onChange={(e) => setCostingMode.mutate({ id: projectId, mode: e.target.value as CostingMode })}
           >
             {COSTING_MODES.map((mode) => (
               <option key={mode} value={mode}>

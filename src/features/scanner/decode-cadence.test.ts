@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  initialCadence,
-  nextCadence,
-  DEFAULT_WASM_CADENCE,
-  type CadenceConfig,
-} from './decode-cadence';
+import { initialCadence, nextCadence, DEFAULT_WASM_CADENCE, type CadenceConfig } from './decode-cadence';
 
 /**
  * Adaptive frame-skip cadence for the off-thread WASM scanner decode (spec §6.6, §6.1 battery).

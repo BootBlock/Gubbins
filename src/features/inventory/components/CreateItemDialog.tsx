@@ -13,7 +13,6 @@ import {
   type CreateItemInput,
   type Location,
   type LocationWithCount,
-  type TrackingMode,
 } from '@/db/repositories';
 import { CONDITION_LABELS, fromDateInputValue } from './inventory-ui';
 import {
@@ -147,7 +146,7 @@ export function CreateItemDialog({
     },
   });
 
-  const trackingMode = watch('trackingMode') as TrackingMode;
+  const trackingMode = watch('trackingMode');
   const isPending = createItem.isPending || createSerialised.isPending;
 
   // Every location is a valid home — including the system Unassigned / In Transit rows —
@@ -209,7 +208,11 @@ export function CreateItemDialog({
         return 'supplier';
       }
     })();
-    notifyScrape(filled.length > 0 ? `Filled ${filled.join(', ')} from ${host}.` : `No empty fields to fill from ${host}.`);
+    notifyScrape(
+      filled.length > 0
+        ? `Filled ${filled.join(', ')} from ${host}.`
+        : `No empty fields to fill from ${host}.`,
+    );
   };
 
   const onSubmit = (values: FormValues) => {
@@ -361,9 +364,7 @@ export function CreateItemDialog({
                   labelledBy={locationLabelId}
                   value={field.value}
                   onChange={(value) =>
-                    value === CREATE_LOCATION_VALUE
-                      ? setInlineCreate('location')
-                      : field.onChange(value)
+                    value === CREATE_LOCATION_VALUE ? setInlineCreate('location') : field.onChange(value)
                   }
                   options={locationOptions}
                 />
@@ -375,8 +376,8 @@ export function CreateItemDialog({
               </span>
             ) : fullLocation ? (
               <span className="mt-1 block text-xs text-warning">
-                {fullLocation.name} is at capacity ({fullLocation.itemCount}/
-                {fullLocation.capacity}). You can still add here.
+                {fullLocation.name} is at capacity ({fullLocation.itemCount}/{fullLocation.capacity}). You can
+                still add here.
               </span>
             ) : null}
           </div>
@@ -657,18 +658,14 @@ export function CreateItemDialog({
               ? chosenLocationId
               : undefined
           }
-          onCreated={(location: Location) =>
-            setValue('locationId', location.id, { shouldDirty: true })
-          }
+          onCreated={(location: Location) => setValue('locationId', location.id, { shouldDirty: true })}
         />
       ) : null}
       {inlineCreate === 'category' ? (
         <CreateCategoryDialog
           open
           onClose={() => setInlineCreate(null)}
-          onCreated={(category: Category) =>
-            setValue('categoryId', category.id, { shouldDirty: true })
-          }
+          onCreated={(category: Category) => setValue('categoryId', category.id, { shouldDirty: true })}
         />
       ) : null}
     </Modal>

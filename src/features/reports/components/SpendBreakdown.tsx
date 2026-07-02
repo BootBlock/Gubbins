@@ -46,7 +46,10 @@ function topWithOther(groups: readonly SpendGroup[]): SpendGroup[] {
   const head = groups.slice(0, TOP_N);
   const tailTotal = groups.slice(TOP_N).reduce((sum, g) => sum + g.total, 0);
   const tailShare = groups.slice(TOP_N).reduce((sum, g) => sum + g.share, 0);
-  return [...head, { id: null, name: `Other (${groups.length - TOP_N})`, total: tailTotal, share: tailShare }];
+  return [
+    ...head,
+    { id: null, name: `Other (${groups.length - TOP_N})`, total: tailTotal, share: tailShare },
+  ];
 }
 
 /**
@@ -55,13 +58,7 @@ function topWithOther(groups: readonly SpendGroup[]): SpendGroup[] {
  * (§2.4.3); every bar labels its amount + share in text. Distinct from the Phase-74 valuation
  * trend: this is money *out*, not inventory value.
  */
-export function SpendBreakdown({
-  report,
-  formatters,
-}: {
-  report: SpendReport;
-  formatters: Formatters;
-}) {
+export function SpendBreakdown({ report, formatters }: { report: SpendReport; formatters: Formatters }) {
   if (report.total <= 0) {
     return (
       <p className="py-6 text-center text-sm text-muted-foreground" data-testid="spend-empty">
@@ -104,7 +101,9 @@ export function SpendBreakdown({
 
       <div className="grid gap-6 sm:grid-cols-2">
         <section aria-labelledby="spend-source-heading" className="flex flex-col gap-2">
-          <h4 id="spend-source-heading" className="text-sm font-semibold">By source</h4>
+          <h4 id="spend-source-heading" className="text-sm font-semibold">
+            By source
+          </h4>
           <ul className="flex flex-col gap-3">
             {report.bySource.map((s) => (
               <SpendBar
@@ -120,7 +119,9 @@ export function SpendBreakdown({
         </section>
 
         <section aria-labelledby="spend-supplier-heading" className="flex flex-col gap-2">
-          <h4 id="spend-supplier-heading" className="text-sm font-semibold">By supplier</h4>
+          <h4 id="spend-supplier-heading" className="text-sm font-semibold">
+            By supplier
+          </h4>
           <ul className="flex flex-col gap-3">
             {suppliers.map((g) => (
               <SpendBar
@@ -136,7 +137,9 @@ export function SpendBreakdown({
         </section>
 
         <section aria-labelledby="spend-category-heading" className="flex flex-col gap-2 sm:col-span-2">
-          <h4 id="spend-category-heading" className="text-sm font-semibold">By category</h4>
+          <h4 id="spend-category-heading" className="text-sm font-semibold">
+            By category
+          </h4>
           <ul className="flex flex-col gap-3">
             {categories.map((g) => (
               <SpendBar

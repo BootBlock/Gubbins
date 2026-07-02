@@ -17,12 +17,7 @@
  * salvaged work as local-wins — rather than a blind wipe.
  */
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
-import {
-  SYNC_TABLES,
-  ITEM_HISTORY_TABLE,
-  ITEM_TAGS_TABLE,
-  itemTagEdgeId,
-} from '@/db/repositories';
+import { SYNC_TABLES, ITEM_HISTORY_TABLE, ITEM_TAGS_TABLE, itemTagEdgeId } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
 import { decodeRowForTable } from './blob-codec';
@@ -104,10 +99,10 @@ async function writeSyncMeta(
   lastSyncTimestamp: number,
   clockOffset: number,
 ): Promise<void> {
-  await driver.execute(
-    'UPDATE sync_meta SET last_sync_timestamp = ?, clock_offset = ? WHERE id = 1;',
-    [lastSyncTimestamp, clockOffset],
-  );
+  await driver.execute('UPDATE sync_meta SET last_sync_timestamp = ?, clock_offset = ? WHERE id = 1;', [
+    lastSyncTimestamp,
+    clockOffset,
+  ]);
 }
 
 export interface RunSyncOptions {
@@ -176,7 +171,14 @@ export async function runSync(
 
   // --- §7.2 TTL edge: full clone with Pre-Wipe Salvage --------------------------
   if (needsFullResync(meta.lastSyncTimestamp, effectiveNow, ttlMs)) {
-    await cloneWithSalvage(driver, remote, dictionary, meta.lastSyncTimestamp, offset, meta.historyPrunedBefore);
+    await cloneWithSalvage(
+      driver,
+      remote,
+      dictionary,
+      meta.lastSyncTimestamp,
+      offset,
+      meta.historyPrunedBefore,
+    );
     const merged = await buildLocalSnapshot(driver, effectiveNow);
     await provider.pushSnapshot(merged);
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
@@ -212,11 +214,7 @@ export async function runSync(
 }
 
 /** §7.2 TTL prune of tombstones older than (now − ttl). */
-async function pruneTombstones(
-  driver: IDatabaseDriver,
-  now: number,
-  ttlMs: number,
-): Promise<number> {
+async function pruneTombstones(driver: IDatabaseDriver, now: number, ttlMs: number): Promise<number> {
   const cutoff = now - ttlMs;
   const res = await driver.execute('DELETE FROM tombstones WHERE deleted_at < ?;', [cutoff]);
   return res.rowsModified;
@@ -293,7 +291,10 @@ function upsert(table: SyncTable, snapshotRow: SqlRow, columns: readonly string[
   // Decode any base64 BLOB (item_images thumbnail) from the snapshot back to bytes.
   const row = decodeRowForTable(table, snapshotRow);
   const cols = columns.filter((c) => c in row);
-  const updates = cols.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ');
+  const updates = cols
+    .filter((c) => c !== 'id')
+    .map((c) => `${c} = excluded.${c}`)
+    .join(', ');
   const sql =
     `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) ` +
     `ON CONFLICT(id) DO UPDATE SET ${updates};`;

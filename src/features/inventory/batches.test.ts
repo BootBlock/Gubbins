@@ -38,7 +38,9 @@ describe('batchKeyOf / normaliseBatch', () => {
   });
 
   it('normalises blank attributes and non-finite expiry to null', () => {
-    expect(normaliseBatch({ batchNumber: ' ', lotNumber: 'L', expiryDate: Number.POSITIVE_INFINITY })).toEqual({
+    expect(
+      normaliseBatch({ batchNumber: ' ', lotNumber: 'L', expiryDate: Number.POSITIVE_INFINITY }),
+    ).toEqual({
       batchNumber: null,
       lotNumber: 'L',
       expiryDate: null,

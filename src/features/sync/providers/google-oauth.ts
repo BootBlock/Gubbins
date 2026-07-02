@@ -19,11 +19,7 @@
  * when it expires. The token is stored device-local in `localStorage` (mirroring the
  * existing bridge-token handling) and is never synced.
  */
-import {
-  GOOGLE_AUTH_ENDPOINT,
-  googleDriveConfig,
-  type GoogleDriveConfig,
-} from './google-config';
+import { GOOGLE_AUTH_ENDPOINT, googleDriveConfig, type GoogleDriveConfig } from './google-config';
 
 /** A short-lived Google access token with its absolute expiry (epoch ms). */
 export interface GoogleToken {

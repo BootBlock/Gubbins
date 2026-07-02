@@ -2,10 +2,7 @@ import { useState } from 'react';
 import { Button, Input, Modal, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { AddIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
 import { FIELD_TYPES, type CategoryWithFieldCount, type FieldType } from '@/db/repositories';
-import {
-  usePreferencesStore,
-  type AttachmentMode,
-} from '@/state/stores/usePreferencesStore';
+import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import {
   useAddCategoryField,
   useCategories,
@@ -33,10 +30,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
   const addCategory = () => {
     const name = newName.trim();
     if (!name) return;
-    createCategory.mutate(
-      { name },
-      { onSuccess: (cat) => setSelectedId(cat.id) },
-    );
+    createCategory.mutate({ name }, { onSuccess: (cat) => setSelectedId(cat.id) });
     setNewName('');
   };
 
@@ -59,9 +53,17 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
               placeholder="New category…"
               aria-label="New category name"
             />
-            <Tooltip content="Create the category, then define its custom fields on the right." triggerTabIndex={-1}>
+            <Tooltip
+              content="Create the category, then define its custom fields on the right."
+              triggerTabIndex={-1}
+            >
               <span>
-                <Button size="icon" aria-label="Add category" onClick={addCategory} disabled={!newName.trim()}>
+                <Button
+                  size="icon"
+                  aria-label="Add category"
+                  onClick={addCategory}
+                  disabled={!newName.trim()}
+                >
                   <AddIcon />
                 </Button>
               </span>
@@ -126,7 +128,10 @@ function CategoryDetail({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="truncate text-sm font-semibold">{category.name}</h3>
-        <Tooltip content="Delete this category and all its field definitions. Items keep their stored values." triggerTabIndex={-1}>
+        <Tooltip
+          content="Delete this category and all its field definitions. Items keep their stored values."
+          triggerTabIndex={-1}
+        >
           <span>
             <Button variant="ghost" size="icon" aria-label="Delete category" onClick={onDeleted}>
               <DeleteIcon className="text-glyph-danger" />
@@ -190,7 +195,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           defaultValue: defaultValue.trim() || null,
           options:
             fieldType === 'SELECT'
-              ? options.split(',').map((o) => o.trim()).filter(Boolean)
+              ? options
+                  .split(',')
+                  .map((o) => o.trim())
+                  .filter(Boolean)
               : null,
         },
       },
@@ -209,8 +217,17 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   return (
     <div className="space-y-2 rounded-lg border border-border bg-secondary/10 p-2.5">
       <div className="grid grid-cols-2 gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Field name" aria-label="Field name" />
-        <Select value={fieldType} onChange={(e) => setFieldType(e.target.value as FieldType)} aria-label="Field type">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Field name"
+          aria-label="Field name"
+        />
+        <Select
+          value={fieldType}
+          onChange={(e) => setFieldType(e.target.value as FieldType)}
+          aria-label="Field type"
+        >
           {FIELD_TYPES.map((t) => (
             <option key={t} value={t}>
               {FIELD_TYPE_LABELS[t]}
@@ -244,7 +261,11 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           Required
         </label>
       </div>
-      {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={!name.trim() || addField.isPending}>
           <AddIcon />

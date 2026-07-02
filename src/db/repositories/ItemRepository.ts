@@ -35,9 +35,7 @@ export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from '.
 export class ItemRepository extends withStock(
   withGauge(
     withAliases(
-      withCapabilities(
-        withSearch(withVariants(withDashboardFeeds(withCycleCount(ItemCoreRepository)))),
-      ),
+      withCapabilities(withSearch(withVariants(withDashboardFeeds(withCycleCount(ItemCoreRepository))))),
     ),
   ),
 ) {}

@@ -75,8 +75,8 @@ export function TextQueryInput() {
       <p id={hintId} className="flex items-center gap-1 text-[11px] text-muted-foreground">
         Power search — <code className="font-mono">field:text</code>,{' '}
         <code className="font-mono">qty&gt;10</code>, <code className="font-mono">cap:key&gt;3.3</code>,{' '}
-        <code className="font-mono">OR</code> / <code className="font-mono">( )</code>; press Enter to fill the
-        builder.
+        <code className="font-mono">OR</code> / <code className="font-mono">( )</code>; press Enter to fill
+        the builder.
         <Tooltip
           content={[
             'Type a query and press **Enter** to fill the builder below.',

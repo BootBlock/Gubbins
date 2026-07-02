@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import {
-  Code128Error,
-  code128Modules,
-  code128Svg,
-  encodeCode128,
-} from './code128';
+import { Code128Error, code128Modules, code128Svg, encodeCode128 } from './code128';
 
 /** Recompute the mod-103 checksum independently, to cross-check the encoder. */
 function expectedChecksum(symbols: number[]): number {

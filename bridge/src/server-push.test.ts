@@ -33,7 +33,9 @@ const pushCapability: PushCapability = {
     if (text.includes('"formatVersion":9999')) {
       throw new PushError(422, 'unprocessable', 'This backup was made by a newer version of Gubbins.');
     }
-    if (text === 'TOO BIG') throw new PushError(413, 'payload_too_large', 'The snapshot exceeds the maximum push size.');
+    if (text === 'TOO BIG') {
+      throw new PushError(413, 'payload_too_large', 'The snapshot exceeds the maximum push size.');
+    }
     return { formatVersion: 1, generatedAt: 1751000000000 };
   },
 };
@@ -64,7 +66,11 @@ afterAll(async () => {
 function post(base: string, body: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${base}/api/v1/snapshot`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      'content-type': 'application/json',
+      ...(init.headers ?? {}),
+    },
     body,
     ...init,
   });
@@ -78,7 +84,9 @@ describe('push disabled (default)', () => {
   });
 
   it('rejects a push with a missing token before anything else (401)', async () => {
-    const res = await post(readonlyBase, '{"formatVersion":1}', { headers: { 'content-type': 'application/json' } });
+    const res = await post(readonlyBase, '{"formatVersion":1}', {
+      headers: { 'content-type': 'application/json' },
+    });
     expect(res.status).toBe(401);
   });
 
@@ -111,7 +119,9 @@ describe('push enabled', () => {
   });
 
   it('404s a GET to /api/v1/snapshot (ingest is POST-only)', async () => {
-    const res = await fetch(`${pushableBase}/api/v1/snapshot`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    const res = await fetch(`${pushableBase}/api/v1/snapshot`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
     expect(res.status).toBe(404);
   });
 

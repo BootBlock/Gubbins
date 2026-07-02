@@ -30,8 +30,7 @@ export const digikeyParser: SupplierParser = {
       ['[data-testid="mfr-part-number"]', 'meta[itemprop="mpn"]', '[itemprop="mpn"]'],
       'MPN',
     );
-    const manufacturer =
-      optionalText(doc, ['[data-testid="manufacturer-name"]', '[itemprop="brand"]']) ?? '';
+    const manufacturer = optionalText(doc, ['[data-testid="manufacturer-name"]', '[itemprop="brand"]']) ?? '';
     const description =
       optionalText(doc, ['[data-testid="product-description"]', 'h1[itemprop="name"]', 'h1']) ?? '';
 

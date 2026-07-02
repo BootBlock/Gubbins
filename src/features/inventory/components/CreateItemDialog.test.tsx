@@ -126,9 +126,7 @@ describe('CreateItemDialog', () => {
     fireEvent.click(catDialog.getByRole('button', { name: 'Create' }));
 
     expect(spies.createCategory).toHaveBeenCalledWith({ name: 'Tools' }, expect.anything());
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Add category' })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add category' })).toBeNull());
 
     // The item form survived (name intact) and now carries the new category.
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Torque wrench');
@@ -157,9 +155,7 @@ describe('CreateItemDialog', () => {
 
     expect(spies.createLocation).toHaveBeenCalledTimes(1);
     expect(spies.createLocation.mock.calls[0][0]).toMatchObject({ name: 'Drawer 9' });
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
 
     // The item form survived and now targets the freshly-created location.
     expect((itemDialog().getByLabelText('Name') as HTMLInputElement).value).toBe('Calipers');

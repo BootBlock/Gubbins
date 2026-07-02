@@ -135,10 +135,7 @@ describe('bucketStockAging — edge cases', () => {
   });
 
   it('clamps a future reference instant to age 0 (first bucket)', () => {
-    const report = bucketStockAging(
-      [makeItem({ lastInboundAt: NOW + 5 * MS_PER_DAY })],
-      NOW,
-    );
+    const report = bucketStockAging([makeItem({ lastInboundAt: NOW + 5 * MS_PER_DAY })], NOW);
     expect(report.buckets[0]?.itemCount).toBe(1);
     expect(report.buckets[0]?.label).toBe('0–30 days');
   });

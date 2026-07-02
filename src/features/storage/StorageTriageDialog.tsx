@@ -82,8 +82,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               : `Archived ${result.archived} entries to a JSON download and freed ${result.pruned} rows.`,
         });
       },
-      onError: () =>
-        show({ tone: 'danger', heading: 'Pruning failed', message: 'No history was deleted.' }),
+      onError: () => show({ tone: 'danger', heading: 'Pruning failed', message: 'No history was deleted.' }),
     });
   };
 
@@ -137,9 +136,24 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
             <>
               <StorageBreakdownBars
                 items={[
-                  { key: 'images', label: 'Images', icon: <ImageIcon />, bytes: breakdown.data.bytes.itemImages },
-                  { key: 'history', label: 'Activity history', icon: <HistoryIcon />, bytes: breakdown.data.bytes.itemHistory },
-                  { key: 'items', label: 'Item records', icon: <PackageIcon />, bytes: breakdown.data.bytes.items },
+                  {
+                    key: 'images',
+                    label: 'Images',
+                    icon: <ImageIcon />,
+                    bytes: breakdown.data.bytes.itemImages,
+                  },
+                  {
+                    key: 'history',
+                    label: 'Activity history',
+                    icon: <HistoryIcon />,
+                    bytes: breakdown.data.bytes.itemHistory,
+                  },
+                  {
+                    key: 'items',
+                    label: 'Item records',
+                    icon: <PackageIcon />,
+                    bytes: breakdown.data.bytes.items,
+                  },
                 ]}
                 total={breakdown.data.bytes.total}
               />
@@ -147,8 +161,8 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                 {breakdown.data.imagesMeasured
                   ? 'Image size measured from the actual files on your device. '
                   : 'Figures are estimated from row counts. '}
-                The total above is your browser&rsquo;s storage across all sites, not Gubbins
-                alone; the breakdown here is Gubbins&rsquo; own share.
+                The total above is your browser&rsquo;s storage across all sites, not Gubbins alone; the
+                breakdown here is Gubbins&rsquo; own share.
               </p>
             </>
           ) : null}
@@ -221,8 +235,8 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
             </h3>
           </div>
           <p className="text-sm text-muted-foreground">
-            Drops full-resolution photos to reclaim space, keeping the thumbnails. Your cloud backup
-            is left untouched.
+            Drops full-resolution photos to reclaim space, keeping the thumbnails. Your cloud backup is left
+            untouched.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm">

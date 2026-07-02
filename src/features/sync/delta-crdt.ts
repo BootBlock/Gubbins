@@ -29,10 +29,7 @@ export function mergeDeltas(
  * converged `current_net_value`. The result is clamped to `[0, grossCapacity]` so
  * concurrent over-consumption can never drive the gauge negative or above full.
  */
-export function replayGaugeValue(
-  grossCapacity: number,
-  deltas: readonly GaugeHistoryDelta[],
-): number {
+export function replayGaugeValue(grossCapacity: number, deltas: readonly GaugeHistoryDelta[]): number {
   const total = deltas.reduce((sum, d) => sum + d.netValueDelta, 0);
   const value = grossCapacity + total;
   if (value < 0) return 0;

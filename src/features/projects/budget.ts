@@ -82,11 +82,7 @@ export interface BudgetCategorySummary {
  * for a zero/negative limit any positive spend reads as `OVER` (else `OK`). Otherwise spend
  * over the limit is `OVER`, spend at/above `warnPercent`% of it is `WARN`, else `OK`.
  */
-export function budgetStatus(
-  value: number,
-  limit: number | null,
-  warnPercent: number,
-): BudgetStatus {
+export function budgetStatus(value: number, limit: number | null, warnPercent: number): BudgetStatus {
   if (limit == null) return 'NONE';
   if (limit <= 0) return value > 0 ? 'OVER' : 'OK';
   if (value > limit) return 'OVER';

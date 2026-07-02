@@ -54,11 +54,7 @@ import {
   type ValuationEvent,
   type ValuationTrendReport,
 } from '@/features/reports/valuation-trend';
-import {
-  buildSpendReport,
-  type SpendEvent,
-  type SpendReport,
-} from '@/features/reports/spend-analytics';
+import { buildSpendReport, type SpendEvent, type SpendReport } from '@/features/reports/spend-analytics';
 import {
   buildReorderPlan,
   type ReorderPlanGroup,
@@ -603,11 +599,7 @@ export class ReportRepository extends BaseRepository {
    * valuation-trend (that tracks inventory *value*; this tracks *money out*). `now` defaults to the
    * wall clock.
    */
-  async spendAnalytics(
-    windowDays: number,
-    buckets: number,
-    now: number = Date.now(),
-  ): Promise<SpendReport> {
+  async spendAnalytics(windowDays: number, buckets: number, now: number = Date.now()): Promise<SpendReport> {
     const windowEnd = now;
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const events: SpendEvent[] = [];

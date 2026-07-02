@@ -75,12 +75,66 @@ interface VersionSpec {
 }
 
 const VERSIONS: VersionSpec[] = [
-  { version: 1, totalCodewords: 16, ecPerBlock: 10, group1Blocks: 1, group1Size: 16, group2Blocks: 0, group2Size: 0, alignment: [] },
-  { version: 2, totalCodewords: 28, ecPerBlock: 16, group1Blocks: 1, group1Size: 28, group2Blocks: 0, group2Size: 0, alignment: [6, 18] },
-  { version: 3, totalCodewords: 44, ecPerBlock: 26, group1Blocks: 1, group1Size: 44, group2Blocks: 0, group2Size: 0, alignment: [6, 22] },
-  { version: 4, totalCodewords: 64, ecPerBlock: 18, group1Blocks: 2, group1Size: 32, group2Blocks: 0, group2Size: 0, alignment: [6, 26] },
-  { version: 5, totalCodewords: 86, ecPerBlock: 24, group1Blocks: 2, group1Size: 43, group2Blocks: 0, group2Size: 0, alignment: [6, 30] },
-  { version: 6, totalCodewords: 108, ecPerBlock: 16, group1Blocks: 4, group1Size: 27, group2Blocks: 0, group2Size: 0, alignment: [6, 34] },
+  {
+    version: 1,
+    totalCodewords: 16,
+    ecPerBlock: 10,
+    group1Blocks: 1,
+    group1Size: 16,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [],
+  },
+  {
+    version: 2,
+    totalCodewords: 28,
+    ecPerBlock: 16,
+    group1Blocks: 1,
+    group1Size: 28,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [6, 18],
+  },
+  {
+    version: 3,
+    totalCodewords: 44,
+    ecPerBlock: 26,
+    group1Blocks: 1,
+    group1Size: 44,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [6, 22],
+  },
+  {
+    version: 4,
+    totalCodewords: 64,
+    ecPerBlock: 18,
+    group1Blocks: 2,
+    group1Size: 32,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [6, 26],
+  },
+  {
+    version: 5,
+    totalCodewords: 86,
+    ecPerBlock: 24,
+    group1Blocks: 2,
+    group1Size: 43,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [6, 30],
+  },
+  {
+    version: 6,
+    totalCodewords: 108,
+    ecPerBlock: 16,
+    group1Blocks: 4,
+    group1Size: 27,
+    group2Blocks: 0,
+    group2Size: 0,
+    alignment: [6, 34],
+  },
 ];
 
 export class QrError extends Error {
@@ -213,13 +267,7 @@ function buildMatrix(codewords: number[], spec: VersionSpec): QrMatrix {
   return { size, modules: best!, version: spec.version };
 }
 
-function placeFinder(
-  m: (boolean | null)[][],
-  r: boolean[][],
-  row: number,
-  col: number,
-  size: number,
-): void {
+function placeFinder(m: (boolean | null)[][], r: boolean[][], row: number, col: number, size: number): void {
   for (let dr = -1; dr <= 7; dr += 1) {
     for (let dc = -1; dc <= 7; dc += 1) {
       const rr = row + dr;
@@ -227,7 +275,7 @@ function placeFinder(
       if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
       const isBorder = dr === 0 || dr === 6 || dc === 0 || dc === 6;
       const isCore = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
-      m[rr]![cc] = (dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6) && (isBorder || isCore);
+      m[rr]![cc] = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 && (isBorder || isCore);
       r[rr]![cc] = true;
     }
   }
@@ -247,12 +295,7 @@ function placeTiming(m: (boolean | null)[][], r: boolean[][], size: number): voi
   }
 }
 
-function placeAlignment(
-  m: (boolean | null)[][],
-  r: boolean[][],
-  spec: VersionSpec,
-  size: number,
-): void {
+function placeAlignment(m: (boolean | null)[][], r: boolean[][], spec: VersionSpec, size: number): void {
   const centres = spec.alignment;
   for (const cy of centres) {
     for (const cx of centres) {
@@ -284,12 +327,7 @@ function reserveFormat(r: boolean[][], size: number): void {
   }
 }
 
-function placeData(
-  m: (boolean | null)[][],
-  r: boolean[][],
-  codewords: number[],
-  size: number,
-): void {
+function placeData(m: (boolean | null)[][], r: boolean[][], codewords: number[], size: number): void {
   const bits: number[] = [];
   for (const cw of codewords) for (let i = 7; i >= 0; i -= 1) bits.push((cw >> i) & 1);
 
@@ -312,23 +350,26 @@ function placeData(
 
 function maskFn(mask: number, row: number, col: number): boolean {
   switch (mask) {
-    case 0: return (row + col) % 2 === 0;
-    case 1: return row % 2 === 0;
-    case 2: return col % 3 === 0;
-    case 3: return (row + col) % 3 === 0;
-    case 4: return (Math.floor(row / 2) + Math.floor(col / 3)) % 2 === 0;
-    case 5: return ((row * col) % 2) + ((row * col) % 3) === 0;
-    case 6: return (((row * col) % 2) + ((row * col) % 3)) % 2 === 0;
-    default: return (((row + col) % 2) + ((row * col) % 3)) % 2 === 0;
+    case 0:
+      return (row + col) % 2 === 0;
+    case 1:
+      return row % 2 === 0;
+    case 2:
+      return col % 3 === 0;
+    case 3:
+      return (row + col) % 3 === 0;
+    case 4:
+      return (Math.floor(row / 2) + Math.floor(col / 3)) % 2 === 0;
+    case 5:
+      return ((row * col) % 2) + ((row * col) % 3) === 0;
+    case 6:
+      return (((row * col) % 2) + ((row * col) % 3)) % 2 === 0;
+    default:
+      return (((row + col) % 2) + ((row * col) % 3)) % 2 === 0;
   }
 }
 
-function applyMask(
-  m: (boolean | null)[][],
-  r: boolean[][],
-  mask: number,
-  size: number,
-): boolean[][] {
+function applyMask(m: (boolean | null)[][], r: boolean[][], mask: number, size: number): boolean[][] {
   const out: boolean[][] = Array.from({ length: size }, () => new Array(size).fill(false));
   for (let row = 0; row < size; row += 1) {
     for (let col = 0; col < size; col += 1) {
@@ -341,9 +382,7 @@ function applyMask(
 }
 
 // Format info for EC level M, indexed by mask (15-bit BCH, pre-computed).
-const FORMAT_BITS_M = [
-  0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0,
-];
+const FORMAT_BITS_M = [0x5412, 0x5125, 0x5e7c, 0x5b4b, 0x45f9, 0x40ce, 0x4f97, 0x4aa0];
 
 function placeFormat(m: boolean[][], mask: number, size: number): void {
   const bits = FORMAT_BITS_M[mask]!;

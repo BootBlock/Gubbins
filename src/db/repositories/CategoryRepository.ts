@@ -41,9 +41,7 @@ interface ResolvedFieldRow extends CategoryFieldRow {
 
 export class CategoryRepository extends BaseRepository {
   async getById(id: string): Promise<Category | undefined> {
-    const row = await this.driver.queryOne<CategoryRow>('SELECT * FROM categories WHERE id = ?;', [
-      id,
-    ]);
+    const row = await this.driver.queryOne<CategoryRow>('SELECT * FROM categories WHERE id = ?;', [id]);
     return row ? rowToCategory(row) : undefined;
   }
 
@@ -136,7 +134,7 @@ export class CategoryRepository extends BaseRepository {
         input.position ?? 0,
       ],
     );
-    return (await this.requireField(id));
+    return await this.requireField(id);
   }
 
   async updateField(fieldId: string, input: UpdateCategoryFieldInput): Promise<CategoryField> {
@@ -176,10 +174,7 @@ export class CategoryRepository extends BaseRepository {
     }
     if (sets.length > 0) {
       params.push(fieldId);
-      await this.driver.execute(
-        `UPDATE category_fields SET ${sets.join(', ')} WHERE id = ?;`,
-        params,
-      );
+      await this.driver.execute(`UPDATE category_fields SET ${sets.join(', ')} WHERE id = ?;`, params);
     }
     return this.requireField(fieldId);
   }
@@ -227,10 +222,7 @@ export class CategoryRepository extends BaseRepository {
    * Upsert (or clear, when value is null) a set of an item's custom-field values
    * atomically. Each field must belong to the item's current category. Write-gated.
    */
-  async setItemFieldValues(
-    itemId: string,
-    values: Readonly<Record<string, string | null>>,
-  ): Promise<void> {
+  async setItemFieldValues(itemId: string, values: Readonly<Record<string, string | null>>): Promise<void> {
     this.assertWritable();
     const entries = Object.entries(values);
     if (entries.length === 0) return;
@@ -265,10 +257,7 @@ export class CategoryRepository extends BaseRepository {
     for (const [fieldId, rawValue] of entries) {
       const def = fieldById.get(fieldId);
       if (def === undefined) {
-        throw new DbError(
-          'SQLITE_CONSTRAINT',
-          `Field "${fieldId}" does not belong to this item's category.`,
-        );
+        throw new DbError('SQLITE_CONSTRAINT', `Field "${fieldId}" does not belong to this item's category.`);
       }
 
       // Validate + canonically coerce the incoming value against its definition.
@@ -312,10 +301,9 @@ export class CategoryRepository extends BaseRepository {
   }
 
   private async requireField(id: string): Promise<CategoryField> {
-    const row = await this.driver.queryOne<CategoryFieldRow>(
-      'SELECT * FROM category_fields WHERE id = ?;',
-      [id],
-    );
+    const row = await this.driver.queryOne<CategoryFieldRow>('SELECT * FROM category_fields WHERE id = ?;', [
+      id,
+    ]);
     if (!row) {
       throw new DbError('SQLITE_CONSTRAINT', `Custom field "${id}" does not exist.`);
     }
@@ -323,11 +311,11 @@ export class CategoryRepository extends BaseRepository {
   }
 
   /** Validate a field's name and (for SELECT) non-empty options; serialise options. */
-  private validateFieldInput(input: {
+  private validateFieldInput(input: { name: string; fieldType: string; options?: string[] | null }): {
     name: string;
     fieldType: string;
-    options?: string[] | null;
-  }): { name: string; fieldType: string; options: string | null } {
+    options: string | null;
+  } {
     const name = input.name.trim();
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A custom field must have a name.');

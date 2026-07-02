@@ -92,15 +92,10 @@ export function DashboardNav() {
   const alertCount = alerts.length;
 
   return (
-    <nav
-      aria-label="Primary navigation"
-      className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3"
-    >
+    <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
       {NAV_GROUP_ORDER.map((group) => {
         // The dashboard itself is the current screen, so it never appears as a tile.
-        const destinations = NAV_DESTINATIONS.filter(
-          (dest) => dest.group === group && dest.to !== '/',
-        );
+        const destinations = NAV_DESTINATIONS.filter((dest) => dest.group === group && dest.to !== '/');
         if (destinations.length === 0) return null;
 
         return (
@@ -109,9 +104,7 @@ export function DashboardNav() {
             aria-label={GROUP_LABELS[group]}
             className={cn('rounded-2xl p-3', GROUP_TINTS[group])}
           >
-            <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">
-              {GROUP_LABELS[group]}
-            </h2>
+            <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{GROUP_LABELS[group]}</h2>
             <ul className="grid grid-cols-2 gap-3">
               {destinations.map((dest) => {
                 const isInventory = dest.to === '/inventory';

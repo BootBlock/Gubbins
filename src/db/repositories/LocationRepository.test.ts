@@ -42,9 +42,7 @@ describe('LocationRepository', () => {
   });
 
   it('rejects creating a child under a non-existent parent', async () => {
-    await expect(locations.create({ name: 'Orphan', parentId: 'nope' })).rejects.toBeInstanceOf(
-      DbError,
-    );
+    await expect(locations.create({ name: 'Orphan', parentId: 'nope' })).rejects.toBeInstanceOf(DbError);
   });
 
   it('counts only active items per location', async () => {
@@ -59,9 +57,7 @@ describe('LocationRepository', () => {
   });
 
   it('refuses to modify or delete the Unassigned location', async () => {
-    await expect(
-      locations.update(UNASSIGNED_LOCATION_ID, { name: 'Nope' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(locations.update(UNASSIGNED_LOCATION_ID, { name: 'Nope' })).rejects.toBeInstanceOf(DbError);
     await expect(locations.delete(UNASSIGNED_LOCATION_ID)).rejects.toBeInstanceOf(DbError);
   });
 
@@ -177,8 +173,6 @@ describe('LocationRepository', () => {
 
   it('refuses to make a system location the default or archive it', async () => {
     await expect(locations.setDefault(UNASSIGNED_LOCATION_ID)).rejects.toBeInstanceOf(DbError);
-    await expect(locations.setArchived(UNASSIGNED_LOCATION_ID, true)).rejects.toBeInstanceOf(
-      DbError,
-    );
+    await expect(locations.setArchived(UNASSIGNED_LOCATION_ID, true)).rejects.toBeInstanceOf(DbError);
   });
 });

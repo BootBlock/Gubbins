@@ -65,17 +65,9 @@ export function GroupEditor({
           {group.conditions.map((child, index) => {
             const childPath = [...path, index];
             return isGroupNode(child) ? (
-              <GroupEditor
-                key={`g-${index}`}
-                group={child}
-                path={childPath}
-                depth={depth + 1}
-              />
+              <GroupEditor key={`g-${index}`} group={child} path={childPath} depth={depth + 1} />
             ) : (
-              <div
-                key={`c-${index}`}
-                className="rounded-lg border border-border/60 bg-card/50 p-2"
-              >
+              <div key={`c-${index}`} className="rounded-lg border border-border/60 bg-card/50 p-2">
                 <ConditionEditor condition={child} path={childPath} />
               </div>
             );
@@ -84,7 +76,10 @@ export function GroupEditor({
       )}
 
       <div className="flex gap-2">
-        <Tooltip content="Add a filter condition (field, operator, value) to this group." triggerTabIndex={-1}>
+        <Tooltip
+          content="Add a filter condition (field, operator, value) to this group."
+          triggerTabIndex={-1}
+        >
           <span>
             <Button
               type="button"
@@ -132,7 +127,11 @@ function OperatorToggle({
       content="**AND** keeps items matching *every* condition in this group; **OR** keeps items matching *any* one of them."
       triggerTabIndex={-1}
     >
-      <div role="radiogroup" aria-label="Group operator" className="inline-flex rounded-lg bg-secondary p-0.5">
+      <div
+        role="radiogroup"
+        aria-label="Group operator"
+        className="inline-flex rounded-lg bg-secondary p-0.5"
+      >
         {(['AND', 'OR'] as const).map((op) => (
           <button
             key={op}

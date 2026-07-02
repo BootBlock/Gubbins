@@ -18,8 +18,7 @@
  * the automatic re-run surgical: a genuine test failure or a real "no test files
  * found" misconfiguration does NOT carry this string and so is never retried.
  */
-export const COLD_START_FLAKE_SIGNATURE =
-  "Cannot read properties of undefined (reading 'config')";
+export const COLD_START_FLAKE_SIGNATURE = "Cannot read properties of undefined (reading 'config')";
 
 /**
  * Decide whether a finished `vitest run` should be re-run once because it hit the

@@ -12,7 +12,15 @@
  * (§9.3) — until a trusted EXTENSION_READY arrives, `ready` stays false and the UI
  * never offers the Scrape button.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  type ReactNode,
+} from 'react';
 import {
   bridgeReducer,
   initialBridgeState,

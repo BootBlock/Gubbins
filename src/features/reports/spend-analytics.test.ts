@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildSpendReport,
-  SPEND_SOURCES,
-  type SpendEvent,
-} from './spend-analytics';
+import { buildSpendReport, SPEND_SOURCES, type SpendEvent } from './spend-analytics';
 
 /** Terse event builder with sensible defaults. */
 function ev(instant: number, amount: number, over: Partial<SpendEvent> = {}): SpendEvent {

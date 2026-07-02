@@ -16,9 +16,7 @@ export function StockAgingChart({
   formatters: Formatters;
 }) {
   if (report.totalQuantity <= 0) {
-    return (
-      <p className="py-6 text-center text-sm text-muted-foreground">No stock on hand to age.</p>
-    );
+    return <p className="py-6 text-center text-sm text-muted-foreground">No stock on hand to age.</p>;
   }
 
   const max = Math.max(...report.buckets.map((b) => b.value), 0);

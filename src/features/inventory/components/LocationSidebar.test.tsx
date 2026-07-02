@@ -47,26 +47,59 @@ function node(
 // workshop (expanded) → cabinet (collapsed) → drawer; plus a system Unassigned leaf.
 // Workshop carries a colour swatch + a description to exercise the tint + tooltip.
 const tree: LocationTreeNode[] = [
-  node(
-    'workshop',
-    'Workshop',
-    [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')], { itemCount: 2 })],
-    { color: 'teal', description: 'Main bench area', itemCount: 5 },
-  ),
+  node('workshop', 'Workshop', [node('cabinet', 'Cabinet', [node('drawer', 'Drawer')], { itemCount: 2 })], {
+    color: 'teal',
+    description: 'Main bench area',
+    itemCount: 5,
+  }),
   node('unassigned', 'Unassigned', [], { isSystem: true }),
 ];
 
 const flat: LocationWithCount[] = [
-  { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false, description: null, color: 'teal', updatedAt: 0, itemCount: 5 },
-  { id: 'cabinet', name: 'Cabinet', parentId: 'workshop', isSystem: false, description: null, color: null, updatedAt: 0, itemCount: 2 },
-  { id: 'drawer', name: 'Drawer', parentId: 'cabinet', isSystem: false, description: null, color: null, updatedAt: 0, itemCount: 0 },
-  { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true, description: null, color: null, updatedAt: 0, itemCount: 0 },
+  {
+    id: 'workshop',
+    name: 'Workshop',
+    parentId: null,
+    isSystem: false,
+    description: null,
+    color: 'teal',
+    updatedAt: 0,
+    itemCount: 5,
+  },
+  {
+    id: 'cabinet',
+    name: 'Cabinet',
+    parentId: 'workshop',
+    isSystem: false,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: 2,
+  },
+  {
+    id: 'drawer',
+    name: 'Drawer',
+    parentId: 'cabinet',
+    isSystem: false,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: 0,
+  },
+  {
+    id: 'unassigned',
+    name: 'Unassigned',
+    parentId: null,
+    isSystem: true,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: 0,
+  },
 ];
 
 function renderSidebar(onSelect = vi.fn()) {
-  render(
-    <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={onSelect} totalCount={7} />,
-  );
+  render(<LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={onSelect} totalCount={7} />);
   return onSelect;
 }
 

@@ -112,10 +112,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
   // Roving-tabindex refs so arrow-key navigation moves DOM focus to the new tab.
   const tabRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
 
-  const tabIds = useMemo<TabId[]>(
-    () => [...ERASE_SECTIONS.map((s) => s.id), EVERYTHING_TAB],
-    [],
-  );
+  const tabIds = useMemo<TabId[]>(() => [...ERASE_SECTIONS.map((s) => s.id), EVERYTHING_TAB], []);
 
   // Fetch affected-row counts for every target once on open (stable query key per mount).
   const allIds = useMemo(() => ERASE_TARGETS.map((t) => t.id), []);
@@ -240,9 +237,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
 
   const busy = erasing || resettingAll;
   const activeSection = activeTab === EVERYTHING_TAB ? null : activeTab;
-  const activeTargets = activeSection
-    ? ERASE_TARGETS.filter((t) => t.section === activeSection)
-    : [];
+  const activeTargets = activeSection ? ERASE_TARGETS.filter((t) => t.section === activeSection) : [];
 
   return (
     <Modal
@@ -407,11 +402,14 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
               className={cn('text-sm', confirming === 'selected' && 'text-destructive-emphasis-foreground')}
               data-testid="erase-selection-summary"
             >
-              <span className="font-semibold tabular-nums">{effectiveSelected.length}</span> selected for deletion
+              <span className="font-semibold tabular-nums">{effectiveSelected.length}</span> selected for
+              deletion
               {totalRecords > 0 ? (
                 <span
                   className={
-                    confirming === 'selected' ? 'text-destructive-emphasis-foreground/80' : 'text-muted-foreground'
+                    confirming === 'selected'
+                      ? 'text-destructive-emphasis-foreground/80'
+                      : 'text-muted-foreground'
                   }
                 >
                   {' '}
@@ -530,7 +528,10 @@ function TabButton({
             ? danger
               ? 'bg-destructive/10 text-destructive'
               : 'bg-primary/10 text-primary'
-            : cn('text-muted-foreground hover:bg-secondary/40 hover:text-foreground', danger && 'text-destructive/80'),
+            : cn(
+                'text-muted-foreground hover:bg-secondary/40 hover:text-foreground',
+                danger && 'text-destructive/80',
+              ),
         )}
       >
         <span
@@ -582,9 +583,9 @@ function EverythingPanel({
         <h3 className="text-sm font-semibold text-destructive">Erase everything</h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        A full factory reset: wipes ALL inventory, photos, custom fields, settings, cloud sign-in and
-        sync links stored on this device, then restarts the app. This cannot be reversed — export a
-        backup first if you might want your data back.
+        A full factory reset: wipes ALL inventory, photos, custom fields, settings, cloud sign-in and sync
+        links stored on this device, then restarts the app. This cannot be reversed — export a backup first if
+        you might want your data back.
       </p>
       {confirming ? (
         <EraseConfirmRow

@@ -90,7 +90,14 @@ describe('maintenance scheduling (§4.3)', () => {
   it('TIME schedule is due once the interval elapses from last service', () => {
     const lastPerformedAt = NOW - 100 * MS_PER_DAY;
     const overdue = maintenanceStatus(
-      { basis: 'TIME', intervalDays: 90, intervalUsage: null, usageSinceService: 0, lastPerformedAt, createdAt: 0 },
+      {
+        basis: 'TIME',
+        intervalDays: 90,
+        intervalUsage: null,
+        usageSinceService: 0,
+        lastPerformedAt,
+        createdAt: 0,
+      },
       NOW,
     );
     expect(overdue.due).toBe(true);
@@ -98,7 +105,14 @@ describe('maintenance scheduling (§4.3)', () => {
     expect(overdue.dueAt).toBe(lastPerformedAt + 90 * MS_PER_DAY);
 
     const fresh = maintenanceStatus(
-      { basis: 'TIME', intervalDays: 90, intervalUsage: null, usageSinceService: 0, lastPerformedAt: NOW - 10 * MS_PER_DAY, createdAt: 0 },
+      {
+        basis: 'TIME',
+        intervalDays: 90,
+        intervalUsage: null,
+        usageSinceService: 0,
+        lastPerformedAt: NOW - 10 * MS_PER_DAY,
+        createdAt: 0,
+      },
       NOW,
     );
     expect(fresh.due).toBe(false);
@@ -107,7 +121,14 @@ describe('maintenance scheduling (§4.3)', () => {
 
   it('TIME schedule anchors on createdAt when never serviced', () => {
     const status = maintenanceStatus(
-      { basis: 'TIME', intervalDays: 30, intervalUsage: null, usageSinceService: 0, lastPerformedAt: null, createdAt: NOW - 31 * MS_PER_DAY },
+      {
+        basis: 'TIME',
+        intervalDays: 30,
+        intervalUsage: null,
+        usageSinceService: 0,
+        lastPerformedAt: null,
+        createdAt: NOW - 31 * MS_PER_DAY,
+      },
       NOW,
     );
     expect(status.due).toBe(true);
@@ -115,14 +136,28 @@ describe('maintenance scheduling (§4.3)', () => {
 
   it('USAGE schedule is due once accrued usage reaches the interval', () => {
     const due = maintenanceStatus(
-      { basis: 'USAGE', intervalDays: null, intervalUsage: 100, usageSinceService: 100, lastPerformedAt: null, createdAt: 0 },
+      {
+        basis: 'USAGE',
+        intervalDays: null,
+        intervalUsage: 100,
+        usageSinceService: 100,
+        lastPerformedAt: null,
+        createdAt: 0,
+      },
       NOW,
     );
     expect(due.due).toBe(true);
     expect(due.remainingUsage).toBe(0);
 
     const notYet = maintenanceStatus(
-      { basis: 'USAGE', intervalDays: null, intervalUsage: 100, usageSinceService: 60, lastPerformedAt: null, createdAt: 0 },
+      {
+        basis: 'USAGE',
+        intervalDays: null,
+        intervalUsage: 100,
+        usageSinceService: 60,
+        lastPerformedAt: null,
+        createdAt: 0,
+      },
       NOW,
     );
     expect(notYet.due).toBe(false);
@@ -133,14 +168,28 @@ describe('maintenance scheduling (§4.3)', () => {
     expect(
       maintenancePerformedNote(
         'Lubricate rails',
-        { basis: 'USAGE', intervalDays: null, intervalUsage: 100, usageSinceService: 112, lastPerformedAt: null, createdAt: 0 },
+        {
+          basis: 'USAGE',
+          intervalDays: null,
+          intervalUsage: 100,
+          usageSinceService: 112,
+          lastPerformedAt: null,
+          createdAt: 0,
+        },
         NOW,
       ),
     ).toContain('112');
     expect(
       maintenancePerformedNote(
         'Calibrate',
-        { basis: 'TIME', intervalDays: 90, intervalUsage: null, usageSinceService: 0, lastPerformedAt: NOW - 100 * MS_PER_DAY, createdAt: 0 },
+        {
+          basis: 'TIME',
+          intervalDays: 90,
+          intervalUsage: null,
+          usageSinceService: 0,
+          lastPerformedAt: NOW - 100 * MS_PER_DAY,
+          createdAt: 0,
+        },
         NOW,
       ),
     ).toContain('overdue');
@@ -187,25 +236,40 @@ describe('maintenance checkout-hours telemetry (§4.3, Phase 22)', () => {
   it('effectiveUsage reads derived hours when accruing, else the manual counter', () => {
     expect(
       effectiveUsage({
-        basis: 'USAGE', intervalDays: null, intervalUsage: 100,
-        usageSinceService: 40, accrueCheckoutHours: true, autoUsage: 73,
-        lastPerformedAt: null, createdAt: 0,
+        basis: 'USAGE',
+        intervalDays: null,
+        intervalUsage: 100,
+        usageSinceService: 40,
+        accrueCheckoutHours: true,
+        autoUsage: 73,
+        lastPerformedAt: null,
+        createdAt: 0,
       }),
     ).toBe(73);
     expect(
       effectiveUsage({
-        basis: 'USAGE', intervalDays: null, intervalUsage: 100,
-        usageSinceService: 40, accrueCheckoutHours: false, autoUsage: 73,
-        lastPerformedAt: null, createdAt: 0,
+        basis: 'USAGE',
+        intervalDays: null,
+        intervalUsage: 100,
+        usageSinceService: 40,
+        accrueCheckoutHours: false,
+        autoUsage: 73,
+        lastPerformedAt: null,
+        createdAt: 0,
       }),
     ).toBe(40);
   });
 
   it('USAGE due-ness and the performed note honour derived checkout-hours', () => {
     const state = {
-      basis: 'USAGE' as const, intervalDays: null, intervalUsage: 100,
-      usageSinceService: 0, accrueCheckoutHours: true, autoUsage: 105,
-      lastPerformedAt: null, createdAt: 0,
+      basis: 'USAGE' as const,
+      intervalDays: null,
+      intervalUsage: 100,
+      usageSinceService: 0,
+      accrueCheckoutHours: true,
+      autoUsage: 105,
+      lastPerformedAt: null,
+      createdAt: 0,
     };
     const status = maintenanceStatus(state, NOW);
     expect(status.due).toBe(true);

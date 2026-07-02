@@ -207,13 +207,10 @@ describe('runSync round-trip (§7.3)', () => {
     await runSync(b.driver, provider, NO_QUOTA);
 
     expect(await b.projects.getById(project.id)).toBeUndefined();
-    const cats = await b.driver.query(
-      'SELECT id FROM project_budget_categories WHERE project_id = ?;',
-      [project.id],
-    );
-    const exps = await b.driver.query('SELECT id FROM project_expenses WHERE project_id = ?;', [
+    const cats = await b.driver.query('SELECT id FROM project_budget_categories WHERE project_id = ?;', [
       project.id,
     ]);
+    const exps = await b.driver.query('SELECT id FROM project_expenses WHERE project_id = ?;', [project.id]);
     expect(cats).toHaveLength(0);
     expect(exps).toHaveLength(0);
   });
@@ -345,7 +342,7 @@ describe('runSync round-trip (§7.3)', () => {
     const line = await a.purchaseOrders.addLine(po.id, { itemId: item.id, orderedQty: 3 });
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
-    expect((await b.purchaseOrders.listLines(po.id))).toHaveLength(1);
+    expect(await b.purchaseOrders.listLines(po.id)).toHaveLength(1);
 
     // A hard-deletes the whole PO (cascading its lines, leaving only the PO + line tombstones)
     // and pushes; B, still holding the orphaned line, must drop it rather than trip the po_id FK.
@@ -399,10 +396,10 @@ describe('runSync round-trip (§7.3)', () => {
     // location — the genuine §7.5.2 conflict. The unambiguous future timestamp makes
     // B's row win LWW deterministically (the location row stays old, so the remote
     // tombstone still removes it), so B's own reconcile must intercept-and-re-parent.
-    await b.driver.execute(
-      'UPDATE items SET name = ?, updated_at = updated_at + 1000000 WHERE id = ?;',
-      ['Still here on B', item.id],
-    );
+    await b.driver.execute('UPDATE items SET name = ?, updated_at = updated_at + 1000000 WHERE id = ?;', [
+      'Still here on B',
+      item.id,
+    ]);
     const pull = await runSync(b.driver, provider, NO_QUOTA);
 
     expect(pull.reparented).toBeGreaterThanOrEqual(1);

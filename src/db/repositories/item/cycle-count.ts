@@ -7,11 +7,7 @@
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
-import {
-  placementDeltaStatements,
-  setBatchStatement,
-  stockBatchRowId,
-} from '../stock-batches';
+import { placementDeltaStatements, setBatchStatement, stockBatchRowId } from '../stock-batches';
 import { stockRowId } from '../stock';
 import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
 import { historyStatement } from './history';
@@ -66,7 +62,9 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           const delta = adj.counted - before;
           if (delta === 0) continue;
           statements.push(setBatchStatement(adj.itemId, adj.locationId, adj.batch, adj.counted));
-          statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }));
+          statements.push(
+            historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }),
+          );
           touched.push(adj.itemId);
           continue;
         }
@@ -76,15 +74,20 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           // the untracked default batch; a shortfall is drawn down FEFO across the lots present.
           const before = Number(
             (
-              await this.driver.queryOne<{ quantity: number }>('SELECT quantity FROM item_stock WHERE id = ?;', [
-                stockRowId(adj.itemId, adj.locationId),
-              ])
+              await this.driver.queryOne<{ quantity: number }>(
+                'SELECT quantity FROM item_stock WHERE id = ?;',
+                [stockRowId(adj.itemId, adj.locationId)],
+              )
             )?.quantity ?? 0,
           );
           const delta = adj.counted - before;
           if (delta === 0) continue;
-          statements.push(...(await placementDeltaStatements(this.driver, adj.itemId, adj.locationId, delta)));
-          statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }));
+          statements.push(
+            ...(await placementDeltaStatements(this.driver, adj.itemId, adj.locationId, delta)),
+          );
+          statements.push(
+            historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }),
+          );
           touched.push(adj.itemId);
           continue;
         }
@@ -93,7 +96,9 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         if (delta === 0) continue;
         // Whole-item: the variance is absorbed at the item's primary location (surplus → the
         // untracked default batch, shortfall → FEFO across that placement's lots, Phase 28).
-        statements.push(...(await placementDeltaStatements(this.driver, adj.itemId, existing.locationId, delta)));
+        statements.push(
+          ...(await placementDeltaStatements(this.driver, adj.itemId, existing.locationId, delta)),
+        );
         statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }));
         touched.push(adj.itemId);
       }

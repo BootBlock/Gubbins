@@ -38,14 +38,7 @@ export interface PageHeaderProps {
  * used to each hand-list a different subset of links, leaving some screens unreachable.
  * Pass `icon`, `title` and optional page-specific `actions`; the layout is owned here.
  */
-export function PageHeader({
-  icon,
-  title,
-  actions,
-  hideSearch,
-  homeTo = '/',
-  className,
-}: PageHeaderProps) {
+export function PageHeader({ icon, title, actions, hideSearch, homeTo = '/', className }: PageHeaderProps) {
   return (
     <header className={cn('flex flex-wrap items-center gap-3', className)}>
       <Link to={homeTo} className="flex items-center gap-2 text-foreground [&_svg]:size-6">

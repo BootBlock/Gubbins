@@ -30,7 +30,9 @@ describe('extension host_permissions (§9 / §4 hardening)', () => {
     // Each non-generic parser id should map to at least one allowed host pattern.
     const hostParserIds = SUPPLIER_PARSERS.map((p) => p.id).filter((id) => id !== 'generic-meta');
     for (const id of hostParserIds) {
-      const covered = EXTENSION_HOST_PERMISSIONS.some((pat) => pat.includes(`.${id}.`) || pat.includes(`.${id}-`));
+      const covered = EXTENSION_HOST_PERMISSIONS.some(
+        (pat) => pat.includes(`.${id}.`) || pat.includes(`.${id}-`),
+      );
       expect(covered, `no host_permission covers parser "${id}"`).toBe(true);
     }
   });

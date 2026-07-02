@@ -35,9 +35,7 @@ export function MoveItemDialog({
   // Soft heads-up when the destination is already at/over capacity (the move is allowed).
   const fullLocation = useMemo(() => {
     const loc = locations.find((l) => l.id === locationId);
-    return loc && locationId !== item.locationId && isLocationFull(loc.itemCount, loc.capacity)
-      ? loc
-      : null;
+    return loc && locationId !== item.locationId && isLocationFull(loc.itemCount, loc.capacity) ? loc : null;
   }, [locations, locationId, item.locationId]);
 
   const submit = () => {
@@ -56,8 +54,8 @@ export function MoveItemDialog({
       <LocationSelect labelledBy={labelId} value={locationId} onChange={setLocationId} options={options} />
       {fullLocation ? (
         <p className="mt-1 text-xs text-warning">
-          {fullLocation.name} is at capacity ({fullLocation.itemCount}/{fullLocation.capacity}).
-          You can still move it here.
+          {fullLocation.name} is at capacity ({fullLocation.itemCount}/{fullLocation.capacity}). You can still
+          move it here.
         </p>
       ) : null}
       <div className="mt-6 flex justify-end gap-2">

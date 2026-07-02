@@ -96,7 +96,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       </FormField>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="MPN (optional)" hint="The Manufacturer Part Number — the maker’s canonical code for this part.">
+        <FormField
+          label="MPN (optional)"
+          hint="The Manufacturer Part Number — the maker’s canonical code for this part."
+        >
           <Input value={mpn} onChange={(e) => setMpn(e.target.value)} placeholder="e.g. NE555P" />
         </FormField>
         <FormField label="Manufacturer (optional)" hint="Who makes the part (e.g. *Texas Instruments*).">

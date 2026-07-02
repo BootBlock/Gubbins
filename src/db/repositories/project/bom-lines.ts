@@ -114,10 +114,7 @@ export function withBomLines<TBase extends Constructor<ProjectCoreRepository>>(B
 
       if (sets.length > 0) {
         params.push(lineId);
-        await this.driver.execute(
-          `UPDATE project_bom_lines SET ${sets.join(', ')} WHERE id = ?;`,
-          params,
-        );
+        await this.driver.execute(`UPDATE project_bom_lines SET ${sets.join(', ')} WHERE id = ?;`, params);
       }
       return (await this.requireLine(lineId)).line;
     }

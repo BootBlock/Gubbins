@@ -19,8 +19,7 @@ import type { CategoryField } from '@/db/repositories';
  * to persist (TEXT), or `null` to clear the value row (we never store `''`).
  */
 export type FieldValidation =
-  | { readonly ok: true; readonly value: string | null }
-  | { readonly ok: false; readonly error: string };
+  { readonly ok: true; readonly value: string | null } | { readonly ok: false; readonly error: string };
 
 /** Options for {@link validateFieldValue}. `now` injects the clock for `DATE` work. */
 export interface ValidateFieldOptions {
@@ -57,9 +56,7 @@ export function validateFieldValue(
   _opts: ValidateFieldOptions = {},
 ): FieldValidation {
   if (isBlank(raw)) {
-    return def.isRequired
-      ? { ok: false, error: `${def.name} is required.` }
-      : { ok: true, value: null };
+    return def.isRequired ? { ok: false, error: `${def.name} is required.` } : { ok: true, value: null };
   }
   // Past the blank guard `raw` is a non-empty string.
   const text = (raw as string).trim();
@@ -157,15 +154,10 @@ function isLeapYear(year: number): boolean {
  * (flat model). This mirrors `CategoryRepository.listFields`'s ordering so the
  * editor and any CSV column mapping see fields in the same sequence the DB does.
  */
-export function fieldsForCategory(
-  defs: readonly CategoryField[],
-  categoryId: string,
-): CategoryField[] {
+export function fieldsForCategory(defs: readonly CategoryField[], categoryId: string): CategoryField[] {
   return defs
     .filter((d) => d.categoryId === categoryId)
     .sort(
-      (a, b) =>
-        a.position - b.position ||
-        a.name.localeCompare(b.name, undefined, { sensitivity: 'accent' }),
+      (a, b) => a.position - b.position || a.name.localeCompare(b.name, undefined, { sensitivity: 'accent' }),
     );
 }

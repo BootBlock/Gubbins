@@ -68,9 +68,7 @@ describe('normaliseDayRange', () => {
 
   it('throws a RangeError when the start is NaN', () => {
     expect(() => normaliseDayRange(Number.NaN, day(1))).toThrow(RangeError);
-    expect(() => normaliseDayRange(Number.NaN, day(1))).toThrow(
-      'A booking needs valid start and end dates.',
-    );
+    expect(() => normaliseDayRange(Number.NaN, day(1))).toThrow('A booking needs valid start and end dates.');
   });
 
   it('throws a RangeError when the end is NaN', () => {

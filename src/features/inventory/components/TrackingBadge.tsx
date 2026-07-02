@@ -12,7 +12,8 @@ const ICONS: Record<TrackingMode, typeof DiscreteIcon> = {
 };
 
 const DESCRIPTIONS: Record<TrackingMode, string> = {
-  DISCRETE: '**Bulk** — counted as a whole-number quantity (e.g. *screws*, *resistors*). Use the ± stepper to add or remove stock.',
+  DISCRETE:
+    '**Bulk** — counted as a whole-number quantity (e.g. *screws*, *resistors*). Use the ± stepper to add or remove stock.',
   SERIALISED:
     '**Serialised** — a single, uniquely identified unit (quantity fixed at `1`). Adding several will clone them into distinct records.',
   CONSUMABLE_GAUGE:

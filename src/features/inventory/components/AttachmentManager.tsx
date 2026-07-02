@@ -4,12 +4,7 @@ import { CloseIcon, DatasheetIcon, LinkIcon, LocalFileIcon, UnlinkIcon } from '@
 import type { AttachmentKind, ItemAttachment, UpdateAttachmentInput } from '@/db/repositories';
 import { getDeviceId } from '@/lib/env/device-id';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import {
-  useAddAttachment,
-  useItemAttachments,
-  useRemoveAttachment,
-  useUpdateAttachment,
-} from '../media';
+import { useAddAttachment, useItemAttachments, useRemoveAttachment, useUpdateAttachment } from '../media';
 import { resolveAttachmentLink } from '../attachment-link';
 import { ATTACHMENT_KIND_LABELS } from './inventory-ui';
 
@@ -167,8 +162,7 @@ function AttachmentRow({
         ? ({ kind: 'URL', value: draft, originDeviceId: null } as const)
         : ({ value: draft, originDeviceId: deviceId } as const);
     onUpdate(input, {
-      onError: (e: unknown) =>
-        setError(e instanceof Error ? e.message : 'Could not update the datasheet.'),
+      onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not update the datasheet.'),
       onSuccess: () => {
         setRelinkMode(null);
         setDraft('');
@@ -240,9 +234,7 @@ function AttachmentRow({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               data-testid="attachment-relink-input"
-              placeholder={
-                relinkMode === 'url' ? 'https://…/datasheet.pdf' : '/path/on/this/device.pdf'
-              }
+              placeholder={relinkMode === 'url' ? 'https://…/datasheet.pdf' : '/path/on/this/device.pdf'}
               aria-label={relinkMode === 'url' ? 'Replacement URL' : 'New local path'}
             />
             {error ? (

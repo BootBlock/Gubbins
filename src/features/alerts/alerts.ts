@@ -132,7 +132,7 @@ function buildLowStockAlerts(sources: readonly LowStockSource[]): Alert[] {
   return sources.map((item) => ({
     id: `low-stock:${item.id}`,
     kind: 'low-stock',
-    severity: 'warning' as AlertSeverity,
+    severity: 'warning',
     title: `Low stock — ${item.name}`,
     detail: 'This item is at or below its reorder point.',
     dueAt: null,
@@ -147,8 +147,7 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
     if (status === 'NONE' || status === 'FRESH') continue;
 
     const severity: AlertSeverity = status === 'EXPIRED' ? 'critical' : 'warning';
-    const dueAt =
-      item.expiryDate != null ? new Date(item.expiryDate).toISOString() : null;
+    const dueAt = item.expiryDate != null ? new Date(item.expiryDate).toISOString() : null;
     const detail =
       status === 'EXPIRED'
         ? `Expiry date has passed${dueAt ? ` (${dueAt.slice(0, 10)})` : ''}.`
@@ -167,18 +166,14 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
   return alerts;
 }
 
-function buildMaintenanceDueAlerts(
-  sources: readonly MaintenanceDueSource[],
-  now: number,
-): Alert[] {
+function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[], now: number): Alert[] {
   return sources.map((schedule) => {
-    const dueAt =
-      schedule.dueAtMs != null ? new Date(schedule.dueAtMs).toISOString() : null;
+    const dueAt = schedule.dueAtMs != null ? new Date(schedule.dueAtMs).toISOString() : null;
     const overdue = schedule.dueAtMs != null && schedule.dueAtMs < now;
     return {
       id: `maintenance-due:${schedule.id}`,
       kind: 'maintenance-due',
-      severity: (overdue ? 'critical' : 'warning') as AlertSeverity,
+      severity: overdue ? 'critical' : 'warning',
       title: `Maintenance due — ${schedule.itemName}`,
       detail: `Schedule: "${schedule.name}"${dueAt ? `. Due ${dueAt.slice(0, 10)}.` : '.'}`,
       dueAt,
@@ -187,10 +182,7 @@ function buildMaintenanceDueAlerts(
   });
 }
 
-function buildWarrantyAlerts(
-  sources: readonly WarrantySource[],
-  now: number,
-): Alert[] {
+function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): Alert[] {
   const alerts: Alert[] = [];
   for (const item of sources) {
     // Gate: items without warrantyExpiresAt produce no warranty alert (P66 field).
@@ -200,9 +192,7 @@ function buildWarrantyAlerts(
     if (status === 'none' || status === 'active') continue;
 
     const dueAtMs = Date.parse(item.warrantyExpiresAt);
-    const dueAt = Number.isFinite(dueAtMs)
-      ? new Date(dueAtMs).toISOString()
-      : null;
+    const dueAt = Number.isFinite(dueAtMs) ? new Date(dueAtMs).toISOString() : null;
 
     const severity: AlertSeverity = status === 'expired' ? 'critical' : 'warning';
     const detail =
@@ -273,10 +263,7 @@ export function buildAlerts(sources: AlertSources, now: number): Alert[] {
  * Dismissed ids are stored device-locally (Zustand persist) — see
  * `useDismissedAlertsStore.ts`. A re-triggered alert with a new id reappears.
  */
-export function applyDismissals(
-  alerts: readonly Alert[],
-  dismissedIds: ReadonlySet<string>,
-): Alert[] {
+export function applyDismissals(alerts: readonly Alert[], dismissedIds: ReadonlySet<string>): Alert[] {
   return alerts.filter((a) => !dismissedIds.has(a.id));
 }
 

@@ -71,9 +71,7 @@ export function BudgetSection({ projectId }: { projectId: string }) {
                 {money(summary.totalSpent)}
                 <span className="text-sm font-normal text-muted-foreground"> spent</span>
               </span>
-              <span className="text-sm text-muted-foreground tabular-nums">
-                of {money(summary.budget!)}
-              </span>
+              <span className="text-sm text-muted-foreground tabular-nums">of {money(summary.budget)}</span>
             </div>
 
             <BudgetMeter
@@ -101,10 +99,8 @@ export function BudgetSection({ projectId }: { projectId: string }) {
         ) : (
           <p className="text-sm text-muted-foreground">
             No budget set. Spent so far:{' '}
-            <span className="font-medium text-foreground tabular-nums">
-              {money(summary.totalSpent)}
-            </span>{' '}
-            ({money(summary.committedFromBom)} parts + {money(summary.manualExpenseTotal)} expenses).
+            <span className="font-medium text-foreground tabular-nums">{money(summary.totalSpent)}</span> (
+            {money(summary.committedFromBom)} parts + {money(summary.manualExpenseTotal)} expenses).
           </p>
         )}
       </Surface>

@@ -46,9 +46,7 @@ export function SavedSearchMenu({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="saved-searches">
-      {searches.length > 0 ? (
-        <span className="text-[11px] text-muted-foreground">Saved:</span>
-      ) : null}
+      {searches.length > 0 ? <span className="text-[11px] text-muted-foreground">Saved:</span> : null}
 
       {searches.map((s) => (
         <span

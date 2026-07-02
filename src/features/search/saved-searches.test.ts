@@ -16,9 +16,7 @@ function counter(): () => string {
 describe('addSavedSearch', () => {
   it('prepends a new entry (most-recent first) with a generated id', () => {
     const next = addSavedSearch([], 'Low stock high voltage', 'cap:voltage>3.3 qty<10', counter());
-    expect(next).toEqual([
-      { id: 'id-1', name: 'Low stock high voltage', query: 'cap:voltage>3.3 qty<10' },
-    ]);
+    expect(next).toEqual([{ id: 'id-1', name: 'Low stock high voltage', query: 'cap:voltage>3.3 qty<10' }]);
   });
 
   it('prepends so the newest is first', () => {

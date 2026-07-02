@@ -9,12 +9,7 @@
  * custom-field values for the clone mutation to re-create. All pure and unit-tested; the mutation
  * just orchestrates the existing repository writes. **No schema change.**
  */
-import type {
-  CreateItemInput,
-  Item,
-  ResolvedItemField,
-  SupplierPart,
-} from '@/db/repositories';
+import type { CreateItemInput, Item, ResolvedItemField, SupplierPart } from '@/db/repositories';
 import type { CreateSupplierPartInput } from '@/db/repositories';
 
 /** Default suffix appended to the cloned item's name so the copy is distinguishable. */
@@ -37,10 +32,7 @@ export const CLONE_NAME_SUFFIX = ' (copy)';
  * Operational metadata is *not* placed here (a non-gauge `CreateItemInput` cannot carry it); the
  * clone mutation copies it via a follow-up `update`.
  */
-export function planItemClone(
-  source: Item,
-  options: { readonly nameSuffix?: string } = {},
-): CreateItemInput {
+export function planItemClone(source: Item, options: { readonly nameSuffix?: string } = {}): CreateItemInput {
   const suffix = options.nameSuffix ?? CLONE_NAME_SUFFIX;
   const base: CreateItemInput = {
     name: `${source.name}${suffix}`,

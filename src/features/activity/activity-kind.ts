@@ -11,14 +11,7 @@
 import { HISTORY_ACTIONS, type HistoryAction } from '@/db/repositories';
 
 /** The semantic activity kinds, in display order. */
-export const ACTIVITY_KINDS = [
-  'created',
-  'stock',
-  'movement',
-  'loan',
-  'lifecycle',
-  'supplier',
-] as const;
+export const ACTIVITY_KINDS = ['created', 'stock', 'movement', 'loan', 'lifecycle', 'supplier'] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
 /** British-English chip labels, one per kind. */

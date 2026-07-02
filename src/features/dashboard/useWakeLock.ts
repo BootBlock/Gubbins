@@ -73,8 +73,7 @@ export function useWakeLock(enabled: boolean, apiOverride?: WakeLockApi): void {
       sentinel = null;
     };
 
-    const isVisible = () =>
-      typeof document === 'undefined' || document.visibilityState === 'visible';
+    const isVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
 
     const sync = async () => {
       const action = wakeLockAction({

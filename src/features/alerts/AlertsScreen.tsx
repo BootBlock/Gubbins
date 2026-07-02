@@ -46,24 +46,23 @@ import { useAlerts } from './useAlerts';
 
 const KIND_LABEL: Record<AlertKind, string> = {
   'low-stock': 'Low stock',
-  'expiry': 'Expiring stock',
+  expiry: 'Expiring stock',
   'maintenance-due': 'Maintenance due',
   'warranty-due': 'Warranty',
 };
 
-const KIND_ORDER: AlertKind[] = [
-  'maintenance-due',
-  'warranty-due',
-  'expiry',
-  'low-stock',
-];
+const KIND_ORDER: AlertKind[] = ['maintenance-due', 'warranty-due', 'expiry', 'low-stock'];
 
 function KindIcon({ kind }: { kind: AlertKind }) {
   switch (kind) {
-    case 'low-stock': return <PackageIcon aria-hidden />;
-    case 'expiry': return <ExpiryIcon aria-hidden />;
-    case 'maintenance-due': return <MaintenanceIcon aria-hidden />;
-    case 'warranty-due': return <NotificationIcon aria-hidden />;
+    case 'low-stock':
+      return <PackageIcon aria-hidden />;
+    case 'expiry':
+      return <ExpiryIcon aria-hidden />;
+    case 'maintenance-due':
+      return <MaintenanceIcon aria-hidden />;
+    case 'warranty-due':
+      return <NotificationIcon aria-hidden />;
   }
 }
 
@@ -102,18 +101,9 @@ function SeverityBadge({ severity }: { severity: AlertSeverity }) {
 // Single alert card
 // ---------------------------------------------------------------------------
 
-function AlertCard({
-  alert,
-  onDismiss,
-}: {
-  alert: Alert;
-  onDismiss: (id: string) => void;
-}) {
+function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string) => void }) {
   return (
-    <Surface
-      className="flex flex-col gap-2 p-4"
-      data-testid={`alert-card-${alert.id}`}
-    >
+    <Surface className="flex flex-col gap-2 p-4" data-testid={`alert-card-${alert.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={alert.severity} />
@@ -131,9 +121,9 @@ function AlertCard({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{alert.detail}</p>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {}
       <Link
-        to={alert.target.route as any}
+        to={alert.target.route}
         className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
         data-testid={`alert-link-${alert.id}`}
       >

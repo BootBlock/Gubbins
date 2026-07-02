@@ -145,7 +145,7 @@ describe('hydrateFromSqliteFile', () => {
     expect((await items.getById('item-esp32'))?.quantity).toBe(7);
   });
 
-  it('never mutates the user\'s export file (it works on a private copy)', async () => {
+  it("never mutates the user's export file (it works on a private copy)", async () => {
     const before = await stat(dbPath);
     await items.searchByAst(emptyAst('AND'));
     const after = await stat(dbPath);
@@ -178,9 +178,7 @@ describe('hydrateFromFile dispatch', () => {
         // The same query through the same app repositories should return the same items,
         // regardless of which source the driver was hydrated from.
         const ids = async (h: HydrateResult) =>
-          (await new ItemRepository(h.driver).searchByAst(emptyAst('AND'))).rows
-            .map((r) => r.id)
-            .sort();
+          (await new ItemRepository(h.driver).searchByAst(emptyAst('AND'))).rows.map((r) => r.id).sort();
         expect(await ids(fromDb)).toEqual(await ids(fromJson));
       } finally {
         await fromDb.driver.close();

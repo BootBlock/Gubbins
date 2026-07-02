@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
 import { readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,9 +12,10 @@ import { buildContentSecurityPolicy } from './src/csp';
 
 // Single-source the app version from package.json (read here so it never enters
 // the TS program / app bundle as a JSON import) and expose it via `define`.
-const pkg = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
-) as { version: string; releaseDate: string };
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version: string;
+  releaseDate: string;
+};
 
 /**
  * Cross-origin isolation headers (spec §2.2.6).

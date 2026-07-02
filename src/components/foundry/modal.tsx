@@ -79,9 +79,7 @@ export function Modal({
       if (e.key !== 'Tab') return;
       const container = dialogRef.current;
       if (!container) return;
-      const focusables = Array.from(
-        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
+      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       const active = document.activeElement as HTMLElement | null;
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
@@ -116,25 +114,16 @@ export function Modal({
       aria-label={title}
     >
       <div
-        className={cn(
-          'absolute inset-0 bg-black/60 backdrop-blur-sm',
-          !reducedMotion && 'animate-fade-in',
-        )}
+        className={cn('absolute inset-0 bg-black/60 backdrop-blur-sm', !reducedMotion && 'animate-fade-in')}
         onClick={onClose}
       />
       <Surface
-        className={cn(
-          'relative z-10 w-full max-w-lg p-6',
-          !reducedMotion && 'animate-zoom-in',
-          className,
-        )}
+        className={cn('relative z-10 w-full max-w-lg p-6', !reducedMotion && 'animate-zoom-in', className)}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-            {description ? (
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-            ) : null}
+            {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
             <CloseIcon className="text-glyph-neutral" />

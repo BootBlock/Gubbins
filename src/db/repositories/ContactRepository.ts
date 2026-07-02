@@ -113,10 +113,7 @@ export class ContactRepository extends BaseRepository {
       params.push(input.note?.trim() || null);
     }
     if (sets.length > 0) {
-      await this.driver.execute(`UPDATE contacts SET ${sets.join(', ')} WHERE id = ?;`, [
-        ...params,
-        id,
-      ]);
+      await this.driver.execute(`UPDATE contacts SET ${sets.join(', ')} WHERE id = ?;`, [...params, id]);
     }
     return (await this.getById(id))!;
   }

@@ -91,10 +91,10 @@ export function rowToItem(row: ItemRow): Item {
   let gauge: GaugeState | null = null;
   if (isGauge) {
     const tare = row.tare_weight ?? 0;
-    const net = row.current_net_value as number;
-    const gross = row.gross_capacity as number;
+    const net = row.current_net_value;
+    const gross = row.gross_capacity;
     gauge = {
-      unitOfMeasure: row.unit_of_measure as string,
+      unitOfMeasure: row.unit_of_measure,
       grossCapacity: gross,
       tareWeight: tare,
       currentNetValue: net,

@@ -14,7 +14,11 @@ export const mouserParser = makeSupplierParser({
   hostPattern: /(^|\.)mouser\.[a-z.]+$/i,
   selectors: {
     mpn: ['#pdpPartNumber', '[data-testid="pdp-mfr-part-number"]', '.pdp-product-number', '[itemprop="mpn"]'],
-    manufacturer: ['[data-testid="pdp-manufacturer-name"]', '.manufacturer-name', '[itemprop="manufacturer"]'],
+    manufacturer: [
+      '[data-testid="pdp-manufacturer-name"]',
+      '.manufacturer-name',
+      '[itemprop="manufacturer"]',
+    ],
     description: ['#pdpDescription', '.pdp-description', 'h1[itemprop="name"]', 'h1'],
     price: ['[data-testid="pdp-unit-price"]', '.pdp-price .unit-price', '.unit-price'],
   },

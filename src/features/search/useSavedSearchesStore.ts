@@ -22,8 +22,7 @@ export const useSavedSearchesStore = create<SavedSearchesStore>()(
   persist(
     (set) => ({
       searches: [],
-      save: (name, query) =>
-        set((state) => ({ searches: addSavedSearch(state.searches, name, query) })),
+      save: (name, query) => set((state) => ({ searches: addSavedSearch(state.searches, name, query) })),
       remove: (id) => set((state) => ({ searches: removeSavedSearch(state.searches, id) })),
     }),
     { name: 'gubbins:saved-searches' },

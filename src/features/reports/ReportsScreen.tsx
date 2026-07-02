@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, LiveRegion, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
-  ExportIcon,
-  LowStockIcon,
-  ReportIcon,
-} from '@/components/icons';
+  Button,
+  LiveRegion,
+  PageContainer,
+  PageHeader,
+  Spinner,
+  Surface,
+  MAIN_CONTENT_ID,
+} from '@/components/foundry';
+import { ExportIcon, LowStockIcon, ReportIcon } from '@/components/icons';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
@@ -69,11 +73,13 @@ export function ReportsScreen() {
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
-    value.isLoading || consumption.isLoading || movement.isLoading ||
-    lowStock.isLoading || deadStock.isLoading;
+    value.isLoading ||
+    consumption.isLoading ||
+    movement.isLoading ||
+    lowStock.isLoading ||
+    deadStock.isLoading;
   const isAnyError =
-    value.isError || consumption.isError || movement.isError ||
-    lowStock.isError || deadStock.isError;
+    value.isError || consumption.isError || movement.isError || lowStock.isError || deadStock.isError;
 
   // Announce the ready / error transition ONCE via the always-mounted live region.
   // Tracked with a ref so re-renders (e.g. React Strict Mode double-invoke) don't
@@ -149,7 +155,11 @@ export function ReportsScreen() {
         }
       />
 
-      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="flex flex-1 animate-rise flex-col gap-6 outline-none">
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-1 animate-rise flex-col gap-6 outline-none"
+      >
         {/* Headline value cards */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
@@ -163,7 +173,9 @@ export function ReportsScreen() {
             label={`Consumption (${REPORT_WINDOW_DAYS}d)`}
             testId="stat-consumption"
             loading={consumption.isLoading}
-            value={consumption.data ? `${f.quantity(Math.round(consumption.data.perDay * 10) / 10)}/day` : '—'}
+            value={
+              consumption.data ? `${f.quantity(Math.round(consumption.data.perDay * 10) / 10)}/day` : '—'
+            }
             sub={consumption.data ? `${f.quantity(consumption.data.totalConsumed)} total` : undefined}
           />
           <StatCard
@@ -190,14 +202,22 @@ export function ReportsScreen() {
             {value.isLoading ? (
               <CentredSpinner />
             ) : (
-              <ValueBreakdown groups={value.data?.byCategory ?? []} formatters={f} emptyLabel="No priced stock yet." />
+              <ValueBreakdown
+                groups={value.data?.byCategory ?? []}
+                formatters={f}
+                emptyLabel="No priced stock yet."
+              />
             )}
           </Panel>
           <Panel title="Value by location">
             {value.isLoading ? (
               <CentredSpinner />
             ) : (
-              <ValueBreakdown groups={value.data?.byLocation ?? []} formatters={f} emptyLabel="No priced stock yet." />
+              <ValueBreakdown
+                groups={value.data?.byLocation ?? []}
+                formatters={f}
+                emptyLabel="No priced stock yet."
+              />
             )}
           </Panel>
         </section>
@@ -316,8 +336,8 @@ export function ReportsScreen() {
             <WindowToggle value={spendWindow} onChange={setSpendWindow} formatters={f} label="Spend window" />
           </div>
           <p className="text-sm text-muted-foreground">
-            Cash out from received purchase orders, project expenses and asset acquisitions. An item
-            bought through a purchase order may also carry an acquisition price, so sources can overlap.
+            Cash out from received purchase orders, project expenses and asset acquisitions. An item bought
+            through a purchase order may also carry an acquisition price, so sources can overlap.
           </p>
           <Panel title={`Spend (last ${spendWindow} days)`}>
             {spend.isLoading ? (
@@ -403,9 +423,7 @@ function WindowToggle({
             onClick={() => onChange(days)}
             aria-pressed={active}
             className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors ${
-              active
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
+              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {formatters.quantity(days)}d

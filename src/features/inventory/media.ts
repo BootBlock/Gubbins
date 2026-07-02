@@ -92,8 +92,7 @@ export function useUpdateAttachment(itemId: string) {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateAttachmentInput }) =>
       getAttachmentRepository().update(id, input),
-    onSettled: () =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
   });
 }
 
@@ -101,7 +100,6 @@ export function useRemoveAttachment(itemId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getAttachmentRepository().remove(id),
-    onSettled: () =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemAttachments(itemId) }),
   });
 }

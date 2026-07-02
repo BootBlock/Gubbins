@@ -34,8 +34,7 @@ export const inventoryKeys = {
   // Phase 3 — categories, custom fields, tags, images & attachments.
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
-  categoryFields: (categoryId: string) =>
-    [...inventoryKeys.categories(), 'fields', categoryId] as const,
+  categoryFields: (categoryId: string) => [...inventoryKeys.categories(), 'fields', categoryId] as const,
   itemFields: (itemId: string) => [...inventoryKeys.item(itemId), 'fields'] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   tagList: () => [...inventoryKeys.tags(), 'list'] as const,
@@ -49,8 +48,7 @@ export const inventoryKeys = {
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
   // invalidation refreshes it by prefix.
-  itemSupplierParts: (itemId: string) =>
-    [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
+  itemSupplierParts: (itemId: string) => [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
   // Phase 81 — a supplier part's recorded cost-over-time points; under item() so the
   // existing supplier-part invalidation (which invalidates item()) refreshes it by prefix.
   supplierPartPriceHistory: (itemId: string, supplierPartId: string) =>
@@ -94,10 +92,7 @@ export function useItemSupplierParts(itemId: string | undefined) {
 }
 
 /** A supplier part's recorded cost-over-time points (Phase 81), newest-first. */
-export function useSupplierPartPriceHistory(
-  itemId: string | undefined,
-  supplierPartId: string | undefined,
-) {
+export function useSupplierPartPriceHistory(itemId: string | undefined, supplierPartId: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.supplierPartPriceHistory(itemId ?? '', supplierPartId ?? ''),
     queryFn: () => getSupplierPartRepository().listPriceHistory(supplierPartId!),
@@ -110,10 +105,8 @@ export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEF
   return useInfiniteQuery({
     queryKey: inventoryKeys.itemList(filters),
     initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     // Bound the resident window so a deep scroll never retains every page's
     // thumbnail BLOBs (spec §2.1). The previous-page param lets a trimmed-off
     // prefix refetch when the user scrolls back up; the virtualised list indexes
@@ -154,8 +147,7 @@ export function useItemHistory(id: string | undefined) {
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       getItemRepository().getHistory(id!, { limit: DEFAULT_PAGE_SIZE, offset: pageParam }),
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,

@@ -6,9 +6,7 @@ afterEach(cleanup);
 
 function Trigger({ duration }: { duration?: number }) {
   const { show } = useToast();
-  return (
-    <button onClick={() => show({ message: 'Saved', heading: 'Done', duration })}>fire</button>
-  );
+  return <button onClick={() => show({ message: 'Saved', heading: 'Done', duration })}>fire</button>;
 }
 
 describe('Foundry Toast', () => {
@@ -55,7 +53,9 @@ describe('Foundry Toast', () => {
     function ActionTrigger() {
       const { show } = useToast();
       return (
-        <button onClick={() => show({ message: 'Scrape failed', action: { label: 'Enter manually', onClick } })}>
+        <button
+          onClick={() => show({ message: 'Scrape failed', action: { label: 'Enter manually', onClick } })}
+        >
           fire
         </button>
       );

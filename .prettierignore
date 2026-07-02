@@ -1,0 +1,25 @@
+# Build output & deps
+dist
+dist-ssr
+coverage
+node_modules
+extension/dist
+
+# Generated code — do not reformat
+src/routeTree.gen.ts
+*.gen.ts
+
+# Lockfiles & data
+package-lock.json
+*.sqlite
+*.db
+
+# Prose & infra: keep the code formatter out of hand-authored docs, markup, and config
+# YAML/HTML (reflowing these churns carefully hand-wrapped content to no benefit).
+*.md
+*.yaml
+*.yml
+*.html
+
+# Test fixtures — reformatting can break byte-exact snapshot comparisons.
+**/fixtures/**

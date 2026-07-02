@@ -1,12 +1,7 @@
 import type { ReactNode } from 'react';
 import { useDatabaseBoot } from './useDatabaseBoot';
 import { BootResultProvider } from './boot-context';
-import {
-  StartingScreen,
-  UnsupportedScreen,
-  MultiTabScreen,
-  BootErrorScreen,
-} from './BootScreens';
+import { StartingScreen, UnsupportedScreen, MultiTabScreen, BootErrorScreen } from './BootScreens';
 
 /**
  * Gates the application behind a successful database boot (spec §2.2, §2.2.7, §3).

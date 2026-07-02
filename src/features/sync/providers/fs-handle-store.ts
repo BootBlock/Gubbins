@@ -100,7 +100,7 @@ export async function forgetSyncDirectory(): Promise<void> {
 export async function handlePermission(handle: PersistableDirectoryHandle): Promise<HandlePermission> {
   if (typeof handle.queryPermission !== 'function') return 'unsupported';
   try {
-    return (await handle.queryPermission({ mode: 'readwrite' })) as HandlePermission;
+    return await handle.queryPermission({ mode: 'readwrite' });
   } catch {
     return 'unsupported';
   }

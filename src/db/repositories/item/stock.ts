@@ -8,11 +8,7 @@
  */
 import { DbError } from '../../errors';
 import { planTransfer } from '@/features/inventory/stock';
-import {
-  isDefaultBatch,
-  planBatchConsumption,
-  planBatchSelection,
-} from '@/features/inventory/batches';
+import { isDefaultBatch, planBatchConsumption, planBatchSelection } from '@/features/inventory/batches';
 import {
   addBatchStatement,
   consumeBatchStatements,

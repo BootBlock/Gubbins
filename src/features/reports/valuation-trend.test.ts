@@ -116,7 +116,13 @@ describe('buildValuationTrend', () => {
   });
 
   it('always ends at the clamped currentValue', () => {
-    const positiveReport = buildValuationTrend(750, [{ createdAt: START + 2 * DAY, valueDelta: 100 }], START, END, 4);
+    const positiveReport = buildValuationTrend(
+      750,
+      [{ createdAt: START + 2 * DAY, valueDelta: 100 }],
+      START,
+      END,
+      4,
+    );
     expect(positiveReport.endValue).toBe(750);
     expect(positiveReport.points[positiveReport.points.length - 1]?.value).toBe(750);
 

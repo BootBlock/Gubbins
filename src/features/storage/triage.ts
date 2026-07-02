@@ -64,10 +64,7 @@ export interface EstimateOptions {
  * *measured* on-disk OPFS bytes when {@link EstimateOptions.itemImagesBytes} is
  * supplied (the accurate path), falling back to the flat per-row heuristic otherwise.
  */
-export function estimateTableBytes(
-  counts: TableRowCounts,
-  options: EstimateOptions = {},
-): TableByteEstimate {
+export function estimateTableBytes(counts: TableRowCounts, options: EstimateOptions = {}): TableByteEstimate {
   const items = safeCount(counts.items) * AVG_ROW_BYTES.items;
   const itemHistory = safeCount(counts.itemHistory) * AVG_ROW_BYTES.itemHistory;
   const measured = safeBytes(options.itemImagesBytes);

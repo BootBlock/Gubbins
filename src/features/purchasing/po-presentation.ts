@@ -37,11 +37,6 @@ export function totalReceived(lines: readonly { receivedQty: number }[]): number
 }
 
 /** Estimated order value across a set of lines (ordered qty × unit cost where priced). */
-export function estimatedValue(
-  lines: readonly { orderedQty: number; unitCost: number | null }[],
-): number {
-  return lines.reduce(
-    (sum, l) => sum + (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0),
-    0,
-  );
+export function estimatedValue(lines: readonly { orderedQty: number; unitCost: number | null }[]): number {
+  return lines.reduce((sum, l) => sum + (l.unitCost != null ? Math.max(0, l.orderedQty) * l.unitCost : 0), 0);
 }

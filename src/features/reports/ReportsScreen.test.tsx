@@ -17,8 +17,11 @@ import { render, screen, act, cleanup } from '@testing-library/react';
 // Stub @tanstack/react-router's Link as a plain <a> so the screen renders
 // without a RouterProvider in the test.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) =>
-    <a href={to} {...props}>{children}</a>,
+  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 // The global nav menu has its own suite; stub it so this screen test needs no
@@ -35,9 +38,7 @@ vi.mock('@/components/BrandMark', () => ({
 vi.mock('@/components/icons', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/icons')>();
   // Replace every icon with a lightweight span so we don't need SVG/canvas in jsdom.
-  return Object.fromEntries(
-    Object.keys(actual).map((k) => [k, () => <span data-testid={`icon-${k}`} />]),
-  );
+  return Object.fromEntries(Object.keys(actual).map((k) => [k, () => <span data-testid={`icon-${k}`} />]));
 });
 
 // Stub the breakdown / chart / export sub-components (not under test here).
@@ -94,62 +95,113 @@ type FakeQueryState = {
 
 // Mutable state shared between the factory closures and each test.
 const queryState: Record<
-  'value' | 'consumption' | 'movement' | 'lowStock' | 'deadStock' | 'abc' | 'turnover' | 'aging' | 'trend' | 'hygiene' | 'spend',
+  | 'value'
+  | 'consumption'
+  | 'movement'
+  | 'lowStock'
+  | 'deadStock'
+  | 'abc'
+  | 'turnover'
+  | 'aging'
+  | 'trend'
+  | 'hygiene'
+  | 'spend',
   FakeQueryState
 > = {
-  value:       { isLoading: true, isError: false },
+  value: { isLoading: true, isError: false },
   consumption: { isLoading: true, isError: false },
-  movement:    { isLoading: true, isError: false },
-  lowStock:    { isLoading: true, isError: false },
-  deadStock:   { isLoading: true, isError: false },
-  abc:         { isLoading: true, isError: false },
-  turnover:    { isLoading: true, isError: false },
-  aging:       { isLoading: true, isError: false },
-  trend:       { isLoading: true, isError: false },
-  hygiene:     { isLoading: true, isError: false },
-  spend:       { isLoading: true, isError: false },
+  movement: { isLoading: true, isError: false },
+  lowStock: { isLoading: true, isError: false },
+  deadStock: { isLoading: true, isError: false },
+  abc: { isLoading: true, isError: false },
+  turnover: { isLoading: true, isError: false },
+  aging: { isLoading: true, isError: false },
+  trend: { isLoading: true, isError: false },
+  hygiene: { isLoading: true, isError: false },
+  spend: { isLoading: true, isError: false },
 };
 
 function makeAllLoaded() {
-  queryState.value       = { isLoading: false, isError: false, data: { totalValue: 99.5, totalQuantity: 10, byCategory: [], byLocation: [] } };
-  queryState.consumption = { isLoading: false, isError: false, data: { perDay: 1, totalConsumed: 5, windowDays: 30 } };
-  queryState.movement    = { isLoading: false, isError: false, data: { buckets: [], totalIn: 0, totalOut: 0, windowDays: 30 } };
-  queryState.lowStock    = { isLoading: false, isError: false, data: 0 };
-  queryState.deadStock   = { isLoading: false, isError: false, data: { lines: [], totalValue: 0 } };
-  queryState.abc         = { isLoading: false, isError: false, data: { lines: [], tiers: {}, totalValue: 0 } };
-  queryState.turnover    = { isLoading: false, isError: false, data: { lines: [], turnover: null, daysOnHand: null } };
-  queryState.aging       = { isLoading: false, isError: false, data: { buckets: [], totalQuantity: 0, totalValue: 0 } };
-  queryState.trend       = { isLoading: false, isError: false, data: { points: [], startValue: 0, endValue: 0, changeValue: 0 } };
-  queryState.hygiene     = { isLoading: false, isError: false, data: { sections: [], totalItems: 0, flaggedItems: 0 } };
-  queryState.spend       = { isLoading: false, isError: false, data: { total: 0, eventCount: 0, buckets: [], bySource: [], bySupplier: [], byCategory: [], windowStart: 0, windowEnd: 0 } };
+  queryState.value = {
+    isLoading: false,
+    isError: false,
+    data: { totalValue: 99.5, totalQuantity: 10, byCategory: [], byLocation: [] },
+  };
+  queryState.consumption = {
+    isLoading: false,
+    isError: false,
+    data: { perDay: 1, totalConsumed: 5, windowDays: 30 },
+  };
+  queryState.movement = {
+    isLoading: false,
+    isError: false,
+    data: { buckets: [], totalIn: 0, totalOut: 0, windowDays: 30 },
+  };
+  queryState.lowStock = { isLoading: false, isError: false, data: 0 };
+  queryState.deadStock = { isLoading: false, isError: false, data: { lines: [], totalValue: 0 } };
+  queryState.abc = { isLoading: false, isError: false, data: { lines: [], tiers: {}, totalValue: 0 } };
+  queryState.turnover = {
+    isLoading: false,
+    isError: false,
+    data: { lines: [], turnover: null, daysOnHand: null },
+  };
+  queryState.aging = {
+    isLoading: false,
+    isError: false,
+    data: { buckets: [], totalQuantity: 0, totalValue: 0 },
+  };
+  queryState.trend = {
+    isLoading: false,
+    isError: false,
+    data: { points: [], startValue: 0, endValue: 0, changeValue: 0 },
+  };
+  queryState.hygiene = {
+    isLoading: false,
+    isError: false,
+    data: { sections: [], totalItems: 0, flaggedItems: 0 },
+  };
+  queryState.spend = {
+    isLoading: false,
+    isError: false,
+    data: {
+      total: 0,
+      eventCount: 0,
+      buckets: [],
+      bySource: [],
+      bySupplier: [],
+      byCategory: [],
+      windowStart: 0,
+      windowEnd: 0,
+    },
+  };
 }
 
 function makeAllErrored() {
-  queryState.value       = { isLoading: false, isError: true };
+  queryState.value = { isLoading: false, isError: true };
   queryState.consumption = { isLoading: false, isError: true };
-  queryState.movement    = { isLoading: false, isError: true };
-  queryState.lowStock    = { isLoading: false, isError: true };
-  queryState.deadStock   = { isLoading: false, isError: true };
-  queryState.abc         = { isLoading: false, isError: true };
-  queryState.turnover    = { isLoading: false, isError: true };
-  queryState.aging       = { isLoading: false, isError: true };
-  queryState.trend       = { isLoading: false, isError: true };
-  queryState.hygiene     = { isLoading: false, isError: true };
-  queryState.spend       = { isLoading: false, isError: true };
+  queryState.movement = { isLoading: false, isError: true };
+  queryState.lowStock = { isLoading: false, isError: true };
+  queryState.deadStock = { isLoading: false, isError: true };
+  queryState.abc = { isLoading: false, isError: true };
+  queryState.turnover = { isLoading: false, isError: true };
+  queryState.aging = { isLoading: false, isError: true };
+  queryState.trend = { isLoading: false, isError: true };
+  queryState.hygiene = { isLoading: false, isError: true };
+  queryState.spend = { isLoading: false, isError: true };
 }
 
 function makeAllLoading() {
-  queryState.value       = { isLoading: true, isError: false };
+  queryState.value = { isLoading: true, isError: false };
   queryState.consumption = { isLoading: true, isError: false };
-  queryState.movement    = { isLoading: true, isError: false };
-  queryState.lowStock    = { isLoading: true, isError: false };
-  queryState.deadStock   = { isLoading: true, isError: false };
-  queryState.abc         = { isLoading: true, isError: false };
-  queryState.turnover    = { isLoading: true, isError: false };
-  queryState.aging       = { isLoading: true, isError: false };
-  queryState.trend       = { isLoading: true, isError: false };
-  queryState.hygiene     = { isLoading: true, isError: false };
-  queryState.spend       = { isLoading: true, isError: false };
+  queryState.movement = { isLoading: true, isError: false };
+  queryState.lowStock = { isLoading: true, isError: false };
+  queryState.deadStock = { isLoading: true, isError: false };
+  queryState.abc = { isLoading: true, isError: false };
+  queryState.turnover = { isLoading: true, isError: false };
+  queryState.aging = { isLoading: true, isError: false };
+  queryState.trend = { isLoading: true, isError: false };
+  queryState.hygiene = { isLoading: true, isError: false };
+  queryState.spend = { isLoading: true, isError: false };
 }
 
 vi.mock('./queries', () => ({
@@ -162,17 +214,17 @@ vi.mock('./queries', () => ({
   VALUATION_TREND_POINTS: 12,
   DATA_HYGIENE_STALE_DAYS: 180,
   SPEND_BUCKETS: 15,
-  useInventoryValue:   () => ({ ...queryState.value }),
-  useConsumptionRate:  () => ({ ...queryState.consumption }),
-  useMovement:         () => ({ ...queryState.movement }),
-  useLowStockCount:    () => ({ ...queryState.lowStock }),
-  useDeadStock:        () => ({ ...queryState.deadStock }),
-  useAbcAnalysis:      () => ({ ...queryState.abc }),
-  useTurnover:         () => ({ ...queryState.turnover }),
-  useStockAging:       () => ({ ...queryState.aging }),
-  useValuationTrend:   () => ({ ...queryState.trend }),
-  useDataHygiene:      () => ({ ...queryState.hygiene }),
-  useSpendAnalytics:   () => ({ ...queryState.spend }),
+  useInventoryValue: () => ({ ...queryState.value }),
+  useConsumptionRate: () => ({ ...queryState.consumption }),
+  useMovement: () => ({ ...queryState.movement }),
+  useLowStockCount: () => ({ ...queryState.lowStock }),
+  useDeadStock: () => ({ ...queryState.deadStock }),
+  useAbcAnalysis: () => ({ ...queryState.abc }),
+  useTurnover: () => ({ ...queryState.turnover }),
+  useStockAging: () => ({ ...queryState.aging }),
+  useValuationTrend: () => ({ ...queryState.trend }),
+  useDataHygiene: () => ({ ...queryState.hygiene }),
+  useSpendAnalytics: () => ({ ...queryState.spend }),
 }));
 
 // --------------------------------------------------------------------------

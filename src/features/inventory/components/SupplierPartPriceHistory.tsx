@@ -54,7 +54,9 @@ export function SupplierPartPriceHistory({
     series.changeAbs === null || series.changeAbs === 0
       ? null
       : `${series.changeAbs > 0 ? '+' : '−'}${fmt.currency(Math.abs(series.changeAbs))}${
-          series.changePct === null ? '' : ` (${series.changePct > 0 ? '+' : '−'}${Math.abs(Math.round(series.changePct))}%)`
+          series.changePct === null
+            ? ''
+            : ` (${series.changePct > 0 ? '+' : '−'}${Math.abs(Math.round(series.changePct))}%)`
         }`;
 
   return (
@@ -100,7 +102,9 @@ export function SupplierPartPriceHistory({
               {p.currency ? ` ${p.currency}` : ''}
             </span>
             <span className="flex items-center gap-2">
-              {p.source === 'SCRAPE' ? <span className="text-[10px] uppercase tracking-wide">Scraped</span> : null}
+              {p.source === 'SCRAPE' ? (
+                <span className="text-[10px] uppercase tracking-wide">Scraped</span>
+              ) : null}
               <time dateTime={new Date(p.recordedAt).toISOString()}>{fmt.date(p.recordedAt)}</time>
             </span>
           </li>

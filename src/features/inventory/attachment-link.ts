@@ -47,7 +47,6 @@ export function resolveAttachmentLink(
   }
   // LOCAL_POINTER: a NULL origin (legacy) or a match to this device is shown as local;
   // anything attributed to a *different* device is the foreign, unlinked case (§4).
-  const foreign =
-    attachment.originDeviceId !== null && attachment.originDeviceId !== currentDeviceId;
+  const foreign = attachment.originDeviceId !== null && attachment.originDeviceId !== currentDeviceId;
   return { state: foreign ? 'unlinked' : 'local', value: attachment.value };
 }

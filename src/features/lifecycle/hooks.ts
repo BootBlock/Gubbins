@@ -166,8 +166,8 @@ export function useReconcile() {
       getItemRepository().reconcile(adjustments),
     onSettled: (updated) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
-      updated?.forEach((item) =>
-        client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
+      updated?.forEach(
+        (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );
     },
   });
@@ -181,8 +181,8 @@ export function useReconcileSerialised() {
       getItemRepository().reconcileSerialised(adjustments),
     onSettled: (updated) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
-      updated?.forEach((item) =>
-        client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
+      updated?.forEach(
+        (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );
     },
   });

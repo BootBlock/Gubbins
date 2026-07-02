@@ -22,9 +22,7 @@ export function VisualBuilder({ resultSummary }: { resultSummary?: string }) {
           <FilterIcon />
         </span>
         <h2 className="text-sm font-semibold">Visual search</h2>
-        {resultSummary ? (
-          <span className="text-xs text-muted-foreground">· {resultSummary}</span>
-        ) : null}
+        {resultSummary ? <span className="text-xs text-muted-foreground">· {resultSummary}</span> : null}
         {conditionCount > 0 ? (
           <button
             type="button"

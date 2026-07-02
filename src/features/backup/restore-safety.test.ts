@@ -33,7 +33,10 @@ describe('estimateBackupBytes', () => {
   it('sums the sqlite copy and the image bytes', () => {
     const bytes = estimateBackupBytes({
       sqlite: new Uint8Array(100),
-      images: [{ name: 'a', bytes: new Uint8Array(10) }, { name: 'b', bytes: new Uint8Array(5) }],
+      images: [
+        { name: 'a', bytes: new Uint8Array(10) },
+        { name: 'b', bytes: new Uint8Array(5) },
+      ],
     });
     expect(bytes).toBe(115);
   });

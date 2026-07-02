@@ -8,13 +8,7 @@ import type { HygieneReport, HygieneSection } from '../data-hygiene';
  * reads as a green tick; a failing one is an expandable `<details>` revealing a sample of the
  * offending items, each a jump-to-fix link into the inventory. Design tokens only.
  */
-export function HygieneChecklist({
-  report,
-  formatters,
-}: {
-  report: HygieneReport;
-  formatters: Formatters;
-}) {
+export function HygieneChecklist({ report, formatters }: { report: HygieneReport; formatters: Formatters }) {
   return (
     <div className="flex flex-col divide-y divide-border" data-testid="hygiene-checklist">
       {report.sections.map((section) => (
@@ -24,13 +18,7 @@ export function HygieneChecklist({
   );
 }
 
-function HygieneRow({
-  section,
-  formatters,
-}: {
-  section: HygieneSection;
-  formatters: Formatters;
-}) {
+function HygieneRow({ section, formatters }: { section: HygieneSection; formatters: Formatters }) {
   const clean = section.count === 0;
 
   if (clean) {
@@ -57,10 +45,7 @@ function HygieneRow({
       <ul className="ml-7 flex flex-col gap-1 pb-2 pt-1" data-testid={`hygiene-samples-${section.kind}`}>
         {section.samples.map((sample) => (
           <li key={sample.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-            <Link
-              to="/inventory"
-              className="font-medium text-primary underline-offset-2 hover:underline"
-            >
+            <Link to="/inventory" className="font-medium text-primary underline-offset-2 hover:underline">
               {sample.name}
             </Link>
             {sample.detail ? <span className="text-muted-foreground">{sample.detail}</span> : null}

@@ -65,7 +65,10 @@ export interface ApiV1Context {
  * snapshot has loaded. A POST is dispatched to the opt-in write router.
  */
 export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Context): Promise<void> {
-  const segments = url.pathname.split('/').filter((s) => s.length > 0).slice(2); // drop 'api','v1'
+  const segments = url.pathname
+    .split('/')
+    .filter((s) => s.length > 0)
+    .slice(2); // drop 'api','v1'
 
   if (ctx.method === 'POST') return void (await handleWrite(res, segments, ctx));
 
@@ -126,7 +129,10 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   const isItemAction = segments[0] === 'items' && segments.length === 3;
   if (!isItemAction) {
     // POST to a GET resource (e.g. /api/v1/items) or a non-existent path: method not allowed.
-    return void sendError(res, 405, 'method_not_allowed', 'Method not allowed', { v1: true, headers: { allow: 'GET' } });
+    return void sendError(res, 405, 'method_not_allowed', 'Method not allowed', {
+      v1: true,
+      headers: { allow: 'GET' },
+    });
   }
   const action = segments[2];
   if (action !== 'adjust-quantity' && action !== 'adjust-gauge') {
@@ -202,10 +208,7 @@ function apiIndex(writable: boolean, pushable: boolean): unknown {
       `${API_V1_BASE}/categories/{id}`,
       `${API_V1_BASE}/capabilities`,
       ...(writable
-        ? [
-            `POST ${API_V1_BASE}/items/{id}/adjust-quantity`,
-            `POST ${API_V1_BASE}/items/{id}/adjust-gauge`,
-          ]
+        ? [`POST ${API_V1_BASE}/items/{id}/adjust-quantity`, `POST ${API_V1_BASE}/items/{id}/adjust-gauge`]
         : []),
       ...(pushable ? [`POST ${API_V1_BASE}/snapshot`] : []),
     ],
@@ -248,9 +251,7 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
   // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
   // rather than an N+1 lookup per row.
   const locationNames = await locationNameMap(driver);
-  const data = result.rows.map((item) =>
-    toItemSummary(item, locationNames.get(item.locationId) ?? null),
-  );
+  const data = result.rows.map((item) => toItemSummary(item, locationNames.get(item.locationId) ?? null));
   sendList(res, data, page, result.hasMore);
 }
 

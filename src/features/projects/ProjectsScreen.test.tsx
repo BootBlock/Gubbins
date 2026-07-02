@@ -15,7 +15,10 @@ import { render, screen, cleanup } from '@testing-library/react';
 // ─── dependency stubs ─────────────────────────────────────────────────────────
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; children?: React.ReactNode }) => (
+  Link: ({
+    children,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { to?: string; children?: React.ReactNode }) => (
     <a {...props}>{children}</a>
   ),
 }));
@@ -32,9 +35,7 @@ vi.mock('@/components/nav/AppNav', () => ({
 
 vi.mock('@/components/icons', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/icons')>();
-  return Object.fromEntries(
-    Object.keys(actual).map((k) => [k, () => <span data-testid={`icon-${k}`} />]),
-  );
+  return Object.fromEntries(Object.keys(actual).map((k) => [k, () => <span data-testid={`icon-${k}`} />]));
 });
 
 // Stub sub-components that pull in heavy dependencies.

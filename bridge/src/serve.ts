@@ -51,9 +51,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   // round-trip through (the PWA never reads the exported `.sqlite` back) — see sqlite-source.ts.
   const source = await detectSource(config.snapshotPath);
   const writesEnabled = writesEnabledForSource(config.allowWrites, source);
-  const write = writesEnabled
-    ? { execute: createWriteExecutor(config.snapshotPath) }
-    : undefined;
+  const write = writesEnabled ? { execute: createWriteExecutor(config.snapshotPath) } : undefined;
   // Push ("push to bridge") is an independent opt-in: it replaces the whole served snapshot, and
   // is likewise refused for a raw `.sqlite` source (no JSON sync channel). See push.ts.
   const pushEnabled = pushEnabledForSource(config.allowPush, source);
@@ -76,9 +74,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   });
 
   if (isLanExposed(config.host)) {
-    console.warn(
-      `Bridge bound to ${config.host} — reachable from the LAN (a deliberate exposure choice).`,
-    );
+    console.warn(`Bridge bound to ${config.host} — reachable from the LAN (a deliberate exposure choice).`);
   }
   console.log(`Gubbins bridge listening on http://${config.host}:${config.port}`);
   console.log(

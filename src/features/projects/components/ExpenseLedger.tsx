@@ -48,13 +48,7 @@ export function ExpenseLedger({
           Expenses
           <span className="text-xs font-normal text-muted-foreground">(recorded spend)</span>
         </h3>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          onClick={openAdd}
-          data-testid="add-expense"
-        >
+        <Button variant="outline" size="sm" className="ml-auto" onClick={openAdd} data-testid="add-expense">
           <AddIcon />
           Add expense
         </Button>
@@ -82,9 +76,7 @@ export function ExpenseLedger({
               {rows.map((expense) => (
                 <tr key={expense.id} className="border-t border-border/60">
                   <td className="px-3 py-2">{expense.description ?? '—'}</td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {categoryName(expense.categoryId)}
-                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{categoryName(expense.categoryId)}</td>
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">
                     {fmt.date(expense.incurredAt)}
                   </td>

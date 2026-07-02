@@ -56,12 +56,18 @@ const KIND_LABEL: Record<AgendaKind, string> = {
 
 function KindIcon({ kind }: { kind: AgendaKind }) {
   switch (kind) {
-    case 'maintenance': return <MaintenanceIcon aria-hidden />;
-    case 'warranty': return <NotificationIcon aria-hidden />;
-    case 'expiry': return <ExpiryIcon aria-hidden />;
-    case 'checkout-due': return <CheckoutIcon aria-hidden />;
-    case 'reorder': return <LowStockIcon aria-hidden />;
-    case 'booking': return <BookingIcon aria-hidden />;
+    case 'maintenance':
+      return <MaintenanceIcon aria-hidden />;
+    case 'warranty':
+      return <NotificationIcon aria-hidden />;
+    case 'expiry':
+      return <ExpiryIcon aria-hidden />;
+    case 'checkout-due':
+      return <CheckoutIcon aria-hidden />;
+    case 'reorder':
+      return <LowStockIcon aria-hidden />;
+    case 'booking':
+      return <BookingIcon aria-hidden />;
   }
 }
 
@@ -106,9 +112,9 @@ function EventCard({ event, bucket }: { event: AgendaEvent; bucket: AgendaBucket
         </span>
       </div>
       <p className="text-xs text-muted-foreground">{event.detail}</p>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {}
       <Link
-        to={event.target.route as any}
+        to={event.target.route}
         className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
         data-testid={`agenda-link-${event.id}`}
       >
@@ -149,9 +155,7 @@ function KindFilter({
             aria-pressed={active}
             data-testid={`agenda-filter-${kind}`}
             className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors [&_svg]:size-3.5 ${
-              active
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground'
+              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <KindIcon kind={kind} />
@@ -197,9 +201,7 @@ export function CalendarScreen() {
     } else {
       const count = events.length;
       setAnnouncement(
-        count === 0
-          ? 'Nothing upcoming — all clear.'
-          : `${count} upcoming item${count === 1 ? '' : 's'}.`,
+        count === 0 ? 'Nothing upcoming — all clear.' : `${count} upcoming item${count === 1 ? '' : 's'}.`,
       );
     }
   }, [isLoading, isError, events.length]);
@@ -238,8 +240,8 @@ export function CalendarScreen() {
             <DueDateIcon className="size-10 text-muted-foreground" />
             <p className="font-medium">Nothing upcoming</p>
             <p className="text-sm text-muted-foreground">
-              No maintenance, warranties, expiries, loans, reorders or bookings are pending.
-              You're all caught up.
+              No maintenance, warranties, expiries, loans, reorders or bookings are pending. You're all caught
+              up.
             </p>
           </Surface>
         )}

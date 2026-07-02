@@ -16,9 +16,7 @@ function or(...conditions: Array<ASTGroupNode | FilterCondition>): ASTGroupNode 
 
 describe('collectCapabilityKeys — best-match ranking inputs (spec §4, §5.1)', () => {
   it('returns an empty list when no condition filters on a capability', () => {
-    expect(collectCapabilityKeys(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(
-      [],
-    );
+    expect(collectCapabilityKeys(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual([]);
     expect(collectCapabilityKeys(and())).toEqual([]);
   });
 
@@ -47,9 +45,7 @@ describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
   });
 
   it('translates a case-insensitive text EQUALS with a bound parameter', () => {
-    const [sql, params] = parseASTtoSQL(
-      and({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }),
-    );
+    const [sql, params] = parseASTtoSQL(and({ field: 'manufacturer', operator: 'EQUALS', value: 'TI' }));
     expect(sql).toBe('(items.manufacturer = ? COLLATE NOCASE)');
     expect(params).toEqual(['TI']);
   });
@@ -101,9 +97,7 @@ describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
   });
 
   it('drops empty groups instead of degenerating an OR into match-all', () => {
-    const [sql, params] = parseASTtoSQL(
-      or({ field: 'quantity', operator: 'GREATER_THAN', value: 1 }, and()),
-    );
+    const [sql, params] = parseASTtoSQL(or({ field: 'quantity', operator: 'GREATER_THAN', value: 1 }, and()));
     expect(sql).toBe('(items.quantity > ?)');
     expect(params).toEqual([1]);
   });
@@ -156,48 +150,38 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
   });
 
   it('translates a text CONTAINS to a LIKE with the field name bound first', () => {
-    const [sql, params] = parseASTtoSQL(
-      and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }),
-    );
+    const [sql, params] = parseASTtoSQL(and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }));
     expect(sql).toContain("AND ifv.value LIKE ? ESCAPE '\\'");
     expect(params).toEqual(['Notes', '%rev2%']);
   });
 
   it('escapes LIKE wildcards in a custom-field CONTAINS value', () => {
-    const [, params] = parseASTtoSQL(
-      and({ field: 'field:Notes', operator: 'CONTAINS', value: '50%_x' }),
-    );
+    const [, params] = parseASTtoSQL(and({ field: 'field:Notes', operator: 'CONTAINS', value: '50%_x' }));
     expect(params).toEqual(['Notes', '%50\\%\\_x%']);
   });
 
   it('translates a text EQUALS case-insensitively against the stored value', () => {
-    const [sql, params] = parseASTtoSQL(
-      and({ field: 'field:Colour', operator: 'EQUALS', value: 'Red' }),
-    );
+    const [sql, params] = parseASTtoSQL(and({ field: 'field:Colour', operator: 'EQUALS', value: 'Red' }));
     expect(sql).toContain('AND ifv.value = ? COLLATE NOCASE');
     expect(params).toEqual(['Colour', 'Red']);
   });
 
   it('translates a numeric comparison casting the TEXT value to REAL', () => {
-    const [sql, params] = parseASTtoSQL(
-      and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 3.3 }),
-    );
+    const [sql, params] = parseASTtoSQL(and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 3.3 }));
     expect(sql).toContain('AND CAST(ifv.value AS REAL) > ?');
     expect(params).toEqual(['Rating', 3.3]);
   });
 
   it('translates a numeric EQUALS casting the TEXT value to REAL', () => {
-    const [sql, params] = parseASTtoSQL(
-      and({ field: 'field:Rating', operator: 'EQUALS', value: 5 }),
-    );
+    const [sql, params] = parseASTtoSQL(and({ field: 'field:Rating', operator: 'EQUALS', value: 5 }));
     expect(sql).toContain('AND CAST(ifv.value AS REAL) = ?');
     expect(params).toEqual(['Rating', 5]);
   });
 
   it('rejects a custom-field reference with no name', () => {
-    expect(() =>
-      parseASTtoSQL(and({ field: 'field:', operator: 'HAS_CAPABILITY', value: '' })),
-    ).toThrow(SearchAstError);
+    expect(() => parseASTtoSQL(and({ field: 'field:', operator: 'HAS_CAPABILITY', value: '' }))).toThrow(
+      SearchAstError,
+    );
   });
 
   it('never concatenates the field name or value into the SQL text', () => {
@@ -211,24 +195,24 @@ describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolutio
 
 describe('parseASTtoSQL — validation & the depth cap (spec §5.1)', () => {
   it('throws on an unknown field', () => {
-    expect(() =>
-      parseASTtoSQL(and({ field: 'nonsense', operator: 'EQUALS', value: 'x' })),
-    ).toThrow(SearchAstError);
+    expect(() => parseASTtoSQL(and({ field: 'nonsense', operator: 'EQUALS', value: 'x' }))).toThrow(
+      SearchAstError,
+    );
   });
 
   it('throws when an operator is unsupported for the field kind', () => {
-    expect(() =>
-      parseASTtoSQL(and({ field: 'name', operator: 'GREATER_THAN', value: 5 })),
-    ).toThrow(/not supported/);
-    expect(() =>
-      parseASTtoSQL(and({ field: 'quantity', operator: 'CONTAINS', value: '5' })),
-    ).toThrow(SearchAstError);
+    expect(() => parseASTtoSQL(and({ field: 'name', operator: 'GREATER_THAN', value: 5 }))).toThrow(
+      /not supported/,
+    );
+    expect(() => parseASTtoSQL(and({ field: 'quantity', operator: 'CONTAINS', value: '5' }))).toThrow(
+      SearchAstError,
+    );
   });
 
   it('throws when a numeric field receives a non-numeric value', () => {
-    expect(() =>
-      parseASTtoSQL(and({ field: 'quantity', operator: 'EQUALS', value: 'lots' })),
-    ).toThrow(/numeric/);
+    expect(() => parseASTtoSQL(and({ field: 'quantity', operator: 'EQUALS', value: 'lots' }))).toThrow(
+      /numeric/,
+    );
   });
 
   it(`allows exactly ${MAX_AST_GROUP_DEPTH} nested groups`, () => {
@@ -285,11 +269,7 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
   }
 
   /** Define a category custom field and return its id. */
-  async function addCategoryField(
-    categoryId: string,
-    name: string,
-    fieldType: string,
-  ): Promise<string> {
+  async function addCategoryField(categoryId: string, name: string, fieldType: string): Promise<string> {
     const fieldId = crypto.randomUUID();
     await driver.execute(
       `INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);`,
@@ -345,21 +325,21 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
   });
 
   it('matches a numeric capability comparison', async () => {
-    expect(
-      await run(and({ field: 'capability:voltage', operator: 'GREATER_THAN', value: 4 })),
-    ).toEqual(['reg']);
+    expect(await run(and({ field: 'capability:voltage', operator: 'GREATER_THAN', value: 4 }))).toEqual([
+      'reg',
+    ]);
   });
 
   it('matches HAS_CAPABILITY existence', async () => {
-    expect(
-      await run(and({ field: 'capability:package', operator: 'HAS_CAPABILITY', value: true })),
-    ).toEqual(['mcu']);
+    expect(await run(and({ field: 'capability:package', operator: 'HAS_CAPABILITY', value: true }))).toEqual([
+      'mcu',
+    ]);
   });
 
   it('matches a text capability EQUALS case-insensitively', async () => {
-    expect(
-      await run(and({ field: 'capability:package', operator: 'EQUALS', value: 'smd' })),
-    ).toEqual(['mcu']);
+    expect(await run(and({ field: 'capability:package', operator: 'EQUALS', value: 'smd' }))).toEqual([
+      'mcu',
+    ]);
   });
 
   it('combines FTS + scalar + capability across AND/OR groups', async () => {
@@ -393,40 +373,32 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
     });
 
     it('matches a custom-field text CONTAINS', async () => {
-      expect(await run(and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }))).toEqual([
-        'reg',
-      ]);
+      expect(await run(and({ field: 'field:Notes', operator: 'CONTAINS', value: 'rev2' }))).toEqual(['reg']);
     });
 
     it('matches a custom-field text EQUALS case-insensitively', async () => {
-      expect(
-        await run(and({ field: 'field:Notes', operator: 'EQUALS', value: 'datasheet rev2' })),
-      ).toEqual(['reg']);
+      expect(await run(and({ field: 'field:Notes', operator: 'EQUALS', value: 'datasheet rev2' }))).toEqual([
+        'reg',
+      ]);
     });
 
     it('matches a numeric custom-field comparison casting TEXT to REAL', async () => {
       // 5 > 4 (reg) but 3.3 < 4 (mcu) — a lexical compare would wrongly include "3.3".
-      expect(await run(and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 4 }))).toEqual([
-        'reg',
-      ]);
+      expect(await run(and({ field: 'field:Rating', operator: 'GREATER_THAN', value: 4 }))).toEqual(['reg']);
     });
 
     it('matches custom-field presence (HAS_CAPABILITY) only where a value exists', async () => {
-      expect(
-        await run(and({ field: 'field:Notes', operator: 'HAS_CAPABILITY', value: '' })),
-      ).toEqual(['reg']);
+      expect(await run(and({ field: 'field:Notes', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+        'reg',
+      ]);
     });
 
     it('an unknown custom-field name matches nothing (no error)', async () => {
-      expect(
-        await run(and({ field: 'field:DoesNotExist', operator: 'CONTAINS', value: 'x' })),
-      ).toEqual([]);
+      expect(await run(and({ field: 'field:DoesNotExist', operator: 'CONTAINS', value: 'x' }))).toEqual([]);
     });
 
     it('resolves the field name case-insensitively', async () => {
-      expect(await run(and({ field: 'field:rating', operator: 'EQUALS', value: 5 }))).toEqual([
-        'reg',
-      ]);
+      expect(await run(and({ field: 'field:rating', operator: 'EQUALS', value: 5 }))).toEqual(['reg']);
     });
   });
 });

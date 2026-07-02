@@ -133,9 +133,9 @@ describe('CategoryRepository', () => {
     const foreign = await categories.addField(resistors.id, { name: 'Resistance', fieldType: 'NUMBER' });
     const item = await items.create({ name: 'MLCC', categoryId: caps.id });
 
-    await expect(
-      categories.setItemFieldValues(item.id, { [foreign.id]: '10' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(categories.setItemFieldValues(item.id, { [foreign.id]: '10' })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('rejects an invalid NUMBER value (Phase 70 validation seam)', async () => {
@@ -160,9 +160,9 @@ describe('CategoryRepository', () => {
     });
     const item = await items.create({ name: 'MLCC', categoryId: cat.id });
 
-    await expect(
-      categories.setItemFieldValues(item.id, { [dielectric.id]: 'NP0' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(categories.setItemFieldValues(item.id, { [dielectric.id]: 'NP0' })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('rejects clearing a required field to blank', async () => {
@@ -174,9 +174,9 @@ describe('CategoryRepository', () => {
     });
     const item = await items.create({ name: 'MLCC', categoryId: cat.id });
 
-    await expect(
-      categories.setItemFieldValues(item.id, { [voltage.id]: '   ' }),
-    ).rejects.toBeInstanceOf(DbError);
+    await expect(categories.setItemFieldValues(item.id, { [voltage.id]: '   ' })).rejects.toBeInstanceOf(
+      DbError,
+    );
   });
 
   it('persists the CANONICAL coerced value (1.50 → 1.5)', async () => {
