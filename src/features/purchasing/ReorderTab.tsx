@@ -8,7 +8,7 @@
  * rest of the Purchase Orders screen (CLAUDE.md, WCAG 4.1.3).
  */
 import { useState, useMemo } from 'react';
-import { Button, Surface, Spinner, LiveRegion } from '@/components/foundry';
+import { Button, Input, Surface, Spinner, LiveRegion } from '@/components/foundry';
 import { DownloadIcon, LowStockIcon, TruckIcon, WarningIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { buildReorderCsv } from './reorder-csv';
@@ -243,7 +243,7 @@ function ReorderLine({
       </div>
       <label className="flex items-center gap-1.5 text-sm">
         <span className="text-xs text-muted-foreground">Qty</span>
-        <input
+        <Input
           type="number"
           min={1}
           step={1}
@@ -252,7 +252,7 @@ function ReorderLine({
           onBlur={commitQty}
           onKeyDown={(e) => e.key === 'Enter' && commitQty()}
           aria-label={`Order quantity for ${line.itemName}`}
-          className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground outline-none ring-ring focus:ring-2"
+          className="h-8 w-20"
           data-testid="reorder-line-qty"
         />
       </label>

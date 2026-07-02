@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Banner, Button, Modal } from '@/components/foundry';
+import { Banner, Button, Modal, Textarea } from '@/components/foundry';
 import { UploadIcon } from '@/components/icons';
 import { useImportBom } from '../projects';
 import { parseBom, BomImportError, type ParsedBomLine } from '../bom-import';
@@ -96,11 +96,11 @@ export function ImportBomDialog({
           />
         </div>
 
-        <textarea
+        <Textarea
           value={text}
           onChange={(e) => handleParse(e.target.value)}
           placeholder={'Reference,Value,Quantity,MPN,Manufacturer\nR1,10k,2,RC0805FR-0710KL,Yageo'}
-          className="h-40 w-full resize-y rounded-lg border border-border bg-input/40 p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+          className="h-40 font-mono"
           aria-label="BOM CSV text"
         />
 

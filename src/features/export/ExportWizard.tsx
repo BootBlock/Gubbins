@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, LiveRegion, Modal, Surface } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
@@ -153,58 +153,51 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
 
         {/* §3 report picker (Phase 61) — shown only for the report-CSV format. */}
         {isReport ? (
-          <div className="space-y-2">
-            <label
-              htmlFor="export-report-kind"
-              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-            >
+          <div>
+            <label htmlFor="export-report-kind" className="mb-field-gap block text-sm font-medium">
               Report
             </label>
-            <select
+            <Select
               id="export-report-kind"
               value={reportKind}
               onChange={(e) => setReportKind(e.target.value as ReportExportKind)}
               data-testid="export-report-kind"
-              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
             >
               {REPORT_KINDS.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         ) : null}
 
         {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
         {hasScope ? (
           <div className="space-y-2">
-            <label
-              htmlFor="export-scope"
-              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              Scope
-            </label>
-            <select
-              id="export-scope"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as ExportScope)}
-              data-testid="export-scope"
-              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-            >
-              {SCOPES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label htmlFor="export-scope" className="mb-field-gap block text-sm font-medium">
+                Scope
+              </label>
+              <Select
+                id="export-scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value as ExportScope)}
+                data-testid="export-scope"
+              >
+                {SCOPES.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
             {scope === 'ITEM' ? (
-              <select
+              <Select
                 value={scopeTargetId ?? ''}
                 onChange={(e) => setScopeTargetId(e.target.value || null)}
                 data-testid="export-target-item"
-                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
               >
                 <option value="">Choose an item…</option>
                 {(itemList.data?.rows ?? []).map((it) => (
@@ -212,15 +205,14 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
                     {it.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             ) : null}
 
             {scope === 'PROJECT' ? (
-              <select
+              <Select
                 value={scopeTargetId ?? ''}
                 onChange={(e) => setScopeTargetId(e.target.value || null)}
                 data-testid="export-target-project"
-                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
               >
                 <option value="">Choose a project…</option>
                 {(projectList.data?.rows ?? []).map((p) => (
@@ -228,7 +220,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             ) : null}
           </div>
         ) : null}
