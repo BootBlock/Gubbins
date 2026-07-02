@@ -218,6 +218,10 @@ npm run preview    # Serve the production build (real service worker + offline)
 npm run test       # Vitest
 ```
 
+> **Git hooks:** `npm install` auto-wires a native pre-commit hook (`.githooks/`, via
+> `core.hooksPath`) that scans staged changes for secrets and runs Prettier + ESLint on
+> staged files. It adds no dependency; bypass a single commit with `git commit --no-verify`.
+
 > **Node version:** building and deploying the PWA works on **Node ≥ 20** (the `engines`
 > floor). Running the *test suites* needs a newer Node: the app's `:memory:` test driver and
 > the companion bridge both use `node:sqlite` — and Gubbins' schema needs `node:sqlite`'s

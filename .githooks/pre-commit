@@ -1,0 +1,86 @@
+#!/usr/bin/env sh
+#
+# Gubbins pre-commit hook. Guards the three things that matter most on a PUBLIC repo,
+# scoped to the STAGED changes so it stays fast:
+#   (a) a credential-shaped scan of the staged diff (no secrets, ever — see CLAUDE.md);
+#   (b) Prettier formatting on staged code files;
+#   (c) ESLint on staged JS/TS/TSX files.
+# Any failure aborts the commit. In a genuine emergency, bypass with `git commit --no-verify`.
+#
+# Auto-wired by the "prepare" npm script (sets core.hooksPath = .githooks) on `npm install`.
+# CI still runs the full type-check + lint + format:check as the authoritative gate.
+
+set -u
+
+fail=0
+red=''
+reset=''
+if [ -t 2 ]; then
+  red="$(printf '\033[31m')"
+  reset="$(printf '\033[0m')"
+fi
+
+note() { printf '%s\n' "$*" >&2; }
+err() { printf '%spre-commit: %s%s\n' "$red" "$*" "$reset" >&2; }
+
+# Staged files, Added/Copied/Modified only — a deletion can't introduce new content.
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+
+# --- (a) Secret scan of the staged diff ------------------------------------------------
+# Only inspect ADDED lines, and drop obvious placeholders so example snippets don't trip it.
+added="$(git diff --cached --no-color -U0 --diff-filter=ACM | grep '^+' | grep -v '^+++' || true)"
+
+# Generic `key = "value"` assignment (kept in a variable so the quote chars stay readable).
+kv_pattern="(password|passwd|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key)[\"' ]*[:=][ ]*[\"'][^\"' ]{8,}"
+
+secret_hits="$(printf '%s\n' "$added" \
+  | grep -nEi \
+    -e '-----BEGIN[ A-Z]*PRIVATE KEY-----' \
+    -e 'AKIA[0-9A-Z]{16}' \
+    -e 'sk-[A-Za-z0-9]{20,}' \
+    -e '(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}' \
+    -e 'github_pat_[A-Za-z0-9_]{20,}' \
+    -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+    -e 'AIza[0-9A-Za-z_-]{35}' \
+    -e "$kv_pattern" \
+  | grep -viE 'xxxx|<[^>]*>|example|placeholder|your[_-]|changeme|redacted|dummy|noreply' \
+  || true)"
+
+if [ -n "$secret_hits" ]; then
+  err 'possible secret in staged changes — commit blocked.'
+  note 'This is a PUBLIC repository; a secret is effectively permanent once pushed.'
+  note 'Suspect added lines (review, then remove the secret or use a placeholder):'
+  printf '%s\n' "$secret_hits" >&2
+  note 'False positive? Use a placeholder (<YOUR_API_KEY>, sk-xxxx) or `git commit --no-verify`.'
+  fail=1
+fi
+
+# --- (b) Prettier check on staged code files -------------------------------------------
+# Prettier honours .prettierignore, so pass the staged code files and let it skip the rest.
+prettier_files="$(printf '%s\n' "$staged" | grep -Ei '\.(m?[jt]sx?|cjs|css|json)$' || true)"
+if [ -n "$prettier_files" ]; then
+  # shellcheck disable=SC2086
+  if ! printf '%s\n' "$prettier_files" | xargs npx prettier --check; then
+    err 'Prettier found unformatted staged files — run `npm run format` (or `npx prettier --write <files>`).'
+    fail=1
+  fi
+fi
+
+# --- (c) ESLint on staged JS/TS/TSX files ----------------------------------------------
+# No `--max-warnings`: the accepted baseline keeps a handful of intentional warnings green.
+eslint_files="$(printf '%s\n' "$staged" | grep -Ei '\.([jt]sx?|mjs|cjs)$' || true)"
+if [ -n "$eslint_files" ]; then
+  # shellcheck disable=SC2086
+  if ! printf '%s\n' "$eslint_files" | xargs npx eslint; then
+    err 'ESLint failed on staged files — fix the reported problems (or `npm run lint:fix`).'
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  note ''
+  err 'commit aborted. Resolve the issues above and re-stage, or bypass with --no-verify.'
+  exit 1
+fi
+
+exit 0

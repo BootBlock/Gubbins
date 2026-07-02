@@ -11,6 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "node -e \"try{require('node:child_process').execSync('git config core.hooksPath .githooks',{stdio:'ignore'})}catch{}\"",
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/check-bundle-size.mjs",
     "build:extension": "node extension/build.mjs",
