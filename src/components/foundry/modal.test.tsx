@@ -61,6 +61,51 @@ describe('Modal — accessible focus management', () => {
     expect(document.activeElement).toBe(last);
   });
 
+  // A nested dialog always opens *after* its parent is mounted (a control inside the
+  // parent opens it), so these harnesses open it via a click — matching the real flow
+  // the modal stack is ordered by.
+  function StackHarness() {
+    const [parentOpen, setParentOpen] = useState(true);
+    const [nestedOpen, setNestedOpen] = useState(false);
+    return (
+      <Modal open={parentOpen} onClose={() => setParentOpen(false)} title="Add item">
+        <button onClick={() => setNestedOpen(true)}>Open nested</button>
+        {nestedOpen ? (
+          <Modal open onClose={() => setNestedOpen(false)} title="Add location">
+            <button>Nested control</button>
+          </Modal>
+        ) : null}
+      </Modal>
+    );
+  }
+
+  it('Escape closes only the topmost dialog of a stack, then the parent', async () => {
+    render(<StackHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open nested' }));
+    expect(screen.getByRole('dialog', { name: 'Add location' })).toBeTruthy();
+
+    // First Escape dismisses the nested dialog — the parent (and whatever the user
+    // typed into it) survives.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Add item' })).toBeTruthy();
+
+    // A second Escape now reaches the parent.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add item' })).toBeNull());
+  });
+
+  it('keeps the body scroll lock while a parent dialog remains open', async () => {
+    render(<StackHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open nested' }));
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add location' })).toBeNull());
+    // The parent still holds the lock; only the last modal releases it.
+    expect(document.body.style.overflow).toBe('hidden');
+  });
+
   it('restores focus to the opener when the dialog closes', async () => {
     function Harness() {
       const [open, setOpen] = useState(false);

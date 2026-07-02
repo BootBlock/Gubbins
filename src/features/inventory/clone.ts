@@ -28,8 +28,8 @@ export const CLONE_NAME_SUFFIX = ' (copy)';
  * — for gauges — the gauge shape (unit / capacity / tare).
  *
  * **Stripped** (per-instance): serial number (auto-assigned afresh), batch/lot number, expiry
- * date, acquired-at, warranty-expiry and purchase price — these describe *this physical unit/lot*,
- * not the template.
+ * date, acquired-at, warranty-expiry, purchase price and free-text notes — these describe *this
+ * physical unit/lot* (or the owner's remarks about it), not the template.
  *
  * **Reset**: quantity to 0 (DISCRETE) and gauge net value to 0 — a clone starts with no stock; you
  * add it afterwards. SERIALISED clones request a single fresh instance (`count: 1`).

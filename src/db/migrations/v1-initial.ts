@@ -16,31 +16,37 @@ import {
 import { SQL_NOW_MS, type Migration } from './migration';
 
 /**
- * v1 — Consolidated baseline schema (Phase 69 migration-baseline squash).
+ * v1 — Consolidated baseline schema (Phase 69 migration-baseline squash; re-squashed
+ * for the Add-item enrichment work).
  *
- * This single migration builds the **entire current schema** in one step. It is the
- * squash of the original v1…v24 migration chain: Gubbins is pre-release with
- * disposable developer-only data, so no incremental upgrade path from an older
- * on-disk version is required (§ migration-baseline consolidation). The migration
+ * This single migration builds the **entire current schema** in one step. It began as
+ * the squash of the original v1…v24 migration chain (Phase 69); the Add-item
+ * enrichment re-squashed the subsequent v2 `asset_bookings`, v3
+ * `supplier_part_price_history` and v4 location-metadata forward steps back into this
+ * baseline **because that work makes two non-additive changes** that a forward
+ * `ALTER TABLE` cannot express: the `items.tracking_mode` CHECK gains `UNTRACKED`,
+ * and the `items_fts` index (plus its sync triggers) gains the new `notes` column.
+ * Gubbins is pre-release with disposable developer-only data, so no incremental
+ * upgrade path from an older on-disk version is required — a pre-squash database
+ * (user_version 2–4) exceeds the new target of 1 and is refused at boot with
+ * `SCHEMA_TOO_NEW`, whose rescue screen offers the local-data reset. The migration
  * *engine* (`runMigrations`/`getUserVersion`/the strict-contiguity guard) and all
- * its sync wiring (`SYNC_TABLES`, `FK_REFS`) are unchanged — only the historical
- * step files are collapsed into this baseline.
+ * its sync wiring (`SYNC_TABLES`, `FK_REFS`) are unchanged.
  *
  * ## Zero schema drift — a hard contract
- * The statement stream below is the **exact, ordered concatenation** of the original
- * v1…v24 `statements` (minus the per-step `PRAGMA user_version` bumps, which the
- * engine still appends — once, for v1). It is therefore byte-for-byte identical to
- * the schema the historical chain produced: the same CREATEs, the same ALTERs folded
- * in their original positions (SQLite stores an ALTER-added column verbatim at the
- * tail of the table's stored `sql`, so re-issuing the original ALTER is the only way
- * to reproduce that stored text exactly), the same indexes, the §7.1 `updated_at`
- * auto-stamp triggers, the v5 FTS5 external-content index + sync triggers, and the
- * v13 `item_stock` / v15 `stock_batches` projection-recompute triggers. The
- * `v1-initial.test.ts` golden-equivalence test proves this byte-identity against the
- * committed `__fixtures__/schema-baseline.snapshot.json` (the dump of the original
- * chain), so the squash provably changed nothing.
+ * The statement stream below is the ordered concatenation of the original chain's
+ * `statements` (minus per-step `PRAGMA user_version` bumps, which the engine still
+ * appends — once, for v1), with the folded v2–v4 streams re-issued verbatim at the
+ * tail and exactly three deliberate edits in place: `items.notes` in the CREATE
+ * TABLE, `notes` in the FTS index + its three sync triggers, and the widened
+ * tracking-mode CHECK (derived from `TRACKING_MODES`, so it can never drift from the
+ * application constant). ALTER-added columns are re-issued as ALTERs in their
+ * original positions (SQLite stores such columns verbatim at the tail of the table's
+ * stored `sql`). The `v1-initial.test.ts` golden-equivalence test locks the result
+ * against the committed `__fixtures__/schema-baseline.snapshot.json`, so any
+ * *unintended* schema change still fails loudly.
  *
- * The original per-phase grouping is preserved as authored: tables come before the
+ * The per-phase grouping is preserved as authored: tables come before the
  * children that reference them, triggers after their tables, the FTS index after its
  * `items` content table, and the recompute triggers after their ledgers — the
  * dependency order the chain already ran in. The `SQL_NOW_MS` epoch expression, the
@@ -164,6 +170,7 @@ export const v1Initial: Migration = {
           id                   TEXT    PRIMARY KEY NOT NULL,
           name                 TEXT    NOT NULL,
           description          TEXT,
+          notes                TEXT,
           location_id          TEXT    NOT NULL REFERENCES locations(id),
           category_id          TEXT    REFERENCES categories(id) ON DELETE SET NULL,
           tracking_mode        TEXT    NOT NULL DEFAULT 'DISCRETE',
@@ -420,7 +427,7 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE VIRTUAL TABLE items_fts USING fts5(
-          name, description, mpn, manufacturer,
+          name, description, notes, mpn, manufacturer,
           content='items',
           content_rowid='rowid'
         );
@@ -429,24 +436,24 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
-          INSERT INTO items_fts(rowid, name, description, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.mpn, new.manufacturer);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, mpn, manufacturer)
-          VALUES ('delete', old.rowid, old.name, old.description, old.mpn, old.manufacturer);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, mpn, manufacturer)
-          VALUES ('delete', old.rowid, old.name, old.description, old.mpn, old.manufacturer);
-          INSERT INTO items_fts(rowid, name, description, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.mpn, new.manufacturer);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer);
         END;
       `,
     },
@@ -872,5 +879,60 @@ export const v1Initial: Migration = {
     {
       sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
     },
+    // --- Folded former v2: asset bookings (Phase 78) ------------------------------
+    {
+      sql: `
+        CREATE TABLE asset_bookings (
+          id                    TEXT    PRIMARY KEY NOT NULL,
+          item_id               TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          contact_id            TEXT    REFERENCES contacts(id) ON DELETE SET NULL,
+          start_date            INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)
+          end_date              INTEGER NOT NULL,            -- day-start UNIX-ms (inclusive)
+          note                  TEXT,
+          cancelled_at          INTEGER,                     -- set ⇒ derived 'cancelled'
+          converted_checkout_id TEXT,                        -- set ⇒ derived 'converted' (soft pointer, not FK)
+          created_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (end_date >= start_date)
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_asset_bookings_item_id ON asset_bookings(item_id, start_date);`,
+    },
+    {
+      sql: `CREATE INDEX idx_asset_bookings_start_date ON asset_bookings(start_date);`,
+    },
+    { sql: updatedAtTrigger('asset_bookings') },
+    // --- Folded former v3: supplier price history (Phase 81) ----------------------
+    {
+      sql: `
+        CREATE TABLE supplier_part_price_history (
+          id               TEXT    PRIMARY KEY NOT NULL,
+          supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,
+          unit_cost        REAL    NOT NULL,                  -- the recorded cost at recorded_at
+          currency         TEXT,                              -- null ⇒ base currency
+          source           TEXT    NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'SCRAPE'
+          recorded_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (unit_cost >= 0),
+          CHECK (source IN ('MANUAL', 'SCRAPE'))
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_supplier_part_price_history_part
+              ON supplier_part_price_history(supplier_part_id, recorded_at);`,
+    },
+    { sql: updatedAtTrigger('supplier_part_price_history') },
+    // --- Folded former v4: richer location metadata -------------------------------
+    { sql: `ALTER TABLE locations ADD COLUMN kind TEXT;` },
+    {
+      sql: `ALTER TABLE locations ADD COLUMN capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0);`,
+    },
+    {
+      sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
+    },
+    { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
   ],
 };

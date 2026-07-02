@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { InfoHint } from '@/components/foundry';
 import { LinkIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
-import { useFormatters } from '@/lib/useFormatters';
 import {
   ScrapeReviewDialog,
   ScrapeSupplierPanel,
@@ -17,12 +16,15 @@ import { useApplyScrape, useCreateSupplierPart, useUpdateSupplierPart } from '..
 import { SupplierPartsTable } from './SupplierPartsTable';
 
 /**
- * Supplier-data facet of the item detail dialog (spec §4, §9): shows the MPN,
- * manufacturer and unit cost; the Universal Alias Mapping; and the editable
- * **supplier-parts table** (N suppliers per item, Phase 60). When the companion
- * extension is present it offers a re-scrape that applies through the §4 no-overwrite
- * review — and, on apply, persists the fetched per-supplier pricing as a supplier part
- * without ever clobbering an existing supplier row (only create-or-fill, never overwrite).
+ * Supplier-data facet of the item detail dialog (spec §4, §9): the Universal Alias
+ * Mapping and the editable **supplier-parts table** (N suppliers per item, Phase 60).
+ * When the companion extension is present it offers a re-scrape that applies through the
+ * §4 no-overwrite review — and, on apply, persists the fetched per-supplier pricing as a
+ * supplier part without ever clobbering an existing supplier row (only create-or-fill,
+ * never overwrite). The item's own MPN, manufacturer and manual unit cost are edited on
+ * the **Details** tab ({@link ItemDetailsEditor}); a scrape can still fill them here via
+ * the review, but they are not mirrored read-only in this section (they used to be, which
+ * duplicated the now-editable Details fields).
  */
 export function SupplierDataEditor({ item }: { item: Item }) {
   const { data: aliases } = useItemAliases(item.id);
@@ -31,7 +33,6 @@ export function SupplierDataEditor({ item }: { item: Item }) {
   const createSupplierPart = useCreateSupplierPart();
   const updateSupplierPart = useUpdateSupplierPart();
   const notify = useScrapeNotifier();
-  const fmt = useFormatters();
   const [reviewPayload, setReviewPayload] = useState<ScrapeResultPayload | null>(null);
 
   const existing = {
@@ -82,24 +83,6 @@ export function SupplierDataEditor({ item }: { item: Item }) {
 
   return (
     <div className="space-y-4">
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <Detail
-          label="MPN"
-          value={item.mpn}
-          hint="The **Manufacturer Part Number** — the maker’s canonical code for this part. Used to de-duplicate and to match supplier scrapes."
-        />
-        <Detail
-          label="Manufacturer"
-          value={item.manufacturer}
-          hint="Who makes the part. Edited via a supplier **scrape** below, or when the item is created."
-        />
-        <Detail
-          label="Unit cost"
-          value={item.unitCost !== null ? fmt.currency(item.unitCost) : null}
-          hint="The **manual** cost of one unit, in your base currency. When set it overrides the preferred supplier's price for valuation; leave it blank to use the preferred supplier."
-        />
-      </dl>
-
       <SupplierPartsTable item={item} />
 
       <div>
@@ -142,18 +125,6 @@ export function SupplierDataEditor({ item }: { item: Item }) {
           isApplying={applyScrape.isPending}
         />
       ) : null}
-    </div>
-  );
-}
-
-function Detail({ label, value, hint }: { label: string; value: string | null; hint?: string }) {
-  return (
-    <div>
-      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {label}
-        {hint ? <InfoHint content={hint} /> : null}
-      </dt>
-      <dd className="font-medium">{value ?? '—'}</dd>
     </div>
   );
 }

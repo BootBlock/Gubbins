@@ -85,6 +85,8 @@ export function ItemCard({
           <GaugeBar gauge={item.gauge} />
         ) : item.trackingMode === 'SERIALISED' ? (
           <p className="text-sm text-muted-foreground">Single serialised unit</p>
+        ) : item.trackingMode === 'UNTRACKED' ? (
+          <p className="text-sm text-muted-foreground">Presence only — not counted</p>
         ) : (
           <div className="flex items-center justify-between">
             <ChangeFlash flashKey={item.quantity} className="text-2xl font-bold tabular-nums">

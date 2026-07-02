@@ -70,6 +70,7 @@ export {
   Gauge as GaugeIcon,
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,
+  Bookmark as UntrackedIcon,
   History as HistoryIcon,
   Shapes as CategoryIcon,
   Tag as TagIcon,

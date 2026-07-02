@@ -107,6 +107,7 @@ export function rowToItem(row: ItemRow): Item {
     id: row.id,
     name: row.name,
     description: row.description,
+    notes: row.notes,
     locationId: row.location_id,
     categoryId: row.category_id,
     trackingMode: row.tracking_mode,

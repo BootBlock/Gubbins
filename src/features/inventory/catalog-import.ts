@@ -41,6 +41,7 @@ export { parseCsv };
 export type CatalogField =
   | 'name'
   | 'description'
+  | 'notes'
   | 'sku'
   | 'quantity'
   | 'locationId'
@@ -59,6 +60,7 @@ export type CatalogField =
 export const CATALOG_FIELDS: readonly CatalogField[] = [
   'name',
   'description',
+  'notes',
   'sku',
   'quantity',
   'locationId',
@@ -78,6 +80,7 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
 export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   name: 'Name',
   description: 'Description',
+  notes: 'Notes',
   sku: 'SKU / MPN',
   quantity: 'Quantity',
   locationId: 'Location ID',
@@ -140,6 +143,9 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['title', 'name'],
   ['description', 'description'],
   ['desc', 'description'],
+  // Deliberately just the exact export header: core synonyms shadow custom-field
+  // names, and "Note"/"Comments" are likely custom-field names in the wild.
+  ['notes', 'notes'],
   ['sku', 'sku'],
   ['mpn', 'sku'],
   ['manufacturerpartnumber', 'sku'],
@@ -223,6 +229,7 @@ const conditionSchema = z.enum(CONDITIONS).optional().nullable();
 const catalogRowSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.').optional(),
   description: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable(),
   sku: z.string().trim().optional().nullable(),
   quantity: z.number().int('Quantity must be a whole number.').min(0, 'Quantity cannot be negative.').optional(),
   locationId: z.string().trim().optional(),
@@ -301,6 +308,7 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRo
   return {
     name: raw.name ?? undefined,
     description: raw.description,
+    notes: raw.notes,
     // 'sku' in the column map resolves to the `mpn` field on the item — the SKU
     // concept maps directly to the manufacturer part number.
     sku: raw.sku,
@@ -372,6 +380,7 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
   return {
     name: data.name!, // guaranteed non-empty by Zod
     description: data.description ?? null,
+    notes: data.notes ?? null,
     locationId: data.locationId ?? UNASSIGNED_LOCATION_ID,
     categoryId: data.categoryId ?? null,
     trackingMode: data.trackingMode ?? 'DISCRETE',
@@ -392,6 +401,7 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   const result: UpdateItemInput = {};
   if (data.name !== undefined) Object.assign(result, { name: data.name });
   if (data.description !== undefined) Object.assign(result, { description: data.description });
+  if (data.notes !== undefined) Object.assign(result, { notes: data.notes });
   if (mpn !== undefined) Object.assign(result, { mpn: mpn ?? null });
   if (data.manufacturer !== undefined) Object.assign(result, { manufacturer: data.manufacturer });
   if (data.unitCost !== undefined) Object.assign(result, { unitCost: data.unitCost ?? null });

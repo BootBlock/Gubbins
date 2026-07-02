@@ -6,6 +6,7 @@ import {
   CostIcon,
   DatasheetIcon,
   DueDateIcon,
+  EditIcon,
   GaugeIcon,
   HistoryIcon,
   ImageIcon,
@@ -24,6 +25,7 @@ import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
+import { ItemDetailsEditor } from './ItemDetailsEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
@@ -80,7 +82,7 @@ export function ItemDetailDialog({
       open={open}
       onClose={onClose}
       title={item.serialNo === null ? item.name : `${item.name} #${item.serialNo}`}
-      description="Images, tags, capabilities, custom fields & datasheets."
+      description="Edit details — plus images, tags, capabilities, custom fields & datasheets."
       className="max-w-4xl"
     >
       {/* Fixed-height frame: the dialog stays the same size as content streams in
@@ -159,13 +161,23 @@ interface TabDef {
 }
 
 /**
- * The ten facet editors, grouped into five tabs. Built per-render (the editors
+ * The facet editors, grouped into six tabs. Built per-render (the editors
  * close over `item`); only the active tab's panel is mounted, so switching tabs
  * unmounts the others — each editor persists to the DB through its own hooks, so
- * there is no shared in-flight state to preserve across a switch.
+ * there is no shared in-flight state to preserve across a switch. "Details" leads:
+ * it is the edit-item home for the core identity fields (name, description, notes,
+ * MPN, manufacturer, cost, category).
  */
 function buildTabs(item: Item): readonly TabDef[] {
   return [
+    {
+      id: 'details',
+      label: 'Details',
+      icon: <EditIcon />,
+      sections: [
+        { title: 'Item details', icon: <EditIcon />, content: <ItemDetailsEditor item={item} /> },
+      ],
+    },
     {
       id: 'supplier',
       label: 'Supplier & ops',

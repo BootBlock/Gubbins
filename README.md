@@ -89,6 +89,14 @@ browser and is entirely opt-in.
 
 ### What it gives you
 
+Example; if you were to ask Home Assistant (either by text, voice (including with Google Assistant/Gemini/Alexa/etc)) the following:
+
+> Where are the M3 screws?
+
+You would see/hear (supports voice via Google Assistant/Gemini/Alexa/etc):
+
+> The M3 screws are located in the garage, in storage box 3.
+
 Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-limited:
 
 - **A read-only HTTP API** — `GET /health`, `/search?q=…`, `/where?q=…` plus a versioned,

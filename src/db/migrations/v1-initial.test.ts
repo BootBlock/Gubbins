@@ -3,25 +3,23 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
-import { v2AssetBookings } from './v2-asset-bookings';
-import { v3SupplierPriceHistory } from './v3-supplier-price-history';
-import { v4LocationMetadata } from './v4-location-metadata';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
 /**
- * Schema-baseline lock (Phase 69 consolidation + forward migrations).
+ * Schema-baseline lock (Phase 69 consolidation, re-squashed by the Add-item
+ * enrichment work).
  *
  * `schema-baseline.snapshot.json` is the committed GOLDEN fixture — the full,
  * deterministic schema dump (every `sqlite_master.sql`, every column / FK / index, and
  * `user_version`) the registered migration chain produces. These tests build a fresh
  * database from the registered `migrations` and assert the resulting schema reproduces the
  * fixture **byte-for-byte**, so any unintended schema change (an edited table, index,
- * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture is
- * regenerated only when the schema intentionally changes — e.g. the Phase-78 `v2`
- * `asset_bookings` forward migration, the Phase-81 `v3` `supplier_part_price_history`
- * forward migration, and the `v4` `location-metadata` forward migration, each of which
- * bumped the recorded `user_version`.
+ * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture
+ * is regenerated only when the schema intentionally changes — most recently the re-squash
+ * of the v2–v4 forward steps into the baseline alongside `items.notes` (in the table and
+ * the FTS index) and the `UNTRACKED` tracking mode, which reset the recorded
+ * `user_version` back to 1.
  */
 describe('schema baseline lock', () => {
   let driver: MemoryDriver;
@@ -34,17 +32,11 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the v1 baseline plus the v2, v3 and v4 forward migrations, targeting version 4', () => {
-    expect(migrations).toHaveLength(4);
+  it('registers the single consolidated baseline, targeting version 1', () => {
+    expect(migrations).toHaveLength(1);
     expect(migrations[0]).toBe(v1Initial);
-    expect(migrations[1]).toBe(v2AssetBookings);
-    expect(migrations[2]).toBe(v3SupplierPriceHistory);
-    expect(migrations[3]).toBe(v4LocationMetadata);
     expect(v1Initial.version).toBe(1);
-    expect(v2AssetBookings.version).toBe(2);
-    expect(v3SupplierPriceHistory.version).toBe(3);
-    expect(v4LocationMetadata.version).toBe(4);
-    expect(TARGET_SCHEMA_VERSION).toBe(4);
+    expect(TARGET_SCHEMA_VERSION).toBe(1);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -65,19 +57,28 @@ describe('schema baseline lock', () => {
     expect(names(snapshot)).toEqual(names(goldenSnapshot));
   });
 
-  it('boots a fresh database cleanly through the chain to user_version 4', async () => {
+  it('boots a fresh database cleanly to user_version 1', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(4);
-    expect(report.applied).toEqual([1, 2, 3, 4]);
+    expect(report.to).toBe(1);
+    expect(report.applied).toEqual([1]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(4);
+    expect(Number(row?.user_version)).toBe(1);
   });
 
   it('records the current target schema version in the golden fixture', () => {
     // The golden is the committed dump of the *current* target schema; its recorded
     // user_version therefore tracks the highest registered migration.
     expect(goldenSnapshot.userVersion).toBe(TARGET_SCHEMA_VERSION);
+  });
+
+  it('refuses a pre-squash database (user_version ahead of the target)', async () => {
+    // A database left at v2–v4 by the former forward chain must be refused loudly
+    // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.
+    await driver.execute('PRAGMA user_version = 4;');
+    await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
+      code: 'SCHEMA_TOO_NEW',
+    });
   });
 });

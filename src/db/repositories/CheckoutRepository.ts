@@ -81,6 +81,12 @@ export class CheckoutRepository extends BaseRepository {
         'Consumable-gauge items are tracked by remaining material, not borrowed — check out a discrete item instead.',
       );
     }
+    if (item.tracking_mode === 'UNTRACKED') {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Untracked items carry no countable stock to lend — use a serialised item for assets that are checked out.',
+      );
+    }
 
     const requested = input.quantity ?? 1;
     if (!Number.isInteger(requested) || requested <= 0) {

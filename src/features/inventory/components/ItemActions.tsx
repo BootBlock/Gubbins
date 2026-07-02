@@ -38,7 +38,7 @@ export function ItemActions({
 
   return (
     <div className="flex items-center gap-1">
-      <Tooltip content="Open the full item record — images, tags, capabilities, custom fields & datasheets." triggerTabIndex={-1}>
+      <Tooltip content="Open the full item record — edit its details, images, tags, capabilities, custom fields & datasheets." triggerTabIndex={-1}>
         <span>
           <Button variant="outline" size="icon" className={size} aria-label="Item details" onClick={() => setDialog('details')}>
             <EditIcon className="text-glyph-edit" />
@@ -68,7 +68,9 @@ export function ItemActions({
           </Button>
         </span>
       </Tooltip>
-      {item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
+      {item.isActive &&
+      item.trackingMode !== 'CONSUMABLE_GAUGE' &&
+      item.trackingMode !== 'UNTRACKED' ? (
         <Tooltip content="Loan this item to a contact, tracking who has it and when it is due back." triggerTabIndex={-1}>
           <span>
             <Button variant="outline" size="icon" className={size} aria-label="Check out" onClick={() => setDialog('checkout')}>

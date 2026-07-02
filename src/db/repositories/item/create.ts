@@ -26,6 +26,7 @@ import {
 export interface ResolvedCreate {
   readonly name: string;
   readonly description: string | null;
+  readonly notes: string | null;
   readonly locationId: string;
   readonly categoryId: string | null;
   readonly mpn: string | null;
@@ -96,6 +97,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
   return {
     name,
     description: input.description ?? null,
+    notes: input.notes ?? null,
     locationId,
     categoryId: input.categoryId ?? null,
     mpn: normaliseText(input.mpn),
@@ -132,16 +134,17 @@ export function buildInsert(
   return [
     {
       sql: `INSERT INTO items
-              (id, name, description, location_id, category_id, tracking_mode, quantity, serial_no,
+              (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
                mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
         r.description,
+        r.notes,
         r.locationId,
         r.categoryId,
         r.trackingMode,

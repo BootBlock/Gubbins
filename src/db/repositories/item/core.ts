@@ -41,7 +41,7 @@ import { THUMBNAIL_SUBQUERY } from './sql';
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
   readonly categoryId?: string;
-  /** Free-text match across name/description/mpn/manufacturer via FTS5 (spec §5). */
+  /** Free-text match across name/description/notes/mpn/manufacturer via FTS5 (spec §5). */
   readonly search?: string;
   /** Include soft-deleted items. Defaults to false (active inventory only). */
   readonly includeInactive?: boolean;
@@ -136,6 +136,10 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.description !== undefined) {
       sets.push('description = ?');
       params.push(input.description);
+    }
+    if (input.notes !== undefined) {
+      sets.push('notes = ?');
+      params.push(input.notes);
     }
     if (input.categoryId !== undefined) {
       sets.push('category_id = ?');

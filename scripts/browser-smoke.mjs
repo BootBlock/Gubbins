@@ -2160,6 +2160,8 @@ try {
   await step('the supplier MPN was mapped as an alias (§4 Universal Alias Mapping)', async () => {
     await scrapeCard().getByRole('button', { name: 'Item details' }).click();
     const detail = page.getByRole('dialog');
+    // The dialog opens on the Details tab; supplier data lives on Supplier & ops.
+    await detail.getByRole('tab', { name: 'Supplier & ops' }).click();
     // Supplier data section shows the scraped MPN value and the alias chip (both the MPN text).
     await detail.getByText(scrapedMpn).first().waitFor({ state: 'visible', timeout: 5000 });
   });
@@ -2246,8 +2248,13 @@ try {
     // Apply WITHOUT ticking — the user's manufacturer must survive.
     await review.getByRole('button', { name: 'Apply' }).click();
     await review.waitFor({ state: 'hidden', timeout: 5000 });
+    // The manufacturer is now edited on the Details tab (no longer mirrored read-only in
+    // Supplier & ops), so assert the no-overwrite result against that editable field.
+    await detail.getByRole('tab', { name: 'Details' }).click();
+    const detailsMfr = detail.getByLabel('Manufacturer (optional)');
+    await detailsMfr.waitFor({ state: 'visible', timeout: 5000 });
     await page.waitForFunction(
-      (mfr) => document.body.textContent?.includes(mfr),
+      (mfr) => [...document.querySelectorAll('input')].some((i) => i.value === mfr),
       userManufacturer,
       { timeout: 5000 },
     );

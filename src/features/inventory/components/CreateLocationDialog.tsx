@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
-import type { LocationWithCount } from '@/db/repositories';
+import type { Location, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useCreateLocation } from '../mutations';
 import { buildParentOptions } from '../parent-options';
@@ -25,11 +25,17 @@ export function CreateLocationDialog({
   onClose,
   locations,
   defaultParentId,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   locations: readonly LocationWithCount[];
   defaultParentId?: string | null;
+  /**
+   * Called with the freshly-created location after a successful save — used by the
+   * Add-item dialog's inline "New location…" flow to select it without a round trip.
+   */
+  onCreated?: (location: Location) => void;
 }) {
   const create = useCreateLocation();
   const fmt = useFormatters();
@@ -63,13 +69,14 @@ export function CreateLocationDialog({
         isDefault,
       },
       {
-        onSuccess: () => {
+        onSuccess: (location) => {
           setName('');
           setDescription('');
           setColor(null);
           setKind(null);
           setCapacity('');
           setIsDefault(false);
+          onCreated?.(location);
           onClose();
         },
       },

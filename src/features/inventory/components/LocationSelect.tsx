@@ -15,6 +15,13 @@ export interface LocationOption {
   readonly meta?: string;
   /** Tailwind text-colour class tinting the label (the location's swatch), if any. */
   readonly colorClass?: string;
+  /**
+   * `'action'` marks a command row (e.g. "＋ New location…") rather than a real
+   * location. It is set apart with a top divider and an accent tint so it never reads
+   * as one of the locations — location swatches span the whole hue wheel, so structural
+   * separation, not colour alone, is what makes it unmistakable.
+   */
+  readonly kind?: 'action';
 }
 
 /**
@@ -170,31 +177,42 @@ export function LocationSelect({
           aria-labelledby={labelledBy}
           className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
         >
-          {options.map((option, index) => (
-            <div
-              key={option.value}
-              ref={(el) => {
-                optionRefs.current[index] = el;
-              }}
-              id={optionId(index)}
-              role="option"
-              aria-selected={index === selectedIndex}
-              onClick={() => choose(index)}
-              onMouseEnter={() => setActiveIndex(index)}
-              className={cn(
-                'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
-                index === activeIndex && 'bg-secondary',
-                index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
-              )}
-            >
-              <span className={cn('min-w-0 flex-1 truncate text-left', option.colorClass)}>
-                {option.label}
-              </span>
-              {option.meta ? (
-                <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
-              ) : null}
-            </div>
-          ))}
+          {options.map((option, index) => {
+            const isAction = option.kind === 'action';
+            return (
+              <div
+                key={option.value}
+                ref={(el) => {
+                  optionRefs.current[index] = el;
+                }}
+                id={optionId(index)}
+                role="option"
+                aria-selected={index === selectedIndex}
+                onClick={() => choose(index)}
+                onMouseEnter={() => setActiveIndex(index)}
+                className={cn(
+                  'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
+                  index === activeIndex && 'bg-secondary',
+                  index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
+                  // A command row (e.g. "＋ New location…") is fenced off from the location
+                  // list above it with a divider so it never reads as one of the locations.
+                  isAction && 'mt-1 border-t border-border/60 pt-2 font-medium',
+                )}
+              >
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate text-left',
+                    isAction ? 'text-accent' : option.colorClass,
+                  )}
+                >
+                  {option.label}
+                </span>
+                {option.meta ? (
+                  <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </div>

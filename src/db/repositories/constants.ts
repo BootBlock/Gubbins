@@ -61,8 +61,11 @@ export const MAX_LIST_PAGES = 6;
  * - `DISCRETE` — integer quantity (e.g. screws).
  * - `SERIALISED` — quantity forced to 1; cloning is a Phase 3 deliverable.
  * - `CONSUMABLE_GAUGE` — continuously degrading material tracked by net value.
+ * - `UNTRACKED` — presence-only: catalogued, searchable and locatable, but with no
+ *   quantity to count (a reference manual, the bench vice). Quantity stays 0 and is
+ *   never shown; excluded from low-stock, reorder, cycle count, checkout and bookings.
  */
-export const TRACKING_MODES = ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE'] as const;
+export const TRACKING_MODES = ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED'] as const;
 export type TrackingMode = (typeof TRACKING_MODES)[number];
 
 /**

@@ -41,6 +41,7 @@ const CSV_COLUMNS = [
   'id',
   'name',
   'description',
+  'notes',
   'trackingMode',
   'quantity',
   'mpn',
@@ -71,6 +72,7 @@ function csvCell(value: unknown): string {
 const CATALOG_CSV_COLUMNS = [
   'name',
   'description',
+  'notes',
   'sku',
   'quantity',
   'locationId',
@@ -300,6 +302,7 @@ function renderItemMarkdown(entry: VaultItem, imageNames: readonly string[]): st
   }
   lines.push('---', '', `# ${item.name}`, '');
   if (item.description) lines.push(item.description, '');
+  if (item.notes) lines.push('## Notes', '', item.notes, '');
 
   if (imageNames.length > 0) {
     lines.push('## Images', '');

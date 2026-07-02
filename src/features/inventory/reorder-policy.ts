@@ -47,13 +47,15 @@ export function effectiveGaugePercent(item: ReorderItem, defaults: ReorderDefaul
  * - CONSUMABLE_GAUGE — low when the gauge's percentage remaining is at/below the
  *   effective gauge floor (a gauge with no usable capacity is never "low").
  * - SERIALISED — a single asset is never "low bulk stock", matching the feed exclusion.
+ * - UNTRACKED — presence-only items have no quantity to run low, matching the feed
+ *   exclusion (its permanent quantity of 0 would otherwise always flag).
  */
 export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     if (!item.gauge || item.gauge.grossCapacity <= 0) return false;
     return item.gauge.percentageRemaining <= effectiveGaugePercent(item, defaults);
   }
-  if (item.trackingMode === 'SERIALISED') return false;
+  if (item.trackingMode === 'SERIALISED' || item.trackingMode === 'UNTRACKED') return false;
   return item.quantity <= effectiveQtyThreshold(item, defaults);
 }
 

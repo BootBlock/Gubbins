@@ -5,6 +5,7 @@ import { Surface } from './surface';
 import { Button } from './button';
 import { CloseIcon } from '@/components/icons';
 import { FOCUSABLE_SELECTOR, nextTrapIndex } from './focus-trap';
+import { isTopModal, openModalCount, popModal, pushModal } from './modal-stack';
 import { useReducedMotion } from './useReducedMotion';
 
 /**
@@ -56,6 +57,10 @@ export function Modal({
   // on close/unmount, restore focus to whatever was focused before it opened.
   useEffect(() => {
     if (!open) return;
+    // Register on the modal stack: dialogs can open on top of one another (e.g. the
+    // "New location" dialog nested inside "Add item"), and only the topmost may
+    // handle Escape/Tab — otherwise one Escape would close every open dialog at once.
+    const token = pushModal();
     const previouslyFocused = document.activeElement as HTMLElement | null;
     // Move initial focus to the caller's chosen control (e.g. a Name field) when one is
     // given, so a type-first dialog is ready to type into; otherwise park focus on the
@@ -66,6 +71,7 @@ export function Modal({
     else dialogRef.current?.focus();
 
     const onKey = (e: KeyboardEvent) => {
+      if (!isTopModal(token)) return;
       if (e.key === 'Escape') {
         onCloseRef.current();
         return;
@@ -88,7 +94,10 @@ export function Modal({
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      popModal(token);
+      // The scroll lock is shared: release it only when the *last* open modal
+      // closes, so dismissing a nested dialog keeps its parent's lock in place.
+      if (openModalCount() === 0) document.body.style.overflow = '';
       // Return focus to the element that opened the dialog, so a keyboard user
       // never loses their place (the dialog subtree is already detached here).
       previouslyFocused?.focus?.();

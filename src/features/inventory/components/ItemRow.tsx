@@ -65,6 +65,8 @@ export function ItemRow({
           </>
         ) : item.trackingMode === 'SERIALISED' ? (
           <span className="text-xs text-muted-foreground">1 unit</span>
+        ) : item.trackingMode === 'UNTRACKED' ? (
+          <span className="text-xs text-muted-foreground">Not counted</span>
         ) : item.isActive ? (
           <QuantityStepper id={item.id} quantity={item.quantity} />
         ) : (

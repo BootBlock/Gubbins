@@ -53,6 +53,7 @@ export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
   DISCRETE: 'Bulk',
   SERIALISED: 'Serialised',
   CONSUMABLE_GAUGE: 'Consumable',
+  UNTRACKED: 'Untracked',
 };
 
 /** British-English labels for category custom-field types (spec §4). */

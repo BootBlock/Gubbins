@@ -72,4 +72,26 @@ describe('LocationSelect — accessible parent picker', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('sets an action row apart with a divider and accent tint (not a location swatch)', () => {
+    render(
+      <>
+        <span id="loc-label">Location</span>
+        <LocationSelect
+          labelledBy="loc-label"
+          value="workshop"
+          onChange={vi.fn()}
+          options={[
+            { value: 'workshop', label: 'Workshop', colorClass: 'text-loc-teal' },
+            { value: '__create__', label: '＋ New location…', kind: 'action' },
+          ]}
+        />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('combobox', { name: 'Location' }));
+    const action = screen.getByRole('option', { name: '＋ New location…' });
+    // Fenced off with a top divider and tinted with the action accent — never a swatch.
+    expect(action.className).toContain('border-t');
+    expect(action.querySelector('span')?.className).toContain('text-accent');
+  });
 });

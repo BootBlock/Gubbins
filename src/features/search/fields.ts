@@ -19,6 +19,7 @@ export interface BuilderField {
 export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'name', label: 'Name', kind: 'text' },
   { value: 'description', label: 'Description', kind: 'text' },
+  { value: 'notes', label: 'Notes', kind: 'text' },
   { value: 'mpn', label: 'MPN', kind: 'text' },
   { value: 'manufacturer', label: 'Manufacturer', kind: 'text' },
   { value: 'quantity', label: 'Quantity', kind: 'number' },

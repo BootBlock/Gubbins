@@ -1248,6 +1248,8 @@ components:
           enum:
           - "DISCRETE"
           - "SERIALISED"
+          - "CONSUMABLE_GAUGE"
+          - "UNTRACKED"
           example: "DISCRETE"
         isActive:
           type: "boolean"

@@ -561,7 +561,11 @@ export const openapiDocument: JsonValue = {
           categoryId: { type: 'string', nullable: true, example: 'cat-fasteners' },
           mpn: { type: 'string', nullable: true, example: 'FAS-M3-10' },
           manufacturer: { type: 'string', nullable: true, example: 'Acme Fasteners' },
-          trackingMode: { type: 'string', enum: ['DISCRETE', 'SERIALISED'], example: 'DISCRETE' },
+          trackingMode: {
+            type: 'string',
+            enum: ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED'],
+            example: 'DISCRETE',
+          },
           isActive: { type: 'boolean', example: true },
         },
       },

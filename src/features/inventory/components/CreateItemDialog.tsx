@@ -2,13 +2,16 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, InfoHint, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, InfoHint, Input, Modal, Select, Textarea } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   CONDITIONS,
+  IN_TRANSIT_LOCATION_ID,
   TRACKING_MODES,
   UNASSIGNED_LOCATION_ID,
+  type Category,
   type CreateItemInput,
+  type Location,
   type LocationWithCount,
   type TrackingMode,
 } from '@/db/repositories';
@@ -24,17 +27,25 @@ import { useCategories } from '../categories';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
 import { isLocationFull } from '../location-fullness';
+import { CreateCategoryDialog } from './CreateCategoryDialog';
+import { CreateLocationDialog } from './CreateLocationDialog';
 import { LocationSelect } from './LocationSelect';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
 /**
  * Item creation form (spec §2.4.4) — React Hook Form bound to a Zod schema via
  * @hookform/resolvers/zod, so validation runs without re-rendering on every
- * keystroke. The gauge fields appear only for CONSUMABLE_GAUGE items (§4.1.1).
+ * keystroke. The gauge fields appear only for CONSUMABLE_GAUGE items (§4.1.1);
+ * DISCRETE items additionally offer a per-item low-stock override (Phase 59
+ * reorder policy). The Location and Category pickers each carry an inline
+ * "＋ New …" row that stacks a creation dialog on top of this one, so a missing
+ * destination can be created without losing anything already typed here.
  */
 const schema = z
   .object({
     name: z.string().trim().min(1, 'Please enter a name.'),
+    description: z.string().optional(),
+    notes: z.string().optional(),
     locationId: z.string().min(1, 'Please choose a location.'),
     categoryId: z.string().optional(),
     trackingMode: z.enum(TRACKING_MODES),
@@ -51,6 +62,9 @@ const schema = z
     grossCapacity: z.string().optional(),
     tareWeight: z.string().optional(),
     currentNetValue: z.string().optional(),
+    reorderPoint: z.string().optional(),
+    reorderQty: z.string().optional(),
+    reorderGaugePercent: z.string().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.trackingMode === 'CONSUMABLE_GAUGE') {
@@ -64,6 +78,10 @@ const schema = z
   });
 
 type FormValues = z.infer<typeof schema>;
+
+// Sentinel picker values for the inline "create it here" rows (never submitted).
+const CREATE_LOCATION_VALUE = '__create-location__';
+const CREATE_CATEGORY_VALUE = '__create-category__';
 
 export function CreateItemDialog({
   open,
@@ -88,6 +106,10 @@ export function CreateItemDialog({
   const nameRef = useRef<HTMLInputElement>(null);
   // Supplier MPNs to map onto the new item as aliases once it is created (§4).
   const [pendingAliases, setPendingAliases] = useState<readonly string[]>([]);
+  // Which inline "create it without leaving this form" dialog is stacked on top (§4):
+  // choosing "＋ New location…"/"＋ New category…" in a picker opens it; the half-filled
+  // item form underneath stays mounted, so nothing the user has typed is lost.
+  const [inlineCreate, setInlineCreate] = useState<'location' | 'category' | null>(null);
   const {
     control,
     register,
@@ -101,6 +123,8 @@ export function CreateItemDialog({
     resolver: zodResolver(schema),
     defaultValues: {
       name: '',
+      description: '',
+      notes: '',
       locationId: defaultLocationId ?? UNASSIGNED_LOCATION_ID,
       categoryId: '',
       trackingMode: 'DISCRETE',
@@ -117,6 +141,9 @@ export function CreateItemDialog({
       grossCapacity: '1000',
       tareWeight: '0',
       currentNetValue: '',
+      reorderPoint: '',
+      reorderQty: '',
+      reorderGaugePercent: '',
     },
   });
 
@@ -125,8 +152,13 @@ export function CreateItemDialog({
 
   // Every location is a valid home — including the system Unassigned / In Transit rows —
   // each tinted with its colour swatch and showing its item count (mirrors MoveItemDialog).
+  // A pinned "＋ New location…" row at the foot opens the inline-create dialog, so a
+  // missing home can be created without abandoning the half-filled item form.
   const locationOptions = useMemo(
-    () => buildItemLocationOptions(locations, fmt.quantity),
+    () => [
+      ...buildItemLocationOptions(locations, fmt.quantity),
+      { value: CREATE_LOCATION_VALUE, label: '＋ New location…', kind: 'action' as const },
+    ],
     [locations, fmt],
   );
 
@@ -145,7 +177,7 @@ export function CreateItemDialog({
       {
         mpn: v.mpn?.trim() || null,
         manufacturer: v.manufacturer?.trim() || null,
-        description: null,
+        description: v.description?.trim() || null,
         unitCost: v.unitCost?.trim() ? Number(v.unitCost) : null,
         aliases: [],
       },
@@ -153,6 +185,10 @@ export function CreateItemDialog({
     );
     const write = applyScrapeMerge(plan); // FILL fields only — no opt-in overwrites here
     const filled: string[] = [];
+    if (write.fields.description !== undefined) {
+      setValue('description', write.fields.description ?? '', { shouldDirty: true });
+      filled.push('description');
+    }
     if (write.fields.mpn !== undefined) {
       setValue('mpn', write.fields.mpn, { shouldDirty: true });
       filled.push('MPN');
@@ -182,6 +218,8 @@ export function CreateItemDialog({
       locationId: values.locationId,
       categoryId: values.categoryId ? values.categoryId : undefined,
       trackingMode: values.trackingMode,
+      ...(values.description?.trim() ? { description: values.description.trim() } : {}),
+      ...(values.notes?.trim() ? { notes: values.notes.trim() } : {}),
       ...(values.mpn?.trim() ? { mpn: values.mpn.trim() } : {}),
       ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
       ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
@@ -190,10 +228,17 @@ export function CreateItemDialog({
       ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
       ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
       ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
+      // Per-item low-stock overrides (Phase 59 reorder policy) — blank = global default.
+      ...(values.reorderPoint?.trim() ? { reorderPoint: Number(values.reorderPoint) } : {}),
+      ...(values.reorderQty?.trim() ? { reorderQty: Number(values.reorderQty) } : {}),
+      ...(values.reorderGaugePercent?.trim()
+        ? { reorderGaugePercent: Number(values.reorderGaugePercent) }
+        : {}),
     };
     const done = () => {
       reset();
       setPendingAliases([]);
+      setInlineCreate(null);
       onClose();
     };
     // Map the scraped supplier MPN(s) onto the freshly-created item (§4 alias mapping).
@@ -236,6 +281,7 @@ export function CreateItemDialog({
   const handleClose = () => {
     reset();
     setPendingAliases([]);
+    setInlineCreate(null);
     onClose();
   };
 
@@ -272,6 +318,21 @@ export function CreateItemDialog({
           />
         </FormField>
 
+        <FormField
+          label="Description (optional)"
+          hint={
+            'What the item **is** — factual, display-worthy copy (e.g. a one-line datasheet ' +
+            'summary). Searchable, and fillable by a supplier scrape.\n\nYour *own* remarks ' +
+            'belong in **Notes** below.'
+          }
+        >
+          <Textarea
+            placeholder="e.g. Single bipolar timer IC, DIP-8"
+            data-testid="item-description"
+            {...register('description')}
+          />
+        </FormField>
+
         <div className="grid grid-cols-2 gap-3">
           {/* A custom listbox (not a native <select>) so each row can show the location's
               colour swatch + item count; an implicit <label> can't name a role=combobox,
@@ -299,7 +360,11 @@ export function CreateItemDialog({
                 <LocationSelect
                   labelledBy={locationLabelId}
                   value={field.value}
-                  onChange={field.onChange}
+                  onChange={(value) =>
+                    value === CREATE_LOCATION_VALUE
+                      ? setInlineCreate('location')
+                      : field.onChange(value)
+                  }
                   options={locationOptions}
                 />
               )}
@@ -321,7 +386,8 @@ export function CreateItemDialog({
               'How this item’s stock is counted — **this can’t be changed later**, so choose with care:\n\n' +
               '- **Discrete** — a plain quantity of identical units (e.g. 100 screws).\n' +
               '- **Serialised** — each unit is its own record with a serial number; pick this for tools and assets you check out individually.\n' +
-              '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.'
+              '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.\n' +
+              '- **Untracked** — presence only: catalogued, searchable and locatable, but with no quantity to count (e.g. a reference manual or the bench vice).'
             }
           >
             <Select {...register('trackingMode')}>
@@ -339,17 +405,32 @@ export function CreateItemDialog({
           hint={
             'Groups the item and unlocks **custom fields** specific to that category ' +
             '(e.g. *resistance* for resistors). Manage categories and their fields from the ' +
-            'category manager. Leave as **None** if no category fits.'
+            'category manager, or pick **＋ New category…** to create one here. Leave as ' +
+            '**None** if no category fits.'
           }
         >
-          <Select {...register('categoryId')}>
-            <option value="">— None —</option>
-            {(categories?.rows ?? []).map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </Select>
+          <Controller
+            control={control}
+            name="categoryId"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ''}
+                onChange={(e) =>
+                  e.target.value === CREATE_CATEGORY_VALUE
+                    ? setInlineCreate('category')
+                    : field.onChange(e.target.value)
+                }
+              >
+                <option value="">— None —</option>
+                {(categories?.rows ?? []).map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+                <option value={CREATE_CATEGORY_VALUE}>＋ New category…</option>
+              </Select>
+            )}
+          />
         </FormField>
 
         {/* §9 supplier scrape — rendered only when the companion extension is present. */}
@@ -429,15 +510,46 @@ export function CreateItemDialog({
         </div>
 
         {trackingMode === 'DISCRETE' ? (
-          <FormField
-            label="Initial quantity"
-            hint={
-              'How many units you have **on hand right now**. It seeds the stock ledger at the ' +
-              'chosen location; you can adjust it later with moves, check-outs and cycle counts.'
-            }
-          >
-            <Input type="number" min={0} step={1} {...register('quantity')} />
-          </FormField>
+          <>
+            <FormField
+              label="Initial quantity"
+              hint={
+                'How many units you have **on hand right now**. It seeds the stock ledger at the ' +
+                'chosen location; you can adjust it later with moves, check-outs and cycle counts.'
+              }
+            >
+              <Input type="number" min={0} step={1} {...register('quantity')} />
+            </FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                label="Low-stock alert at (optional)"
+                hint={
+                  'This item’s **own** low-stock trigger: it is flagged on the dashboard and in ' +
+                  'reorder suggestions when on-hand quantity falls to or below this.\n\nLeave ' +
+                  'blank to use the global default from **Settings → Inventory**. Editable later ' +
+                  'from the item’s **Supplier & ops** tab.'
+                }
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="Global default"
+                  data-testid="item-reorder-point"
+                  {...register('reorderPoint')}
+                />
+              </FormField>
+              <FormField
+                label="Reorder quantity (optional)"
+                hint={
+                  'A suggested **top-up amount** for the shopping list when this item runs low. ' +
+                  'Left blank, the shortfall back up to the low-stock level is used.'
+                }
+              >
+                <Input type="number" min={0} step={1} placeholder="Shortfall" {...register('reorderQty')} />
+              </FormField>
+            </div>
+          </>
         ) : null}
 
         {trackingMode === 'SERIALISED' ? (
@@ -487,8 +599,39 @@ export function CreateItemDialog({
             >
               <Input type="number" min={0} step="any" placeholder="full" {...register('currentNetValue')} />
             </FormField>
+            <FormField
+              label="Low-stock alert (% left, optional)"
+              hint={
+                'This consumable’s **own** low-stock trigger: it is flagged when its remaining ' +
+                'percentage falls to or below this.\n\nLeave blank to use the global default from ' +
+                '**Settings → Inventory**. Editable later from the item’s **Supplier & ops** tab.'
+              }
+            >
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                placeholder="Global default"
+                {...register('reorderGaugePercent')}
+              />
+            </FormField>
           </div>
         ) : null}
+
+        <FormField
+          label="Notes (optional)"
+          hint={
+            'Your **own remarks** — provenance, quirks, reminders (e.g. *bought at the swap ' +
+            'meet; pin 3 is bent*). Searchable, and editable later from the item’s **Details** tab.'
+          }
+        >
+          <Textarea
+            placeholder="Anything worth remembering about this item."
+            data-testid="item-notes"
+            {...register('notes')}
+          />
+        </FormField>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={handleClose}>
@@ -499,6 +642,35 @@ export function CreateItemDialog({
           </Button>
         </div>
       </form>
+
+      {/* Inline creation, stacked on top (the Modal stack scopes Escape/Tab to the top
+          dialog). Mounted only while open so each opening starts fresh — and with the
+          currently-chosen location as the suggested parent for a new location. On
+          success the new entity is selected in the form; nothing typed is lost. */}
+      {inlineCreate === 'location' ? (
+        <CreateLocationDialog
+          open
+          onClose={() => setInlineCreate(null)}
+          locations={locations}
+          defaultParentId={
+            chosenLocationId !== UNASSIGNED_LOCATION_ID && chosenLocationId !== IN_TRANSIT_LOCATION_ID
+              ? chosenLocationId
+              : undefined
+          }
+          onCreated={(location: Location) =>
+            setValue('locationId', location.id, { shouldDirty: true })
+          }
+        />
+      ) : null}
+      {inlineCreate === 'category' ? (
+        <CreateCategoryDialog
+          open
+          onClose={() => setInlineCreate(null)}
+          onCreated={(category: Category) =>
+            setValue('categoryId', category.id, { shouldDirty: true })
+          }
+        />
+      ) : null}
     </Modal>
   );
 }

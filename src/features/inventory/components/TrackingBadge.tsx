@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
-import { DiscreteIcon, GaugeIcon, SerialisedIcon } from '@/components/icons';
+import { DiscreteIcon, GaugeIcon, SerialisedIcon, UntrackedIcon } from '@/components/icons';
 import type { TrackingMode } from '@/db/repositories';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
@@ -8,6 +8,7 @@ const ICONS: Record<TrackingMode, typeof DiscreteIcon> = {
   DISCRETE: DiscreteIcon,
   SERIALISED: SerialisedIcon,
   CONSUMABLE_GAUGE: GaugeIcon,
+  UNTRACKED: UntrackedIcon,
 };
 
 const DESCRIPTIONS: Record<TrackingMode, string> = {
@@ -16,6 +17,8 @@ const DESCRIPTIONS: Record<TrackingMode, string> = {
     '**Serialised** — a single, uniquely identified unit (quantity fixed at `1`). Adding several will clone them into distinct records.',
   CONSUMABLE_GAUGE:
     '**Consumable** — material that degrades continuously (e.g. *filament*, *resin*). Tracked by remaining amount with a low-stock gauge rather than a count.',
+  UNTRACKED:
+    '**Untracked** — a presence-only record (e.g. *the bench vice*, *a reference manual*). Catalogued, searchable and locatable, but with no quantity to count.',
 };
 
 /** A small pill identifying an item's tracking level (spec §4), with a rich tooltip. */

@@ -24,6 +24,13 @@ export function ReorderPointEditor({ item }: { item: Item }) {
       </p>
     );
   }
+  if (item.trackingMode === 'UNTRACKED') {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Reorder points apply to bulk stock — untracked items carry no quantity to run low.
+      </p>
+    );
+  }
   return item.trackingMode === 'CONSUMABLE_GAUGE' ? (
     <GaugeReorderEditor item={item} />
   ) : (

@@ -88,6 +88,11 @@ describe('reorder-policy — isLow', () => {
   it('never flags a SERIALISED single asset', () => {
     expect(isLow(discrete(1, { trackingMode: 'SERIALISED' }), DEFAULTS)).toBe(false);
   });
+
+  it('never flags an UNTRACKED presence-only item (its permanent 0 is not "low")', () => {
+    expect(isLow(discrete(0, { trackingMode: 'UNTRACKED' }), DEFAULTS)).toBe(false);
+    expect(isLow(discrete(0, { trackingMode: 'UNTRACKED', reorderPoint: 20 }), DEFAULTS)).toBe(false);
+  });
 });
 
 describe('reorder-policy — shortfall', () => {

@@ -63,6 +63,7 @@ type FieldKind = 'fts-text' | 'id-text' | 'numeric';
 const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>> = {
   name: { column: 'items.name', kind: 'fts-text' },
   description: { column: 'items.description', kind: 'fts-text' },
+  notes: { column: 'items.notes', kind: 'fts-text' },
   mpn: { column: 'items.mpn', kind: 'fts-text' },
   manufacturer: { column: 'items.manufacturer', kind: 'fts-text' },
   category: { column: 'items.category_id', kind: 'id-text' },

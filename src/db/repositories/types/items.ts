@@ -10,6 +10,8 @@ export interface ItemRow {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  /** Free-text owner's notes — remarks, provenance, quirks; FTS-indexed (§4). */
+  readonly notes: string | null;
   readonly location_id: string;
   readonly category_id: string | null;
   readonly tracking_mode: TrackingMode;
@@ -73,7 +75,10 @@ export interface GaugeState {
 export interface Item {
   readonly id: string;
   readonly name: string;
+  /** What the item *is* — factual, display-worthy copy (e.g. a datasheet summary). */
   readonly description: string | null;
+  /** The owner's own free-text notes — remarks, provenance, quirks. FTS-indexed. */
+  readonly notes: string | null;
   readonly locationId: string;
   readonly categoryId: string | null;
   readonly trackingMode: TrackingMode;
@@ -158,6 +163,8 @@ export interface GaugeInput {
 export interface CreateItemInput {
   readonly name: string;
   readonly description?: string | null;
+  /** Free-text owner's notes (§4); omit/null for none. */
+  readonly notes?: string | null;
   /** Target location; defaults to the Unassigned location when omitted. */
   readonly locationId?: string;
   readonly categoryId?: string | null;
@@ -201,6 +208,8 @@ export interface CreateItemInput {
 export interface UpdateItemInput {
   readonly name?: string;
   readonly description?: string | null;
+  /** Free-text owner's notes; null clears them (§4). */
+  readonly notes?: string | null;
   readonly categoryId?: string | null;
   readonly mpn?: string | null;
   readonly manufacturer?: string | null;

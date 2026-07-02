@@ -71,6 +71,8 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   name: { field: 'name', kind: 'text' },
   description: { field: 'description', kind: 'text' },
   desc: { field: 'description', kind: 'text' },
+  notes: { field: 'notes', kind: 'text' },
+  note: { field: 'notes', kind: 'text' },
   mpn: { field: 'mpn', kind: 'text' },
   manufacturer: { field: 'manufacturer', kind: 'text' },
   mfr: { field: 'manufacturer', kind: 'text' },
