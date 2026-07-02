@@ -435,7 +435,7 @@ function RestorePanel({
                         available (~{fmt.bytes(quota.availableBytes)}).
                       </p>
                     ) : null}
-                    <label className="block space-y-1">
+                    <label className="block space-y-field-gap-compact">
                       <span className="text-xs text-muted-foreground">
                         Type{' '}
                         <code className="rounded bg-secondary/60 px-1 font-mono">{REPLACE_CONFIRM_WORD}</code>{' '}

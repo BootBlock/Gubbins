@@ -65,7 +65,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex flex-col gap-field-gap-compact text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             Key
             <InfoHint
@@ -86,7 +86,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
             className="h-9 w-28"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex flex-col gap-field-gap-compact text-xs text-muted-foreground">
           Value
           <Input
             value={value}
@@ -102,7 +102,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
             className="h-9 w-28"
           />
         </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex flex-col gap-field-gap-compact text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             Weight
             <InfoHint

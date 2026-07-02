@@ -367,7 +367,7 @@ function ImportWorkbench({
     <div className="space-y-4">
       {/* Format + match-key controls */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <label
             htmlFor={formatId}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -395,7 +395,7 @@ function ImportWorkbench({
             </p>
           ) : null}
         </div>
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <label
             htmlFor={matchKeyId}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"

@@ -89,7 +89,7 @@ export function PrintLocationLabelDialog({
     <Modal open={open} onClose={onClose} title="Print location label" description={location.name}>
       <div className="space-y-4">
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
             Code
             <Select
               value={symbology}
@@ -104,7 +104,7 @@ export function PrintLocationLabelDialog({
             </Select>
           </label>
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
             Copies
             <Select
               value={String(copies)}
@@ -119,7 +119,7 @@ export function PrintLocationLabelDialog({
             </Select>
           </label>
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
             Columns per sheet
             <Select value={String(columns)} onChange={(e) => setColumns(Number(e.target.value))}>
               {Array.from(

@@ -87,7 +87,7 @@ export function PrintLabelsDialog({
 
         {/* Template controls */}
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
             Code
             <Select
               value={template.symbology}
@@ -102,7 +102,7 @@ export function PrintLabelsDialog({
             </Select>
           </label>
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          <label className="flex flex-col gap-field-gap-compact text-xs font-medium text-muted-foreground">
             Columns per sheet
             <Select
               value={String(template.columns)}
