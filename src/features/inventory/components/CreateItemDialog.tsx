@@ -384,7 +384,9 @@ export function CreateItemDialog({
           <FormField
             label="Tracking"
             hint={
-              'How this item’s stock is counted — **this can’t be changed later**, so choose with care:\n\n' +
+              'How this item’s stock is counted. **Serialised** and **Consumable** are fixed once ' +
+              'set — choose them with care; **Discrete** and **Untracked** can be swapped later ' +
+              'from the item’s Details tab.\n\n' +
               '- **Discrete** — a plain quantity of identical units (e.g. 100 screws).\n' +
               '- **Serialised** — each unit is its own record with a serial number; pick this for tools and assets you check out individually.\n' +
               '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.\n' +

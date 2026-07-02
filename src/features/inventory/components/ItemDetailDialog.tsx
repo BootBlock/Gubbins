@@ -10,6 +10,7 @@ import {
   GaugeIcon,
   HistoryIcon,
   ImageIcon,
+  LocationOtherIcon,
   LowStockIcon,
   SettingsIcon,
   SupplierIcon,
@@ -26,6 +27,7 @@ import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
 import { ItemDetailsEditor } from './ItemDetailsEditor';
+import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
@@ -166,7 +168,7 @@ interface TabDef {
  * unmounts the others — each editor persists to the DB through its own hooks, so
  * there is no shared in-flight state to preserve across a switch. "Details" leads:
  * it is the edit-item home for the core identity fields (name, description, notes,
- * MPN, manufacturer, cost, category).
+ * MPN, manufacturer, cost, category) plus the item's location.
  */
 function buildTabs(item: Item): readonly TabDef[] {
   return [
@@ -174,7 +176,10 @@ function buildTabs(item: Item): readonly TabDef[] {
       id: 'details',
       label: 'Details',
       icon: <EditIcon />,
-      sections: [{ title: 'Item details', icon: <EditIcon />, content: <ItemDetailsEditor item={item} /> }],
+      sections: [
+        { title: 'Item details', icon: <EditIcon />, content: <ItemDetailsEditor item={item} /> },
+        { title: 'Location', icon: <LocationOtherIcon />, content: <LocationEditor item={item} /> },
+      ],
     },
     {
       id: 'supplier',

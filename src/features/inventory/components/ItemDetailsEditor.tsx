@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Button, FormField, Input, Select, Textarea } from '@/components/foundry';
-import type { Item } from '@/db/repositories';
+import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
+import { TRACKING_MODE_LABELS } from './inventory-ui';
+
+/** Whether this item's tracking mode is one that can be switched in place (Bulk ↔ Untracked). */
+const isTrackingEditable = (mode: TrackingMode): boolean =>
+  (CONVERTIBLE_TRACKING_MODES as readonly TrackingMode[]).includes(mode);
 
 /**
  * Core-fields editor — the "Edit item" home for the identity fields set when the
  * item was created: name, description, the owner's notes, MPN, manufacturer, unit
- * cost and category. Everything else already has a dedicated facet editor
- * (lifecycle, reorder point, supplier data, …), so this deliberately covers only
- * the fields that previously could not be changed after creation.
+ * cost, category and (for the Bulk ↔ Untracked pair only) the tracking mode.
+ * Everything else already has a dedicated facet editor (lifecycle, reorder point,
+ * supplier data, …), so this deliberately covers only the fields that previously
+ * could not be changed after creation.
  *
  * Draft state is local and saved wholesale via {@link useUpdateItem} (which logs a
  * `RENAMED` history entry when the name changes). Blank optional fields clear the
@@ -20,6 +26,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const { data: categories } = useCategories();
 
   const [name, setName] = useState(item.name);
+  const [trackingMode, setTrackingMode] = useState<TrackingMode>(item.trackingMode);
   const [description, setDescription] = useState(item.description ?? '');
   const [notes, setNotes] = useState(item.notes ?? '');
   const [mpn, setMpn] = useState(item.mpn ?? '');
@@ -30,6 +37,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
     setName(item.name);
+    setTrackingMode(item.trackingMode);
     setDescription(item.description ?? '');
     setNotes(item.notes ?? '');
     setMpn(item.mpn ?? '');
@@ -40,8 +48,12 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
 
   const text = (raw: string): string | null => (raw.trim().length > 0 ? raw.trim() : null);
   const nextUnitCost = unitCost.trim() === '' ? null : Number(unitCost);
+  // Serialised / Consumable-Gauge items can't be converted in place, so their mode is fixed
+  // and never enters the draft; only the Bulk ↔ Untracked pair is editable here.
+  const trackingEditable = isTrackingEditable(item.trackingMode);
   const draft = {
     name: name.trim(),
+    ...(trackingEditable ? { trackingMode } : {}),
     description: text(description),
     notes: text(notes),
     mpn: text(mpn),
@@ -51,6 +63,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   };
   const dirty =
     draft.name !== item.name ||
+    (trackingEditable && trackingMode !== item.trackingMode) ||
     draft.description !== (item.description ?? null) ||
     draft.notes !== (item.notes ?? null) ||
     draft.mpn !== (item.mpn ?? null) ||
@@ -142,6 +155,50 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             ))}
           </Select>
         </FormField>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {trackingEditable ? (
+          <FormField
+            label="Tracking"
+            hint={
+              'How this item’s stock is counted. **Bulk** keeps a running quantity; **Untracked** ' +
+              'is presence-only — catalogued and locatable but with no quantity, and left out of ' +
+              'low-stock, checkout, cycle counts and bookings.\n\nSwitching between these keeps the ' +
+              'on-hand quantity (Untracked just hides it), so it’s reversible. **Serialised** and ' +
+              '**Consumable** can’t be set after creation.'
+            }
+          >
+            <Select
+              value={trackingMode}
+              onChange={(e) => setTrackingMode(e.target.value as TrackingMode)}
+              data-testid="item-details-tracking"
+            >
+              {CONVERTIBLE_TRACKING_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {TRACKING_MODE_LABELS[mode]}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        ) : (
+          <FormField
+            label="Tracking"
+            hint={
+              'How this item’s stock is counted, fixed at creation. **Serialised** and ' +
+              '**Consumable (gauge)** items can’t be converted in place — create a new item if you ' +
+              'need a different tracking mode.'
+            }
+          >
+            <Input
+              value={TRACKING_MODE_LABELS[item.trackingMode]}
+              readOnly
+              aria-readonly="true"
+              className="cursor-not-allowed text-muted-foreground"
+              data-testid="item-details-tracking"
+            />
+          </FormField>
+        )}
       </div>
 
       <div className="flex justify-end">

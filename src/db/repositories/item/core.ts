@@ -10,6 +10,7 @@
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
+import { isConvertibleTrackingChange } from '../constants';
 import { BaseRepository } from '../base';
 import { consolidateStockStatements } from '../stock';
 import { tombstoneStatement } from '../tombstone';
@@ -130,6 +131,28 @@ export class ItemCoreRepository extends BaseRepository {
         params.push(name);
         statements.push(historyStatement(id, 'RENAMED', { note: `Renamed "${existing.name}" → "${name}".` }));
       }
+    }
+    if (input.trackingMode !== undefined && input.trackingMode !== existing.trackingMode) {
+      // Only the storage-identical DISCRETE ↔ UNTRACKED swap is allowed in place; both keep
+      // their quantity + item_stock ledger row, so nothing migrates and the on-hand stock is
+      // preserved (UNTRACKED just hides it). Any other change is a lossy row-split / column
+      // migration and is rejected — the item must be recreated instead.
+      if (!isConvertibleTrackingChange(existing.trackingMode, input.trackingMode)) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Cannot change tracking mode from "${existing.trackingMode}" to "${input.trackingMode}" ` +
+            'after creation. Only Discrete and Untracked can be swapped in place; create a new item ' +
+            'for Serialised or Consumable-Gauge.',
+        );
+      }
+      sets.push('tracking_mode = ?');
+      params.push(input.trackingMode);
+      statements.push(
+        historyStatement(id, 'TRACKING_CHANGED', {
+          note: `Tracking changed from "${existing.trackingMode}" to "${input.trackingMode}".`,
+          metadata: { from: existing.trackingMode, to: input.trackingMode },
+        }),
+      );
     }
     if (input.description !== undefined) {
       sets.push('description = ?');
