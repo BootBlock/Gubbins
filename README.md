@@ -194,7 +194,9 @@ See **`docs/todo/done/_specification.md` §1.2** for the binding decisions (SQLi
 
 ## Development
 
-**Quick start (Windows):** double-click **`run.bat`**, or run **`.\run.ps1`** in PowerShell. Either installs dependencies on first use, starts the app, and opens it at `http://localhost:5173/Gubbins/`. Pass `preview` (e.g. `run.bat preview` / `.\run.ps1 preview`) to build and serve the production bundle at `http://localhost:4173/Gubbins/` instead.
+**Quick start (Windows):** double-click **`Run.bat`**, or run **`.\Run.ps1`** in PowerShell. Either installs dependencies on first use, starts the app, and opens it at `http://127.0.0.1:5173/Gubbins/`. Pass `preview` (e.g. `Run.bat preview` / `.\Run.ps1 preview`) to build and serve the production bundle at `http://127.0.0.1:4173/Gubbins/` instead.
+
+The launcher takes a few optional parameters: `-BindHost localhost` (serve via the `localhost` origin instead of `127.0.0.1`), `-Port 8080` (serve on a specific port), `-Browser firefox` (open a specific browser), and `-NoOpen` (start the server without opening a browser). By default it binds and opens the concrete loopback address `127.0.0.1` rather than the name `localhost`, which avoids a Windows IPv4/IPv6 name-resolution race that could show a spurious "unable to connect" on the first open.
 
 Or use npm directly:
 

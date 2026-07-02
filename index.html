@@ -22,8 +22,8 @@
     <!--
       "Wrong way in" fallback guide (see the `.gb-fallback` block inside #root below).
 
-      Gubbins is a dev-server app: the page only works when served by Vite via run.bat /
-      run.ps1. Double-clicking this file opens it as file://, where the module script and
+      Gubbins is a dev-server app: the page only works when served by Vite via Run.bat /
+      Run.ps1. Double-clicking this file opens it as file://, where the module script and
       `/Gubbins/...` assets cannot resolve — so React never mounts and the user is left
       staring at a blank page. The fallback explains how to launch it properly.
 
@@ -446,7 +446,7 @@
             </li>
             <li class="gb-step">
               <strong>Launch it from the project folder.</strong> Double-click
-              <code class="gb-code">run.bat</code>, or right-click <code class="gb-code">run.ps1</code>
+              <code class="gb-code">Run.bat</code>, or right-click <code class="gb-code">Run.ps1</code>
               and choose <strong>“Run with PowerShell”</strong>. A terminal window opens and stays
               open while the app is running.
             </li>
@@ -458,7 +458,7 @@
             <li class="gb-step">
               <strong>Your browser opens automatically.</strong> Once the local server is ready,
               Gubbins opens in your default browser at
-              <code class="gb-code">http://localhost:5173/Gubbins/</code>. That tab — not this file —
+              <code class="gb-code">http://127.0.0.1:5173/Gubbins/</code>. That tab — not this file —
               is the real app.
             </li>
             <li class="gb-step">
@@ -470,7 +470,7 @@
 
           <p class="gb-note">
             <strong>Tip:</strong> want a production-style build instead of the fast hot-reload dev
-            server? Run <code class="gb-code">run.bat preview</code> — it builds the optimised,
+            server? Run <code class="gb-code">Run.bat preview</code> — it builds the optimised,
             minified bundle, which loads with roughly <strong>10× fewer requests</strong> and a
             small fraction of the download size of the dev server. (The hosted app above is built
             this way too.)
