@@ -48,4 +48,64 @@ describe('Markdown renderer', () => {
     expect(paras).toHaveLength(2);
     expect(paras[0]?.textContent).toBe('line one line two');
   });
+
+  it('renders strikethrough as an <s> element', () => {
+    const { container } = render(<Markdown content="This is ~~gone~~ now." />);
+    expect(container.querySelector('s')?.textContent).toBe('gone');
+    expect(container.textContent).not.toContain('~~');
+  });
+
+  it('renders a horizontal rule from ---', () => {
+    const { container } = render(<Markdown content={'above\n\n---\n\nbelow'} />);
+    expect(container.querySelector('hr')).toBeInTheDocument();
+    // The rule must not be mistaken for a list bullet or swallowed into a paragraph.
+    expect(container.querySelectorAll('p')).toHaveLength(2);
+  });
+
+  it('renders a GFM pipe table with a header and body cells', () => {
+    const md = ['| Name | Qty |', '| --- | ---: |', '| Resistor | 100 |', '| Capacitor | 42 |'].join('\n');
+    const { container } = render(<Markdown content={md} />);
+    const table = container.querySelector('table');
+    expect(table).toBeInTheDocument();
+    expect(container.querySelectorAll('thead th')).toHaveLength(2);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Resistor' })).toBeInTheDocument();
+  });
+
+  it('applies per-column alignment from the delimiter row', () => {
+    const md = ['| L | C | R |', '| :-- | :-: | --: |', '| a | b | c |'].join('\n');
+    const { container } = render(<Markdown content={md} />);
+    const headers = container.querySelectorAll('thead th');
+    expect(headers[0]?.className).toContain('text-left');
+    expect(headers[1]?.className).toContain('text-center');
+    expect(headers[2]?.className).toContain('text-right');
+  });
+
+  it('renders inline marks inside table cells', () => {
+    const md = ['| Field | Note |', '| --- | --- |', '| id | **required** |'].join('\n');
+    const { container } = render(<Markdown content={md} />);
+    expect(container.querySelector('td strong')?.textContent).toBe('required');
+  });
+
+  it('renders a blockquote with its inner markdown', () => {
+    const { container } = render(<Markdown content={'> **Note:** save often.'} />);
+    const quote = container.querySelector('blockquote');
+    expect(quote).toBeInTheDocument();
+    expect(quote?.querySelector('strong')?.textContent).toBe('Note:');
+  });
+
+  it('renders a task list with checked/unchecked state', () => {
+    const { container } = render(<Markdown content={'- [x] done\n- [ ] todo'} />);
+    // No literal bracket syntax survives in the text.
+    expect(container.textContent).not.toContain('[x]');
+    expect(container.textContent).not.toContain('[ ]');
+    expect(screen.getByLabelText('Done')).toBeInTheDocument();
+    expect(screen.getByLabelText('Not done')).toBeInTheDocument();
+  });
+
+  it('renders headings up to level four', () => {
+    const { container } = render(<Markdown content={'#### Deep'} />);
+    expect(container.querySelector('h6')?.textContent).toBe('Deep');
+  });
 });

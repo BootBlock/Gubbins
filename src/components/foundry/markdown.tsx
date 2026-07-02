@@ -5,12 +5,17 @@ import { cn } from '@/lib/utils';
  * A tiny, dependency-free Markdown renderer (spec §2.4.3 — prioritise lean native
  * solutions over NPM bloat). It renders a trusted, app-authored Markdown string to
  * **React elements** — never via `dangerouslySetInnerHTML` — so there is no HTML
- * injection surface. It deliberately supports a focused subset suited to rich
- * tooltips and help text: paragraphs, headings, bullet/ordered lists, fenced code
- * blocks, and the inline marks **bold**, *italic*, `code` and [links](https://…).
+ * injection surface.
  *
- * It is intentionally not a full CommonMark implementation; the subset keeps the
- * parser small, predictable and easy to unit-test.
+ * It is deliberately not a full CommonMark implementation, but it covers the subset
+ * that makes it a capable engine for **rich tooltips and in-app documentation**:
+ *
+ * - Block: headings (`#`–`####`), paragraphs, bullet / ordered lists, task lists
+ *   (`- [ ]` / `- [x]`), blockquotes (`>`), GitHub-flavoured pipe **tables** (with
+ *   per-column alignment), fenced code blocks, and horizontal rules (`---`).
+ * - Inline: **bold**, *italic*, ~~strikethrough~~, `code`, and [links](https://…).
+ *
+ * The subset keeps the parser small, predictable and easy to unit-test.
  */
 export function Markdown({ content, className }: { content: string; className?: string }) {
   return (
@@ -22,13 +27,27 @@ export function Markdown({ content, className }: { content: string; className?: 
 
 // --- Block-level parsing --------------------------------------------------------
 
+/** Matches a thematic break: three or more `-`, `*` or `_` (optionally spaced). */
+const HR = /^ {0,3}([-*_])(?: *\1){2,} *$/;
+/** Matches a GFM table delimiter row, e.g. `| --- | :--: | ---: |`. */
+const TABLE_DELIMITER = /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/;
+
 function renderBlocks(source: string): ReactNode[] {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
 
-  const isSpecial = (line: string) => /^(#{1,3}\s|[-*]\s|\d+\.\s|```)/.test(line);
+  /** True when line `n` begins a block that must not be folded into a paragraph. */
+  const startsBlock = (n: number): boolean => {
+    const line = lines[n];
+    if (line === undefined) return false;
+    return (
+      /^(#{1,4}\s|[-*]\s|\d+\.\s|```|>)/.test(line) ||
+      HR.test(line) ||
+      (line.includes('|') && lines[n + 1] !== undefined && TABLE_DELIMITER.test(lines[n + 1]!))
+    );
+  };
 
   while (i < lines.length) {
     const line = lines[i]!;
@@ -58,14 +77,53 @@ function renderBlocks(source: string): ReactNode[] {
       continue;
     }
 
-    // Heading (#, ##, ###).
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    // Horizontal rule.
+    if (HR.test(line)) {
+      blocks.push(<hr key={key++} className="border-0 border-t border-border/80" />);
+      i++;
+      continue;
+    }
+
+    // GFM pipe table: a header row immediately followed by a delimiter row.
+    if (line.includes('|') && i + 1 < lines.length && TABLE_DELIMITER.test(lines[i + 1]!)) {
+      const header = splitRow(line);
+      const aligns = splitRow(lines[i + 1]!).map(columnAlign);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i]!.trim() !== '' && lines[i]!.includes('|')) {
+        rows.push(splitRow(lines[i]!));
+        i++;
+      }
+      blocks.push(renderTable(header, aligns, rows, key++));
+      continue;
+    }
+
+    // Blockquote: gather consecutive `>` lines and render their content recursively.
+    if (line.startsWith('>')) {
+      const buffer: string[] = [];
+      while (i < lines.length && lines[i]!.startsWith('>')) {
+        buffer.push(lines[i]!.replace(/^>\s?/, ''));
+        i++;
+      }
+      blocks.push(
+        <blockquote
+          key={key++}
+          className="border-l-2 border-primary/60 pl-3 text-muted-foreground [&_p]:italic"
+        >
+          {renderBlocks(buffer.join('\n'))}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    // Heading (#, ##, ###, ####).
+    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
     if (heading) {
       const level = heading[1]!.length;
-      const sizes = ['text-base', 'text-sm', 'text-sm'];
+      const sizes = ['text-base', 'text-sm', 'text-sm', 'text-xs'];
       blocks.push(
         createElement(
-          `h${level + 2}`,
+          `h${Math.min(level + 2, 6)}`,
           { key: key++, className: cn('font-semibold text-foreground', sizes[level - 1]) },
           parseInline(heading[2]!, `h${key}`),
         ),
@@ -74,18 +132,17 @@ function renderBlocks(source: string): ReactNode[] {
       continue;
     }
 
-    // Unordered list.
+    // Unordered list (with optional `[ ]` / `[x]` task-list checkboxes).
     if (/^[-*]\s+/.test(line)) {
       const items: string[] = [];
       while (i < lines.length && /^[-*]\s+/.test(lines[i]!)) {
         items.push(lines[i]!.replace(/^[-*]\s+/, ''));
         i++;
       }
+      const isTaskList = items.every((item) => /^\[[ xX]\]\s+/.test(item));
       blocks.push(
-        <ul key={key++} className="ml-4 list-disc space-y-1">
-          {items.map((item, idx) => (
-            <li key={idx}>{parseInline(item, `ul${key}-${idx}`)}</li>
-          ))}
+        <ul key={key++} className={cn('ml-4 space-y-1', isTaskList ? 'ml-1 list-none' : 'list-disc')}>
+          {items.map((item, idx) => renderListItem(item, `ul${key}-${idx}`, idx))}
         </ul>,
       );
       continue;
@@ -111,7 +168,7 @@ function renderBlocks(source: string): ReactNode[] {
     // Paragraph: gather consecutive plain lines (soft-wrapped into one block).
     const paragraph: string[] = [line];
     i++;
-    while (i < lines.length && lines[i]!.trim() !== '' && !isSpecial(lines[i]!)) {
+    while (i < lines.length && lines[i]!.trim() !== '' && !startsBlock(i)) {
       paragraph.push(lines[i]!);
       i++;
     }
@@ -121,11 +178,94 @@ function renderBlocks(source: string): ReactNode[] {
   return blocks;
 }
 
+/** Render one `<li>`, drawing a leading `[ ]` / `[x]` as a task-list checkbox. */
+function renderListItem(item: string, keyBase: string, idx: number): ReactNode {
+  const task = /^\[([ xX])\]\s+(.*)$/.exec(item);
+  if (!task) {
+    return <li key={idx}>{parseInline(item, keyBase)}</li>;
+  }
+  const checked = task[1]!.toLowerCase() === 'x';
+  return (
+    <li key={idx} className="flex items-start gap-2">
+      <span
+        role="img"
+        aria-label={checked ? 'Done' : 'Not done'}
+        className={cn(
+          'mt-0.5 grid size-3.5 shrink-0 place-items-center rounded border text-[0.6rem] leading-none',
+          checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent',
+        )}
+      >
+        {checked ? '✓' : ''}
+      </span>
+      <span className={cn(checked && 'text-muted-foreground line-through')}>
+        {parseInline(task[2]!, keyBase)}
+      </span>
+    </li>
+  );
+}
+
+/** Split a table row on pipes, dropping the optional leading/trailing edge cells. */
+function splitRow(line: string): string[] {
+  const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|');
+  return cells.map((cell) => cell.trim());
+}
+
+type ColumnAlign = 'left' | 'center' | 'right';
+
+/** Read a delimiter cell (`:--`, `:-:`, `--:`, `---`) into its column alignment. */
+function columnAlign(cell: string): ColumnAlign {
+  const left = cell.startsWith(':');
+  const right = cell.endsWith(':');
+  if (left && right) return 'center';
+  if (right) return 'right';
+  return 'left';
+}
+
+const ALIGN_CLASS: Record<ColumnAlign, string> = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
+};
+
+function renderTable(header: string[], aligns: ColumnAlign[], rows: string[][], key: number): ReactNode {
+  const alignOf = (col: number): ColumnAlign => aligns[col] ?? 'left';
+  return (
+    <div key={key} className="overflow-x-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-border">
+            {header.map((cell, col) => (
+              <th
+                key={col}
+                className={cn('px-2 py-1 font-semibold text-foreground', ALIGN_CLASS[alignOf(col)])}
+              >
+                {parseInline(cell, `th${key}-${col}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r} className="border-b border-border/50 last:border-0">
+              {header.map((_, col) => (
+                <td key={col} className={cn('px-2 py-1 align-top', ALIGN_CLASS[alignOf(col)])}>
+                  {parseInline(row[col] ?? '', `td${key}-${r}-${col}`)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // --- Inline parsing -------------------------------------------------------------
 
-// Order matters: code first (its contents are literal), then bold, then italic,
-// then links. Non-greedy bodies keep adjacent marks from being swallowed.
-const INLINE = /(`[^`]+`)|(\*\*[\s\S]+?\*\*|__[\s\S]+?__)|(\*[\s\S]+?\*|_[\s\S]+?_)|(\[[^\]]+\]\([^)]+\))/;
+// Order matters: code first (its contents are literal), then bold, then strikethrough,
+// then italic, then links. Non-greedy bodies keep adjacent marks from being swallowed.
+const INLINE =
+  /(`[^`]+`)|(\*\*[\s\S]+?\*\*|__[\s\S]+?__)|(~~[\s\S]+?~~)|(\*[\s\S]+?\*|_[\s\S]+?_)|(\[[^\]]+\]\([^)]+\))/;
 
 function parseInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -159,6 +299,12 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
         </strong>,
       );
     } else if (match[3]) {
+      nodes.push(
+        <s key={key} className="text-muted-foreground">
+          {parseInline(token.slice(2, -2), key)}
+        </s>,
+      );
+    } else if (match[4]) {
       nodes.push(
         <em key={key} className="italic">
           {parseInline(token.slice(1, -1), key)}

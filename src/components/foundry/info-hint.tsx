@@ -1,6 +1,6 @@
 import { InfoIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
-import { INFO_OPEN_DELAY_MS, Tooltip, type TooltipPlacement } from './tooltip';
+import { INFO_OPEN_DELAY_MS, Tooltip, type TooltipPlacement, type TooltipSize } from './tooltip';
 
 /**
  * Foundry InfoHint — a small `i` information badge that surfaces a **rich-Markdown**
@@ -18,15 +18,18 @@ import { INFO_OPEN_DELAY_MS, Tooltip, type TooltipPlacement } from './tooltip';
 export function InfoHint({
   content,
   placement = 'top',
+  size,
   className,
 }: {
   /** Markdown help string. */
   readonly content: string;
   readonly placement?: TooltipPlacement;
+  /** Widen the bubble for richer help (tables, code, longer docs). Defaults to `sm`. */
+  readonly size?: TooltipSize;
   readonly className?: string;
 }) {
   return (
-    <Tooltip content={content} openDelayMs={INFO_OPEN_DELAY_MS} placement={placement}>
+    <Tooltip content={content} openDelayMs={INFO_OPEN_DELAY_MS} placement={placement} size={size}>
       <span
         role="img"
         aria-label="More information"

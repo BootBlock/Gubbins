@@ -74,6 +74,30 @@ describe('Tooltip', () => {
     expect(trigger).toHaveAttribute('aria-describedby', tip.id);
   });
 
+  it('wraps content in a vertical scroll region so tall help never overflows the viewport', async () => {
+    render(
+      <Tooltip content="Lots of documentation.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    fireEvent.focus(screen.getByText('info').parentElement!);
+    const tip = await screen.findByRole('tooltip');
+    const scroller = tip.querySelector('.overflow-y-auto');
+    expect(scroller).not.toBeNull();
+    expect(scroller?.textContent).toContain('Lots of documentation.');
+  });
+
+  it('widens the bubble for the requested size tier', async () => {
+    render(
+      <Tooltip content="Wide table content." size="lg">
+        <span>info</span>
+      </Tooltip>,
+    );
+    fireEvent.focus(screen.getByText('info').parentElement!);
+    const tip = await screen.findByRole('tooltip');
+    expect(tip.className).toContain('max-w-md');
+  });
+
   it('closes on Escape', async () => {
     render(
       <Tooltip content="Closes on escape.">

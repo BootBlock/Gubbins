@@ -27,6 +27,19 @@ import { useReducedMotion } from './useReducedMotion';
  */
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
 
+/**
+ * Bubble width tier. `sm` (default) suits a sentence or two of help; step up to
+ * `md`/`lg` for richer content — a Markdown table, a code sample, or a longer
+ * documentation panel that reads better with room to breathe.
+ */
+export type TooltipSize = 'sm' | 'md' | 'lg';
+
+const SIZE_MAX_WIDTH: Record<TooltipSize, string> = {
+  sm: 'max-w-xs',
+  md: 'max-w-sm',
+  lg: 'max-w-md',
+};
+
 export interface TooltipProps {
   /** Markdown string rendered inside the tooltip. */
   readonly content: string;
@@ -34,6 +47,12 @@ export interface TooltipProps {
   readonly placement?: TooltipPlacement;
   /** Class applied to the inline trigger wrapper. */
   readonly className?: string;
+  /**
+   * Maximum bubble width tier (default `sm`). Widen to `md`/`lg` for content that needs
+   * it — tables, code blocks, or longer documentation. Tall content always scrolls
+   * vertically within the bubble regardless of size.
+   */
+  readonly size?: TooltipSize;
   /**
    * Tab stop for the trigger wrapper. Defaults to 0 so standalone triggers (e.g.
    * an info glyph) are keyboard-focusable. Pass -1 when wrapping an already
@@ -77,6 +96,7 @@ export function Tooltip({
   children,
   placement = 'top',
   className,
+  size = 'sm',
   triggerTabIndex = 0,
   openDelayMs = DEFAULT_OPEN_DELAY_MS,
 }: TooltipProps) {
@@ -257,11 +277,22 @@ export function Tooltip({
                 visibility: coords ? 'visible' : 'hidden',
               }}
               className={cn(
-                'z-[60] max-w-xs rounded-xl border border-border bg-popover/95 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl',
+                // Glass panel: a translucent popover surface behind a heavy blur + saturation
+                // boost so the content beneath tints through, ringed by a hairline highlight and
+                // lifted on a deep shadow. `overflow-hidden` keeps the rounded corners clipping
+                // the scroll region within.
+                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/75 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150',
+                SIZE_MAX_WIDTH[size],
                 !reducedMotion && 'animate-fade-in',
               )}
             >
-              <Markdown content={content} />
+              {/* Tall content scrolls vertically within the bubble rather than overflowing the
+                  viewport — the tooltip doubles as a documentation panel, so long help stays
+                  readable. Padding lives here (not on the glass panel) so the scrollbar tucks
+                  neatly inside the rounded, clipped edge. */}
+              <div className="max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+                <Markdown content={content} />
+              </div>
             </div>,
             document.body,
           )
