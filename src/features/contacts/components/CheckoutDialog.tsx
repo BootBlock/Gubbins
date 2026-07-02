@@ -44,7 +44,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   // Per-location source (Phase 26): only when the item's stock is genuinely split across
   // more than one location is a lend-from choice meaningful; otherwise the single
   // placement is used silently. The available quantity follows the chosen placement.
-  const placements = stock.data ?? [];
+  const placements = useMemo(() => stock.data ?? [], [stock.data]);
   const isSplit = isDiscrete && placements.length > 1;
   // Per-lot source (Phase 29): the lots sitting at the *resolved* source placement (the chosen
   // location when split, else the item's primary). When any is a tracked lot, the user may lend

@@ -42,7 +42,7 @@ export function ReorderTab() {
   /** Per-line quantity overrides (key = `${groupKey}::${itemId}`). */
   const [qtyOverrides, setQtyOverrides] = useState<Map<string, number>>(new Map());
 
-  const plan = planQuery.data ?? [];
+  const plan = useMemo(() => planQuery.data ?? [], [planQuery.data]);
   const totalLines = plan.reduce((n, g) => n + g.lines.length, 0);
 
   /** Build a modified copy of the plan with the user's quantity overrides applied. */

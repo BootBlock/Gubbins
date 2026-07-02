@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import { AddIcon, ProjectIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,7 @@ export function ProjectsScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const rows = projects.data?.rows ?? [];
+  const rows = useMemo(() => projects.data?.rows ?? [], [projects.data?.rows]);
 
   // Default the selection to the first project once loaded. Only acts when nothing is
   // selected, so it never fights an explicit selection (e.g. a freshly created project

@@ -41,9 +41,9 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
       ],
-      // Pre-existing `any` (mostly test casts + a mixin constructor helper where `any` is
-      // idiomatic) is surfaced as a warning — visible, but not a merge blocker.
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // `no-explicit-any` is an error in product code (from the recommended preset). The
+      // one legitimate use — the TS-mandated mixin constructor in `item/mixin.ts` — carries
+      // a scoped disable; test files relax it below (loose JSON-boundary assertions).
     },
   },
 
@@ -76,6 +76,9 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Promote the hook-dependency check to an error: a stale/oversized dep array is a
+      // real bug (missed re-render or an effect firing every render), not a style nit.
+      'react-hooks/exhaustive-deps': 'error',
       // Accessibility linting — the app invests heavily in ARIA/APG patterns, so this is a
       // natural fit, enforced at the recommended preset's severities (errors).
       ...jsxA11y.flatConfigs.recommended.rules,
@@ -107,6 +110,12 @@ export default tseslint.config(
     files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.worker, ...globals.vitest },
+    },
+    rules: {
+      // Tests assert against loosely-typed boundaries (parsed JSON API responses, fixtures),
+      // where `any` is pragmatic and the assertions themselves are the real safety net —
+      // the standard production-strict / test-pragmatic split. Product code stays strict.
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 

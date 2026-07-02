@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Select, Surface, Tooltip } from '@/components/foundry';
 import {
@@ -64,7 +64,7 @@ function ScannerOverlayInner({
   const checkout = useCheckoutItem();
   const move = useMoveItem();
   const locations = useLocations();
-  const locationRows = locations.data?.rows ?? [];
+  const locationRows = useMemo(() => locations.data?.rows ?? [], [locations.data?.rows]);
   const symbology = usePreferencesStore((s) => s.scannerSymbology);
   // §6.5 scan confirmation is user-mutable (quiet workshops, shared spaces, sensory
   // preference). Read both flags so a successful scan honours the current settings.
