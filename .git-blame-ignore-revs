@@ -1,0 +1,7 @@
+# Bulk reformat when ESLint + Prettier were adopted. `git blame` skips these
+# revisions so line authorship points at the real change, not the reflow.
+# Enable locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub honours this file automatically.)
+
+# build(lint): adopt ESLint + Prettier with a braceless-if house style
+abef0ac44df744615562e7b2a3b8c763cbc3531b
