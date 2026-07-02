@@ -2,8 +2,18 @@ import { type ReactNode } from 'react';
 import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
 import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
-import { APP_VERSION } from '@/lib/app-version';
+import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { Starfield } from './Starfield';
+
+/**
+ * Build date formatted once for display — mirrors the dashboard hero's version chip
+ * (`DashboardVersion`) so the two surfaces render the same date the same way.
+ */
+const BUILD_DATE_LABEL = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+}).format(new Date(`${APP_RELEASE_DATE}T00:00:00`));
 
 /** Project links — single source so the screen and any future surfaces agree. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
@@ -36,11 +46,19 @@ export function AboutScreen() {
             tools, collections, and general inventory. Everything is stored privately on this device; nothing
             is sent to a server.
           </p>
-          <dl className="mt-4 flex items-center gap-2 text-sm">
-            <dt className="text-muted-foreground">Version</dt>
-            <dd className="font-medium tabular-nums" data-testid="about-version">
-              {APP_VERSION}
-            </dd>
+          <dl className="mt-4 space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <dt className="text-muted-foreground">Version</dt>
+              <dd className="font-medium tabular-nums" data-testid="about-version">
+                {APP_VERSION}
+              </dd>
+            </div>
+            <div className="flex items-center gap-2">
+              <dt className="text-muted-foreground">Build date</dt>
+              <dd className="font-medium tabular-nums" data-testid="about-build-date">
+                {BUILD_DATE_LABEL}
+              </dd>
+            </div>
           </dl>
         </AboutSection>
 
