@@ -93,4 +93,47 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(useInventoryEntry.getState().pendingSearch).toBe('220 ohm resistor');
   });
+
+  it('always shows the usage help, including the > hint', () => {
+    useCommandPaletteStore.setState({ open: true });
+    render(<CommandPalette />);
+    const help = screen.getByTestId('command-palette-help');
+    expect(help.textContent).toContain('jump to a screen');
+  });
+
+  describe('screen-jump mode (> prefix)', () => {
+    it('lists every screen when the query is just ">"', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: '>' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens.length).toBeGreaterThan(1);
+      expect(screens.map((s) => s.textContent).join('|')).toContain('Sync');
+      // No item results are shown in screen mode.
+      expect(screen.queryByTestId('command-palette-result')).toBeNull();
+    });
+
+    it('fuzzily filters screens and navigates to the chosen route on Enter', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: '>sync' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens[0].textContent).toContain('Sync');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/sync' });
+      // Screen jump must not touch the inventory search intent.
+      expect(useInventoryEntry.getState().pendingSearch).toBeNull();
+    });
+
+    it('shows an empty state when no screen matches', () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), {
+        target: { value: '>zzzzz' },
+      });
+      expect(screen.queryAllByTestId('command-palette-screen')).toHaveLength(0);
+      expect(screen.getByText(/No screens match/)).toBeTruthy();
+    });
+  });
 });
