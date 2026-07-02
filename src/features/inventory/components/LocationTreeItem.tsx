@@ -86,6 +86,7 @@ export function LocationTreeItem({
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- APG tree: the container's onKeyDown (resolveTreeKey) handles Enter/Space activation for the focused row, so this row's onClick has full keyboard parity; a row-level key handler would double-fire.
     <div
       ref={ref}
       role="treeitem"

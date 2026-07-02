@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,6 +29,7 @@ export function CreateProjectDialog({
   onCreated?: (id: string) => void;
 }) {
   const createProject = useCreateProject();
+  const nameRef = useRef<HTMLInputElement>(null);
   const {
     register,
     handleSubmit,
@@ -65,10 +67,23 @@ export function CreateProjectDialog({
       onClose={close}
       title="New project"
       description="Plan a build and its bill of materials."
+      initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <FormField label="Name" error={errors.name?.message}>
-          <Input autoFocus placeholder="e.g. Bench power supply" {...register('name')} />
+          <Input
+            placeholder="e.g. Bench power supply"
+            {...(() => {
+              const { ref, ...rest } = register('name');
+              return {
+                ...rest,
+                ref: (el: HTMLInputElement | null) => {
+                  ref(el);
+                  nameRef.current = el;
+                },
+              };
+            })()}
+          />
         </FormField>
 
         <FormField label="Description (optional)">

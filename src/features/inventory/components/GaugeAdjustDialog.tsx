@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Input, Modal } from '@/components/foundry';
 import { cn } from '@/lib/utils';
 import type { Item } from '@/db/repositories';
@@ -38,6 +38,7 @@ export function GaugeAdjustDialog({
   const fmt = useFormatters();
   const [mode, setMode] = useState<Mode>('consume');
   const [value, setValue] = useState('');
+  const valueRef = useRef<HTMLInputElement>(null);
 
   const gauge = item.gauge;
   if (!gauge) return null;
@@ -80,6 +81,7 @@ export function GaugeAdjustDialog({
       onClose={onClose}
       title={`Update ${item.name}`}
       description="Record usage or recalibrate against a scale."
+      initialFocusRef={valueRef}
     >
       <div className="mb-4">
         <GaugeBar gauge={gauge} />
@@ -115,12 +117,12 @@ export function GaugeAdjustDialog({
             : `Amount added (${gauge.unitOfMeasure})`}
       </label>
       <Input
+        ref={valueRef}
         id="gauge-value"
         type="number"
         inputMode="decimal"
         min={0}
         step="any"
-        autoFocus
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && submit()}

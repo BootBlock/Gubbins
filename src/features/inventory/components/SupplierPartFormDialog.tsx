@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 
@@ -84,6 +84,7 @@ export function SupplierPartFormDialog({
   const [url, setUrl] = useState(part?.url ?? '');
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -125,10 +126,12 @@ export function SupplierPartFormDialog({
       onClose={onClose}
       title={part ? 'Edit supplier' : 'Add supplier'}
       description="A supplier's order code, pricing and quantity price-breaks for this item."
+      initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="supplier-part-form">
         <FormField label="Supplier">
           <Input
+            ref={nameRef}
             value={supplierName}
             onChange={(e) => {
               setSupplierName(e.target.value);
@@ -136,7 +139,6 @@ export function SupplierPartFormDialog({
             }}
             placeholder="e.g. DigiKey"
             data-testid="supplier-part-name"
-            autoFocus
           />
         </FormField>
 

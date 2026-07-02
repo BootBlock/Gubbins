@@ -106,6 +106,7 @@ export function ScrapeReviewDialog({
             <ul className="space-y-2 text-sm">
               {conflicts.map((p) => (
                 <li key={p.field} className="rounded-lg border border-border p-2">
+                  {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested checkbox is correctly associated; the label's text comes from the dynamic {p.field} content, which the linter cannot resolve to a static string. */}
                   <label className="flex items-start gap-2">
                     <input
                       type="checkbox"

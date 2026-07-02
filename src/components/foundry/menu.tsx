@@ -211,6 +211,7 @@ export function Menu({
               id={panelId}
               role="menu"
               aria-label={label}
+              tabIndex={-1}
               onKeyDown={onPanelKeyDown}
               style={{
                 position: 'fixed',

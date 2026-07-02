@@ -179,10 +179,14 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
         {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
         {hasScope ? (
           <div className="space-y-2">
-            <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <label
+              htmlFor="export-scope"
+              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
               Scope
             </label>
             <select
+              id="export-scope"
               value={scope}
               onChange={(e) => setScope(e.target.value as ExportScope)}
               data-testid="export-scope"

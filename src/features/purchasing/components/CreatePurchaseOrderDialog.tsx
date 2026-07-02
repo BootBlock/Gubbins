@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreatePurchaseOrderInput } from '@/db/repositories';
 
@@ -28,6 +28,7 @@ export function CreatePurchaseOrderDialog({
   const [reference, setReference] = useState('');
   const [currency, setCurrency] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const supplierRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -49,10 +50,12 @@ export function CreatePurchaseOrderDialog({
       onClose={onClose}
       title="New purchase order"
       description="A supplier-keyed order. Add the parts to order as lines once it is created."
+      initialFocusRef={supplierRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-create-form">
         <FormField label="Supplier">
           <Input
+            ref={supplierRef}
             value={supplierName}
             onChange={(e) => {
               setSupplierName(e.target.value);
@@ -60,7 +63,6 @@ export function CreatePurchaseOrderDialog({
             }}
             placeholder="e.g. DigiKey"
             data-testid="po-supplier-name"
-            autoFocus
           />
         </FormField>
 

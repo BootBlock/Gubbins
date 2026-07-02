@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button, Input, Tooltip } from '@/components/foundry';
 import { AddIcon, CloseIcon } from '@/components/icons';
 import { useSavedSearchesStore } from '../useSavedSearchesStore';
@@ -24,6 +24,12 @@ export function SavedSearchMenu({
   const remove = useSavedSearchesStore((s) => s.remove);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
+  // Focus the name field when it appears (managed here rather than via the discouraged
+  // `autoFocus` attribute) so the user can start typing the search name immediately.
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (naming) nameRef.current?.focus();
+  }, [naming]);
 
   const canSave = currentQuery.trim().length > 0;
 
@@ -79,6 +85,7 @@ export function SavedSearchMenu({
       {naming ? (
         <div className="flex items-center gap-1">
           <Input
+            ref={nameRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={onNameKeyDown}
@@ -86,7 +93,6 @@ export function SavedSearchMenu({
             aria-label="Saved search name"
             data-testid="saved-search-name"
             className="h-7 w-40 text-xs"
-            autoFocus
           />
           <Button
             type="button"

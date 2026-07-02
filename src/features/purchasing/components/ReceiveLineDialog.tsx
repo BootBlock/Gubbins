@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import { LocationSelect, type LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { BatchIdentity } from '@/features/inventory/batches';
@@ -41,6 +41,7 @@ export function ReceiveLineDialog({
   const [lotNumber, setLotNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const locationLabelId = useId();
+  const quantityRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -67,6 +68,7 @@ export function ReceiveLineDialog({
       onClose={onClose}
       title="Receive into stock"
       description={`${outstanding} of ${line.orderedQty} still to arrive. Receiving lands the units in your inventory.`}
+      initialFocusRef={quantityRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-receive-form">
         <FormField
@@ -74,11 +76,11 @@ export function ReceiveLineDialog({
           hint="Defaults to the whole outstanding remainder; a partial receipt is fine."
         >
           <Input
+            ref={quantityRef}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
             inputMode="numeric"
             data-testid="po-receive-qty"
-            autoFocus
           />
         </FormField>
 

@@ -717,7 +717,7 @@ export function ImportDataDialog({ open, onClose }: { open: boolean; onClose: ()
       className="w-full max-w-4xl max-h-[85vh] overflow-y-auto"
     >
       <div className="flex flex-col gap-5 sm:flex-row">
-        <nav
+        <div
           role="tablist"
           aria-label="Import method"
           aria-orientation="vertical"
@@ -741,7 +741,7 @@ export function ImportDataDialog({ open, onClose }: { open: boolean; onClose: ()
           >
             Import file
           </TabButton>
-        </nav>
+        </div>
 
         <div id={panelId} role="tabpanel" className="min-w-0 flex-1 space-y-5">
           {tab === 'text' ? (

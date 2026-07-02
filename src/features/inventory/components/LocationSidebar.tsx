@@ -105,7 +105,13 @@ export function LocationSidebar({
       </div>
 
       {/* APG tree: a single keydown handler on the role="tree" container drives roving-tabindex navigation. */}
-      <div role="tree" aria-labelledby="locations-heading" className="space-y-0.5" onKeyDown={onKeyDown}>
+      <div
+        role="tree"
+        aria-labelledby="locations-heading"
+        tabIndex={-1}
+        className="space-y-0.5"
+        onKeyDown={onKeyDown}
+      >
         <LocationTreeItem
           id={ALL_ITEMS_ID}
           ref={setRowRef(ALL_ITEMS_ID)}

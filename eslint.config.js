@@ -77,17 +77,14 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       // Accessibility linting — the app invests heavily in ARIA/APG patterns, so this is a
-      // natural fit. Adopted at `warn` (not `error`) so the pre-existing findings are a
-      // visible backlog rather than a merge blocker; promote to `error` as they're fixed.
-      // Rules the recommended preset ships disabled (e.g. the deprecated `label-has-for`)
-      // stay disabled — only the active `error` rules are softened to `warn`.
-      ...Object.fromEntries(
-        Object.entries(jsxA11y.flatConfigs.recommended.rules).map(([rule, setting]) => {
-          const severity = Array.isArray(setting) ? setting[0] : setting;
-          const disabled = severity === 'off' || severity === 0;
-          return [rule, disabled ? setting : 'warn'];
-        }),
-      ),
+      // natural fit, enforced at the recommended preset's severities (errors).
+      ...jsxA11y.flatConfigs.recommended.rules,
+      // Teach `label-has-associated-control` about the Foundry form primitives: a `<label>`
+      // wrapping one of these wraps a real control, exactly as if it wrapped a bare <input>.
+      'jsx-a11y/label-has-associated-control': [
+        'error',
+        { controlComponents: ['Input', 'Select', 'Textarea'] },
+      ],
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       // High-value async-safety rules — the payoff for a worker/RPC/React-Query codebase
       // that `tsc` alone won't catch. Kept as a focused set, not the full type-checked

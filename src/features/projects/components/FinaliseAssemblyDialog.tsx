@@ -61,6 +61,7 @@ export function FinaliseAssemblyDialog({
       <div className="space-y-4">
         <div className="space-y-2">
           {ASSEMBLY_OUTCOMES.map((value) => (
+            // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio input is correctly associated; the label's text is the dynamic per-outcome content, which the linter cannot resolve to a static string.
             <label
               key={value}
               className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-secondary/40 has-[:checked]:border-primary has-[:checked]:bg-primary/5"

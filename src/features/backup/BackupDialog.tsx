@@ -547,6 +547,7 @@ function ModeOption({
   hint: string;
 }) {
   return (
+    // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested radio input is correctly associated; the label's text comes from the dynamic {label}/{hint} props, which the linter cannot resolve to a static string.
     <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40">
       <input
         type="radio"

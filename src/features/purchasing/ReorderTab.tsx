@@ -197,6 +197,7 @@ function ReorderGroup({
       </div>
 
       {/* Lines */}
+      {/* eslint-disable-next-line jsx-a11y/no-redundant-roles -- the flex layout drops the <ul>'s implicit list semantics in Safari/VoiceOver, so role="list" is restored deliberately. */}
       <ul className="flex flex-col divide-y divide-border px-4" role="list">
         {group.lines.map((line) => (
           <ReorderLine

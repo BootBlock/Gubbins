@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button, Tooltip } from '@/components/foundry';
 import { AddIcon, SubtractIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
@@ -21,6 +21,12 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
   const fmt = useFormatters();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  // Focus the field when it appears (managed here rather than via the discouraged
+  // `autoFocus` attribute); its own onFocus then selects the text for quick overtyping.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
 
   const bump = (delta: number) => {
     if (quantity + delta < 0) return;
@@ -76,10 +82,10 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
 
       {editing ? (
         <input
+          ref={inputRef}
           type="number"
           min={0}
           step={1}
-          autoFocus
           aria-label="Set quantity"
           data-testid="quantity-input"
           value={draft}

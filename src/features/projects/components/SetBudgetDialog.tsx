@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, FormField, Input, Modal, Spinner, useToast } from '@/components/foundry';
 import { useSetBudget } from '../projects';
 
@@ -20,6 +20,7 @@ export function SetBudgetDialog({
   const setBudget = useSetBudget();
   const { show } = useToast();
   const [value, setValue] = useState('');
+  const valueRef = useRef<HTMLInputElement>(null);
 
   // Seed the field from the current budget whenever the dialog (re)opens.
   useEffect(() => {
@@ -54,10 +55,12 @@ export function SetBudgetDialog({
       onClose={onClose}
       title="Project budget"
       description="Set an overall budget for this project, or clear the field to remove it."
+      initialFocusRef={valueRef}
     >
       <div className="space-y-4">
         <FormField label="Budget">
           <Input
+            ref={valueRef}
             type="number"
             min={0}
             step="0.01"
@@ -66,7 +69,6 @@ export function SetBudgetDialog({
             data-testid="budget-amount-input"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            autoFocus
           />
         </FormField>
         <div className="flex justify-between gap-2">

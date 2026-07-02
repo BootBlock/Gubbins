@@ -180,6 +180,7 @@ export function LocationSelect({
           {options.map((option, index) => {
             const isAction = option.kind === 'action';
             return (
+              // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
               <div
                 key={option.value}
                 ref={(el) => {

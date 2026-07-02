@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Modal, Select } from '@/components/foundry';
 import { CheckoutIcon } from '@/components/icons';
 import type { Item, ItemBatchPlacement } from '@/db/repositories';
@@ -38,6 +38,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   const [fromLocationId, setFromLocationId] = useState<string>(item.locationId);
   const [fromBatchKey, setFromBatchKey] = useState(ANY_LOT);
   const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const isDiscrete = item.trackingMode === 'DISCRETE';
   // Per-location source (Phase 26): only when the item's stock is genuinely split across
@@ -118,12 +119,12 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Check out" description={item.name}>
+    <Modal open={open} onClose={onClose} title="Check out" description={item.name} initialFocusRef={nameRef}>
       <div className="space-y-4">
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">Borrower</span>
           <Input
-            autoFocus
+            ref={nameRef}
             list="contact-suggestions"
             value={name}
             onChange={(e) => setName(e.target.value)}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The inline rename editor (F2): an uncontrolled-feeling text field that commits on
@@ -17,6 +17,12 @@ export function LocationInlineRename({
 }) {
   const [value, setValue] = useState(initial);
   const done = useRef(false);
+  // Grab focus when the editor mounts (F2 opens it in place). Managed here rather than via
+  // the `autoFocus` attribute, which is discouraged for accessibility.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const commit = () => {
     if (done.current) return;
@@ -28,7 +34,7 @@ export function LocationInlineRename({
 
   return (
     <input
-      autoFocus
+      ref={inputRef}
       aria-label={`Rename ${initial}`}
       value={value}
       onChange={(e) => setValue(e.target.value)}

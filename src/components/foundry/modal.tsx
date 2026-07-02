@@ -113,6 +113,7 @@ export function Modal({
       aria-modal="true"
       aria-label={title}
     >
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- the backdrop's click-to-dismiss is a redundant pointer affordance; keyboard users dismiss via Escape (handled in the effect above) or the Close button, so no keyboard handler belongs on this decorative overlay. */}
       <div
         className={cn('absolute inset-0 bg-black/60 backdrop-blur-sm', !reducedMotion && 'animate-fade-in')}
         onClick={onClose}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, FormField, Input, Modal, Select, Spinner, useToast } from '@/components/foundry';
 import type { ProjectBudgetCategory, ProjectExpense } from '@/db/repositories';
 import { useAddExpense, useUpdateExpense } from '../projects';
@@ -41,6 +41,7 @@ export function ExpenseDialog({
   const { show } = useToast();
   const editing = Boolean(expense);
   const pending = addExpense.isPending || updateExpense.isPending;
+  const descriptionRef = useRef<HTMLInputElement>(null);
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -93,14 +94,15 @@ export function ExpenseDialog({
       onClose={onClose}
       title={editing ? 'Edit expense' : 'Add expense'}
       description="Record a cost against this project — parts, shipping, labour or anything else."
+      initialFocusRef={descriptionRef}
     >
       <div className="space-y-4">
         <FormField label="Description">
           <Input
+            ref={descriptionRef}
             placeholder="e.g. PCB fabrication"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            autoFocus
           />
         </FormField>
         <div className="grid grid-cols-2 gap-3">
