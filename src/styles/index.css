@@ -22,6 +22,17 @@
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.2 0.015 281);
 
+  /*
+   * A raised card surface, one step lighter than `card`, for a control that must read as
+   * "on top" of a card/secondary field — e.g. the active thumb of the density segmented
+   * control, which otherwise shares `card`'s tone with its inactive track. In light mode
+   * `card` is already pure white so there is no headroom to go lighter; it stays white and
+   * leans on the thumb's shadow/ring to lift. The lift is most needed in dark mode, where
+   * plain `card` is actually *darker* than the `secondary` track (see the dark block).
+   */
+  --card-elevated: oklch(1 0 0);
+  --card-elevated-foreground: oklch(0.2 0.015 281);
+
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.015 281);
 
@@ -133,6 +144,11 @@
   --card: oklch(0.205 0.014 281);
   --card-foreground: oklch(0.97 0.005 280);
 
+  /* Raised surface — sits clearly above the `secondary` (0.27) segmented-control track so
+     the active density thumb reads as lifted rather than recessed. See the light block. */
+  --card-elevated: oklch(0.32 0.02 281);
+  --card-elevated-foreground: oklch(0.97 0.005 280);
+
   --popover: oklch(0.2 0.014 281);
   --popover-foreground: oklch(0.97 0.005 280);
 
@@ -213,6 +229,9 @@
 
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+
+  --color-card-elevated: var(--card-elevated);
+  --color-card-elevated-foreground: var(--card-elevated-foreground);
 
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -455,6 +474,36 @@
 }
 
 /*
+ * Density view-mode swap (spec §3 "Adaptive Density"). Switching the inventory list
+ * between Visual and Data slides the whole list in horizontally so the change of view
+ * reads as a deliberate transition rather than an instant repaint. Two directions so the
+ * motion tracks the segmented control: Data (the right segment) enters from the right,
+ * Visual (the left segment) enters from the left. A generous 1s emphasized ease per the
+ * brief. Reduced-motion users get the static end state via the global catch-all.
+ */
+@keyframes gubbins-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes gubbins-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/*
  * Toast exit — the mirror of `animate-rise`'s entrance for the Foundry Toast. A passive
  * notification shouldn't simply blink out of existence: it fades while sinking a touch and
  * shrinking, so the eye reads "this is leaving" before it unmounts. The provider plays this
@@ -527,6 +576,14 @@
 
 @utility animate-swap-in {
   animation: gubbins-swap-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility animate-slide-in-right {
+  animation: gubbins-slide-in-right 1s var(--ease-emphasized) both;
+}
+
+@utility animate-slide-in-left {
+  animation: gubbins-slide-in-left 1s var(--ease-emphasized) both;
 }
 
 @utility animate-toast-out {

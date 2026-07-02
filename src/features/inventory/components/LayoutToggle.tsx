@@ -42,7 +42,7 @@ export function LayoutToggle() {
       {/* Sliding thumb */}
       <span
         aria-hidden
-        className="absolute inset-y-1 w-[calc(50%-0.25rem)] rounded-lg bg-card shadow-sm shadow-black/20 ring-1 ring-border transition-transform duration-300 ease-emphasized"
+        className="absolute inset-y-1 w-[calc(50%-0.25rem)] rounded-lg bg-card-elevated shadow-sm shadow-black/20 ring-1 ring-border transition-transform duration-300 ease-emphasized"
         style={{ transform: `translateX(${activeIndex * 100}%)` }}
       />
       {OPTIONS.map((option) => {

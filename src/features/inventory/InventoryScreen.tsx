@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
@@ -156,6 +157,23 @@ function InventoryWorkspace() {
   // off the leading page(s), so the virtualised list can index in absolute space.
   const firstItemIndex = active.data?.pages[0]?.offset ?? 0;
   const flatLocations = flat.data?.rows ?? [];
+
+  // Pick the list's entrance so it reflects whichever input changed. A view-mode switch
+  // (Visual ↔ Data) slides the list in horizontally, tracking the segmented control: Data
+  // (the right segment) enters from the right, Visual (the left segment) from the left. A
+  // location change keeps the quick vertical swap-in. We remount the list wrapper on either
+  // change (via `listKey`) and compare the previous density to know which entrance to play.
+  const prevDensity = useRef(density);
+  const densityChanged = prevDensity.current !== density;
+  useEffect(() => {
+    prevDensity.current = density;
+  }, [density]);
+  const listEntrance = densityChanged
+    ? density === 'data'
+      ? 'animate-slide-in-right'
+      : 'animate-slide-in-left'
+    : 'animate-swap-in';
+  const listKey = `view-${density}-${selectedLocationId ?? 'all'}`;
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   const selection: ItemSelection | undefined = selecting
@@ -317,15 +335,25 @@ function InventoryWorkspace() {
         }
       />
 
-      {builderOpen ? (
-        <div className="pb-4">
-          <VisualBuilder
-            resultSummary={
-              astActive ? `${flatItems.length} match${flatItems.length === 1 ? '' : 'es'}` : undefined
-            }
-          />
+      {/* Visual-search reveal: the panel stays mounted and animates open/closed both ways
+          by transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity over 1s with
+          the signature emphasized ease. `inert` when closed keeps the hidden panel out of
+          the tab order and the accessibility tree. Reduced-motion users skip the transition
+          via the global catch-all and simply get the end state. */}
+      <div
+        className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
+        style={{ gridTemplateRows: builderOpen ? '1fr' : '0fr', opacity: builderOpen ? 1 : 0 }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="pb-4" inert={!builderOpen}>
+            <VisualBuilder
+              resultSummary={
+                astActive ? `${flatItems.length} match${flatItems.length === 1 ? '' : 'es'}` : undefined
+              }
+            />
+          </div>
         </div>
-      ) : null}
+      </div>
 
       <div className="flex min-h-0 flex-1 gap-6">
         {tree.data && flat.data ? (
@@ -343,7 +371,7 @@ function InventoryWorkspace() {
         <main
           id={MAIN_CONTENT_ID}
           tabIndex={-1}
-          className="flex min-w-0 flex-1 animate-rise flex-col outline-none"
+          className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
         >
           <div className="flex items-center justify-between pb-3">
             <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
@@ -426,15 +454,13 @@ function InventoryWorkspace() {
             </div>
           ) : null}
 
-          {/* Keyed by the selected location so switching location re-mounts this region
-              and replays the quick swap-in entrance — the list visibly arrives rather
-              than blinking into place. (Search-as-you-type deliberately doesn't re-key,
-              so typing never flashes the list.) Reduced-motion is handled by the global
-              catch-all. */}
-          <div
-            key={`loc-${selectedLocationId ?? 'all'}`}
-            className="flex min-h-0 flex-1 animate-swap-in flex-col"
-          >
+          {/* Keyed by the selected location *and* the density so switching either re-mounts
+              this region and replays an entrance — the list visibly arrives rather than
+              blinking into place. A location change plays the quick vertical swap-in; a
+              view-mode change plays the horizontal slide chosen in `listEntrance`.
+              (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
+              list.) Reduced-motion is handled by the global catch-all. */}
+          <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
             {active.isLoading ? (
               <div className="flex flex-1 items-center justify-center">
                 <Spinner />
