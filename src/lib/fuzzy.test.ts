@@ -51,11 +51,11 @@ describe('rankFuzzy', () => {
   it('keeps only matches, ordered best-first', () => {
     const ranked = rankFuzzy(screens, 's', (s) => s);
     const labels = ranked.map((r) => r.item);
-    // Everything with an "s" survives; those starting with "s" rank first.
     // Only labels containing an "s" survive ("Inventory" has none).
     expect(labels).not.toContain('Inventory');
-    // Start-of-string matches ("Settings", "Sync") outrank the mid-word one ("Dashboard").
-    expect(labels.indexOf('Dashboard')).toBe(labels.length - 1);
+    // Start-of-string matches ("Sync", "Settings") outrank the mid-word ones
+    // ("Dashboard", "Reports"), so they take the top two slots.
+    expect(new Set(labels.slice(0, 2))).toEqual(new Set(['Sync', 'Settings']));
     expect(labels[0][0]).toBe('S');
   });
 
