@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+
+import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Select, Surface, Tooltip } from '@/components/foundry';
 import {
@@ -285,7 +287,7 @@ function ScannerOverlayInner({
           <div className="absolute inset-x-0 bottom-0 p-4">
             <Surface className="space-y-3 p-4 text-foreground">
               <p className="text-sm font-semibold">
-                {queue.count} item{queue.count === 1 ? '' : 's'} in the queue
+                {queue.count} {plural(queue.count, 'item')} in the queue
               </p>
               <ul className="max-h-40 space-y-1 overflow-auto text-sm">
                 {queue.entries.map((e) => (

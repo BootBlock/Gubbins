@@ -30,6 +30,7 @@ import {
   MaintenanceIcon,
   NotificationIcon,
 } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   AGENDA_KINDS,
@@ -201,7 +202,7 @@ export function CalendarScreen() {
     } else {
       const count = events.length;
       setAnnouncement(
-        count === 0 ? 'Nothing upcoming — all clear.' : `${count} upcoming item${count === 1 ? '' : 's'}.`,
+        count === 0 ? 'Nothing upcoming — all clear.' : `${count} upcoming ${plural(count, 'item')}.`,
       );
     }
   }, [isLoading, isError, events.length]);

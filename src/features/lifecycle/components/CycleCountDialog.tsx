@@ -9,6 +9,8 @@
  * arithmetic and ledger notes come from the pure, unit-tested `cycle-count` module.
  */
 import { useEffect, useState } from 'react';
+
+import { plural } from '@/lib/plural';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Input, LiveRegion, Modal, Tooltip } from '@/components/foundry';
 import {
@@ -121,7 +123,7 @@ function CycleCountBody({
   // is set, guaranteeing assistive tech will announce the update.
   const resultMessage =
     applied !== null
-      ? `Reconciliation complete — ${applied} adjustment${applied === 1 ? '' : 's'} applied to the ledger.`
+      ? `Reconciliation complete — ${applied} ${plural(applied, 'adjustment')} applied to the ledger.`
       : null;
 
   const authorise = async () => {
@@ -272,7 +274,7 @@ function CycleCountBody({
 
           <div className="flex items-center justify-between pt-1">
             <p className="text-xs text-muted-foreground">
-              {drift.length + missing.length} adjustment{drift.length + missing.length === 1 ? '' : 's'} to
+              {drift.length + missing.length} {plural(drift.length + missing.length, 'adjustment')} to
               authorise
               {missing.length > 0 ? ` (${missing.length} missing)` : ''}
             </p>

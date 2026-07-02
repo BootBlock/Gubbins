@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Input, Modal, Select } from '@/components/foundry';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { CONDITIONS, type Condition, type LocationWithCount } from '@/db/repositories';
 import { CONDITION_LABELS } from './inventory-ui';
@@ -88,8 +89,8 @@ export function BulkEditDialog({
     const result = await bulkEdit.mutateAsync({ ids: itemIds, spec });
     const message =
       result.failed > 0
-        ? `Updated ${result.succeeded} item${result.succeeded === 1 ? '' : 's'}; ${result.failed} failed.`
-        : `Updated ${result.succeeded} item${result.succeeded === 1 ? '' : 's'}.`;
+        ? `Updated ${result.succeeded} ${plural(result.succeeded, 'item')}; ${result.failed} failed.`
+        : `Updated ${result.succeeded} ${plural(result.succeeded, 'item')}.`;
     onApplied?.(message);
     onClose();
   };
@@ -99,7 +100,7 @@ export function BulkEditDialog({
       open={open}
       onClose={onClose}
       title="Bulk edit"
-      description={`Apply changes to ${itemIds.length} selected item${itemIds.length === 1 ? '' : 's'}.`}
+      description={`Apply changes to ${itemIds.length} selected ${plural(itemIds.length, 'item')}.`}
     >
       <div className="max-h-[72vh] space-y-3 dialog-scroll">
         {/* Category ----------------------------------------------------- */}

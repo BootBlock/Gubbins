@@ -8,6 +8,8 @@
  * average byte-size per table — deliberately rough, tunable constants.
  */
 
+import { plural } from '@/lib/plural';
+
 export interface TableRowCounts {
   readonly items: number;
   readonly itemHistory: number;
@@ -108,7 +110,7 @@ export function pruneCutoff(now: number, months: number): number {
 
 /** Pluralised month-window label (en-GB) for the dashboard controls. */
 export function monthsLabel(months: number): string {
-  return `${months} ${months === 1 ? 'month' : 'months'}`;
+  return `${months} ${plural(months, 'month')}`;
 }
 
 /** Schema version of the cold-storage history archive payload (§7.6.3 A). */

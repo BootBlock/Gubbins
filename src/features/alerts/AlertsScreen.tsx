@@ -16,6 +16,8 @@
  * the skip-to-content link (Phase 40) works here too.
  */
 import { useEffect, useRef, useState } from 'react';
+
+import { plural } from '@/lib/plural';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
@@ -165,7 +167,7 @@ export function AlertsScreen() {
       setAnnouncement(
         count === 0
           ? 'No active alerts — all looks good.'
-          : `${count} alert${count === 1 ? '' : 's'} require your attention.`,
+          : `${count} ${plural(count, 'alert')} require your attention.`,
       );
     }
   }, [isLoading, isError, alerts.length]);

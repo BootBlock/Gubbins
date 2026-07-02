@@ -21,6 +21,7 @@ import {
   StorageIcon,
   SuccessIcon,
 } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -196,12 +197,12 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               </Select>
             </label>
             <span className="text-sm text-muted-foreground">
-              {pruneCount.data ?? 0} entr{(pruneCount.data ?? 0) === 1 ? 'y' : 'ies'} affected
+              {pruneCount.data ?? 0} {plural(pruneCount.data ?? 0, 'entry', 'entries')} affected
             </span>
             {confirming === 'prune' ? (
               <ConfirmRow
                 testIdPrefix="prune"
-                message={`Permanently delete ${pruneCount.data ?? 0} entr${(pruneCount.data ?? 0) === 1 ? 'y' : 'ies'} after the archive downloads?`}
+                message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} after the archive downloads?`}
                 onConfirm={onPrune}
                 onCancel={() => setConfirming(null)}
                 pending={prune.isPending}
@@ -256,12 +257,12 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               </Select>
             </label>
             <span className="text-sm text-muted-foreground">
-              {downgradeCount.data ?? 0} image{(downgradeCount.data ?? 0) === 1 ? '' : 's'} affected
+              {downgradeCount.data ?? 0} {plural(downgradeCount.data ?? 0, 'image')} affected
             </span>
             {confirming === 'downgrade' ? (
               <ConfirmRow
                 testIdPrefix="downgrade"
-                message={`Drop full-resolution data for ${downgradeCount.data ?? 0} image${(downgradeCount.data ?? 0) === 1 ? '' : 's'}? Thumbnails are kept.`}
+                message={`Drop full-resolution data for ${downgradeCount.data ?? 0} ${plural(downgradeCount.data ?? 0, 'image')}? Thumbnails are kept.`}
                 onConfirm={onDowngrade}
                 onCancel={() => setConfirming(null)}
                 pending={downgrade.isPending}

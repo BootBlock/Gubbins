@@ -16,6 +16,7 @@
  * anchored at `now`, so they sort and bucket into "Today" rather than being hidden.
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
+import { plural } from '@/lib/plural';
 import { maintenanceDueAtMs } from '@/features/alerts/alerts';
 
 // ---------------------------------------------------------------------------
@@ -236,7 +237,7 @@ function buildReorderEvents(sources: readonly ReorderAgendaSource[], now: number
     title: `Reorder — ${s.itemName}`,
     detail:
       s.shortfall > 0
-        ? `${s.shortfall} unit${s.shortfall === 1 ? '' : 's'} below the reorder point.`
+        ? `${s.shortfall} ${plural(s.shortfall, 'unit')} below the reorder point.`
         : 'At or below the reorder point.',
     dueAt: now,
     hasDate: false,

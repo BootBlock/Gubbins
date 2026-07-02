@@ -10,6 +10,7 @@
  * right-aligned wrapping button row, which packed everything into a ragged strip.
  */
 import { Link } from '@tanstack/react-router';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { NAV_OPEN_DELAY_MS, Surface, Tooltip } from '@/components/foundry';
 import {
@@ -122,7 +123,7 @@ export function DashboardNav() {
                         data-testid={isAlerts ? 'nav-alerts' : undefined}
                         aria-label={
                           isAlerts && alertCount > 0
-                            ? `Alerts — ${alertCount} active alert${alertCount === 1 ? '' : 's'}`
+                            ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
                             : undefined
                         }
                         className="block h-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"

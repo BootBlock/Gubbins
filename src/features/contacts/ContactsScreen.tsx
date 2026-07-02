@@ -12,6 +12,7 @@ import {
 } from '@/components/foundry';
 import { AddContactIcon, CheckInIcon, ContactsIcon, DueDateIcon } from '@/components/icons';
 import type { CheckoutWithNames } from '@/db/repositories';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useContacts, useCreateContact, useOpenCheckouts, useCheckInItem } from './contacts';
 
@@ -54,13 +55,13 @@ export function ContactsScreen() {
             ? 'Loading on-loan items…'
             : onLoan.length === 0
               ? 'Nothing currently checked out.'
-              : `${onLoan.length} item${onLoan.length === 1 ? '' : 's'} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
+              : `${onLoan.length} ${plural(onLoan.length, 'item')} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
         </p>
         <p className="sr-only" role="status" aria-live="polite" data-testid="contacts-count-live">
           {contacts.data == null
             ? 'Loading contacts…'
             : contacts.data.rows.length > 0
-              ? `${contacts.data.rows.length} contact${contacts.data.rows.length === 1 ? '' : 's'}.`
+              ? `${contacts.data.rows.length} ${plural(contacts.data.rows.length, 'contact')}.`
               : 'No contacts yet.'}
         </p>
         {/* On loan */}
