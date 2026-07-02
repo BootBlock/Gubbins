@@ -196,7 +196,17 @@ See **`docs/todo/done/_specification.md` §1.2** for the binding decisions (SQLi
 
 **Quick start (Windows):** double-click **`Run.bat`**, or run **`.\Run.ps1`** in PowerShell. Either installs dependencies on first use, starts the app, and opens it at `http://127.0.0.1:5173/Gubbins/`. Pass `preview` (e.g. `Run.bat preview` / `.\Run.ps1 preview`) to build and serve the production bundle at `http://127.0.0.1:4173/Gubbins/` instead.
 
-The launcher takes a few optional parameters: `-BindHost localhost` (serve via the `localhost` origin instead of `127.0.0.1`), `-Port 8080` (serve on a specific port), `-Browser firefox` (open a specific browser), and `-NoOpen` (start the server without opening a browser). By default it binds and opens the concrete loopback address `127.0.0.1` rather than the name `localhost`, which avoids a Windows IPv4/IPv6 name-resolution race that could show a spurious "unable to connect" on the first open.
+**Launcher options:** both `Run.bat` and `Run.ps1` accept the same optional parameters — pass them straight through (e.g. `Run.bat -Port 8080`, or `.\Run.ps1 -BindHost localhost`):
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `preview` | — | Build the production bundle and serve *that* (real service worker + offline) instead of the hot-reload dev server. |
+| `-BindHost <host>` | `127.0.0.1` | Host to bind and open. Use `localhost` to keep the `localhost` origin — Vite is then bound dual-stack for reliability, at the cost of a one-time Windows Firewall prompt and the dev server being visible on the LAN. `$env:GUBBINS_DEV_HOST` overrides the default. |
+| `-Port <n>` | `5173` dev / `4173` preview | Serve on a specific port (falls back to the next free port only when auto-picking the default). |
+| `-Browser <exe\|path\|none>` | OS default | Open the app in a specific browser, or `none` to suppress the auto-open. Overrides the legacy `$env:BROWSER`. |
+| `-NoOpen` | off | Start the server without opening a browser — just print the URL (handy for headless boxes, scripting, or an already-open tab). |
+
+> **Why `127.0.0.1` and not `localhost`?** On Windows `localhost` resolves to both `::1` (IPv6) and `127.0.0.1` (IPv4), but Vite binds only one of them; if the browser then tries the other first it gets a connection-refused "unable to connect" page and you have to reload. Binding *and* opening the same concrete address removes that race. Use `-BindHost localhost` if you specifically need the `localhost` origin (e.g. a Google OAuth redirect registered against it) — note that browser storage is per-origin, so the two hosts keep separate local data.
 
 Or use npm directly:
 
