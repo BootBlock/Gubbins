@@ -5,6 +5,7 @@ import {
   isUuid,
   parseScannedCode,
   parseScannedItemId,
+  resolveLabelBaseUrl,
 } from './scan-payload';
 import { CooldownMap, COOLDOWN_WINDOW_MS } from './cooldown';
 import { initialScannerState, scannerReducer, isStreaming, type ScannerState } from './scanner-machine';
@@ -55,6 +56,49 @@ describe('scan-payload', () => {
     });
     expect(parseScannedCode(`gubbins:item:${UUID}`)).toEqual({ kind: 'item', id: UUID });
     expect(parseScannedCode('hello world')).toBeNull();
+  });
+});
+
+describe('resolveLabelBaseUrl (Link host override)', () => {
+  it('derives origin + base path when no override is set', () => {
+    expect(resolveLabelBaseUrl('', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://localhost:5173/Gubbins/',
+    );
+    expect(resolveLabelBaseUrl('   ', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://localhost:5173/Gubbins/',
+    );
+  });
+
+  it('uses a full override URL verbatim, ignoring origin and base path', () => {
+    expect(resolveLabelBaseUrl('https://gubbins.local/Gubbins/', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'https://gubbins.local/Gubbins/',
+    );
+  });
+
+  it('assumes http:// for a scheme-less host, keeping any port', () => {
+    expect(resolveLabelBaseUrl('gubbins.local', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://gubbins.local/',
+    );
+    expect(resolveLabelBaseUrl('gubbins.local:8080', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://gubbins.local:8080/',
+    );
+  });
+
+  it('feeds a parseable deep-link so the override round-trips through the scanner', () => {
+    const base = resolveLabelBaseUrl('gubbins.local', 'http://localhost:5173', '/Gubbins/');
+    expect(parseScannedItemId(buildItemQrUrl(UUID, base))).toBe(UUID);
+  });
+
+  it('falls back to the derived default on an unparseable override', () => {
+    expect(resolveLabelBaseUrl('http://', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://localhost:5173/Gubbins/',
+    );
+  });
+
+  it('returns a hash-only link when there is no origin and no usable override', () => {
+    expect(resolveLabelBaseUrl('', null, '/Gubbins/')).toBe('#');
+    // …but an absolute override still resolves without a DOM origin.
+    expect(resolveLabelBaseUrl('https://gubbins.local/', null, '/Gubbins/')).toBe('https://gubbins.local/');
   });
 });
 

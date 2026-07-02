@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
@@ -21,12 +21,14 @@ import {
   KioskIcon,
   LightThemeIcon,
   NotificationIcon,
+  QrCodeIcon,
   ScanIcon,
   SettingsIcon,
   StorageIcon,
   SystemThemeIcon,
 } from '@/components/icons';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
+import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
@@ -281,6 +283,15 @@ export function SettingsScreen() {
           </SettingRow>
         </SettingsSection>
 
+        <SettingsSection icon={<QrCodeIcon />} title="Labels &amp; QR codes">
+          <SettingRow
+            label="Link host"
+            description="The web address printed QR codes and barcodes point to. Leave blank to use whatever address you open this app from. Set a stable name every device can reach on your network — e.g. http://gubbins.local — so labels printed from a dev server or one device keep working when scanned from a phone."
+          >
+            <LabelBaseUrlControl />
+          </SettingRow>
+        </SettingsSection>
+
         <SettingsSection icon={<ExpiryIcon />} title="Inventory &amp; lifecycle">
           <SettingRow
             label="“Expiring soon” window"
@@ -419,6 +430,51 @@ export function SettingsScreen() {
         {triageOpen ? <StorageTriageDialog open onClose={() => setTriageOpen(false)} /> : null}
       </main>
     </PageContainer>
+  );
+}
+
+/** A representative item id used only to preview the resolved deep-link in Settings. */
+const SAMPLE_ITEM_ID = '1f0a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8';
+
+/**
+ * The "Link host" control (spec §6). A free-text base-URL override for printable codes,
+ * held as a local draft and committed to the store on blur (so mid-typing never fights a
+ * normaliser). A live preview shows the exact deep-link a code will carry — resolved
+ * through the same {@link resolveLabelBaseUrl} the print dialogs use — so the effect of a
+ * blank vs. custom host is visible before anything is printed.
+ */
+function LabelBaseUrlControl() {
+  const stored = usePreferencesStore((s) => s.labelBaseUrl);
+  const setLabelBaseUrl = usePreferencesStore((s) => s.setLabelBaseUrl);
+  const [draft, setDraft] = useState(stored);
+  // Re-seed if the stored value changes elsewhere (e.g. a reset from the Danger Zone).
+  useEffect(() => setDraft(stored), [stored]);
+
+  const origin = typeof window === 'undefined' ? null : window.location.origin;
+  const resolved = resolveLabelBaseUrl(draft, origin, import.meta.env.BASE_URL);
+  const example = buildItemQrUrl(SAMPLE_ITEM_ID, resolved);
+  const usingDefault = draft.trim().length === 0;
+
+  return (
+    <div className="flex w-72 max-w-full flex-col gap-1.5">
+      <input
+        aria-label="Label link host"
+        data-testid="setting-label-base-url"
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="http://gubbins.local"
+        className="h-9 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => setLabelBaseUrl(draft)}
+      />
+      <p className="break-all text-xs text-muted-foreground" data-testid="label-base-url-preview">
+        {usingDefault ? 'Using this device’s address — codes link to ' : 'Codes link to '}
+        <span className="font-medium text-foreground">{example}</span>
+      </p>
+    </div>
   );
 }
 

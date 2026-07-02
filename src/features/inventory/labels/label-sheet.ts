@@ -16,7 +16,14 @@
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
 import { qrSvg } from '@/features/scanner/qr-code';
 import { code128Svg } from './code128';
-import { labelBarcodeValue, templateHasBarcode, templateHasQr, type LabelTemplate } from './label-template';
+import {
+  DEFAULT_LABEL_TEMPLATE,
+  clampLabelDimension,
+  labelBarcodeValue,
+  templateHasBarcode,
+  templateHasQr,
+  type LabelTemplate,
+} from './label-template';
 
 /** The item fields a label may surface (all but id/name optional). */
 export interface LabelItem {
@@ -152,10 +159,10 @@ export function labelCellHtml(cell: LabelCell): string {
 }
 
 /**
- * Build a complete, self-contained printable HTML document of labels — an A4 grid
- * (the template's `columns` across) where each label holds the chosen code(s) and
- * text. The opener writes this into a fresh window and calls `print()`; nothing here
- * touches the DOM, so it is a pure deterministic transform.
+ * Build a complete, self-contained printable HTML document of labels — either an A4
+ * grid (`sheet` mode, the template's `columns` across) or one physical die-cut label
+ * per page (`die-cut` mode). The opener writes this into a fresh window and calls
+ * `print()`; nothing here touches the DOM, so it is a pure deterministic transform.
  */
 export function buildLabelSheetHtml(
   items: readonly LabelItem[],
@@ -163,11 +170,21 @@ export function buildLabelSheetHtml(
   template: LabelTemplate,
 ): string {
   const cells = toLabelCells(items, baseUrl, template).map(labelCellHtml).join('');
-  return sheetDocument(cells, template.columns);
+  return sheetDocument(cells, template);
 }
 
-/** Wrap pre-rendered label-cell HTML in the shared A4 print document for `columns`. */
-export function sheetDocument(cellsHtml: string, columns: number): string {
+/**
+ * Wrap pre-rendered label-cell HTML in the print document for the template's size mode:
+ * a tiled A4 grid, or one exact-sized die-cut label per page.
+ */
+export function sheetDocument(cellsHtml: string, template: LabelTemplate): string {
+  return template.sizeMode === 'die-cut'
+    ? dieCutDocument(cellsHtml, template)
+    : a4SheetDocument(cellsHtml, template.columns);
+}
+
+/** An A4 page tiling labels in a `columns`-wide grid (the original sheet layout). */
+function a4SheetDocument(cellsHtml: string, columns: number): string {
   return (
     '<!doctype html>' +
     '<html lang="en-GB"><head><meta charset="utf-8">' +
@@ -185,5 +202,37 @@ export function sheetDocument(cellsHtml: string, columns: number): string {
     '.meta{font-size:8pt;line-height:1.2;word-break:break-word;max-width:40mm;color:#444}' +
     '</style></head>' +
     `<body><div class="sheet">${cellsHtml}</div></body></html>`
+  );
+}
+
+/**
+ * One exact-sized label per page for a thermal / die-cut printer. The `@page` size and
+ * each `.label` match the chosen physical `labelWidthMm × labelHeightMm`; the code fills
+ * the available height (staying square) and the text sits beneath it, so the same label
+ * scales to whatever roll is loaded.
+ */
+function dieCutDocument(cellsHtml: string, template: LabelTemplate): string {
+  const w = clampLabelDimension(template.labelWidthMm, DEFAULT_LABEL_TEMPLATE.labelWidthMm);
+  const h = clampLabelDimension(template.labelHeightMm, DEFAULT_LABEL_TEMPLATE.labelHeightMm);
+  return (
+    '<!doctype html>' +
+    '<html lang="en-GB"><head><meta charset="utf-8">' +
+    '<title>Gubbins — labels</title>' +
+    '<style>' +
+    `@page{size:${w}mm ${h}mm;margin:0}` +
+    '*{box-sizing:border-box}' +
+    'body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#000}' +
+    `.label{width:${w}mm;height:${h}mm;display:flex;flex-direction:column;align-items:center;` +
+    'justify-content:center;gap:1mm;padding:1.5mm;overflow:hidden;text-align:center;' +
+    'break-after:page;break-inside:avoid}' +
+    '.label:last-child{break-after:auto}' +
+    '.label .qr{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}' +
+    '.label .qr svg{height:100%;width:auto;max-width:100%}' +
+    '.label .bc{width:100%}' +
+    '.label .bc svg{width:100%;height:auto;max-height:12mm}' +
+    '.name{font-size:7pt;line-height:1.15;word-break:break-word;font-weight:600}' +
+    '.meta{font-size:6pt;line-height:1.15;word-break:break-word;color:#333}' +
+    '</style></head>' +
+    `<body>${cellsHtml}</body></html>`
   );
 }

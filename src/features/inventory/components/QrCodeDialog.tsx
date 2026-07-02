@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select } from '@/components/foundry';
 import { DownloadIcon, PrintIcon } from '@/components/icons';
-import { buildItemQrUrl } from '@/features/scanner/scan-payload';
+import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { qrSvg } from '@/features/scanner/qr-code';
 import { code128Svg } from '../labels/code128';
 import { LABEL_SYMBOLOGY_OPTIONS, labelBarcodeValue, type LabelSymbology } from '../labels/label-template';
@@ -29,6 +29,7 @@ export function QrCodeDialog({
   itemMpn?: string | null;
 }) {
   const defaultSymbology = usePreferencesStore((s) => s.labelTemplate.symbology);
+  const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Seed from the saved default, coercing 'none' (meaningless for a single-code dialog)
   // and any stale/garbage persisted value to QR.
   const [symbology, setSymbology] = useState<LabelSymbology>(() => seedSymbology(defaultSymbology));
@@ -37,14 +38,15 @@ export function QrCodeDialog({
     if (open) setSymbology(seedSymbology(defaultSymbology));
   }, [open, defaultSymbology]);
 
-  const baseUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '#';
-    try {
-      return new URL(import.meta.env.BASE_URL, window.location.origin).href;
-    } catch {
-      return '#';
-    }
-  }, []);
+  const baseUrl = useMemo(
+    () =>
+      resolveLabelBaseUrl(
+        labelBaseUrl,
+        typeof window === 'undefined' ? null : window.location.origin,
+        import.meta.env.BASE_URL,
+      ),
+    [labelBaseUrl],
+  );
 
   const url = useMemo(() => buildItemQrUrl(itemId, baseUrl), [itemId, baseUrl]);
   const barcodeValue = useMemo(() => labelBarcodeValue({ id: itemId, mpn: itemMpn }), [itemId, itemMpn]);

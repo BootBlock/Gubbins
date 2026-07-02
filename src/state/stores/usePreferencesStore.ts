@@ -71,6 +71,14 @@ interface PreferencesStore {
    * working copy from this and can save changes back as the new default.
    */
   readonly labelTemplate: LabelTemplate;
+  /**
+   * Optional base URL that printable QR codes / barcodes should link to (spec §6). Empty
+   * means "derive from the address this app is opened from" (`origin` + Vite base path).
+   * Set it to a stable name every device can reach — e.g. `http://gubbins.local` — so a
+   * label printed from a `localhost` dev server still resolves from a phone. Device-local
+   * (a printing/network concern, never synced); resolved by `resolveLabelBaseUrl`.
+   */
+  readonly labelBaseUrl: string;
   /** Play a synthesised confirmation beep on a successful scan (§6.5). On by default. */
   readonly scannerBeep: boolean;
   /** Trigger a haptic bump (`navigator.vibrate`) on a successful scan (§6.5). On by default. */
@@ -129,6 +137,7 @@ interface PreferencesStore {
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
   setLabelTemplate: (template: LabelTemplate) => void;
+  setLabelBaseUrl: (url: string) => void;
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setExpirySoonWindowDays: (days: number) => void;
@@ -157,6 +166,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
       labelTemplate: DEFAULT_LABEL_TEMPLATE,
+      labelBaseUrl: '',
       scannerBeep: true,
       scannerHaptics: true,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
@@ -182,6 +192,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setScannerSymbology: (symbology) => set({ scannerSymbology: normaliseSymbology(symbology) }),
       // Normalise so a stale/partial persisted template can never reach the renderer.
       setLabelTemplate: (template) => set({ labelTemplate: normaliseLabelTemplate(template) }),
+      // Stored verbatim (trimmed); the forgiving `resolveLabelBaseUrl` normalises at read time.
+      setLabelBaseUrl: (labelBaseUrl) => set({ labelBaseUrl: labelBaseUrl.trim() }),
       setScannerBeep: (scannerBeep) => set({ scannerBeep }),
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value

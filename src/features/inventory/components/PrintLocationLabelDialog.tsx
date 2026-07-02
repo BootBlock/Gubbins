@@ -2,10 +2,12 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import {
   LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
   normaliseLabelTemplate,
+  type LabelSizeMode,
   type LabelSymbology,
   type LabelTemplate,
 } from '../labels/label-template';
@@ -15,6 +17,7 @@ import {
   type LocationLabelInput,
 } from '../labels/location-label';
 import { LabelCellPreview } from './LabelCellPreview';
+import { LabelSizeControls } from './LabelSizeControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
@@ -51,6 +54,7 @@ export function PrintLocationLabelDialog({
   location: LocationLabelInput;
 }) {
   const storedTemplate = usePreferencesStore((s) => s.labelTemplate);
+  const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
 
   // A location label only uses symbology / columns / showName / showLocation(path);
   // the item-only field flags are forced on/off so the shared renderer behaves.
@@ -58,6 +62,9 @@ export function PrintLocationLabelDialog({
   const [columns, setColumns] = useState(1);
   const [showPath, setShowPath] = useState(true);
   const [copies, setCopies] = useState(1);
+  const [sizeMode, setSizeMode] = useState<LabelSizeMode>('sheet');
+  const [labelWidthMm, setLabelWidthMm] = useState(40);
+  const [labelHeightMm, setLabelHeightMm] = useState(30);
   useEffect(() => {
     if (!open) return;
     const seed = normaliseLabelTemplate(storedTemplate);
@@ -65,16 +72,20 @@ export function PrintLocationLabelDialog({
     setColumns(seed.columns);
     setShowPath(true);
     setCopies(1);
+    setSizeMode(seed.sizeMode);
+    setLabelWidthMm(seed.labelWidthMm);
+    setLabelHeightMm(seed.labelHeightMm);
   }, [open, storedTemplate]);
 
-  const baseUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '#';
-    try {
-      return new URL(import.meta.env.BASE_URL, window.location.origin).href;
-    } catch {
-      return '#';
-    }
-  }, []);
+  const baseUrl = useMemo(
+    () =>
+      resolveLabelBaseUrl(
+        labelBaseUrl,
+        typeof window === 'undefined' ? null : window.location.origin,
+        import.meta.env.BASE_URL,
+      ),
+    [labelBaseUrl],
+  );
 
   const template: LabelTemplate = useMemo(
     () => ({
@@ -85,8 +96,11 @@ export function PrintLocationLabelDialog({
       showMpn: false,
       showQuantity: false,
       showText: true,
+      sizeMode,
+      labelWidthMm,
+      labelHeightMm,
     }),
-    [symbology, columns, showPath],
+    [symbology, columns, showPath, sizeMode, labelWidthMm, labelHeightMm],
   );
 
   const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
@@ -101,9 +115,25 @@ export function PrintLocationLabelDialog({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Print location label" description={location.name}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Print location label"
+      description={location.name}
+      className="max-w-[38.4rem]"
+    >
       <div className="space-y-4">
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
+          <LabelSizeControls
+            testId="loc-label-size"
+            value={{ sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm }}
+            onChange={(v) => {
+              setSizeMode(v.sizeMode);
+              setLabelWidthMm(v.widthMm);
+              setLabelHeightMm(v.heightMm);
+            }}
+          />
+
           <CompactSelect
             label="Code"
             value={symbology}
@@ -123,15 +153,17 @@ export function PrintLocationLabelDialog({
             options={COPY_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
           />
 
-          <CompactSelect
-            label="Columns per sheet"
-            value={String(columns)}
-            onChange={(value) => setColumns(Number(value))}
-            options={Array.from(
-              { length: LABEL_COLUMNS_BOUNDS.max - LABEL_COLUMNS_BOUNDS.min + 1 },
-              (_, i) => LABEL_COLUMNS_BOUNDS.min + i,
-            ).map((n) => ({ value: String(n), label: String(n) }))}
-          />
+          {sizeMode === 'sheet' ? (
+            <CompactSelect
+              label="Columns per sheet"
+              value={String(columns)}
+              onChange={(value) => setColumns(Number(value))}
+              options={Array.from(
+                { length: LABEL_COLUMNS_BOUNDS.max - LABEL_COLUMNS_BOUNDS.min + 1 },
+                (_, i) => LABEL_COLUMNS_BOUNDS.min + i,
+              ).map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          ) : null}
 
           {location.path && location.path.trim().length > 0 ? (
             <label className="flex cursor-pointer items-center gap-2 self-end text-sm text-foreground">
@@ -146,8 +178,11 @@ export function PrintLocationLabelDialog({
           ) : null}
         </div>
 
-        <div className="mx-auto w-40">
-          <LabelCellPreview cell={cell} />
+        <div className="mx-auto w-48">
+          <LabelCellPreview
+            cell={cell}
+            size={sizeMode === 'die-cut' ? { widthMm: labelWidthMm, heightMm: labelHeightMm } : undefined}
+          />
         </div>
 
         <div className="flex justify-end gap-2">

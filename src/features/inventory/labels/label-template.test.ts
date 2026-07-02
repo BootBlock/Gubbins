@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LABEL_TEMPLATE,
   LABEL_COLUMNS_BOUNDS,
+  LABEL_SIZE_BOUNDS,
+  LABEL_SIZE_CUSTOM_ID,
+  LABEL_SIZE_PRESETS,
+  LABEL_SIZE_SHEET_ID,
   clampColumns,
+  clampLabelDimension,
   labelBarcodeValue,
+  labelSizeSelection,
   normaliseLabelTemplate,
   shortId,
   templateHasBarcode,
@@ -49,6 +55,53 @@ describe('normaliseLabelTemplate', () => {
 
   it('clamps an out-of-range column count', () => {
     expect(normaliseLabelTemplate({ columns: 99 }).columns).toBe(LABEL_COLUMNS_BOUNDS.max);
+  });
+
+  it('defaults the size mode to the A4 sheet and coerces an unknown mode', () => {
+    expect(normaliseLabelTemplate({}).sizeMode).toBe('sheet');
+    expect(normaliseLabelTemplate({ sizeMode: 'nonsense' }).sizeMode).toBe('sheet');
+    expect(normaliseLabelTemplate({ sizeMode: 'die-cut' }).sizeMode).toBe('die-cut');
+  });
+
+  it('clamps out-of-range / garbage die-cut dimensions to the bounds', () => {
+    const t = normaliseLabelTemplate({ sizeMode: 'die-cut', labelWidthMm: 5, labelHeightMm: 9999 });
+    expect(t.labelWidthMm).toBe(LABEL_SIZE_BOUNDS.min);
+    expect(t.labelHeightMm).toBe(LABEL_SIZE_BOUNDS.max);
+    const g = normaliseLabelTemplate({ labelWidthMm: 'x' });
+    expect(g.labelWidthMm).toBe(DEFAULT_LABEL_TEMPLATE.labelWidthMm);
+  });
+});
+
+describe('clampLabelDimension', () => {
+  it('clamps and rounds to the mm bounds', () => {
+    expect(clampLabelDimension(0)).toBe(LABEL_SIZE_BOUNDS.min);
+    expect(clampLabelDimension(9999)).toBe(LABEL_SIZE_BOUNDS.max);
+    expect(clampLabelDimension(40.4)).toBe(40);
+  });
+  it('falls back to the (clamped) fallback for non-finite input', () => {
+    expect(clampLabelDimension('nope', 30)).toBe(30);
+    expect(clampLabelDimension(undefined, 5)).toBe(LABEL_SIZE_BOUNDS.min);
+  });
+});
+
+describe('labelSizeSelection', () => {
+  const size = (over: Partial<LabelTemplate> = {}): LabelTemplate => ({ ...DEFAULT_LABEL_TEMPLATE, ...over });
+
+  it('is the sheet id in sheet mode', () => {
+    expect(labelSizeSelection(size({ sizeMode: 'sheet' }))).toBe(LABEL_SIZE_SHEET_ID);
+  });
+  it('matches a preset id when the die-cut dimensions equal that preset', () => {
+    const preset = LABEL_SIZE_PRESETS[0]!;
+    expect(
+      labelSizeSelection(
+        size({ sizeMode: 'die-cut', labelWidthMm: preset.widthMm, labelHeightMm: preset.heightMm }),
+      ),
+    ).toBe(preset.id);
+  });
+  it('is the custom id for a bespoke die-cut size', () => {
+    expect(labelSizeSelection(size({ sizeMode: 'die-cut', labelWidthMm: 37, labelHeightMm: 23 }))).toBe(
+      LABEL_SIZE_CUSTOM_ID,
+    );
   });
 });
 

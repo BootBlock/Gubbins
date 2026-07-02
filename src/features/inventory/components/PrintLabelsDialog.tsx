@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Banner, Button, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import {
   LABEL_COLUMNS_BOUNDS,
   LABEL_SYMBOLOGY_OPTIONS,
@@ -12,6 +13,7 @@ import {
 } from '../labels/label-template';
 import { MAX_LABELS, buildLabelSheetHtml, toLabelCells, type LabelItem } from '../labels/label-sheet';
 import { LabelCellPreview } from './LabelCellPreview';
+import { LabelSizeControls } from './LabelSizeControls';
 
 /**
  * Batch label-sheet preview & print (spec §6 "Printable QR generation"; Phase 73
@@ -51,6 +53,7 @@ export function PrintLabelsDialog({
 }) {
   const storedTemplate = usePreferencesStore((s) => s.labelTemplate);
   const setLabelTemplate = usePreferencesStore((s) => s.setLabelTemplate);
+  const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
 
   // Editable working copy, re-seeded from the saved default each time the dialog opens.
   const [template, setTemplate] = useState<LabelTemplate>(() => normaliseLabelTemplate(storedTemplate));
@@ -58,14 +61,15 @@ export function PrintLabelsDialog({
     if (open) setTemplate(normaliseLabelTemplate(storedTemplate));
   }, [open, storedTemplate]);
 
-  const baseUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '#';
-    try {
-      return new URL(import.meta.env.BASE_URL, window.location.origin).href;
-    } catch {
-      return '#';
-    }
-  }, []);
+  const baseUrl = useMemo(
+    () =>
+      resolveLabelBaseUrl(
+        labelBaseUrl,
+        typeof window === 'undefined' ? null : window.location.origin,
+        import.meta.env.BASE_URL,
+      ),
+    [labelBaseUrl],
+  );
 
   const cells = useMemo(() => toLabelCells(items, baseUrl, template), [items, baseUrl, template]);
   const truncated = items.length > MAX_LABELS;
@@ -102,6 +106,22 @@ export function PrintLabelsDialog({
 
         {/* Template controls */}
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
+          <LabelSizeControls
+            value={{
+              sizeMode: template.sizeMode,
+              widthMm: template.labelWidthMm,
+              heightMm: template.labelHeightMm,
+            }}
+            onChange={(v) =>
+              setTemplate((t) => ({
+                ...t,
+                sizeMode: v.sizeMode,
+                labelWidthMm: v.widthMm,
+                labelHeightMm: v.heightMm,
+              }))
+            }
+          />
+
           <CompactSelect
             label="Code"
             value={template.symbology}
@@ -110,13 +130,15 @@ export function PrintLabelsDialog({
             options={LABEL_SYMBOLOGY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           />
 
-          <CompactSelect
-            label="Columns per sheet"
-            value={String(template.columns)}
-            onChange={(value) => set('columns', Number(value))}
-            data-testid="label-columns"
-            options={columnOptions().map((n) => ({ value: String(n), label: String(n) }))}
-          />
+          {template.sizeMode === 'sheet' ? (
+            <CompactSelect
+              label="Columns per sheet"
+              value={String(template.columns)}
+              onChange={(value) => set('columns', Number(value))}
+              data-testid="label-columns"
+              options={columnOptions().map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          ) : null}
 
           <fieldset className="flex flex-col gap-1.5 sm:col-span-2">
             <legend className="text-xs font-medium text-muted-foreground">Show on label</legend>
@@ -152,7 +174,15 @@ export function PrintLabelsDialog({
             className="grid max-h-[45vh] grid-cols-2 gap-3 overflow-auto sm:grid-cols-3"
           >
             {cells.map((cell, i) => (
-              <LabelCellPreview key={`${cell.id}-${i}`} cell={cell} />
+              <LabelCellPreview
+                key={`${cell.id}-${i}`}
+                cell={cell}
+                size={
+                  template.sizeMode === 'die-cut'
+                    ? { widthMm: template.labelWidthMm, heightMm: template.labelHeightMm }
+                    : undefined
+                }
+              />
             ))}
           </div>
         )}

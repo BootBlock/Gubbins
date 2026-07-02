@@ -88,7 +88,8 @@ export function toLocationLabelCell(
 
 /**
  * Build a complete, self-contained printable document of `copies` identical labels for
- * one location, laid out in the template's columns. Pure deterministic transform.
+ * one location, laid out per the template's size mode (A4 grid or die-cut per page).
+ * Pure deterministic transform.
  */
 export function buildLocationLabelHtml(
   loc: LocationLabelInput,
@@ -97,5 +98,5 @@ export function buildLocationLabelHtml(
   copies = 1,
 ): string {
   const cell = labelCellHtml(toLocationLabelCell(loc, baseUrl, template));
-  return sheetDocument(cell.repeat(clampCopies(copies)), template.columns);
+  return sheetDocument(cell.repeat(clampCopies(copies)), template);
 }

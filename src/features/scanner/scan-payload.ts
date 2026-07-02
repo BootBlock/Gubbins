@@ -57,6 +57,56 @@ function buildDeepLink(param: string, id: string, baseUrl: string): string {
 }
 
 /**
+ * Resolve the base URL that printable item/location codes should point at.
+ *
+ * A code encodes an absolute deep-link (`<base>#/inventory?item=<id>`), and by default
+ * `<base>` is derived from the running page: the deployment `origin` (e.g.
+ * `http://localhost:5173`) plus the Vite `basePath` (`import.meta.env.BASE_URL`, e.g.
+ * `/Gubbins/`). That is fine when you always open the app the same way, but a label
+ * printed from a `localhost` dev server — or from one device's IP — is useless on a
+ * phone. The optional `override` (Settings → "Link host") replaces the derived base
+ * entirely, so codes can point at a stable name every device can reach, e.g.
+ * `http://gubbins.local/`.
+ *
+ * `override` is forgiving: a full URL (`https://gubbins.local/Gubbins/`) is used as-is,
+ * and a bare host (`gubbins.local:8080`) is assumed to be `http://`. A blank or
+ * unparseable override falls back to the derived default. When there is no `origin`
+ * (no DOM — tests/SSR) and no usable override, returns `'#'` so callers still emit a
+ * hash-only link the in-app scanner can parse. Never throws.
+ */
+export function resolveLabelBaseUrl(override: string, origin: string | null, basePath: string): string {
+  const custom = parseOverrideBase(override);
+  if (custom) return custom;
+  if (!origin) return '#';
+  try {
+    return new URL(basePath, origin).href;
+  } catch {
+    return '#';
+  }
+}
+
+/**
+ * Parse a user-typed "Link host" into a normalised absolute base URL, or `null` when it
+ * is blank or cannot be made into an `http(s)` URL. Tries the value verbatim first, then
+ * prefixed with `http://` so a scheme-less host still resolves.
+ */
+function parseOverrideBase(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // Assume `http://` only when the value carries no scheme of its own (so a lone
+  // `http://` isn't "helpfully" turned into `http://http://…`).
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  const candidate = hasScheme ? trimmed : `http://${trimmed}`;
+  try {
+    const url = new URL(candidate);
+    if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) return url.href;
+  } catch {
+    // fall through to the derived default
+  }
+  return null;
+}
+
+/**
  * Decode a raw scanned/typed string into a tagged {@link ScannedCode}, or `null` if
  * it is not a recognisable Gubbins code. Accepts, in order: a **bare UUID** (always an
  * item, preserving the original Phase-6 contract); the `gubbins:location:<uuid>` /

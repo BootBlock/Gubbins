@@ -77,6 +77,40 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(save).toBeDisabled();
   });
 
+  it('switches to a die-cut size: hides the columns control and prints an exact-sized sheet', () => {
+    const fakeDoc = { write: vi.fn(), close: vi.fn() };
+    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+
+    // Sheet mode shows the columns control...
+    expect(screen.queryByTestId('label-columns')).not.toBeNull();
+
+    chooseOption('label-size', /40 .* 30 mm/);
+
+    // ...die-cut mode replaces it (columns are meaningless for one-label-per-page).
+    expect(screen.queryByTestId('label-columns')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('print-labels-confirm'));
+    const written = fakeDoc.write.mock.calls[0]![0] as string;
+    expect(written).toContain('@page{size:40mm 30mm;margin:0}');
+
+    openSpy.mockRestore();
+  });
+
+  it('reveals width/height inputs for a custom die-cut size', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.queryByTestId('label-size-width')).toBeNull();
+
+    chooseOption('label-size', /Custom/);
+
+    const width = screen.getByTestId('label-size-width') as HTMLInputElement;
+    fireEvent.change(width, { target: { value: '37' } });
+    fireEvent.blur(width);
+    expect(width.value).toBe('37');
+  });
+
   it('disables printing and shows a notice when nothing is selected', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={[]} />);
     expect(screen.getByTestId('print-labels-confirm')).toBeDisabled();

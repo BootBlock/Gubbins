@@ -173,4 +173,28 @@ describe('buildLabelSheetHtml', () => {
     const html = buildLabelSheetHtml(many, BASE, template());
     expect(countOccurrences(html, '<svg')).toBe(MAX_LABELS);
   });
+
+  it('emits an exact-sized single-label-per-page document in die-cut mode', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'Resistor 10k' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 40, labelHeightMm: 30 }),
+    );
+    expect(html).toContain('@page{size:40mm 30mm;margin:0}');
+    expect(html).toContain('width:40mm;height:30mm');
+    expect(html).toContain('break-after:page');
+    // A die-cut sheet is not the tiled A4 grid.
+    expect(html).not.toContain('@page{size:A4');
+    expect(html).not.toContain('grid-template-columns');
+    expect(html).toContain('Resistor 10k');
+  });
+
+  it('clamps out-of-range die-cut dimensions in the rendered @page size', () => {
+    const html = buildLabelSheetHtml(
+      [{ id: ID_A, name: 'X' }],
+      BASE,
+      template({ sizeMode: 'die-cut', labelWidthMm: 4, labelHeightMm: 9999 }),
+    );
+    expect(html).toContain('@page{size:10mm 300mm;margin:0}');
+  });
 });
