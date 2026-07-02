@@ -50,7 +50,7 @@ const BACKUP_RESULT = {
   filename: 'gubbins-backup-2026-06-30.zip',
   size: 1024,
   manifest: {
-    appVersion: '0.9.0',
+    appVersion: '0.1.0',
     createdAt: Date.now(),
     counts: { items: 42, images: 5 },
   },
@@ -59,7 +59,7 @@ const BACKUP_RESULT = {
 /** A minimal ParsedBackup that satisfies RestorePanel's parsed rendering. */
 const PARSED_BACKUP = {
   manifest: {
-    appVersion: '0.9.0',
+    appVersion: '0.1.0',
     createdAt: new Date('2026-06-01').getTime(),
   },
   snapshot: { tables: { items: Array(10).fill({ id: 'x' }) } },
