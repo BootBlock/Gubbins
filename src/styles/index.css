@@ -123,6 +123,17 @@
   --abc-c: oklch(0.6 0.04 260);
 
   /*
+   * Condition palette (spec §4 Condition Tracking). Tints a condition label in the item
+   * pickers so an item's state reads at a glance — best (Mint) green through to
+   * Needs-repair red. Mint / Out-for-calibration / Needs-repair reuse the semantic
+   * success / warning / destructive tokens directly; only "Good" needs a hue of its own
+   * — a lime sitting between mint-green and amber on the severity ramp — defined here.
+   * Colour is never the sole signal (the condition label always reads), so this stays
+   * within WCAG 1.4.1; the .dark block lifts it for the near-black surface.
+   */
+  --cond-good: oklch(0.62 0.15 130);
+
+  /*
    * Decorative starfield (About screen). Theme-aware so the field reads on either
    * surface: on the near-white light theme the stars are *dark* dots; the .dark
    * block flips them to a cool near-white. `--star-flare` tints the occasional
@@ -214,6 +225,11 @@
   --abc-b: oklch(0.75 0.12 250);
   --abc-c: oklch(0.72 0.04 260);
 
+  /* Condition palette, dark-theme variant — the "Good" lime lifted for the near-black
+   * surface (see :root for the rationale). Mint/warning/destructive reuse their own
+   * dark-variant semantic tokens. */
+  --cond-good: oklch(0.82 0.14 130);
+
   /* Starfield, dark-theme variant — cool near-white stars and a cyan-tinted flare
    * glow on the near-black surface (see :root for the rationale). */
   --star: oklch(0.96 0.012 250);
@@ -294,6 +310,10 @@
   --color-abc-a: var(--abc-a);
   --color-abc-b: var(--abc-b);
   --color-abc-c: var(--abc-c);
+
+  /* Condition "Good" lime → `text-cond-good` (the one condition hue not already a
+   * semantic token; Mint/Out-for-calibration/Needs-repair use success/warning/destructive). */
+  --color-cond-good: var(--cond-good);
 
   /* Starfield tokens → exposed as `*-star` utilities for completeness; the
    * .gubbins-star / .gubbins-flare classes reference the raw vars directly. */

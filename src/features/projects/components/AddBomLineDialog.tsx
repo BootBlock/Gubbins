@@ -1,7 +1,7 @@
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useAddBomLine } from '../projects';
 
@@ -34,6 +34,7 @@ export function AddBomLineDialog({
 }) {
   const addLine = useAddBomLine(projectId);
   const {
+    control,
     register,
     handleSubmit,
     reset,
@@ -83,21 +84,29 @@ export function AddBomLineDialog({
       description="Add a required part to this project."
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Inventory item (optional)</span>
-          <Select {...register('itemId')}>
-            <option value="">— Manual / unmatched —</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-                {item.mpn ? ` · ${item.mpn}` : ''}
-              </option>
-            ))}
-          </Select>
+        <div>
+          <Controller
+            control={control}
+            name="itemId"
+            render={({ field }) => (
+              <SelectField
+                label="Inventory item (optional)"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                options={[
+                  { value: '', label: '— Manual / unmatched —' },
+                  ...items.map((item) => ({
+                    value: item.id,
+                    label: `${item.name}${item.mpn ? ` · ${item.mpn}` : ''}`,
+                  })),
+                ]}
+              />
+            )}
+          />
           <span className="mt-1 block text-xs text-muted-foreground">
             Matching an item inherits its current unit cost as the point-in-time snapshot.
           </span>
-        </label>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Designator">

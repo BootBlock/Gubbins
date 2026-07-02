@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, Input, Modal, SelectField } from '@/components/foundry';
 import { CheckoutIcon } from '@/components/icons';
 import type { Item, ItemBatchPlacement } from '@/db/repositories';
 import { isDefaultBatch } from '@/features/inventory/batches';
@@ -139,47 +139,42 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
         </label>
 
         {isSplit ? (
-          <label className="block">
-            <span className="mb-field-gap block text-sm font-medium">Lend from</span>
-            <Select
+          <div>
+            <SelectField
+              label="Lend from"
               value={fromLocationId}
-              onChange={(e) => {
-                setFromLocationId(e.target.value);
+              onChange={(value) => {
+                setFromLocationId(value);
                 setFromBatchKey(ANY_LOT); // the lot list belongs to the placement — reset on change
               }}
               data-testid="checkout-from-location"
-            >
-              {placements.map((p) => (
-                <option key={p.locationId} value={p.locationId}>
-                  {p.locationName} ({p.quantity})
-                </option>
-              ))}
-            </Select>
+              options={placements.map((p) => ({
+                value: p.locationId,
+                label: `${p.locationName} (${p.quantity})`,
+              }))}
+            />
             <span className="mt-1 block text-xs text-muted-foreground">
               Returned stock goes back to this location.
             </span>
-          </label>
+          </div>
         ) : null}
 
         {canPickLot ? (
-          <label className="block">
-            <span className="mb-field-gap block text-sm font-medium">Lend from lot</span>
-            <Select
+          <div>
+            <SelectField
+              label="Lend from lot"
               value={fromBatchKey}
-              onChange={(e) => setFromBatchKey(e.target.value)}
+              onChange={setFromBatchKey}
               data-testid="checkout-from-lot"
-            >
-              <option value={ANY_LOT}>Any (soonest expiry)</option>
-              {lotsHere.map((b) => (
-                <option key={b.batchKey} value={b.batchKey}>
-                  {lotLabel(b)} ({b.quantity})
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: ANY_LOT, label: 'Any (soonest expiry)' },
+                ...lotsHere.map((b) => ({ value: b.batchKey, label: `${lotLabel(b)} (${b.quantity})` })),
+              ]}
+            />
             <span className="mt-1 block text-xs text-muted-foreground">
               A returned unit goes back to this exact lot.
             </span>
-          </label>
+          </div>
         ) : null}
 
         {isDiscrete ? (

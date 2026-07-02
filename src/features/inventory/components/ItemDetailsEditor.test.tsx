@@ -57,7 +57,9 @@ describe('ItemDetailsEditor', () => {
     expect((screen.getByLabelText('Description (optional)') as HTMLTextAreaElement).value).toBe(
       'Single bipolar timer IC',
     );
-    expect((screen.getByLabelText('Category') as HTMLSelectElement).value).toBe('cat-1');
+    // The Category picker is a custom listbox combobox now — the trigger shows the
+    // selected category's *name* (cat-1 → "Resistors"), not its raw id.
+    expect(screen.getByRole('combobox', { name: 'Category' }).textContent).toContain('Resistors');
     expect(screen.getByTestId('item-details-save')).toHaveProperty('disabled', true);
   });
 

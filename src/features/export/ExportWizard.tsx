@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, LiveRegion, Modal, Surface } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Select, Surface } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
@@ -154,81 +154,65 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
         {/* §3 report picker (Phase 61) — shown only for the report-CSV format. */}
         {isReport ? (
           <div className="space-y-2">
-            <label
-              htmlFor="export-report-kind"
+            <span
+              id="export-report-kind-label"
               className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
             >
               Report
-            </label>
-            <select
+            </span>
+            <Select
               id="export-report-kind"
+              aria-labelledby="export-report-kind-label"
               value={reportKind}
-              onChange={(e) => setReportKind(e.target.value as ReportExportKind)}
+              onChange={(value) => setReportKind(value as ReportExportKind)}
               data-testid="export-report-kind"
-              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-            >
-              {REPORT_KINDS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+              options={REPORT_KINDS.map((r) => ({ value: r.value, label: r.label }))}
+            />
           </div>
         ) : null}
 
         {/* §4.5 scope (item/project/whole-inventory exports only; not shown for report or catalog CSV) */}
         {hasScope ? (
           <div className="space-y-2">
-            <label
-              htmlFor="export-scope"
+            <span
+              id="export-scope-label"
               className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
             >
               Scope
-            </label>
-            <select
+            </span>
+            <Select
               id="export-scope"
+              aria-labelledby="export-scope-label"
               value={scope}
-              onChange={(e) => setScope(e.target.value as ExportScope)}
+              onChange={(value) => setScope(value as ExportScope)}
               data-testid="export-scope"
-              className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-            >
-              {SCOPES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+              options={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
+            />
 
             {scope === 'ITEM' ? (
-              <select
+              <Select
                 value={scopeTargetId ?? ''}
-                onChange={(e) => setScopeTargetId(e.target.value || null)}
+                onChange={(value) => setScopeTargetId(value || null)}
                 data-testid="export-target-item"
-                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-              >
-                <option value="">Choose an item…</option>
-                {(itemList.data?.rows ?? []).map((it) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                aria-label="Item to export"
+                options={[
+                  { value: '', label: 'Choose an item…' },
+                  ...(itemList.data?.rows ?? []).map((it) => ({ value: it.id, label: it.name })),
+                ]}
+              />
             ) : null}
 
             {scope === 'PROJECT' ? (
-              <select
+              <Select
                 value={scopeTargetId ?? ''}
-                onChange={(e) => setScopeTargetId(e.target.value || null)}
+                onChange={(value) => setScopeTargetId(value || null)}
                 data-testid="export-target-project"
-                className="w-full rounded-lg border border-border bg-background p-2 text-sm"
-              >
-                <option value="">Choose a project…</option>
-                {(projectList.data?.rows ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                aria-label="Project to export"
+                options={[
+                  { value: '', label: 'Choose a project…' },
+                  ...(projectList.data?.rows ?? []).map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
             ) : null}
           </div>
         ) : null}

@@ -185,15 +185,10 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                 aria-label="Purge history older than"
                 data-testid="prune-months"
                 className="ml-1 inline-block h-9 w-auto"
-                value={pruneMonths}
-                onChange={(e) => setPruneMonths(Number(e.target.value))}
-              >
-                {WINDOW_MONTH_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    {monthsLabel(m)}
-                  </option>
-                ))}
-              </Select>
+                value={String(pruneMonths)}
+                onChange={(value) => setPruneMonths(Number(value))}
+                options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+              />
             </label>
             <span className="text-sm text-muted-foreground">
               {pruneCount.data ?? 0} entr{(pruneCount.data ?? 0) === 1 ? 'y' : 'ies'} affected
@@ -245,15 +240,10 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                 aria-label="Downgrade images older than"
                 data-testid="downgrade-months"
                 className="ml-1 inline-block h-9 w-auto"
-                value={downgradeMonths}
-                onChange={(e) => setDowngradeMonths(Number(e.target.value))}
-              >
-                {WINDOW_MONTH_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    {monthsLabel(m)}
-                  </option>
-                ))}
-              </Select>
+                value={String(downgradeMonths)}
+                onChange={(value) => setDowngradeMonths(Number(value))}
+                options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+              />
             </label>
             <span className="text-sm text-muted-foreground">
               {downgradeCount.data ?? 0} image{(downgradeCount.data ?? 0) === 1 ? '' : 's'} affected

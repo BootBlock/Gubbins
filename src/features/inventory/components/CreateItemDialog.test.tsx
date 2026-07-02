@@ -95,7 +95,9 @@ describe('CreateItemDialog', () => {
 
   it('offers Untracked and hides quantity + low-stock fields for it', async () => {
     renderDialog();
-    fireEvent.change(screen.getByLabelText('Tracking'), { target: { value: 'UNTRACKED' } });
+    // Tracking is a custom listbox combobox now — open it and click the option.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Untracked' }));
 
     expect(screen.queryByLabelText('Initial quantity')).toBeNull();
     expect(screen.queryByLabelText('Low-stock alert at (optional)')).toBeNull();
@@ -117,10 +119,10 @@ describe('CreateItemDialog', () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Torque wrench' } });
 
-    // Choosing "＋ New category…" stacks the quick-create dialog on top.
-    fireEvent.change(screen.getByLabelText('Category (optional)'), {
-      target: { value: '__create-category__' },
-    });
+    // Choosing "＋ New category…" stacks the quick-create dialog on top. The Category
+    // picker is now a custom listbox combobox, so open it and click the action row.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: '＋ New category…' }));
     const catDialog = within(await screen.findByRole('dialog', { name: 'Add category' }));
     fireEvent.change(catDialog.getByLabelText('Name'), { target: { value: 'Tools' } });
     fireEvent.click(catDialog.getByRole('button', { name: 'Create' }));

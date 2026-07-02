@@ -94,12 +94,13 @@ export function AttachmentManager({ itemId }: { itemId: string }) {
         {mode === 'HYBRID' ? (
           <Select
             value={kind}
-            onChange={(e) => setKind(e.target.value as AttachmentKind)}
+            onChange={(value) => setKind(value as AttachmentKind)}
             aria-label="Attachment kind"
-          >
-            <option value="URL">{ATTACHMENT_KIND_LABELS.URL}</option>
-            <option value="LOCAL_POINTER">{ATTACHMENT_KIND_LABELS.LOCAL_POINTER}</option>
-          </Select>
+            options={[
+              { value: 'URL', label: ATTACHMENT_KIND_LABELS.URL },
+              { value: 'LOCAL_POINTER', label: ATTACHMENT_KIND_LABELS.LOCAL_POINTER },
+            ]}
+          />
         ) : null}
         <Input
           value={value}

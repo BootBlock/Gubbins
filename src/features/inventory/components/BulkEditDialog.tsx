@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Input, Modal, Select } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
-import { CONDITIONS, type Condition, type LocationWithCount } from '@/db/repositories';
-import { CONDITION_LABELS } from './inventory-ui';
+import { type Condition, type LocationWithCount } from '@/db/repositories';
+import { conditionSelectOptions } from './inventory-ui';
 import { useCategories } from '../categories';
 import { useBulkEditItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
@@ -106,17 +106,14 @@ export function BulkEditDialog({
         <FieldRow enabled={catOn} onToggle={setCatOn} label="Category" testId="bulk-field-category">
           <Select
             value={catValue}
-            onChange={(e) => setCatValue(e.target.value)}
+            onChange={setCatValue}
             disabled={!catOn}
             aria-label="New category"
-          >
-            <option value="">— Clear (uncategorised) —</option>
-            {(categories.data?.rows ?? []).map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </Select>
+            options={[
+              { value: '', label: '— Clear (uncategorised) —' },
+              ...(categories.data?.rows ?? []).map((cat) => ({ value: cat.id, label: cat.name })),
+            ]}
+          />
         </FieldRow>
 
         {/* Location ----------------------------------------------------- */}
@@ -136,30 +133,25 @@ export function BulkEditDialog({
         <FieldRow enabled={condOn} onToggle={setCondOn} label="Condition" testId="bulk-field-condition">
           <Select
             value={condValue}
-            onChange={(e) => setCondValue(e.target.value)}
+            onChange={setCondValue}
             disabled={!condOn}
             aria-label="New condition"
-          >
-            <option value="">— Clear (untracked) —</option>
-            {CONDITIONS.map((c) => (
-              <option key={c} value={c}>
-                {CONDITION_LABELS[c]}
-              </option>
-            ))}
-          </Select>
+            options={conditionSelectOptions('— Clear (untracked) —')}
+          />
         </FieldRow>
 
         {/* Active-state ------------------------------------------------- */}
         <FieldRow enabled={activeOn} onToggle={setActiveOn} label="State" testId="bulk-field-active">
           <Select
             value={activeValue}
-            onChange={(e) => setActiveValue(e.target.value as 'active' | 'removed')}
+            onChange={(value) => setActiveValue(value as 'active' | 'removed')}
             disabled={!activeOn}
             aria-label="New state"
-          >
-            <option value="active">Active</option>
-            <option value="removed">Removed</option>
-          </Select>
+            options={[
+              { value: 'active', label: 'Active' },
+              { value: 'removed', label: 'Removed' },
+            ]}
+          />
         </FieldRow>
 
         {/* Tags --------------------------------------------------------- */}
@@ -167,13 +159,14 @@ export function BulkEditDialog({
           <div className="flex flex-col gap-2">
             <Select
               value={tagMode}
-              onChange={(e) => setTagMode(e.target.value as TagEditMode)}
+              onChange={(value) => setTagMode(value as TagEditMode)}
               disabled={!tagsOn}
               aria-label="Tag mode"
-            >
-              <option value="add">Add to existing tags</option>
-              <option value="replace">Replace all tags</option>
-            </Select>
+              options={[
+                { value: 'add', label: 'Add to existing tags' },
+                { value: 'replace', label: 'Replace all tags' },
+              ]}
+            />
             <Input
               value={tagText}
               onChange={(e) => setTagText(e.target.value)}

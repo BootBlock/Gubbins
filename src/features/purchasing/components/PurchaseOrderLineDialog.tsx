@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import type { CreatePurchaseOrderLineInput } from '@/db/repositories';
 
 /** A pickable item for a PO line, with its default (preferred-supplier) unit cost. */
@@ -89,20 +89,17 @@ export function PurchaseOrderLineDialog({
       description="A part to order. Link an inventory item so received stock lands automatically."
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-line-form">
-        <FormField label="Item" hint="Link an inventory item, or leave unlinked and describe it below.">
-          <Select
-            value={itemId}
-            onChange={(e) => handleItemChange(e.target.value)}
-            data-testid="po-line-item"
-          >
-            <option value="">— Unlinked —</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        <SelectField
+          label="Item"
+          hint="Link an inventory item, or leave unlinked and describe it below."
+          value={itemId}
+          onChange={handleItemChange}
+          data-testid="po-line-item"
+          options={[
+            { value: '', label: '— Unlinked —' },
+            ...items.map((i) => ({ value: i.id, label: i.name })),
+          ]}
+        />
 
         <FormField label="Description" hint="Used when no item is linked (e.g. a not-yet-stocked part).">
           <Input

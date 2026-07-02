@@ -5,7 +5,7 @@
  * resets the schedule and appends a `MAINTENANCE_LOGGED` ledger entry), accrue
  * usage against a usage-based schedule, or remove one.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { SettingsIcon, AddIcon, DeleteIcon, CheckIcon, WarningIcon } from '@/components/icons';
 import { MAINTENANCE_BASES, type MaintenanceBasis, type MaintenanceSchedule } from '@/db/repositories';
@@ -35,6 +35,7 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
   const [accrueCheckoutHours, setAccrueCheckoutHours] = useState(false);
   const [locationId, setLocationId] = useState<string>(WHOLE_ITEM);
   const [error, setError] = useState<string | null>(null);
+  const locScopeLabelId = useId();
 
   // Offer a per-placement scope only where the tool actually sits in more than one place
   // (Phase 30, §4.3): a schedule scoped to a location is serviced per placement.
@@ -106,15 +107,11 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
           <div className="grid grid-cols-3 gap-2">
             <Select
               data-testid="maintenance-basis"
+              aria-label="Schedule basis"
               value={basis}
-              onChange={(e) => setBasis(e.target.value as MaintenanceBasis)}
-            >
-              {MAINTENANCE_BASES.map((b) => (
-                <option key={b} value={b}>
-                  {MAINTENANCE_BASIS_LABELS[b]}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => setBasis(value as MaintenanceBasis)}
+              options={MAINTENANCE_BASES.map((b) => ({ value: b, label: MAINTENANCE_BASIS_LABELS[b] }))}
+            />
             <Input
               type="number"
               min={1}
@@ -152,27 +149,27 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
             </label>
           ) : null}
           {showLocationScope ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="shrink-0">Applies to</span>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span id={locScopeLabelId} className="shrink-0">
+                Applies to
+              </span>
               <Select
                 data-testid="maintenance-location"
+                aria-labelledby={locScopeLabelId}
                 value={locationId}
-                onChange={(e) => setLocationId(e.target.value)}
-              >
-                <option value={WHOLE_ITEM}>Whole item (any location)</option>
-                {scopeLocations.map((p) => (
-                  <option key={p.locationId} value={p.locationId}>
-                    {p.locationName}
-                  </option>
-                ))}
-              </Select>
+                onChange={setLocationId}
+                options={[
+                  { value: WHOLE_ITEM, label: 'Whole item (any location)' },
+                  ...scopeLocations.map((p) => ({ value: p.locationId, label: p.locationName })),
+                ]}
+              />
               <Tooltip
                 content="Scope this schedule to one placement — serviced per location, and (in accrue mode) counting only loans drawn from there."
                 openDelayMs={INFO_OPEN_DELAY_MS}
               >
                 <span className="cursor-help underline decoration-dotted">why?</span>
               </Tooltip>
-            </label>
+            </div>
           ) : null}
           <div className="flex justify-end">
             <Button size="sm" onClick={add} disabled={create.isPending} data-testid="add-maintenance">

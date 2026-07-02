@@ -21,7 +21,7 @@ import {
   MAIN_CONTENT_ID,
   PageContainer,
   PageHeader,
-  Select,
+  SelectField,
   Spinner,
   Surface,
 } from '@/components/foundry';
@@ -160,22 +160,23 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
       </h2>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Asset</span>
-          <Select value={itemId} onChange={(e) => setItemId(e.target.value)} data-testid="booking-asset">
-            <option value="">Choose an asset…</option>
-            {assets.data?.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+        <div>
+          <SelectField
+            label="Asset"
+            data-testid="booking-asset"
+            value={itemId}
+            onChange={setItemId}
+            options={[
+              { value: '', label: 'Choose an asset…' },
+              ...(assets.data?.map((a) => ({ value: a.id, label: a.name })) ?? []),
+            ]}
+          />
           {assets.data && assets.data.length === 0 ? (
             <span className="mt-1 block text-xs text-muted-foreground">
               No bookable assets yet — only serialised or single-unit items can be booked.
             </span>
           ) : null}
-        </label>
+        </div>
 
         <label className="block">
           <span className="mb-field-gap block text-sm font-medium">Booked for (optional)</span>

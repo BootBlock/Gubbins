@@ -126,21 +126,18 @@ function MappingTable({
             <tr key={i} className="border-b border-border last:border-0">
               <td className="px-3 py-2 font-mono text-xs text-foreground">{header || '(empty)'}</td>
               <td className="px-3 py-2">
-                <select
+                <Select
                   value={
                     isCustomFieldTarget(mapping[i] ?? null) ? '' : ((mapping[i] as CatalogField | null) ?? '')
                   }
-                  onChange={(e) => onChange(i, (e.target.value || null) as CatalogField | null)}
-                  className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                  onChange={(value) => onChange(i, (value || null) as CatalogField | null)}
+                  className="h-8 text-xs"
                   aria-label={`Field for column ${header || i + 1}`}
-                >
-                  <option value="">(ignore)</option>
-                  {CATALOG_FIELDS.map((f) => (
-                    <option key={f} value={f}>
-                      {CATALOG_FIELD_LABELS[f]}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: '(ignore)' },
+                    ...CATALOG_FIELDS.map((f) => ({ value: f, label: CATALOG_FIELD_LABELS[f] })),
+                  ]}
+                />
               </td>
             </tr>
           ))}
@@ -368,27 +365,23 @@ function ImportWorkbench({
       {/* Format + match-key controls */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <label
-            htmlFor={formatId}
+          <span
+            id={`${formatId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
           >
             Interpret as
-          </label>
+          </span>
           <Select
             id={formatId}
+            aria-labelledby={`${formatId}-label`}
             value={formatOverride ?? 'auto'}
-            onChange={(e) =>
-              setFormatOverride(e.target.value === 'auto' ? null : (e.target.value as ImportFormat))
-            }
+            onChange={(value) => setFormatOverride(value === 'auto' ? null : (value as ImportFormat))}
             className="h-9"
-          >
-            <option value="auto">Auto-detect</option>
-            {IMPORT_FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {IMPORT_FORMAT_LABELS[f]}
-              </option>
-            ))}
-          </Select>
+            options={[
+              { value: 'auto', label: 'Auto-detect' },
+              ...IMPORT_FORMATS.map((f) => ({ value: f, label: IMPORT_FORMAT_LABELS[f] })),
+            ]}
+          />
           {autoDetected ? (
             <p className="text-xs text-muted-foreground">
               Detected: {IMPORT_FORMAT_LABELS[extraction.format]}
@@ -396,22 +389,24 @@ function ImportWorkbench({
           ) : null}
         </div>
         <div className="space-y-1">
-          <label
-            htmlFor={matchKeyId}
+          <span
+            id={`${matchKeyId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
           >
             Match existing items by
-          </label>
+          </span>
           <Select
             id={matchKeyId}
+            aria-labelledby={`${matchKeyId}-label`}
             value={matchKey}
-            onChange={(e) => setMatchKey(e.target.value as MatchKey)}
+            onChange={(value) => setMatchKey(value as MatchKey)}
             className="h-9"
             data-testid="catalog-import-match-key"
-          >
-            <option value="name">Name</option>
-            <option value="sku">SKU / MPN</option>
-          </Select>
+            options={[
+              { value: 'name', label: 'Name' },
+              { value: 'sku', label: 'SKU / MPN' },
+            ]}
+          />
         </div>
       </div>
 

@@ -149,19 +149,14 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                   className="h-8 text-xs"
                   value={line.reservationStatus}
                   aria-label="Reservation status"
-                  onChange={(e) =>
-                    setReservation.mutate({
-                      lineId: line.id,
-                      status: e.target.value as ReservationStatus,
-                    })
+                  onChange={(value) =>
+                    setReservation.mutate({ lineId: line.id, status: value as ReservationStatus })
                   }
-                >
-                  {RESERVATION_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {RESERVATION_STATUS_LABELS[s]}
-                    </option>
-                  ))}
-                </Select>
+                  options={RESERVATION_STATUSES.map((s) => ({
+                    value: s,
+                    label: RESERVATION_STATUS_LABELS[s],
+                  }))}
+                />
               </td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-1.5">
@@ -169,19 +164,14 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                     className="h-8 text-xs"
                     value={line.procurementStatus}
                     aria-label="Procurement status"
-                    onChange={(e) =>
-                      setProcurement.mutate({
-                        lineId: line.id,
-                        status: e.target.value as ProcurementStatus,
-                      })
+                    onChange={(value) =>
+                      setProcurement.mutate({ lineId: line.id, status: value as ProcurementStatus })
                     }
-                  >
-                    {PROCUREMENT_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {PROCUREMENT_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </Select>
+                    options={PROCUREMENT_STATUSES.map((s) => ({
+                      value: s,
+                      label: PROCUREMENT_STATUS_LABELS[s],
+                    }))}
+                  />
                   {line.itemId && line.procurementStatus === 'IN_TRANSIT' ? (
                     <ReceiveControl
                       key={line.receivedQty}

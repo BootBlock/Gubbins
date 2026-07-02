@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, FormField, Input, Modal, Select, Spinner, useToast } from '@/components/foundry';
+import { Button, FormField, Input, Modal, SelectField, Spinner, useToast } from '@/components/foundry';
 import type { ProjectBudgetCategory, ProjectExpense } from '@/db/repositories';
 import { useAddExpense, useUpdateExpense } from '../projects';
 
@@ -121,16 +121,15 @@ export function ExpenseDialog({
             <Input type="date" value={incurred} onChange={(e) => setIncurred(e.target.value)} />
           </FormField>
         </div>
-        <FormField label="Category (optional)">
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">— Uncategorised —</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        <SelectField
+          label="Category (optional)"
+          value={categoryId}
+          onChange={setCategoryId}
+          options={[
+            { value: '', label: '— Uncategorised —' },
+            ...categories.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
             Cancel

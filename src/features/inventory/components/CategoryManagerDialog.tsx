@@ -225,15 +225,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         />
         <Select
           value={fieldType}
-          onChange={(e) => setFieldType(e.target.value as FieldType)}
+          onChange={(value) => setFieldType(value as FieldType)}
           aria-label="Field type"
-        >
-          {FIELD_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {FIELD_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </Select>
+          options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
+        />
       </div>
       {fieldType === 'SELECT' ? (
         <Input

@@ -5,15 +5,15 @@
  * Variants nest to any depth (Phase 18 lifted the single-level cap): any item may
  * gain sub-variants; only cycles are rejected, enforced in the repository.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/components/icons';
-import { CONDITIONS, type Item } from '@/db/repositories';
+import type { Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
 import { useUpdateItem } from '@/features/inventory/mutations';
 import { useFormatters } from '@/lib/useFormatters';
 import {
-  CONDITION_LABELS,
+  conditionSelectOptions,
   fromDateInputValue,
   toDateInputValue,
 } from '@/features/inventory/components/inventory-ui';
@@ -34,7 +34,8 @@ export function LifecycleEditor({ item }: { item: Item }) {
   const [expiry, setExpiry] = useState(toDateInputValue(item.expiryDate));
   const [batch, setBatch] = useState(item.batchNumber ?? '');
   const [lot, setLot] = useState(item.lotNumber ?? '');
-  const [condition, setCondition] = useState(item.condition ?? '');
+  const [condition, setCondition] = useState<string>(item.condition ?? '');
+  const conditionLabelId = useId();
 
   const status = expiryStatus(item.expiryDate, Date.now());
   const days = daysUntilExpiry(item.expiryDate, Date.now());
@@ -103,22 +104,31 @@ export function LifecycleEditor({ item }: { item: Item }) {
             onChange={(e) => setExpiry(e.target.value)}
           />
         </LField>
-        <LField
-          label="Condition"
-          hint={
-            'The physical state of this stock (*New*, *Used*, *Damaged*…). Changing it records a ' +
-            '`CONDITION_CHANGED` entry in the item’s **Activity log**.'
-          }
-        >
-          <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
-            <option value="">— Untracked —</option>
-            {CONDITIONS.map((c) => (
-              <option key={c} value={c}>
-                {CONDITION_LABELS[c]}
-              </option>
-            ))}
-          </Select>
-        </LField>
+        {/* A custom listbox (not a native <select>) so each condition can be tinted by its
+            severity — green Mint through to red Needs-repair. A role=combobox isn't a
+            labelable control, so it is named via a sibling label span, matching LField. */}
+        <div className="relative">
+          <span
+            id={conditionLabelId}
+            className="mb-field-gap-compact block pr-5 text-xs text-muted-foreground"
+          >
+            Condition
+          </span>
+          <span className="absolute right-0 top-0">
+            <InfoHint
+              content={
+                'The physical state of this stock (*New*, *Used*, *Damaged*…). Changing it records a ' +
+                '`CONDITION_CHANGED` entry in the item’s **Activity log**.'
+              }
+            />
+          </span>
+          <Select
+            aria-labelledby={conditionLabelId}
+            value={condition}
+            onChange={setCondition}
+            options={conditionSelectOptions('— Untracked —')}
+          />
+        </div>
         <LField
           label="Batch no."
           hint="A maker/supplier **batch** identifier for traceability. Stock from different batches is kept as separate lots and consumed **oldest-first (FEFO)**."

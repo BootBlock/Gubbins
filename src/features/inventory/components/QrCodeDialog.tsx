@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select } from '@/components/foundry';
 import { DownloadIcon, PrintIcon } from '@/components/icons';
 import { buildItemQrUrl } from '@/features/scanner/scan-payload';
@@ -32,6 +32,7 @@ export function QrCodeDialog({
   // Seed from the saved default, coercing 'none' (meaningless for a single-code dialog)
   // and any stale/garbage persisted value to QR.
   const [symbology, setSymbology] = useState<LabelSymbology>(() => seedSymbology(defaultSymbology));
+  const symbologyLabelId = useId();
   useEffect(() => {
     if (open) setSymbology(seedSymbology(defaultSymbology));
   }, [open, defaultSymbology]);
@@ -95,21 +96,20 @@ export function QrCodeDialog({
   return (
     <Modal open={open} onClose={onClose} title="Item label" description={itemName}>
       <div className="space-y-4">
-        <label className="flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
-          Code
+        <div className="flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
+          <span id={symbologyLabelId}>Code</span>
           <Select
             value={symbology}
-            onChange={(e) => setSymbology(e.target.value as LabelSymbology)}
+            onChange={(value) => setSymbology(value as LabelSymbology)}
             className="w-auto"
             data-testid="qr-symbology"
-          >
-            {LABEL_SYMBOLOGY_OPTIONS.filter((o) => o.value !== 'none').map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </label>
+            aria-labelledby={symbologyLabelId}
+            options={LABEL_SYMBOLOGY_OPTIONS.filter((o) => o.value !== 'none').map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
+          />
+        </div>
 
         <div className="flex flex-col items-center gap-3">
           {qr ? (

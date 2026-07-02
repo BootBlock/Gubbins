@@ -2,10 +2,9 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, InfoHint, Input, Modal, Select, Textarea } from '@/components/foundry';
+import { Button, FormField, InfoHint, Input, Modal, SelectField, Textarea } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import {
-  CONDITIONS,
   IN_TRANSIT_LOCATION_ID,
   TRACKING_MODES,
   UNASSIGNED_LOCATION_ID,
@@ -14,7 +13,7 @@ import {
   type Location,
   type LocationWithCount,
 } from '@/db/repositories';
-import { CONDITION_LABELS, fromDateInputValue } from './inventory-ui';
+import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
 import {
   applyScrapeMerge,
   buildScrapeMergePlan,
@@ -381,58 +380,51 @@ export function CreateItemDialog({
               </span>
             ) : null}
           </div>
-          <FormField
-            label="Tracking"
-            hint={
-              'How this item’s stock is counted — **this can’t be changed later**, so choose with care:\n\n' +
-              '- **Discrete** — a plain quantity of identical units (e.g. 100 screws).\n' +
-              '- **Serialised** — each unit is its own record with a serial number; pick this for tools and assets you check out individually.\n' +
-              '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.\n' +
-              '- **Untracked** — presence only: catalogued, searchable and locatable, but with no quantity to count (e.g. a reference manual or the bench vice).'
-            }
-          >
-            <Select {...register('trackingMode')}>
-              {TRACKING_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {TRACKING_MODE_LABELS[mode]}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        </div>
-
-        <FormField
-          label="Category (optional)"
-          hint={
-            'Groups the item and unlocks **custom fields** specific to that category ' +
-            '(e.g. *resistance* for resistors). Manage categories and their fields from the ' +
-            'category manager, or pick **＋ New category…** to create one here. Leave as ' +
-            '**None** if no category fits.'
-          }
-        >
           <Controller
             control={control}
-            name="categoryId"
+            name="trackingMode"
             render={({ field }) => (
-              <Select
-                value={field.value ?? ''}
-                onChange={(e) =>
-                  e.target.value === CREATE_CATEGORY_VALUE
-                    ? setInlineCreate('category')
-                    : field.onChange(e.target.value)
+              <SelectField
+                label="Tracking"
+                hint={
+                  'How this item’s stock is counted — **this can’t be changed later**, so choose with care:\n\n' +
+                  '- **Discrete** — a plain quantity of identical units (e.g. 100 screws).\n' +
+                  '- **Serialised** — each unit is its own record with a serial number; pick this for tools and assets you check out individually.\n' +
+                  '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.\n' +
+                  '- **Untracked** — presence only: catalogued, searchable and locatable, but with no quantity to count (e.g. a reference manual or the bench vice).'
                 }
-              >
-                <option value="">— None —</option>
-                {(categories?.rows ?? []).map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-                <option value={CREATE_CATEGORY_VALUE}>＋ New category…</option>
-              </Select>
+                options={TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] }))}
+                value={field.value}
+                onChange={field.onChange}
+              />
             )}
           />
-        </FormField>
+        </div>
+
+        <Controller
+          control={control}
+          name="categoryId"
+          render={({ field }) => (
+            <SelectField
+              label="Category (optional)"
+              hint={
+                'Groups the item and unlocks **custom fields** specific to that category ' +
+                '(e.g. *resistance* for resistors). Manage categories and their fields from the ' +
+                'category manager, or pick **＋ New category…** to create one here. Leave as ' +
+                '**None** if no category fits.'
+              }
+              options={[
+                { value: '', label: '— None —' },
+                ...(categories?.rows ?? []).map((cat) => ({ value: cat.id, label: cat.name })),
+                { value: CREATE_CATEGORY_VALUE, label: '＋ New category…', kind: 'action' as const },
+              ]}
+              value={field.value ?? ''}
+              onChange={(value) =>
+                value === CREATE_CATEGORY_VALUE ? setInlineCreate('category') : field.onChange(value)
+              }
+            />
+          )}
+        />
 
         {/* §9 supplier scrape — rendered only when the companion extension is present. */}
         <ScrapeSupplierPanel onResult={onScrapeResult} />
@@ -477,22 +469,23 @@ export function CreateItemDialog({
           >
             <Input type="date" data-testid="item-expiry" {...register('expiryDate')} />
           </FormField>
-          <FormField
-            label="Condition (optional)"
-            hint={
-              'The physical state of this stock (e.g. *New*, *Used*, *Damaged*). **Untracked** ' +
-              'simply records no condition. Useful for second-hand or salvaged parts.'
-            }
-          >
-            <Select data-testid="item-condition" {...register('condition')}>
-              <option value="">— Untracked —</option>
-              {CONDITIONS.map((c) => (
-                <option key={c} value={c}>
-                  {CONDITION_LABELS[c]}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+          <Controller
+            control={control}
+            name="condition"
+            render={({ field }) => (
+              <SelectField
+                label="Condition (optional)"
+                hint={
+                  'The physical state of this stock (e.g. *New*, *Used*, *Damaged*). **Untracked** ' +
+                  'simply records no condition. Useful for second-hand or salvaged parts.'
+                }
+                data-testid="item-condition"
+                options={conditionSelectOptions('— Untracked —')}
+                value={field.value ?? ''}
+                onChange={field.onChange}
+              />
+            )}
+          />
           <FormField
             label="Batch no. (optional)"
             hint={

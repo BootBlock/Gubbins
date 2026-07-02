@@ -323,18 +323,15 @@ function ScannerOverlayInner({
               <div className="flex gap-2 border-t border-border/60 pt-3">
                 <Select
                   value={moveTarget}
-                  onChange={(e) => setMoveTarget(e.target.value)}
+                  onChange={setMoveTarget}
                   className="flex-1"
                   aria-label="Move all to location"
                   data-testid="scanner-move-location"
-                >
-                  <option value="">Move all to…</option>
-                  {locationRows.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </Select>
+                  options={[
+                    { value: '', label: 'Move all to…' },
+                    ...locationRows.map((loc) => ({ value: loc.id, label: loc.name })),
+                  ]}
+                />
                 <Button
                   variant="outline"
                   onClick={() => void batchMove()}

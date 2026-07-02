@@ -70,15 +70,10 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
       <Select
         aria-label="Field"
         value={fieldSelectValue(condition.field)}
-        onChange={(e) => onFieldChange(e.target.value)}
+        onChange={onFieldChange}
         className="h-9 w-36"
-      >
-        {BUILDER_FIELDS.map((f) => (
-          <option key={f.value} value={f.value}>
-            {f.label}
-          </option>
-        ))}
-      </Select>
+        options={BUILDER_FIELDS.map((f) => ({ value: f.value, label: f.label }))}
+      />
 
       {isCapability ? (
         <Tooltip
@@ -125,15 +120,10 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
       <Select
         aria-label="Operator"
         value={condition.operator}
-        onChange={(e) => onOperatorChange(e.target.value as FilterOperator)}
+        onChange={(value) => onOperatorChange(value as FilterOperator)}
         className="h-9 w-40"
-      >
-        {operators.map((op) => (
-          <option key={op} value={op}>
-            {operatorLabelFor(op, kind)}
-          </option>
-        ))}
-      </Select>
+        options={operators.map((op) => ({ value: op, label: operatorLabelFor(op, kind) }))}
+      />
 
       {showValue ? (
         <Input

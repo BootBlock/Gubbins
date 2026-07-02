@@ -5,14 +5,16 @@
  * `makeFormatters` factory (`@/lib/format`) via the `useFormatters()` hook so it
  * honours the user's chosen locale (§3); these helpers are locale-independent.
  */
-import type {
-  AttachmentKind,
-  Condition,
-  FieldType,
-  Item,
-  MaintenanceBasis,
-  TrackingMode,
+import {
+  CONDITIONS,
+  type AttachmentKind,
+  type Condition,
+  type FieldType,
+  type Item,
+  type MaintenanceBasis,
+  type TrackingMode,
 } from '@/db/repositories';
+import type { SelectOption } from '@/components/foundry';
 import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
 
 /**
@@ -83,6 +85,39 @@ export const CONDITION_LABELS: Record<Condition, string> = {
   NEEDS_REPAIR: 'Needs repair',
   OUT_FOR_CALIBRATION: 'Out for calibration',
 };
+
+/**
+ * Token text-colour class tinting a Condition label wherever it appears in a picker,
+ * so an item's state reads at a glance (spec §4): green for Mint down to red for Needs
+ * repair. Static token literals (never raw colours) so Tailwind's scanner emits the
+ * utilities and the tints stay themed/dark-mode-correct — Mint / Out-for-calibration /
+ * Needs-repair reuse the semantic success / warning / destructive tokens, and Good uses
+ * the dedicated `cond-good` lime (see styles/index.css). Colour is never the sole signal
+ * (the label always reads), keeping this within WCAG 1.4.1.
+ */
+export const CONDITION_COLOR_CLASS: Record<Condition, string> = {
+  MINT: 'text-success',
+  GOOD: 'text-cond-good',
+  NEEDS_REPAIR: 'text-destructive',
+  OUT_FOR_CALIBRATION: 'text-warning',
+};
+
+/**
+ * Options for a Condition {@link Select} combobox: a leading "untracked" blank row plus
+ * every condition, each tinted with its {@link CONDITION_COLOR_CLASS}. The blank row's
+ * label differs by context — "— Untracked —" when creating, "— None —" when editing — so
+ * it is a parameter.
+ */
+export function conditionSelectOptions(untrackedLabel = '— Untracked —'): SelectOption[] {
+  return [
+    { value: '', label: untrackedLabel },
+    ...CONDITIONS.map((c) => ({
+      value: c,
+      label: CONDITION_LABELS[c],
+      colorClass: CONDITION_COLOR_CLASS[c],
+    })),
+  ];
+}
 
 /** Labels for the §4.3 maintenance schedule basis (Phase 9). */
 export const MAINTENANCE_BASIS_LABELS: Record<MaintenanceBasis, string> = {

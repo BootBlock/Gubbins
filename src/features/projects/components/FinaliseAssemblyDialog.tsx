@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Input, Modal, Select } from '@/components/foundry';
+import { Button, Input, Modal, SelectField } from '@/components/foundry';
 import {
   ASSEMBLY_OUTCOMES,
   UNASSIGNED_LOCATION_ID,
@@ -98,16 +98,12 @@ export function FinaliseAssemblyDialog({
         ) : null}
 
         {outcome === 'SINGULAR_OBJECT' ? (
-          <label className="block">
-            <span className="mb-field-gap block text-sm font-medium">Place the new item in</span>
-            <Select value={resultLocationId} onChange={(e) => setResultLocationId(e.target.value)}>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <SelectField
+            label="Place the new item in"
+            value={resultLocationId}
+            onChange={setResultLocationId}
+            options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
+          />
         ) : null}
 
         <p className="text-xs text-muted-foreground">

@@ -47,6 +47,18 @@ import {
   clampLowStockQty,
 } from './settings';
 
+/** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
+const ON_OFF_OPTIONS = [
+  { value: 'on', label: 'On' },
+  { value: 'off', label: 'Off' },
+] as const;
+
+/** Off/on pair for a boolean preference that reads more naturally Off-first (Kiosk mode). */
+const OFF_ON_OPTIONS = [
+  { value: 'off', label: 'Off' },
+  { value: 'on', label: 'On' },
+] as const;
+
 /** Locales offered for formatting (Intl, §2.4.3); en-GB is the default (§1.2.1). */
 const LOCALE_OPTIONS = [
   { value: 'en-GB', label: 'English (United Kingdom)' },
@@ -89,14 +101,9 @@ export function SettingsScreen() {
               data-testid="setting-currency"
               className="h-9 w-56"
               value={prefs.baseCurrency}
-              onChange={(e) => prefs.setBaseCurrency(e.target.value)}
-            >
-              {CURRENCY_OPTIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.value} — {c.label}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => prefs.setBaseCurrency(value)}
+              options={CURRENCY_OPTIONS.map((c) => ({ value: c.value, label: `${c.value} — ${c.label}` }))}
+            />
           </SettingRow>
           <SettingRow label="Locale" description="Controls date and number formatting.">
             <Select
@@ -104,14 +111,9 @@ export function SettingsScreen() {
               data-testid="setting-locale"
               className="h-9 w-56"
               value={prefs.locale}
-              onChange={(e) => prefs.setLocale(e.target.value)}
-            >
-              {LOCALE_OPTIONS.map((l) => (
-                <option key={l.value} value={l.value}>
-                  {l.label}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => prefs.setLocale(value)}
+              options={LOCALE_OPTIONS.map((l) => ({ value: l.value, label: l.label }))}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -151,11 +153,9 @@ export function SettingsScreen() {
               data-testid="setting-dashboard-command-palette"
               className="h-9 w-40"
               value={prefs.dashboardCommandPalette ? 'on' : 'off'}
-              onChange={(e) => prefs.setDashboardCommandPalette(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </Select>
+              onChange={(value) => prefs.setDashboardCommandPalette(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
           </SettingRow>
           <SettingRow
             label="Quick actions"
@@ -166,11 +166,9 @@ export function SettingsScreen() {
               data-testid="setting-dashboard-quick-actions"
               className="h-9 w-40"
               value={prefs.dashboardQuickActions ? 'on' : 'off'}
-              onChange={(e) => prefs.setDashboardQuickActions(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </Select>
+              onChange={(value) => prefs.setDashboardQuickActions(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
           </SettingRow>
           <SettingRow
             label="Getting-started panel"
@@ -181,11 +179,9 @@ export function SettingsScreen() {
               data-testid="setting-dashboard-getting-started"
               className="h-9 w-40"
               value={prefs.dashboardGettingStarted ? 'on' : 'off'}
-              onChange={(e) => prefs.setDashboardGettingStarted(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </Select>
+              onChange={(value) => prefs.setDashboardGettingStarted(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -199,11 +195,9 @@ export function SettingsScreen() {
               data-testid="setting-kiosk-mode"
               className="h-9 w-40"
               value={prefs.kioskMode ? 'on' : 'off'}
-              onChange={(e) => prefs.setKioskMode(e.target.value === 'on')}
-            >
-              <option value="off">Off</option>
-              <option value="on">On</option>
-            </Select>
+              onChange={(value) => prefs.setKioskMode(value === 'on')}
+              options={OFF_ON_OPTIONS}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -217,13 +211,12 @@ export function SettingsScreen() {
               data-testid="setting-scrape-notifications"
               className="h-9 w-56"
               value={prefs.scrapeNotifications}
-              onChange={(e) =>
-                prefs.setScrapeNotifications(e.target.value as typeof prefs.scrapeNotifications)
-              }
-            >
-              <option value="TOAST">Show a toast</option>
-              <option value="SILENT">Silent</option>
-            </Select>
+              onChange={(value) => prefs.setScrapeNotifications(value as typeof prefs.scrapeNotifications)}
+              options={[
+                { value: 'TOAST', label: 'Show a toast' },
+                { value: 'SILENT', label: 'Silent' },
+              ]}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -237,11 +230,12 @@ export function SettingsScreen() {
               data-testid="setting-attachment-mode"
               className="h-9 w-56"
               value={prefs.attachmentMode}
-              onChange={(e) => prefs.setAttachmentMode(e.target.value as typeof prefs.attachmentMode)}
-            >
-              <option value="URL_ONLY">External URLs only</option>
-              <option value="HYBRID">URLs and local file pointers</option>
-            </Select>
+              onChange={(value) => prefs.setAttachmentMode(value as typeof prefs.attachmentMode)}
+              options={[
+                { value: 'URL_ONLY', label: 'External URLs only' },
+                { value: 'HYBRID', label: 'URLs and local file pointers' },
+              ]}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -255,14 +249,9 @@ export function SettingsScreen() {
               data-testid="setting-scanner-symbology"
               className="h-9 w-56"
               value={prefs.scannerSymbology}
-              onChange={(e) => prefs.setScannerSymbology(e.target.value as typeof prefs.scannerSymbology)}
-            >
-              {SCANNER_SYMBOLOGY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
+              onChange={(value) => prefs.setScannerSymbology(value as typeof prefs.scannerSymbology)}
+              options={SCANNER_SYMBOLOGY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
           </SettingRow>
           <SettingRow
             label="Beep on scan"
@@ -273,11 +262,9 @@ export function SettingsScreen() {
               data-testid="setting-scanner-beep"
               className="h-9 w-40"
               value={prefs.scannerBeep ? 'on' : 'off'}
-              onChange={(e) => prefs.setScannerBeep(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </Select>
+              onChange={(value) => prefs.setScannerBeep(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
           </SettingRow>
           <SettingRow
             label="Vibrate on scan"
@@ -288,11 +275,9 @@ export function SettingsScreen() {
               data-testid="setting-scanner-haptics"
               className="h-9 w-40"
               value={prefs.scannerHaptics ? 'on' : 'off'}
-              onChange={(e) => prefs.setScannerHaptics(e.target.value === 'on')}
-            >
-              <option value="on">On</option>
-              <option value="off">Off</option>
-            </Select>
+              onChange={(value) => prefs.setScannerHaptics(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
           </SettingRow>
         </SettingsSection>
 
@@ -382,15 +367,10 @@ export function SettingsScreen() {
               aria-label="Default purge window"
               data-testid="setting-prune-window"
               className="h-9 w-40"
-              value={prefs.pruneWindowMonths}
-              onChange={(e) => prefs.setPruneWindowMonths(Number(e.target.value))}
-            >
-              {WINDOW_MONTH_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {monthsLabel(m)}
-                </option>
-              ))}
-            </Select>
+              value={String(prefs.pruneWindowMonths)}
+              onChange={(value) => prefs.setPruneWindowMonths(Number(value))}
+              options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+            />
           </SettingRow>
           <SettingRow
             label="Default downgrade window"
@@ -400,15 +380,10 @@ export function SettingsScreen() {
               aria-label="Default downgrade window"
               data-testid="setting-downgrade-window"
               className="h-9 w-40"
-              value={prefs.downgradeWindowMonths}
-              onChange={(e) => prefs.setDowngradeWindowMonths(Number(e.target.value))}
-            >
-              {WINDOW_MONTH_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {monthsLabel(m)}
-                </option>
-              ))}
-            </Select>
+              value={String(prefs.downgradeWindowMonths)}
+              onChange={(value) => prefs.setDowngradeWindowMonths(Number(value))}
+              options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+            />
           </SettingRow>
           <SettingRow
             label="Storage triage"

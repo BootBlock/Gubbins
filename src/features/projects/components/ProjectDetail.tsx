@@ -167,21 +167,16 @@ export function ProjectDetail({
             <span className="text-xs text-warning">{costing.data.unpricedLineCount} unpriced</span>
           </Tooltip>
         ) : null}
-        <label className="ml-auto flex items-center gap-2 text-sm">
+        <div className="ml-auto flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Costing</span>
           <Select
             className="h-8 w-auto text-xs"
             value={project.data.costingMode}
             aria-label="Costing mode"
-            onChange={(e) => setCostingMode.mutate({ id: projectId, mode: e.target.value as CostingMode })}
-          >
-            {COSTING_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {COSTING_MODE_LABELS[mode]}
-              </option>
-            ))}
-          </Select>
-        </label>
+            onChange={(value) => setCostingMode.mutate({ id: projectId, mode: value as CostingMode })}
+            options={COSTING_MODES.map((mode) => ({ value: mode, label: COSTING_MODE_LABELS[mode] }))}
+          />
+        </div>
       </Surface>
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pb-4">

@@ -1,8 +1,8 @@
 import { useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, Input, Modal, Select } from '@/components/foundry';
+import { Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import { COSTING_MODES } from '@/db/repositories';
 import { useCreateProject } from '../projects';
 import { COSTING_MODE_LABELS } from './projects-ui';
@@ -31,6 +31,7 @@ export function CreateProjectDialog({
   const createProject = useCreateProject();
   const nameRef = useRef<HTMLInputElement>(null);
   const {
+    control,
     register,
     handleSubmit,
     reset,
@@ -90,15 +91,18 @@ export function CreateProjectDialog({
           <Input placeholder="A short summary" {...register('description')} />
         </FormField>
 
-        <FormField label="Costing">
-          <Select {...register('costingMode')}>
-            {COSTING_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {COSTING_MODE_LABELS[mode]}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+        <Controller
+          control={control}
+          name="costingMode"
+          render={({ field }) => (
+            <SelectField
+              label="Costing"
+              value={field.value}
+              onChange={field.onChange}
+              options={COSTING_MODES.map((mode) => ({ value: mode, label: COSTING_MODE_LABELS[mode] }))}
+            />
+          )}
+        />
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>

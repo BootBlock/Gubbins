@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, FormField, Input, Select, Textarea } from '@/components/foundry';
+import { Button, FormField, Input, SelectField, Textarea } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
@@ -129,19 +129,16 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             placeholder="0.00"
           />
         </FormField>
-        <FormField
+        <SelectField
           label="Category"
           hint="Groups the item and unlocks that category’s **custom fields**. *None* leaves it uncategorised."
-        >
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">— None —</option>
-            {(categories?.rows ?? []).map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
+          value={categoryId}
+          onChange={setCategoryId}
+          options={[
+            { value: '', label: '— None —' },
+            ...(categories?.rows ?? []).map((cat) => ({ value: cat.id, label: cat.name })),
+          ]}
+        />
       </div>
 
       <div className="flex justify-end">

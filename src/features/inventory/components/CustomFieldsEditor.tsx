@@ -72,7 +72,10 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
             {/* The error node lives *outside* the <label> so it is not folded into
                 the control's accessible name; it is associated via aria-describedby. */}
             <label className="block">
-              <span className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
+              <span
+                id={`${field.id}-label`}
+                className="mb-field-gap flex items-center gap-1.5 text-sm font-medium"
+              >
                 {field.name}
                 {field.isRequired ? <span className="text-destructive">*</span> : null}
                 {!field.hasStoredValue && field.defaultValue ? (
@@ -91,6 +94,7 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
                 value={draft[field.id] ?? ''}
                 onChange={(v) => set(field.id, v)}
                 controlProps={controlProps}
+                labelId={`${field.id}-label`}
               />
             </label>
             {hasError ? (
@@ -119,11 +123,14 @@ function FieldInput({
   value,
   onChange,
   controlProps,
+  labelId,
 }: {
   field: ResolvedItemField;
   value: string;
   onChange: (value: string) => void;
   controlProps: ControlAria;
+  /** Id of the field's visible label span — names the SELECT combobox (not a labelable control). */
+  labelId: string;
 }) {
   switch (field.fieldType) {
     case 'NUMBER':
@@ -153,14 +160,17 @@ function FieldInput({
       );
     case 'SELECT':
       return (
-        <Select value={value} onChange={(e) => onChange(e.target.value)} {...controlProps}>
-          <option value="">—</option>
-          {(field.options ?? []).map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </Select>
+        <Select
+          value={value}
+          onChange={onChange}
+          aria-labelledby={labelId}
+          aria-invalid={controlProps['aria-invalid']}
+          aria-describedby={controlProps['aria-describedby']}
+          options={[
+            { value: '', label: '—' },
+            ...(field.options ?? []).map((opt) => ({ value: opt, label: opt })),
+          ]}
+        />
       );
     default:
       return <Input value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;

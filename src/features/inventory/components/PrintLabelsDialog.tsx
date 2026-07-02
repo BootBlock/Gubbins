@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Banner, Button, Modal, Select } from '@/components/foundry';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { Banner, Button, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
@@ -25,6 +25,21 @@ import { LabelCellPreview } from './LabelCellPreview';
  * preview and the printed sheet share {@link toLabelCells}, so what you see is what
  * prints (the pure {@link buildLabelSheetHtml} is opened in a fresh print window).
  */
+/**
+ * A compact stacked label + {@link Select} combobox for the template controls. The
+ * combobox (a `role="combobox"`, not a labelable control) is named via a sibling label
+ * span so the small muted caption above it still associates.
+ */
+function CompactSelect({ label, ...props }: { label: string } & Omit<SelectProps, 'aria-labelledby'>) {
+  const labelId = useId();
+  return (
+    <div className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+      <span id={labelId}>{label}</span>
+      <Select aria-labelledby={labelId} {...props} />
+    </div>
+  );
+}
+
 export function PrintLabelsDialog({
   open,
   onClose,
@@ -87,35 +102,21 @@ export function PrintLabelsDialog({
 
         {/* Template controls */}
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            Code
-            <Select
-              value={template.symbology}
-              onChange={(e) => set('symbology', e.target.value as LabelSymbology)}
-              data-testid="label-symbology"
-            >
-              {LABEL_SYMBOLOGY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <CompactSelect
+            label="Code"
+            value={template.symbology}
+            onChange={(value) => set('symbology', value as LabelSymbology)}
+            data-testid="label-symbology"
+            options={LABEL_SYMBOLOGY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+          />
 
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            Columns per sheet
-            <Select
-              value={String(template.columns)}
-              onChange={(e) => set('columns', Number(e.target.value))}
-              data-testid="label-columns"
-            >
-              {columnOptions().map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <CompactSelect
+            label="Columns per sheet"
+            value={String(template.columns)}
+            onChange={(value) => set('columns', Number(value))}
+            data-testid="label-columns"
+            options={columnOptions().map((n) => ({ value: String(n), label: String(n) }))}
+          />
 
           <fieldset className="flex flex-col gap-1.5 sm:col-span-2">
             <legend className="text-xs font-medium text-muted-foreground">Show on label</legend>

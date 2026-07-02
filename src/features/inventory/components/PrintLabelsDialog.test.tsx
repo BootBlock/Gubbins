@@ -12,6 +12,12 @@ const ITEMS = [
 beforeEach(() => usePreferencesStore.setState({ labelTemplate: DEFAULT_LABEL_TEMPLATE }));
 afterEach(cleanup);
 
+/** Open a custom Select combobox by its test id and click the option with the given name. */
+function chooseOption(testId: string, optionName: string | RegExp) {
+  fireEvent.click(screen.getByTestId(testId));
+  fireEvent.click(screen.getByRole('option', { name: optionName }));
+}
+
 describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', () => {
   it('renders one preview cell per selected item with a QR by default', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
@@ -24,14 +30,13 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
 
   it('switches symbology: text-only removes the codes, both renders two SVGs per cell', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
-    const symbology = screen.getByTestId('label-symbology');
 
-    fireEvent.change(symbology, { target: { value: 'none' } });
+    chooseOption('label-symbology', 'Text only');
     screen.getAllByTestId('label-cell').forEach((cell) => {
       expect(cell.querySelector('svg')).toBeNull();
     });
 
-    fireEvent.change(symbology, { target: { value: 'both' } });
+    chooseOption('label-symbology', 'QR + barcode');
     screen.getAllByTestId('label-cell').forEach((cell) => {
       expect(cell.querySelectorAll('svg')).toHaveLength(2);
     });
@@ -64,7 +69,7 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     // Nothing changed yet → nothing to save.
     expect(save).toBeDisabled();
 
-    fireEvent.change(screen.getByTestId('label-columns'), { target: { value: '4' } });
+    chooseOption('label-columns', '4');
     expect(save).not.toBeDisabled();
 
     fireEvent.click(save);
