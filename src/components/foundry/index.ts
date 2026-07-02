@@ -24,6 +24,7 @@ export {
   NAV_OPEN_DELAY_MS,
   type TooltipProps,
   type TooltipPlacement,
+  type TooltipSize,
 } from './tooltip';
 export { SkipLink, MAIN_CONTENT_ID } from './skip-link';
 export { PageHeader, type PageHeaderProps } from './page-header';

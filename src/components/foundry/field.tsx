@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, cloneElement, isValidElement, useId 
 import { cn } from '@/lib/utils';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
+import { type TooltipSize } from './tooltip';
 
 export interface FormFieldProps {
   readonly label: ReactNode;
@@ -14,6 +15,8 @@ export interface FormFieldProps {
    * control's accessible name.
    */
   readonly hint?: string;
+  /** Widen the hint bubble for richer help (tables, code, longer docs). Defaults to `sm`. */
+  readonly hintSize?: TooltipSize;
   /** The single form control (Input/Select/…) the label and error describe. */
   readonly children: ReactNode;
 }
@@ -36,7 +39,7 @@ export interface FormFieldProps {
  * {...register('name')} /></FormField>`. The child's own props always win, so an
  * explicit `aria-*` at the call site is never clobbered.
  */
-export function FormField({ label, error, className, hint, children }: FormFieldProps) {
+export function FormField({ label, error, className, hint, hintSize, children }: FormFieldProps) {
   const fieldId = useId();
   const { controlProps, errorId, hasError } = fieldAria(fieldId, error);
   const control = isValidElement(children)
@@ -56,7 +59,7 @@ export function FormField({ label, error, className, hint, children }: FormField
       </label>
       {hint ? (
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={hint} />
+          <InfoHint content={hint} size={hintSize} />
         </span>
       ) : null}
       {hasError ? (
