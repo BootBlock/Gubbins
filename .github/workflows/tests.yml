@@ -16,6 +16,34 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    name: Lint, format & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          # `type-check` runs the app's `tsc -b`; ESLint's type-aware rules also drive the
+          # TypeScript program. Pin the same Node 24 the test jobs use for consistency.
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fail fast on types first, then lint, then formatting — cheapest signal last.
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
   app:
     name: App unit tests
     runs-on: ubuntu-latest
