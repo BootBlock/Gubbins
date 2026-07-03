@@ -4,10 +4,12 @@ A read-only Home Assistant integration that talks to the local Gubbins **bridge*
 companion service that exposes a bearer-token-protected HTTP API over an exported Gubbins
 inventory snapshot. This integration never writes; the bridge is the only data path.
 
-Setup wires three things:
+Setup wires four things:
   * a per-entry :class:`GubbinsClient` (read-only HTTP client) into ``hass.data``;
   * the conversation intent handler (registered once, see :mod:`.intent`);
-  * the ``gubbins.search`` service (registered once, see below);
+  * the read-only ``gubbins.search`` service (registered once, see below);
+  * the opt-in ``gubbins.adjust_quantity`` write service (registered once, see below) —
+    itself a no-op unless the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
 and forwards the optional ``/health`` sensor platform.
 """
 

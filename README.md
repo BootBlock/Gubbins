@@ -152,11 +152,24 @@ Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-l
     subset, not a full OData service).
   - **CSV export** — `GET /api/v1/items.csv` (honouring the same filter/sort/search), a
     refreshable pull you can point Excel / Power BI at.
+- **A subscribable calendar** — `GET /api/v1/calendar.ics`, a read-only iCalendar feed of your
+  time-bearing facts (loan due-backs, asset bookings, maintenance/service dates, warranty
+  expiries) that Google / Apple / Outlook / Thunderbird / Home Assistant can **subscribe** to by
+  URL, so they appear alongside your own events.
+- **Syndication feeds & Prometheus metrics** — `GET /api/v1/activity.rss` (plus `.atom` and
+  `.json` [JSON Feed]) render your recent activity log for any feed reader, and `GET /metrics`
+  exposes aggregate inventory counts (items, low-/out-of-stock, per-location) in
+  OpenMetrics/Prometheus format for a Grafana home-lab.
 - **A Home Assistant integration** — a HACS-compatible custom component with a
   *"Where are my {item}?"* voice intent (it speaks the location back), a dashboard sensor, and
   **auto-discovery** so you usually don't even type the host/port.
 - **An MCP server** — exposes the same read-only queries as tools to an LLM/agent (e.g. Claude),
   so an assistant can look things up for you.
+- **Opt-in, off-by-default change events** — turn on outbound **webhooks**
+  (`GUBBINS_BRIDGE_WEBHOOKS=on`, HMAC-signed, at-least-once with retries) and/or a read-only
+  **SSE stream** (`GUBBINS_BRIDGE_EVENTS=on`, `GET /api/v1/events`) so Slack / Discord / n8n /
+  Node-RED / Home Assistant can react the moment stock moves — e.g. a "low stock" alert. An
+  event never mutates inventory.
 - **Opt-in, off-by-default MQTT publishing** — push your inventory into a home-automation stack.
   With `GUBBINS_BRIDGE_MQTT=on` the bridge connects **out** to your MQTT broker (Mosquitto, EMQX,
   the Home Assistant add-on, …) as a *client* — it opens no extra inbound port — and publishes a
@@ -176,6 +189,11 @@ Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-l
 - **Opt-in, off-by-default "push to bridge"** — if you *don't* use folder sync, the app can POST
   its whole dataset straight to the bridge (`GUBBINS_BRIDGE_ALLOW_PUSH=on`), so no shared folder
   is needed at all.
+
+Every opt-in above defaults **off** and is a separate, startup-logged choice; the
+[Permission & security matrix](bridge/README.md#permission--security-matrix) is the single,
+authoritative list of every `GUBBINS_BRIDGE_*` flag, what it exposes, whether it can write, and
+where its secret lives.
 
 ### Setting it up
 

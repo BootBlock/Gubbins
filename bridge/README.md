@@ -16,20 +16,30 @@ TypeScript directly (no build step) on Node ≥ 23.6 — but see the
 [FTS5 caveat](#requirements) below: the **v23.x line never got FTS5** support, so in practice
 you need Node **≥ 24** (or the **22.16+ LTS** line).
 
-> **Status:** Complete (Phase HA-5 — packaging, docs, hardening) plus the generic
-> [versioned REST API](#versioned-rest-api-apiv1) and a read-only
-> [MCP server](#mcp-server-for-llmagent-tools) for LLM/agent tools. The bridge serves
-> bearer-token-protected, read-only endpoints — the original `GET /health`, `/search`,
-> `/where` plus an additive, OpenAPI-described `/api/v1` surface (items, locations,
-> categories, capabilities) — and the same read-only core over an MCP stdio server; it
-> re-hydrates automatically when the snapshot changes, and is rate-limited per client. An
-> **opt-in** set of [limited write endpoints](#limited-writes-opt-in) (off by default) can
-> additionally check stock in/out by round-tripping through the app's own sync merge, and an
-> **opt-in** [snapshot-ingest endpoint](#snapshot-push-opt-in) (also off by default) lets the
-> PWA push its whole dataset straight to the bridge for users without folder sync. The
-> Home Assistant custom integration that consumes it lives in
-> [`../homeassistant/`](../homeassistant/README.md). Full plan:
-> [`docs/todo/home-assistant_2026-06-29.md`](../docs/todo/home-assistant_2026-06-29.md).
+> **Status:** Complete and stable. The bridge serves bearer-token-protected, **read-only-by-
+> default** surfaces and re-hydrates automatically when the snapshot changes, rate-limited per
+> client. What it exposes, at a glance:
+>
+> - **Read (always on):** the original `GET /health`, `/search`, `/where`; an additive,
+>   OpenAPI-described [`/api/v1`](#versioned-rest-api-apiv1) surface (items, locations,
+>   categories, capabilities, with field-selection + an OData-style query subset); a
+>   [CSV export](#csv-export); an [iCalendar subscription feed](#calendar-subscription); and
+>   [syndication feeds + a Prometheus `/metrics`](#feeds--metrics) endpoint. The same read-only
+>   core is also offered over a read-only [MCP stdio server](#mcp-server-for-llmagent-tools) for
+>   LLM/agent tools.
+> - **Opt-in, off by default (each its own `GUBBINS_BRIDGE_*` flag):**
+>   [limited stock writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
+>   [outbound webhooks + an SSE event stream](#events-webhooks--sse-opt-in),
+>   [outbound MQTT publishing + Home Assistant MQTT discovery](#mqtt-publishing-opt-in), and
+>   [mDNS/zeroconf advertising](#mdns--zeroconf-discovery). Every one is a deliberate,
+>   startup-logged choice — see the [Permission & security matrix](#permission--security-matrix)
+>   for the single, authoritative list of what each flag turns on.
+>
+> The Home Assistant custom integration that consumes the read surface lives in
+> [`../homeassistant/`](../homeassistant/README.md). The original HA build plan is
+> [`docs/todo/home-assistant_2026-06-29.md`](../docs/todo/home-assistant_2026-06-29.md); the
+> ecosystem build-out (events, calendar, importers, share target, MQTT, feeds/metrics) is
+> [`docs/todo/ecosystem-integrations-plan_2026-07-03.md`](../docs/todo/ecosystem-integrations-plan_2026-07-03.md).
 
 ---
 
@@ -793,6 +803,57 @@ persistence re-learns it).
 # verify the bridge is publishing (subscribe to everything under the prefix)
 mosquitto_sub -h 127.0.0.1 -t 'gubbins/#' -v
 ```
+
+## Permission & security matrix
+
+This is the **single authoritative list** of what the bridge can do and how you turn each
+capability on. The design rule is **read-only by default, per-capability opt-in**: with **no
+`GUBBINS_BRIDGE_*` capability flag set**, the bridge only ever *reads* your snapshot and
+*serves* token-gated read endpoints — it never writes your inventory and never connects out.
+Each capability below is a **separate, deliberate opt-in** that defaults **off** and is **logged
+as an explicit choice at startup**, so what you've enabled is always visible in the logs.
+
+**Always on (no flag) — token-gated reads only.** These are pure read *pulls*; they cannot
+mutate inventory and open no outbound connection, so they carry no opt-in flag and are gated
+solely by the bearer token (the calendar and feeds additionally accept the token as a `?token=`
+query parameter — see their sections):
+
+| Surface | Path | Notes |
+| --- | --- | --- |
+| REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | Read-only; field-selection + OData-style options. |
+| CSV export | `GET /api/v1/items.csv` | Refreshable spreadsheet pull. |
+| Calendar subscription | `GET /api/v1/calendar.ics` | `?token=` accepted (calendar clients can't send headers). |
+| Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `?token=` accepted. |
+| Prometheus metrics | `GET /metrics` | Header-only token (no `?token=`). |
+| MCP server | stdio (`mcp.mjs`) | No network token — trust boundary is the OS process. |
+
+**Opt-in capabilities — each its own flag, all default `off`.** "Writes inventory?" means the
+capability can change your stock (always via the app's own §7.3 sync merge — never bespoke SQL);
+"Direction" is whether the capability serves *in*, sends *out*, or advertises on the LAN:
+
+| Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Secret — where it lives |
+| --- | --- | --- | --- | --- |
+| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` (JSON source only). | inbound (HTTP) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — reuses `GUBBINS_BRIDGE_TOKEN`. |
+| `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
+| `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
+| `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). | outbound (push) | No — an event never mutates inventory. | Per-target HMAC signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `.env` only. |
+| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
+| `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`). | outbound (push) | No. | None new (uses the MQTT connection above). |
+| `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
+
+Notes that apply across the table:
+
+- **Writes/push require a JSON snapshot source.** With a raw `.sqlite` source the write and push
+  paths stay `404` **even with the flag on** (there is no sync channel to round-trip through) —
+  see [Data sources](#data-sources-json-snapshot-or-raw-sqlite).
+- **No secret is ever advertised, logged, or committed.** Signing secrets and broker credentials
+  live only in the git-ignored `.env` / `webhooks.json`; `.env.example` and `webhooks.example.json`
+  hold placeholders only. The bearer token and item data are never written to the logs.
+- **Enabling an outbound/write capability and binding the LAN (`GUBBINS_BRIDGE_HOST=0.0.0.0`) is a
+  deliberate double opt-in.** The safest posture keeps the bridge on the `127.0.0.1` default.
+
+The full environment-variable reference (including the non-capability tuning knobs — host, port,
+rate limits, topic prefixes, byte caps) follows.
 
 ## Configuration reference
 
