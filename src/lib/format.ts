@@ -22,8 +22,19 @@ function clamp01(value: number): number {
 
 /** A bundle of locale/currency-bound formatters (all pure, all native `Intl`). */
 export interface Formatters {
-  /** Money in the configured base currency (e.g. `£1,234.50`); `—` for non-finite. */
-  currency(value: number): string;
+  /**
+   * Money in the configured base currency (e.g. `£1,234.50`); `—` for non-finite.
+   *
+   * Pass `currencyOverride` (an ISO-4217 code) to render `value` with *that* currency's
+   * own symbol instead — e.g. `currency(1.23, 'EUR')` → `€1.23`, `currency(1, 'USD')`
+   * → `US$1.00`. This is presentation only (no FX conversion): the number is shown
+   * verbatim under the correct symbol, which is what a per-supplier stored currency
+   * needs. A malformed code (not three ASCII letters) that `Intl` rejects falls back to
+   * the base symbol with the raw code appended (`£1.23 ZZ`) so nothing is silently
+   * dropped. (An unrecognised *well-formed* code like `XBT` is accepted by `Intl` and
+   * simply renders with the code itself as the symbol.)
+   */
+  currency(value: number, currencyOverride?: string): string;
   /** A 0..1 ratio as a percentage, clamped (e.g. `50%`). */
   percent(ratio: number, maximumFractionDigits?: number): string;
   /** A human-readable SI byte size (e.g. `1.5 kB`). */
@@ -49,6 +60,21 @@ export function makeFormatters(
 ): Formatters {
   const number = new Intl.NumberFormat(locale);
   const currencyFormat = new Intl.NumberFormat(locale, { style: 'currency', currency });
+  // Per-currency formatters are built lazily and memoised (they are heavyweight), so a
+  // table of parts in several currencies pays the construction cost once per code.
+  const currencyFormatters = new Map<string, Intl.NumberFormat>([[currency, currencyFormat]]);
+  /** An `Intl` currency formatter for `code`, or `null` if the code is not valid ISO-4217. */
+  const currencyFormatterFor = (code: string): Intl.NumberFormat | null => {
+    const cached = currencyFormatters.get(code);
+    if (cached) return cached;
+    try {
+      const fmt = new Intl.NumberFormat(locale, { style: 'currency', currency: code });
+      currencyFormatters.set(code, fmt);
+      return fmt;
+    } catch {
+      return null;
+    }
+  };
   const dateFormat = new Intl.DateTimeFormat(locale, {
     day: '2-digit',
     month: 'short',
@@ -60,8 +86,16 @@ export function makeFormatters(
   });
 
   return {
-    currency(value) {
+    currency(value, currencyOverride) {
       if (!Number.isFinite(value)) return '—';
+      const code = currencyOverride?.trim().toUpperCase();
+      if (code && code !== currency) {
+        const fmt = currencyFormatterFor(code);
+        if (fmt) return fmt.format(value);
+        // Unknown/unformattable code: keep the number legible under the base symbol and
+        // append the raw code so its provenance is never lost.
+        return `${currencyFormat.format(value)} ${code}`;
+      }
       return currencyFormat.format(value);
     },
     percent(ratio, maximumFractionDigits = 0) {

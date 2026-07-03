@@ -18,6 +18,26 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.currency(Number.POSITIVE_INFINITY)).toBe('—');
   });
 
+  it('renders a per-call currency override with its own symbol (no conversion)', () => {
+    // The number is shown verbatim under the override's own symbol, not the base £.
+    const eur = gb.currency(1.23, 'EUR');
+    expect(eur).toContain('€');
+    expect(eur).toContain('1.23');
+    expect(eur).not.toContain('£');
+    const usd = gb.currency(1, 'USD');
+    expect(usd).toContain('$');
+    expect(usd).toContain('1.00');
+    expect(usd).not.toContain('£');
+    // A code equal to the base (any case) is just the base format.
+    expect(gb.currency(1234.5, 'gbp')).toBe('£1,234.50');
+    expect(gb.currency(1234.5, undefined)).toBe('£1,234.50');
+  });
+
+  it('falls back to the base symbol + raw code for a malformed override', () => {
+    // Not three ASCII letters — Intl rejects it, so keep it legible and preserve the code.
+    expect(gb.currency(1.23, 'ZZ')).toBe('£1.23 ZZ');
+  });
+
   it('formats a 0..1 ratio as a percentage, clamping out-of-range/non-finite input', () => {
     expect(gb.percent(0)).toBe('0%');
     expect(gb.percent(0.5)).toBe('50%');

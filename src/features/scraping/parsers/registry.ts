@@ -34,6 +34,17 @@ export const SUPPLIER_PARSERS: readonly SupplierParser[] = [
   genericMetaParser,
 ];
 
+/**
+ * Human labels of the host-specific supplier parsers, in registry priority order —
+ * the single source of truth for UI that lists which suppliers have a dedicated scraper
+ * (e.g. the supplier dialog's URL help). The generic structured-metadata fallback is
+ * excluded: it is not a named supplier but a best-effort strategy for any other product
+ * page. Derived from {@link SUPPLIER_PARSERS}, so the list can never drift from reality.
+ */
+export const SUPPORTED_SUPPLIER_LABELS: readonly string[] = SUPPLIER_PARSERS.filter(
+  (p) => p.id !== genericMetaParser.id,
+).map((p) => p.label);
+
 /** Pick the first parser that claims the URL (the generic fallback always does). */
 export function selectParser(url: string): SupplierParser | null {
   return SUPPLIER_PARSERS.find((p) => p.matches(url)) ?? null;

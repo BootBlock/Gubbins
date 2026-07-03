@@ -49,11 +49,14 @@ export function SupplierPartPriceHistory({
   );
   const tone = DIRECTION_TONE[series.direction];
   const recent = [...series.points].reverse().slice(0, RECENT_LIMIT);
+  // The change is a delta between the latest two points; render it under that point's own
+  // currency so the symbol matches the figures listed below it.
+  const latestCurrency = recent[0]?.currency ?? undefined;
 
   const changeLabel =
     series.changeAbs === null || series.changeAbs === 0
       ? null
-      : `${series.changeAbs > 0 ? '+' : '−'}${fmt.currency(Math.abs(series.changeAbs))}${
+      : `${series.changeAbs > 0 ? '+' : '−'}${fmt.currency(Math.abs(series.changeAbs), latestCurrency)}${
           series.changePct === null
             ? ''
             : ` (${series.changePct > 0 ? '+' : '−'}${Math.abs(Math.round(series.changePct))}%)`
@@ -98,8 +101,7 @@ export function SupplierPartPriceHistory({
         {recent.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <span className="text-foreground tabular-nums">
-              {fmt.currency(p.unitCost)}
-              {p.currency ? ` ${p.currency}` : ''}
+              {fmt.currency(p.unitCost, p.currency ?? undefined)}
             </span>
             <span className="flex items-center gap-2">
               {p.source === 'SCRAPE' ? (

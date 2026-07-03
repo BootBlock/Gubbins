@@ -95,8 +95,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                 <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   {part.unitCost !== null ? (
                     <span className="text-foreground">
-                      {fmt.currency(part.unitCost)}
-                      {part.currency ? ` ${part.currency}` : ''}
+                      {fmt.currency(part.unitCost, part.currency ?? undefined)}
                     </span>
                   ) : (
                     <span>No price</span>
@@ -123,7 +122,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                         key={b.qty}
                         className="rounded bg-secondary/60 px-1.5 py-0.5 text-xs text-muted-foreground"
                       >
-                        {b.qty}+: {fmt.currency(b.unitCost)}
+                        {b.qty}+: {fmt.currency(b.unitCost, part.currency ?? undefined)}
                       </span>
                     ))}
                   </div>

@@ -1,6 +1,27 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
+import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
+import { CURRENCY_OPTIONS } from '@/features/settings/settings';
+
+/**
+ * URL-field help: which suppliers the companion extension can scrape, listed from the
+ * live parser registry so this can never fall out of step with what actually works.
+ */
+const URL_HINT = [
+  "The supplier's product page — paste the full `https://…` link.",
+  '',
+  'With the companion browser extension installed, a **re-scrape** reads live price, order ' +
+    "code and other details straight from this page, matching the supplier by the link's host. " +
+    `Dedicated scrapers exist for: **${SUPPORTED_SUPPLIER_LABELS.join('**, **')}**. Any other ` +
+    'product page is still read on a best-effort basis from its structured metadata.',
+].join('\n');
+
+/** Help for the auto-completing Currency field (now drives the displayed symbol). */
+const CURRENCY_HINT =
+  'Pick a common currency or type any ISO-4217 code (e.g. **EUR**, **JPY**). This ' +
+  "supplier's costs are then shown with that currency's own symbol — e.g. `€1.23` — exactly " +
+  'as entered and **never converted**. Leave blank to use your base currency (set in Settings).';
 
 /**
  * Add/edit dialog for a single supplier part (§4 supplier facet; Phase 60). Local controlled
@@ -85,6 +106,7 @@ export function SupplierPartFormDialog({
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const currencyListId = useId();
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -129,7 +151,15 @@ export function SupplierPartFormDialog({
       initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="supplier-part-form">
-        <FormField label="Supplier">
+        <FormField
+          label="Supplier"
+          hint={
+            'The distributor or shop you buy this part from (e.g. **DigiKey**, **RS**, or a local ' +
+            'supplier). **Required.** An item can list several suppliers; **star** one in the table ' +
+            "to mark it preferred — its unit cost feeds the item's valuation unless you've set a " +
+            'manual cost on the item.'
+          }
+        >
           <Input
             ref={nameRef}
             value={supplierName}
@@ -143,7 +173,13 @@ export function SupplierPartFormDialog({
         </FormField>
 
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Order code">
+          <FormField
+            label="Order code"
+            hint={
+              "The supplier's own part number / SKU for this item — *their* **order code**, not the " +
+              "manufacturer's MPN. Used to reorder and to recognise this supplier on a re-scrape. Optional."
+            }
+          >
             <Input
               value={orderCode}
               onChange={(e) => setOrderCode(e.target.value)}
@@ -151,10 +187,7 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-order-code"
             />
           </FormField>
-          <FormField
-            label="URL"
-            hint="The supplier's product page. A re-scrape matches a supplier by this link's host."
-          >
+          <FormField label="URL" hint={URL_HINT} hintSize="md">
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -165,7 +198,14 @@ export function SupplierPartFormDialog({
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <FormField label="Unit cost">
+          <FormField
+            label="Unit cost"
+            hint={
+              'Price for a **single unit** at this supplier, in the currency beside it. Feeds ' +
+              'valuation and cost roll-ups. Enter the base per-unit price here; tiered quantity ' +
+              'pricing goes in **Price breaks** below. Optional — leave blank if unknown.'
+            }
+          >
             <Input
               value={unitCost}
               onChange={(e) => setUnitCost(e.target.value)}
@@ -174,18 +214,24 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-unit-cost"
             />
           </FormField>
-          <FormField
-            label="Currency"
-            hint="ISO code (e.g. **USD**). Blank uses your base currency; it is stored for fidelity only and never converted."
-          >
+          <FormField label="Currency" hint={CURRENCY_HINT}>
             <Input
               value={currency}
               onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+              list={currencyListId}
               maxLength={3}
+              autoComplete="off"
               placeholder="—"
+              data-testid="supplier-part-currency"
             />
           </FormField>
-          <FormField label="Pack qty">
+          <FormField
+            label="Pack qty"
+            hint={
+              'How many units come in one orderable pack (e.g. a reel of **1000**). Informational — ' +
+              'it does **not** multiply the unit cost. Blank means single units. Whole number above zero.'
+            }
+          >
             <Input
               value={packQty}
               onChange={(e) => setPackQty(e.target.value)}
@@ -194,9 +240,22 @@ export function SupplierPartFormDialog({
             />
           </FormField>
         </div>
+        <datalist id={currencyListId}>
+          {CURRENCY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </datalist>
 
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Min order qty">
+          <FormField
+            label="Min order qty"
+            hint={
+              'The smallest quantity this supplier will sell — their **MOQ**. Informational, for ' +
+              'reorder planning; it does not change the cost. Blank means no minimum. Whole number above zero.'
+            }
+          >
             <Input
               value={minOrderQty}
               onChange={(e) => setMinOrderQty(e.target.value)}

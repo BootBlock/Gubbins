@@ -39,6 +39,7 @@ export {
   type SupplierFieldStatus,
   type ExistingSupplierPart,
 } from './supplier-part-plan';
+export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
 export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
 export { ScrapeReviewDialog } from './components/ScrapeReviewDialog';
