@@ -1,7 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_CURRENCY, DEFAULT_LOCALE, makeFormatters } from './format';
+import { DEFAULT_CURRENCY, DEFAULT_LOCALE, decimalSeparatorForLocale, makeFormatters } from './format';
 
 const gb = makeFormatters(); // en-GB / GBP defaults (§1.2.1)
+
+describe('decimalSeparatorForLocale', () => {
+  it('returns a dot for English locales', () => {
+    expect(decimalSeparatorForLocale('en-GB')).toBe('.');
+    expect(decimalSeparatorForLocale('en-US')).toBe('.');
+  });
+
+  it('returns a comma for eurozone / comma-decimal locales', () => {
+    expect(decimalSeparatorForLocale('de-DE')).toBe(',');
+    expect(decimalSeparatorForLocale('fr-FR')).toBe(',');
+  });
+
+  it('defaults to the app locale, and falls back to a dot for a bad locale', () => {
+    expect(decimalSeparatorForLocale()).toBe('.'); // DEFAULT_LOCALE is en-GB
+    expect(decimalSeparatorForLocale('not-a-locale!!')).toBe('.');
+  });
+});
 
 describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
   it('exposes the locked defaults', () => {
