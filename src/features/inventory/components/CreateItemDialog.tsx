@@ -444,9 +444,13 @@ export function CreateItemDialog({
                   '| Mode | Counts | Example |\n' +
                   '| --- | --- | --- |\n' +
                   '| **Discrete** | a plain quantity | 100 screws |\n' +
-                  '| **Serialised** | each unit separately | a tool you check out |\n' +
+                  '| **Serialised** | each unit separately | a table saw you check out |\n' +
                   '| **Consumable** | how *full* it is | a filament spool |\n' +
                   '| **Untracked** | presence only | a reference manual |\n\n' +
+                  '> **One-off tool or asset?** A single item like a table saw is best **Serialised** ' +
+                  'with a count of **1** — that gives it its own condition, servicing schedule, ' +
+                  'check-out history and bookings. Use **Discrete** with quantity 1 only for a plain ' +
+                  'countable thing you don’t need to track individually.\n\n' +
                   '> **Note:** **Serialised** and **Consumable** are fixed once set, so choose them ' +
                   'with care; **Discrete** and **Untracked** can be swapped later from the item’s ' +
                   'Details tab.'
@@ -581,7 +585,9 @@ export function CreateItemDialog({
               label="Initial quantity"
               hint={
                 'How many units you have **on hand right now**. It seeds the stock ledger at the ' +
-                'chosen location; you can adjust it later with moves, check-outs and cycle counts.'
+                'chosen location; you can adjust it later with moves, check-outs and cycle counts.\n\n' +
+                '> Cataloguing a single one-off tool? A **Serialised** item (count 1) gives it its own ' +
+                'condition, servicing and check-out history — see **Tracking** above.'
               }
             >
               <Input type="number" min={0} step={1} {...register('quantity')} />
@@ -641,7 +647,8 @@ export function CreateItemDialog({
             hint={
               'Serialised items are tracked **individually**. Entering `3` creates **three separate ' +
               'records** sharing this name (e.g. *Drill #1, #2, #3*), each independently located, ' +
-              'checked out and maintained.'
+              'checked out and maintained.\n\n' +
+              '> For a **single one-off asset** (e.g. a table saw), enter `1`.'
             }
           >
             <Input type="number" min={1} step={1} {...register('count')} />
