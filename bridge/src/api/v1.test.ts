@@ -167,6 +167,78 @@ describe('GET /api/v1/items/{id}', () => {
   });
 });
 
+describe('field selection (fields / include)', () => {
+  it('search projects to just the named fields (the "only the price" case)', async () => {
+    const body = await json('/api/v1/search?q=ESP32&fields=name,unitCost');
+    expect(body.matches).toHaveLength(1);
+    expect(Object.keys(body.matches[0]).sort()).toEqual(['name', 'unitCost']);
+    expect(body.matches[0].name).toBe('ESP32 Dev Board');
+    expect(body.matches[0].unitCost).toBeNull(); // present but unpriced in the fixture
+  });
+
+  it('search include= adds an extended field on top of the default match shape', async () => {
+    const body = await json('/api/v1/search?q=ESP32&include=capabilities');
+    const match = body.matches[0];
+    // Default search fields are still present…
+    expect(match).toMatchObject({ id: 'item-esp32', name: 'ESP32 Dev Board', mpn: 'DEV-ESP32' });
+    // …plus the opted-in extended field.
+    expect(match.capabilities.some((c: any) => c.key === 'voltage')).toBe(true);
+  });
+
+  it('search 400s an unknown field with the v1 envelope', async () => {
+    const res = await get('/api/v1/search?q=ESP32&fields=bogus');
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('bad_request');
+    expect(body.error.message).toContain('bogus');
+  });
+
+  it('items list projects every row and keeps the pagination envelope', async () => {
+    const body = await json('/api/v1/items?fields=id,name');
+    expect(body.pagination.count).toBe(4);
+    for (const row of body.data) expect(Object.keys(row).sort()).toEqual(['id', 'name']);
+  });
+
+  it('items list include= adds an extended field to every row', async () => {
+    const body = await json('/api/v1/items?include=notes&limit=1');
+    expect(body.data[0]).toHaveProperty('notes');
+    expect(body.data[0]).toHaveProperty('trackingMode'); // defaults retained
+  });
+
+  it('item detail supports a nested sparse fieldset', async () => {
+    const body = await json('/api/v1/items/item-esp32?fields=name,placements.quantity');
+    expect(Object.keys(body).sort()).toEqual(['name', 'placements']);
+    for (const p of body.placements) expect(Object.keys(p)).toEqual(['quantity']);
+    expect(body.placements.reduce((n: number, p: any) => n + p.quantity, 0)).toBe(7);
+  });
+
+  it('item detail include= adds extended fields beyond the default detail payload', async () => {
+    const body = await json('/api/v1/items/item-esp32?include=notes,operationalMetadata');
+    expect(body).toHaveProperty('notes');
+    expect(body).toHaveProperty('operationalMetadata');
+    expect(body).toHaveProperty('capabilities'); // default detail fields retained
+  });
+
+  it('item detail 400s an unknown field', async () => {
+    const res = await get('/api/v1/items/item-esp32?fields=nope');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('bad_request');
+  });
+
+  it('the default (no-param) responses are unchanged', async () => {
+    // A guard that the projection path is strictly additive: no params → today's shapes.
+    const search = await json('/api/v1/search?q=ESP32');
+    expect(Object.keys(search.matches[0]).sort()).toEqual([
+      'id',
+      'locationName',
+      'manufacturer',
+      'mpn',
+      'name',
+      'quantity',
+    ]);
+  });
+});
+
 describe('GET /api/v1/locations', () => {
   it('lists locations with live item counts (incl. the seeded system locations)', async () => {
     const body = await json('/api/v1/locations');

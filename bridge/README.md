@@ -155,6 +155,9 @@ every endpoint is **GET-only** and strictly read-only.
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
   `unauthorized`, `not_found`, `method_not_allowed`, `too_many_requests`,
   `snapshot_unavailable`, `internal_error`.
+- **Field selection** — the item endpoints accept `fields` (return only the named fields) and
+  `include` (add extended fields on top of the default payload). See
+  [Field selection & extended fields](#field-selection--extended-fields) below.
 - All ids are the app's stable record ids; timestamps are UNIX-ms integers (as stored).
 
 ### Endpoints
@@ -164,10 +167,10 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1` | A small discovery index (version + endpoint list). |
 | `GET /api/v1/openapi.json` | This API's OpenAPI 3 document. |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
-| `GET /api/v1/search?q=&limit=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. |
+| `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
-| `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=` | Paginated item summaries (`ItemSummary`). |
-| `GET /api/v1/items/{id}` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. |
+| `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields). |
+| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/locations?limit=&offset=` | Paginated locations with live item counts (`Location`). |
 | `GET /api/v1/locations/{id}` | One location; `404` if unknown. |
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
@@ -194,6 +197,59 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/openapi.json"          # the spec
 ```
 
 (Ids such as `item-esp32` / `cat-electronics` above are from the synthetic test fixture.)
+
+### Field selection & extended fields
+
+The item endpoints (`/search`, `/items`, `/items/{id}`) let a caller **shape the response** with
+two optional, composable query parameters — so an integration fetches *exactly* the data it needs
+and nothing more. Both are also available on the MCP `gubbins_search` and `gubbins_get_item`
+[tools](#tools).
+
+| Parameter | Meaning | Example |
+| --- | --- | --- |
+| `fields` | **Sparse fieldset (projection).** A comma-separated list; the response contains **only** these fields. Naming an extended field opts it in — so you can ask for just the price. One level of nesting is supported for the array fields via a dotted path. | `?fields=name,unitCost` → `{ name, unitCost }` |
+| `include` | **Field expansion.** A comma-separated list of extended fields (or named groups) **added on top** of the default payload. | `?include=capabilities,notes` |
+
+- **"Just the price of M3 screws"** — `GET /api/v1/search?q=M3%20screw&fields=name,unitCost`
+  returns each match as `{ "name": …, "unitCost": … }` and nothing else.
+- **"More information, if available"** — `GET /api/v1/items/item-esp32?include=all` returns the
+  full detail payload plus every extended field the app stores (owner's notes, lifecycle, reorder
+  policy, operational metadata, the gauge, …).
+- **Nested projection** — `GET /api/v1/items/item-esp32?fields=name,placements.quantity` returns
+  `{ "name": …, "placements": [ { "quantity": … }, … ] }`.
+
+**Default field set** (returned when neither parameter is given — unchanged from before):
+
+| Endpoint | Default fields |
+| --- | --- |
+| `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
+| `/items` | the above + `locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
+| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
+
+**Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
+`quantity`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
+`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNo`, `parentId`,
+`unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
+`warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
+`operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
+`locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`).
+
+**Include groups** (aliases usable in `include`): `relations` (placements + capabilities +
+categoryName), `pricing` (unitCost + purchasePrice), `lifecycle` (acquiredAt + warrantyExpiresAt +
+purchasePrice + depreciationMonths), `reorder` (the three reorder fields), `timestamps`
+(createdAt + updatedAt), and `all` (every extended field).
+
+An unknown field or include name is a `400 bad_request` whose message lists the valid vocabulary;
+an over-long selection is likewise rejected. Relational fields are resolved **lazily** — a
+projection that doesn't select `placements`/`capabilities`/`categoryName` never incurs their extra
+read. The unversioned `/search` and `/where` aliases are deliberately **frozen** (no field
+selection) so their long-standing contract never changes; use the `/api/v1` twins for shaping.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,unitCost"
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
+```
 
 ### OpenAPI spec
 
@@ -254,9 +310,9 @@ All tools are **read-only** and return both human-readable `text` content and a 
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
-| `gubbins_search` | `q` (required), `limit?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). |
+| `gubbins_search` | `q` (required), `limit?`, `fields?`, `include?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_where_is` | `q` (required), `limit?` | The top matches with their per-location breakdown plus one spoken British-English sentence. |
-| `gubbins_get_item` | `id` (required) | One item with `placements` and `capabilities`; `{ found: false }` if unknown. |
+| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_list_locations` | `limit?`, `offset?` | Paginated locations with live item counts. |
 | `gubbins_list_categories` | `limit?`, `offset?` | Paginated categories with field counts. |
 | `gubbins_list_capabilities` | `limit?`, `offset?` | The distinct `cap:` vocabulary you can filter on. |
@@ -598,6 +654,8 @@ bridge/
   Dockerfile            # thin, build-free node:slim image (context = repo root)
   gubbins-bridge.service # example systemd unit (hardened, runs as an unprivileged user)
   openapi.yaml          # committed OpenAPI 3 spec for /api/v1 (generated from src/openapi.ts)
+  scripts/
+    emit-openapi-yaml.mjs # regenerate openapi.yaml from the typed spec (run after editing src/openapi.ts)
   .env.example          # placeholder config only
   src/
     node-driver.ts      # node:sqlite IDatabaseDriver (:memory: or a file copy; sibling of the test memory-driver)
@@ -630,10 +688,14 @@ bridge/
     api/
       v1.ts             # versioned /api/v1 router (items/locations/categories/capabilities + aliases)
       dto.ts            # stable public DTOs + pure row→DTO mappers
+      field-select.ts   # generic fields/include projection engine (parse + validate + lazy project)
+      item-view.ts      # item field vocabulary + lazy relational context (SSOT for projectable fields)
       respond.ts        # shared JSON / error-envelope helpers (legacy flat + v1 structured)
       params.ts         # shared q / pagination parsing (clamped)
       limits.ts         # shared request/pagination bounds
-      v1.test.ts        # in-process /api/v1 endpoint + pagination + auth + 404 tests
+      v1.test.ts        # in-process /api/v1 endpoint + pagination + auth + 404 + field-selection tests
+      field-select.test.ts # unit tests for the generic projection engine
+      item-view.test.ts # item registry drift-guard + lazy-resolution tests
     hydrate.test.ts     # hydration tests over the synthetic fixture
     sqlite-source.test.ts # raw .sqlite source tests (generated synthetic .sqlite, detection, write-gating)
     query.test.ts       # query-core tests over the synthetic fixture

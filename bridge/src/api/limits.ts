@@ -19,3 +19,10 @@ export const DEFAULT_PAGE_LIMIT = 50;
  * repository would serve anyway.
  */
 export const MAX_PAGE_LIMIT = 100;
+
+/**
+ * Hard cap on how many distinct fields a single `fields`/`include` selection may name — an
+ * abuse guard so a pathological query can't request an absurd projection. Comfortably above
+ * the whole item vocabulary (~33 fields), so it never bites a legitimate caller.
+ */
+export const MAX_SELECTED_FIELDS = 100;

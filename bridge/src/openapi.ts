@@ -86,6 +86,49 @@ const qParam: JsonValue = {
   example: 'M3 bolt',
 };
 
+/**
+ * The `fields` (sparse fieldset / projection) parameter shared by the item read endpoints.
+ * Present it and the response contains ONLY the named fields; omit it for the endpoint's
+ * default payload. Naming an extended field opts it in; one level of nesting is supported for
+ * the array fields via a dotted path (e.g. `placements.quantity`).
+ */
+const fieldsParam: JsonValue = {
+  name: 'fields',
+  in: 'query',
+  required: false,
+  description:
+    'Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default ' +
+    'set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so ' +
+    '`fields=name,unitCost` returns just those two. Nest an array field with a dot: ' +
+    '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
+    'locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, ' +
+    'isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, ' +
+    'expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
+    'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
+    'updatedAt, placements, capabilities.',
+  schema: { type: 'string' },
+  example: 'name,unitCost',
+};
+
+/**
+ * The `include` (field expansion) parameter shared by the item read endpoints — adds extended
+ * fields on top of the default payload, singly or by named group.
+ */
+const includeParam: JsonValue = {
+  name: 'include',
+  in: 'query',
+  required: false,
+  description:
+    'Field expansion: a comma-separated list of extended fields, or named groups, to ADD on ' +
+    'top of the default payload. Groups: relations (placements, capabilities, categoryName), ' +
+    'pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, ' +
+    'purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, ' +
+    'reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An ' +
+    'unknown name is a 400.',
+  schema: { type: 'string' },
+  example: 'capabilities,notes',
+};
+
 /** Standard error responses reused across operations. */
 const errorResponses = (...codes: number[]): JsonValue => {
   const all: Record<number, JsonValue> = {
@@ -231,7 +274,8 @@ export const openapiDocument: JsonValue = {
         summary: 'Relevance search (top-N, not paginated)',
         description:
           'Returns up to a hard ceiling of 25 best matches as compact item DTOs. For browsing ' +
-          'all items with pagination, use GET /api/v1/items instead.',
+          'all items with pagination, use GET /api/v1/items instead. Use `fields` to project ' +
+          'only specific fields (e.g. just the price) or `include` to add extended fields.',
         parameters: [
           qParam,
           {
@@ -241,6 +285,8 @@ export const openapiDocument: JsonValue = {
             description: 'Max results, clamped to [1, 25]. Defaults to 5.',
             schema: { type: 'integer', minimum: 1, maximum: 25, default: 5 },
           },
+          fieldsParam,
+          includeParam,
         ],
         responses: {
           200: response('The matches.', '#/components/schemas/SearchResult'),
@@ -263,6 +309,9 @@ export const openapiDocument: JsonValue = {
       get: {
         tags: ['items'],
         summary: 'Browse items (paginated)',
+        description:
+          'Paginated item summaries. Use `fields` to project a sparse fieldset or `include` to ' +
+          'add extended fields to every row.',
         parameters: [
           limitParam,
           offsetParam,
@@ -287,10 +336,12 @@ export const openapiDocument: JsonValue = {
             description: 'Include soft-deleted items when "true". Defaults to active only.',
             schema: { type: 'boolean', default: false },
           },
+          fieldsParam,
+          includeParam,
         ],
         responses: {
           200: okList('#/components/schemas/ItemSummary'),
-          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -298,10 +349,13 @@ export const openapiDocument: JsonValue = {
       get: {
         tags: ['items'],
         summary: 'Look up one item by id (with placements and capabilities)',
-        parameters: [idParam('item')],
+        description:
+          'One item with its full detail. Use `fields` to project a sparse fieldset (e.g. just ' +
+          'the price) or `include` to add extended fields beyond the default detail payload.',
+        parameters: [idParam('item'), fieldsParam, includeParam],
         responses: {
           200: response('The item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),
         },
       },
     },

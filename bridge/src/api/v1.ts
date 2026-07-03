@@ -16,12 +16,21 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
 import type { LocationTreeNode } from '@/db/repositories/types';
-import { searchItems, whereIs } from '../query.ts';
+import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
 import { sendError, sendJson } from './respond.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
+import { FieldSelectionError, hasSelection, type RawSelection, type SelectedField } from './field-select.ts';
+import {
+  createItemViewContext,
+  parseItemSelection,
+  projectItem,
+  ITEM_DETAIL_DEFAULT_FIELDS,
+  ITEM_SUMMARY_DEFAULT_FIELDS,
+  SEARCH_DEFAULT_FIELDS,
+} from './item-view.ts';
 import {
   toCapabilityKey,
   toCategoryDetail,
@@ -98,7 +107,7 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       break;
     case 'items':
       if (segments.length === 1) return void (await handleItems(res, driver, url));
-      if (segments.length === 2) return void (await handleItem(res, driver, decode(segments[1]!)));
+      if (segments.length === 2) return void (await handleItem(res, driver, url, decode(segments[1]!)));
       break;
     case 'locations':
       if (segments.length === 1) return void (await handleLocations(res, driver, url));
@@ -225,7 +234,22 @@ async function handleHealth(res: ServerResponse, state: BridgeServerState): Prom
 async function handleSearch(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
   const q = readQueryParam(res, url, true);
   if (q === null) return;
-  const matches = await searchItems(driver, q, { limit: readResultLimit(url) });
+  const limit = readResultLimit(url);
+  const raw = readSelection(url);
+
+  // With a `fields`/`include` selection, project the raw rows through the item field engine;
+  // otherwise keep the compact ItemMatch shape (byte-identical to the legacy /search alias).
+  if (hasSelection(raw)) {
+    const selection = parseSelectionOr400(res, SEARCH_DEFAULT_FIELDS, raw);
+    if (selection === null) return;
+    const rows = await searchItemRows(driver, q, { limit });
+    const matches = await Promise.all(
+      rows.map((row) => projectItem(createItemViewContext(driver, row), selection)),
+    );
+    return void sendJson(res, 200, { query: q.trim(), matches });
+  }
+
+  const matches = await searchItems(driver, q, { limit });
   sendJson(res, 200, { query: q.trim(), matches });
 }
 
@@ -239,6 +263,12 @@ async function handleWhere(res: ServerResponse, driver: Driver, url: URL): Promi
 
 async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
   const page = readPage(url);
+  const raw = readSelection(url);
+  const selection = hasSelection(raw)
+    ? parseSelectionOr400(res, ITEM_SUMMARY_DEFAULT_FIELDS, raw)
+    : undefined;
+  if (selection === null) return; // a 400 was already sent
+
   const items = new ItemRepository(driver);
   const result = await items.list({
     limit: page.limit,
@@ -251,11 +281,32 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
   // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
   // rather than an N+1 lookup per row.
   const locationNames = await locationNameMap(driver);
-  const data = result.rows.map((item) => toItemSummary(item, locationNames.get(item.locationId) ?? null));
+  const data: readonly unknown[] =
+    selection === undefined
+      ? result.rows.map((item) => toItemSummary(item, locationNames.get(item.locationId) ?? null))
+      : await Promise.all(
+          result.rows.map((item) =>
+            projectItem(
+              createItemViewContext(driver, item, {
+                locationName: locationNames.get(item.locationId) ?? null,
+              }),
+              selection,
+            ),
+          ),
+        );
   sendList(res, data, page, result.hasMore);
 }
 
-async function handleItem(res: ServerResponse, driver: Driver, id: string): Promise<void> {
+async function handleItem(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
+  const raw = readSelection(url);
+  if (hasSelection(raw)) {
+    const selection = parseSelectionOr400(res, ITEM_DETAIL_DEFAULT_FIELDS, raw);
+    if (selection === null) return;
+    const item = await new ItemRepository(driver).getById(id);
+    if (item === undefined) return notFound(res, 'item');
+    return void sendJson(res, 200, await projectItem(createItemViewContext(driver, item), selection));
+  }
+
   const detail = await loadItemDetail(driver, id);
   if (detail === null) return notFound(res, 'item');
   sendJson(res, 200, detail);
@@ -307,6 +358,36 @@ async function handleCapabilities(res: ServerResponse, driver: Driver, url: URL)
 // --- helpers ----------------------------------------------------------------------
 
 type Driver = BridgeServerState['driver'];
+
+/** Read the optional `fields`/`include` selection parameters off the query string. */
+function readSelection(url: URL): RawSelection {
+  const fields = url.searchParams.get('fields');
+  const include = url.searchParams.get('include');
+  return {
+    ...(fields !== null ? { fields } : {}),
+    ...(include !== null ? { include } : {}),
+  };
+}
+
+/**
+ * Parse a field selection, or send a `400 bad_request` (v1 envelope) and return `null` when it
+ * is invalid. The `FieldSelectionError` message is caller-facing and PII-free by construction.
+ */
+function parseSelectionOr400(
+  res: ServerResponse,
+  defaults: readonly string[],
+  raw: RawSelection,
+): readonly SelectedField[] | null {
+  try {
+    return parseItemSelection(defaults, raw);
+  } catch (err) {
+    if (err instanceof FieldSelectionError) {
+      sendError(res, 400, 'bad_request', err.message, { v1: true });
+      return null;
+    }
+    throw err;
+  }
+}
 
 function decode(segment: string): string {
   try {

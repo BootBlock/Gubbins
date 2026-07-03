@@ -156,7 +156,7 @@ paths:
       tags:
       - "search"
       summary: "Relevance search (top-N, not paginated)"
-      description: "Returns up to a hard ceiling of 25 best matches as compact item DTOs. For browsing all items with pagination, use GET /api/v1/items instead."
+      description: "Returns up to a hard ceiling of 25 best matches as compact item DTOs. For browsing all items with pagination, use GET /api/v1/items instead. Use `fields` to project only specific fields (e.g. just the price) or `include` to add extended fields."
       parameters:
       -
         name: "q"
@@ -177,6 +177,22 @@ paths:
           minimum: 1
           maximum: 25
           default: 5
+      -
+        name: "fields"
+        in: "query"
+        required: false
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "include"
+        in: "query"
+        required: false
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
       responses:
         "200":
           description: "The matches."
@@ -279,6 +295,7 @@ paths:
       tags:
       - "items"
       summary: "Browse items (paginated)"
+      description: "Paginated item summaries. Use `fields` to project a sparse fieldset or `include` to add extended fields to every row."
       parameters:
       -
         name: "limit"
@@ -321,6 +338,22 @@ paths:
         schema:
           type: "boolean"
           default: false
+      -
+        name: "fields"
+        in: "query"
+        required: false
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "include"
+        in: "query"
+        required: false
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
       responses:
         "200":
           description: "A page of results."
@@ -338,6 +371,12 @@ paths:
                       $ref: "#/components/schemas/ItemSummary"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: "Missing or invalid bearer token."
           headers:
@@ -371,6 +410,7 @@ paths:
       tags:
       - "items"
       summary: "Look up one item by id (with placements and capabilities)"
+      description: "One item with its full detail. Use `fields` to project a sparse fieldset (e.g. just the price) or `include` to add extended fields beyond the default detail payload."
       parameters:
       -
         name: "id"
@@ -379,6 +419,22 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "fields"
+        in: "query"
+        required: false
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "include"
+        in: "query"
+        required: false
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
       responses:
         "200":
           description: "The item."
@@ -386,6 +442,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ItemDetail"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: "Missing or invalid bearer token."
           headers:

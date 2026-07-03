@@ -16,6 +16,7 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { parseTextQuery } from '@/features/search/parse-text-query.ts';
 import type { SearchAST } from '@/db/search/ast.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
+import type { Item } from '@/db/repositories/types';
 import { speakWhereIs } from './spoken.ts';
 
 /**
@@ -74,16 +75,10 @@ export async function searchItems(
   q: string,
   options: SearchOptions = {},
 ): Promise<ItemMatch[]> {
-  const trimmed = q.trim();
-  if (trimmed.length === 0) return [];
-
-  const limit = clampLimit(options.limit);
-  const items = new ItemRepository(driver);
+  const rows = await searchItemRows(driver, q, options);
   const locations = new LocationRepository(driver);
-
-  const page = await items.searchByAst(astForQuery(trimmed), { limit });
   return Promise.all(
-    page.rows.map(async (row) => ({
+    rows.map(async (row) => ({
       id: row.id,
       name: row.name,
       quantity: row.quantity,
@@ -92,6 +87,26 @@ export async function searchItems(
       manufacturer: row.manufacturer,
     })),
   );
+}
+
+/**
+ * The same relevance search as {@link searchItems}, but returning the **raw** {@link Item}
+ * rows rather than the compact {@link ItemMatch} DTO. This is the projection-friendly seam:
+ * the field-selection layer needs every column available (e.g. `unitCost`, `notes`) so it can
+ * emit an arbitrary sparse fieldset, which the compact DTO has already discarded. Same query
+ * grammar, same fallback, same limit clamp — only the shape returned differs.
+ */
+export async function searchItemRows(
+  driver: IDatabaseDriver,
+  q: string,
+  options: SearchOptions = {},
+): Promise<readonly Item[]> {
+  const trimmed = q.trim();
+  if (trimmed.length === 0) return [];
+  const page = await new ItemRepository(driver).searchByAst(astForQuery(trimmed), {
+    limit: clampLimit(options.limit),
+  });
+  return page.rows;
 }
 
 /**

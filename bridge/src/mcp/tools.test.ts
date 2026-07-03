@@ -81,6 +81,27 @@ describe('gubbins_search', () => {
   it('rejects a missing q', async () => {
     await expect(run('gubbins_search', {})).rejects.toBeInstanceOf(ToolInputError);
   });
+
+  it('projects to a sparse fieldset with "fields"', async () => {
+    const result = (await run('gubbins_search', { q: 'ESP32 Dev Board', fields: 'name,quantity' })) as {
+      matches: Record<string, unknown>[];
+    };
+    expect(Object.keys(result.matches[0]!).sort()).toEqual(['name', 'quantity']);
+  });
+
+  it('adds an extended field with "include" (also accepts an array)', async () => {
+    const result = (await run('gubbins_search', { q: 'ESP32', include: ['capabilities'] })) as {
+      matches: { id: string; capabilities: { key: string }[] }[];
+    };
+    expect(result.matches[0]!.id).toBe('item-esp32');
+    expect(result.matches[0]!.capabilities.some((c) => c.key === 'voltage')).toBe(true);
+  });
+
+  it('rejects an unknown field with a ToolInputError', async () => {
+    await expect(run('gubbins_search', { q: 'ESP32', fields: 'bogus' })).rejects.toBeInstanceOf(
+      ToolInputError,
+    );
+  });
 });
 
 describe('gubbins_where_is', () => {
@@ -118,6 +139,20 @@ describe('gubbins_get_item', () => {
 
   it('rejects a missing id', async () => {
     await expect(run('gubbins_get_item', {})).rejects.toBeInstanceOf(ToolInputError);
+  });
+
+  it('projects a sparse fieldset and still reports found:false for an unknown id', async () => {
+    const found = (await run('gubbins_get_item', { id: 'item-esp32', fields: 'name,unitCost' })) as {
+      found: boolean;
+      item: Record<string, unknown>;
+    };
+    expect(found.found).toBe(true);
+    expect(Object.keys(found.item).sort()).toEqual(['name', 'unitCost']);
+
+    expect(await run('gubbins_get_item', { id: 'no-such-item', fields: 'name' })).toEqual({
+      found: false,
+      id: 'no-such-item',
+    });
   });
 });
 

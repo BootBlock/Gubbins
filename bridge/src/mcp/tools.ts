@@ -14,7 +14,7 @@ import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import { searchItems, whereIs, DEFAULT_RESULT_LIMIT, MAX_RESULT_LIMIT } from '../query.ts';
+import { searchItems, searchItemRows, whereIs, DEFAULT_RESULT_LIMIT, MAX_RESULT_LIMIT } from '../query.ts';
 import { loadItemDetail } from '../item-detail.ts';
 import {
   toCapabilityKey,
@@ -24,6 +24,14 @@ import {
   type PaginationMeta,
 } from '../api/dto.ts';
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '../api/limits.ts';
+import { FieldSelectionError, hasSelection, type SelectedField } from '../api/field-select.ts';
+import {
+  createItemViewContext,
+  parseItemSelection,
+  projectItem,
+  ITEM_DETAIL_DEFAULT_FIELDS,
+  SEARCH_DEFAULT_FIELDS,
+} from '../api/item-view.ts';
 
 /** A minimal JSON-Schema subset — enough to describe each tool's arguments in `tools/list`. */
 export interface JsonSchema {
@@ -55,6 +63,22 @@ export interface McpTool {
  */
 export class ToolInputError extends Error {}
 
+/** The shared `fields`/`include` argument schemas (comma-separated, mirroring the HTTP API). */
+const FIELDS_SCHEMA: JsonSchema = {
+  type: 'string',
+  description:
+    'Sparse fieldset: a comma-separated list of fields to return instead of the default set ' +
+    '(e.g. "name,unitCost"). Nest an array field with a dot ("placements.quantity"). Naming an ' +
+    'extended field opts it in.',
+};
+
+const INCLUDE_SCHEMA: JsonSchema = {
+  type: 'string',
+  description:
+    'Comma-separated extended fields (or groups: relations, pricing, lifecycle, reorder, ' +
+    'timestamps, all) to add on top of the default payload (e.g. "capabilities,notes").',
+};
+
 // --- the tools --------------------------------------------------------------------
 
 const searchTool: McpTool = {
@@ -63,7 +87,8 @@ const searchTool: McpTool = {
     'Search the Gubbins inventory and return compact matches (id, name, total quantity, ' +
     'primary location, MPN, manufacturer). Accepts a casual phrase ("M3 bolts") or the ' +
     'power-user grammar (field:value, cap:key>n, AND/OR, parentheses). Relevance-ranked, ' +
-    `top-N (default ${DEFAULT_RESULT_LIMIT}, max ${MAX_RESULT_LIMIT}).`,
+    `top-N (default ${DEFAULT_RESULT_LIMIT}, max ${MAX_RESULT_LIMIT}). Use "fields" to return ` +
+    'only specific fields (e.g. just the price) or "include" to add extended fields.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -74,13 +99,23 @@ const searchTool: McpTool = {
         minimum: 1,
         maximum: MAX_RESULT_LIMIT,
       },
+      fields: FIELDS_SCHEMA,
+      include: INCLUDE_SCHEMA,
     },
     required: ['q'],
     additionalProperties: false,
   },
   async run(driver, args) {
     const q = requireString(args, 'q');
-    const matches = await searchItems(driver, q, { limit: optionalInteger(args, 'limit') });
+    const limit = optionalInteger(args, 'limit');
+    const selection = selectionFromArgs(args, SEARCH_DEFAULT_FIELDS);
+    if (selection === undefined) {
+      return { query: q.trim(), matches: await searchItems(driver, q, { limit }) };
+    }
+    const rows = await searchItemRows(driver, q, { limit });
+    const matches = await Promise.all(
+      rows.map((row) => projectItem(createItemViewContext(driver, row), selection)),
+    );
     return { query: q.trim(), matches };
   },
 };
@@ -115,19 +150,29 @@ const getItemTool: McpTool = {
   name: 'gubbins_get_item',
   description:
     'Fetch one inventory item by its stable id, with full detail: per-location placements ' +
-    'and parametric capabilities. Returns { found: false } when no item has that id.',
+    'and parametric capabilities. Returns { found: false } when no item has that id. Use ' +
+    '"fields" to project only specific fields, or "include" to add extended fields (e.g. notes).',
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+      fields: FIELDS_SCHEMA,
+      include: INCLUDE_SCHEMA,
     },
     required: ['id'],
     additionalProperties: false,
   },
   async run(driver, args) {
     const id = requireString(args, 'id');
-    const item = await loadItemDetail(driver, id);
-    return item === null ? { found: false, id } : { found: true, item };
+    const selection = selectionFromArgs(args, ITEM_DETAIL_DEFAULT_FIELDS);
+    if (selection === undefined) {
+      const item = await loadItemDetail(driver, id);
+      return item === null ? { found: false, id } : { found: true, item };
+    }
+    const row = await new ItemRepository(driver).getById(id);
+    return row === undefined
+      ? { found: false, id }
+      : { found: true, item: await projectItem(createItemViewContext(driver, row), selection) };
   },
 };
 
@@ -204,6 +249,36 @@ function optionalInteger(args: Readonly<Record<string, unknown>>, key: string): 
     throw new ToolInputError(`"${key}" must be a number when provided.`);
   }
   return Math.floor(value);
+}
+
+/**
+ * Resolve a `fields`/`include` selection from tool args, or `undefined` when neither is given
+ * (so the caller keeps its default shape). An invalid selection surfaces as a model-visible
+ * {@link ToolInputError} rather than a generic failure.
+ */
+function selectionFromArgs(
+  args: Readonly<Record<string, unknown>>,
+  defaults: readonly string[],
+): readonly SelectedField[] | undefined {
+  const raw = {
+    ...(args.fields != null ? { fields: optionalStringList(args, 'fields') } : {}),
+    ...(args.include != null ? { include: optionalStringList(args, 'include') } : {}),
+  };
+  if (!hasSelection(raw)) return undefined;
+  try {
+    return parseItemSelection(defaults, raw);
+  } catch (err) {
+    if (err instanceof FieldSelectionError) throw new ToolInputError(err.message);
+    throw err;
+  }
+}
+
+/** A `fields`/`include` argument may be a comma-separated string or an array of field names. */
+function optionalStringList(args: Readonly<Record<string, unknown>>, key: string): string | string[] {
+  const value = args[key];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value as string[];
+  throw new ToolInputError(`"${key}" must be a comma-separated string or an array of strings.`);
 }
 
 interface PageRequest {
