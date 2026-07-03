@@ -1,7 +1,7 @@
 /**
  * Dashboard widget registry (spec §3 "Customisable Dashboard": "Users can pin
  * specific visualisations, 'Low Stock Alerts', 'Soon to Expire' trackers, 'Overdue
- * Items', Project statuses, or quick-links").
+ * Items', or Project statuses").
  *
  * Each widget is a self-contained component that fetches its own Tier-1 data, so the
  * grid (`DashboardGrid`) only places, reorders, shows/hides and persists them — it
@@ -9,7 +9,6 @@
  * layout; the pure `dashboard-layout.ts` seam owns all the coordinate maths.
  */
 import type { ComponentType, ReactNode } from 'react';
-import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { Money, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
@@ -28,10 +27,6 @@ import {
   BudgetIcon,
   HistoryIcon,
   ValueIcon,
-  AddIcon,
-  ScanIcon,
-  ImportIcon,
-  ShoppingCartIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -53,7 +48,6 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -395,39 +389,6 @@ function BudgetAlertsWidget() {
   );
 }
 
-function QuickActionsWidget() {
-  // Action-oriented, not destinations — the destinations already appear as nav tiles
-  // directly above this board (improvement #8). Add/Scan/Import hand a one-shot intent to
-  // the Inventory screen (it opens the matching dialog on arrival); New PO navigates to
-  // where a purchase order is raised.
-  const actions = [
-    { to: '/inventory', label: 'Add item', icon: <AddIcon />, intent: 'add' as const },
-    { to: '/inventory', label: 'Scan', icon: <ScanIcon />, intent: 'scan' as const },
-    { to: '/inventory', label: 'Import', icon: <ImportIcon />, intent: 'import' as const },
-    { to: '/purchase-orders', label: 'New PO', icon: <ShoppingCartIcon />, intent: null },
-  ] as const;
-  return (
-    <WidgetShell icon={<AddIcon />} title="Quick actions">
-      <div className="grid grid-cols-2 gap-1.5">
-        {actions.map((a) => {
-          const { intent } = a;
-          return (
-            <Link
-              key={a.label}
-              to={a.to}
-              onClick={intent ? () => useInventoryEntry.getState().requestIntent(intent) : undefined}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
-            >
-              {a.icon}
-              {a.label}
-            </Link>
-          );
-        })}
-      </div>
-    </WidgetShell>
-  );
-}
-
 function InventoryTotalsWidget() {
   const fmt = useFormatters();
   const value = useInventoryValue();
@@ -556,8 +517,8 @@ function PlatformWidget() {
 
 /**
  * The widget registry in default row-major order. The actionable inventory trackers
- * come first, then quick-links, then the system-status board — but the user is free to
- * reorder, hide or re-pin any of them.
+ * come first, then the system-status board — but the user is free to reorder, hide or
+ * re-pin any of them.
  */
 export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
@@ -617,7 +578,6 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     to: '/activity',
     Component: RecentActivityWidget,
   },
-  { id: 'quick-links', title: 'Quick actions', icon: <AddIcon />, Component: QuickActionsWidget },
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   {
     id: 'system-storage',
