@@ -24,9 +24,9 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1, EI-2, EI-3, EI-4, EI-5 & EI-6 complete & merged (2026-07-03). Next: EI-7._ Phase order: **EI-1 → EI-7**.
-> EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
-> could be reordered, but the embedded prompts assume this order.
+> **Status:** ✅ **PLAN COMPLETE (2026-07-03).** All seven phases (EI-1 … EI-7) are implemented,
+> `/code-review high`-gated, and merged to `main`. Phase order was **EI-1 → EI-7**; EI-1 (the
+> event model) was a hard prerequisite for EI-2 and EI-6. No further work is scheduled here.
 
 ---
 
@@ -715,26 +715,26 @@ prompt.
 — and every other integration doc — actually detail what is supported**, now that the surface
 is much larger. Close the loop so a stranger can discover and use every capability.
 
-- [ ] **`bridge/README.md`:** ensure every surface is documented and accurate — REST `/api/v1`,
+- [x] **`bridge/README.md`:** ensure every surface is documented and accurate — REST `/api/v1`,
       OpenAPI, CSV, events/webhooks/SSE (EI-1), calendar (EI-2), MQTT (EI-5), feeds & metrics
       (EI-6), limited writes, push, mDNS. Fix any drift accumulated across phases.
-- [ ] **MCP docs:** the "MCP server" section must list **exactly** the tools that exist and
+- [x] **MCP docs:** the "MCP server" section must list **exactly** the tools that exist and
       their real I/O shapes (the tool table), the `mcpServers` config example, transport
       (stdio) and its trust boundary, and what is *not* supported (HTTP transport, write tools)
       so expectations are correct.
-- [ ] **Home Assistant docs:** `homeassistant/README.md` + `custom_components/gubbins` — detail
+- [x] **Home Assistant docs:** `homeassistant/README.md` + `custom_components/gubbins` — detail
       the custom-component path **and** the new MQTT-discovery path (EI-5) as alternatives, the
       conversation intent, the sensor, zeroconf discovery, and the exact bridge contract each
       relies on.
-- [ ] **Top-level `README.md`:** refresh the integration section to enumerate the full
+- [x] **Top-level `README.md`:** refresh the integration section to enumerate the full
       ecosystem (pull: REST/OpenAPI/CSV/MCP; push: webhooks/SSE/MQTT/feeds; calendar; inbound:
       share target/importers; metrics) with the opt-in posture stated once, clearly.
-- [ ] **OpenAPI completeness:** every `/api/v1` path added across EI-1…EI-6 is in
+- [x] **OpenAPI completeness:** every `/api/v1` path added across EI-1…EI-6 is in
       `bridge/src/openapi.ts` + `openapi.yaml`, drift-guard green.
-- [ ] **Permission & security matrix:** one table listing every `GUBBINS_BRIDGE_*` flag, its
+- [x] **Permission & security matrix:** one table listing every `GUBBINS_BRIDGE_*` flag, its
       default (off), what it exposes, whether it can write, and where its secret lives — the
       single place a user reasons about what they've turned on.
-- [ ] **Final audit:** re-confirm no secret/real-data anywhere across all new files, fixtures,
+- [x] **Final audit:** re-confirm no secret/real-data anywhere across all new files, fixtures,
       logs, and docs; all examples synthetic; licence/`package.json` consistent if any dep was
       added in EI-5.
 
@@ -743,11 +743,51 @@ match the code (no aspirational or stale claims); the security matrix is complet
 
 **Review gate:** `/code-review high` (docs-focused, but catches contract drift).
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Documentation truth-up — no code behaviour changed; the audit
+confirmed the code had **outrun the prose in only a few small places** (the six prior phases each
+documented their own surface well), so this phase closed the remaining gaps and added the one
+missing cross-cutting artefact. **`bridge/README.md`:** the stale top-of-file **Status** block
+(still describing "Phase HA-5" and only the REST+MCP surface) was rewritten into an at-a-glance
+map of the whole surface — always-on reads (`/health`/`/search`/`/where`, `/api/v1/*`, CSV,
+calendar, feeds, `/metrics`, MCP) vs. the per-flag opt-ins — pointing at the new matrix and both
+plan docs. A new **"Permission & security matrix"** section (the phase's headline deliverable) is
+the single authoritative table: one row per `GUBBINS_BRIDGE_*` capability flag
+(`ALLOW_WRITES`, `ALLOW_PUSH`, `EVENTS`, `WEBHOOKS`, `MQTT`, `MQTT_DISCOVERY`, `MDNS`) giving
+default (all **off**), what it turns on, direction (inbound/outbound/advertise), whether it can
+**write inventory**, and **where its secret lives** — preceded by an "always on (no flag) —
+token-gated reads only" table so a reader sees exactly what is exposed with zero flags set. The
+rest of `bridge/README.md` (events/webhooks/SSE, calendar, MQTT, feeds/metrics, writes, push,
+mDNS, the MCP tool table, the config reference) was audited against the code and found accurate —
+the **six MCP tools** in the table match `mcp/tools.ts` exactly (`gubbins_search`,
+`gubbins_where_is`, `gubbins_get_item`, `gubbins_list_locations`, `gubbins_list_categories`,
+`gubbins_list_capabilities`), and stdio-transport / no-network-token / read-only posture is
+correctly stated. **Top-level `README.md`:** the bridge "What it gives you" list gained the three
+surfaces it was missing — the subscribable **calendar**, **syndication feeds + Prometheus
+`/metrics`**, and opt-in **change events** (webhooks + SSE) — plus a closing pointer to the
+permission matrix as the authoritative opt-in list; the migration-importers (EI-3) and
+share-target/file-handler (EI-4) sections were already present and accurate. **Home Assistant:**
+`homeassistant/README.md` already documents all three install paths — the custom component
+(Option A), the no-code YAML recipe (Option B) and the EI-5 **MQTT-discovery** path (Option C) —
+plus the conversation intent, sensor, zeroconf discovery and the opt-in write service; the only
+`custom_components/gubbins` fix was a stale module docstring in `__init__.py` (it said setup wires
+"three things" and omitted the `gubbins.adjust_quantity` write service — corrected to four).
+**OpenAPI completeness:** every served `/api/v1` route — including the opt-in `POST` writes
+(`adjust-quantity`/`adjust-gauge`), `POST /api/v1/snapshot`, the SSE `/api/v1/events`, calendar,
+the three activity feeds and the root `/metrics` — is present in `openapi.ts` / `openapi.yaml`;
+the drift-guard test (`openapi.test.ts`, 6 tests) is green, and a route-by-route check of the
+`v1.ts` dispatcher + `server.ts` (`/metrics`) confirmed nothing served is undocumented. **Final
+audit:** a diff-wide scan for secret/PII shapes came back clean — no tokens, keys or emails; the
+only IPs are `127.0.0.1` (loopback) and `0.0.0.0` (the documented LAN-bind), and all example ids
+remain synthetic-fixture values (`item-esp32`, `test-token-123`, `192.0.2.10` TEST-NET, etc.). No
+dependency was added in any phase (EI-5's MQTT client was hand-rolled), so `package.json`'s MIT
+licence and the zero-runtime-dependency claim remain consistent. **Review gate:** `/code-review
+high` ran on the docs diff — see the merge for the result. **This completes the ecosystem
+integrations build-out (EI-1 … EI-7).**
 
-**Continuation prompt:** none — this is the final phase. On completion, mark the plan
-**complete** here, update the memory index line, and emit an "all ecosystem phases complete"
-summary in chat instead of a continuation prompt.
+**Continuation prompt:** none — this was the final phase.
+
+> **PLAN COMPLETE (2026-07-03).** All seven phases (EI-1 … EI-7) are implemented, reviewed and
+> merged to `main`. There is no further work scheduled in this plan.
 
 ---
 
@@ -763,21 +803,9 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-7** (EI-1 through EI-6 are complete and merged) — the **final**
-phase. Its kick-off prompt (self-contained, for a cold session) is below.
-
-```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-7 (documentation
-truth-up + ecosystem finalisation). EI-1 through EI-6 are complete and merged. Work in a NEW
-git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-docs -b
-feat/ecosystem-docs HEAD), follow the "How every phase runs" loop and the top-of-doc
-invariants, gate with /code-review high before merging, then merge --no-ff into main and clean
-up. This is the FINAL phase: update ALL integration docs to detail EXACTLY what is now
-supported — bridge/README.md, the MCP server section + tool table, homeassistant/README.md and
-custom_components/gubbins docs, the top-level README's integration section, and make the
-OpenAPI spec complete for every /api/v1 surface. Add a single "permission & security matrix"
-listing every GUBBINS_BRIDGE_* opt-in flag and what it exposes. Verify every example is
-synthetic. After merging, mark the whole plan complete in the plan doc and update the memory
-index. There is NO next phase — emit an "all phases complete" summary instead of a continuation
-prompt.
-```
+None — **the plan is complete.** All seven phases (EI-1 … EI-7) shipped and merged to `main` on
+2026-07-03. This document is retained as the historical record of the ecosystem build-out; the
+living surface it describes now lives in the code and in [`../../bridge/README.md`](../../bridge/README.md)
+(see its [Permission & security matrix](../../bridge/README.md#permission--security-matrix)),
+[`../../homeassistant/README.md`](../../homeassistant/README.md) and the top-level
+[`../../README.md`](../../README.md).
