@@ -157,6 +157,17 @@ Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-l
   **auto-discovery** so you usually don't even type the host/port.
 - **An MCP server** — exposes the same read-only queries as tools to an LLM/agent (e.g. Claude),
   so an assistant can look things up for you.
+- **Opt-in, off-by-default MQTT publishing** — push your inventory into a home-automation stack.
+  With `GUBBINS_BRIDGE_MQTT=on` the bridge connects **out** to your MQTT broker (Mosquitto, EMQX,
+  the Home Assistant add-on, …) as a *client* — it opens no extra inbound port — and publishes a
+  retained snapshot of your inventory (total items, low-stock / out-of-stock counts, a per-location
+  item count) plus a live change event whenever stock moves. Turn on the `…_MQTT_DISCOVERY` sub-flag
+  and it *also* emits Home Assistant MQTT-discovery messages, so **HA auto-creates the Gubbins
+  sensors with no custom component at all** — an alternative to the integration above (you pick one).
+  Anything that speaks MQTT (Node-RED, dashboards, automations) can then react to what's in your
+  boxes. It's best-effort: if the broker is down the bridge just retries — your HTTP API is
+  unaffected. Full topic list, config, and the HA recipe are in
+  [`bridge/README.md` → MQTT publishing](bridge/README.md#mqtt-publishing-opt-in).
 - **Two data sources** — point it at either the `gubbins-sync.json` your sync writes, *or* a raw
   exported `.sqlite` database; it auto-detects which.
 - **Opt-in, off-by-default writes** — let an automation or voice command check stock in/out
