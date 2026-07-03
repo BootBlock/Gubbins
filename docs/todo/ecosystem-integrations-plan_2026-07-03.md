@@ -24,9 +24,9 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _Not started._ Phase order: **EI-1 → EI-7**. EI-1 (the event model) is a
-> hard prerequisite for EI-2 and EI-6; the rest are independent and could be reordered, but
-> the embedded prompts assume this order.
+> **Status:** _EI-1 complete & merged (2026-07-03). Next: EI-2._ Phase order: **EI-1 → EI-7**.
+> EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
+> could be reordered, but the embedded prompts assume this order.
 
 ---
 
@@ -125,30 +125,30 @@ so nothing forks it:
 model, one opt-in signed-webhook delivery path, and one read-only SSE stream — the keystone
 every other "notify me / react to change" feature builds on.
 
-- [ ] **Event model** (`bridge/src/events/*`, pure + tested): compute the typed event list
+- [x] **Event model** (`bridge/src/events/*`, pure + tested): compute the typed event list
       for a hydration generation from the `item_history` delta (reuse
       `activityKindForAction` / `describeHistoryEntry`; do **not** fork them). Map each to the
       `{ id, type, occurredAt, data }` DTO over existing `api/dto.ts` shapes. Handle the
       first-run/cold-start case (no baseline → emit nothing, don't replay history).
-- [ ] **Watcher integration:** a post-swap hook in `watcher.ts` that hands the new events to a
+- [x] **Watcher integration:** a post-swap hook in `watcher.ts` that hands the new events to a
       registered set of sinks. Coalesce per generation and **cap fan-out** so a bulk import
       can't flood downstream (bounded batch + a "N more" summary event if exceeded).
-- [ ] **Outbound webhooks** (`GUBBINS_BRIDGE_WEBHOOKS=on`, off by default): POST each event to
+- [x] **Outbound webhooks** (`GUBBINS_BRIDGE_WEBHOOKS=on`, off by default): POST each event to
       each configured `{ url, secret, events[] }` target. `X-Gubbins-Signature` = HMAC-SHA256
       of the raw body (GitHub/Stripe pattern, `node:crypto`), a `X-Gubbins-Delivery` id,
       at-least-once with bounded exponential backoff + retry cap, and a per-target failure
       circuit so one dead URL can't stall the others. Target list from env/JSON (secrets in
       `.env` only).
-- [ ] **SSE stream:** `GET /api/v1/events` (bearer-token + rate-limit reuse) holds the
+- [x] **SSE stream:** `GET /api/v1/events` (bearer-token + rate-limit reuse) holds the
       connection open and writes each event as `data: <json>\n\n`, with `id:` for
       `Last-Event-ID` resumption and a heartbeat comment. Bounded client count.
-- [ ] **Config + docs:** `config.ts` parses the new flag(s) and the target list;
+- [x] **Config + docs:** `config.ts` parses the new flag(s) and the target list;
       `serve.ts` wires the sinks and logs an explicit "Webhooks ENABLED → N target(s)" /
       "Event stream available at /api/v1/events" line. `bridge/README.md` gains an "Events,
       webhooks & SSE" section (payload schema, signature verification recipe, the event-type
       table, an n8n/Node-RED/Discord example). Add the `/api/v1/events` path + event schemas to
       `bridge/src/openapi.ts` (and the generated `openapi.yaml`, with the drift-guard test).
-- [ ] **Tests:** pure event-model tests over the synthetic fixture (each `HistoryAction` →
+- [x] **Tests:** pure event-model tests over the synthetic fixture (each `HistoryAction` →
       expected event; cold-start = no replay; fan-out cap). Webhook delivery tests with an
       in-process receiver asserting the signature verifies, retries/backoff fire, and a dead
       target is isolated. An SSE test asserting a change is streamed and `Last-Event-ID`
@@ -170,7 +170,37 @@ the flag **off**, no webhook fires and `/api/v1/events` is `404`. Read-only w.r.
 
 **Review gate:** `/code-review high` (largest, highest-risk phase — delivery/retry/security).
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `bridge/src/events/*` and merged to `main` (merge
+`d5f26a2`, feature commit `b256957`). A pure, transport-agnostic event model
+(`model.ts`) turns the `item_history` ledger delta between hydration generations into typed
+`{ id, type, occurredAt, data }` events, reusing the app's own `activityKindForAction` and
+`describeHistoryEntry` (imported, never forked) and the `api/dto.ts` `ItemSummary` shape; a
+stock movement that leaves an item low/empty additionally raises `item.low_stock` /
+`item.out_of_stock`. Cold start emits nothing (no replay). `generation.ts` + `pipeline.ts`
+read the just-swapped driver through the app repositories only (no bespoke SQL) and fan events
+to sinks; `watcher.ts` now **awaits** its post-swap hook so the pipeline always reads a live
+driver (no closed-driver race). Two opt-in sinks, both off by default: signed webhooks
+(`webhook.ts` — HMAC-SHA256 `X-Gubbins-Signature` over the raw body + `X-Gubbins-Delivery`,
+per-target FIFO queue, bounded backoff, failure circuit; targets/secrets in a git-ignored
+`webhooks.json`/`.env` only) and a read-only SSE stream `GET /api/v1/events` (`sse.ts` —
+bearer+rate-limit reuse, `Last-Event-ID` replay buffer, heartbeat, bounded clients).
+`GUBBINS_BRIDGE_EVENTS` / `_WEBHOOKS` flags (the latter implies the stream); `/api/v1/events`
++ the `BridgeEvent` schema added to `openapi.ts` and the regenerated `openapi.yaml` (drift
+guard extended). **Zero new dependencies.** 44 new bridge tests (321 total, all green); `tsc
+--noEmit` clean for bridge and app. A live `serve.mjs` smoke passed the acceptance verbatim:
+with `GUBBINS_BRIDGE_WEBHOOKS=on`, a low-stock edit delivered a signature-verified
+`item.low_stock` webhook and streamed the same event over SSE; with the flag off no webhook
+fired and `/api/v1/events` was `404`. **Review gate:** `/code-review high` ran; its one
+high-severity confirmed finding — the original `created_at` high-water-mark cursor silently
+dropped an **out-of-order** ledger row synced from another device — was fixed by switching the
+cursor to a bounded **seen-id set** (with a regression test), and the default `webhooks.json`
+path was anchored to the bridge package (+ a root-level `.gitignore` entry) so a secret file
+can never land somewhere committable. Known bound (documented): a single generation surfaces
+only its newest `scanLimit` (100) ledger rows — a larger burst is summarized via
+`events.truncated` and better consumed via the REST API; the stream/webhooks are at-least-once
+with deterministic ids for downstream dedupe. **Note for later phases:** running `serve.mjs`
+on Node 25 requires `--experimental-transform-types` (the shared app modules use TS parameter
+properties, which Node's default strip-only mode rejects) — vitest is unaffected.
 
 **Continuation prompt — emit on completion (starts EI-2):**
 
@@ -518,31 +548,18 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-1**. Its kick-off prompt (self-contained, for a cold
-session) is below; each completed phase replaces this with the next phase's embedded prompt.
+The current next step is **Phase EI-2** (EI-1 is complete and merged — merge `d5f26a2`). Its
+kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces
+this with the next phase's embedded prompt.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md (and its companion research doc
-docs/todo/ecosystem-integrations_2026-07-03.md) and run Phase EI-1 (bridge event model +
-outbound webhooks + SSE stream) — the FIRST phase of the ecosystem build-out. Re-read
-CLAUDE.md and the plan's "invariants" + "How every phase runs" sections first. Work in a NEW
-git worktree off local HEAD: git worktree add .claude/worktrees/ecosystem-events -b
-feat/ecosystem-events HEAD. Build: (1) a pure event model in bridge/src/events/* — the
-item_history delta between hydration generations mapped to typed {id,type,occurredAt,data}
-events, reusing src/features/activity activityKindForAction/describeHistoryEntry (do NOT fork
-them), with cold-start emitting nothing (no history replay); (2) a post-swap hook in
-bridge/src/watcher.ts that fans new events to registered sinks, coalesced per generation with
-a fan-out cap; (3) opt-in signed outbound webhooks (GUBBINS_BRIDGE_WEBHOOKS=on, off by
-default) — POST each event with an HMAC-SHA256 X-Gubbins-Signature + X-Gubbins-Delivery id,
-bounded retry/backoff, per-target failure isolation, target list + secrets in git-ignored
-.env/webhooks.json only; (4) a read-only SSE stream GET /api/v1/events reusing the existing
-bearer-token + rate-limit middleware, with id:/Last-Event-ID resumption and a heartbeat. Add
-the /api/v1/events path + event schemas to bridge/src/openapi.ts and openapi.yaml and update
-the drift-guard test. Reuse bridge/src/api/dto.ts shapes; keep parseASTtoSQL the only SQL path;
-zero new dependencies. Synthetic fixtures only; keep tsc --noEmit clean for both bridge and
-app; run a live serve.mjs smoke (flag on: a low-stock edit delivers a verifiable signed webhook
-and streams over SSE; flag off: no webhook and /api/v1/events is 404). Gate with /code-review
-high before merging and resolve all confirmed findings. Then merge --no-ff into main, remove
-the worktree + branch, fill in the EI-1 Outcome in the plan doc, and emit EI-2's continuation
-prompt (embedded under Phase EI-1) as a raw fenced block — the last thing in your reply.
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-2 (iCalendar
+subscription feed). EI-1 (event model + webhooks + SSE) is complete and merged. Work in a
+NEW git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-ical -b
+feat/ecosystem-ical HEAD), follow the "How every phase runs" loop and the invariants at the
+top of the plan doc, gate with /code-review high before merging, then merge --no-ff into main
+and clean up the worktree/branch. Update the plan doc's EI-2 Outcome, then emit EI-3's
+continuation prompt as a raw fenced block. Build the read-only GET /api/v1/calendar.ics feed
+(loan due-backs, asset bookings, maintenance/service, warranty expiry) with a hand-rolled
+iCalendar emitter — no dependency — and stable per-source UIDs. Synthetic fixtures only.
 ```
