@@ -1435,25 +1435,32 @@ try {
       async () => {
         await page.getByRole('button', { name: 'Add line' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
-        await dialog.getByRole('combobox').selectOption({ label: unlimitedName });
+        await chooseOption(
+          dialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
+          unlimitedName,
+          { exact: false },
+        );
         await dialog.getByLabel('Quantity').fill('1000');
         await dialog.getByRole('button', { name: 'Add line' }).click();
 
-        // The line joins the Bill of materials…
-        const bom = page
-          .locator('section')
-          .filter({ has: page.getByRole('heading', { name: 'Bill of materials' }) });
-        await bom.getByText(unlimitedName).first().waitFor({ state: 'visible', timeout: 5000 });
+        // The line joins the Bill of materials (its row carries the item name)…
+        const unlimitedRow = () => page.getByRole('row').filter({ hasText: unlimitedName });
+        await unlimitedRow().first().waitFor({ state: 'visible', timeout: 5000 });
 
         // …but an infinite source is always satisfiable, so it never surfaces on the shopping list
-        // (unlike the finite part, which is still there). Scope the check to the shopping-list section.
+        // (which lists only short parts). Scope the check to the Shopping-list section.
         const shopping = page
           .locator('section')
           .filter({ has: page.getByRole('heading', { name: /Shopping list/ }) });
-        await shopping.getByText(partName).first().waitFor({ state: 'visible', timeout: 5000 });
+        await shopping.waitFor({ state: 'visible', timeout: 5000 });
         if ((await shopping.getByText(unlimitedName).count()) > 0) {
           throw new Error('An unlimited-supply component must not appear on the shopping list.');
         }
+
+        // Remove the unlimited line again so the later single-line BOM steps (reserve /
+        // procurement / receive) still address exactly one line.
+        await unlimitedRow().getByRole('button', { name: 'Remove line' }).click();
+        await unlimitedRow().waitFor({ state: 'detached', timeout: 5000 });
       },
     );
 
