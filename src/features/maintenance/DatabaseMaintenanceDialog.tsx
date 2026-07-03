@@ -243,7 +243,7 @@ function MaintenanceTask({
   readonly result: TaskResult | null;
 }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
+    <section className="rounded-lg border border-border p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary/50 text-muted-foreground [&_svg]:size-4">
@@ -254,23 +254,33 @@ function MaintenanceTask({
             <p className="text-xs text-muted-foreground">{description}</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" data-testid={`${testId}-run`} disabled={disabled} onClick={onRun}>
-          {running ? <Spinner /> : <DatabaseIcon />}
-          {buttonLabel}
-        </Button>
-      </div>
-      {result ? (
-        <div
-          data-testid={`${testId}-result`}
-          className={
-            result.tone === 'success'
-              ? 'text-xs text-muted-foreground'
-              : 'rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs text-foreground'
-          }
-        >
-          {result.node}
+        {/* Button and its result share one row: the status sits to the button's right so a
+            finished task never grows the card (and the dialog) with an extra row below. */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2.5">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid={`${testId}-run`}
+            disabled={disabled}
+            onClick={onRun}
+          >
+            {running ? <Spinner /> : <DatabaseIcon />}
+            {buttonLabel}
+          </Button>
+          {result ? (
+            <div
+              data-testid={`${testId}-result`}
+              className={
+                result.tone === 'success'
+                  ? 'min-w-0 text-xs text-muted-foreground'
+                  : 'min-w-0 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-foreground'
+              }
+            >
+              {result.node}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </section>
   );
 }
