@@ -200,6 +200,50 @@ const filterParam: JsonValue = {
   example: "quantity gt 10 and contains(name,'bolt')",
 };
 
+/** The `token` query-param shared by the read-only subscription surfaces (calendar + feeds). */
+const feedTokenParam: JsonValue = {
+  name: 'token',
+  in: 'query',
+  required: false,
+  description:
+    'The shared bearer token, for feed/calendar clients that cannot send an Authorization header. ' +
+    'Accepted on the read-only subscription paths only; prefer the Authorization header elsewhere.',
+  schema: { type: 'string' },
+};
+
+/** The `limit` query-param on the syndication feeds (window size, clamped to [1, 50]). */
+const feedLimitParam: JsonValue = {
+  name: 'limit',
+  in: 'query',
+  required: false,
+  description: 'Number of recent activity entries to include, clamped to [1, 50]. Defaults to 50.',
+  schema: { type: 'integer', minimum: 1, maximum: 50, default: 50 },
+};
+
+/** A syndication-feed GET operation: the shared params + a single string-body media type. */
+function feedOperation(summary: string, mediaType: string, example: string): JsonValue {
+  return {
+    get: {
+      tags: ['feeds'],
+      summary,
+      description:
+        'A read-only feed of the recent cross-item activity log (item_history), newest first, each ' +
+        'entry carrying a stable host-free URN id so a reader updates it in place rather than ' +
+        'duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a ' +
+        '`token` query parameter (a feed reader cannot send an Authorization header) — a deliberately ' +
+        'weaker token-in-URL posture scoped to the feed/calendar paths. Read-only.',
+      parameters: [feedTokenParam, feedLimitParam],
+      responses: {
+        200: {
+          description: 'The feed document.',
+          content: { [mediaType]: { schema: { type: 'string' }, example } },
+        },
+        ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
+      },
+    },
+  };
+}
+
 /** Standard error responses reused across operations. */
 const errorResponses = (...codes: number[]): JsonValue => {
   const all: Record<number, JsonValue> = {
@@ -287,6 +331,18 @@ export const openapiDocument: JsonValue = {
         'A read-only iCalendar (.ics) subscription feed of Gubbins’ time-bearing facts — loan ' +
         'due-backs, asset bookings, maintenance/service dates, and warranty expiries — that any ' +
         'calendar app can subscribe to by URL.',
+    },
+    {
+      name: 'feeds',
+      description:
+        'Read-only syndication feeds (RSS 2.0, Atom 1.0, JSON Feed 1.1) of the recent activity ' +
+        'log — a human "what changed" stream any feed reader can subscribe to by URL.',
+    },
+    {
+      name: 'metrics',
+      description:
+        'A Prometheus/OpenMetrics text-exposition of the aggregate inventory counts, at the root ' +
+        '/metrics path (the scrape convention), for Grafana/Prometheus home-labs.',
     },
     { name: 'locations', description: 'Browse the locations hierarchy.' },
     { name: 'categories', description: 'Browse categories and their custom-field schema.' },
@@ -558,6 +614,56 @@ export const openapiDocument: JsonValue = {
             },
           },
           ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/activity.rss': feedOperation(
+      'Subscribe to the recent-activity feed (RSS 2.0)',
+      'application/rss+xml',
+      '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n  <channel>\n' +
+        '    <title>Gubbins activity</title>\n    <item>\n      <title>ESP32 Dev Board — Quantity changed</title>\n' +
+        '      <guid isPermaLink="false">urn:gubbins:activity:hist-0007</guid>\n    </item>\n  </channel>\n</rss>\n',
+    ),
+    '/api/v1/activity.atom': feedOperation(
+      'Subscribe to the recent-activity feed (Atom 1.0)',
+      'application/atom+xml',
+      '<?xml version="1.0" encoding="UTF-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">\n' +
+        '  <title>Gubbins activity</title>\n  <entry>\n    <title>ESP32 Dev Board — Quantity changed</title>\n' +
+        '    <id>urn:gubbins:activity:hist-0007</id>\n  </entry>\n</feed>\n',
+    ),
+    '/api/v1/activity.json': feedOperation(
+      'Subscribe to the recent-activity feed (JSON Feed 1.1)',
+      'application/feed+json',
+      '{\n  "version": "https://jsonfeed.org/version/1.1",\n  "title": "Gubbins activity",\n' +
+        '  "items": [\n    { "id": "urn:gubbins:activity:hist-0007", "title": "ESP32 Dev Board — Quantity changed" }\n  ]\n}\n',
+    ),
+    '/metrics': {
+      get: {
+        tags: ['metrics'],
+        summary: 'Prometheus/OpenMetrics exposition of the aggregate inventory counts',
+        description:
+          'A text/plain (version=0.0.4) Prometheus exposition a scrape accepts directly, at the ' +
+          'root /metrics path (the scrape convention) rather than under /api/v1. Gauges: ' +
+          'gubbins_items_total, gubbins_low_stock_items, gubbins_out_of_stock_items, ' +
+          'gubbins_locations_total, and the per-location gubbins_location_items / ' +
+          'gubbins_location_capacity / gubbins_location_fullness_ratio (labelled by location). The ' +
+          'low/out-of-stock counts reuse the same seams as the event stream and MQTT, so they never ' +
+          'drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token.',
+        responses: {
+          200: {
+            description: 'The metrics exposition.',
+            content: {
+              'text/plain': {
+                schema: { type: 'string' },
+                example:
+                  '# HELP gubbins_items_total Total active items in the inventory.\n' +
+                  '# TYPE gubbins_items_total gauge\ngubbins_items_total 4\n' +
+                  '# HELP gubbins_low_stock_items Active items at or below their low-stock threshold.\n' +
+                  '# TYPE gubbins_low_stock_items gauge\ngubbins_low_stock_items 1\n',
+              },
+            },
+          },
+          ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
         },
       },
     },

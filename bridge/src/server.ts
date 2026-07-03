@@ -32,9 +32,11 @@ import { emptyAst } from '@/db/search/ast.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { searchItems, whereIs } from './query.ts';
 import type { RateLimiter } from './rate-limit.ts';
-import { sendError, sendJson } from './api/respond.ts';
+import { sendError, sendJson, sendMetrics } from './api/respond.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
-import { API_V1_BASE, API_V1_CALENDAR_PATH, handleApiV1, isApiV1Path } from './api/v1.ts';
+import { API_V1_BASE, handleApiV1, isApiV1Path, pathAllowsUrlToken } from './api/v1.ts';
+import { projectMetrics } from './feeds/metrics.ts';
+import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { ItemDetailDto } from './api/dto.ts';
@@ -268,6 +270,9 @@ export async function handleRequest(
       case '/where':
         await handleWhere(res, options, url);
         return;
+      case '/metrics':
+        await handleMetrics(res, options);
+        return;
       default:
         sendError(res, 404, 'not_found', 'Not found', { v1: false });
     }
@@ -370,6 +375,24 @@ async function handleSearch(res: ServerResponse, options: BridgeServerOptions, u
   sendJson(res, 200, { query: q.trim(), matches });
 }
 
+/**
+ * `GET /metrics` — a Prometheus/OpenMetrics text-exposition of the aggregate inventory counts
+ * (items, low/out-of-stock, locations, per-location fullness). A read-only projection through the
+ * app repositories (see `feeds/metrics.ts`), the same bearer token as every other endpoint. It
+ * lives at the root `/metrics` (the Prometheus convention) rather than under `/api/v1`. Auth is
+ * header-only here (a Prometheus scrape config can send an `Authorization: Bearer` header or read
+ * it from a file), so — unlike the feeds/calendar — no `?token=` is accepted; on a trusted
+ * loopback a scrape job can also share the token via its own config.
+ */
+async function handleMetrics(res: ServerResponse, options: BridgeServerOptions): Promise<void> {
+  const state = options.getState();
+  if (state === null) {
+    sendError(res, 503, 'snapshot_unavailable', 'Snapshot not loaded yet', { v1: false });
+    return;
+  }
+  sendMetrics(res, 200, formatMetrics(await projectMetrics(state.driver)));
+}
+
 /** `GET /where?q=` — the "where is X?" answer plus a spoken sentence. */
 async function handleWhere(res: ServerResponse, options: BridgeServerOptions, url: URL): Promise<void> {
   const q = readQueryParam(res, url, false);
@@ -396,11 +419,13 @@ function clientKey(req: IncomingMessage): string {
 
 /**
  * Constant-time bearer-token check. The token normally arrives as an `Authorization: Bearer …`
- * header. A missing/malformed header is unauthorised — **except** on the calendar feed path
- * (`GET /api/v1/calendar.ics`), where the token may instead be supplied as a `?token=` query
- * parameter, because a calendar client subscribing by URL cannot send an auth header. That
- * weaker token-in-URL posture (URLs get logged by proxies / browser history) is deliberately
- * scoped to just this one read-only path.
+ * header. A missing/malformed header is unauthorised — **except** on the read-only subscription
+ * paths (the calendar feed `GET /api/v1/calendar.ics` and the syndication feeds
+ * `GET /api/v1/activity.{rss,atom,json}`), where the token may instead be supplied as a `?token=`
+ * query parameter, because a calendar / feed client subscribing by URL cannot send an auth header.
+ * That weaker token-in-URL posture (URLs get logged by proxies / browser history) is deliberately
+ * scoped to just those read-only feed paths (see `pathAllowsUrlToken`); everything else — including
+ * `/metrics` — requires the header.
  */
 function isAuthorised(req: IncomingMessage, token: string, url: URL): boolean {
   const header = req.headers.authorization;
@@ -408,7 +433,7 @@ function isAuthorised(req: IncomingMessage, token: string, url: URL): boolean {
   if (typeof header === 'string' && header.startsWith(prefix)) {
     if (constantTimeEqual(header.slice(prefix.length).trim(), token)) return true;
   }
-  if (url.pathname === API_V1_CALENDAR_PATH) {
+  if (pathAllowsUrlToken(url.pathname)) {
     const queryToken = url.searchParams.get('token');
     if (queryToken !== null && constantTimeEqual(queryToken, token)) return true;
   }

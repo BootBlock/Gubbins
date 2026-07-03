@@ -27,8 +27,14 @@ describe('openapiDocument', () => {
 
   it('describes every v1 endpoint under /api/v1 with a GET or (write) POST, secured by the bearer scheme', () => {
     const paths = doc.paths as Record<string, any>;
+    // Every path is under /api/v1 EXCEPT the root Prometheus /metrics endpoint (the scrape
+    // convention places it at the root, not under a version prefix).
+    const rootExceptions = new Set(['/metrics']);
     for (const [path, ops] of Object.entries(paths)) {
-      expect(path.startsWith('/api/v1'), `${path} should be under /api/v1`).toBe(true);
+      expect(
+        path.startsWith('/api/v1') || rootExceptions.has(path),
+        `${path} should be under /api/v1 (or a documented root exception)`,
+      ).toBe(true);
       // Reads are GET; the opt-in write endpoints are POST. Every path must define one of them.
       expect(ops.get ?? ops.post, `${path} should have a GET or POST`).toBeDefined();
     }
@@ -53,6 +59,20 @@ describe('openapiDocument', () => {
     );
     // The discovery index advertises the stream toggle.
     expect(doc.components.schemas.ApiIndex.properties.streamable).toBeDefined();
+  });
+
+  it('documents the syndication feeds and the Prometheus /metrics endpoint (EI-6)', () => {
+    const paths = doc.paths as Record<string, any>;
+    // The three feed formats, each with its own media type, tagged `feeds`.
+    expect(paths['/api/v1/activity.rss'].get.tags).toContain('feeds');
+    expect(paths['/api/v1/activity.rss'].get.responses['200'].content['application/rss+xml']).toBeDefined();
+    expect(paths['/api/v1/activity.atom'].get.responses['200'].content['application/atom+xml']).toBeDefined();
+    expect(
+      paths['/api/v1/activity.json'].get.responses['200'].content['application/feed+json'],
+    ).toBeDefined();
+    // Metrics: a root-path text/plain exposition tagged `metrics`.
+    expect(paths['/metrics'].get.tags).toContain('metrics');
+    expect(paths['/metrics'].get.responses['200'].content['text/plain']).toBeDefined();
   });
 
   it('has no dangling $ref — every referenced schema exists', () => {

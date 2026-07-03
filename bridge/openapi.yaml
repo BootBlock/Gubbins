@@ -26,6 +26,12 @@ tags:
   name: "calendar"
   description: "A read-only iCalendar (.ics) subscription feed of Gubbins’ time-bearing facts — loan due-backs, asset bookings, maintenance/service dates, and warranty expiries — that any calendar app can subscribe to by URL."
 -
+  name: "feeds"
+  description: "Read-only syndication feeds (RSS 2.0, Atom 1.0, JSON Feed 1.1) of the recent activity log — a human \"what changed\" stream any feed reader can subscribe to by URL."
+-
+  name: "metrics"
+  description: "A Prometheus/OpenMetrics text-exposition of the aggregate inventory counts, at the root /metrics path (the scrape convention), for Grafana/Prometheus home-labs."
+-
   name: "locations"
   description: "Browse the locations hierarchy."
 -
@@ -709,6 +715,228 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/activity.rss:
+    get:
+      tags:
+      - "feeds"
+      summary: "Subscribe to the recent-activity feed (RSS 2.0)"
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      parameters:
+      -
+        name: "token"
+        in: "query"
+        required: false
+        description: "The shared bearer token, for feed/calendar clients that cannot send an Authorization header. Accepted on the read-only subscription paths only; prefer the Authorization header elsewhere."
+        schema:
+          type: "string"
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Number of recent activity entries to include, clamped to [1, 50]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 50
+          default: 50
+      responses:
+        "200":
+          description: "The feed document."
+          content:
+            "application/rss+xml":
+              schema:
+                type: "string"
+              example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Gubbins activity</title>\n    <item>\n      <title>ESP32 Dev Board — Quantity changed</title>\n      <guid isPermaLink=\"false\">urn:gubbins:activity:hist-0007</guid>\n    </item>\n  </channel>\n</rss>\n"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/activity.atom:
+    get:
+      tags:
+      - "feeds"
+      summary: "Subscribe to the recent-activity feed (Atom 1.0)"
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      parameters:
+      -
+        name: "token"
+        in: "query"
+        required: false
+        description: "The shared bearer token, for feed/calendar clients that cannot send an Authorization header. Accepted on the read-only subscription paths only; prefer the Authorization header elsewhere."
+        schema:
+          type: "string"
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Number of recent activity entries to include, clamped to [1, 50]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 50
+          default: 50
+      responses:
+        "200":
+          description: "The feed document."
+          content:
+            "application/atom+xml":
+              schema:
+                type: "string"
+              example: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\">\n  <title>Gubbins activity</title>\n  <entry>\n    <title>ESP32 Dev Board — Quantity changed</title>\n    <id>urn:gubbins:activity:hist-0007</id>\n  </entry>\n</feed>\n"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/activity.json:
+    get:
+      tags:
+      - "feeds"
+      summary: "Subscribe to the recent-activity feed (JSON Feed 1.1)"
+      description: "A read-only feed of the recent cross-item activity log (item_history), newest first, each entry carrying a stable host-free URN id so a reader updates it in place rather than duplicating on refetch. Like the calendar, this path ALSO accepts the bearer token as a `token` query parameter (a feed reader cannot send an Authorization header) — a deliberately weaker token-in-URL posture scoped to the feed/calendar paths. Read-only."
+      parameters:
+      -
+        name: "token"
+        in: "query"
+        required: false
+        description: "The shared bearer token, for feed/calendar clients that cannot send an Authorization header. Accepted on the read-only subscription paths only; prefer the Authorization header elsewhere."
+        schema:
+          type: "string"
+      -
+        name: "limit"
+        in: "query"
+        required: false
+        description: "Number of recent activity entries to include, clamped to [1, 50]. Defaults to 50."
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 50
+          default: 50
+      responses:
+        "200":
+          description: "The feed document."
+          content:
+            "application/feed+json":
+              schema:
+                type: "string"
+              example: "{\n  \"version\": \"https://jsonfeed.org/version/1.1\",\n  \"title\": \"Gubbins activity\",\n  \"items\": [\n    { \"id\": \"urn:gubbins:activity:hist-0007\", \"title\": \"ESP32 Dev Board — Quantity changed\" }\n  ]\n}\n"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /metrics:
+    get:
+      tags:
+      - "metrics"
+      summary: "Prometheus/OpenMetrics exposition of the aggregate inventory counts"
+      description: "A text/plain (version=0.0.4) Prometheus exposition a scrape accepts directly, at the root /metrics path (the scrape convention) rather than under /api/v1. Gauges: gubbins_items_total, gubbins_low_stock_items, gubbins_out_of_stock_items, gubbins_locations_total, and the per-location gubbins_location_items / gubbins_location_capacity / gubbins_location_fullness_ratio (labelled by location). The low/out-of-stock counts reuse the same seams as the event stream and MQTT, so they never drift. Auth is header-only here (no ?token=); a scrape config sends the bearer token."
+      responses:
+        "200":
+          description: "The metrics exposition."
+          content:
+            text/plain:
+              schema:
+                type: "string"
+              example: "# HELP gubbins_items_total Total active items in the inventory.\n# TYPE gubbins_items_total gauge\ngubbins_items_total 4\n# HELP gubbins_low_stock_items Active items at or below their low-stock threshold.\n# TYPE gubbins_low_stock_items gauge\ngubbins_low_stock_items 1\n"
         "401":
           description: "Missing or invalid bearer token."
           headers:

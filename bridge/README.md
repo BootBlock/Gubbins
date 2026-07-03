@@ -174,6 +174,8 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
 | `GET /api/v1/items.csv` | A spreadsheet-friendly CSV of the matching items (refreshable pull for Excel/Power BI). See [CSV export](#csv-export). |
 | `GET /api/v1/calendar.ics` | A read-only iCalendar feed of Gubbins' time-bearing facts (loan due-backs, bookings, maintenance, warranty) that any calendar app can **subscribe** to. See [Calendar subscription](#calendar-subscription). |
+| `GET /api/v1/activity.rss` (`.atom`, `.json`) | A read-only syndication feed of the recent activity log (RSS 2.0 / Atom 1.0 / JSON Feed 1.1) any feed reader can **subscribe** to. See [Feeds & metrics](#feeds--metrics). |
+| `GET /metrics` | A Prometheus/OpenMetrics text exposition of the aggregate inventory counts (root path, not under `/api/v1`). See [Feeds & metrics](#feeds--metrics). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
@@ -415,6 +417,67 @@ local day may appear shifted by one day — a documented limitation of a timezon
 Integration → *Remote Calendar*) and paste the subscribe URL above (including `?token=…`) as the
 calendar URL. HA then exposes a `calendar.gubbins` entity you can use in automations and on
 dashboards.
+
+### Feeds & metrics
+
+Two cheap, standards-based **read** surfaces for the same self-hosted audience: a human "what
+changed" feed for any reader, and machine metrics for a Prometheus/Grafana home-lab. Both are
+**read-only pulls** (like `calendar.ics` / `items.csv`), so — like those — they carry **no
+`GUBBINS_BRIDGE_*` flag**; they are always available and gated only by the bearer token.
+
+**Syndication feeds.** `GET /api/v1/activity.rss` (plus `.atom` and `.json`) render the recent
+cross-item **activity log** — the same `item_history` projection the app's Activity screen shows —
+newest first, in RSS 2.0, Atom 1.0, or [JSON Feed 1.1](https://jsonfeed.org). Each entry carries a
+stable, host-free URN id (`urn:gubbins:activity:<ledger-id>`) so a reader updates it in place rather
+than duplicating on refetch, and the same stable dotted `type` the [event stream](#events-webhooks--sse-opt-in)
+uses for that row. Like the calendar, a feed reader can't send an `Authorization` header, so these
+paths **also** accept the token as a `?token=` query parameter (the same deliberately weaker
+token-in-URL posture, scoped to the feed/calendar paths only).
+
+```bash
+BASE=http://127.0.0.1:8787/api/v1
+
+curl -H "Authorization: Bearer $TOKEN" "$BASE/activity.rss"           # RSS 2.0
+curl -H "Authorization: Bearer $TOKEN" "$BASE/activity.atom"          # Atom 1.0
+curl -H "Authorization: Bearer $TOKEN" "$BASE/activity.json"          # JSON Feed 1.1
+curl "$BASE/activity.rss?token=$TOKEN&limit=20"                       # subscribe-by-URL form
+```
+
+The feed is a **recent-activity window** (newest `?limit=` entries, clamped to `[1, 50]`, default
+50) — for a full history use the REST API. Point any feed reader (or Home Assistant's *Feedreader*
+integration) at the subscribe-by-URL form.
+
+**Prometheus `/metrics`.** `GET /metrics` (at the **root**, the scrape convention — not under
+`/api/v1`) returns a `text/plain; version=0.0.4` exposition a Prometheus scrape accepts directly:
+
+| Metric | Type | Meaning |
+| --- | --- | --- |
+| `gubbins_items_total` | gauge | Total active items. |
+| `gubbins_low_stock_items` | gauge | Active items at/below their low-stock threshold. |
+| `gubbins_out_of_stock_items` | gauge | Active items fully depleted (a subset of low-stock). |
+| `gubbins_locations_total` | gauge | User-defined locations (system buckets excluded). |
+| `gubbins_location_items{location_id,location}` | gauge | Item count per location. |
+| `gubbins_location_capacity{location_id,location}` | gauge | Configured capacity (only when set). |
+| `gubbins_location_fullness_ratio{location_id,location}` | gauge | `items / capacity` (only when a capacity is set). |
+
+The low/out-of-stock counts reuse the **same seams** as the event stream and MQTT publishing, so a
+scraped count can never drift from an `item.low_stock` event or the `gubbins/summary` MQTT topic.
+Every read flows through the app's own repositories — no bespoke SQL. Unlike the feeds, `/metrics`
+is **header-only** (no `?token=`): a Prometheus scrape config sends the token via an `Authorization`
+header or a `bearer_token_file`. On a trusted loopback you can also run the scrape job beside the
+bridge and share the token through its own config.
+
+```yaml
+# prometheus.yml — scrape the bridge on loopback
+scrape_configs:
+  - job_name: gubbins
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials: "<your GUBBINS_BRIDGE_TOKEN>"   # or credentials_file: /etc/prometheus/gubbins.token
+    static_configs:
+      - targets: ["127.0.0.1:8787"]
+```
 
 ### OpenAPI spec
 

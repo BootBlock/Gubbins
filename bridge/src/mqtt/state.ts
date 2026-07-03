@@ -14,11 +14,8 @@
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
-import { MAX_PAGE_SIZE } from '@/db/repositories/constants.ts';
-import { isLow } from '@/features/inventory/reorder-policy.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import type { Item, Page } from '@/db/repositories/types';
-import { DEFAULT_LOW_STOCK, isStockEmpty } from '../events/model.ts';
+import { countStockLevels, forEachPage, MAX_LOCATIONS_SCANNED } from '../inventory-scan.ts';
 
 /** One location's published state: its id, name and live (active) item count. */
 export interface LocationState {
@@ -41,16 +38,6 @@ export interface InventoryState {
   readonly generatedAt: string | null;
 }
 
-/**
- * Hard cap on how many items the low/out-of-stock scan walks. Generous enough never to bite a real
- * personal inventory while bounding the work on a pathological vault (past it, the counts are of
- * the first {@link MAX_ITEMS_SCANNED} active items — `itemsTotal` still reports the true total).
- */
-export const MAX_ITEMS_SCANNED = 50_000;
-
-/** Hard cap on how many locations the projection walks — locations are a small physical hierarchy. */
-export const MAX_LOCATIONS_SCANNED = 10_000;
-
 /** Options for {@link projectInventoryState}. */
 export interface InventoryStateOptions {
   /** The snapshot's generation instant (ISO-8601) to stamp on the summary payload. */
@@ -67,19 +54,7 @@ export async function projectInventoryState(
 ): Promise<InventoryState> {
   const items = new ItemRepository(driver);
   const itemsTotal = await items.count();
-
-  let lowStockItems = 0;
-  let outOfStockItems = 0;
-  await forEachPage<Item>(
-    (limit, offset) => items.list({ limit, offset }),
-    MAX_ITEMS_SCANNED,
-    (item) => {
-      if (!isLow(item, DEFAULT_LOW_STOCK)) return;
-      lowStockItems += 1;
-      if (isStockEmpty(item)) outOfStockItems += 1;
-    },
-  );
-
+  const { lowStockItems, outOfStockItems } = await countStockLevels(items);
   const locations = await projectLocations(driver);
   return { itemsTotal, lowStockItems, outOfStockItems, locations, generatedAt: options.generatedAt };
 }
@@ -102,21 +77,4 @@ async function projectLocations(driver: IDatabaseDriver): Promise<LocationState[
     },
   );
   return out;
-}
-
-/**
- * Walk a paginated repository read (paging at {@link MAX_PAGE_SIZE}, bounded by `maxScanned`),
- * invoking `onRow` for every row. Shared by the item scan and the location scan so the paging /
- * termination logic lives in one place.
- */
-async function forEachPage<T>(
-  read: (limit: number, offset: number) => Promise<Page<T>>,
-  maxScanned: number,
-  onRow: (row: T) => void,
-): Promise<void> {
-  for (let offset = 0; offset < maxScanned; offset += MAX_PAGE_SIZE) {
-    const page = await read(MAX_PAGE_SIZE, offset);
-    for (const row of page.rows) onRow(row);
-    if (!page.hasMore) break;
-  }
 }
