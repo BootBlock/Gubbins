@@ -38,9 +38,11 @@ the only data path; this integration only issues `GET` requests.
 | **`gubbins.adjust_quantity` service** | **Opt-in** check-in / check-out (negative delta = check out). Only works when the bridge runs with `GUBBINS_BRIDGE_ALLOW_WRITES=on`; the change syncs back to the app conflict-free. |
 | **Inventory-items sensor** | Optional `/health` sensor (item count + snapshot timestamp) for dashboards and "bridge offline" automations. |
 
-Two ways to install: the **custom integration** (recommended — gives you the config flow,
-the service and the sensor) or the **no-code YAML recipe** (no `custom_components/`, just
-the voice intent). Both are documented below.
+Three ways to install: the **custom integration** (Option A, recommended — gives you the config
+flow, the voice intent, the service and the sensor); the **no-code YAML recipe** (Option B — no
+`custom_components/`, just the voice intent); or **MQTT discovery** (Option C — no
+`custom_components/`, auto-created dashboard sensors via your MQTT broker). All three are documented
+below; pick the one that fits your setup.
 
 ---
 
@@ -204,6 +206,42 @@ intent_script:
 The custom integration (Option A) is recommended because it keeps the token in HA's
 encrypted entry store (out of YAML entirely), adds graceful typed error handling, and gives
 you the service and sensor too.
+
+---
+
+## Option C — MQTT discovery (no custom_components, auto-created entities)
+
+If you already run an MQTT broker with Home Assistant (the Mosquitto add-on is the common
+setup), the bridge can publish straight to it and let HA **auto-create the entities** — **no
+`custom_components/gubbins` at all**. This is an *alternative* to Option A, not an addition:
+pick one. Option A gives you the **voice intent** and the read/write **services**; Option C
+gives you **auto-discovered dashboard sensors** with zero HA-side YAML. (You can run both if
+you want the voice experience *and* the MQTT sensors, but you don't need to.)
+
+**1. Point the bridge at your broker** (in the bridge's git-ignored `.env` — see
+[`bridge/README.md` → MQTT publishing](../bridge/README.md#mqtt-publishing-opt-in)):
+
+```bash
+GUBBINS_BRIDGE_MQTT=on
+GUBBINS_BRIDGE_MQTT_URL=mqtt://127.0.0.1:1883        # your broker
+GUBBINS_BRIDGE_MQTT_USERNAME=<YOUR_MQTT_USERNAME>    # optional
+GUBBINS_BRIDGE_MQTT_PASSWORD=<YOUR_MQTT_PASSWORD>    # optional; .env only
+GUBBINS_BRIDGE_MQTT_DISCOVERY=on                     # publish HA discovery configs
+```
+
+**2. Restart the bridge.** With the MQTT integration configured in Home Assistant, a
+"**Gubbins**" device appears automatically under *Settings → Devices & services → MQTT*, with:
+
+- `sensor.gubbins_items_total`, `sensor.gubbins_low_stock_items`,
+  `sensor.gubbins_out_of_stock_items`, `sensor.gubbins_locations_total`;
+- `binary_sensor.gubbins_low_stock` (problem class — `on` whenever anything is low);
+- one `sensor.gubbins_location_<id>` per user location (its live item count).
+
+All of these track the bridge's retained state topics and go **unavailable** if the bridge
+stops (an MQTT Last-Will flips `gubbins/status` to `offline`). The exact topics/payloads and
+the `GUBBINS_BRIDGE_MQTT_*` variables are documented in
+[`bridge/README.md`](../bridge/README.md#mqtt-publishing-opt-in). Nothing here needs the bridge's
+bearer token — MQTT auth is your broker's username/password, kept in the bridge `.env` only.
 
 ---
 
