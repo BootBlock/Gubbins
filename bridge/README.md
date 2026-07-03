@@ -677,6 +677,60 @@ param for clients that can't set it; events still buffered after that id are rep
 A browser `EventSource` receives every event via `onmessage` (the type is in the JSON payload). The
 concurrent-stream count is capped (a `429` past the cap).
 
+## MQTT publishing (opt-in)
+
+The bridge can **publish out** to your MQTT broker (Mosquitto, EMQX, the Home Assistant add-on, …),
+so a home-automation stack (Node-RED, Zigbee2MQTT-style pipelines, and especially **Home
+Assistant**) can react to Gubbins state and change events. The bridge is an MQTT **client** dialling
+*out* — it opens **no inbound port**, so this doesn't widen the bridge's attack surface. It is
+**off by default** and best-effort: a broker that is down, unreachable or rejects the credentials
+only logs a secret-free warning and retries with backoff — the HTTP API is unaffected.
+
+Enable it with **`GUBBINS_BRIDGE_MQTT=on`** and point `GUBBINS_BRIDGE_MQTT_URL` at your broker:
+
+```bash
+# in the git-ignored bridge/.env
+GUBBINS_BRIDGE_MQTT=on
+GUBBINS_BRIDGE_MQTT_URL=mqtt://127.0.0.1:1883        # or mqtts:// for TLS
+GUBBINS_BRIDGE_MQTT_USERNAME=<YOUR_MQTT_USERNAME>    # optional
+GUBBINS_BRIDGE_MQTT_PASSWORD=<YOUR_MQTT_PASSWORD>    # optional; .env only, never logged
+```
+
+### Topics
+
+Everything hangs under the prefix (default `gubbins`, override with `GUBBINS_BRIDGE_MQTT_PREFIX`):
+
+| Topic | Retained? | Payload |
+| --- | --- | --- |
+| `gubbins/status` | yes | `online` / `offline` — the availability topic (also the MQTT Last-Will, so an ungraceful death flips it to `offline` automatically). |
+| `gubbins/summary/state` | yes | `{ itemsTotal, lowStockItems, outOfStockItems, locationsTotal, generatedAt }` — refreshed on every snapshot change. |
+| `gubbins/location/<id>/state` | yes | `{ id, name, itemCount }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). |
+| `gubbins/event/<type>` | no | The EI-1 change event (the [same shape](#the-event-shape) the webhooks/SSE emit), e.g. `gubbins/event/item.low_stock`. Transient — a late subscriber doesn't replay history. |
+
+State is **retained** so a subscriber (or Home Assistant) that connects after the bridge sees the
+last-known values immediately. The low-stock / out-of-stock counts use the exact same rule as the
+`item.low_stock` / `item.out_of_stock` events, so they never drift. Every published payload is
+synthetic-safe: it carries only inventory facts, never the token or the broker credentials.
+
+### Home Assistant MQTT discovery (no custom component)
+
+Set **`GUBBINS_BRIDGE_MQTT_DISCOVERY=on`** to *also* publish Home Assistant
+[MQTT-discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) configs
+(retained, under the `homeassistant/` prefix — override with `GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX`).
+Home Assistant then **auto-creates** the entities with **no `custom_components/gubbins` at all** —
+this is an *alternative* to the [custom component](../homeassistant/README.md); pick one. It creates,
+under a single "Gubbins" device: `sensor.gubbins_items_total`, `sensor.gubbins_low_stock_items`,
+`sensor.gubbins_out_of_stock_items`, `sensor.gubbins_locations_total`, a
+`binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), and one
+`sensor.gubbins_location_<id>` per user location. The discovery layout is re-published whenever a
+location is added/removed/renamed and on every reconnect (so a broker that restarted without
+persistence re-learns it).
+
+```bash
+# verify the bridge is publishing (subscribe to everything under the prefix)
+mosquitto_sub -h 127.0.0.1 -t 'gubbins/#' -v
+```
+
 ## Configuration reference
 
 The server is configured **entirely from the environment**, so no secret or local path is
@@ -700,6 +754,14 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_WEBHOOKS` | no | `off` | Enable opt-in signed [outbound webhooks](#events-webhooks--sse-opt-in). **Off by default**; also lights up the event stream (shared pipeline). A webhook never mutates inventory. |
 | `GUBBINS_BRIDGE_WEBHOOKS_FILE` | no | `webhooks.json` | Path to the **git-ignored** JSON webhook-target list. The target **secrets live only here** — never in a committed file. |
 | `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` | no | — | The whole target list inline as JSON (wins over the file). Carries secrets, so keep it in the git-ignored `.env` only. |
+| `GUBBINS_BRIDGE_MQTT` | no | `off` | Enable opt-in [outbound MQTT publishing](#mqtt-publishing-opt-in) (state + events to your broker). **Off by default**; outbound-only (no inbound port). Does **not** expose the SSE HTTP endpoint. |
+| `GUBBINS_BRIDGE_MQTT_URL` | when MQTT on | — | Broker URL: `mqtt://host:port` (plaintext, default port 1883) or `mqtts://host:port` (TLS, default 8883). Any `user:pass@` in the URL is ignored — use the vars below. |
+| `GUBBINS_BRIDGE_MQTT_USERNAME` | no | — | Broker username. Keep it in the git-ignored `.env`. |
+| `GUBBINS_BRIDGE_MQTT_PASSWORD` | no | — | Broker password. `.env` only; **never logged**. |
+| `GUBBINS_BRIDGE_MQTT_PREFIX` | no | `gubbins` | Topic prefix every published topic hangs under. |
+| `GUBBINS_BRIDGE_MQTT_CLIENT_ID` | no | `gubbins-bridge` | The MQTT client identifier. |
+| `GUBBINS_BRIDGE_MQTT_DISCOVERY` | no | `off` | Also publish [Home Assistant MQTT-discovery](#home-assistant-mqtt-discovery-no-custom-component) configs so HA auto-creates entities with no custom component. Only meaningful when MQTT is on. |
+| `GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX` | no | `homeassistant` | HA discovery prefix (match HA's `discovery_prefix` if you changed it). |
 
 A missing required value, an out-of-range port, or a non-numeric rate setting makes the
 bridge **fail loudly at startup** (with a secret-free message) rather than serve
@@ -878,8 +940,10 @@ The bridge is designed to be safe by construction; this is the checklist it sati
   data under `bridge/local/`. The only fixture committed is the fully synthetic
   `src/fixtures/synthetic-snapshot.json` (made-up parts, `example.com`/`localhost` only).
 - **Minimal dependency surface.** Zero runtime dependencies — stdlib `node:http` /
-  `node:fs` / `node:crypto` (and `node:dgram` / `node:os` for the optional mDNS advertiser)
-  only — so there is no third-party supply-chain surface to vet.
+  `node:fs` / `node:crypto` (and `node:dgram` / `node:os` for the optional mDNS advertiser,
+  `node:net` / `node:tls` for the optional MQTT client) only — so there is no third-party
+  supply-chain surface to vet. The MQTT publisher speaks a **hand-rolled**, publish-only subset
+  of MQTT 3.1.1 rather than taking a client dependency (see [MQTT publishing](#mqtt-publishing-opt-in)).
 
 ### Rate limiting
 
@@ -931,6 +995,14 @@ bridge/
       records.ts        # pure DNS-SD record/TXT building + question parsing + opt-in/loopback gating
       advertise.ts      # node:dgram multicast lifecycle (announce/respond/goodbye; best-effort)
       records.test.ts   # pure wire-format / TXT / gating / address-pick tests
+    mqtt/               # opt-in outbound MQTT publishing (EI-5) — zero-dep, publish-only
+      packet.ts         # pure hand-rolled MQTT 3.1.1 codec (CONNECT/CONNACK/PUBLISH/PING/DISCONNECT)
+      client.ts         # node:net/node:tls connection shell: connect/CONNACK/keep-alive/reconnect/LWT
+      topics.ts         # pure topic + payload builders (status/summary/location/event)
+      state.ts          # read-only inventory-state projection through the app repositories
+      discovery.ts      # pure Home Assistant MQTT-discovery config builder (no custom component)
+      publisher.ts      # orchestrator: EventSink + per-generation retained state + availability
+      packet.test.ts / topics.test.ts / discovery.test.ts / state.test.ts / client.test.ts / publisher.test.ts
     mcp/
       tools.ts          # the six read-only gubbins_* MCP tools (wrap the query core/repositories)
       dispatcher.ts     # stdlib JSON-RPC dispatcher (initialize/tools.list/tools.call/ping)

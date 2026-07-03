@@ -32,6 +32,16 @@
  *                                  (default `webhooks.json`); the target SECRETS live only here.
  *   GUBBINS_BRIDGE_WEBHOOKS_TARGETS (optional) — inline JSON target list (wins over the file);
  *                                  carries secrets, so keep it in the git-ignored .env only.
+ *   GUBBINS_BRIDGE_MQTT           (optional) — connect OUT to an MQTT broker and publish inventory
+ *                                  state + the EI-1 events. Off by default (outbound-only; no port).
+ *   GUBBINS_BRIDGE_MQTT_URL       (required when MQTT on) — mqtt:// or mqtts:// broker URL.
+ *   GUBBINS_BRIDGE_MQTT_USERNAME  (optional) — broker username; in .env only.
+ *   GUBBINS_BRIDGE_MQTT_PASSWORD  (optional) — broker password; in .env only, never logged.
+ *   GUBBINS_BRIDGE_MQTT_PREFIX    (optional) — topic prefix (default `gubbins`).
+ *   GUBBINS_BRIDGE_MQTT_CLIENT_ID (optional) — MQTT client id (default `gubbins-bridge`).
+ *   GUBBINS_BRIDGE_MQTT_DISCOVERY (optional) — also emit Home Assistant MQTT-discovery configs so
+ *                                  HA auto-creates entities with no custom component. Off by default.
+ *   GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX (optional) — HA discovery prefix (default `homeassistant`).
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 
@@ -118,6 +128,31 @@ export interface BridgeConfig {
    * belongs in the git-ignored `.env` only.
    */
   readonly webhooksInline: string | undefined;
+  /**
+   * Whether the operator opted into **outbound MQTT publishing** (`GUBBINS_BRIDGE_MQTT=on`).
+   * **Off by default.** When on, the bridge connects OUT to {@link mqttUrl} (an MQTT *client* — no
+   * inbound port) and publishes retained inventory state + the EI-1 events. Implies the event
+   * pipeline (like {@link webhooks}) so events reach the broker even without the SSE stream.
+   */
+  readonly mqtt: boolean;
+  /** The broker URL (`mqtt://` / `mqtts://`). Required (non-empty) when {@link mqtt} is on. */
+  readonly mqttUrl: string | undefined;
+  /** Optional broker username (`GUBBINS_BRIDGE_MQTT_USERNAME`); `.env` only. */
+  readonly mqttUsername: string | undefined;
+  /** Optional broker password (`GUBBINS_BRIDGE_MQTT_PASSWORD`); `.env` only, never logged. */
+  readonly mqttPassword: string | undefined;
+  /** Topic prefix every published topic hangs under (`GUBBINS_BRIDGE_MQTT_PREFIX`, default `gubbins`). */
+  readonly mqttPrefix: string;
+  /** MQTT client id (`GUBBINS_BRIDGE_MQTT_CLIENT_ID`, default `gubbins-bridge`). */
+  readonly mqttClientId: string;
+  /**
+   * Whether to also emit Home Assistant MQTT-discovery configs (`GUBBINS_BRIDGE_MQTT_DISCOVERY=on`)
+   * so HA auto-creates entities with no custom component. Off by default; only meaningful when
+   * {@link mqtt} is on.
+   */
+  readonly mqttDiscovery: boolean;
+  /** HA discovery prefix (`GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX`, default `homeassistant`). */
+  readonly mqttDiscoveryPrefix: string;
 }
 
 /** The subset of the environment we read; `process.env`-shaped for easy injection in tests. */
@@ -148,6 +183,23 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const events = parseBool(env.GUBBINS_BRIDGE_EVENTS, false, 'GUBBINS_BRIDGE_EVENTS') || webhooks;
   const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
   const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
+
+  const mqtt = parseBool(env.GUBBINS_BRIDGE_MQTT, false, 'GUBBINS_BRIDGE_MQTT');
+  const mqttUrl = (env.GUBBINS_BRIDGE_MQTT_URL ?? '').trim() || undefined;
+  if (mqtt && mqttUrl === undefined) {
+    throw new Error('GUBBINS_BRIDGE_MQTT is on but GUBBINS_BRIDGE_MQTT_URL is unset (set it in .env).');
+  }
+  const mqttUsername = (env.GUBBINS_BRIDGE_MQTT_USERNAME ?? '').trim() || undefined;
+  // Password is intentionally NOT trimmed (a leading/trailing space could be significant); only a
+  // truly empty value becomes undefined.
+  const mqttPassword =
+    env.GUBBINS_BRIDGE_MQTT_PASSWORD !== undefined && env.GUBBINS_BRIDGE_MQTT_PASSWORD.length > 0
+      ? env.GUBBINS_BRIDGE_MQTT_PASSWORD
+      : undefined;
+  const mqttPrefix = (env.GUBBINS_BRIDGE_MQTT_PREFIX ?? '').trim() || 'gubbins';
+  const mqttClientId = (env.GUBBINS_BRIDGE_MQTT_CLIENT_ID ?? '').trim() || 'gubbins-bridge';
+  const mqttDiscovery = parseBool(env.GUBBINS_BRIDGE_MQTT_DISCOVERY, false, 'GUBBINS_BRIDGE_MQTT_DISCOVERY');
+  const mqttDiscoveryPrefix = (env.GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX ?? '').trim() || 'homeassistant';
   const maxPushBytes = Math.floor(
     parsePositive(
       env.GUBBINS_BRIDGE_MAX_PUSH_BYTES,
@@ -174,6 +226,14 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     webhooks,
     webhooksFile,
     webhooksInline,
+    mqtt,
+    mqttUrl,
+    mqttUsername,
+    mqttPassword,
+    mqttPrefix,
+    mqttClientId,
+    mqttDiscovery,
+    mqttDiscoveryPrefix,
   };
 }
 

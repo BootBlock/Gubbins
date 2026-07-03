@@ -51,6 +51,7 @@ const summary: ItemSummaryDto = {
   manufacturer: null,
   trackingMode: 'DISCRETE',
   isActive: true,
+  isUnlimited: false,
 };
 
 function resolved(e: ActivityFeedEntry, item: Item | null): ResolvedEntry {

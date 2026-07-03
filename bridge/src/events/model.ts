@@ -129,6 +129,7 @@ const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   SOFT_DELETED: 'item.removed',
   RESTORED: 'item.restored',
   CONDITION_CHANGED: 'item.condition_changed',
+  TRACKING_CHANGED: 'item.tracking_changed',
   MAINTENANCE_LOGGED: 'item.maintenance_logged',
   SCRAPE_APPLIED: 'item.supplier_data_applied',
 };
@@ -237,7 +238,7 @@ function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): Bridge
   if (item === null || !isStockAction(entry.action)) return null;
   if (!isLow(item, defaults)) return null;
 
-  const empty = isEmpty(item);
+  const empty = isStockEmpty(item);
   const type = empty ? 'item.out_of_stock' : 'item.low_stock';
   const base = baseEvent(resolved);
   return {
@@ -248,8 +249,12 @@ function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): Bridge
   };
 }
 
-/** Whether a stock item is fully depleted (nothing on hand / gauge empty). */
-function isEmpty(item: ReorderItem): boolean {
+/**
+ * Whether a stock item is fully depleted (nothing on hand / gauge empty). Exported so the EI-5
+ * MQTT state projection derives its out-of-stock count from the exact same rule as the
+ * `item.out_of_stock` event (no fork).
+ */
+export function isStockEmpty(item: ReorderItem): boolean {
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     return !item.gauge || item.gauge.percentageRemaining <= 0;
   }

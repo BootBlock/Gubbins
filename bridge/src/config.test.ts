@@ -28,6 +28,14 @@ describe('loadConfig (HA-3)', () => {
       webhooks: false,
       webhooksFile: undefined,
       webhooksInline: undefined,
+      mqtt: false,
+      mqttUrl: undefined,
+      mqttUsername: undefined,
+      mqttPassword: undefined,
+      mqttPrefix: 'gubbins',
+      mqttClientId: 'gubbins-bridge',
+      mqttDiscovery: false,
+      mqttDiscoveryPrefix: 'homeassistant',
     });
   });
 
@@ -42,6 +50,40 @@ describe('loadConfig (HA-3)', () => {
     const config = loadConfig({ ...VALID, GUBBINS_BRIDGE_WEBHOOKS: 'on' });
     expect(config.webhooks).toBe(true);
     expect(config.events).toBe(true);
+  });
+
+  it('keeps MQTT off by default and opts in with a URL', () => {
+    expect(loadConfig(VALID).mqtt).toBe(false);
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_MQTT: 'on',
+      GUBBINS_BRIDGE_MQTT_URL: 'mqtt://broker.test:1883',
+      GUBBINS_BRIDGE_MQTT_USERNAME: 'user',
+      GUBBINS_BRIDGE_MQTT_PASSWORD: 'placeholder-mqtt-pass',
+      GUBBINS_BRIDGE_MQTT_DISCOVERY: 'on',
+      GUBBINS_BRIDGE_MQTT_PREFIX: 'home/gubbins',
+    });
+    expect(config.mqtt).toBe(true);
+    expect(config.mqttUrl).toBe('mqtt://broker.test:1883');
+    expect(config.mqttUsername).toBe('user');
+    expect(config.mqttPassword).toBe('placeholder-mqtt-pass');
+    expect(config.mqttDiscovery).toBe(true);
+    expect(config.mqttPrefix).toBe('home/gubbins');
+  });
+
+  it('does NOT expose the SSE HTTP endpoint just because MQTT is on', () => {
+    // MQTT publishes events out to the broker but must not implicitly open GET /api/v1/events.
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_MQTT: 'on',
+      GUBBINS_BRIDGE_MQTT_URL: 'mqtt://broker.test:1883',
+    });
+    expect(config.mqtt).toBe(true);
+    expect(config.events).toBe(false);
+  });
+
+  it('throws when MQTT is on but no broker URL is set', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_MQTT: 'on' })).toThrow(/GUBBINS_BRIDGE_MQTT_URL/);
   });
 
   it('carries the webhook target sources without inlining a secret into config shape', () => {

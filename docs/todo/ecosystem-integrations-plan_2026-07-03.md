@@ -24,7 +24,7 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1, EI-2, EI-3 & EI-4 complete & merged (2026-07-03). Next: EI-5._ Phase order: **EI-1 → EI-7**.
+> **Status:** _EI-1, EI-2, EI-3, EI-4 & EI-5 complete & merged (2026-07-03). Next: EI-6._ Phase order: **EI-1 → EI-7**.
 > EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
 > could be reordered, but the embedded prompts assume this order.
 
@@ -506,22 +506,22 @@ explicitly; this is the sanctioned place to reconsider the zero-dependency rule.
 pipelines, and especially Home Assistant) by **publishing out** to the user's MQTT broker —
 optionally auto-creating HA entities with **no custom component at all**.
 
-- [ ] **Opt-in outbound MQTT client** (`GUBBINS_BRIDGE_MQTT=on`, off by default):
+- [x] **Opt-in outbound MQTT client** (`GUBBINS_BRIDGE_MQTT=on`, off by default):
       `GUBBINS_BRIDGE_MQTT_URL` + optional `_MQTT_USERNAME` / `_MQTT_PASSWORD` (all in `.env`).
       The bridge is an MQTT **client** connecting *out* — no inbound port, so it doesn't
       violate "no inbound server".
-- [ ] **Publish topics:** item/location state under `gubbins/…/state` (retained, JSON) and the
+- [x] **Publish topics:** item/location state under `gubbins/…/state` (retained, JSON) and the
       **EI-1 events** under `gubbins/event/…`. Reuse the EI-1 event model — do not fork it.
-- [ ] **Home Assistant MQTT discovery (optional, own sub-flag):** emit
+- [x] **Home Assistant MQTT discovery (optional, own sub-flag):** emit
       `homeassistant/<component>/gubbins_<id>/config` topics so HA auto-creates low-stock
       binary sensors, per-location count sensors, etc. — **no** `custom_components/gubbins`
       needed for this path. Document how it relates to the existing custom component (they are
       alternatives; a user picks one).
-- [ ] **Resilience:** reconnect with backoff, an availability/LWT topic (`online`/`offline`),
+- [x] **Resilience:** reconnect with backoff, an availability/LWT topic (`online`/`offline`),
       and best-effort (a broker outage logs a warning; the HTTP API is unaffected).
-- [ ] **Docs:** `bridge/README.md` "MQTT publishing" section; `homeassistant/README.md` gains
+- [x] **Docs:** `bridge/README.md` "MQTT publishing" section; `homeassistant/README.md` gains
       the MQTT-discovery route as an alternative to the custom component.
-- [ ] **Tests:** pure tests for topic/payload/discovery-config construction over the synthetic
+- [x] **Tests:** pure tests for topic/payload/discovery-config construction over the synthetic
       fixture; the connection/reconnect shell behind a seam so it's unit-testable without a
       live broker (an injected fake client).
 
@@ -539,7 +539,60 @@ entities without the custom component; with the flag off, nothing connects.
 
 **Review gate:** `/code-review high` (networking + the dependency decision; review carefully).
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `bridge/src/mqtt/*` and merged to `main`. An opt-in
+(`GUBBINS_BRIDGE_MQTT=on`, off by default) mode connects the bridge **out** to the operator's MQTT
+broker (an MQTT *client* dialling out — **no inbound port**, so the "no inbound server" posture
+holds) and publishes inventory state + the EI-1 change events. **Dependency decision (the
+sanctioned reconsideration of the zero-dependency rule): hand-rolled.** The `mqtt` npm client is
+MIT/well-maintained and would pass IP-hygiene vetting, but it exists to be a *full* client
+(subscribe, QoS-1/2 ack machines, WS transport) and pulls a broad transitive tree for a job the
+bridge doesn't need; the required subset is strict and RFC-specified — CONNECT (clean session,
+keep-alive, LWT, optional username/password), CONNACK, **QoS-0** PUBLISH (no packet id / ack),
+PINGREQ/PINGRESP, DISCONNECT — the same size as the already-hand-rolled mDNS wire format and
+iCal/YAML emitters. So the bridge **stays zero-runtime-dependency and build-free** (`bridge/src/mqtt/packet.ts`
+is the pure codec, `client.ts` the `node:net`/`node:tls` connection shell). The pure pieces —
+`topics.ts` (status/summary/location/event topic + payload builders), `state.ts` (a **read-only
+projection through the app repositories**, no bespoke SQL, reusing the EI-1 `isLow` / `isStockEmpty`
+seams so the low/out-of-stock counts can never drift from the `item.low_stock` / `item.out_of_stock`
+events; system buckets `Unassigned`/`In Transit` are excluded as HA-sensor clutter), and
+`discovery.ts` (Home Assistant MQTT-discovery config builder) — are all unit-tested directly, and
+`publisher.ts` orchestrates them: it is an EI-1 **`EventSink`** (each event → `gubbins/event/<type>`,
+not retained) **and** publishes **retained** state per generation (`gubbins/summary/state`,
+`gubbins/location/<id>/state`), reusing the event model (never forked). Availability is a retained
+`gubbins/status` topic — `online` on each (re)connect and `offline` as the connection's **Last-Will**
+(ungraceful death flips it automatically) and on graceful stop. **Resilience:** reconnect with
+bounded backoff, keep-alive pings with **half-open detection** (two unanswered pings → force
+reconnect rather than black-holing publishes to a dead socket), and offline **retained-only**
+buffering (transient events are dropped rather than replayed stale after an outage; retained state is
+re-announced on reconnect, along with the discovery layout so a broker that restarted without
+persistence re-learns everything). **Home Assistant discovery** is a second sub-flag
+(`GUBBINS_BRIDGE_MQTT_DISCOVERY=on`): it emits retained `homeassistant/.../config` topics so HA
+auto-creates the four count sensors + a low-stock `binary_sensor` + one sensor per user location
+under a single "Gubbins" device with **no custom component at all** (documented as an *alternative*
+to the custom component — "Option C" in `homeassistant/README.md`; a removed location clears its
+retained state + discovery entity so no ghost sensors linger). Config: `GUBBINS_BRIDGE_MQTT[_URL|
+_USERNAME|_PASSWORD|_PREFIX|_CLIENT_ID|_DISCOVERY|_DISCOVERY_PREFIX]` (secrets in `.env` only, never
+logged; the broker URL is parsed once at startup and only its host/port label is logged). Enabling
+MQTT turns the internal event pipeline on **without** exposing the SSE HTTP endpoint (that stays
+gated by `GUBBINS_BRIDGE_EVENTS` / `_WEBHOOKS`) — per-capability opt-in. **Zero new dependencies.**
+61 new bridge tests (415 total, all green; `tsc --noEmit` clean for bridge and app). A live
+`serve.mjs` smoke against a **throwaway in-process MQTT broker** passed the acceptance verbatim (15
+checks): with the flag on, the bridge connected out, published retained `online` + summary + per-
+location state + all six HA discovery configs, and — after a snapshot change dropped an item below
+its low-stock bound — published live `gubbins/event/stock.adjusted` + `item.low_stock` (non-
+retained); with the flag off, the broker saw **no connection**. **Review gate:** `/code-review high`
+ran (correctness + cleanup/conventions finder angles, then verification). It caught, and this phase
+fixed: (1) a **stale-retained-topic** leak — a removed location's retained state + HA entity now
+cleared via a zero-length retained publish; (2) **no half-open detection** — added the unanswered-
+ping force-reconnect; (3) **stale event replay** — the offline buffer now holds retained messages
+only. Cleanup findings (a duplicated paged-scan loop → shared `forEachPage`; a double-parsed broker
+URL + duplicated endpoint label → parsed once + shared `endpointLabel()`; a conflated scan cap →
+separate `MAX_LOCATIONS_SCANNED`) were all applied. The review also surfaced a stray **NUL byte**
+that had crept into publisher.ts's discovery-signature line (git had flagged the file binary,
+hiding it from the diff) — fixed by switching the signature to `JSON.stringify` of the location
+`[id,name]` pairs. Separately, two **pre-existing** bridge `tsc` breakages (app-side additions that
+outpaced the EI-1 event model — the `TRACKING_CHANGED` history action and the `isUnlimited`
+`ItemSummaryDto` field) were repaired so the gate is genuinely green.
 
 **Continuation prompt — emit on completion (starts EI-6):**
 
@@ -664,22 +717,21 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-5** (EI-1 through EI-4 are complete and merged). Its
+The current next step is **Phase EI-6** (EI-1 through EI-5 are complete and merged). Its
 kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces this
 with the next phase's embedded prompt.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-5 (MQTT publish +
-Home Assistant MQTT discovery). EI-1 through EI-4 are complete and merged. Work in a NEW git
-worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-mqtt -b
-feat/ecosystem-mqtt HEAD), follow the "How every phase runs" loop and the top-of-doc
-invariants, gate with /code-review high before merging, then merge --no-ff into main and
-clean up. Update the EI-5 Outcome, then emit EI-6's continuation prompt as a raw fenced block.
-Add an opt-in (GUBBINS_BRIDGE_MQTT=on, off by default) mode where the bridge connects OUT to a
-user's MQTT broker and publishes inventory state + the EI-1 events to topics, optionally
-emitting Home Assistant MQTT-discovery config so HA auto-creates entities with NO custom
-component. DECISION AT ENTRY: hand-rolled MQTT 3.1.1 publish-only client (preserve zero-dep)
-vs. the first vetted MIT dependency (e.g. `mqtt`) — vet licence/maintenance and decide
-explicitly; this is the sanctioned place to reconsider the zero-dependency rule. Secrets in
-.env only; synthetic fixtures only.
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-6 (RSS/Atom/JSON
+Feed + Prometheus /metrics). EI-1 through EI-5 are complete and merged. Work in a NEW git
+worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-feeds -b
+feat/ecosystem-feeds HEAD), follow the "How every phase runs" loop and the top-of-doc
+invariants, gate with /code-review high before merging, then merge --no-ff into main and clean
+up. Update the EI-6 Outcome, then emit EI-7's continuation prompt as a raw fenced block. Add
+cheap standards read-surfaces on the bridge: GET /api/v1/activity.rss (+ .atom, .json) rendering
+the Phase 80 activity feed (item_history projection, reuse the EI-1 event model / activity-kind
+seams) via a hand-rolled emitter (no dependency), and GET /metrics in OpenMetrics/Prometheus
+text format (gubbins_items_total, gubbins_low_stock_items, gubbins_locations_total,
+gubbins_out_of_stock_items, storage/fullness gauges). Add both to the OpenAPI spec. Synthetic
+fixtures only.
 ```

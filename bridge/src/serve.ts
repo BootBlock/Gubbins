@@ -29,6 +29,8 @@ import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdn
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
+import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
+import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
 
 export interface RunningBridge {
@@ -36,6 +38,8 @@ export interface RunningBridge {
   readonly watcher: SnapshotWatcher;
   /** The mDNS advertiser, when LAN-exposed and opted in; otherwise `undefined`. */
   readonly mdns?: MdnsAdvertiser;
+  /** The MQTT publisher, when `GUBBINS_BRIDGE_MQTT=on`; otherwise `undefined`. */
+  readonly mqtt?: MqttPublisher;
 }
 
 /** Load config, hydrate the first snapshot, and start listening. Resolves once bound. */
@@ -50,7 +54,14 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   if (sseHub) sinks.push(sseHub);
   const webhookTargets = config.webhooks ? loadWebhookTargets(config) : [];
   if (webhookTargets.length > 0) sinks.push(createWebhookDeliverer({ targets: webhookTargets }));
-  const pipeline = config.events ? createEventPipeline({ sinks }) : undefined;
+  // EI-5 outbound MQTT (opt-in). The publisher is another event sink (events → `…/event/<type>`)
+  // AND publishes retained state per generation; enabling it turns the event pipeline on WITHOUT
+  // exposing the SSE HTTP endpoint (that stays gated by `config.events`) — per-capability opt-in.
+  // The URL is parsed to an endpoint ONCE here (a single validation/throw site), reused for the log.
+  const mqttEndpoint = config.mqtt ? parseMqttEndpoint(config.mqttUrl!) : undefined;
+  const mqtt = mqttEndpoint ? createMqttPublisherFromConfig(config, mqttEndpoint) : undefined;
+  if (mqtt) sinks.push(mqtt);
+  const pipeline = config.events || config.mqtt ? createEventPipeline({ sinks }) : undefined;
 
   const watcher = createSnapshotWatcher({
     snapshotPath: config.snapshotPath,
@@ -59,9 +70,19 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
       // The pipeline reads the just-swapped driver (guaranteed live because the watcher awaits
       // this hook) and fans any new events to the sinks. It never throws.
       if (pipeline) await pipeline.onGeneration(state.driver);
+      // Publish the retained inventory-state topics for this generation (best-effort; the client
+      // buffers while offline). Guarded so an MQTT hiccup never disturbs the data-serving job.
+      if (mqtt) {
+        try {
+          await mqtt.publishState(state.driver, state.snapshotGeneratedAt);
+        } catch (err) {
+          console.error(`MQTT state publish failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     },
     onError: (error) => console.error(`Snapshot reload failed: ${error.message}`),
   });
+  mqtt?.start();
   await watcher.start();
 
   const rateLimiter = config.rateLimit ? createRateLimiter(config.rateLimit) : undefined;
@@ -142,17 +163,30 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   }
   if (config.events) {
     console.log('Event stream available at GET /api/v1/events (SSE, read-only, same bearer token).');
-  } else {
+  } else if (!config.mqtt) {
     console.log(
       'Events/webhooks: disabled. Set GUBBINS_BRIDGE_EVENTS=on for the SSE stream, or ' +
         'GUBBINS_BRIDGE_WEBHOOKS=on for outbound webhooks.',
     );
+  }
+  if (mqttEndpoint) {
+    // The endpoint label is safe to log (host/port only); the username/password are NEVER logged.
+    console.warn(
+      `MQTT ENABLED (GUBBINS_BRIDGE_MQTT=on): publishing state + events to ` +
+        `${endpointLabel(mqttEndpoint)} under "${config.mqttPrefix}/". ` +
+        (config.mqttDiscovery
+          ? `Home Assistant discovery ON (prefix "${config.mqttDiscoveryPrefix}") — HA will auto-create entities.`
+          : 'Home Assistant discovery off (set GUBBINS_BRIDGE_MQTT_DISCOVERY=on to auto-create HA entities).'),
+    );
+  } else {
+    console.log('MQTT publishing: disabled. Set GUBBINS_BRIDGE_MQTT=on to publish to a broker.');
   }
 
   const mdns = await maybeStartMdns(config);
 
   const shutdown = (): void => {
     void mdns?.stop();
+    mqtt?.stop();
     sseHub?.close();
     void watcher.stop();
     server.close();
@@ -160,7 +194,21 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
 
-  return { server, watcher, mdns };
+  return { server, watcher, mdns, mqtt };
+}
+
+/** Build the MQTT publisher from config + the already-parsed broker endpoint. */
+function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpoint): MqttPublisher {
+  return createMqttPublisher({
+    endpoint,
+    clientId: config.mqttClientId,
+    ...(config.mqttUsername !== undefined ? { username: config.mqttUsername } : {}),
+    ...(config.mqttPassword !== undefined ? { password: config.mqttPassword } : {}),
+    prefix: config.mqttPrefix,
+    discovery: config.mqttDiscovery,
+    discoveryPrefix: config.mqttDiscoveryPrefix,
+    version: packageJson.version,
+  });
 }
 
 /**
