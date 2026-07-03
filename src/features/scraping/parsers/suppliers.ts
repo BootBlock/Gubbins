@@ -45,15 +45,14 @@ const ALLOWED_SUPPLIER_DOMAINS: readonly string[] = EXTENSION_HOST_PERMISSIONS.m
 );
 
 /**
- * Whether a scrape target is one the extension is permitted to fetch (spec §9 hardening):
- * an absolute **https** URL whose host is — or is a subdomain of — a registered supplier
- * domain. This is the privileged background worker's own gate, applied *before* it makes a
- * network request, so a page that drives the bridge can never coerce it into fetching an
- * arbitrary origin (defence-in-depth above the manifest's `host_permissions`, which the
- * background fetch otherwise relies on alone). `http:`, `file:`, `data:`, credentials in the
- * URL, and any non-supplier host are all rejected.
+ * Shared host-allowlist gate (spec §9 hardening): an absolute **https** URL, no userinfo,
+ * whose host is — or is a subdomain of — one of `domains`. This is the privileged background
+ * worker's own check, applied *before* it makes a network request, so a page that drives the
+ * bridge can never coerce it into fetching an arbitrary origin (defence-in-depth above the
+ * manifest's `host_permissions`). `http:`, `file:`, `data:`, credentials in the URL, and any
+ * off-list host are all rejected.
  */
-export function isAllowedSupplierUrl(rawUrl: string): boolean {
+function isAllowedUrlForDomains(rawUrl: string, domains: readonly string[]): boolean {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -64,5 +63,43 @@ export function isAllowedSupplierUrl(rawUrl: string): boolean {
   // A userinfo component (user:pass@host) is never legitimate here and can disguise the host.
   if (url.username.length > 0 || url.password.length > 0) return false;
   const host = url.hostname.toLowerCase();
-  return ALLOWED_SUPPLIER_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
+
+/** Whether a scrape target is a registered supplier domain the extension may fetch (§9). */
+export function isAllowedSupplierUrl(rawUrl: string): boolean {
+  return isAllowedUrlForDomains(rawUrl, ALLOWED_SUPPLIER_DOMAINS);
+}
+
+/**
+ * Host allowlist for the keyless **product-lookup** provider (recommendation point 2).
+ * Open Food Facts is a free, open, key-less product database (`world.openfoodfacts.org`);
+ * its coverage is groceries/consumables, but it needs no API key or secret — the only
+ * lookup source compatible with this public, backend-less repo. Kept separate from the
+ * supplier list because a product database is *not* a supplier: {@link isAllowedLookupUrl}
+ * gates the barcode-lookup fetch, {@link isAllowedSupplierUrl} the URL scrape.
+ */
+export const PRODUCT_LOOKUP_HOST_PERMISSIONS: readonly string[] = ['https://*.openfoodfacts.org/*'];
+
+const ALLOWED_LOOKUP_DOMAINS: readonly string[] = PRODUCT_LOOKUP_HOST_PERMISSIONS.map((pattern) =>
+  pattern
+    .replace(/^https:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^\*\./, '')
+    .toLowerCase(),
+);
+
+/** Whether a product-lookup target is an allowed open-database host the extension may fetch. */
+export function isAllowedLookupUrl(rawUrl: string): boolean {
+  return isAllowedUrlForDomains(rawUrl, ALLOWED_LOOKUP_DOMAINS);
+}
+
+/**
+ * The full set of host patterns the extension manifest must grant — suppliers plus the
+ * product-lookup provider. `host-permissions.test.ts` pins `extension/manifest.json` to
+ * this, so neither list can drift from the manifest.
+ */
+export const ALL_EXTENSION_HOST_PERMISSIONS: readonly string[] = [
+  ...EXTENSION_HOST_PERMISSIONS,
+  ...PRODUCT_LOOKUP_HOST_PERMISSIONS,
+];

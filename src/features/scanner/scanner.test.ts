@@ -57,6 +57,15 @@ describe('scan-payload', () => {
     expect(parseScannedCode(`gubbins:item:${UUID}`)).toEqual({ kind: 'item', id: UUID });
     expect(parseScannedCode('hello world')).toBeNull();
   });
+
+  it('classifies a valid retail barcode as kind gtin (unknown-product fallback)', () => {
+    expect(parseScannedCode('4006381333931')).toEqual({ kind: 'gtin', gtin: '4006381333931' });
+    expect(parseScannedCode(' 036000291452 ')).toEqual({ kind: 'gtin', gtin: '036000291452' });
+    // A Gubbins code is never re-classified as a GTIN, and a plain barcode is not an item.
+    expect(parseScannedItemId('4006381333931')).toBeNull();
+    // A bad check digit is not a GTIN (stays unrecognised).
+    expect(parseScannedCode('4006381333930')).toBeNull();
+  });
 });
 
 describe('resolveLabelBaseUrl (Link host override)', () => {

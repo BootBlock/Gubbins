@@ -25,6 +25,7 @@ import {
   bridgeReducer,
   initialBridgeState,
   pendingScrapeCount,
+  type ProductLookupState,
   type ScrapeRequestState,
 } from './bridge-reducer';
 import { makeMessage, parseExtensionMessage } from './protocol';
@@ -33,6 +34,8 @@ interface ScrapeBridgeValue {
   readonly ready: boolean;
   /** Tracked scrapes keyed by `requestId` — several may be in flight at once (§9). */
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
+  /** Tracked barcode product lookups keyed by `requestId` (recommendation point 2). */
+  readonly lookups: Readonly<Record<string, ProductLookupState>>;
   /** Number of scrapes still awaiting an outcome (for UI affordances). */
   readonly pendingCount: number;
   /**
@@ -43,6 +46,13 @@ interface ScrapeBridgeValue {
   readonly requestScrape: (url: string) => string;
   /** Drop a single finished (or abandoned) scrape by id. */
   readonly clear: (id: string) => void;
+  /**
+   * Send a PRODUCT_LOOKUP_REQUEST for a retail barcode (GTIN) across the bridge (point 2).
+   * Returns the generated `requestId` so the caller can track its own lookup via {@link lookups}.
+   */
+  readonly requestLookup: (gtin: string) => string;
+  /** Drop a single finished (or abandoned) product lookup by id. */
+  readonly clearLookup: (id: string) => void;
 }
 
 const ScrapeBridgeContext = createContext<ScrapeBridgeValue | null>(null);
@@ -69,7 +79,13 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
         case 'SCRAPE_ERROR':
           dispatch({ type: 'ERROR', id: msg.requestId, payload: msg.payload });
           break;
-        // SCRAPE_REQUEST is outbound-only from the PWA — ignore our own echo.
+        case 'PRODUCT_LOOKUP_RESULT':
+          dispatch({ type: 'LOOKUP_RESULT', id: msg.requestId, payload: msg.payload });
+          break;
+        case 'PRODUCT_LOOKUP_ERROR':
+          dispatch({ type: 'LOOKUP_ERROR', id: msg.requestId, payload: msg.payload });
+          break;
+        // *_REQUEST kinds are outbound-only from the PWA — ignore our own echo.
       }
     };
 
@@ -86,15 +102,27 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
 
   const clear = useCallback((id: string) => dispatch({ type: 'CLEAR', id }), []);
 
+  const requestLookup = useCallback((gtin: string) => {
+    const id = crypto.randomUUID();
+    dispatch({ type: 'LOOKUP_REQUEST', id, gtin });
+    window.postMessage(makeMessage('PRODUCT_LOOKUP_REQUEST', { gtin }, id), window.location.origin);
+    return id;
+  }, []);
+
+  const clearLookup = useCallback((id: string) => dispatch({ type: 'LOOKUP_CLEAR', id }), []);
+
   const value = useMemo<ScrapeBridgeValue>(
     () => ({
       ready: state.ready,
       requests: state.requests,
+      lookups: state.lookups,
       pendingCount: pendingScrapeCount(state),
       requestScrape,
       clear,
+      requestLookup,
+      clearLookup,
     }),
-    [state, requestScrape, clear],
+    [state, requestScrape, clear, requestLookup, clearLookup],
   );
 
   return <ScrapeBridgeContext.Provider value={value}>{children}</ScrapeBridgeContext.Provider>;

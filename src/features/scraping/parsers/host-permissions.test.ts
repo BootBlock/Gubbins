@@ -9,7 +9,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXTENSION_HOST_PERMISSIONS, isAllowedSupplierUrl } from './suppliers';
+import {
+  ALL_EXTENSION_HOST_PERMISSIONS,
+  EXTENSION_HOST_PERMISSIONS,
+  isAllowedLookupUrl,
+  isAllowedSupplierUrl,
+} from './suppliers';
 import { SUPPLIER_PARSERS } from './registry';
 
 // Vitest runs from the project root, so resolve the manifest relative to cwd (the test
@@ -22,8 +27,13 @@ describe('extension host_permissions (§9 / §4 hardening)', () => {
     expect(manifest.host_permissions).not.toContain('<all_urls>');
   });
 
-  it('matches the supplier allowlist source of truth exactly', () => {
-    expect(manifest.host_permissions).toEqual([...EXTENSION_HOST_PERMISSIONS]);
+  it('matches the combined allowlist source of truth exactly (suppliers + product lookup)', () => {
+    expect(manifest.host_permissions).toEqual([...ALL_EXTENSION_HOST_PERMISSIONS]);
+  });
+
+  it('still carries every supplier host, and the product-lookup host', () => {
+    for (const host of EXTENSION_HOST_PERMISSIONS) expect(manifest.host_permissions).toContain(host);
+    expect(manifest.host_permissions).toContain('https://*.openfoodfacts.org/*');
   });
 
   it('covers every host-specific registered parser', () => {
@@ -67,5 +77,18 @@ describe('isAllowedSupplierUrl (§9 background-fetch gate)', () => {
   it('rejects a userinfo-disguised host and unparseable input', () => {
     expect(isAllowedSupplierUrl('https://www.digikey.com@evil.test/x')).toBe(false);
     expect(isAllowedSupplierUrl('not a url')).toBe(false);
+  });
+});
+
+describe('isAllowedLookupUrl (product-lookup fetch gate, point 2)', () => {
+  it('allows the Open Food Facts https host and its subdomains', () => {
+    expect(isAllowedLookupUrl('https://world.openfoodfacts.org/api/v2/product/12345.json')).toBe(true);
+    expect(isAllowedLookupUrl('https://openfoodfacts.org/x')).toBe(true);
+  });
+
+  it('rejects non-https, a supplier host, and other origins', () => {
+    expect(isAllowedLookupUrl('http://world.openfoodfacts.org/x')).toBe(false);
+    expect(isAllowedLookupUrl('https://www.digikey.com/x')).toBe(false);
+    expect(isAllowedLookupUrl('https://openfoodfacts.org.evil.test/x')).toBe(false);
   });
 });

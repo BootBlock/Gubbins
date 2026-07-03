@@ -12,12 +12,15 @@ export {
   extensionMessageSchema,
   scrapeResultPayloadSchema,
   scrapeErrorPayloadSchema,
+  productLookupResultPayloadSchema,
   SCRAPE_ERROR_TYPES,
   type ExtensionMessage,
   type ScrapeResultPayload,
   type ScrapeErrorPayload,
   type ScrapeErrorType,
+  type ProductLookupResultPayload,
 } from './protocol';
+export { buildProductLookupUrl, parseOpenFoodFactsProduct } from './product-lookup';
 export {
   buildScrapeMergePlan,
   applyScrapeMerge,
@@ -42,5 +45,6 @@ export {
 export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
 export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
+export { ProductLookupPanel } from './components/ProductLookupPanel';
 export { ScrapeReviewDialog } from './components/ScrapeReviewDialog';
 export { useScrapeNotifier } from './useScrapeNotifier';

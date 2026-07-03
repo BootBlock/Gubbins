@@ -66,6 +66,7 @@ const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>>
   notes: { column: 'items.notes', kind: 'fts-text' },
   mpn: { column: 'items.mpn', kind: 'fts-text' },
   manufacturer: { column: 'items.manufacturer', kind: 'fts-text' },
+  barcode: { column: 'items.barcode', kind: 'fts-text' },
   category: { column: 'items.category_id', kind: 'id-text' },
   location: { column: 'items.location_id', kind: 'id-text' },
   quantity: { column: 'items.quantity', kind: 'numeric' },

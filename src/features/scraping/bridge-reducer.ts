@@ -12,7 +12,7 @@
  * it. A result/error whose id is unknown (stale, already-cleared, or never-requested)
  * is ignored — cross-talk between concurrent scrapes is structurally impossible.
  */
-import type { ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
+import type { ProductLookupResultPayload, ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
 
 /** Lifecycle of a single tracked scrape. */
 export type ScrapeRequestStatus = 'SCRAPING' | 'SUCCESS' | 'ERROR';
@@ -26,16 +26,31 @@ export interface ScrapeRequestState {
   readonly error: ScrapeErrorPayload | null;
 }
 
+/** Lifecycle of a single tracked product lookup (recommendation point 2). */
+export type ProductLookupStatus = 'LOOKING_UP' | 'SUCCESS' | 'ERROR';
+
+/** One correlated barcode lookup — its id, the GTIN it targets, and its current outcome. */
+export interface ProductLookupState {
+  readonly id: string;
+  readonly gtin: string;
+  readonly status: ProductLookupStatus;
+  readonly result: ProductLookupResultPayload | null;
+  readonly error: ScrapeErrorPayload | null;
+}
+
 export interface BridgeState {
-  /** True once an EXTENSION_READY has been received — gates the "Scrape" button (§9.3). */
+  /** True once an EXTENSION_READY has been received — gates the bridge affordances (§9.3). */
   readonly ready: boolean;
   /** In-flight and recently-finished scrapes, keyed by `requestId`. */
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
+  /** In-flight and recently-finished product lookups, keyed by `requestId` (point 2). */
+  readonly lookups: Readonly<Record<string, ProductLookupState>>;
 }
 
 export const initialBridgeState: BridgeState = {
   ready: false,
   requests: {},
+  lookups: {},
 };
 
 export type BridgeAction =
@@ -43,25 +58,51 @@ export type BridgeAction =
   | { type: 'REQUEST'; id: string; url: string }
   | { type: 'RESULT'; id: string; payload: ScrapeResultPayload }
   | { type: 'ERROR'; id: string; payload: ScrapeErrorPayload }
-  | { type: 'CLEAR'; id: string };
+  | { type: 'CLEAR'; id: string }
+  | { type: 'LOOKUP_REQUEST'; id: string; gtin: string }
+  | { type: 'LOOKUP_RESULT'; id: string; payload: ProductLookupResultPayload }
+  | { type: 'LOOKUP_ERROR'; id: string; payload: ScrapeErrorPayload }
+  | { type: 'LOOKUP_CLEAR'; id: string };
 
-/** Resolve a finished outcome onto the tracked request, or ignore an unknown/stale id. */
-function settle(
-  state: BridgeState,
+/**
+ * Resolve a finished outcome onto a tracked request in a keyed map, or ignore an
+ * unknown/stale id. Only a request still in its `pending` status may transition — a
+ * result for an unknown, already-settled or already-cleared id is a stale/foreign echo
+ * and is dropped. Shared by scrapes and lookups so the correlation rule lives in one place.
+ */
+function settle<S extends { readonly status: string }>(
+  map: Readonly<Record<string, S>>,
   id: string,
-  patch: Pick<ScrapeRequestState, 'status' | 'result' | 'error'>,
-): BridgeState {
-  const current = state.requests[id];
-  // Only a scrape we are actively awaiting may transition — a result for an unknown,
-  // already-settled or already-cleared id is a stale/foreign echo and is dropped.
-  if (!current || current.status !== 'SCRAPING') return state;
-  return { ...state, requests: { ...state.requests, [id]: { ...current, ...patch } } };
+  pending: string,
+  patch: Partial<S>,
+): Readonly<Record<string, S>> {
+  const current = map[id];
+  if (!current || current.status !== pending) return map;
+  return { ...map, [id]: { ...current, ...patch } };
+}
+
+/** Remove a key from a map, returning the same reference when the key is absent. */
+function drop<S>(map: Readonly<Record<string, S>>, id: string): Readonly<Record<string, S>> {
+  if (!(id in map)) return map;
+  const next = { ...map };
+  delete next[id];
+  return next;
+}
+
+/** Reseat the scrapes map, preserving the state's identity when it did not change. */
+function withRequests(state: BridgeState, requests: BridgeState['requests']): BridgeState {
+  return requests === state.requests ? state : { ...state, requests };
+}
+
+/** Reseat the lookups map, preserving the state's identity when it did not change. */
+function withLookups(state: BridgeState, lookups: BridgeState['lookups']): BridgeState {
+  return lookups === state.lookups ? state : { ...state, lookups };
 }
 
 export function bridgeReducer(state: BridgeState, action: BridgeAction): BridgeState {
   switch (action.type) {
     case 'READY':
-      // Idempotent: a re-broadcast just confirms readiness, never disturbs a scrape.
+      // Idempotent: a re-broadcast just confirms readiness, never disturbs a request.
       return state.ready ? state : { ...state, ready: true };
     case 'REQUEST':
       return {
@@ -72,15 +113,53 @@ export function bridgeReducer(state: BridgeState, action: BridgeAction): BridgeS
         },
       };
     case 'RESULT':
-      return settle(state, action.id, { status: 'SUCCESS', result: action.payload, error: null });
+      return withRequests(
+        state,
+        settle(state.requests, action.id, 'SCRAPING', {
+          status: 'SUCCESS',
+          result: action.payload,
+          error: null,
+        }),
+      );
     case 'ERROR':
-      return settle(state, action.id, { status: 'ERROR', result: null, error: action.payload });
-    case 'CLEAR': {
-      if (!(action.id in state.requests)) return state;
-      const next = { ...state.requests };
-      delete next[action.id];
-      return { ...state, requests: next };
-    }
+      return withRequests(
+        state,
+        settle(state.requests, action.id, 'SCRAPING', {
+          status: 'ERROR',
+          result: null,
+          error: action.payload,
+        }),
+      );
+    case 'CLEAR':
+      return withRequests(state, drop(state.requests, action.id));
+    case 'LOOKUP_REQUEST':
+      return {
+        ...state,
+        lookups: {
+          ...state.lookups,
+          [action.id]: { id: action.id, gtin: action.gtin, status: 'LOOKING_UP', result: null, error: null },
+        },
+      };
+    case 'LOOKUP_RESULT':
+      return withLookups(
+        state,
+        settle(state.lookups, action.id, 'LOOKING_UP', {
+          status: 'SUCCESS',
+          result: action.payload,
+          error: null,
+        }),
+      );
+    case 'LOOKUP_ERROR':
+      return withLookups(
+        state,
+        settle(state.lookups, action.id, 'LOOKING_UP', {
+          status: 'ERROR',
+          result: null,
+          error: action.payload,
+        }),
+      );
+    case 'LOOKUP_CLEAR':
+      return withLookups(state, drop(state.lookups, action.id));
     default:
       return state;
   }

@@ -12,16 +12,28 @@
  * Note: MV3 service workers have no DOM, so parsing happens in the content script
  * (which does) — keeping this worker tiny and dependency-free.
  */
-import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
+import type { ProductLookupResultPayload, ScrapeErrorType } from '../../src/features/scraping/protocol';
 import { classifyHttpStatus } from '../../src/features/scraping/scrape-errors';
-import { isAllowedSupplierUrl } from '../../src/features/scraping/parsers/suppliers';
+import { isAllowedLookupUrl, isAllowedSupplierUrl } from '../../src/features/scraping/parsers/suppliers';
+import { buildProductLookupUrl, parseOpenFoodFactsProduct } from '../../src/features/scraping/product-lookup';
+import { parseGtin } from '../../src/features/scanner/gtin';
 
 interface FetchRequest {
   kind: 'FETCH';
   url: string;
 }
 
+/** A keyless barcode → product lookup request (recommendation point 2). */
+interface LookupRequest {
+  kind: 'LOOKUP';
+  gtin: string;
+}
+
 type FetchResponse = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
+
+type LookupResponse =
+  | { ok: true; product: ProductLookupResultPayload }
+  | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 const FETCH_TIMEOUT_MS = 15000;
 
@@ -29,7 +41,11 @@ declare const chrome: {
   runtime: {
     onMessage: {
       addListener: (
-        cb: (message: unknown, sender: unknown, sendResponse: (r: FetchResponse) => void) => boolean | void,
+        cb: (
+          message: unknown,
+          sender: unknown,
+          sendResponse: (r: FetchResponse | LookupResponse) => void,
+        ) => boolean | void,
       ) => void;
     };
   };
@@ -65,11 +81,53 @@ async function fetchPage(url: string): Promise<FetchResponse> {
   }
 }
 
+/**
+ * Resolve a retail barcode (GTIN) to a product via the open, key-less database
+ * (recommendation point 2). The GTIN is re-validated here (never trust the page that drove
+ * the bridge), the URL is built from it and gated by the extension's own lookup allowlist,
+ * and the JSON body is parsed by the shared pure {@link parseOpenFoodFactsProduct}. A barcode
+ * the database doesn't carry is a clean `NOT_FOUND`, mapped through the same §9.4.2 taxonomy.
+ */
+async function fetchProduct(gtin: string): Promise<LookupResponse> {
+  const normalised = parseGtin(gtin);
+  if (normalised === null) {
+    return { ok: false, errorType: 'NOT_FOUND', reason: 'Not a valid product barcode.' };
+  }
+  const url = buildProductLookupUrl(normalised);
+  // Defence-in-depth over host_permissions: only ever fetch the allow-listed lookup host.
+  if (!isAllowedLookupUrl(url)) {
+    return { ok: false, errorType: 'BLOCKED', reason: 'Lookup host is not allowed.' };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal, credentials: 'omit', redirect: 'follow' });
+    const failure = classifyHttpStatus(res.status);
+    if (failure) return { ok: false, errorType: failure.errorType, reason: failure.reason };
+    const parsed = parseOpenFoodFactsProduct(await res.text(), normalised);
+    if (!parsed.ok) return { ok: false, errorType: 'NOT_FOUND', reason: parsed.reason };
+    return { ok: true, product: parsed.payload };
+  } catch (err) {
+    const aborted = err instanceof DOMException && err.name === 'AbortError';
+    return {
+      ok: false,
+      errorType: 'NETWORK_TIMEOUT',
+      reason: aborted ? 'Request timed out.' : `Network error: ${String(err)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  const req = message as Partial<FetchRequest> | null;
+  const req = message as Partial<FetchRequest & LookupRequest> | null;
   if (req?.kind === 'FETCH' && typeof req.url === 'string') {
     void fetchPage(req.url).then(sendResponse);
     return true; // keep the message channel open for the async response
+  }
+  if (req?.kind === 'LOOKUP' && typeof req.gtin === 'string') {
+    void fetchProduct(req.gtin).then(sendResponse);
+    return true;
   }
   return false;
 });

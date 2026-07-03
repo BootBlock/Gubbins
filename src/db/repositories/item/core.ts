@@ -62,6 +62,26 @@ export class ItemCoreRepository extends BaseRepository {
     return row ? rowToItem(row) : undefined;
   }
 
+  /**
+   * Find the **active** item carrying a given retail barcode (GTIN), or `undefined`.
+   * The scanner uses this to resolve a scanned EAN/UPC to an existing item before
+   * offering to create one (recommendation point 1). The match is case-insensitive and
+   * exact (barcodes are stored verbatim as printed); if several items share a barcode
+   * the most recently created wins, so the result is deterministic. A blank barcode
+   * never matches.
+   */
+  async getByBarcode(barcode: string): Promise<Item | undefined> {
+    const value = barcode.trim();
+    if (value.length === 0) return undefined;
+    const row = await this.driver.queryOne<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
+       WHERE barcode = ? COLLATE NOCASE AND is_active = 1
+       ORDER BY created_at DESC, id ASC LIMIT 1;`,
+      [value],
+    );
+    return row ? rowToItem(row) : undefined;
+  }
+
   /** A paginated, filtered list of items (spec §2.1). */
   async list(filters: ItemListFilters = {}): Promise<Page<Item>> {
     const { limit, offset } = this.resolvePage(filters);
@@ -206,6 +226,10 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.manufacturer !== undefined) {
       sets.push('manufacturer = ?');
       params.push(normaliseText(input.manufacturer));
+    }
+    if (input.barcode !== undefined) {
+      sets.push('barcode = ?');
+      params.push(normaliseText(input.barcode));
     }
     if (input.unitCost !== undefined) {
       sets.push('unit_cost = ?');

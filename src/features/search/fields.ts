@@ -22,6 +22,7 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'notes', label: 'Notes', kind: 'text' },
   { value: 'mpn', label: 'MPN', kind: 'text' },
   { value: 'manufacturer', label: 'Manufacturer', kind: 'text' },
+  { value: 'barcode', label: 'Barcode', kind: 'text' },
   { value: 'quantity', label: 'Quantity', kind: 'number' },
   { value: 'capability', label: 'Capability', kind: 'capability' },
   { value: 'customfield', label: 'Custom field', kind: 'customfield' },

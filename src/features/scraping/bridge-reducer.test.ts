@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bridgeReducer, initialBridgeState, pendingScrapeCount, type BridgeState } from './bridge-reducer';
-import type { ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
+import type { ProductLookupResultPayload, ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
 
 const result: ScrapeResultPayload = {
   mpn: 'NE555P',
@@ -11,11 +11,19 @@ const result: ScrapeResultPayload = {
 };
 const error: ScrapeErrorPayload = { domain: 'x.test', error_type: 'DOM_DRIFT', reason: 'gone' };
 
+const product: ProductLookupResultPayload = {
+  gtin: '4006381333931',
+  name: 'Sticky Notes',
+  brand: 'Acme',
+  description: null,
+  quantity: null,
+};
+
 const ready: BridgeState = bridgeReducer(initialBridgeState, { type: 'READY' });
 
 describe('bridgeReducer (§9.3 lifecycle)', () => {
-  it('starts not-ready with no requests', () => {
-    expect(initialBridgeState).toEqual({ ready: false, requests: {} });
+  it('starts not-ready with no requests or lookups', () => {
+    expect(initialBridgeState).toEqual({ ready: false, requests: {}, lookups: {} });
   });
 
   it('READY flips the gate and is idempotent', () => {
@@ -73,5 +81,36 @@ describe('bridgeReducer — requestId correlation (§9 multi-scrape)', () => {
     expect(s.requests.b?.status).toBe('ERROR');
     expect(s.requests.b?.error).toEqual(error);
     expect(pendingScrapeCount(s)).toBe(0);
+  });
+});
+
+describe('bridgeReducer — product lookups (recommendation point 2)', () => {
+  it('LOOKUP_REQUEST → LOOKUP_RESULT resolves the tracked lookup, not the scrapes', () => {
+    let s = bridgeReducer(ready, { type: 'LOOKUP_REQUEST', id: 'g', gtin: product.gtin });
+    expect(s.lookups.g?.status).toBe('LOOKING_UP');
+    s = bridgeReducer(s, { type: 'LOOKUP_RESULT', id: 'g', payload: product });
+    expect(s.lookups.g?.status).toBe('SUCCESS');
+    expect(s.lookups.g?.result).toEqual(product);
+    expect(s.requests).toEqual({}); // scrapes untouched
+  });
+
+  it('LOOKUP_ERROR marshals the failure and LOOKUP_CLEAR removes it', () => {
+    let s = bridgeReducer(ready, { type: 'LOOKUP_REQUEST', id: 'g', gtin: product.gtin });
+    s = bridgeReducer(s, { type: 'LOOKUP_ERROR', id: 'g', payload: error });
+    expect(s.lookups.g?.status).toBe('ERROR');
+    const cleared = bridgeReducer(s, { type: 'LOOKUP_CLEAR', id: 'g' });
+    expect(cleared.lookups.g).toBeUndefined();
+  });
+
+  it('ignores a stale/duplicate lookup outcome (identity preserved)', () => {
+    expect(bridgeReducer(ready, { type: 'LOOKUP_RESULT', id: 'ghost', payload: product })).toBe(ready);
+    let s = bridgeReducer(ready, { type: 'LOOKUP_REQUEST', id: 'g', gtin: product.gtin });
+    s = bridgeReducer(s, { type: 'LOOKUP_RESULT', id: 'g', payload: product });
+    const again = bridgeReducer(s, {
+      type: 'LOOKUP_RESULT',
+      id: 'g',
+      payload: { ...product, name: 'Other' },
+    });
+    expect(again).toBe(s); // first outcome stands, no churn
   });
 });

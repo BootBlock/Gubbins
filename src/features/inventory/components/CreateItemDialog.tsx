@@ -26,8 +26,10 @@ import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
 import {
   applyScrapeMerge,
   buildScrapeMergePlan,
+  ProductLookupPanel,
   ScrapeSupplierPanel,
   useScrapeNotifier,
+  type ProductLookupResultPayload,
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
@@ -60,6 +62,7 @@ const schema = z
     trackingMode: z.enum(TRACKING_MODES),
     mpn: z.string().optional(),
     manufacturer: z.string().optional(),
+    barcode: z.string().optional(),
     unitCost: z.string().optional(),
     expiryDate: z.string().optional(),
     batchNumber: z.string().optional(),
@@ -104,6 +107,8 @@ export interface CreateItemInitialValues {
   name?: string;
   notes?: string;
   mpn?: string;
+  /** Retail barcode (GTIN) — pre-filled when adding an item from a scanned barcode (point 1). */
+  barcode?: string;
   sourceUrl?: string;
 }
 
@@ -162,6 +167,7 @@ export function CreateItemDialog({
       trackingMode: 'DISCRETE',
       mpn: initialValues?.mpn ?? '',
       manufacturer: '',
+      barcode: initialValues?.barcode ?? '',
       unitCost: '',
       expiryDate: '',
       batchNumber: '',
@@ -249,6 +255,30 @@ export function CreateItemDialog({
     );
   };
 
+  // §4 no-overwrite: a keyless barcode lookup (recommendation point 2) only fills fields the
+  // user has left blank, exactly like the supplier scrape above.
+  const onProductLookup = (payload: ProductLookupResultPayload) => {
+    const v = getValues();
+    const filled: string[] = [];
+    if (!v.name?.trim()) {
+      setValue('name', payload.name, { shouldDirty: true });
+      filled.push('name');
+    }
+    if (payload.brand && !v.manufacturer?.trim()) {
+      setValue('manufacturer', payload.brand, { shouldDirty: true });
+      filled.push('manufacturer');
+    }
+    if (payload.description && !v.description?.trim()) {
+      setValue('description', payload.description, { shouldDirty: true });
+      filled.push('description');
+    }
+    notifyScrape(
+      filled.length > 0
+        ? `Filled ${filled.join(', ')} from Open Food Facts.`
+        : 'No empty fields to fill from Open Food Facts.',
+    );
+  };
+
   const onSubmit = (values: FormValues) => {
     const base = {
       name: values.name.trim(),
@@ -259,6 +289,7 @@ export function CreateItemDialog({
       ...(values.notes?.trim() ? { notes: values.notes.trim() } : {}),
       ...(values.mpn?.trim() ? { mpn: values.mpn.trim() } : {}),
       ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
+      ...(values.barcode?.trim() ? { barcode: values.barcode.trim() } : {}),
       ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
       // Phase 9 perishables & condition (§4) — all optional.
       ...(values.expiryDate?.trim() ? { expiryDate: fromDateInputValue(values.expiryDate) } : {}),
@@ -518,6 +549,27 @@ export function CreateItemDialog({
             )}
           />
         </div>
+        <FormField
+          label="Barcode (optional)"
+          hintSize="lg"
+          hint={
+            'The **retail barcode** (GTIN) printed on the packaging — EAN-13, UPC-A, EAN-8 or ' +
+            'GTIN-14.\n\nScanning a product barcode pre-fills this automatically. It is the item’s ' +
+            'own scannable code, distinct from the **MPN** above.\n\n> A future scan of the same ' +
+            'barcode jumps straight to this item.'
+          }
+        >
+          <Input
+            inputMode="numeric"
+            placeholder="e.g. 4006381333931"
+            data-testid="item-barcode"
+            {...register('barcode')}
+          />
+        </FormField>
+        {/* Keyless product enrichment (recommendation point 2): when the companion extension
+            is present and a barcode is entered, look the product up (Open Food Facts) and fill
+            any blank name/description/manufacturer. Feature-detected — hidden when absent. */}
+        <ProductLookupPanel barcode={watch('barcode') ?? ''} onResult={onProductLookup} />
         <FormField
           label="Unit cost (optional)"
           hint={

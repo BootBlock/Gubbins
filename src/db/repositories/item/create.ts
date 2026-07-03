@@ -31,6 +31,7 @@ export interface ResolvedCreate {
   readonly categoryId: string | null;
   readonly mpn: string | null;
   readonly manufacturer: string | null;
+  readonly barcode: string | null;
   readonly unitCost: number | null;
   readonly expiryDate: number | null;
   readonly batchNumber: string | null;
@@ -112,6 +113,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     categoryId: input.categoryId ?? null,
     mpn: normaliseText(input.mpn),
     manufacturer: normaliseText(input.manufacturer),
+    barcode: normaliseText(input.barcode),
     unitCost: normaliseUnitCost(input.unitCost),
     expiryDate: normaliseExpiry(input.expiryDate),
     batchNumber: normaliseText(input.batchNumber),
@@ -147,10 +149,10 @@ export function buildInsert(
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-               mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
+               mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -168,6 +170,7 @@ export function buildInsert(
         r.operationalMetadata,
         r.mpn,
         r.manufacturer,
+        r.barcode,
         r.unitCost,
         r.expiryDate,
         r.batchNumber,
