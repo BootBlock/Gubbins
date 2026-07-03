@@ -306,6 +306,51 @@ describe('OData-style query options', () => {
     const body = await (await get('/api/v1/items?$filter=quantity ge 10')).json();
     expect(body.error.code).toBe('bad_request');
   });
+
+  it('$count=true adds the grand total across all pages', async () => {
+    const body = await json('/api/v1/items?$top=2&$count=true');
+    expect(body.data).toHaveLength(2);
+    expect(body.pagination.total).toBe(4);
+    expect(body.pagination.hasMore).toBe(true);
+
+    const filtered = await json('/api/v1/items?$filter=quantity gt 10&$count=true');
+    expect(filtered.pagination.total).toBe(3);
+
+    // Omitting $count leaves total absent (it costs an extra query).
+    const plain = await json('/api/v1/items');
+    expect(plain.pagination.total).toBeUndefined();
+  });
+
+  it('GET /items/$count returns a bare text/plain integer honouring $filter/$search', async () => {
+    const all = await get('/api/v1/items/$count');
+    expect(all.status).toBe(200);
+    expect(all.headers.get('content-type')).toContain('text/plain');
+    expect(await all.text()).toBe('4');
+
+    expect(await (await get('/api/v1/items/$count?$filter=quantity gt 10')).text()).toBe('3');
+    expect(await (await get('/api/v1/items/$count?$search=ESP32')).text()).toBe('1');
+    expect((await get('/api/v1/items/$count?$filter=bogus eq 1')).status).toBe(400);
+  });
+
+  it('$search does a free-text (FTS) match on the list', async () => {
+    const body = await json('/api/v1/items?$search=ESP32');
+    expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32']);
+  });
+
+  it('serves the OData $metadata CSDL document (state-independent)', async () => {
+    const res = await get('/api/v1/$metadata');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/xml');
+    const xml = await res.text();
+    expect(xml).toContain('<EntityType Name="Item">');
+    expect(xml).toContain('<EntitySet Name="items"');
+  });
+
+  it('lists $metadata and items/$count in the discovery index', async () => {
+    const index = await json('/api/v1');
+    expect(index.endpoints).toContain('/api/v1/$metadata');
+    expect(index.endpoints).toContain('/api/v1/items/$count');
+  });
 });
 
 describe('GET /api/v1/locations', () => {

@@ -20,8 +20,9 @@ import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
-import { sendError, sendJson } from './respond.ts';
+import { sendError, sendJson, sendText, sendXml } from './respond.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
+import { odataMetadataXml } from './odata-metadata.ts';
 import { FieldSelectionError, hasSelection, type RawSelection, type SelectedField } from './field-select.ts';
 import {
   createItemViewContext,
@@ -34,6 +35,7 @@ import {
 import { BadQueryError, parseOrderBy, readOption } from './odata.ts';
 import { parseODataFilter } from './odata-filter.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
+import type { SearchAST } from '@/db/search/ast.ts';
 import type { ItemSort } from '@/db/repositories/item/sql.ts';
 import type { Page, Item } from '@/db/repositories/types';
 import {
@@ -93,6 +95,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   if (segments.length === 1 && segments[0] === 'openapi.json') {
     return void sendJson(res, 200, openapiDocument);
   }
+  if (segments.length === 1 && segments[0] === '$metadata') {
+    return void sendXml(res, 200, odataMetadataXml());
+  }
 
   const state = ctx.getState();
   if (state === null) {
@@ -112,6 +117,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       break;
     case 'items':
       if (segments.length === 1) return void (await handleItems(res, driver, url));
+      if (segments.length === 2 && segments[1] === '$count') {
+        return void (await handleItemCount(res, driver, url));
+      }
       if (segments.length === 2) return void (await handleItem(res, driver, url, decode(segments[1]!)));
       break;
     case 'locations':
@@ -211,11 +219,14 @@ function apiIndex(writable: boolean, pushable: boolean): unknown {
     /** Whether this bridge has the opt-in snapshot-ingest endpoint enabled (PWA "push to bridge"). */
     pushable,
     endpoints: [
+      `${API_V1_BASE}/openapi.json`,
+      `${API_V1_BASE}/$metadata`,
       `${API_V1_BASE}/health`,
       `${API_V1_BASE}/search`,
       `${API_V1_BASE}/where`,
       `${API_V1_BASE}/items`,
       `${API_V1_BASE}/items/{id}`,
+      `${API_V1_BASE}/items/$count`,
       `${API_V1_BASE}/locations`,
       `${API_V1_BASE}/locations/{id}`,
       `${API_V1_BASE}/categories`,
@@ -277,8 +288,37 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
   const sort = parseOrderByOr400(res, url);
   if (sort === null) return;
 
-  const result = await queryItemsOr400(res, driver, url, page, sort);
-  if (result === null) return; // an invalid $filter already sent a 400
+  const ast = parseItemFilterOr400(res, url);
+  if (ast === null) return; // an invalid $filter already sent a 400
+
+  const items = new ItemRepository(driver);
+  const filters = readItemListFilters(url);
+  const wantCount = url.searchParams.get('$count') === 'true';
+
+  let result: Page<Item>;
+  let total: number | undefined;
+  try {
+    if (ast !== undefined) {
+      // $filter path: the compiled AST is the sole row filter (location/category/$search ignored).
+      result = await items.searchByAst(ast, {
+        limit: page.limit,
+        offset: page.offset,
+        includeInactive: filters.includeInactive,
+        sort,
+      });
+      if (wantCount) total = await items.countByAst(ast, { includeInactive: filters.includeInactive });
+    } else {
+      result = await items.list({ ...filters, limit: page.limit, offset: page.offset, sort });
+      if (wantCount) total = await items.count(filters);
+    }
+  } catch (err) {
+    // An AST-translation error (SearchAstError — e.g. an operator not valid for the field, or a
+    // too-deep filter) is the caller's fault → 400.
+    if (err instanceof SearchAstError) {
+      return void sendError(res, 400, 'bad_request', err.message, { v1: true });
+    }
+    throw err;
+  }
 
   // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
   // rather than an N+1 lookup per row.
@@ -296,49 +336,66 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
             ),
           ),
         );
-  sendList(res, data, page, result.hasMore);
+  sendList(res, data, page, result.hasMore, total);
 }
 
 /**
- * Run the item query for `GET /api/v1/items`, honouring an optional OData `$filter`. With a
- * `$filter` present the rows come from `searchByAst` (the constrained filter compiled to the
- * app's SearchAST); otherwise from the plain `list` with its `location`/`category` scope. A
- * malformed `$filter` (or one the AST rejects) sends a `400` and returns `null`.
+ * `GET /api/v1/items/$count` — the OData inline-count path: the grand total of matching items as
+ * a bare `text/plain` integer, honouring the same `$filter`/`$search`/location/category scope.
  */
-async function queryItemsOr400(
-  res: ServerResponse,
-  driver: Driver,
-  url: URL,
-  page: PageRequest,
-  sort: readonly ItemSort[] | undefined,
-): Promise<Page<Item> | null> {
+async function handleItemCount(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
+  const ast = parseItemFilterOr400(res, url);
+  if (ast === null) return;
+
   const items = new ItemRepository(driver);
-  const includeInactive = url.searchParams.get('includeInactive') === 'true';
-  const filterRaw = url.searchParams.get('$filter');
-
-  if (filterRaw !== null) {
-    try {
-      const ast = parseODataFilter(filterRaw);
-      return await items.searchByAst(ast, { limit: page.limit, offset: page.offset, includeInactive, sort });
-    } catch (err) {
-      // A syntax error (BadQueryError) and an AST-translation error (SearchAstError — e.g. an
-      // operator not valid for the field, or too-deep nesting) are both the caller's fault → 400.
-      if (err instanceof BadQueryError || err instanceof SearchAstError) {
-        sendError(res, 400, 'bad_request', err.message, { v1: true });
-        return null;
-      }
-      throw err;
+  const filters = readItemListFilters(url);
+  try {
+    const total =
+      ast !== undefined
+        ? await items.countByAst(ast, { includeInactive: filters.includeInactive })
+        : await items.count(filters);
+    sendText(res, 200, String(total));
+  } catch (err) {
+    if (err instanceof SearchAstError) {
+      return void sendError(res, 400, 'bad_request', err.message, { v1: true });
     }
+    throw err;
   }
+}
 
-  return items.list({
-    limit: page.limit,
-    offset: page.offset,
+/** The active-scope + non-page item list filters (location/category/$search), shared by rows + $count. */
+function readItemListFilters(url: URL): {
+  locationId?: string;
+  categoryId?: string;
+  search?: string;
+  includeInactive: boolean;
+} {
+  return {
     locationId: url.searchParams.get('location') ?? undefined,
     categoryId: url.searchParams.get('category') ?? undefined,
-    includeInactive,
-    sort,
-  });
+    // OData `$search` maps onto the app's FTS list filter.
+    search: url.searchParams.get('$search') ?? undefined,
+    includeInactive: url.searchParams.get('includeInactive') === 'true',
+  };
+}
+
+/**
+ * Parse the optional `$filter` into a SearchAST, or send a `400` and return `null`. Returns
+ * `undefined` when `$filter` is absent (use the plain `list` path). Only reports *syntax* errors
+ * here (BadQueryError); an AST-translation error surfaces when the query runs.
+ */
+function parseItemFilterOr400(res: ServerResponse, url: URL): SearchAST | undefined | null {
+  const raw = url.searchParams.get('$filter');
+  if (raw === null) return undefined;
+  try {
+    return parseODataFilter(raw);
+  } catch (err) {
+    if (err instanceof BadQueryError) {
+      sendError(res, 400, 'bad_request', err.message, { v1: true });
+      return null;
+    }
+    throw err;
+  }
 }
 
 async function handleItem(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
@@ -467,12 +524,19 @@ function notFound(res: ServerResponse, resource: string): void {
   sendError(res, 404, 'not_found', `No such ${resource}`, { v1: true });
 }
 
-function sendList<T>(res: ServerResponse, data: readonly T[], page: PageRequest, hasMore: boolean): void {
+function sendList<T>(
+  res: ServerResponse,
+  data: readonly T[],
+  page: PageRequest,
+  hasMore: boolean,
+  total?: number,
+): void {
   const pagination: PaginationMeta = {
     limit: page.limit,
     offset: page.offset,
     count: data.length,
     hasMore,
+    ...(total !== undefined ? { total } : {}),
   };
   const envelope: ListEnvelope<T> = { data, pagination };
   sendJson(res, 200, envelope);

@@ -31,6 +31,11 @@ export interface PaginationMeta {
   readonly count: number;
   /** True when a further page may exist (a full page came back). */
   readonly hasMore: boolean;
+  /**
+   * Grand total of rows matching the query across all pages — present only when the caller
+   * asked for it with the OData `$count=true` option (it costs an extra COUNT query).
+   */
+  readonly total?: number;
 }
 
 /** The envelope every list endpoint returns. */

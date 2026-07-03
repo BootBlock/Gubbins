@@ -56,6 +56,10 @@ const paginationSchema: JsonValue = {
     offset: { type: 'integer', description: 'Zero-based offset of the first row.' },
     count: { type: 'integer', description: 'Rows returned in this page (≤ limit).' },
     hasMore: { type: 'boolean', description: 'True when a further page may exist.' },
+    total: {
+      type: 'integer',
+      description: 'Grand total across all pages — present only when the OData $count=true option is set.',
+    },
   },
 };
 
@@ -147,6 +151,28 @@ const selectParam = odataAlias('$select', 'fields', 'name,unitCost');
 const expandParam = odataAlias('$expand', 'include', 'capabilities,notes');
 const topParam = odataAlias('$top', 'limit', '10');
 const skipParam = odataAlias('$skip', 'offset', '0');
+
+const countParam: JsonValue = {
+  name: '$count',
+  in: 'query',
+  required: false,
+  description:
+    'When "true", include the grand total of matching rows (across all pages) as ' +
+    '`pagination.total`. Costs one extra COUNT query.',
+  schema: { type: 'boolean', default: false },
+  example: 'true',
+};
+
+const searchParam: JsonValue = {
+  name: '$search',
+  in: 'query',
+  required: false,
+  description:
+    'Free-text search across the item name/description/notes/mpn/manufacturer via the FTS5 ' +
+    'index (ignored when $filter is set).',
+  schema: { type: 'string' },
+  example: 'esp32',
+};
 
 const orderbyParam: JsonValue = {
   name: '$orderby',
@@ -299,6 +325,23 @@ export const openapiDocument: JsonValue = {
         },
       },
     },
+    '/api/v1/$metadata': {
+      get: {
+        tags: ['meta'],
+        summary: 'OData CSDL $metadata (descriptive, not full-OData conformance)',
+        description:
+          'An OData v4 CSDL document describing the read model (the items/locations/categories ' +
+          'entity sets and their complex types), for OData-aware tooling. The service implements ' +
+          'only the constrained OData query subset, not the whole protocol.',
+        responses: {
+          200: {
+            description: 'The CSDL $metadata XML.',
+            content: { 'application/xml': { schema: { type: 'string' } } },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
     '/api/v1/health': {
       get: {
         tags: ['meta'],
@@ -394,9 +437,28 @@ export const openapiDocument: JsonValue = {
           skipParam,
           orderbyParam,
           filterParam,
+          countParam,
+          searchParam,
         ],
         responses: {
           200: okList('#/components/schemas/ItemSummary'),
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/items/$count': {
+      get: {
+        tags: ['items'],
+        summary: 'The count of matching items (OData inline-count path)',
+        description:
+          'Returns the grand total of matching items as a bare text/plain integer, honouring the ' +
+          'same $filter/$search/location/category scope as GET /api/v1/items.',
+        parameters: [filterParam, searchParam],
+        responses: {
+          200: {
+            description: 'The count, as a plain-text integer.',
+            content: { 'text/plain': { schema: { type: 'integer' }, example: 4 } },
+          },
           ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
         },
       },

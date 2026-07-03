@@ -107,6 +107,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/$metadata:
+    get:
+      tags:
+      - "meta"
+      summary: "OData CSDL $metadata (descriptive, not full-OData conformance)"
+      description: "An OData v4 CSDL document describing the read model (the items/locations/categories entity sets and their complex types), for OData-aware tooling. The service implements only the constrained OData query subset, not the whole protocol."
+      responses:
+        "200":
+          description: "The CSDL $metadata XML."
+          content:
+            application/xml:
+              schema:
+                type: "string"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/health:
     get:
       tags:
@@ -426,6 +461,23 @@ paths:
         schema:
           type: "string"
         example: "quantity gt 10 and contains(name,'bolt')"
+      -
+        name: "$count"
+        in: "query"
+        required: false
+        description: "When \"true\", include the grand total of matching rows (across all pages) as `pagination.total`. Costs one extra COUNT query."
+        schema:
+          type: "boolean"
+          default: false
+        example: "true"
+      -
+        name: "$search"
+        in: "query"
+        required: false
+        description: "Free-text search across the item name/description/notes/mpn/manufacturer via the FTS5 index (ignored when $filter is set)."
+        schema:
+          type: "string"
+        example: "esp32"
       responses:
         "200":
           description: "A page of results."
@@ -443,6 +495,71 @@ paths:
                       $ref: "#/components/schemas/ItemSummary"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/items/$count:
+    get:
+      tags:
+      - "items"
+      summary: "The count of matching items (OData inline-count path)"
+      description: "Returns the grand total of matching items as a bare text/plain integer, honouring the same $filter/$search/location/category scope as GET /api/v1/items."
+      parameters:
+      -
+        name: "$filter"
+        in: "query"
+        required: false
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        schema:
+          type: "string"
+        example: "quantity gt 10 and contains(name,'bolt')"
+      -
+        name: "$search"
+        in: "query"
+        required: false
+        description: "Free-text search across the item name/description/notes/mpn/manufacturer via the FTS5 index (ignored when $filter is set)."
+        schema:
+          type: "string"
+        example: "esp32"
+      responses:
+        "200":
+          description: "The count, as a plain-text integer."
+          content:
+            text/plain:
+              schema:
+                type: "integer"
+              example: 4
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -1185,6 +1302,9 @@ components:
         hasMore:
           type: "boolean"
           description: "True when a further page may exist."
+        total:
+          type: "integer"
+          description: "Grand total across all pages — present only when the OData $count=true option is set."
     ApiIndex:
       type: "object"
       properties:

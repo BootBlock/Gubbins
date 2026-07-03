@@ -159,7 +159,8 @@ every endpoint is **GET-only** and strictly read-only.
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.
 - **OData-style options** — the item endpoints also accept a convenience subset of the OData
-  query options (`$select`, `$expand`, `$top`, `$skip`, `$orderby`, `$filter`). See
+  query options (`$select`, `$expand`, `$top`, `$skip`, `$orderby`, `$filter`, `$count`,
+  `$search`), plus a CSDL `$metadata` document and an `/items/$count` path. See
   [OData-style query options](#odata-style-query-options) below.
 - All ids are the app's stable record ids; timestamps are UNIX-ms integers (as stored).
 
@@ -169,6 +170,8 @@ every endpoint is **GET-only** and strictly read-only.
 | --- | --- |
 | `GET /api/v1` | A small discovery index (version + endpoint list). |
 | `GET /api/v1/openapi.json` | This API's OpenAPI 3 document. |
+| `GET /api/v1/$metadata` | OData v4 CSDL describing the read model (descriptive; see [OData-style options](#odata-style-query-options)). |
+| `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
@@ -270,10 +273,22 @@ for a zero-dependency bridge). It adds **no dependency** and ships **nothing** t
 | `$skip` | `offset` | Row offset (list endpoints). |
 | `$orderby` | *(new)* | Sort — see below. |
 | `$filter` | *(new)* | Constrained boolean filter — see below. |
+| `$count` | *(new)* | `$count=true` adds the grand total as `pagination.total`. |
+| `$search` | *(new)* | Free-text (FTS) match across name/description/notes/mpn/manufacturer. |
 
 Each `$`-prefixed option is an **alias** of its plain REST name and **wins** when both are given
 (`?$top=5&limit=9` ⇒ 5). `$select`/`$expand`/`$top` work on `/search`, `/items` and `/items/{id}`;
-`$skip`, `$orderby` and `$filter` apply to the `/items` list.
+`$skip`, `$orderby`, `$filter`, `$count` and `$search` apply to the `/items` list.
+
+There are also two dedicated paths:
+
+- **`GET /api/v1/$metadata`** — an OData v4 **CSDL** document describing the read model (the
+  `items`/`locations`/`categories` entity sets and their complex types), for OData-aware tooling.
+  It is **descriptive**: the service implements only this query subset, not the whole OData
+  protocol (no service document, no `$batch`/`$apply`, no navigation-property expansion beyond the
+  bundled `placements`/`capabilities`).
+- **`GET /api/v1/items/$count`** — the OData inline-count path: the total number of matching items
+  as a bare `text/plain` integer (honouring `$filter`/`$search`/`location`/`category`).
 
 **`$orderby`** — a comma-separated list of `<field> [asc|desc]` terms (direction defaults to
 `asc`). Sortable fields: `name`, `quantity`, `unitCost`, `mpn`, `manufacturer`, `createdAt`,
@@ -293,15 +308,27 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 
 Anything outside the subset (`ne`/`ge`/`le`, `not`, `startswith`/`endswith`, arithmetic, lambdas,
 an unknown field) is a `400` naming what *is* supported. When `$filter` is present it is the sole
-row filter, so the `location`/`category` query params are ignored.
+row filter, so the `location`/`category`/`$search` query params are ignored.
+
+**`$count`** — `$count=true` computes the grand total of matching rows across *all* pages and
+returns it as `pagination.total` alongside the page (it costs one extra `COUNT` query, so it is
+opt-in). For just the number, hit the dedicated `/items/$count` path instead.
+
+**`$search`** — a free-text match over the FTS5-indexed item columns (name, description, notes,
+mpn, manufacturer), the same backend the app's own search uses. It combines with `location` /
+`category`; it is ignored when `$filter` is set (which is then the sole filter).
 
 ```bash
 # Sort by quantity, biggest first, top 5:
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$orderby=quantity desc&\$top=5"
 
-# Everything with more than ten in stock whose name contains "bolt", names only:
+# Everything with more than ten in stock whose name contains "bolt", names only, with the total:
 curl -H "Authorization: Bearer $TOKEN" \
-  "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name"
+  "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name&\$count=true"
+
+# Just the number of ESP32-ish items, and the metadata document:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/\$count?\$search=esp32"
+curl -H "Authorization: Bearer $TOKEN" "$BASE/\$metadata"
 ```
 
 (Escape the literal `$` for your shell, as above, or single-quote the whole URL.)
@@ -747,7 +774,8 @@ bridge/
       item-view.ts      # item field vocabulary + lazy relational context (SSOT for projectable fields)
       odata.ts          # OData-style option layer: $-alias reader + $orderby parser
       odata-filter.ts   # constrained OData $filter → SearchAST compiler (never bespoke SQL)
-      respond.ts        # shared JSON / error-envelope helpers (legacy flat + v1 structured)
+      odata-metadata.ts # OData v4 CSDL $metadata builder (descriptive read model)
+      respond.ts        # shared JSON / text / xml / error-envelope helpers (legacy flat + v1 structured)
       params.ts         # shared q / pagination parsing (clamped; $top/$skip aliases)
       limits.ts         # shared request/pagination bounds
       v1.test.ts        # in-process /api/v1 endpoint + pagination + auth + 404 + field-selection + OData tests
@@ -755,6 +783,7 @@ bridge/
       item-view.test.ts # item registry drift-guard + lazy-resolution tests
       odata.test.ts     # $orderby validation + alias-reader tests
       odata-filter.test.ts # $filter parser grammar + rejection tests
+      odata-metadata.test.ts # $metadata CSDL shape + registry drift-guard tests
     hydrate.test.ts     # hydration tests over the synthetic fixture
     sqlite-source.test.ts # raw .sqlite source tests (generated synthetic .sqlite, detection, write-gating)
     query.test.ts       # query-core tests over the synthetic fixture

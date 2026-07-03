@@ -46,6 +46,18 @@ export function sendJson(
   res.end(text);
 }
 
+/** Write a `text/plain` response — used by the OData `/$count` path (a bare integer). */
+export function sendText(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(body);
+}
+
+/** Write an `application/xml` response — used by the OData `$metadata` (CSDL) document. */
+export function sendXml(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(body);
+}
+
 /**
  * Write an error response in whichever envelope the request path calls for: the
  * structured `{ error: { code, message } }` for v1, or the flat `{ error: message }` for
