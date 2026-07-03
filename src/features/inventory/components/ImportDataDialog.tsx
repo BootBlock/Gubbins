@@ -47,6 +47,7 @@ import {
 import {
   IMPORT_FORMATS,
   IMPORT_FORMAT_LABELS,
+  applyMigration,
   buildImportPlan,
   buildPreviewRows,
   extractImport,
@@ -54,6 +55,13 @@ import {
   type ImportFormat,
   type ImportPreviewRow,
 } from '../text-import';
+import {
+  MIGRATION_SOURCE_HINTS,
+  MIGRATION_SOURCE_IDS,
+  MIGRATION_SOURCE_LABELS,
+  detectMigrationSource,
+  type MigrationSourceId,
+} from '../importers/migrations';
 import { inventoryKeys } from '../queries';
 
 // ---------------------------------------------------------------------------
@@ -313,11 +321,15 @@ function ImportWorkbench({
   onClose: () => void;
 }) {
   const formatId = useId();
+  const sourceId = useId();
   const matchKeyId = useId();
   const headerId = useId();
   const locationId = useId();
   const trackingId = useId();
   const [formatOverride, setFormatOverride] = useState<ImportFormat | null>(null);
+  // 'auto' → detect a known tool from the headers; 'generic' → skip migration mapping
+  // and use the plain synonym inference; a source id → force that tool's mapper.
+  const [sourceOverride, setSourceOverride] = useState<'auto' | 'generic' | MigrationSourceId>('auto');
   const [hasHeader, setHasHeader] = useState(true);
   const [matchKey, setMatchKey] = useState<MatchKey>('name');
   // Batch defaults, applied to every row that does not specify its own value inline.
@@ -336,7 +348,7 @@ function ImportWorkbench({
     [],
   );
 
-  const extraction = useMemo(
+  const rawExtraction = useMemo(
     () =>
       extractImport(text, {
         ...(formatOverride ? { format: formatOverride } : {}),
@@ -347,6 +359,23 @@ function ImportWorkbench({
     [text, formatOverride, catalogue.customFields, hasHeader, decimalSeparator],
   );
   const autoDetected = formatOverride === null;
+
+  // Recognise a known tool's export from its headers and, unless the user has forced a
+  // "generic" import, reshape the columns through that tool's migration mapper *before*
+  // the (unchanged) plan builder sees them.
+  const detectedSource = useMemo(
+    () =>
+      rawExtraction.isTabular && rawExtraction.headerRow.length > 0
+        ? detectMigrationSource(rawExtraction.headerRow)
+        : null,
+    [rawExtraction],
+  );
+  const activeSource: MigrationSourceId | null =
+    sourceOverride === 'generic' ? null : sourceOverride === 'auto' ? detectedSource : sourceOverride;
+  const extraction = useMemo(
+    () => (activeSource ? applyMigration(rawExtraction, activeSource) : rawExtraction),
+    [rawExtraction, activeSource],
+  );
 
   // The mapping is re-seeded from the extraction whenever the tabular structure
   // (format + column set) changes, but preserved while the user tweaks it. The column
@@ -435,6 +464,43 @@ function ImportWorkbench({
 
   return (
     <div className="space-y-4">
+      {/* Migration source — reshape another tool's export before the shared pipeline */}
+      <div className="space-y-1">
+        <span
+          id={`${sourceId}-label`}
+          className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          Import source
+        </span>
+        <Select
+          id={sourceId}
+          aria-labelledby={`${sourceId}-label`}
+          value={sourceOverride}
+          onChange={(value) => setSourceOverride(value as 'auto' | 'generic' | MigrationSourceId)}
+          className="h-9"
+          data-testid="import-source"
+          options={[
+            { value: 'auto', label: 'Auto-detect' },
+            { value: 'generic', label: 'Generic (spreadsheet / CSV)' },
+            ...MIGRATION_SOURCE_IDS.map((id) => ({ value: id, label: MIGRATION_SOURCE_LABELS[id] })),
+          ]}
+        />
+        {activeSource ? (
+          <p className="text-xs text-muted-foreground" data-testid="import-source-note">
+            {sourceOverride === 'auto'
+              ? `Recognised a ${MIGRATION_SOURCE_LABELS[activeSource]} export — `
+              : ''}
+            columns mapped to Gubbins fields; anything unrecognised is kept in each item’s notes.{' '}
+            {MIGRATION_SOURCE_HINTS[activeSource]}
+          </p>
+        ) : sourceOverride === 'auto' ? (
+          <p className="text-xs text-muted-foreground">
+            No known tool detected — import as generic spreadsheet data. Supported migrations:{' '}
+            {MIGRATION_SOURCE_IDS.map((id) => MIGRATION_SOURCE_LABELS[id]).join(', ')}.
+          </p>
+        ) : null}
+      </div>
+
       {/* Format + match-key controls */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">

@@ -65,6 +65,7 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Provider-agnostic cloud sync — a local **File System Access** folder or **Google Drive** (backend-less browser OAuth into an app-private folder) — with last-write-wins conflict resolution.
 - Full database backup & restore: a single portable `.zip` (version-guarded JSON snapshot + an exact `.sqlite` copy + full-resolution images + device settings), restored as a non-destructive **Merge** or an exact **Replace** — the destructive path guarded by an auto restore-point, an impact preview, a storage-quota pre-check, and a type-to-confirm gate.
 - Export / import as a Markdown vault or a raw `.sqlite` file, including image re-hydration.
+- Bulk import from pasted text or a file (CSV / TSV / JSON / Markdown / free-form lines), plus one-click **migration** from another inventory tool (see [below](#migrating-from-another-tool)).
 - Storage triage dashboard: OPFS quota recovery, history pruning, and image downgrade.
 - Cross-device handling of unlinked local-file attachments.
 - Optional Home Assistant / query bridge: ask a voice assistant where your items are — or push your whole dataset straight to it (see [below](#home-assistant--external-query-bridge-optional)).
@@ -75,6 +76,29 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Installable PWA with an offline indicator.
 - Kiosk / tablet mode with screen wake-lock.
 - Accessibility throughout: focus trapping, ARIA tree navigation, skip links, live regions, accessible form errors, and reduced-motion support.
+
+## Migrating from another tool
+
+Already running another inventory app? Open **Import items**, paste your export (or choose the
+file), and pick your tool under **Import source**. Gubbins recognises each tool's export by its
+column headers, so **Auto-detect** usually just works — or force a specific source. Each
+migration is a pure field-mapping that runs *in front of* the normal import pipeline, so you get
+the same live preview and per-row create/update/error status before anything is written.
+
+| Source | How to export | Mapped to Gubbins |
+| --- | --- | --- |
+| **Homebox** | Tools → Export (the `HB.`-prefixed CSV) | name, description, quantity, location, manufacturer, model number → MPN, notes, purchase price → unit cost |
+| **Grocy** | Products / Stock overview → export CSV | name, description, location, amount → quantity, barcode → identifier, min-stock → reorder point, price → unit cost |
+| **Sortly** | Export → CSV (all items) | name, notes, quantity, price → unit cost, barcode → identifier, min level → reorder point, folder → location |
+| **Snipe-IT** | Assets → Export → CSV | name, model number → MPN, manufacturer, location, purchase cost → unit cost, notes (quantity of 1 per asset) |
+| **InvenTree** | Part list → Export → CSV | name, description, IPN → identifier, in-stock → quantity, minimum stock → reorder point, default location, notes |
+
+Anything a source exports that has no clean Gubbins field — labels, tags, serial numbers, warranty
+dates, and each tool's **category / group name** — is folded into that item's **notes** with a
+clear "Imported from …" provenance line, so nothing is lost and no column is ever silently
+mis-mapped. Categories are intentionally *not* auto-assigned (Gubbins categories are referenced by
+id, with their own custom fields); assign them after the import from the folded provenance note.
+Choose **Generic (spreadsheet / CSV)** to bypass a tool's mapper and map the columns yourself.
 
 ## Home Assistant / external query bridge (optional)
 
