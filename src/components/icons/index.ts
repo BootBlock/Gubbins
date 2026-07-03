@@ -29,6 +29,11 @@ export {
   HardDrive as StorageIcon,
   HardDriveDownload as ArchiveIcon,
 
+  // Database maintenance (compact/optimise, health check, orphan sweep)
+  Sparkles as OptimiseIcon,
+  Stethoscope as HealthCheckIcon,
+  Brush as SweepIcon,
+
   // Actions
   Download as DownloadIcon,
   RefreshCw as RefreshIcon,
