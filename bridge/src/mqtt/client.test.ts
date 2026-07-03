@@ -147,6 +147,31 @@ describe('connection lifecycle', () => {
     expect(h.client.publish('gubbins/event/x', '{}', false)).toBe(true);
   });
 
+  it('drops a non-retained publish while offline (no stale event replay on reconnect)', () => {
+    const h = harness();
+    h.client.start();
+    // Offline transient event: dropped, not buffered.
+    expect(h.client.publish('gubbins/event/x', '{}', false)).toBe(false);
+    h.last().ready();
+    h.last().emit(CONNACK_OK);
+    // Nothing flushed on connect (only the CONNECT packet went out).
+    const publishes = h.last().writes.filter((w) => w[0]! >> 4 === PACKET_TYPE.PUBLISH);
+    expect(publishes).toHaveLength(0);
+  });
+
+  it('force-reconnects when keep-alive pings go unanswered (half-open detection)', () => {
+    const h = harness({ keepAliveSeconds: 60 });
+    h.client.start();
+    h.last().ready();
+    h.last().emit(CONNACK_OK);
+    const before = h.sockets.length;
+    // Fire the keep-alive repeatedly with NO inbound response: two pings then a forced reconnect,
+    // then the scheduled reconnect timer creates a fresh socket.
+    for (let i = 0; i < 4; i++) h.fireTimers();
+    expect(h.client.isConnected()).toBe(false);
+    expect(h.sockets.length).toBeGreaterThan(before);
+  });
+
   it('reconnects (new socket) after a CONNACK refusal', () => {
     const h = harness();
     h.client.start();

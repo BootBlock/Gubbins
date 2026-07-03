@@ -30,7 +30,7 @@ import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
-import { parseMqttEndpoint } from './mqtt/client.ts';
+import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
 
 export interface RunningBridge {
@@ -57,7 +57,9 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   // EI-5 outbound MQTT (opt-in). The publisher is another event sink (events → `…/event/<type>`)
   // AND publishes retained state per generation; enabling it turns the event pipeline on WITHOUT
   // exposing the SSE HTTP endpoint (that stays gated by `config.events`) — per-capability opt-in.
-  const mqtt = config.mqtt ? createMqttPublisherFromConfig(config) : undefined;
+  // The URL is parsed to an endpoint ONCE here (a single validation/throw site), reused for the log.
+  const mqttEndpoint = config.mqtt ? parseMqttEndpoint(config.mqttUrl!) : undefined;
+  const mqtt = mqttEndpoint ? createMqttPublisherFromConfig(config, mqttEndpoint) : undefined;
   if (mqtt) sinks.push(mqtt);
   const pipeline = config.events || config.mqtt ? createEventPipeline({ sinks }) : undefined;
 
@@ -167,12 +169,11 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         'GUBBINS_BRIDGE_WEBHOOKS=on for outbound webhooks.',
     );
   }
-  if (config.mqtt) {
-    // The endpoint is safe to log (host/port only); the username/password are NEVER logged.
-    const endpoint = parseMqttEndpoint(config.mqttUrl!);
+  if (mqttEndpoint) {
+    // The endpoint label is safe to log (host/port only); the username/password are NEVER logged.
     console.warn(
       `MQTT ENABLED (GUBBINS_BRIDGE_MQTT=on): publishing state + events to ` +
-        `${endpoint.tls ? 'mqtts' : 'mqtt'}://${endpoint.host}:${endpoint.port} under "${config.mqttPrefix}/". ` +
+        `${endpointLabel(mqttEndpoint)} under "${config.mqttPrefix}/". ` +
         (config.mqttDiscovery
           ? `Home Assistant discovery ON (prefix "${config.mqttDiscoveryPrefix}") — HA will auto-create entities.`
           : 'Home Assistant discovery off (set GUBBINS_BRIDGE_MQTT_DISCOVERY=on to auto-create HA entities).'),
@@ -196,10 +197,10 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   return { server, watcher, mdns, mqtt };
 }
 
-/** Build the MQTT publisher from config (endpoint parsed from the validated `mqttUrl`). */
-function createMqttPublisherFromConfig(config: BridgeConfig): MqttPublisher {
+/** Build the MQTT publisher from config + the already-parsed broker endpoint. */
+function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpoint): MqttPublisher {
   return createMqttPublisher({
-    endpoint: parseMqttEndpoint(config.mqttUrl!),
+    endpoint,
     clientId: config.mqttClientId,
     ...(config.mqttUsername !== undefined ? { username: config.mqttUsername } : {}),
     ...(config.mqttPassword !== undefined ? { password: config.mqttPassword } : {}),

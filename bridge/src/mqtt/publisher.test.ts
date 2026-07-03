@@ -116,7 +116,47 @@ describe('publishState', () => {
     const afterSecond = fake.published.filter((p) => p.topic.startsWith('homeassistant/')).length;
     expect(afterSecond).toBe(afterFirst); // no new discovery configs
   });
+
+  it('clears the retained state + HA entity of a location that disappears', async () => {
+    const { publisher, fake } = makePublisher({ discovery: true });
+    // First generation: both user locations present.
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    fake.published.length = 0;
+
+    // Second generation: a snapshot whose only user location is loc-store (loc-bench removed).
+    const trimmed = await hydrateFromJson(JSON.stringify(await trimmedSnapshot()));
+    try {
+      await publisher.publishState(trimmed.driver, GENERATED_AT);
+    } finally {
+      await trimmed.driver.close();
+    }
+
+    // A zero-length retained publish clears the ghost location's state topic and HA entity.
+    const benchState = byTopic(fake.published, 'gubbins/location/loc-bench/state')!;
+    expect(benchState.payload).toBe('');
+    expect(benchState.retain).toBe(true);
+    const benchConfig = byTopic(fake.published, 'homeassistant/sensor/gubbins/location_loc-bench/config')!;
+    expect(benchConfig.payload).toBe('');
+    expect(benchConfig.retain).toBe(true);
+    // The surviving location is still published normally.
+    expect(byTopic(fake.published, 'gubbins/location/loc-store/state')!.payload).not.toBe('');
+  });
 });
+
+/** The fixture snapshot with the Workbench location (and its items) removed, for the removal test. */
+async function trimmedSnapshot(): Promise<Record<string, unknown>> {
+  type Row = { id?: string; location_id?: string };
+  interface Snapshot {
+    tables: { locations: Row[]; items: Row[]; item_stock: Row[]; stock_batches: Row[] };
+  }
+  const raw = JSON.parse(await readFile(fileURLToPath(FIXTURE_URL), 'utf8')) as Snapshot;
+  const t = raw.tables;
+  t.locations = t.locations.filter((l) => l.id !== 'loc-bench');
+  t.items = t.items.filter((i) => i.location_id !== 'loc-bench');
+  t.item_stock = t.item_stock.filter((s) => s.location_id !== 'loc-bench');
+  t.stock_batches = t.stock_batches.filter((s) => s.location_id !== 'loc-bench');
+  return raw as unknown as Record<string, unknown>;
+}
 
 describe('event delivery (EventSink)', () => {
   it('publishes each event to its topic, not retained', () => {

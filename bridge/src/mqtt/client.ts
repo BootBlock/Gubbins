@@ -139,6 +139,11 @@ export function parseMqttEndpoint(rawUrl: string): MqttEndpoint {
   return { host, port, tls: secure };
 }
 
+/** A secret-free `mqtt(s)://host:port` label for logs (never carries credentials). */
+export function endpointLabel(endpoint: MqttEndpoint): string {
+  return `${endpoint.tls ? 'mqtts' : 'mqtt'}://${endpoint.host}:${endpoint.port}`;
+}
+
 /** The default socket factory: a real `node:net` (or `node:tls`) connection. */
 export const nodeSocketFactory: SocketFactory = (endpoint) => {
   const socket = endpoint.tls
@@ -173,8 +178,13 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
   let reconnectAttempts = 0;
   let reconnectTimer: { unref?: () => void } | null = null;
   let keepAliveTimer: { unref?: () => void } | null = null;
+  // Consecutive keep-alive pings sent with NO inbound byte in between. Any inbound data (a
+  // PINGRESP, or anything else) resets it to 0; if it reaches 2 the connection is treated as
+  // half-open/black-holed and force-reconnected (rather than silently dropping publishes until the
+  // OS TCP timeout, which can be minutes).
+  let pingsSinceData = 0;
   const buffered: Buffer[] = [];
-  const endpointLabel = `${options.endpoint.tls ? 'mqtts' : 'mqtt'}://${options.endpoint.host}:${options.endpoint.port}`;
+  const label = endpointLabel(options.endpoint);
 
   function connect(): void {
     if (stopped) return;
@@ -184,7 +194,7 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
     socket = sock;
 
     sock.onError((err) => {
-      logger.warn(`MQTT socket error (${endpointLabel}): ${err.message}`);
+      logger.warn(`MQTT socket error (${label}): ${err.message}`);
     });
     sock.onClose(() => {
       if (socket === sock) handleDrop();
@@ -207,13 +217,15 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
   }
 
   function onData(chunk: Buffer): void {
+    // Any inbound byte (a PINGRESP, a CONNACK, …) proves the connection is alive.
+    pingsSinceData = 0;
     inbound = inbound.length === 0 ? chunk : Buffer.concat([inbound, chunk]);
     let parsed;
     try {
       parsed = parsePackets(inbound);
     } catch (err) {
       // A malformed stream from the broker: drop the connection and let backoff retry.
-      logger.warn(`MQTT stream error (${endpointLabel}): ${(err as Error).message}`);
+      logger.warn(`MQTT stream error (${label}): ${(err as Error).message}`);
       forceReconnect();
       return;
     }
@@ -229,19 +241,20 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
     try {
       result = decodeConnack(body);
     } catch (err) {
-      logger.warn(`MQTT CONNACK malformed (${endpointLabel}): ${(err as Error).message}`);
+      logger.warn(`MQTT CONNACK malformed (${label}): ${(err as Error).message}`);
       forceReconnect();
       return;
     }
     if (!result.accepted) {
       const reason = CONNACK_REASONS[result.returnCode] ?? `code ${result.returnCode}`;
-      logger.warn(`MQTT connection refused by ${endpointLabel}: ${reason}. Retrying with backoff.`);
+      logger.warn(`MQTT connection refused by ${label}: ${reason}. Retrying with backoff.`);
       forceReconnect();
       return;
     }
     connected = true;
     reconnectAttempts = 0;
-    logger.log(`MQTT connected to ${endpointLabel}.`);
+    pingsSinceData = 0;
+    logger.log(`MQTT connected to ${label}.`);
     startKeepAlive();
     flushBuffered();
     options.onConnect?.();
@@ -255,7 +268,9 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
   /**
    * Schedule the next keep-alive ping, re-arming itself on each fire (the injectable timer is a
    * one-shot timeout, so we self-reschedule rather than rely on a repeating interval). Ping
-   * comfortably inside the keep-alive window (0.75×) so a quiet bridge is never dropped.
+   * comfortably inside the keep-alive window (0.75×) so a quiet bridge is never dropped. If two
+   * consecutive pings go out with no inbound byte in between (no PINGRESP), the connection is
+   * treated as half-open and force-reconnected instead of silently black-holing publishes.
    */
   function armKeepAlive(): void {
     if (keepAliveSeconds === 0) return;
@@ -263,7 +278,13 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
     const timer = setTimer(() => {
       keepAliveTimer = null;
       if (!connected || !socket) return;
+      if (pingsSinceData >= 2) {
+        logger.warn(`MQTT keep-alive unanswered by ${label}; reconnecting.`);
+        forceReconnect();
+        return;
+      }
       socket.write(encodePingReq());
+      pingsSinceData += 1;
       armKeepAlive();
     }, intervalMs);
     timer.unref?.();
@@ -283,7 +304,7 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
     socket = null;
     stopKeepAlive();
     if (stopped) return;
-    if (wasConnected) logger.warn(`MQTT disconnected from ${endpointLabel}; reconnecting.`);
+    if (wasConnected) logger.warn(`MQTT disconnected from ${label}; reconnecting.`);
     scheduleReconnect();
   }
 
@@ -333,7 +354,12 @@ export function createMqttClient(options: MqttClientOptions): MqttClient {
         socket.write(packet);
         return true;
       }
-      // Offline: buffer (bounded, oldest dropped) so a brief reconnect doesn't lose the message.
+      // Offline. Only RETAINED messages (last-write-wins state) are buffered for the next connect;
+      // a transient (non-retained) event is dropped rather than replayed as if current after a long
+      // outage — honest QoS-0 best-effort. The buffer is bounded (oldest dropped past the cap), and
+      // since retained topics are last-write-wins, a stale buffered value is superseded by the fresh
+      // state the publisher re-announces on reconnect.
+      if (!retain) return false;
       buffered.push(packet);
       if (buffered.length > maxBuffered) buffered.shift();
       return false;

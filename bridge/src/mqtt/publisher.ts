@@ -27,7 +27,7 @@ import {
   type MqttLogger,
   type SocketFactory,
 } from './client.ts';
-import { buildDiscoveryConfigs } from './discovery.ts';
+import { buildDiscoveryConfigs, discoveryConfigTopic, locationSensorObjectId } from './discovery.ts';
 import { projectInventoryState, type InventoryState } from './state.ts';
 import {
   AVAILABILITY_OFFLINE,
@@ -77,6 +77,9 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   // Signature of the location set last published as discovery configs -- so we only re-emit the
   // discovery layout when a location is added/removed/renamed, not on every state refresh.
   let discoverySignature: string | null = null;
+  // The location ids we currently have RETAINED topics for, so a removed location's retained state
+  // (and its HA discovery entity) can be cleared rather than lingering on the broker as a ghost.
+  let publishedLocationIds: readonly string[] = [];
 
   const client = createClient({
     endpoint: options.endpoint,
@@ -107,7 +110,30 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     for (const location of state.locations) {
       client.publish(topics.locationState(location.id), locationPayload(location), true);
     }
+    clearRemovedLocations(state);
     if (options.discovery) publishDiscoveryIfChanged(state);
+  }
+
+  /**
+   * Clear the retained state (and HA discovery entity) of any location that was published before but
+   * is gone from `state` (deleted, archived, or renamed to a new id), so it doesn't linger on the
+   * broker as a ghost sensor. A zero-length retained publish is the MQTT idiom for "forget this
+   * topic" / "remove this discovered entity".
+   */
+  function clearRemovedLocations(state: InventoryState): void {
+    const currentIds = new Set(state.locations.map((l) => l.id));
+    for (const id of publishedLocationIds) {
+      if (currentIds.has(id)) continue;
+      client.publish(topics.locationState(id), '', true);
+      if (options.discovery) {
+        client.publish(
+          discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
+          '',
+          true,
+        );
+      }
+    }
+    publishedLocationIds = state.locations.map((l) => l.id);
   }
 
   /** Re-publish the HA discovery configs only when the location layout has changed since last time. */

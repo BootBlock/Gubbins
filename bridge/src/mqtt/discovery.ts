@@ -37,6 +37,16 @@ export interface DiscoveryOptions {
   readonly version: string;
 }
 
+/** The HA discovery config topic for one entity: `<prefix>/<component>/gubbins/<objectId>/config`. */
+export function discoveryConfigTopic(discoveryPrefix: string, component: string, objectId: string): string {
+  return `${discoveryPrefix}/${component}/gubbins/${sanitizeTopicLevel(objectId)}/config`;
+}
+
+/** The discovery `object_id` for a per-location sensor (also its `unique_id` stem). */
+export function locationSensorObjectId(locationId: string): string {
+  return `location_${sanitizeTopicLevel(locationId)}`;
+}
+
 /** The HA device block shared by every entity, so they group under one "Gubbins" device. */
 function deviceBlock(version: string): Record<string, unknown> {
   return {
@@ -62,7 +72,7 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
     payload_not_available: AVAILABILITY_OFFLINE,
   };
   const configTopic = (component: string, objectId: string): string =>
-    `${options.discoveryPrefix}/${component}/gubbins/${sanitizeTopicLevel(objectId)}/config`;
+    discoveryConfigTopic(options.discoveryPrefix, component, objectId);
 
   /** A numeric summary sensor reading one field of the retained summary JSON. */
   const summarySensor = (objectId: string, name: string, field: string, icon: string): DiscoveryConfig => ({

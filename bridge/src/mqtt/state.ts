@@ -17,7 +17,7 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { MAX_PAGE_SIZE } from '@/db/repositories/constants.ts';
 import { isLow } from '@/features/inventory/reorder-policy.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import type { Item } from '@/db/repositories/types';
+import type { Item, Page } from '@/db/repositories/types';
 import { DEFAULT_LOW_STOCK, isStockEmpty } from '../events/model.ts';
 
 /** One location's published state: its id, name and live (active) item count. */
@@ -48,6 +48,9 @@ export interface InventoryState {
  */
 export const MAX_ITEMS_SCANNED = 50_000;
 
+/** Hard cap on how many locations the projection walks — locations are a small physical hierarchy. */
+export const MAX_LOCATIONS_SCANNED = 10_000;
+
 /** Options for {@link projectInventoryState}. */
 export interface InventoryStateOptions {
   /** The snapshot's generation instant (ISO-8601) to stamp on the summary payload. */
@@ -67,36 +70,53 @@ export async function projectInventoryState(
 
   let lowStockItems = 0;
   let outOfStockItems = 0;
-  for (let offset = 0; offset < MAX_ITEMS_SCANNED; offset += MAX_PAGE_SIZE) {
-    const page = await items.list({ limit: MAX_PAGE_SIZE, offset });
-    for (const item of page.rows as Item[]) {
-      if (!isLow(item, DEFAULT_LOW_STOCK)) continue;
+  await forEachPage<Item>(
+    (limit, offset) => items.list({ limit, offset }),
+    MAX_ITEMS_SCANNED,
+    (item) => {
+      if (!isLow(item, DEFAULT_LOW_STOCK)) return;
       lowStockItems += 1;
       if (isStockEmpty(item)) outOfStockItems += 1;
-    }
-    if (!page.hasMore) break;
-  }
+    },
+  );
 
   const locations = await projectLocations(driver);
   return { itemsTotal, lowStockItems, outOfStockItems, locations, generatedAt: options.generatedAt };
 }
 
 /**
- * Collect every **user** location with its live item count (paged at the repository ceiling). The
- * built-in system buckets (`Unassigned`, `In Transit`) are excluded: they are internal plumbing, so
- * publishing them as always-zero HA sensors would only be clutter — the summary `locationsTotal`
- * likewise counts only user locations, matching what the operator actually created.
+ * Collect every **user** location with its live item count. The built-in system buckets
+ * (`Unassigned`, `In Transit`) are excluded: they are internal plumbing, so publishing them as
+ * always-zero HA sensors would only be clutter — the summary `locationsTotal` likewise counts only
+ * user locations, matching what the operator actually created.
  */
 async function projectLocations(driver: IDatabaseDriver): Promise<LocationState[]> {
   const repo = new LocationRepository(driver);
   const out: LocationState[] = [];
-  for (let offset = 0; offset < MAX_ITEMS_SCANNED; offset += MAX_PAGE_SIZE) {
-    const page = await repo.list({ limit: MAX_PAGE_SIZE, offset });
-    for (const location of page.rows) {
-      if (location.isSystem) continue;
+  await forEachPage(
+    (limit, offset) => repo.list({ limit, offset }),
+    MAX_LOCATIONS_SCANNED,
+    (location) => {
+      if (location.isSystem) return;
       out.push({ id: location.id, name: location.name, itemCount: location.itemCount });
-    }
+    },
+  );
+  return out;
+}
+
+/**
+ * Walk a paginated repository read (paging at {@link MAX_PAGE_SIZE}, bounded by `maxScanned`),
+ * invoking `onRow` for every row. Shared by the item scan and the location scan so the paging /
+ * termination logic lives in one place.
+ */
+async function forEachPage<T>(
+  read: (limit: number, offset: number) => Promise<Page<T>>,
+  maxScanned: number,
+  onRow: (row: T) => void,
+): Promise<void> {
+  for (let offset = 0; offset < maxScanned; offset += MAX_PAGE_SIZE) {
+    const page = await read(MAX_PAGE_SIZE, offset);
+    for (const row of page.rows) onRow(row);
     if (!page.hasMore) break;
   }
-  return out;
 }
