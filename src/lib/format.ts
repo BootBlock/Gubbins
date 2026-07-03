@@ -13,6 +13,23 @@ export const DEFAULT_LOCALE = 'en-GB';
 /** The locked default base currency (§1.2.1). */
 export const DEFAULT_CURRENCY = 'GBP';
 
+/**
+ * The character a locale uses as its **decimal separator** — `.` for en-GB / en-US,
+ * `,` for de-DE / fr-FR and most of the eurozone. Derived from a live `Intl.NumberFormat`
+ * (so it needs no hand-maintained table and stays correct as the platform's CLDR data
+ * evolves); an unknown or malformed locale falls back to `.`. Pure and injectable — pass a
+ * locale explicitly in tests. Callers that parse *user-entered* numbers (e.g. a pasted
+ * invoice price) use this to interpret `,` vs `.` the way the user's own locale writes them.
+ */
+export function decimalSeparatorForLocale(locale: string = DEFAULT_LOCALE): string {
+  try {
+    const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find((p) => p.type === 'decimal');
+    return decimal?.value ?? '.';
+  } catch {
+    return '.';
+  }
+}
+
 const SI_UNITS = ['B', 'kB', 'MB', 'GB', 'TB', 'PB'] as const;
 
 function clamp01(value: number): number {

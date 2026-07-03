@@ -23,6 +23,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Select, Spinner, Surface, Textarea } from '@/components/foundry';
 import { cn } from '@/lib/utils';
+import { decimalSeparatorForLocale } from '@/lib/format';
 import { DatasheetIcon, ImportIcon, UploadIcon } from '@/components/icons';
 import {
   getCategoryRepository,
@@ -327,14 +328,23 @@ function ImportWorkbench({
   const [applyError, setApplyError] = useState<string | null>(null);
   const [result, setResult] = useState<CatalogApplyResult | null>(null);
 
+  // Read a currency price the way the user's own browser locale writes numbers, so a
+  // eurozone `€5,99` parses as 5.99 rather than 5. Fixed per session (the locale does not
+  // change while the dialog is open).
+  const decimalSeparator = useMemo(
+    () => decimalSeparatorForLocale(typeof navigator !== 'undefined' ? navigator.language : undefined),
+    [],
+  );
+
   const extraction = useMemo(
     () =>
       extractImport(text, {
         ...(formatOverride ? { format: formatOverride } : {}),
         customFields: catalogue.customFields,
         hasHeader,
+        decimalSeparator,
       }),
-    [text, formatOverride, catalogue.customFields, hasHeader],
+    [text, formatOverride, catalogue.customFields, hasHeader, decimalSeparator],
   );
   const autoDetected = formatOverride === null;
 

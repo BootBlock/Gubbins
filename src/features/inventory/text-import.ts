@@ -350,19 +350,42 @@ function extractQuantityShorthand(input: string): { quantity: number | null; res
 }
 
 /**
- * A **currency-marked** price: a symbol (£/$/€/¥) immediately followed by a number, with
- * optional thousands separators (`$1,234.56`). Anchoring to a currency symbol keeps this
- * from swallowing a plain number that is really a quantity or part of a part code — a bare
- * `12.99` is deliberately *not* treated as a price.
+ * A **currency-marked** amount: a symbol (£/$/€/¥) immediately followed by a run of digits
+ * and grouping/decimal separators. Anchoring to a currency symbol keeps this from swallowing
+ * a plain number that is really a quantity or part of a part code — a bare `12.99` is
+ * deliberately *not* treated as a price. The run must start and end on a digit, so a
+ * trailing separator is not captured.
  */
-const CURRENCY_PRICE_RE = /[£$€¥]\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
+const CURRENCY_AMOUNT_RE = /[£$€¥]\s?(\d[\d.,]*\d|\d)/;
 
-/** Pull a currency-marked unit price out of the text, or `null` when none is present. */
-function extractCurrencyPrice(input: string): { value: number; matchedText: string } | null {
-  const m = CURRENCY_PRICE_RE.exec(input);
+/**
+ * Parse a captured amount string (`1,234.56`, `1.234,56`, `5,99`) to a number, using the
+ * caller's `decimalSeparator` to disambiguate `.` from `,`. The *other* symbol is treated
+ * as the thousands separator and stripped; the decimal separator is normalised to `.`.
+ * Returns `null` when the result is not finite.
+ */
+function parseLocaleAmount(raw: string, decimalSeparator: string): number | null {
+  const thousands = decimalSeparator === ',' ? '.' : ',';
+  const withoutThousands = raw.split(thousands).join('');
+  const normalised =
+    decimalSeparator === '.' ? withoutThousands : withoutThousands.replace(decimalSeparator, '.');
+  const value = Number.parseFloat(normalised);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Pull a currency-marked unit price out of the text, or `null` when none is present.
+ * `decimalSeparator` (default `.`) selects how `,`/`.` are read, so a eurozone invoice's
+ * `€5,99` parses as `5.99` when the caller passes the user's `,`-decimal locale.
+ */
+function extractCurrencyPrice(
+  input: string,
+  decimalSeparator = '.',
+): { value: number; matchedText: string } | null {
+  const m = CURRENCY_AMOUNT_RE.exec(input);
   if (!m) return null;
-  const value = Number.parseFloat(m[1]!.replace(/,/g, ''));
-  if (!Number.isFinite(value) || value < 0) return null;
+  const value = parseLocaleAmount(m[1]!, decimalSeparator);
+  if (value === null || value < 0) return null;
   return { value, matchedText: m[0] };
 }
 
@@ -375,9 +398,10 @@ function extractCurrencyPrice(input: string): { value: number; matchedText: stri
  * cost, and finally a quantity shorthand. Each is stripped so it never leaks into the item
  * name. Quantity defaults to 1 (an item is unlikely to be added with none). A line that
  * reduces to nothing but codes falls back to the ASIN/SKU, then to the raw line, so
- * nothing is dropped.
+ * nothing is dropped. `decimalSeparator` (default `.`) governs how a currency amount's
+ * `,`/`.` are read, so a eurozone user's `€5,99` is interpreted as `5.99`.
  */
-export function parseFreeformLine(line: string): FreeformItem | null {
+export function parseFreeformLine(line: string, decimalSeparator = '.'): FreeformItem | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
 
@@ -397,7 +421,7 @@ export function parseFreeformLine(line: string): FreeformItem | null {
 
   // A currency-marked price (e.g. an invoice line's unit price) becomes the unit cost.
   let unitCost: number | undefined;
-  const price = extractCurrencyPrice(head);
+  const price = extractCurrencyPrice(head, decimalSeparator);
   if (price) {
     unitCost = price.value;
     head = head.replace(price.matchedText, ' ');
@@ -426,11 +450,14 @@ export function parseFreeformLine(line: string): FreeformItem | null {
   return { name, quantity: quantity ?? 1, sku, ...extras };
 }
 
-/** Parse a whole block of free-form text into items, one per non-blank line. */
-export function parseFreeformText(text: string): FreeformItem[] {
+/**
+ * Parse a whole block of free-form text into items, one per non-blank line.
+ * `decimalSeparator` (default `.`) is passed through to each line's price parsing.
+ */
+export function parseFreeformText(text: string, decimalSeparator = '.'): FreeformItem[] {
   const items: FreeformItem[] = [];
   for (const line of text.split(/\r\n|\r|\n/)) {
-    const item = parseFreeformLine(line);
+    const item = parseFreeformLine(line, decimalSeparator);
     if (item) items.push(item);
   }
   return items;
@@ -583,6 +610,12 @@ export interface ExtractImportOptions {
    * data (for headerless CSV/TSV pastes). Ignored for non-delimited formats.
    */
   readonly hasHeader?: boolean;
+  /**
+   * The decimal separator (`.` or `,`) used to read a currency-marked price in a free-form
+   * **line list**. Defaults to `.`; the import dialog passes the user's browser-locale
+   * separator so a eurozone `€5,99` is read as `5.99`. Ignored for tabular formats.
+   */
+  readonly decimalSeparator?: string;
 }
 
 /** Build a synthetic header row (`Column 1 … Column n`) for headerless input. */
@@ -630,7 +663,7 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
     // A line list defaults each item to quantity 1 (a new item is unlikely to be
     // added with none) and carries any inline manufacturer / location / tracking
     // through to the shared plan builder via the synthetic columns.
-    const dataRows = parseFreeformText(text).map((item) => [
+    const dataRows = parseFreeformText(text, options.decimalSeparator).map((item) => [
       item.name,
       String(item.quantity),
       item.sku ?? '',

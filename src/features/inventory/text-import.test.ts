@@ -238,6 +238,24 @@ describe('parseFreeformLine', () => {
       sku: null,
     });
   });
+
+  it('reads a comma-decimal price when told the locale uses a comma separator', () => {
+    expect(parseFreeformLine('Kabel €5,99', ',')).toEqual({
+      name: 'Kabel',
+      quantity: 1,
+      sku: null,
+      unitCost: 5.99,
+    });
+  });
+
+  it('reads a dot-thousands / comma-decimal price for a comma-decimal locale', () => {
+    expect(parseFreeformLine('Werkzeugkasten €1.234,56 x2', ',')).toEqual({
+      name: 'Werkzeugkasten',
+      quantity: 2,
+      sku: null,
+      unitCost: 1234.56,
+    });
+  });
 });
 
 describe('parseFreeformText', () => {
@@ -283,6 +301,14 @@ describe('extractImport', () => {
   it('carries an ASIN and a currency price from a line into the SKU / unit-cost columns', () => {
     const ex = extractImport('Anker USB-C cable B0F3XF5ZKF £9.99 x2');
     expect(ex.dataRows).toEqual([['Anker USB-C cable', '2', 'B0F3XF5ZKF', '', '', '', '9.99']]);
+  });
+
+  it('honours a comma decimal separator when parsing line-list prices', () => {
+    // Forced to line-list: a lone comma decimal would otherwise auto-detect as CSV (the
+    // naive delimiter sniff can't tell a `,` decimal from a `,` delimiter — the dialog's
+    // "Interpret as" override covers that case for eurozone pastes).
+    const ex = extractImport('Kabel €5,99', { format: 'lines', decimalSeparator: ',' });
+    expect(ex.dataRows).toEqual([['Kabel', '1', '', '', '', '', '5.99']]);
   });
 
   it('parses a TSV paste and infers the mapping from headers', () => {
