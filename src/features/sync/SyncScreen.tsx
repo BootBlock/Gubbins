@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Banner,
@@ -10,6 +11,7 @@ import {
   PageHeader,
   Surface,
   Tooltip,
+  buttonVariants,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import {
@@ -20,6 +22,7 @@ import {
   DisconnectIcon,
   FolderSyncIcon,
   SyncIcon,
+  VoiceIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
@@ -427,6 +430,26 @@ export function SyncScreen() {
             <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your URL and
             token are stored only on this device.
           </p>
+          {/* Entry point to the interactive Home Assistant setup guide — the natural place to
+            discover it, since the bridge and push settings it walks through live right here. The
+            guide is a lazily-loaded route, so linking to it adds nothing to this screen's bundle. */}
+          <Banner
+            tone="info"
+            icon={<VoiceIcon />}
+            heading="Setting up Home Assistant voice control?"
+            action={
+              <Link
+                to="/home-assistant"
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                data-testid="open-ha-guide"
+              >
+                Open setup guide
+              </Link>
+            }
+          >
+            Follow the step-by-step guide to run the bridge, connect Home Assistant, and generate the access
+            token — it walks you through every choice.
+          </Banner>
           <Surface className="space-y-4 p-4">
             <FormField
               label="Bridge URL"

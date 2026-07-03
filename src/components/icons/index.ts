@@ -165,6 +165,16 @@ export {
   FolderSync as FolderSyncIcon,
   PlugZap as ConnectIcon,
   Unplug as DisconnectIcon,
+
+  // Home Assistant setup guide (interactive integration walkthrough)
+  KeyRound as KeyIcon,
+  Server as ServerIcon,
+  Mic as VoiceIcon,
+  PartyPopper as CelebrateIcon,
+  ClipboardCopy as CopyIcon,
+  SquareTerminal as TerminalIcon,
+  ChevronLeft as ChevronLeftIcon,
+  CircleHelp as HelpIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';
