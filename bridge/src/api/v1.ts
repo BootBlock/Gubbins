@@ -20,8 +20,10 @@ import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
-import { sendError, sendJson, sendText, sendXml, sendCsv, sendCalendar } from './respond.ts';
+import { sendError, sendJson, sendText, sendXml, sendCsv, sendCalendar, sendFeed } from './respond.ts';
 import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '../ical/feed.ts';
+import { buildActivityFeed } from '../feeds/feed.ts';
+import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
 import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { odataMetadataXml } from './odata-metadata.ts';
@@ -63,6 +65,23 @@ export const API_V1_BASE = '/api/v1';
  * scoped to this one endpoint limits the blast radius.
  */
 export const API_V1_CALENDAR_PATH = `${API_V1_BASE}/calendar.ics`;
+
+/** The three read-only syndication-feed paths (RSS / Atom / JSON Feed) → their emitter format. */
+export const API_V1_FEED_PATHS: Readonly<Record<string, FeedFormat>> = {
+  [`${API_V1_BASE}/activity.rss`]: 'rss',
+  [`${API_V1_BASE}/activity.atom`]: 'atom',
+  [`${API_V1_BASE}/activity.json`]: 'json',
+};
+
+/**
+ * The read-only paths that also accept the bearer token as a `?token=` query parameter (a feed /
+ * calendar client subscribing by URL cannot send an `Authorization` header). Deliberately scoped
+ * to these read-only subscription surfaces only; every other path still requires the header. See
+ * `server.ts` `isAuthorised`.
+ */
+export function pathAllowsUrlToken(pathname: string): boolean {
+  return pathname === API_V1_CALENDAR_PATH || pathname in API_V1_FEED_PATHS;
+}
 
 /** True when a request path belongs to the versioned API (the base itself or below it). */
 export function isApiV1Path(pathname: string): boolean {
@@ -150,6 +169,15 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
     case 'calendar.ics':
       if (segments.length === 1) return void (await handleCalendar(res, state, url));
       break;
+    case 'activity.rss':
+    case 'activity.atom':
+    case 'activity.json': {
+      const format = API_V1_FEED_PATHS[url.pathname];
+      if (segments.length === 1 && format !== undefined) {
+        return void (await handleActivityFeed(res, state, url, format));
+      }
+      break;
+    }
     case 'locations':
       if (segments.length === 1) return void (await handleLocations(res, driver, url));
       if (segments.length === 2) return void (await handleLocation(res, driver, decode(segments[1]!)));
@@ -257,6 +285,9 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): un
       `${API_V1_BASE}/items`,
       `${API_V1_BASE}/items.csv`,
       `${API_V1_BASE}/calendar.ics`,
+      `${API_V1_BASE}/activity.rss`,
+      `${API_V1_BASE}/activity.atom`,
+      `${API_V1_BASE}/activity.json`,
       `${API_V1_BASE}/items/{id}`,
       `${API_V1_BASE}/items/$count`,
       `${API_V1_BASE}/locations`,
@@ -477,6 +508,62 @@ function parseCalendarTypes(url: URL): readonly CalendarSourceType[] | undefined
     if (!types.includes(part)) types.push(part);
   }
   return types;
+}
+
+// --- activity feeds (read-only RSS / Atom / JSON Feed of the Phase 80 activity log) ------
+
+/** Which syndication format a feed path renders. */
+export type FeedFormat = 'rss' | 'atom' | 'json';
+
+/** The emitter + media type for each feed format. */
+const FEED_RENDERERS: Record<FeedFormat, { emit: typeof emitRss; contentType: string }> = {
+  rss: { emit: emitRss, contentType: 'application/rss+xml' },
+  atom: { emit: emitAtom, contentType: 'application/atom+xml' },
+  json: { emit: emitJsonFeed, contentType: 'application/feed+json' },
+};
+
+/**
+ * `GET /api/v1/activity.{rss,atom,json}` — the read-only syndication feed of the cross-item
+ * `item_history` activity log (Phase 80), each entry carrying a stable, host-free URN id so a
+ * reader updates in place rather than duplicating on refetch (see `feeds/*`). The optional
+ * `?limit=` narrows the window (clamped to [1, 50]). Like the calendar, auth may arrive as a
+ * `?token=` query param (a feed reader cannot send an auth header) — applied by the caller. The
+ * feed's build timestamp is the snapshot's generation instant when known (stable across refetches).
+ */
+async function handleActivityFeed(
+  res: ServerResponse,
+  state: BridgeServerState,
+  url: URL,
+  format: FeedFormat,
+): Promise<void> {
+  const items = await buildActivityFeed(state.driver, { limit: readFeedLimit(url) });
+  const channel = feedChannel(state, url);
+  const { emit, contentType } = FEED_RENDERERS[format];
+  sendFeed(res, 200, emit(channel, items), contentType);
+}
+
+/** Parse the optional `?limit=` (a positive integer); `undefined` falls back to the feed default. */
+function readFeedLimit(url: URL): number | undefined {
+  const raw = url.searchParams.get('limit');
+  if (raw === null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Build the channel metadata: a host-free self/home URL (token stripped) + the build timestamp. */
+function feedChannel(state: BridgeServerState, url: URL): FeedChannel {
+  // Strip the token so it is never echoed into the feed body (self URL) — the token may have
+  // arrived as a `?token=` query param on this path.
+  const self = new URL(url.href);
+  self.searchParams.delete('token');
+  const parsed = state.snapshotGeneratedAt !== null ? Date.parse(state.snapshotGeneratedAt) : NaN;
+  return {
+    title: 'Gubbins activity',
+    description: 'Recent inventory activity from Gubbins.',
+    homeUrl: `${url.protocol}//${url.host}`,
+    selfUrl: self.href,
+    updated: Number.isFinite(parsed) ? parsed : Date.now(),
+  };
 }
 
 /** The active-scope + non-page item list filters (location/category/$search), shared by rows + $count. */

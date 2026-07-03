@@ -1,0 +1,94 @@
+{
+  "formatVersion": 1,
+  "generatedAt": 1751000000000,
+  "tables": {
+    "locations": [
+      { "id": "loc-store", "name": "Store Room", "parent_id": null, "is_system": 0, "capacity": 10, "updated_at": 1751000000000 },
+      { "id": "loc-bench", "name": "Workbench", "parent_id": null, "is_system": 0, "capacity": null, "updated_at": 1751000000000 }
+    ],
+    "categories": [
+      { "id": "cat-supplies", "name": "Supplies", "updated_at": 1751000000000 }
+    ],
+    "items": [
+      {
+        "id": "item-solder",
+        "name": "Solder 0.7mm",
+        "description": "Synthetic low-stock consumable.",
+        "location_id": "loc-store",
+        "category_id": "cat-supplies",
+        "tracking_mode": "DISCRETE",
+        "quantity": 3,
+        "mpn": "SUP-SOLDER-07",
+        "manufacturer": "Synthetic Supplies Co",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-flux",
+        "name": "Flux Paste",
+        "description": "Synthetic depleted consumable.",
+        "location_id": "loc-store",
+        "category_id": "cat-supplies",
+        "tracking_mode": "DISCRETE",
+        "quantity": 0,
+        "mpn": "SUP-FLUX",
+        "manufacturer": "Synthetic Supplies Co",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-wire",
+        "name": "Hook-up Wire 22AWG",
+        "description": "Synthetic well-stocked item.",
+        "location_id": "loc-bench",
+        "category_id": "cat-supplies",
+        "tracking_mode": "DISCRETE",
+        "quantity": 250,
+        "mpn": "SUP-WIRE-22",
+        "manufacturer": "Synthetic Supplies Co",
+        "is_active": 1,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-retired",
+        "name": "Retired Multimeter",
+        "description": "Synthetic soft-deleted item (must not count).",
+        "location_id": "loc-bench",
+        "category_id": "cat-supplies",
+        "tracking_mode": "DISCRETE",
+        "quantity": 10,
+        "mpn": "SUP-DMM",
+        "manufacturer": "Synthetic Supplies Co",
+        "is_active": 0,
+        "created_at": 1750000000000,
+        "updated_at": 1751000000000
+      }
+    ],
+    "item_stock": [
+      { "id": "item-solder|loc-store", "item_id": "item-solder", "location_id": "loc-store", "quantity": 3, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-flux|loc-store", "item_id": "item-flux", "location_id": "loc-store", "quantity": 0, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-wire|loc-bench", "item_id": "item-wire", "location_id": "loc-bench", "quantity": 250, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-retired|loc-bench", "item_id": "item-retired", "location_id": "loc-bench", "quantity": 10, "created_at": 1750000000000, "updated_at": 1751000000000 }
+    ],
+    "stock_batches": [
+      { "id": "item-solder|loc-store|", "item_id": "item-solder", "location_id": "loc-store", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 3, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-flux|loc-store|", "item_id": "item-flux", "location_id": "loc-store", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 0, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-wire|loc-bench|", "item_id": "item-wire", "location_id": "loc-bench", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 250, "created_at": 1750000000000, "updated_at": 1751000000000 },
+      { "id": "item-retired|loc-bench|", "item_id": "item-retired", "location_id": "loc-bench", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 10, "created_at": 1750000000000, "updated_at": 1751000000000 }
+    ]
+  },
+  "tombstones": [],
+  "gaugeHistory": [],
+  "itemTags": [],
+  "itemHistory": [
+    { "id": "hist-1", "item_id": "item-wire", "action": "CREATED", "quantity_delta": 1, "net_value_delta": null, "note": "Created.", "metadata": null, "created_at": 1751000000001 },
+    { "id": "hist-2", "item_id": "item-solder", "action": "QUANTITY_CHANGE", "quantity_delta": -3, "net_value_delta": null, "note": "Checked out 3.", "metadata": null, "created_at": 1751000000002 },
+    { "id": "hist-3", "item_id": "item-wire", "action": "MOVED", "quantity_delta": null, "net_value_delta": null, "note": "Moved to Workbench.", "metadata": null, "created_at": 1751000000003 },
+    { "id": "hist-4", "item_id": "item-flux", "action": "RENAMED", "quantity_delta": null, "net_value_delta": null, "note": "Renamed to Flux Paste.", "metadata": null, "created_at": 1751000000004 },
+    { "id": "hist-5", "item_id": "item-retired", "action": "SOFT_DELETED", "quantity_delta": null, "net_value_delta": null, "note": "Removed from inventory.", "metadata": null, "created_at": 1751000000005 },
+    { "id": "hist-6", "item_id": "item-flux", "action": "QUANTITY_CHANGE", "quantity_delta": -2, "net_value_delta": null, "note": "Checked out 2.", "metadata": null, "created_at": 1751000000006 }
+  ]
+}

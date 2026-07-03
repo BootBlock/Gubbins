@@ -87,6 +87,33 @@ export function sendCalendar(res: ServerResponse, status: number, body: string):
 }
 
 /**
+ * Write a syndication-feed response (RSS / Atom / JSON Feed). `inline` (not an attachment) so a
+ * feed reader that fetches the subscription URL renders it rather than downloading it; `no-store`
+ * so a subscriber always sees the current snapshot's activity. The `contentType` names the exact
+ * feed media type (e.g. `application/rss+xml`).
+ */
+export function sendFeed(res: ServerResponse, status: number, body: string, contentType: string): void {
+  res.writeHead(status, {
+    'content-type': `${contentType}; charset=utf-8`,
+    'cache-control': 'no-store',
+  });
+  res.end(body);
+}
+
+/**
+ * Write a Prometheus/OpenMetrics text-exposition response. The `text/plain; version=0.0.4` content
+ * type is the Prometheus exposition format a scrape accepts directly; `no-store` so each scrape
+ * reflects the current snapshot.
+ */
+export function sendMetrics(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  res.end(body);
+}
+
+/**
  * Write an error response in whichever envelope the request path calls for: the
  * structured `{ error: { code, message } }` for v1, or the flat `{ error: message }` for
  * the legacy paths. The `code` is ignored for the legacy shape (kept identical to the
