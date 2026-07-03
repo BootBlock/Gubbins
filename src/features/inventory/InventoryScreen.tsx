@@ -40,7 +40,7 @@ import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { locationColorTextClass } from './location-color';
-import { defaultLocationForNewItem } from './location-tree';
+import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -499,7 +499,7 @@ function InventoryWorkspace() {
           defaultLocationId={defaultLocationForNewItem(
             selectedLocationId,
             flatLocations,
-            flatLocations.find((l) => l.isDefault && !l.archivedAt)?.id,
+            markedDefaultLocationId(flatLocations),
           )}
         />
       ) : null}

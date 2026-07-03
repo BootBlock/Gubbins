@@ -13,6 +13,12 @@
  * logic header-injection requires (generateSW cannot express it).
  */
 import { buildContentSecurityPolicy } from './csp';
+import {
+  stashShare,
+  parseShareForm,
+  pruneStaleShares,
+  SHARE_INBOX_CACHE,
+} from './features/share/share-inbox';
 
 interface PrecacheEntry {
   url: string;
@@ -20,6 +26,13 @@ interface PrecacheEntry {
 }
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
+
+/**
+ * The Web Share Target action path (spec: manifest `share_target.action`, VitePWA config). The
+ * PWA has no server, so a "Share to Gubbins" POST lands here and this worker — not a backend —
+ * captures it. Resolved against this worker's own URL so it tracks the `/Gubbins/` base path.
+ */
+const SHARE_TARGET_PATH = new URL('share-target', sw.location.href).pathname;
 
 // `self.__WB_MANIFEST` is the injection point vite-plugin-pwa replaces at build
 // time; the cast erases to exactly that token in the emitted worker.
@@ -68,9 +81,17 @@ sw.addEventListener('message', (event) => {
 sw.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      // Keep the app-shell precache and the share inbox; drop any superseded cache. The share
+      // inbox holds an in-flight "Share to Gubbins" payload the page has not yet consumed, so an
+      // update that activates between the share POST and the draft opening must not discard it.
       const keys = await caches.keys();
-      await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+      await Promise.all(
+        keys.filter((key) => key !== CACHE && key !== SHARE_INBOX_CACHE).map((key) => caches.delete(key)),
+      );
       await pruneStalePrecache();
+      // Reclaim any share that was stashed but never consumed (its landing tab was dismissed),
+      // while keeping a just-stashed, still-in-flight share.
+      await pruneStaleShares();
       await sw.clients.claim();
     })(),
   );
@@ -98,9 +119,36 @@ async function pruneStalePrecache(): Promise<void> {
 }
 
 sw.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  // A "Share to Gubbins" POST from the OS share sheet: capture it here (the PWA has no server),
+  // stash the payload, and redirect to the share-landing route which opens a reviewable draft.
+  if (event.request.method === 'POST' && url.pathname === SHARE_TARGET_PATH) {
+    event.respondWith(handleShareTarget(event.request));
+    return;
+  }
   if (event.request.method !== 'GET') return;
   event.respondWith(respond(event.request));
 });
+
+/**
+ * Handle an inbound Web Share POST. Reads the `multipart/form-data` the manifest `share_target`
+ * declared (`title` / `text` / `url` and an optional `image` file), stashes it under a one-shot id
+ * ({@link ./features/share/share-inbox}), and 303-redirects to `share-target?share=<id>` so the SPA
+ * opens a **pre-filled add-item draft the user confirms** — a share is never auto-committed. Any
+ * failure falls back to opening the empty add flow rather than surfacing a raw error to the OS.
+ */
+async function handleShareTarget(request: Request): Promise<Response> {
+  const landing = new URL('share-target', sw.location.href);
+  try {
+    const stashed = parseShareForm(await request.formData());
+    const id = crypto.randomUUID();
+    await stashShare(id, stashed);
+    landing.searchParams.set('share', id);
+  } catch {
+    // Fall through: open the share landing with no id → an empty, still-reviewable draft.
+  }
+  return Response.redirect(landing.href, 303);
+}
 
 async function respond(request: Request): Promise<Response> {
   const cache = await caches.open(CACHE);

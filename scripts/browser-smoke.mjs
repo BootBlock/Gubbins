@@ -3918,6 +3918,69 @@ try {
         );
 
         await step(
+          'PWA: the manifest declares the inbound share/file/protocol entry points (EI-4)',
+          async () => {
+            const manifest = await ppage.evaluate(async (base) => {
+              const res = await fetch(`${base}manifest.webmanifest`);
+              return res.json();
+            }, pwaBase);
+            if (!manifest.share_target || !String(manifest.share_target.action).endsWith('share-target')) {
+              throw new Error(
+                `manifest share_target missing/wrong: ${JSON.stringify(manifest.share_target)}`,
+              );
+            }
+            if (manifest.share_target.method !== 'POST') {
+              throw new Error('share_target must be a POST target (needs multipart for an image)');
+            }
+            if (!Array.isArray(manifest.file_handlers) || manifest.file_handlers.length === 0) {
+              throw new Error('manifest file_handlers missing');
+            }
+            const proto = (manifest.protocol_handlers ?? [])[0];
+            if (!proto || proto.protocol !== 'web+gubbins') {
+              throw new Error(`manifest protocol_handlers missing web+gubbins: ${JSON.stringify(proto)}`);
+            }
+          },
+        );
+
+        await step(
+          'PWA: a "Share to Gubbins" POST lands on a pre-filled, reviewable add-item draft (EI-4)',
+          async () => {
+            // The service worker (now controlling the page) intercepts the share POST, stashes the
+            // payload, and 303-redirects to the share-landing route. `fetch` follows the redirect,
+            // so `res.url` is the landing URL carrying the one-shot ?share=<id>.
+            const landingUrl = await ppage.evaluate(async (base) => {
+              const fd = new FormData();
+              fd.set('title', 'Smoke Shared Widget');
+              fd.set('url', 'https://www.amazon.co.uk/dp/B0F3XF5ZKF');
+              const res = await fetch(`${base}share-target`, { method: 'POST', body: fd });
+              return res.url;
+            }, pwaBase);
+            if (!/share-target\?share=/.test(landingUrl)) {
+              throw new Error(`share POST did not redirect to the landing route: ${landingUrl}`);
+            }
+
+            // Opening the landing route reads the stash back and opens the add-item dialog PRE-FILLED
+            // — never auto-committed. The shared title becomes the name; the Amazon URL's ASIN the MPN.
+            await ppage.goto(landingUrl, { waitUntil: 'domcontentloaded' });
+            const dialog = ppage.getByRole('dialog', { name: 'Add item' });
+            await dialog.waitFor({ state: 'visible', timeout: 10000 });
+            const nameValue = await ppage.getByLabel('Name').inputValue();
+            if (nameValue !== 'Smoke Shared Widget') {
+              throw new Error(`shared draft name not pre-filled (got "${nameValue}")`);
+            }
+            const mpnValue = await ppage.getByLabel('MPN (optional)').inputValue();
+            if (mpnValue !== 'B0F3XF5ZKF') {
+              throw new Error(`shared Amazon URL did not pre-fill the MPN/ASIN (got "${mpnValue}")`);
+            }
+            // Return to the app shell so the subsequent update-handshake step starts from inventory.
+            await ppage.goto(`${pwaBase}inventory`, { waitUntil: 'domcontentloaded' });
+            await ppage
+              .getByRole('button', { name: 'Add item' })
+              .waitFor({ state: 'visible', timeout: 10000 });
+          },
+        );
+
+        await step(
           'PWA: a waiting worker surfaces the real "A new version is ready" banner (§2 prompt)',
           async () => {
             // Swap the served sw.js for a byte-different variant so the browser's SW byte-

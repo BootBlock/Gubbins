@@ -100,6 +100,25 @@ mis-mapped. Categories are intentionally *not* auto-assigned (Gubbins categories
 id, with their own custom fields); assign them after the import from the folded provenance note.
 Choose **Generic (spreadsheet / CSV)** to bypass a tool's mapper and map the columns yourself.
 
+## Add to Gubbins from other apps
+
+Once you've **installed Gubbins** as an app (use your browser's *Install* / *Add to Home Screen*),
+your OS can hand content straight to it. Every one of these opens a **reviewable draft you confirm**
+— Gubbins never adds or changes anything on its own from a share or a link.
+
+- **Share to Gubbins.** From any app's share sheet (a browser, a photo, a note), pick **Gubbins**.
+  A shared **link** opens a pre-filled *Add item* draft — the page title becomes the name, and an
+  Amazon listing URL fills the SKU/MPN and pre-loads the supplier-scraper box so you can enrich it
+  in one tap. Shared **text** seeds the name and notes; a shared **image** is attached to the item
+  once you save. Review the draft and confirm to add it.
+- **Open a file with Gubbins.** Choose *Open with → Gubbins* (or double-click) a `.csv`, `.tsv`,
+  `.json`, `.md`, or `.txt` file and it drops straight into the **Import** tool's live preview.
+- **Deep links.** A `web+gubbins://item/<id>` link (e.g. from a note) opens that item in Gubbins;
+  `web+gubbins://add?title=…&url=…` opens a pre-filled draft.
+
+Because Gubbins is serverless, the **service worker** handles the incoming share on-device — nothing
+is uploaded anywhere. These entry points appear only after the app is installed.
+
 ## Home Assistant / external query bridge (optional)
 
 Gubbins itself stays serverless and in-browser, so a web page can't host a LAN endpoint a

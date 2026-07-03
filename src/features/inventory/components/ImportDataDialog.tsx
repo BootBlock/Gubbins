@@ -859,12 +859,26 @@ function TabButton({
 // Dialog shell
 // ---------------------------------------------------------------------------
 
-export function ImportDataDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ImportDataDialog({
+  open,
+  onClose,
+  initialText,
+  initialFilename,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Seed the workbench with file contents — e.g. a file opened via the OS (plan EI-4). */
+  initialText?: string;
+  /** The name of the seeded file, shown on the File tab. */
+  initialFilename?: string;
+}) {
   const client = useQueryClient();
   const panelId = useId();
-  const [tab, setTab] = useState<ImportTab>('text');
-  const [text, setText] = useState('');
-  const [filename, setFilename] = useState<string | null>(null);
+  // When opened with seeded file contents (a File Handling launch), land on the File tab so the
+  // provenance (filename) is visible; otherwise the Text tab is the default entry point.
+  const [tab, setTab] = useState<ImportTab>(initialText != null ? 'file' : 'text');
+  const [text, setText] = useState(initialText ?? '');
+  const [filename, setFilename] = useState<string | null>(initialFilename ?? null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
