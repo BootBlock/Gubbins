@@ -80,7 +80,7 @@ export const API_V1_FEED_PATHS: Readonly<Record<string, FeedFormat>> = {
  * `server.ts` `isAuthorised`.
  */
 export function pathAllowsUrlToken(pathname: string): boolean {
-  return pathname === API_V1_CALENDAR_PATH || pathname in API_V1_FEED_PATHS;
+  return pathname === API_V1_CALENDAR_PATH || Object.hasOwn(API_V1_FEED_PATHS, pathname);
 }
 
 /** True when a request path belongs to the versioned API (the base itself or below it). */

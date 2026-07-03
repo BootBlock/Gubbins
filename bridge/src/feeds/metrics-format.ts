@@ -21,7 +21,12 @@ const PREFIX = 'gubbins';
  * the injection guard.
  */
 export function escapeLabel(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  // Backslash first, then the double-quote, then any CR/LF collapsed to the literal `\n` escape
+  // (a raw carriage return would otherwise break the single-line sample just as a newline would).
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n|\r|\n/g, '\\n');
 }
 
 /** One metric family: its (already-prefixed) name, help text, and rendered sample lines. */

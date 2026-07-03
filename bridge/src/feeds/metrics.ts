@@ -3,11 +3,11 @@
  * home-lab scrapes from `GET /metrics`.
  *
  * A **read-only projection through the app's own repositories** — never bespoke SQL, mirroring the
- * iCal feed and the MQTT state projection. It reuses the **exact same decision seams** as the EI-1
- * event model and the EI-5 MQTT state — `isLow` (reorder policy) and `isStockEmpty` (the event
- * model) with the app-default thresholds — so a scraped `gubbins_low_stock_items` can never drift
- * from the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location fullness
- * reuses the app's own `locationFullness` seam (the same maths behind the Edit-location gauge).
+ * iCal feed and the MQTT state projection. The low/out-of-stock counts come from the shared
+ * {@link countStockLevels} (reusing the EI-1 event model's `isLow` / `isStockEmpty` seams), the
+ * *same* helper the EI-5 MQTT state projection uses — so a scraped `gubbins_low_stock_items` can
+ * never drift from the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location
+ * fullness reuses the app's own `locationFullness` seam (the maths behind the Edit-location gauge).
  *
  * Everything is bounded (paged at the repository ceiling up to {@link MAX_ITEMS_SCANNED} /
  * {@link MAX_LOCATIONS_SCANNED}), so a pathological vault can't produce an unbounded scan. The
@@ -15,12 +15,10 @@
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
-import { MAX_PAGE_SIZE } from '@/db/repositories/constants.ts';
-import { isLow } from '@/features/inventory/reorder-policy.ts';
 import { locationFullness } from '@/features/inventory/location-fullness.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import type { Item, LocationWithCount, Page } from '@/db/repositories/types';
-import { DEFAULT_LOW_STOCK, isStockEmpty } from '../events/model.ts';
+import type { LocationWithCount } from '@/db/repositories/types';
+import { countStockLevels, forEachPage, MAX_LOCATIONS_SCANNED } from '../inventory-scan.ts';
 
 /** One location's metrics row: its identity, item count, optional capacity and fullness ratio. */
 export interface LocationMetric {
@@ -48,35 +46,15 @@ export interface MetricsSnapshot {
 }
 
 /**
- * Hard cap on how many items the low/out-of-stock scan walks. Generous enough never to bite a real
- * personal inventory while bounding the work on a pathological vault (past it, the low/out counts
- * are of the first {@link MAX_ITEMS_SCANNED} active items — `itemsTotal` still reports the true total).
- */
-export const MAX_ITEMS_SCANNED = 50_000;
-
-/** Hard cap on how many locations the projection walks — locations are a small physical hierarchy. */
-export const MAX_LOCATIONS_SCANNED = 10_000;
-
-/**
  * Project the just-swapped, read-only driver into the aggregate {@link MetricsSnapshot}. Reads only
- * through the app repositories (`ItemRepository`, `LocationRepository`); never mutates.
+ * through the app repositories (`ItemRepository`, `LocationRepository`); never mutates. The
+ * low/out-of-stock counts come from the shared {@link countStockLevels} (the same helper the MQTT
+ * state projection uses), so the two surfaces can never disagree.
  */
 export async function projectMetrics(driver: IDatabaseDriver): Promise<MetricsSnapshot> {
   const items = new ItemRepository(driver);
   const itemsTotal = await items.count();
-
-  let lowStockItems = 0;
-  let outOfStockItems = 0;
-  await forEachPage<Item>(
-    (limit, offset) => items.list({ limit, offset }),
-    MAX_ITEMS_SCANNED,
-    (item) => {
-      if (!isLow(item, DEFAULT_LOW_STOCK)) return;
-      lowStockItems += 1;
-      if (isStockEmpty(item)) outOfStockItems += 1;
-    },
-  );
-
+  const { lowStockItems, outOfStockItems } = await countStockLevels(items);
   const locations = await projectLocations(driver);
   return { itemsTotal, lowStockItems, outOfStockItems, locationsTotal: locations.length, locations };
 }
@@ -105,21 +83,4 @@ async function projectLocations(driver: IDatabaseDriver): Promise<LocationMetric
     },
   );
   return out;
-}
-
-/**
- * Walk a paginated repository read (paging at {@link MAX_PAGE_SIZE}, bounded by `maxScanned`),
- * invoking `onRow` for every row. Local to this module (parallels the identical helper in the MQTT
- * state projection) so the paging / termination logic stays beside the projection that uses it.
- */
-async function forEachPage<T>(
-  read: (limit: number, offset: number) => Promise<Page<T>>,
-  maxScanned: number,
-  onRow: (row: T) => void,
-): Promise<void> {
-  for (let offset = 0; offset < maxScanned; offset += MAX_PAGE_SIZE) {
-    const page = await read(MAX_PAGE_SIZE, offset);
-    for (const row of page.rows) onRow(row);
-    if (!page.hasMore) break;
-  }
 }
