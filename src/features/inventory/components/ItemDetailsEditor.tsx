@@ -1,9 +1,24 @@
 import { useEffect, useState } from 'react';
-import { AutocompleteField, Button, FormField, Input, SelectField, Textarea } from '@/components/foundry';
+import {
+  AutocompleteField,
+  Button,
+  FormField,
+  InfoHint,
+  Input,
+  SelectField,
+  Textarea,
+} from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
+
+/** Rich help for the "Unlimited supply" modifier (Phase 82). */
+const HINT_UNLIMITED =
+  'Marks this as an **effectively infinite source** — tap water, mains air, a bulk pile you ' +
+  'never count.\n\nIts quantity shows as **∞**, it **never** runs low or joins the shopping ' +
+  'list, it is **excluded** from stock valuation and cycle counts, and using it in a build ' +
+  'never causes a shortage. Only available for **bulk (DISCRETE)** items.';
 
 /**
  * Core-fields editor — the "Edit item" home for the identity fields set when the
@@ -28,6 +43,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? '');
   const [unitCost, setUnitCost] = useState(item.unitCost?.toString() ?? '');
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
+  const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
 
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
@@ -38,7 +54,11 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setManufacturer(item.manufacturer ?? '');
     setUnitCost(item.unitCost?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
+    setIsUnlimited(item.isUnlimited);
   }, [item]);
+
+  // "Unlimited supply" is a DISCRETE-only modifier (Phase 82).
+  const canBeUnlimited = item.trackingMode === 'DISCRETE';
 
   const text = (raw: string): string | null => (raw.trim().length > 0 ? raw.trim() : null);
   const nextUnitCost = unitCost.trim() === '' ? null : Number(unitCost);
@@ -50,6 +70,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     manufacturer: text(manufacturer),
     unitCost: Number.isFinite(nextUnitCost ?? 0) ? nextUnitCost : null,
     categoryId: categoryId || null,
+    // Only a DISCRETE item can carry the flag; ignore stale UI state for other modes.
+    isUnlimited: canBeUnlimited ? isUnlimited : false,
   };
   const dirty =
     draft.name !== item.name ||
@@ -58,7 +80,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.mpn !== (item.mpn ?? null) ||
     draft.manufacturer !== (item.manufacturer ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
-    draft.categoryId !== (item.categoryId ?? null);
+    draft.categoryId !== (item.categoryId ?? null) ||
+    draft.isUnlimited !== item.isUnlimited;
   const valid = draft.name.length > 0;
 
   const save = () => update.mutate({ id: item.id, input: draft });
@@ -143,6 +166,23 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
           ]}
         />
       </div>
+
+      <label
+        className="flex cursor-pointer items-center gap-2 text-sm data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-60"
+        data-disabled={!canBeUnlimited}
+      >
+        <input
+          type="checkbox"
+          checked={draft.isUnlimited}
+          disabled={!canBeUnlimited}
+          onChange={(e) => setIsUnlimited(e.target.checked)}
+          className="size-4 accent-primary"
+          data-testid="item-details-unlimited"
+        />
+        Unlimited supply
+        <InfoHint content={HINT_UNLIMITED} />
+        {!canBeUnlimited ? <span className="text-xs text-muted-foreground">(bulk items only)</span> : null}
+      </label>
 
       <div className="flex justify-end">
         <Button

@@ -121,6 +121,8 @@ export function rowToItem(row: ItemRow): Item {
     lotNumber: row.lot_number,
     condition: row.condition,
     parentId: row.parent_id,
+    // "Unlimited supply" modifier (Phase 82); DISCRETE-only infinite source.
+    isUnlimited: row.is_unlimited === 1,
     // Per-item reorder policy (Phase 59); null = fall back to the global default.
     reorderPoint: row.reorder_point,
     reorderGaugePercent: row.reorder_gauge_percent,

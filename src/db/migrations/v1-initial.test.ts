@@ -73,6 +73,30 @@ describe('schema baseline lock', () => {
     expect(goldenSnapshot.userVersion).toBe(TARGET_SCHEMA_VERSION);
   });
 
+  it('accepts is_unlimited = 1 on a DISCRETE item but rejects it on other modes', async () => {
+    await runMigrations(driver, migrations);
+    const loc = '00000000-0000-4000-8000-000000000001'; // seeded Unassigned location
+
+    // DISCRETE + unlimited is the sole permitted combination — the CHECK admits it.
+    await driver.execute(
+      `INSERT INTO items (id, name, location_id, tracking_mode, quantity, is_unlimited)
+       VALUES ('u1', 'Tap water', ?, 'DISCRETE', 0, 1);`,
+      [loc],
+    );
+
+    // Every non-DISCRETE mode with is_unlimited = 1 must be refused by the DISCRETE-only CHECK.
+    for (const mode of ['SERIALISED', 'UNTRACKED'] as const) {
+      const qty = mode === 'SERIALISED' ? 1 : 0;
+      await expect(
+        driver.execute(
+          `INSERT INTO items (id, name, location_id, tracking_mode, quantity, is_unlimited)
+           VALUES (?, ?, ?, ?, ?, 1);`,
+          [`bad-${mode}`, `Bad ${mode}`, loc, mode, qty],
+        ),
+      ).rejects.toThrow(/CHECK constraint failed/i);
+    }
+  });
+
   it('refuses a pre-squash database (user_version ahead of the target)', async () => {
     // A database left at v2–v4 by the former forward chain must be refused loudly
     // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.

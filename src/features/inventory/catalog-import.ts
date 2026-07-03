@@ -50,7 +50,8 @@ export type CatalogField =
   | 'lotNumber'
   | 'condition'
   | 'reorderPoint'
-  | 'reorderQty';
+  | 'reorderQty'
+  | 'isUnlimited';
 
 /** All recognised logical field names (used for UI pickers). */
 export const CATALOG_FIELDS: readonly CatalogField[] = [
@@ -70,6 +71,7 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'condition',
   'reorderPoint',
   'reorderQty',
+  'isUnlimited',
 ];
 
 /** Human-readable label for each field (used in the import wizard UI). */
@@ -90,6 +92,7 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   condition: 'Condition',
   reorderPoint: 'Reorder point',
   reorderQty: 'Reorder quantity',
+  isUnlimited: 'Unlimited supply',
 };
 
 /**
@@ -170,6 +173,8 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['reorderpoint', 'reorderPoint'],
   ['reorderqty', 'reorderQty'],
   ['reorderquantity', 'reorderQty'],
+  ['isunlimited', 'isUnlimited'],
+  ['unlimited', 'isUnlimited'],
 ];
 
 /**
@@ -243,6 +248,8 @@ const catalogRowSchema = z.object({
   condition: conditionSchema,
   reorderPoint: z.number().int().min(0).optional().nullable(),
   reorderQty: z.number().int().min(0).optional().nullable(),
+  // "Unlimited supply" modifier (Phase 82); DISCRETE-only (enforced in the plan builder).
+  isUnlimited: z.boolean().optional(),
 });
 
 type CatalogRowData = z.infer<typeof catalogRowSchema>;
@@ -267,6 +274,19 @@ function parseOptionalInt(text: string | null): number | undefined | null {
   if (text === null) return undefined;
   const n = Number.parseInt(text, 10);
   return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Parse a boolean cell: `true`/`1`/`yes`/`y` (case-insensitive) → `true`,
+ * `false`/`0`/`no`/`n` → `false`, an absent cell → `undefined` (leave unchanged). An
+ * unrecognised non-empty value also returns `undefined` (treated as "not supplied").
+ */
+function parseOptionalBool(text: string | null): boolean | undefined {
+  if (text === null) return undefined;
+  const key = text.trim().toLowerCase();
+  if (['true', '1', 'yes', 'y'].includes(key)) return true;
+  if (['false', '0', 'no', 'n'].includes(key)) return false;
+  return undefined;
 }
 
 /** The raw cells of one CSV data row, partitioned into core + custom-field columns. */
@@ -324,6 +344,7 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRo
     condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
     reorderPoint: parseOptionalInt(raw.reorderPoint ?? null),
     reorderQty: parseOptionalInt(raw.reorderQty ?? null),
+    isUnlimited: parseOptionalBool(raw.isUnlimited ?? null),
   };
 }
 
@@ -393,7 +414,19 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
     condition: data.condition ?? null,
     reorderPoint: data.reorderPoint ?? null,
     reorderQty: data.reorderQty ?? null,
+    isUnlimited: data.isUnlimited ?? false,
   };
+}
+
+/**
+ * Mirror the DB CHECK at dry-run time (Phase 82): the unlimited-supply flag is DISCRETE-only.
+ * Returns a row-error message when `isUnlimited` is set on a non-DISCRETE row, else `null`.
+ */
+function unlimitedModeError(data: CatalogRowData, mode: TrackingMode): string | null {
+  if (data.isUnlimited === true && mode !== 'DISCRETE') {
+    return `Only DISCRETE items can be marked as unlimited supply (this row is ${mode}).`;
+  }
+  return null;
 }
 
 function toUpdateInput(data: CatalogRowData): UpdateItemInput {
@@ -411,6 +444,7 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.reorderPoint !== undefined) Object.assign(result, { reorderPoint: data.reorderPoint ?? null });
   if (data.reorderQty !== undefined) Object.assign(result, { reorderQty: data.reorderQty ?? null });
   if (data.categoryId !== undefined) Object.assign(result, { categoryId: data.categoryId ?? null });
+  if (data.isUnlimited !== undefined) Object.assign(result, { isUnlimited: data.isUnlimited });
   return result;
 }
 
@@ -701,6 +735,11 @@ export function buildImportPlanFromRows(
         continue;
       }
       // No match key but has a name — treat as create.
+      const unlimitedError = unlimitedModeError(data, data.trackingMode ?? 'DISCRETE');
+      if (unlimitedError) {
+        errors.push({ sourceRow, message: unlimitedError });
+        continue;
+      }
       creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
       continue;
     }
@@ -720,7 +759,13 @@ export function buildImportPlanFromRows(
     const existingItem = matchKey === 'name' ? byName.get(matchValue) : byMpn.get(matchValue);
 
     if (existingItem) {
-      // Matched → update.
+      // Matched → update. Mirror the DB CHECK against the *existing* item's mode (an update
+      // never changes tracking_mode), so unlimited can't be set on a non-DISCRETE item.
+      const unlimitedError = unlimitedModeError(data, existingItem.trackingMode);
+      if (unlimitedError) {
+        errors.push({ sourceRow, message: unlimitedError });
+        continue;
+      }
       updates.push({
         sourceRow,
         itemId: existingItem.id,
@@ -731,6 +776,11 @@ export function buildImportPlanFromRows(
       // No match → create. A name is required for creates.
       if (!data.name) {
         errors.push({ sourceRow, message: 'Name is required when creating a new item.' });
+        continue;
+      }
+      const unlimitedError = unlimitedModeError(data, data.trackingMode ?? 'DISCRETE');
+      if (unlimitedError) {
+        errors.push({ sourceRow, message: unlimitedError });
         continue;
       }
       creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });

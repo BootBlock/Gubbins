@@ -37,10 +37,11 @@ import { SQL_NOW_MS, type Migration } from './migration';
  * The statement stream below is the ordered concatenation of the original chain's
  * `statements` (minus per-step `PRAGMA user_version` bumps, which the engine still
  * appends — once, for v1), with the folded v2–v4 streams re-issued verbatim at the
- * tail and exactly three deliberate edits in place: `items.notes` in the CREATE
- * TABLE, `notes` in the FTS index + its three sync triggers, and the widened
+ * tail and a small set of deliberate edits in place: `items.notes` in the CREATE
+ * TABLE, `notes` in the FTS index + its three sync triggers, the widened
  * tracking-mode CHECK (derived from `TRACKING_MODES`, so it can never drift from the
- * application constant). ALTER-added columns are re-issued as ALTERs in their
+ * application constant), and (Phase 82) the additive `items.is_unlimited` boolean
+ * column with its two CHECKs. ALTER-added columns are re-issued as ALTERs in their
  * original positions (SQLite stores such columns verbatim at the tail of the table's
  * stored `sql`). The `v1-initial.test.ts` golden-equivalence test locks the result
  * against the committed `__fixtures__/schema-baseline.snapshot.json`, so any
@@ -181,12 +182,19 @@ export const v1Initial: Migration = {
           current_net_value    REAL,
           operational_metadata TEXT,
           is_active            INTEGER NOT NULL DEFAULT 1,
+          is_unlimited         INTEGER NOT NULL DEFAULT 0,
           created_at           INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at           INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (tracking_mode IN (${trackingModeList})),
           CHECK (is_active IN (0, 1)),
           CHECK (quantity >= 0),
           CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1),
+          -- "Unlimited supply" (Phase 82) is a DISCRETE-only modifier: an item whose
+          -- source is effectively infinite (tap water, mains air). The first CHECK keeps
+          -- it a strict boolean; the second is the invariant that it can only sit on a
+          -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.
+          CHECK (is_unlimited IN (0, 1)),
+          CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),
           -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.
           CHECK (
             tracking_mode <> 'CONSUMABLE_GAUGE' OR (

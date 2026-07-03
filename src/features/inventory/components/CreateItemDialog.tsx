@@ -73,6 +73,8 @@ const schema = z
     reorderPoint: z.string().optional(),
     reorderQty: z.string().optional(),
     reorderGaugePercent: z.string().optional(),
+    // "Unlimited supply" modifier (Phase 82) — DISCRETE-only; the UI only surfaces it there.
+    isUnlimited: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.trackingMode === 'CONSUMABLE_GAUGE') {
@@ -154,6 +156,7 @@ export function CreateItemDialog({
       reorderPoint: '',
       reorderQty: '',
       reorderGaugePercent: '',
+      isUnlimited: false,
     },
   });
 
@@ -276,7 +279,12 @@ export function CreateItemDialog({
 
     let input: CreateItemInput = base;
     if (values.trackingMode === 'DISCRETE') {
-      input = { ...base, quantity: Math.max(0, Math.floor(Number(values.quantity) || 0)) };
+      input = {
+        ...base,
+        quantity: Math.max(0, Math.floor(Number(values.quantity) || 0)),
+        // "Unlimited supply" (Phase 82) — DISCRETE-only; the toggle is hidden for other modes.
+        ...(values.isUnlimited ? { isUnlimited: true } : {}),
+      };
     } else if (values.trackingMode === 'CONSUMABLE_GAUGE') {
       const net = values.currentNetValue?.trim() ? Number(values.currentNetValue) : undefined;
       input = {
@@ -578,6 +586,23 @@ export function CreateItemDialog({
                 <Input type="number" min={0} step={1} placeholder="Shortfall" {...register('reorderQty')} />
               </FormField>
             </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                data-testid="item-unlimited"
+                {...register('isUnlimited')}
+              />
+              Unlimited supply
+              <InfoHint
+                content={
+                  'Marks this as an **effectively infinite source** — tap water, mains air, a bulk ' +
+                  'pile you never count.\n\nIts quantity shows as **∞**, it **never** runs low or ' +
+                  'joins the shopping list, it is **excluded** from stock valuation and cycle ' +
+                  'counts, and using it in a build never causes a shortage.'
+                }
+              />
+            </label>
           </>
         ) : null}
 

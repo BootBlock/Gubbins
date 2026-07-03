@@ -4,11 +4,12 @@ import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
+import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
 import { ChangeFlash } from './ChangeFlash';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
-import { TrackingBadge } from './TrackingBadge';
+import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 import type { ItemSelection } from './inventory-ui';
 
@@ -81,11 +82,25 @@ export function ItemCard({
             </p>
           </div>
         </div>
-        <TrackingBadge mode={item.trackingMode} />
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <TrackingBadge mode={item.trackingMode} />
+          {isUnlimited(item) ? <UnlimitedBadge /> : null}
+        </div>
       </div>
 
       <div className="flex-1">
-        {item.gauge ? (
+        {isUnlimited(item) ? (
+          <div className="flex items-center justify-between">
+            <span
+              className="text-2xl font-bold text-glyph-scan"
+              aria-label="Unlimited supply"
+              title="Unlimited supply"
+            >
+              {UNLIMITED_GLYPH}
+            </span>
+            <span className="text-xs text-muted-foreground">unlimited supply</span>
+          </div>
+        ) : item.gauge ? (
           <GaugeBar gauge={item.gauge} />
         ) : item.trackingMode === 'SERIALISED' ? (
           <p className="text-sm text-muted-foreground">Single serialised unit</p>
@@ -102,7 +117,7 @@ export function ItemCard({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-        {item.trackingMode === 'DISCRETE' && item.isActive ? (
+        {item.trackingMode === 'DISCRETE' && item.isActive && !isUnlimited(item) ? (
           <QuantityStepper id={item.id} quantity={item.quantity} />
         ) : (
           <span />

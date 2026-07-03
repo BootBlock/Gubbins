@@ -170,6 +170,7 @@ page.on('pageerror', (err) => pageErrors.push(String(err)));
 
 const stamp = Date.now().toString().slice(-5);
 const screwName = `Smoke Screws ${stamp}`;
+const unlimitedName = `Smoke Tap Water ${stamp}`;
 const filamentName = `Smoke Filament ${stamp}`;
 const categoryName = `Smoke Caps ${stamp}`;
 const fieldName = `Voltage ${stamp}`;
@@ -394,6 +395,30 @@ try {
       await dialog.getByLabel('Initial quantity').fill('100');
       await dialog.getByRole('button', { name: 'Create item' }).click();
       await page.getByText(screwName).waitFor({ state: 'visible', timeout: 5000 });
+    });
+
+    await step('creates an Unlimited-supply item shown as ∞ with no ± stepper (Phase 82)', async () => {
+      await page.getByRole('button', { name: 'Add item' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Add item' });
+      await dialog.getByLabel('Name').fill(unlimitedName);
+      // Tracking defaults to DISCRETE — the sole mode the "Unlimited supply" toggle appears for.
+      await dialog.getByTestId('item-unlimited').check();
+      await dialog.getByRole('button', { name: 'Create item' }).click();
+      await page.getByText(unlimitedName).waitFor({ state: 'visible', timeout: 5000 });
+
+      // The on-hand quantity renders as ∞ with an accessible label (never a number, no stepper).
+      await page.getByLabel('Unlimited supply').first().waitFor({ state: 'visible', timeout: 5000 });
+      const card = page
+        .locator('div')
+        .filter({ hasText: unlimitedName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+      const steppers = await card
+        .getByRole('button', { name: /Increase quantity|Decrease quantity/ })
+        .count();
+      if (steppers > 0) {
+        throw new Error('An unlimited-supply item must not render a ± quantity stepper.');
+      }
     });
 
     await step('creates a Consumable Gauge item with a rendered gauge', async () => {
@@ -1307,6 +1332,33 @@ try {
         { timeout: 5000 },
       );
     });
+
+    await step(
+      'an Unlimited-supply BOM component is always satisfiable — never a shortfall (Phase 82)',
+      async () => {
+        await page.getByRole('button', { name: 'Add line' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
+        await dialog.getByRole('combobox').selectOption({ label: unlimitedName });
+        await dialog.getByLabel('Quantity').fill('1000');
+        await dialog.getByRole('button', { name: 'Add line' }).click();
+
+        // The line joins the Bill of materials…
+        const bom = page
+          .locator('section')
+          .filter({ has: page.getByRole('heading', { name: 'Bill of materials' }) });
+        await bom.getByText(unlimitedName).first().waitFor({ state: 'visible', timeout: 5000 });
+
+        // …but an infinite source is always satisfiable, so it never surfaces on the shopping list
+        // (unlike the finite part, which is still there). Scope the check to the shopping-list section.
+        const shopping = page
+          .locator('section')
+          .filter({ has: page.getByRole('heading', { name: /Shopping list/ }) });
+        await shopping.getByText(partName).first().waitFor({ state: 'visible', timeout: 5000 });
+        if ((await shopping.getByText(unlimitedName).count()) > 0) {
+          throw new Error('An unlimited-supply component must not appear on the shopping list.');
+        }
+      },
+    );
 
     await step('toggles the BOM costing mode', async () => {
       const costing = page.getByLabel('Costing mode');

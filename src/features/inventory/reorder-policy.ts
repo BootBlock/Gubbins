@@ -27,7 +27,13 @@ export interface ReorderDefaults {
 /** The reorder-relevant slice of an item — kept minimal so callers can pass any shape. */
 export type ReorderItem = Pick<
   Item,
-  'trackingMode' | 'quantity' | 'gauge' | 'reorderPoint' | 'reorderGaugePercent' | 'reorderQty'
+  | 'trackingMode'
+  | 'quantity'
+  | 'gauge'
+  | 'reorderPoint'
+  | 'reorderGaugePercent'
+  | 'reorderQty'
+  | 'isUnlimited'
 >;
 
 /** The effective DISCRETE quantity floor for an item: its own override, else the default. */
@@ -49,8 +55,11 @@ export function effectiveGaugePercent(item: ReorderItem, defaults: ReorderDefaul
  * - SERIALISED — a single asset is never "low bulk stock", matching the feed exclusion.
  * - UNTRACKED — presence-only items have no quantity to run low, matching the feed
  *   exclusion (its permanent quantity of 0 would otherwise always flag).
+ * - Unlimited supply (Phase 82) — an effectively infinite source never runs low, whatever
+ *   its stored quantity, so it is never flagged and never joins the shopping list.
  */
 export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
+  if (item.isUnlimited) return false;
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     if (!item.gauge || item.gauge.grossCapacity <= 0) return false;
     return item.gauge.percentageRemaining <= effectiveGaugePercent(item, defaults);

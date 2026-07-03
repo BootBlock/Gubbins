@@ -210,6 +210,18 @@ export class ItemCoreRepository extends BaseRepository {
         }),
       );
     }
+    if (input.isUnlimited !== undefined) {
+      // DISCRETE-only modifier (Phase 82) — mirror the DB CHECK with a clear message rather
+      // than surfacing a raw constraint failure. Plain LWW column; never a HISTORY_ACTION.
+      if (input.isUnlimited && existing.trackingMode !== 'DISCRETE') {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Only DISCRETE items can be marked as unlimited supply (${existing.name} is ${existing.trackingMode}).`,
+        );
+      }
+      sets.push('is_unlimited = ?');
+      params.push(input.isUnlimited ? 1 : 0);
+    }
     if (input.reorderPoint !== undefined) {
       sets.push('reorder_point = ?');
       params.push(normaliseReorderInt(input.reorderPoint));

@@ -62,7 +62,8 @@ export class CheckoutRepository extends BaseRepository {
       tracking_mode: string;
       location_id: string;
       is_active: number;
-    }>('SELECT tracking_mode, is_active, location_id FROM items WHERE id = ?;', [input.itemId]);
+      is_unlimited: number;
+    }>('SELECT tracking_mode, is_active, location_id, is_unlimited FROM items WHERE id = ?;', [input.itemId]);
     if (!item) {
       throw new DbError('SQLITE_CONSTRAINT', `Item "${input.itemId}" does not exist.`);
     }
@@ -76,6 +77,13 @@ export class CheckoutRepository extends BaseRepository {
       throw new DbError(
         'SQLITE_CONSTRAINT',
         'Untracked items carry no countable stock to lend — use a serialised item for assets that are checked out.',
+      );
+    }
+    if (item.is_unlimited === 1) {
+      // An infinite source (tap water, mains air) is not "lent" — mirror the UNTRACKED guard (Phase 82).
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Unlimited-supply items are an infinite source, not a lendable asset — they cannot be checked out.',
       );
     }
 

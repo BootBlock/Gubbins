@@ -216,7 +216,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -401,7 +401,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -599,7 +599,7 @@ paths:
       tags:
       - "items"
       summary: "Export matching items as a CSV (refreshable spreadsheet pull)"
-      description: "A spreadsheet-friendly CSV download of the matching items (columns: id, name, description, notes, trackingMode, quantity, mpn, manufacturer, unitCost — the same shape as the app's own export). Honours the same $filter/$search/$orderby/location/category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows (up to a hard cap), not a single page. Point Excel/Power BI \"From Web\" at it for a refreshable pull."
+      description: "A spreadsheet-friendly CSV download of the matching items (columns: id, name, description, notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost — the same shape as the app's own export; the quantity cell is blank for an unlimited-supply row). Honours the same $filter/$search/$orderby/location/category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows (up to a hard cap), not a single page. Point Excel/Power BI \"From Web\" at it for a refreshable pull."
       parameters:
       -
         name: "$filter"
@@ -632,7 +632,7 @@ paths:
             text/csv:
               schema:
                 type: "string"
-              example: "id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost\r\nitem-esp32,ESP32 Dev Board,,,DISCRETE,7,DEV-ESP32,Synthetic Silicon Co,"
+              example: "id,name,description,notes,trackingMode,quantity,isUnlimited,mpn,manufacturer,unitCost\r\nitem-esp32,ESP32 Dev Board,,,DISCRETE,7,false,DEV-ESP32,Synthetic Silicon Co,"
         "400":
           description: "Bad request — missing or invalid parameter."
           content:
@@ -685,7 +685,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -1450,7 +1450,9 @@ components:
           example: "ESP32 Dev Board"
         quantity:
           type: "integer"
+          nullable: true
           example: 7
+          description: "On-hand grand total; **null** for an unlimited-supply item (an infinite source has no finite count)."
         locationName:
           type: "string"
           nullable: true
@@ -1550,6 +1552,7 @@ components:
       - "id"
       - "name"
       - "quantity"
+      - "isUnlimited"
       - "locationId"
       - "locationName"
       - "categoryId"
@@ -1566,7 +1569,13 @@ components:
           example: "M3 x 10 Hex Bolt"
         quantity:
           type: "integer"
+          nullable: true
           example: 42
+          description: "On-hand grand total across every location. **null** for an unlimited-supply item (`isUnlimited: true`) — an effectively infinite source has no finite count."
+        isUnlimited:
+          type: "boolean"
+          example: false
+          description: "True for an effectively infinite source (e.g. tap water); its `quantity` is null."
         locationId:
           type: "string"
           example: "loc-drawer-a"

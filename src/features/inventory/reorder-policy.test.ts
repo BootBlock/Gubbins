@@ -18,6 +18,7 @@ function discrete(quantity: number, overrides: Partial<ReorderItem> = {}): Reord
     reorderPoint: null,
     reorderGaugePercent: null,
     reorderQty: null,
+    isUnlimited: false,
     ...overrides,
   };
 }
@@ -37,6 +38,7 @@ function gauge(percentageRemaining: number, overrides: Partial<ReorderItem> = {}
     reorderPoint: null,
     reorderGaugePercent: null,
     reorderQty: null,
+    isUnlimited: false,
     ...overrides,
   };
 }
@@ -102,6 +104,12 @@ describe('reorder-policy — isLow', () => {
     expect(isLow(discrete(0, { trackingMode: 'UNTRACKED' }), DEFAULTS)).toBe(false);
     expect(isLow(discrete(0, { trackingMode: 'UNTRACKED', reorderPoint: 20 }), DEFAULTS)).toBe(false);
   });
+
+  it('never flags an unlimited-supply item, whatever its quantity or reorder point', () => {
+    // An infinite source never runs low, even at 0 on-hand or with an aggressive reorder point.
+    expect(isLow(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(false);
+    expect(isLow(discrete(0, { isUnlimited: true, reorderPoint: 20 }), DEFAULTS)).toBe(false);
+  });
 });
 
 describe('reorder-policy — shortfall', () => {
@@ -122,5 +130,10 @@ describe('reorder-policy — shortfall', () => {
 
   it('returns 0 for a gauge item (continuous material, not countable units)', () => {
     expect(shortfall(gauge(5), DEFAULTS)).toBe(0);
+  });
+
+  it('returns 0 for an unlimited-supply item (never on the shopping list)', () => {
+    expect(shortfall(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(0);
+    expect(shortfall(discrete(0, { isUnlimited: true, reorderQty: 50 }), DEFAULTS)).toBe(0);
   });
 });

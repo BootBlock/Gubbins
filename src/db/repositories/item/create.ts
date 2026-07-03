@@ -36,6 +36,8 @@ export interface ResolvedCreate {
   readonly batchNumber: string | null;
   readonly lotNumber: string | null;
   readonly condition: string | null;
+  /** 0/1 for the STRICT INTEGER `is_unlimited` column (Phase 82). */
+  readonly isUnlimited: number;
   readonly reorderPoint: number | null;
   readonly reorderGaugePercent: number | null;
   readonly reorderQty: number | null;
@@ -61,6 +63,16 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
 
   const trackingMode = input.trackingMode ?? 'DISCRETE';
   const locationId = input.locationId ?? UNASSIGNED_LOCATION_ID;
+
+  // "Unlimited supply" (Phase 82) is a DISCRETE-only modifier — mirror the DB CHECK with a
+  // clear application error (the import path relies on this to reject bad rows before insert).
+  const isUnlimited = input.isUnlimited === true;
+  if (isUnlimited && trackingMode !== 'DISCRETE') {
+    throw new DbError(
+      'SQLITE_CONSTRAINT',
+      `Only DISCRETE items can be marked as unlimited supply (this is ${trackingMode}).`,
+    );
+  }
 
   let quantity = input.quantity ?? (trackingMode === 'SERIALISED' ? 1 : 0);
   if (trackingMode === 'SERIALISED') quantity = 1;
@@ -105,6 +117,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     batchNumber: normaliseText(input.batchNumber),
     lotNumber: normaliseText(input.lotNumber),
     condition: input.condition ?? null,
+    isUnlimited: isUnlimited ? 1 : 0,
     reorderPoint: normaliseReorderInt(input.reorderPoint),
     reorderGaugePercent: normaliseReorderPercent(input.reorderGaugePercent),
     reorderQty: normaliseReorderInt(input.reorderQty),
@@ -134,10 +147,10 @@ export function buildInsert(
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-               mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition,
+               mpn, manufacturer, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -160,6 +173,7 @@ export function buildInsert(
         r.batchNumber,
         r.lotNumber,
         r.condition,
+        r.isUnlimited,
         r.reorderPoint,
         r.reorderGaugePercent,
         r.reorderQty,

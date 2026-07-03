@@ -48,8 +48,12 @@ export interface ListEnvelope<T> {
 export interface ItemSummaryDto {
   readonly id: string;
   readonly name: string;
-  /** On-hand grand total across every location. */
-  readonly quantity: number;
+  /**
+   * On-hand grand total across every location — **`null` for an unlimited-supply item**
+   * (`isUnlimited`), since an effectively infinite source has no finite count and JSON has
+   * no `Infinity`.
+   */
+  readonly quantity: number | null;
   readonly locationId: string;
   readonly locationName: string | null;
   readonly categoryId: string | null;
@@ -57,6 +61,8 @@ export interface ItemSummaryDto {
   readonly manufacturer: string | null;
   readonly trackingMode: Item['trackingMode'];
   readonly isActive: boolean;
+  /** `true` for an effectively infinite source (tap water, mains air); its `quantity` is `null`. */
+  readonly isUnlimited: boolean;
 }
 
 /** One weighted parametric capability of an item (read-only projection). */
@@ -147,7 +153,8 @@ export function toItemSummary(item: Item, locationName: string | null): ItemSumm
   return {
     id: item.id,
     name: item.name,
-    quantity: item.quantity,
+    // An unlimited-supply item has no finite on-hand count (JSON has no Infinity) — null it.
+    quantity: item.isUnlimited ? null : item.quantity,
     locationId: item.locationId,
     locationName,
     categoryId: item.categoryId,
@@ -155,6 +162,7 @@ export function toItemSummary(item: Item, locationName: string | null): ItemSumm
     manufacturer: item.manufacturer,
     trackingMode: item.trackingMode,
     isActive: item.isActive,
+    isUnlimited: item.isUnlimited,
   };
 }
 

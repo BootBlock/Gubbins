@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
-import { DiscreteIcon, GaugeIcon, SerialisedIcon, UntrackedIcon } from '@/components/icons';
+import { DiscreteIcon, GaugeIcon, InfinityIcon, SerialisedIcon, UntrackedIcon } from '@/components/icons';
 import type { TrackingMode } from '@/db/repositories';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
 
@@ -35,6 +35,31 @@ export function TrackingBadge({ mode, className }: { mode: TrackingMode; classNa
       >
         <Icon />
         {TRACKING_MODE_LABELS[mode]}
+      </span>
+    </Tooltip>
+  );
+}
+
+/**
+ * A small ∞ pill flagging an "unlimited supply" item (Phase 82) — an effectively infinite
+ * source. Sits next to the {@link TrackingBadge}; reuses the badge's token classes and tints
+ * the glyph with a `text-glyph-*` token.
+ */
+export function UnlimitedBadge({ className }: { className?: string }) {
+  return (
+    <Tooltip
+      content="**Unlimited supply** — an effectively infinite source. Never runs low; excluded from counts, valuation and the shopping list."
+      triggerTabIndex={-1}
+      openDelayMs={INFO_OPEN_DELAY_MS}
+    >
+      <span
+        className={cn(
+          'inline-flex cursor-help items-center gap-1 rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-xs font-medium text-glyph-scan [&_svg]:size-3',
+          className,
+        )}
+      >
+        <InfinityIcon />
+        Unlimited
       </span>
     </Tooltip>
   );
