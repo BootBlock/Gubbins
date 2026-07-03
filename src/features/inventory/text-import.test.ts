@@ -188,6 +188,56 @@ describe('parseFreeformLine', () => {
       location: 'Drawer 3',
     });
   });
+
+  it('recognises a bare Amazon ASIN as the SKU and strips it from the name', () => {
+    expect(parseFreeformLine('USB-C cable B0F3XF5ZKF x3')).toEqual({
+      name: 'USB-C cable',
+      quantity: 3,
+      sku: 'B0F3XF5ZKF',
+    });
+  });
+
+  it('recognises an Amazon listing URL and names an id-only line after the ASIN', () => {
+    expect(parseFreeformLine('https://www.amazon.co.uk/dp/B0F3XF5ZKF?th=1')).toEqual({
+      name: 'B0F3XF5ZKF',
+      quantity: 1,
+      sku: 'B0F3XF5ZKF',
+    });
+  });
+
+  it('lets an explicit sku: label win over an ASIN in the line', () => {
+    expect(parseFreeformLine('Cable B0F3XF5ZKF sku: MY-PART')).toEqual({
+      name: 'Cable',
+      quantity: 1,
+      sku: 'MY-PART',
+    });
+  });
+
+  it('extracts a currency-marked unit price as the unit cost', () => {
+    expect(parseFreeformLine('Anker charger £12.99')).toEqual({
+      name: 'Anker charger',
+      quantity: 1,
+      sku: null,
+      unitCost: 12.99,
+    });
+  });
+
+  it('parses an invoice-style line with ASIN, price (thousands) and quantity together', () => {
+    expect(parseFreeformLine('Widget kit B0F3XF5ZKF $1,234.50 x2')).toEqual({
+      name: 'Widget kit',
+      quantity: 2,
+      sku: 'B0F3XF5ZKF',
+      unitCost: 1234.5,
+    });
+  });
+
+  it('does not treat a bare number as a price', () => {
+    expect(parseFreeformLine('Screw 4.5mm')).toEqual({
+      name: 'Screw 4.5mm',
+      quantity: 1,
+      sku: null,
+    });
+  });
 });
 
 describe('parseFreeformText', () => {
@@ -205,21 +255,34 @@ describe('parseFreeformText', () => {
 // ---------------------------------------------------------------------------
 
 describe('extractImport', () => {
-  it('flattens a line list into name / quantity / sku / manufacturer / location / tracking columns', () => {
+  it('flattens a line list into name / quantity / sku / manufacturer / location / tracking / unit-cost columns', () => {
     const ex = extractImport('Resistor 10k x50\nArduino Uno');
     expect(ex.format).toBe('lines');
     expect(ex.isTabular).toBe(false);
-    expect(ex.columns).toEqual(['Name', 'Quantity', 'SKU', 'Manufacturer', 'Location', 'Tracking']);
+    expect(ex.columns).toEqual([
+      'Name',
+      'Quantity',
+      'SKU',
+      'Manufacturer',
+      'Location',
+      'Tracking',
+      'Unit cost',
+    ]);
     // Explicit quantity kept; a bare name defaults to 1 (unlikely to be added with none).
     expect(ex.dataRows).toEqual([
-      ['Resistor 10k', '50', '', '', '', ''],
-      ['Arduino Uno', '1', '', '', '', ''],
+      ['Resistor 10k', '50', '', '', '', '', ''],
+      ['Arduino Uno', '1', '', '', '', '', ''],
     ]);
   });
 
   it('carries inline manufacturer / location / tracking into the line-list columns', () => {
     const ex = extractImport('Multimeter manu: Fluke loc: Bench track: serialised q: 2');
-    expect(ex.dataRows).toEqual([['Multimeter', '2', '', 'Fluke', 'Bench', 'serialised']]);
+    expect(ex.dataRows).toEqual([['Multimeter', '2', '', 'Fluke', 'Bench', 'serialised', '']]);
+  });
+
+  it('carries an ASIN and a currency price from a line into the SKU / unit-cost columns', () => {
+    const ex = extractImport('Anker USB-C cable B0F3XF5ZKF £9.99 x2');
+    expect(ex.dataRows).toEqual([['Anker USB-C cable', '2', 'B0F3XF5ZKF', '', '', '', '9.99']]);
   });
 
   it('parses a TSV paste and infers the mapping from headers', () => {

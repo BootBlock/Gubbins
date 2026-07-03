@@ -14,7 +14,10 @@
  *   - `'markdown'` — a GitHub-flavoured pipe table.
  *   - `'lines'`    — free-form, one item per line, with best-effort extraction of a
  *                    quantity and SKU from common shorthand ("Resistor 10k x50",
- *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100").
+ *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). An
+ *                    **Amazon ASIN or listing URL** in the line is recognised as the SKU
+ *                    and a **currency-marked unit price** (£/$/€/¥) as the unit cost, so a
+ *                    pasted Amazon invoice / order lands as items with their ASIN + price.
  *
  * Tabular shapes reuse the proven RFC-4180 codec ({@link parseDelimited}) and the
  * shared plan builder ({@link buildImportPlanFromRows}); the free-form shape is
@@ -31,6 +34,7 @@ import {
   type CatalogImportPlan,
   type ColumnMapping,
 } from './catalog-import';
+import { findAsin } from './asin';
 import type { CategoryField, Item } from '@/db/repositories/types';
 
 // ---------------------------------------------------------------------------
@@ -197,6 +201,8 @@ export interface FreeformItem {
   readonly location?: string;
   /** Labelled tracking mode (`track:` / `tracking:`) — enum or label, when present. */
   readonly trackingMode?: string;
+  /** A currency-marked unit price recovered from the line (e.g. `£12.99`), when present. */
+  readonly unitCost?: number;
 }
 
 /** Parse a non-negative integer, or `null` if the text is not a clean integer. */
@@ -344,22 +350,62 @@ function extractQuantityShorthand(input: string): { quantity: number | null; res
 }
 
 /**
+ * A **currency-marked** price: a symbol (£/$/€/¥) immediately followed by a number, with
+ * optional thousands separators (`$1,234.56`). Anchoring to a currency symbol keeps this
+ * from swallowing a plain number that is really a quantity or part of a part code — a bare
+ * `12.99` is deliberately *not* treated as a price.
+ */
+const CURRENCY_PRICE_RE = /[£$€¥]\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/;
+
+/** Pull a currency-marked unit price out of the text, or `null` when none is present. */
+function extractCurrencyPrice(input: string): { value: number; matchedText: string } | null {
+  const m = CURRENCY_PRICE_RE.exec(input);
+  if (!m) return null;
+  const value = Number.parseFloat(m[1]!.replace(/,/g, ''));
+  if (!Number.isFinite(value) || value < 0) return null;
+  return { value, matchedText: m[0] };
+}
+
+/**
  * Best-effort parse of a single free-form line into a {@link FreeformItem}. Returns
  * `null` for a blank line. Inline labels (`sku:`, `manu:`, `loc:`, `track:`, `q:`) are
  * extracted first — so a number inside a part code is never mistaken for a quantity —
- * then a quantity shorthand from what precedes them, and whatever remains is the item
- * name. Quantity defaults to 1 (an item is unlikely to be added with none). A line
- * that is *only* labels falls back to the raw line as the name so nothing is dropped.
+ * then, from the remaining head text and in order: an **Amazon ASIN / listing URL** as the
+ * SKU (unless a `sku:` label already won), a **currency-marked unit price** as the unit
+ * cost, and finally a quantity shorthand. Each is stripped so it never leaks into the item
+ * name. Quantity defaults to 1 (an item is unlikely to be added with none). A line that
+ * reduces to nothing but codes falls back to the ASIN/SKU, then to the raw line, so
+ * nothing is dropped.
  */
 export function parseFreeformLine(line: string): FreeformItem | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
 
   const labelled = extractLabelledFields(trimmed);
+  let head = labelled.head;
+
+  // An Amazon ASIN or listing URL fills the SKU when the line did not label one — Amazon
+  // is a supplier and the ASIN its part code (the importer's SKU→MPN slot). The token is
+  // stripped from the head either way, so the URL/id never becomes part of the item name
+  // even when an explicit `sku:` label takes the SKU slot.
+  let sku = labelled.sku;
+  const found = findAsin(head);
+  if (found) {
+    if (sku === null) sku = found.asin;
+    head = head.replace(found.matchedText, ' ');
+  }
+
+  // A currency-marked price (e.g. an invoice line's unit price) becomes the unit cost.
+  let unitCost: number | undefined;
+  const price = extractCurrencyPrice(head);
+  if (price) {
+    unitCost = price.value;
+    head = head.replace(price.matchedText, ' ');
+  }
 
   // Always strip a shorthand quantity from the head so it never leaks into the name,
   // but a labelled quantity (`q:`) takes precedence over the shorthand's value.
-  const shorthand = extractQuantityShorthand(labelled.head);
+  const shorthand = extractQuantityShorthand(head);
   const quantity = labelled.quantity ?? shorthand.quantity;
   const rest = shorthand.rest;
 
@@ -367,15 +413,17 @@ export function parseFreeformLine(line: string): FreeformItem | null {
     ...(labelled.manufacturer !== null ? { manufacturer: labelled.manufacturer } : {}),
     ...(labelled.location !== null ? { location: labelled.location } : {}),
     ...(labelled.trackingMode !== null ? { trackingMode: labelled.trackingMode } : {}),
+    ...(unitCost !== undefined ? { unitCost } : {}),
   };
 
   const name = cleanName(rest);
   if (name.length === 0) {
-    const fallback = cleanName(trimmed);
+    // Nothing but codes/price/quantity: name it after the ASIN/SKU, else the raw line.
+    const fallback = sku ?? cleanName(trimmed);
     if (fallback.length === 0) return null;
-    return { name: fallback, quantity: quantity ?? 1, sku: labelled.sku, ...extras };
+    return { name: fallback, quantity: quantity ?? 1, sku, ...extras };
   }
-  return { name, quantity: quantity ?? 1, sku: labelled.sku, ...extras };
+  return { name, quantity: quantity ?? 1, sku, ...extras };
 }
 
 /** Parse a whole block of free-form text into items, one per non-blank line. */
@@ -477,8 +525,24 @@ function parseMarkdownRows(text: string): { headerRow: string[]; dataRows: strin
 // ---------------------------------------------------------------------------
 
 /** The canonical columns synthesised for a free-form line list. */
-const LINES_HEADER: readonly string[] = ['name', 'quantity', 'sku', 'manufacturer', 'location', 'tracking'];
-const LINES_COLUMNS: readonly string[] = ['Name', 'Quantity', 'SKU', 'Manufacturer', 'Location', 'Tracking'];
+const LINES_HEADER: readonly string[] = [
+  'name',
+  'quantity',
+  'sku',
+  'manufacturer',
+  'location',
+  'tracking',
+  'unitCost',
+];
+const LINES_COLUMNS: readonly string[] = [
+  'Name',
+  'Quantity',
+  'SKU',
+  'Manufacturer',
+  'Location',
+  'Tracking',
+  'Unit cost',
+];
 const LINES_MAPPING: ColumnMapping = [
   'name',
   'quantity',
@@ -486,6 +550,7 @@ const LINES_MAPPING: ColumnMapping = [
   'manufacturer',
   'locationId',
   'trackingMode',
+  'unitCost',
 ];
 
 /** The normalised, parse-ready form of an import: a header + data-row matrix. */
@@ -572,6 +637,7 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
       item.manufacturer ?? '',
       item.location ?? '',
       item.trackingMode ?? '',
+      item.unitCost !== undefined ? String(item.unitCost) : '',
     ]);
     return {
       format,

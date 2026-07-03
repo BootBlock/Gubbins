@@ -643,7 +643,10 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
         <span className="font-mono text-xs">manu:</span>, <span className="font-mono text-xs">q:</span>,{' '}
         <span className="font-mono text-xs">loc:</span> and <span className="font-mono text-xs">track:</span>{' '}
         (e.g. <span className="font-mono text-xs">Multimeter manu: Fluke loc: Bench track: serialised</span>).
-        The format is detected automatically — override it with “Interpret as” below.
+        An <span className="font-mono text-xs">Amazon ASIN</span> or listing URL is read as the SKU and a
+        currency price as the unit cost, so you can paste an Amazon invoice (e.g.{' '}
+        <span className="font-mono text-xs">USB-C cable B0F3XF5ZKF £9.99 x2</span>). The format is detected
+        automatically — override it with “Interpret as” below.
       </p>
       <Textarea
         id={inputId}
