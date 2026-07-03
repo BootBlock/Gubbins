@@ -696,7 +696,10 @@
 }
 
 @utility animate-rise {
-  animation: gubbins-rise 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* Page-navigation entrance for every screen's <main> (and the cards within,
+     e.g. the Inventory item grid). Duration eased 20% from 0.25s → 0.30s so the
+     controls settle in a touch more gently as you move between pages. */
+  animation: gubbins-rise 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @utility animate-swap-in {
