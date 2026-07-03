@@ -13,6 +13,7 @@ import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
 import { buildAlerts, applyDismissals, maintenanceDueAtMs, type Alert, type AlertSources } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
@@ -48,13 +49,24 @@ export function useAlerts(): {
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
 
+  // Modular UI (Phase 7): the expiry, maintenance and warranty lanes each gate on their
+  // capability. When one is off we skip its source fetch (`enabled: false`) AND feed an empty
+  // array into the pure `buildAlerts` seam below, so a disabled lane simply produces nothing —
+  // even if a stale cache entry from when it was on still holds rows. Low stock is core
+  // inventory and never gated. The feature set is read once (unconditionally — rules of hooks).
+  const enabled = useEnabledFeatures();
+  const perishablesOn = enabled.has('perishables');
+  const maintenanceOn = enabled.has('maintenance');
+  const warrantyOn = enabled.has('warranty');
+
   const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent });
-  const expiringQuery = useExpiringItems(expirySoonWindowDays);
-  const maintenanceDueQuery = useDueMaintenance();
+  const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn });
+  const maintenanceDueQuery = useDueMaintenance({ enabled: maintenanceOn });
 
   const warrantyQuery = useQuery({
     queryKey: warrantyExpiringKey(),
     queryFn: () => getItemRepository().listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now, { limit: 100 }),
+    enabled: warrantyOn,
   });
 
   const isLoading =
@@ -74,28 +86,39 @@ export function useAlerts(): {
       name: item.name,
     })),
 
-    expiring: (expiringQuery.data?.rows ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      expiryDate: item.expiryDate ?? null,
-    })),
+    expiring: perishablesOn
+      ? (expiringQuery.data?.rows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          expiryDate: item.expiryDate ?? null,
+        }))
+      : [],
 
-    maintenanceDue: (maintenanceDueQuery.data?.rows ?? []).map((sched) => ({
-      id: sched.id,
-      name: sched.name,
-      itemId: sched.itemId,
-      itemName: sched.itemName,
-      dueAtMs: maintenanceDueAtMs(sched.basis, sched.lastPerformedAt, sched.createdAt, sched.intervalDays),
-    })),
+    maintenanceDue: maintenanceOn
+      ? (maintenanceDueQuery.data?.rows ?? []).map((sched) => ({
+          id: sched.id,
+          name: sched.name,
+          itemId: sched.itemId,
+          itemName: sched.itemName,
+          dueAtMs: maintenanceDueAtMs(
+            sched.basis,
+            sched.lastPerformedAt,
+            sched.createdAt,
+            sched.intervalDays,
+          ),
+        }))
+      : [],
 
-    warrantyItems: (warrantyQuery.data?.rows ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      acquiredAt: item.acquiredAt,
-      warrantyExpiresAt: item.warrantyExpiresAt,
-      purchasePrice: item.purchasePrice,
-      depreciationMonths: item.depreciationMonths,
-    })),
+    warrantyItems: warrantyOn
+      ? (warrantyQuery.data?.rows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          acquiredAt: item.acquiredAt,
+          warrantyExpiresAt: item.warrantyExpiresAt,
+          purchasePrice: item.purchasePrice,
+          depreciationMonths: item.depreciationMonths,
+        }))
+      : [],
   };
 
   // --- Dismissals ---

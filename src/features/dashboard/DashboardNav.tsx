@@ -20,6 +20,7 @@ import {
   type NavGroup,
 } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -58,9 +59,10 @@ const GROUP_CARD_TINTS: Record<NavGroup, string> = {
 /**
  * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
  * card. Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard
- * (`/`) is the current screen and never appears as a tile, so it has no entry.
+ * (`/`) is the current screen and never appears as a tile, and `/modules` is reached from
+ * Settings/first-run rather than a nav tile — so neither has an entry.
  */
-const NAV_TOOLTIPS: Record<Exclude<AppRoutePath, '/'>, string> = {
+const NAV_TOOLTIPS: Record<Exclude<AppRoutePath, '/' | '/modules'>, string> = {
   '/inventory':
     '**Inventory** — your item catalogue.\n\nBrowse, search and filter every item, adjust stock by location, scan barcodes, and manage categories, locations, batches and cycle counts.',
   '/projects':
@@ -93,12 +95,17 @@ export function DashboardNav() {
   // Alert badge: count of undismissed alerts for the Alerts tile.
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
+  const enabledFeatures = useEnabledFeatures();
 
   return (
     <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
       {NAV_GROUP_ORDER.map((group) => {
-        // The dashboard itself is the current screen, so it never appears as a tile.
-        const destinations = NAV_DESTINATIONS.filter((dest) => dest.group === group && dest.to !== '/');
+        // The dashboard itself is the current screen, so it never appears as a tile; a tile
+        // whose feature is switched off is dropped too. An empty group collapses (returns
+        // null), so no bare heading is left behind.
+        const destinations = NAV_DESTINATIONS.filter(
+          (dest) => dest.group === group && dest.to !== '/' && enabledFeatures.has(dest.feature),
+        );
         if (destinations.length === 0) return null;
 
         return (

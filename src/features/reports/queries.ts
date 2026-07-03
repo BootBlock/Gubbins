@@ -108,9 +108,20 @@ export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
   });
 }
 
-export function useSpendAnalytics(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+/**
+ * Spend analytics (money out from received POs, project expenses and asset acquisitions).
+ *
+ * `options.enabled` lets the Reports screen skip the fetch when the Purchase-orders module is
+ * off (Modular UI Phase 7) — the spend card is dropped rather than fetched-then-hidden.
+ * Defaults to enabled.
+ */
+export function useSpendAnalytics(
+  windowDays: number = DEFAULT_ANALYTICS_WINDOW,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ['reports', 'spend', windowDays, SPEND_BUCKETS],
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
+    enabled: options?.enabled ?? true,
   });
 }

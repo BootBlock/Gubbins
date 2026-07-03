@@ -23,6 +23,7 @@ import { SearchIcon, PackageIcon, CloseIcon, ChevronRightIcon } from '@/componen
 import { cn } from '@/lib/utils';
 import { rankFuzzy } from '@/lib/fuzzy';
 import { NAV_DESTINATIONS, type NavDestination } from '@/components/nav/nav-destinations';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems } from '@/features/inventory/queries';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
@@ -77,6 +78,7 @@ function optionId(entry: PaletteEntry): string {
 
 function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const navigate = useNavigate();
+  const enabledFeatures = useEnabledFeatures();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -107,7 +109,10 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     if (isScreenMode) {
-      return rankFuzzy(NAV_DESTINATIONS, screenQuery, (d) => d.label).map(({ item, match }) => ({
+      // Screen-jump only offers destinations whose feature is enabled; item search itself is
+      // core inventory and is never gated (§3, Phase 2).
+      const screens = NAV_DESTINATIONS.filter((d) => enabledFeatures.has(d.feature));
+      return rankFuzzy(screens, screenQuery, (d) => d.label).map(({ item, match }) => ({
         kind: 'screen' as const,
         dest: item,
         positions: match.positions,
@@ -126,7 +131,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     return [...ranked.map((r) => ({ item: r.item, positions: r.match.positions })), ...rest]
       .slice(0, MAX_RESULTS)
       .map(({ item, positions }) => ({ kind: 'item' as const, item, positions }));
-  }, [isScreenMode, screenQuery, hasItemQuery, itemSearch, itemsQuery.data]);
+  }, [isScreenMode, screenQuery, hasItemQuery, itemSearch, itemsQuery.data, enabledFeatures]);
 
   // Keep the active row in range as results change.
   useEffect(() => {

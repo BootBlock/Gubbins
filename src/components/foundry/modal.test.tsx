@@ -61,6 +61,33 @@ describe('Modal — accessible focus management', () => {
     expect(document.activeElement).toBe(last);
   });
 
+  it('treats a roving-tabindex radiogroup as a single Tab stop (skips tabindex=-1 radios)', () => {
+    render(
+      <Modal open onClose={() => {}} title="Set up">
+        <div role="radiogroup" aria-label="Presets">
+          <button role="radio" aria-checked tabIndex={0}>
+            A
+          </button>
+          <button role="radio" aria-checked={false} tabIndex={-1}>
+            B
+          </button>
+          <button role="radio" aria-checked={false} tabIndex={-1}>
+            C
+          </button>
+        </div>
+        <button>Confirm</button>
+      </Modal>,
+    );
+    const checkedRadio = screen.getByRole('radio', { name: 'A' });
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+
+    // Tab off the checked radio jumps straight to Confirm — the unchecked radios
+    // (tabindex="-1") are not individual Tab stops, so the group is one stop.
+    checkedRadio.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(confirm);
+  });
+
   // A nested dialog always opens *after* its parent is mounted (a control inside the
   // parent opens it), so these harnesses open it via a click — matching the real flow
   // the modal stack is ordered by.

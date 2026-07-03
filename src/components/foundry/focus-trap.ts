@@ -9,15 +9,16 @@
  * CSS selector for the elements a focus trap should cycle through. Disabled
  * controls and `tabindex="-1"` (programmatically-focusable-only) elements are
  * deliberately excluded so they are never reachable by Tab inside the dialog.
+ *
+ * The `tabindex="-1"` exclusion is applied to *every* clause, not just the bare
+ * `[tabindex]` one: a natively-focusable element (`button`, `input`, …) that opts out
+ * of the tab order with `tabindex="-1"` must be skipped too. This is what makes a roving
+ * `role="radio"` group inside a dialog (its unchecked radios carry `tabindex="-1"`) count
+ * as a single Tab stop rather than one stop per radio.
  */
-export const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',');
+export const FOCUSABLE_SELECTOR = ['a[href]', 'button', 'input', 'select', 'textarea', '[tabindex]']
+  .map((sel) => `${sel}:not([disabled]):not([tabindex="-1"])`)
+  .join(',');
 
 /**
  * Given the number of focusable elements in the dialog, the index of the one

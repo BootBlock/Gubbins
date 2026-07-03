@@ -209,6 +209,10 @@ function makeAllLoading() {
   queryState.spend = { isLoading: true, isError: false };
 }
 
+// Captures the `enabled` option the spend query hook was last called with, so the gating test
+// can assert the query is disabled (not merely filtered out of the DOM) when the module is off.
+let spendEnabled: boolean | undefined;
+
 vi.mock('./queries', () => ({
   REPORT_WINDOW_DAYS: 30,
   DEAD_STOCK_SINCE_DAYS: 90,
@@ -229,13 +233,17 @@ vi.mock('./queries', () => ({
   useStockAging: () => ({ ...queryState.aging }),
   useValuationTrend: () => ({ ...queryState.trend }),
   useDataHygiene: () => ({ ...queryState.hygiene }),
-  useSpendAnalytics: () => ({ ...queryState.spend }),
+  useSpendAnalytics: (_windowDays?: number, options?: { enabled?: boolean }) => {
+    spendEnabled = options?.enabled;
+    return { ...queryState.spend };
+  },
 }));
 
 // --------------------------------------------------------------------------
 // The component under test (imported AFTER all mocks are declared).
 // --------------------------------------------------------------------------
 import { ReportsScreen } from './ReportsScreen';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 
 // --------------------------------------------------------------------------
 // Tests
@@ -244,6 +252,8 @@ import { ReportsScreen } from './ReportsScreen';
 afterEach(() => {
   cleanup();
   makeAllLoading();
+  useModulesStore.setState({ intent: {} });
+  spendEnabled = undefined;
 });
 
 describe('ReportsScreen — aggregate-completion aria-live announcement (Phase 63 / WCAG 4.1.3)', () => {
@@ -343,5 +353,29 @@ describe('ReportsScreen — advanced analytics (Phase 74)', () => {
     const alertRegions = screen.getAllByRole('alert');
     const errorRegion = alertRegions.find((el) => el.textContent?.includes('Analytics failed'));
     expect(errorRegion).toBeTruthy();
+  });
+});
+
+describe('ReportsScreen — spend card gating (Modular UI Phase 7)', () => {
+  it('shows the Spend analytics card and enables its query when Purchase orders is on', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    expect(screen.queryByRole('heading', { name: 'Spend analytics' })).not.toBeNull();
+    expect(screen.queryByTestId('spend-live-region')).not.toBeNull();
+    expect(spendEnabled).toBe(true);
+  });
+
+  it('drops the Spend analytics card and disables its query when Purchase orders is off', () => {
+    useModulesStore.getState().setFeatureIntent('purchase-orders', false);
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    // The whole card and its aria-live regions are gone — no empty shell, no orphaned announce.
+    expect(screen.queryByRole('heading', { name: 'Spend analytics' })).toBeNull();
+    expect(screen.queryByTestId('spend-live-region')).toBeNull();
+    expect(screen.queryByTestId('spend-error-live-region')).toBeNull();
+    // The gated query is disabled, not merely hidden.
+    expect(spendEnabled).toBe(false);
+    // Sibling report cards are untouched.
+    expect(screen.queryByTestId('abc-breakdown')).not.toBeNull();
   });
 });

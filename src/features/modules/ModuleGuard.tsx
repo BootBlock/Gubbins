@@ -1,0 +1,132 @@
+/**
+ * Route guard + "module hidden" interstitial (modular-ui-plan §4, Phase 5).
+ *
+ * Wraps the screen an optional page route renders. When the route's feature is effectively
+ * on, the children (the real screen) render unchanged — the guard is transparent. When the
+ * feature is off, we render a gentle interstitial in place (no redirect) explaining the
+ * module is hidden, with two ways forward:
+ *
+ *  - **Show this module** flips the feature's stored intent back on (and, if the feature has
+ *    dependencies that are themselves off, first confirms the knock-on switches via the same
+ *    `ConfirmCascadeModal` the Modules screen uses). Re-enabling immediately reveals the
+ *    screen because `useFeature` re-resolves to on.
+ *  - **Continue anyway** renders the real screen just this once via a local override, without
+ *    touching intent — the module stays hidden everywhere else.
+ *
+ * The interstitial composes the Foundry `PageHeader` (so the global nav + skip-link wiring
+ * stay intact) and its own `<main>`, mirroring every other screen.
+ */
+import { useState, type ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
+import { Button, PageContainer, PageHeader, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { HideIcon, ModulesIcon, ShowIcon } from '@/components/icons';
+import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/foundry/button';
+import { useModulesStore } from '@/state/stores/useModulesStore';
+import { ConfirmCascadeModal, type PendingCascade } from './ConfirmCascadeModal';
+import { FEATURE_REGISTRY, getFeature, type FeatureId } from './feature-registry';
+import { closureToEnable } from './modules-graph';
+import { useFeature } from './useFeature';
+
+export interface ModuleGuardProps {
+  /** The feature this route belongs to; sourced from the registry (`featureForRoute`). */
+  readonly feature: FeatureId;
+  /** The real screen to render when the feature is on (or the user continues anyway). */
+  readonly children: ReactNode;
+}
+
+/**
+ * Gate an optional page route behind its feature. Transparent when the feature is on;
+ * otherwise renders the "module hidden" interstitial in place.
+ */
+export function ModuleGuard({ feature, children }: ModuleGuardProps) {
+  const enabled = useFeature(feature);
+  // A one-shot "Continue anyway" override — renders the real screen without changing intent.
+  const [override, setOverride] = useState(false);
+
+  if (enabled || override) return <>{children}</>;
+  return <ModuleHiddenInterstitial feature={feature} onContinue={() => setOverride(true)} />;
+}
+
+/** The in-place "this module is hidden" screen with Show / Continue affordances. */
+function ModuleHiddenInterstitial({
+  feature,
+  onContinue,
+}: {
+  readonly feature: FeatureId;
+  readonly onContinue: () => void;
+}) {
+  const intent = useModulesStore((state) => state.intent);
+  const setFeatureIntent = useModulesStore((state) => state.setFeatureIntent);
+  const [pending, setPending] = useState<PendingCascade | null>(null);
+
+  const def = getFeature(feature);
+  // Defensive: an unregistered id can't reach here (the prop is a FeatureId), but never crash.
+  if (!def) return null;
+
+  /**
+   * Turn the module back on. If it depends on features that are currently off, confirm the
+   * pulled-in switches first (matching the Modules screen); otherwise flip it on directly.
+   */
+  const showModule = () => {
+    const closure = [...closureToEnable(feature, intent, FEATURE_REGISTRY)];
+    if (closure.some((id) => id !== feature)) {
+      setPending({ action: 'enable', id: feature, closure });
+      return;
+    }
+    setFeatureIntent(feature, true);
+  };
+
+  const confirmEnable = () => {
+    if (!pending) return;
+    // Enabling must switch every pulled-in dependency on, or the feature still resolves off.
+    for (const id of pending.closure) setFeatureIntent(id, true);
+    setPending(null);
+  };
+
+  return (
+    <PageContainer>
+      <PageHeader icon={<def.Icon />} title={def.label} />
+
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="flex flex-1 animate-rise flex-col items-center justify-center py-10 outline-none"
+      >
+        <Surface className="flex max-w-md flex-col items-center gap-4 p-8 text-center">
+          <span
+            aria-hidden
+            className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground [&_svg]:size-6"
+          >
+            <HideIcon />
+          </span>
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-lg font-semibold text-foreground">{def.label} is hidden</h2>
+            <p className="text-sm text-muted-foreground">{def.description}</p>
+            <p className="text-sm text-muted-foreground">
+              You’ve switched this module off for a leaner app. Your data is untouched — switch it back on
+              whenever you like.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button data-testid="module-guard-show" onClick={showModule}>
+              <ShowIcon aria-hidden />
+              Show this module
+            </Button>
+            <Button variant="outline" data-testid="module-guard-continue" onClick={onContinue}>
+              Continue anyway
+            </Button>
+          </div>
+          <Link to="/modules" className={cn(buttonVariants({ variant: 'link' }), 'h-auto px-0')}>
+            <ModulesIcon aria-hidden />
+            Manage modules
+          </Link>
+        </Surface>
+      </main>
+
+      {pending ? (
+        <ConfirmCascadeModal pending={pending} onCancel={() => setPending(null)} onConfirm={confirmEnable} />
+      ) : null}
+    </PageContainer>
+  );
+}

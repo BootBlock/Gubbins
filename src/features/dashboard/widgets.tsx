@@ -48,6 +48,7 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
+import type { FeatureId } from '@/features/modules/feature-registry';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -57,6 +58,16 @@ export interface WidgetDefinition {
   readonly to?: string;
   /** Optional `#anchor` (used with `to`) to deep-link a specific section of the target. */
   readonly hash?: string;
+  /**
+   * The Modular UI feature this widget belongs to (modular-ui-plan §4). When the feature
+   * is not in the effective-enabled set the grid drops the widget from the board *and* the
+   * "Customise" picker. A widget with no `feature` is always shown — either it's core
+   * inventory (low stock, totals) or app-status plumbing (database/storage/platform) that
+   * makes sense regardless of which modules are on. Note this gates the *widget*; a
+   * surviving widget whose `to` points at a hidden route drops only its link (see
+   * `featureForRoute`), it isn't removed.
+   */
+  readonly feature?: FeatureId;
   readonly Component: ComponentType;
 }
 
@@ -521,6 +532,7 @@ function PlatformWidget() {
  * re-pin any of them.
  */
 export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
+  // Core inventory pulse — no feature gate; only its `to: /reports` link is conditional.
   {
     id: 'inventory-totals',
     title: 'Inventory totals',
@@ -528,6 +540,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     to: '/reports',
     Component: InventoryTotalsWidget,
   },
+  // Low stock is core reorder inventory — always meaningful, so no feature gate.
   {
     id: 'low-stock',
     title: 'Low stock',
@@ -540,14 +553,23 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'Soon to expire',
     icon: <ExpiryIcon />,
     to: '/inventory',
+    feature: 'perishables',
     Component: ExpiringWidget,
   },
-  { id: 'overdue', title: 'Overdue items', icon: <DueDateIcon />, to: '/contacts', Component: OverdueWidget },
+  {
+    id: 'overdue',
+    title: 'Overdue items',
+    icon: <DueDateIcon />,
+    to: '/contacts',
+    feature: 'contacts',
+    Component: OverdueWidget,
+  },
   {
     id: 'maintenance',
     title: 'Maintenance due',
     icon: <MaintenanceIcon />,
     to: '/inventory',
+    feature: 'maintenance',
     Component: MaintenanceWidget,
   },
   {
@@ -555,6 +577,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'In transit',
     icon: <TruckIcon />,
     to: '/inventory',
+    feature: 'purchase-orders',
     Component: InTransitWidget,
   },
   {
@@ -562,6 +585,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'Project statuses',
     icon: <ProjectIcon />,
     to: '/projects',
+    feature: 'projects',
     Component: ProjectsWidget,
   },
   {
@@ -569,6 +593,8 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'Budget alerts',
     icon: <BudgetIcon />,
     to: '/projects',
+    // Budgets live inside Projects (no separate flag in v1), so they gate together.
+    feature: 'projects',
     Component: BudgetAlertsWidget,
   },
   {
@@ -576,8 +602,10 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'Recent activity',
     icon: <HistoryIcon />,
     to: '/activity',
+    feature: 'activity',
     Component: RecentActivityWidget,
   },
+  // System-status board — app plumbing, meaningful whatever modules are on (no gate).
   { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
   {
     id: 'system-storage',

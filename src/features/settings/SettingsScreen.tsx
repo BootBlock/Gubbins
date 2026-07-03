@@ -21,6 +21,7 @@ import {
   InstallIcon,
   KioskIcon,
   LightThemeIcon,
+  ModulesIcon,
   NotificationIcon,
   QrCodeIcon,
   ScanIcon,
@@ -31,6 +32,7 @@ import {
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { cn } from '@/lib/utils';
+import { useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
@@ -86,6 +88,14 @@ export function SettingsScreen() {
   const [triageOpen, setTriageOpen] = useState(false);
   const install = useInstallPrompt();
 
+  // Modular UI (Phase 7): controls whose feature is off are hidden here too, so a hidden
+  // capability leaves no orphaned setting behind. The Scanner group drops whole; the
+  // "expiring soon" window and budget-warn rows drop individually (their Inventory & lifecycle
+  // section stays for the always-present low-stock thresholds — no empty section shell).
+  const scannerOn = useFeature('scanner');
+  const perishablesOn = useFeature('perishables');
+  const projectsOn = useFeature('projects');
+
   return (
     <PageContainer>
       <PageHeader icon={<SettingsIcon />} title="Settings" />
@@ -118,6 +128,22 @@ export function SettingsScreen() {
               onChange={(value) => prefs.setLocale(value)}
               options={LOCALE_OPTIONS.map((l) => ({ value: l.value, label: l.label }))}
             />
+          </SettingRow>
+        </SettingsSection>
+
+        <SettingsSection icon={<ModulesIcon />} title="Modules">
+          <SettingRow
+            label="Manage modules"
+            description="Choose which pages and capabilities appear, from a preset or a granular list. Hidden features stay fully functional underneath."
+          >
+            <Link
+              to="/modules"
+              data-testid="open-modules-settings"
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
+              <ModulesIcon />
+              Manage modules
+            </Link>
           </SettingRow>
         </SettingsSection>
 
@@ -243,47 +269,49 @@ export function SettingsScreen() {
           </SettingRow>
         </SettingsSection>
 
-        <SettingsSection icon={<ScanIcon />} title="Scanner">
-          <SettingRow
-            label="Barcode symbology"
-            description="Restrict the live scanner to one code type for faster decoding, or scan all supported codes."
-          >
-            <Select
-              aria-label="Barcode symbology"
-              data-testid="setting-scanner-symbology"
-              className="h-9 w-56"
-              value={prefs.scannerSymbology}
-              onChange={(value) => prefs.setScannerSymbology(value as typeof prefs.scannerSymbology)}
-              options={SCANNER_SYMBOLOGY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            />
-          </SettingRow>
-          <SettingRow
-            label="Beep on scan"
-            description="Play a short confirmation tone after each successful scan (§6.5)."
-          >
-            <Select
-              aria-label="Beep on scan"
-              data-testid="setting-scanner-beep"
-              className="h-9 w-40"
-              value={prefs.scannerBeep ? 'on' : 'off'}
-              onChange={(value) => prefs.setScannerBeep(value === 'on')}
-              options={ON_OFF_OPTIONS}
-            />
-          </SettingRow>
-          <SettingRow
-            label="Vibrate on scan"
-            description="Give a haptic bump after each successful scan, where the device supports it."
-          >
-            <Select
-              aria-label="Vibrate on scan"
-              data-testid="setting-scanner-haptics"
-              className="h-9 w-40"
-              value={prefs.scannerHaptics ? 'on' : 'off'}
-              onChange={(value) => prefs.setScannerHaptics(value === 'on')}
-              options={ON_OFF_OPTIONS}
-            />
-          </SettingRow>
-        </SettingsSection>
+        {scannerOn ? (
+          <SettingsSection icon={<ScanIcon />} title="Scanner">
+            <SettingRow
+              label="Barcode symbology"
+              description="Restrict the live scanner to one code type for faster decoding, or scan all supported codes."
+            >
+              <Select
+                aria-label="Barcode symbology"
+                data-testid="setting-scanner-symbology"
+                className="h-9 w-56"
+                value={prefs.scannerSymbology}
+                onChange={(value) => prefs.setScannerSymbology(value as typeof prefs.scannerSymbology)}
+                options={SCANNER_SYMBOLOGY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Beep on scan"
+              description="Play a short confirmation tone after each successful scan (§6.5)."
+            >
+              <Select
+                aria-label="Beep on scan"
+                data-testid="setting-scanner-beep"
+                className="h-9 w-40"
+                value={prefs.scannerBeep ? 'on' : 'off'}
+                onChange={(value) => prefs.setScannerBeep(value === 'on')}
+                options={ON_OFF_OPTIONS}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Vibrate on scan"
+              description="Give a haptic bump after each successful scan, where the device supports it."
+            >
+              <Select
+                aria-label="Vibrate on scan"
+                data-testid="setting-scanner-haptics"
+                className="h-9 w-40"
+                value={prefs.scannerHaptics ? 'on' : 'off'}
+                onChange={(value) => prefs.setScannerHaptics(value === 'on')}
+                options={ON_OFF_OPTIONS}
+              />
+            </SettingRow>
+          </SettingsSection>
+        ) : null}
 
         <SettingsSection icon={<QrCodeIcon />} title="Labels &amp; QR codes">
           <SettingRow
@@ -295,24 +323,28 @@ export function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection icon={<ExpiryIcon />} title="Inventory &amp; lifecycle">
-          <SettingRow
-            label="“Expiring soon” window"
-            description={`How many days before an expiry date a perishable is flagged on the dashboard (${EXPIRY_WINDOW_BOUNDS.min}–${EXPIRY_WINDOW_BOUNDS.max}).`}
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label="Expiring soon window (days)"
-                data-testid="setting-expiry-days"
-                type="number"
-                min={EXPIRY_WINDOW_BOUNDS.min}
-                max={EXPIRY_WINDOW_BOUNDS.max}
-                className="h-9 w-24"
-                value={prefs.expirySoonWindowDays}
-                onChange={(e) => prefs.setExpirySoonWindowDays(clampExpiryWindowDays(Number(e.target.value)))}
-              />
-              <span className="text-sm text-muted-foreground">days</span>
-            </div>
-          </SettingRow>
+          {perishablesOn ? (
+            <SettingRow
+              label="“Expiring soon” window"
+              description={`How many days before an expiry date a perishable is flagged on the dashboard (${EXPIRY_WINDOW_BOUNDS.min}–${EXPIRY_WINDOW_BOUNDS.max}).`}
+            >
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label="Expiring soon window (days)"
+                  data-testid="setting-expiry-days"
+                  type="number"
+                  min={EXPIRY_WINDOW_BOUNDS.min}
+                  max={EXPIRY_WINDOW_BOUNDS.max}
+                  className="h-9 w-24"
+                  value={prefs.expirySoonWindowDays}
+                  onChange={(e) =>
+                    prefs.setExpirySoonWindowDays(clampExpiryWindowDays(Number(e.target.value)))
+                  }
+                />
+                <span className="text-sm text-muted-foreground">days</span>
+              </div>
+            </SettingRow>
+          ) : null}
           <SettingRow
             label="Default low-stock quantity threshold"
             description={`The default reorder point for discrete items — those at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
@@ -351,24 +383,26 @@ export function SettingsScreen() {
               <span className="text-sm text-muted-foreground">%</span>
             </div>
           </SettingRow>
-          <SettingRow
-            label="Budget warning threshold"
-            description={`Projects are flagged on the dashboard once spending reaches this percentage of their budget (${BUDGET_WARN_BOUNDS.min}–${BUDGET_WARN_BOUNDS.max}).`}
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label="Budget warning threshold"
-                data-testid="setting-budget-warn"
-                type="number"
-                min={BUDGET_WARN_BOUNDS.min}
-                max={BUDGET_WARN_BOUNDS.max}
-                className="h-9 w-24"
-                value={prefs.budgetWarnPercent}
-                onChange={(e) => prefs.setBudgetWarnPercent(clampBudgetWarnPercent(Number(e.target.value)))}
-              />
-              <span className="text-sm text-muted-foreground">%</span>
-            </div>
-          </SettingRow>
+          {projectsOn ? (
+            <SettingRow
+              label="Budget warning threshold"
+              description={`Projects are flagged on the dashboard once spending reaches this percentage of their budget (${BUDGET_WARN_BOUNDS.min}–${BUDGET_WARN_BOUNDS.max}).`}
+            >
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label="Budget warning threshold"
+                  data-testid="setting-budget-warn"
+                  type="number"
+                  min={BUDGET_WARN_BOUNDS.min}
+                  max={BUDGET_WARN_BOUNDS.max}
+                  className="h-9 w-24"
+                  value={prefs.budgetWarnPercent}
+                  onChange={(e) => prefs.setBudgetWarnPercent(clampBudgetWarnPercent(Number(e.target.value)))}
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            </SettingRow>
+          ) : null}
         </SettingsSection>
 
         <SettingsSection icon={<StorageIcon />} title="Storage">

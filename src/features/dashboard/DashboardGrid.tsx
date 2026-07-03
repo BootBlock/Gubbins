@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils';
 import { buttonVariants, Surface, Tooltip, useReducedMotion } from '@/components/foundry';
 import { CustomiseIcon, DragHandleIcon, HideIcon, ShowIcon, CheckIcon, ResetIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { featureForRoute } from '@/features/modules/feature-registry';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import {
   DASHBOARD_COLUMNS,
   moveWidget,
@@ -27,6 +29,7 @@ import {
   setWidgetVisible,
   type DashboardLayout,
   type NudgeDirection,
+  type WidgetPlacement,
 } from './dashboard-layout';
 import { DASHBOARD_WIDGET_IDS, widgetById, type WidgetDefinition } from './widgets';
 
@@ -56,15 +59,37 @@ export function DashboardGrid() {
   // when the drag ends so the indicator only shows while arranging.
   const [overCell, setOverCell] = useState<{ x: number; y: number } | null>(null);
 
+  // Which Modular UI features are on (modular-ui-plan §4). Drives both what appears on the
+  // board and whether a surviving widget's quick-link stays live.
+  const enabled = useEnabledFeatures();
+
   // Reconcile the persisted layout against the live registry every render so the board
   // survives the widget set changing across releases (new widgets appear, removed ones
   // drop). The reconciled layout is what we render and what edits mutate.
-  const layout = useMemo(() => reconcileLayout(stored, DASHBOARD_WIDGET_IDS), [stored]);
+  const fullLayout = useMemo(() => reconcileLayout(stored, DASHBOARD_WIDGET_IDS), [stored]);
+
+  // Gate on top of the stored layout: a widget whose feature is off is split out into
+  // `gated` and never rendered, while `layout` (its enabled complement) is what the board
+  // draws and what every edit operates on. The gated placements are kept verbatim and
+  // concatenated back on each persist (`apply`), so a hidden module's widgets keep their
+  // exact coordinates — turning the module back on restores the prior layout untouched.
+  const { layout, gated } = useMemo(() => {
+    const onBoard: WidgetPlacement[] = [];
+    const gatedOut: WidgetPlacement[] = [];
+    for (const p of fullLayout) {
+      const feature = widgetById(p.id)?.feature;
+      (!feature || enabled.has(feature) ? onBoard : gatedOut).push(p);
+    }
+    return { layout: onBoard as DashboardLayout, gated: gatedOut as DashboardLayout };
+  }, [fullLayout, enabled]);
+
   const placed = placedWidgets(layout);
   const hidden = layout.filter((p) => !p.visible);
 
   const apply = (next: DashboardLayout) => {
-    if (next !== layout) setLayout(next);
+    // Pure ops return the same reference on a no-op; only persist a real change. The
+    // gated placements are merged back untouched so their coords are never rewritten.
+    if (next !== layout) setLayout([...next, ...gated]);
   };
 
   const endDrag = () => {
@@ -166,6 +191,11 @@ export function DashboardGrid() {
         {placed.map((p, i) => {
           const def = widgetById(p.id);
           if (!def) return null;
+          // Resolve the quick-link through the enabled set: a surviving widget whose `to`
+          // targets a now-hidden route drops its link rather than navigate into a hidden
+          // module (modular-ui-plan §4). An ungated route (or no `to`) stays live.
+          const linkFeature = def.to ? featureForRoute(def.to) : undefined;
+          const linkActive = !linkFeature || enabled.has(linkFeature);
           return (
             <WidgetTile
               key={p.id}
@@ -174,6 +204,7 @@ export function DashboardGrid() {
               y={p.y}
               index={i}
               editing={editing}
+              linkActive={linkActive}
               isDropTarget={p.id === ghostTargetId}
               onDragStart={() => setDraggingId(p.id)}
               onDragEnd={endDrag}
@@ -261,6 +292,7 @@ function WidgetTile({
   y,
   index,
   editing,
+  linkActive,
   isDropTarget,
   onDragStart,
   onDragEnd,
@@ -274,6 +306,8 @@ function WidgetTile({
   y: number;
   index: number;
   editing: boolean;
+  /** Whether this tile's `to` link is live (its target route's feature is enabled). */
+  linkActive: boolean;
   isDropTarget: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -352,8 +386,10 @@ function WidgetTile({
   );
 
   // The grid item is the outermost element — it carries the coordinate placement. A
-  // quick-link target makes the whole tile navigable (§3 "quick-links").
-  if (def.to) {
+  // quick-link target makes the whole tile navigable (§3 "quick-links"), unless the
+  // target route's module is hidden — then the tile renders as a plain, non-clickable
+  // card so it never navigates into a hidden module (modular-ui-plan §4).
+  if (def.to && linkActive) {
     return (
       <Link to={def.to} hash={def.hash} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
         {card}

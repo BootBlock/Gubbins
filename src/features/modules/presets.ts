@@ -1,0 +1,85 @@
+/**
+ * Curated module presets (modular-ui-plan §2.5).
+ *
+ * A preset is a named starting point offered on the Modules manager and the first-run
+ * chooser. Applying one sets intent to `true` for its `featureIds` and `false` for every
+ * other optional feature (see `useModulesStore.applyPreset`); the dependency closure is
+ * then handled by `resolveEnabled`, so a preset need only list the features it wants —
+ * their dependencies come along automatically at read time.
+ */
+import type { FeatureId } from './feature-registry';
+import { OPTIONAL_FEATURE_IDS } from './feature-registry';
+import type { LucideIcon } from '@/components/icons';
+import { CustomiseIcon, PackageIcon, ProjectIcon, WarrantyIcon } from '@/components/icons';
+
+/** Stable preset keys. Referenced by the manager/first-run UI; treat like a public enum. */
+export type PresetId = 'everything' | 'minimal' | 'home-hobby' | 'maker-workshop' | 'asset-equipment';
+
+export interface Preset {
+  readonly id: PresetId;
+  readonly label: string;
+  readonly description: string;
+  readonly Icon: LucideIcon;
+  /**
+   * The optional features this preset turns on. Every optional feature *not* listed is
+   * turned off. Dependencies need not be listed — `resolveEnabled` pulls them in — but
+   * listing them keeps the intent explicit and self-documenting.
+   */
+  readonly featureIds: readonly FeatureId[];
+}
+
+export const PRESETS: readonly Preset[] = [
+  {
+    id: 'everything',
+    label: 'Everything',
+    description: 'Every page and capability switched on — the full app (the default).',
+    Icon: CustomiseIcon,
+    featureIds: OPTIONAL_FEATURE_IDS,
+  },
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    description: 'Just the essentials — Dashboard, Inventory, Settings and About.',
+    Icon: PackageIcon,
+    featureIds: [],
+  },
+  {
+    id: 'home-hobby',
+    label: 'Home & hobby',
+    description: 'A lean set for personal supplies and household stock.',
+    Icon: PackageIcon,
+    featureIds: ['reports', 'scanner', 'perishables', 'tags-attachments', 'alerts', 'upcoming'],
+  },
+  {
+    id: 'maker-workshop',
+    label: 'Maker workshop',
+    description: 'Projects, procurement and servicing for a busy workshop.',
+    Icon: ProjectIcon,
+    featureIds: [
+      'projects',
+      'purchase-orders',
+      'contacts',
+      'reports',
+      'scanner',
+      'maintenance',
+      'custom-fields',
+      'alerts',
+      'upcoming',
+    ],
+  },
+  {
+    id: 'asset-equipment',
+    label: 'Asset & equipment',
+    description: 'Lending, servicing and lifecycle for tools and equipment.',
+    Icon: WarrantyIcon,
+    featureIds: ['contacts', 'bookings', 'maintenance', 'warranty', 'reports', 'alerts', 'upcoming'],
+  },
+];
+
+/** Lookup by id, built once from {@link PRESETS}. */
+const PRESET_BY_ID: ReadonlyMap<PresetId, Preset> = new Map(PRESETS.map((p) => [p.id, p]));
+
+/** Look up a preset by id, or `undefined` if unknown. */
+export function getPreset(id: PresetId): Preset | undefined {
+  return PRESET_BY_ID.get(id);
+}

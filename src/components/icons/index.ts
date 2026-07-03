@@ -163,6 +163,15 @@ export {
   CalendarX as ExpiryIcon,
   GitBranch as VariantIcon,
 
+  // Modular UI feature registry (feat/modular-ui) — semantic glyphs for the
+  // capability sub-features toggled from the Modules manager. Warranty/asset
+  // lifecycle reuses the shield-check "protection" glyph; batches/lots reuse the
+  // stacked-layers glyph. `Blocks` is the "building blocks" glyph for the Modules
+  // manager screen itself.
+  ShieldCheck as WarrantyIcon,
+  Layers as BatchIcon,
+  Blocks as ModulesIcon,
+
   // Cloud Sync & File System Access (Phase 7, §7, §2)
   Cloud as CloudIcon,
   CloudOff as OfflineIcon,

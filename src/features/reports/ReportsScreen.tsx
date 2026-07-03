@@ -10,6 +10,7 @@ import {
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { ExportIcon, LowStockIcon, ReportIcon } from '@/components/icons';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
@@ -70,8 +71,14 @@ export function ReportsScreen() {
   const hygiene = useDataHygiene();
 
   // Phase 79 procurement / spend analytics — its own selectable trailing window.
+  //
+  // Modular UI (Phase 7): the spend card is dropped when the Purchase-orders module is off —
+  // its money-out sources are procurement-led (received POs, plus project expenses and asset
+  // acquisitions), so it belongs to that module. Skip the fetch (`enabled`) rather than
+  // fetch-then-hide, and omit the whole section + its live regions below.
+  const spendOn = useEnabledFeatures().has('purchase-orders');
   const [spendWindow, setSpendWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
-  const spend = useSpendAnalytics(spendWindow);
+  const spend = useSpendAnalytics(spendWindow, { enabled: spendOn });
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
@@ -135,14 +142,15 @@ export function ReportsScreen() {
   const [spendAnnouncement, setSpendAnnouncement] = useState('');
   const spendAnnouncedRef = useRef(false);
   useEffect(() => {
-    if (spend.isLoading || spendAnnouncedRef.current) return;
+    // Skip the announcement entirely when the spend card is gated off (query disabled).
+    if (!spendOn || spend.isLoading || spendAnnouncedRef.current) return;
     spendAnnouncedRef.current = true;
     setSpendAnnouncement(
       spend.isError
         ? 'Spend analytics failed to load.'
         : `Spend analytics ready — ${f.currency(spend.data?.total ?? 0)} in the window.`,
     );
-  }, [spend.isLoading, spend.isError, spend.data, f]);
+  }, [spendOn, spend.isLoading, spend.isError, spend.data, f]);
 
   return (
     <PageContainer>
@@ -329,30 +337,38 @@ export function ReportsScreen() {
         </section>
 
         {/* Spend analytics (Phase 79) — money OUT over time, by source/supplier/category.
-            Distinct from the valuation trend above (inventory value). */}
-        <section className="flex flex-col gap-3" aria-labelledby="spend-heading">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
-              Spend analytics
-            </h2>
-            <WindowToggle value={spendWindow} onChange={setSpendWindow} formatters={f} label="Spend window" />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Cash out from received purchase orders, project expenses and asset acquisitions. An item bought
-            through a purchase order may also carry an acquisition price, so sources can overlap.
-          </p>
-          <Panel title={`Spend (last ${spendWindow} days)`}>
-            {spend.isLoading ? (
-              <CentredSpinner />
-            ) : spend.data ? (
-              <SpendBreakdown report={spend.data} formatters={f} />
-            ) : (
-              <p className="py-6 text-center text-sm text-destructive">
-                The spend analytics report failed to load.
-              </p>
-            )}
-          </Panel>
-        </section>
+            Distinct from the valuation trend above (inventory value). Dropped when the
+            Purchase-orders module is off (Modular UI Phase 7). */}
+        {spendOn ? (
+          <section className="flex flex-col gap-3" aria-labelledby="spend-heading">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
+                Spend analytics
+              </h2>
+              <WindowToggle
+                value={spendWindow}
+                onChange={setSpendWindow}
+                formatters={f}
+                label="Spend window"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Cash out from received purchase orders, project expenses and asset acquisitions. An item bought
+              through a purchase order may also carry an acquisition price, so sources can overlap.
+            </p>
+            <Panel title={`Spend (last ${spendWindow} days)`}>
+              {spend.isLoading ? (
+                <CentredSpinner />
+              ) : spend.data ? (
+                <SpendBreakdown report={spend.data} formatters={f} />
+              ) : (
+                <p className="py-6 text-center text-sm text-destructive">
+                  The spend analytics report failed to load.
+                </p>
+              )}
+            </Panel>
+          </section>
+        ) : null}
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -384,13 +400,18 @@ export function ReportsScreen() {
         {hygiene.isError && hygieneAnnouncement ? <p>{hygieneAnnouncement}</p> : null}
       </LiveRegion>
 
-      {/* The spend-analytics block's own once-only completion region (Phase 79). */}
-      <LiveRegion visuallyHidden data-testid="spend-live-region">
-        {!spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
-      </LiveRegion>
-      <LiveRegion urgency="assertive" visuallyHidden data-testid="spend-error-live-region">
-        {spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
-      </LiveRegion>
+      {/* The spend-analytics block's own once-only completion region (Phase 79); omitted with
+          the section when the Purchase-orders module is off (Modular UI Phase 7). */}
+      {spendOn ? (
+        <>
+          <LiveRegion visuallyHidden data-testid="spend-live-region">
+            {!spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
+          </LiveRegion>
+          <LiveRegion urgency="assertive" visuallyHidden data-testid="spend-error-live-region">
+            {spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
+          </LiveRegion>
+        </>
+      ) : null}
     </PageContainer>
   );
 }

@@ -1,0 +1,142 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+
+// Plain-anchor Link so the grid renders without a RouterProvider; the `href` lets us
+// assert whether a tile is a live quick-link or a dropped (non-clickable) one.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+// A controlled widget registry so this test exercises the grid's gating logic — not the
+// real widgets' data hooks. `featureForRoute` (from the real registry) still resolves the
+// `to` targets below, so the dead-link path is tested end to end against real route data.
+vi.mock('./widgets', () => {
+  const defs = [
+    // Ungated widget with a core-route link — always on the board, link always live.
+    { id: 'alpha', title: 'Alpha', icon: null, to: '/inventory', Component: () => <p>Alpha body</p> },
+    // Gated on `projects` — disappears entirely when Projects is off.
+    {
+      id: 'beta',
+      title: 'Beta',
+      icon: null,
+      to: '/projects',
+      feature: 'projects',
+      Component: () => <p>Beta body</p>,
+    },
+    // Ungated widget whose link targets `/reports` — survives when Reports is off, but its
+    // link must drop (the dead-link case).
+    { id: 'gamma', title: 'Gamma', icon: null, to: '/reports', Component: () => <p>Gamma body</p> },
+  ];
+  return {
+    DASHBOARD_WIDGETS: defs,
+    DASHBOARD_WIDGET_IDS: defs.map((d) => d.id),
+    widgetById: (id: string) => defs.find((d) => d.id === id),
+  };
+});
+
+import { DashboardGrid } from './DashboardGrid';
+import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useLayoutStore } from '@/state/stores/useLayoutStore';
+
+beforeEach(() => {
+  useModulesStore.setState({ intent: {} });
+  useLayoutStore.setState({ dashboardLayout: [] });
+});
+afterEach(() => {
+  cleanup();
+  useModulesStore.setState({ intent: {} });
+  useLayoutStore.setState({ dashboardLayout: [] });
+});
+
+/** The `<a>` wrapping a tile, or `null` when the tile isn't a live link. */
+function tileLink(id: string): HTMLAnchorElement | null {
+  return screen.getByTestId(`widget-${id}`).closest('a');
+}
+
+describe('DashboardGrid — widget feature gating (Phase 4)', () => {
+  it('renders every widget with its live quick-link when all modules are on', () => {
+    render(<DashboardGrid />);
+    expect(screen.getByTestId('widget-alpha')).toBeInTheDocument();
+    expect(screen.getByTestId('widget-beta')).toBeInTheDocument();
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+    expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
+    expect(tileLink('beta')?.getAttribute('href')).toBe('/projects');
+    expect(tileLink('gamma')?.getAttribute('href')).toBe('/reports');
+  });
+
+  it('drops a widget from the board when its module is off', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    expect(screen.queryByTestId('widget-beta')).toBeNull();
+    expect(screen.queryByText('Beta body')).toBeNull();
+    // The surviving widgets are untouched.
+    expect(screen.getByTestId('widget-alpha')).toBeInTheDocument();
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+  });
+
+  it('omits a gated widget from the Customise "Hidden widgets" picker', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    fireEvent.click(screen.getByTestId('customise-dashboard'));
+    // A gated widget is neither on the board nor offered as re-addable in the picker.
+    expect(screen.queryByTestId('widget-add-beta')).toBeNull();
+    expect(screen.queryByText('Beta body')).toBeNull();
+  });
+
+  it('drops a surviving widget’s link when its target route is hidden', () => {
+    useModulesStore.getState().setFeatureIntent('reports', false);
+    render(<DashboardGrid />);
+    // Gamma stays (it is ungated) but is no longer a link into the hidden Reports module.
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+    expect(tileLink('gamma')).toBeNull();
+    // A widget whose link targets a still-enabled (core) route keeps its link.
+    expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
+  });
+});
+
+describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
+  const seeded = [
+    { id: 'alpha', x: 0, y: 0, visible: true },
+    { id: 'beta', x: 1, y: 0, visible: true },
+    { id: 'gamma', x: 2, y: 0, visible: true },
+  ];
+
+  it('never rewrites a gated widget’s stored coordinates when the board is edited', () => {
+    useLayoutStore.setState({ dashboardLayout: seeded });
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+
+    // Edit the visible board: hide Gamma. This persists a new layout — the gated Beta must
+    // ride along untouched so re-enabling Projects restores its exact placement.
+    fireEvent.click(screen.getByTestId('customise-dashboard'));
+    fireEvent.click(screen.getByTestId('widget-hide-gamma'));
+
+    const persisted = useLayoutStore.getState().dashboardLayout;
+    expect(persisted.find((p) => p.id === 'beta')).toEqual({ id: 'beta', x: 1, y: 0, visible: true });
+    expect(persisted.find((p) => p.id === 'gamma')).toMatchObject({ id: 'gamma', visible: false });
+  });
+
+  it('restores a widget at its prior coordinates when its module is turned back on', () => {
+    useLayoutStore.setState({ dashboardLayout: seeded });
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    expect(screen.queryByTestId('widget-beta')).toBeNull();
+
+    // Turn Projects back on — the subscribed grid re-renders and Beta reappears; its stored
+    // coords were never mutated, so it lands back where it was.
+    act(() => {
+      useModulesStore.getState().setFeatureIntent('projects', true);
+    });
+    expect(screen.getByTestId('widget-beta')).toBeInTheDocument();
+    expect(useLayoutStore.getState().dashboardLayout.find((p) => p.id === 'beta')).toEqual({
+      id: 'beta',
+      x: 1,
+      y: 0,
+      visible: true,
+    });
+  });
+});

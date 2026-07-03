@@ -17,6 +17,7 @@ import {
   getReportRepository,
 } from '@/db/repositories';
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
 
 /**
@@ -53,26 +54,42 @@ export function useAgenda(): {
 } {
   const now = Date.now();
 
+  // Modular UI (Phase 7): each date-driven lane gates on its owning feature. A disabled lane
+  // skips its source fetch (`enabled: false`) AND feeds an empty array into the pure
+  // `buildAgenda` seam below, so it produces no events even if a stale cache entry still holds
+  // rows. Reorder is core inventory and never gated. The feature set is read once,
+  // unconditionally (rules of hooks).
+  const enabled = useEnabledFeatures();
+  const maintenanceOn = enabled.has('maintenance');
+  const warrantyOn = enabled.has('warranty');
+  const perishablesOn = enabled.has('perishables');
+  const contactsOn = enabled.has('contacts');
+  const bookingsOn = enabled.has('bookings');
+
   const maintenanceQuery = useQuery({
     queryKey: ['agenda', 'maintenance'],
     queryFn: () => getMaintenanceRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
+    enabled: maintenanceOn,
   });
 
   const warrantyQuery = useQuery({
     queryKey: ['agenda', 'warranty', AGENDA_LOOKAHEAD_DAYS],
     queryFn: () =>
       getItemRepository().listWarrantyExpiring(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
+    enabled: warrantyOn,
   });
 
   const expiryQuery = useQuery({
     queryKey: ['agenda', 'expiry', AGENDA_LOOKAHEAD_DAYS],
     queryFn: () =>
       getItemRepository().listExpiringWithin(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
+    enabled: perishablesOn,
   });
 
   const checkoutsQuery = useQuery({
     queryKey: ['agenda', 'checkouts'],
     queryFn: () => getCheckoutRepository().listOpen({ limit: AGENDA_FETCH_LIMIT }),
+    enabled: contactsOn,
   });
 
   const reorderQuery = useQuery({
@@ -83,6 +100,7 @@ export function useAgenda(): {
   const bookingsQuery = useQuery({
     queryKey: ['agenda', 'bookings'],
     queryFn: () => getAssetBookingRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
+    enabled: bookingsOn,
   });
 
   const isLoading =
@@ -102,51 +120,59 @@ export function useAgenda(): {
     bookingsQuery.isError;
 
   const sources: AgendaSources = {
-    maintenance: (maintenanceQuery.data?.rows ?? []).map((s) => ({
-      scheduleId: s.id,
-      itemId: s.itemId,
-      itemName: s.itemName,
-      scheduleName: s.name,
-      // TIME schedules carry a calendar due instant; USAGE schedules return null and are
-      // surfaced only while actually due (no calendar position).
-      dueAtMs: maintenanceDueAtMs(s.basis, s.lastPerformedAt, s.createdAt, s.intervalDays),
-      usageDue:
-        s.basis === 'USAGE'
-          ? maintenanceStatus(
-              {
-                basis: s.basis,
-                intervalDays: s.intervalDays,
-                intervalUsage: s.intervalUsage,
-                usageSinceService: s.usageSinceService,
-                accrueCheckoutHours: s.accrueCheckoutHours,
-                autoUsage: s.autoUsageHours,
-                lastPerformedAt: s.lastPerformedAt,
-                createdAt: s.createdAt,
-              },
-              now,
-            ).due
-          : false,
-    })),
+    maintenance: maintenanceOn
+      ? (maintenanceQuery.data?.rows ?? []).map((s) => ({
+          scheduleId: s.id,
+          itemId: s.itemId,
+          itemName: s.itemName,
+          scheduleName: s.name,
+          // TIME schedules carry a calendar due instant; USAGE schedules return null and are
+          // surfaced only while actually due (no calendar position).
+          dueAtMs: maintenanceDueAtMs(s.basis, s.lastPerformedAt, s.createdAt, s.intervalDays),
+          usageDue:
+            s.basis === 'USAGE'
+              ? maintenanceStatus(
+                  {
+                    basis: s.basis,
+                    intervalDays: s.intervalDays,
+                    intervalUsage: s.intervalUsage,
+                    usageSinceService: s.usageSinceService,
+                    accrueCheckoutHours: s.accrueCheckoutHours,
+                    autoUsage: s.autoUsageHours,
+                    lastPerformedAt: s.lastPerformedAt,
+                    createdAt: s.createdAt,
+                  },
+                  now,
+                ).due
+              : false,
+        }))
+      : [],
 
-    warranty: (warrantyQuery.data?.rows ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      warrantyExpiresAt: item.warrantyExpiresAt,
-    })),
+    warranty: warrantyOn
+      ? (warrantyQuery.data?.rows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          warrantyExpiresAt: item.warrantyExpiresAt,
+        }))
+      : [],
 
-    expiry: (expiryQuery.data?.rows ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      expiryDate: item.expiryDate ?? null,
-    })),
+    expiry: perishablesOn
+      ? (expiryQuery.data?.rows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          expiryDate: item.expiryDate ?? null,
+        }))
+      : [],
 
-    checkouts: (checkoutsQuery.data?.rows ?? []).map((k) => ({
-      id: k.id,
-      itemId: k.itemId,
-      itemName: k.itemName,
-      contactName: k.contactName,
-      dueDate: k.dueDate,
-    })),
+    checkouts: contactsOn
+      ? (checkoutsQuery.data?.rows ?? []).map((k) => ({
+          id: k.id,
+          itemId: k.itemId,
+          itemName: k.itemName,
+          contactName: k.contactName,
+          dueDate: k.dueDate,
+        }))
+      : [],
 
     reorder: (reorderQuery.data ?? []).map((r) => ({
       itemId: r.itemId,
@@ -154,14 +180,16 @@ export function useAgenda(): {
       shortfall: r.shortfall,
     })),
 
-    bookings: (bookingsQuery.data?.rows ?? []).map((b) => ({
-      id: b.id,
-      itemId: b.itemId,
-      itemName: b.itemName,
-      contactName: b.contactName,
-      startDate: b.startDate,
-      endDate: b.endDate,
-    })),
+    bookings: bookingsOn
+      ? (bookingsQuery.data?.rows ?? []).map((b) => ({
+          id: b.id,
+          itemId: b.itemId,
+          itemName: b.itemName,
+          contactName: b.contactName,
+          startDate: b.startDate,
+          endDate: b.endDate,
+        }))
+      : [],
   };
 
   const events = buildAgenda(sources, now);
