@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
-import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon } from '@/components/icons';
+import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon, WikiIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { Starfield } from './Starfield';
@@ -17,6 +17,7 @@ const BUILD_DATE_LABEL = new Intl.DateTimeFormat(undefined, {
 
 /** Project links — single source so the screen and any future surfaces agree. */
 const REPO_URL = 'https://github.com/BootBlock/Gubbins';
+const WIKI_URL = 'https://github.com/BootBlock/Gubbins/wiki';
 const ISSUES_URL = 'https://github.com/BootBlock/Gubbins/issues';
 const LICENCE_URL = 'https://github.com/BootBlock/Gubbins/blob/main/LICENSE';
 const AUTHOR_URL = 'https://github.com/BootBlock';
@@ -64,10 +65,14 @@ export function AboutScreen() {
 
         <AboutSection icon={<LinkIcon />} title="Project &amp; support">
           <p className="text-sm text-muted-foreground">
-            Source code, issue tracking and releases live on GitHub. Found a bug or have an idea? Please open
-            an issue.
+            The wiki has guides, tips and help. Source code, issue tracking and releases live on GitHub. Found
+            a bug or have an idea? Please open an issue.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
+            <ExternalLink href={WIKI_URL}>
+              <WikiIcon />
+              Wiki &amp; help
+            </ExternalLink>
             <ExternalLink href={REPO_URL}>
               <LinkIcon />
               GitHub repository
