@@ -30,8 +30,14 @@ export interface SnapshotWatcherOptions {
   readonly snapshotPath: string;
   /** Debounce window in ms (defaults to {@link DEFAULT_DEBOUNCE_MS}). */
   readonly debounceMs?: number;
-  /** Called after each successful swap with the new state. */
-  readonly onReload?: (state: BridgeServerState) => void;
+  /**
+   * Called after each successful swap with the new state. It is **awaited** before the reload
+   * completes, so a post-swap consumer (the EI-1 event pipeline) always reads the just-built
+   * driver while it is still live — the next reload cannot close it until this resolves. It
+   * must not reject (the pipeline swallows its own errors); a rejection is surfaced via
+   * {@link onError} and does not corrupt the already-swapped good state.
+   */
+  readonly onReload?: (state: BridgeServerState) => void | Promise<void>;
   /** Called when a (re-)hydrate fails; the previous good state is retained. */
   readonly onError?: (error: Error) => void;
 }
@@ -74,7 +80,9 @@ export function createSnapshotWatcher(options: SnapshotWatcherOptions): Snapshot
       const previous = state;
       state = { driver, snapshotGeneratedAt: toIso(snapshot.generatedAt) };
       if (previous) await safeClose(previous.driver);
-      options.onReload?.(state);
+      // Awaited: a post-swap consumer reads `driver` here while it is guaranteed live (the
+      // next reload only closes it once this reload — and thus this hook — has completed).
+      await options.onReload?.(state);
     } catch (error) {
       // File briefly absent / partial write / bad JSON: keep the last good state.
       options.onError?.(asError(error));

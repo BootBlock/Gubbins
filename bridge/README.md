@@ -183,6 +183,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
 | `GET /api/v1/categories/{id}` | One category with its custom-field schema (`CategoryDetail`); `404` if unknown. |
 | `GET /api/v1/capabilities?limit=&offset=` | The distinct, queryable capability vocabulary (`CapabilityKey`) — the keys you can filter on with `cap:<key>`. |
+| `GET /api/v1/events` | **Opt-in** read-only SSE stream of change events (`GUBBINS_BRIDGE_EVENTS=on`); `404` when off. See [Events, webhooks & SSE](#events-webhooks--sse-opt-in). |
 
 Search is the **relevance** endpoint (top-N, capped at 25 for voice safety); to **browse all
 items** with pagination use `GET /api/v1/items`. Every read flows through the app's own
@@ -531,6 +532,90 @@ Open **Cloud Sync & backups** in the app, fill in the bridge **URL** and **token
 bridge", and press **Push now**. The URL/token are stored on that device only (never synced, never
 committed). The MCP server stays **read-only** — push is HTTP-only, by design.
 
+## Events, webhooks & SSE (opt-in)
+
+The bridge already re-hydrates the snapshot on every change; this turns that into an **event
+source**. One transport-agnostic event model feeds two sinks — **outbound webhooks** (push) and a
+**read-only SSE stream** (pull) — so one mechanism covers Slack/Discord/n8n/Node-RED/Home Assistant
+without integrating any of them by name. Both are **off by default** and strictly **read-only**
+w.r.t. inventory (an event never mutates data).
+
+> **Where events come from.** New rows in the synced, immutable `item_history` ledger — the same
+> table the app's activity feed projects — *are* the events, already typed by the §4 activity
+> actions. The bridge reuses the app's own `activityKindForAction` / `describeHistoryEntry` shapers
+> (never a fork) and never runs bespoke SQL. The **first** generation after a (re)start establishes
+> a baseline and emits **nothing** — it never replays history as a burst.
+
+### The event shape
+
+Every event is `{ id, type, occurredAt, data }`:
+
+- **`id`** — deterministic (ledger-row-derived) so a consumer can dedupe.
+- **`type`** — a stable dotted name: `item.created`, `item.renamed`, `stock.adjusted`,
+  `item.low_stock`, `item.out_of_stock`, `item.moved`, `item.checked_out`, `item.checked_in`,
+  `item.reserved`, `item.reservation_cleared`, `item.removed`, `item.restored`,
+  `item.condition_changed`, `item.maintenance_logged`, `item.supplier_data_applied`,
+  `item.changed` (forward-compat fallback), and `events.truncated` (a burst exceeded the fan-out
+  cap). A stock movement that leaves an item at/below its low-stock floor additionally raises an
+  `item.low_stock` (or `item.out_of_stock` when empty) event.
+- **`occurredAt`** — the ledger row's timestamp, ISO-8601.
+- **`data`** — the change plus the item's current summary (the same `ItemSummary` shape the REST
+  API uses).
+
+A bulk import is coalesced per generation and **capped** (a `events.truncated` summary is appended
+if the cap is exceeded), so a downstream sink can't be flooded.
+
+### Outbound webhooks
+
+Set **`GUBBINS_BRIDGE_WEBHOOKS=on`** and list your targets in a **git-ignored** file (copy
+[`webhooks.example.json`](webhooks.example.json) → `webhooks.json`) or inline via
+`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`. Each target is `{ "url", "secret", "events"? }` — omit `events`
+(or use `"*"`) to receive everything. **The signing secrets live only in that git-ignored file /
+`.env`, never in a committed file.**
+
+Each event is POSTed as JSON with:
+
+| Header | Value |
+| --- | --- |
+| `X-Gubbins-Signature` | `sha256=<hex>` — HMAC-SHA256 of the **raw body** under the target's `secret` (the GitHub/Stripe pattern). |
+| `X-Gubbins-Delivery` | A unique delivery id (make your handler idempotent and dedupe on it). |
+| `X-Gubbins-Event` | The event `type`. |
+
+Delivery is **at-least-once** with bounded exponential backoff; each target has its **own FIFO
+queue and failure circuit**, so one dead URL can neither stall the others nor retry forever.
+
+**Verify a signature** (Node):
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+// `rawBody` must be the exact bytes received (do not re-serialise the parsed JSON).
+const expected = 'sha256=' + createHmac('sha256', SECRET).update(rawBody).digest('hex');
+const got = req.headers['x-gubbins-signature'];
+const ok = got && got.length === expected.length &&
+  timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+```
+
+A minimal **n8n / Node-RED / Discord** recipe: point a "Webhook" / "HTTP In" node (or a Discord
+channel's incoming-webhook relay) at the URL, verify the signature above, then branch on
+`type` — e.g. post to a channel when `type === 'item.low_stock'`.
+
+### SSE event stream
+
+`GET /api/v1/events` holds the connection open and writes each event as a `data: <json>\n\n` frame
+(with an `id:` line for resumption and periodic `: heartbeat` comments), using the **same bearer
+token + rate limit** as every endpoint. Enable it with **`GUBBINS_BRIDGE_EVENTS=on`** — and it is
+also implied by `GUBBINS_BRIDGE_WEBHOOKS=on` (the two share one pipeline). When neither is on the
+path is a `404`.
+
+```bash
+curl -N -H "Authorization: Bearer $GUBBINS_BRIDGE_TOKEN" http://127.0.0.1:8787/api/v1/events
+```
+
+Resume after a disconnect with the standard `Last-Event-ID` header, or a `?lastEventId=<id>` query
+param for clients that can't set it; events still buffered after that id are replayed on connect.
+A browser `EventSource` receives every event via `onmessage` (the type is in the JSON payload). The
+concurrent-stream count is capped (a `429` past the cap).
+
 ## Configuration reference
 
 The server is configured **entirely from the environment**, so no secret or local path is
@@ -550,6 +635,10 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust). **Off by default — the bridge is read-only unless this is `on`.** Writes use the same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
+| `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same bearer token + rate limit. |
+| `GUBBINS_BRIDGE_WEBHOOKS` | no | `off` | Enable opt-in signed [outbound webhooks](#events-webhooks--sse-opt-in). **Off by default**; also lights up the event stream (shared pipeline). A webhook never mutates inventory. |
+| `GUBBINS_BRIDGE_WEBHOOKS_FILE` | no | `webhooks.json` | Path to the **git-ignored** JSON webhook-target list. The target **secrets live only here** — never in a committed file. |
+| `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` | no | — | The whole target list inline as JSON (wins over the file). Carries secrets, so keep it in the git-ignored `.env` only. |
 
 A missing required value, an out-of-range port, or a non-numeric rate setting makes the
 bridge **fail loudly at startup** (with a secret-free message) rather than serve

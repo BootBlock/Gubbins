@@ -299,6 +299,13 @@ export const openapiDocument: JsonValue = {
         'versioned backup JSON the bridge reads from a synced folder and replaces it atomically; ' +
         'the watcher then re-hydrates. When push is disabled this path returns 404.',
     },
+    {
+      name: 'events',
+      description:
+        'Opt-in read-only event stream (off by default; enabled with GUBBINS_BRIDGE_EVENTS=on, or ' +
+        'implied by GUBBINS_BRIDGE_WEBHOOKS=on). A Server-Sent Events feed of typed inventory-change ' +
+        'events, the same events delivered to outbound webhooks. When disabled this path returns 404.',
+    },
   ],
   paths: {
     '/api/v1': {
@@ -635,6 +642,47 @@ export const openapiDocument: JsonValue = {
         },
       },
     },
+    '/api/v1/events': {
+      get: {
+        tags: ['events'],
+        summary: 'Subscribe to the read-only Server-Sent Events stream',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_EVENTS=on, or implied by GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 ' +
+          'when disabled. Holds the connection open and writes one "data: <BridgeEvent JSON>" frame ' +
+          'per inventory change, each preceded by an SSE "id:" line for Last-Event-ID resumption, ' +
+          'plus periodic ": heartbeat" comment frames. The first generation after a (re)start emits ' +
+          'nothing (no history replay). Same bearer token + rate limit as every endpoint; strictly ' +
+          'read-only. A 429 is returned when the concurrent-stream cap is reached.',
+        parameters: [
+          {
+            name: 'lastEventId',
+            in: 'query',
+            required: false,
+            description:
+              'Resume after this event id (a query-string alias of the standard Last-Event-ID header, ' +
+              'for clients that cannot set it). Events still buffered after this id are replayed on connect.',
+            schema: { type: 'string' },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'The event stream.',
+            content: {
+              'text/event-stream': {
+                schema: { type: 'string' },
+                example:
+                  'id: hist-0007\n' +
+                  'data: {"id":"hist-0007","type":"item.low_stock","occurredAt":"2025-06-27T06:13:20.000Z",' +
+                  '"data":{"itemId":"item-esp32","itemName":"ESP32 Dev Board","action":"QUANTITY_CHANGE",' +
+                  '"kind":"stock","label":"Quantity changed","detail":"Checked out 4.","delta":"−4",' +
+                  '"quantityDelta":-4,"netValueDelta":null,"item":null}}\n\n',
+              },
+            },
+          },
+          ...(errorResponses(401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -657,6 +705,10 @@ export const openapiDocument: JsonValue = {
           pushable: {
             type: 'boolean',
             description: 'Whether the opt-in snapshot-ingest endpoint is enabled.',
+          },
+          streamable: {
+            type: 'boolean',
+            description: 'Whether the opt-in read-only SSE event stream (/api/v1/events) is enabled.',
           },
           endpoints: { type: 'array', items: { type: 'string' } },
         },
@@ -850,6 +902,91 @@ export const openapiDocument: JsonValue = {
           itemCount: { type: 'integer', example: 1 },
           hasNumericValues: { type: 'boolean', example: true },
           hasTextValues: { type: 'boolean', example: false },
+        },
+      },
+      BridgeEventData: {
+        type: 'object',
+        required: [
+          'itemId',
+          'itemName',
+          'action',
+          'kind',
+          'label',
+          'detail',
+          'delta',
+          'quantityDelta',
+          'netValueDelta',
+          'item',
+        ],
+        properties: {
+          itemId: { type: 'string', example: 'item-esp32' },
+          itemName: { type: 'string', example: 'ESP32 Dev Board' },
+          action: {
+            type: 'string',
+            description: 'The raw §4 activity-ledger action.',
+            example: 'QUANTITY_CHANGE',
+          },
+          kind: {
+            type: 'string',
+            enum: ['created', 'stock', 'movement', 'loan', 'lifecycle', 'supplier'],
+            description: 'The semantic activity kind the action folds into.',
+            example: 'stock',
+          },
+          label: { type: 'string', example: 'Quantity changed' },
+          detail: { type: 'string', nullable: true, example: 'Checked out 4.' },
+          delta: {
+            type: 'string',
+            nullable: true,
+            description: 'A signed movement badge ("+3" / "−45.5"), or null when there was no movement.',
+            example: '−4',
+          },
+          quantityDelta: { type: 'integer', nullable: true, example: -4 },
+          netValueDelta: { type: 'number', nullable: true, example: null },
+          item: {
+            nullable: true,
+            description: 'The item’s current summary, or null when the item is no longer present.',
+            allOf: [{ $ref: '#/components/schemas/ItemSummary' }],
+          },
+        },
+      },
+      BridgeEvent: {
+        type: 'object',
+        required: ['id', 'type', 'occurredAt', 'data'],
+        description:
+          'One event delivered over the SSE stream and to outbound webhooks. `id` is deterministic ' +
+          '(ledger-row-derived) so a consumer can dedupe; `type` is a stable dotted name.',
+        properties: {
+          id: { type: 'string', example: 'hist-0007' },
+          type: {
+            type: 'string',
+            enum: [
+              'item.created',
+              'item.renamed',
+              'stock.adjusted',
+              'item.low_stock',
+              'item.out_of_stock',
+              'item.moved',
+              'item.checked_out',
+              'item.checked_in',
+              'item.reserved',
+              'item.reservation_cleared',
+              'item.removed',
+              'item.restored',
+              'item.condition_changed',
+              'item.maintenance_logged',
+              'item.supplier_data_applied',
+              'item.changed',
+              'events.truncated',
+            ],
+            example: 'item.low_stock',
+          },
+          occurredAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'The ledger row’s created_at as ISO-8601.',
+            example: '2025-06-27T06:13:20.000Z',
+          },
+          data: { $ref: '#/components/schemas/BridgeEventData' },
         },
       },
     },

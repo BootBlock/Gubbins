@@ -1,0 +1,16 @@
+{
+  "//": "Copy to webhooks.json (git-ignored) and fill in real URLs + secrets. NEVER commit real secrets.",
+  "//events": "Omit 'events' (or use '*') to receive every event; otherwise list the types you want.",
+  "//types": "item.created, item.renamed, stock.adjusted, item.low_stock, item.out_of_stock, item.moved, item.checked_out, item.checked_in, item.reserved, item.reservation_cleared, item.removed, item.restored, item.condition_changed, item.maintenance_logged, item.supplier_data_applied, item.changed, events.truncated",
+  "targets": [
+    {
+      "url": "https://automation.example.test/webhooks/gubbins",
+      "secret": "<YOUR_SIGNING_SECRET_FOR_THIS_TARGET>",
+      "events": ["item.low_stock", "item.out_of_stock"]
+    },
+    {
+      "url": "http://127.0.0.1:5678/webhook/gubbins-all",
+      "secret": "<YOUR_OTHER_SIGNING_SECRET>"
+    }
+  ]
+}

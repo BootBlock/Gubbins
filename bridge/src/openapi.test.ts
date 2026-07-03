@@ -38,6 +38,23 @@ describe('openapiDocument', () => {
     expect(doc.components.securitySchemes.bearerAuth.scheme).toBe('bearer');
   });
 
+  it('documents the read-only SSE event stream and the BridgeEvent schema (EI-1)', () => {
+    const events = doc.paths['/api/v1/events'];
+    expect(events.get.tags).toContain('events');
+    // The stream is an event-stream media type, not JSON.
+    expect(events.get.responses['200'].content['text/event-stream']).toBeDefined();
+    // The event schema exists and references the shared ItemSummary for its payload.
+    const bridgeEvent = doc.components.schemas.BridgeEvent;
+    expect(bridgeEvent.required).toEqual(['id', 'type', 'occurredAt', 'data']);
+    expect(bridgeEvent.properties.type.enum).toContain('item.low_stock');
+    expect(bridgeEvent.properties.type.enum).toContain('stock.adjusted');
+    expect(JSON.stringify(doc.components.schemas.BridgeEventData)).toContain(
+      '#/components/schemas/ItemSummary',
+    );
+    // The discovery index advertises the stream toggle.
+    expect(doc.components.schemas.ApiIndex.properties.streamable).toBeDefined();
+  });
+
   it('has no dangling $ref — every referenced schema exists', () => {
     const schemas = new Set(Object.keys(doc.components.schemas));
     for (const ref of collectRefs(openapiDocument)) {
