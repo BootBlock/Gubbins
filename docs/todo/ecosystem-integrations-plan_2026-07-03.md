@@ -24,7 +24,7 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1 complete & merged (2026-07-03). Next: EI-2._ Phase order: **EI-1 → EI-7**.
+> **Status:** _EI-1 & EI-2 complete & merged (2026-07-03). Next: EI-3._ Phase order: **EI-1 → EI-7**.
 > EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
 > could be reordered, but the embedded prompts assume this order.
 
@@ -223,24 +223,23 @@ iCalendar emitter — no dependency — and stable per-source UIDs. Synthetic fi
 **Goal:** expose Gubbins' time-bearing facts as a read-only calendar any app (Google/Apple/
 Outlook/Thunderbird/Home Assistant) can **subscribe** to by URL.
 
-- [ ] **`GET /api/v1/calendar.ics`** returning a `text/calendar` VCALENDAR. Auth: bearer token
+- [x] **`GET /api/v1/calendar.ics`** returning a `text/calendar` VCALENDAR. Auth: bearer token
       accepted **in the query string** as well as the header (the standard for calendar
       subscriptions, which can't send auth headers) — document the trade-off and keep the
       loopback/opt-in posture; consider a dedicated read-only calendar token later.
-- [ ] **Sources** (each a pure projection through existing repositories, VEVENT per row with a
+- [x] **Sources** (each a pure projection through existing repositories, VEVENT per row with a
       **stable `UID`** so subscribers update in place, not duplicate): loan due-backs
       (checked-out items with a due date), **asset bookings** (the shipped asset-booking
-      feature — see `src/features/sync/asset-booking-sync.ts` for its shape), maintenance /
-      service-due dates, and warranty-expiry dates where present on items. Skip a source
-      gracefully if its data isn't present.
-- [ ] **Hand-rolled iCalendar emitter** (`bridge/src/ical/*`, pure + tested) — RFC 5545 line
+      feature), maintenance / service-due dates, and warranty-expiry dates where present on
+      items. Skip a source gracefully if its data isn't present.
+- [x] **Hand-rolled iCalendar emitter** (`bridge/src/ical/*`, pure + tested) — RFC 5545 line
       folding, text escaping, `DTSTAMP`/`DTSTART`/`SUMMARY`/`DESCRIPTION`/`UID`, all-day vs.
       timed. **No dependency** (same posture as the YAML emitter).
-- [ ] **Optional per-type feeds** (`?type=loans|bookings|maintenance|warranty`) so a consumer
+- [x] **Optional per-type feeds** (`?type=loans|bookings|maintenance|warranty`) so a consumer
       can subscribe to just one calendar.
-- [ ] **Docs:** `bridge/README.md` "Calendar subscription" section (the subscribe URL shape,
+- [x] **Docs:** `bridge/README.md` "Calendar subscription" section (the subscribe URL shape,
       the token-in-URL note, an HA `calendar:` example); add the path to the OpenAPI spec.
-- [ ] **Tests:** emitter unit tests (folding/escaping/edge dates), and a feed test over the
+- [x] **Tests:** emitter unit tests (folding/escaping/edge dates), and a feed test over the
       synthetic fixture asserting the expected VEVENTs and stable UIDs; a no-dated-data case
       yields a valid empty VCALENDAR.
 
@@ -253,7 +252,45 @@ warranty events; the feed validates as iCalendar; UIDs are stable across refetch
 
 **Review gate:** `/code-review high`.
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `bridge/src/ical/*` and merged to `main`. A read-only
+`GET /api/v1/calendar.ics` serves a `text/calendar` (RFC 5545) VCALENDAR of Gubbins' time-bearing
+facts. A small **hand-rolled iCalendar emitter** (`emitter.ts`, **zero dependencies**, same
+stdlib-first posture as the JSON-RPC / mDNS / YAML encoders) does TEXT escaping (`\ ; , \n` — and
+it collapses any `CR`/`LF` in a value to the literal `\n` escape, so a hostile item name can't
+inject VEVENT structure), 75-octet line folding on code-point boundaries (never mid-character),
+and both all-day `VALUE=DATE` and timed UTC `DATE-TIME` values with an **exclusive** all-day
+`DTEND`. The feed projection (`feed.ts`) draws four sources, each a **read-only projection through
+an existing repository** — no bespoke SQL: loan due-backs (`CheckoutRepository.listOpen`, open
+checkouts filtered to those with a due date), asset bookings (`AssetBookingRepository.listUpcoming`,
+active + not-yet-passed), maintenance (`MaintenanceRepository.listUpcoming` + the pure
+`maintenanceStatus` seam — **TIME** schedules get their computed due date; **USAGE** schedules have
+no calendar date and are skipped), and warranty expiries (`ItemRepository.listWarrantyExpiring`
+over a generous decade horizon; the stored `YYYY-MM-DD` is used verbatim, no timezone maths). Each
+event carries a **stable per-source `UID`** (`loan-…` / `booking-…` / `maintenance-…` /
+`warranty-…`, suffixed `@gubbins.invalid` — the RFC 2606 reserved TLD, so no real host is
+committed), so a subscriber updates in place rather than duplicating on refetch; each source is
+bounded (5 000 events). **Auth:** the bearer token is accepted as a `?token=` query parameter
+**on the calendar path only** (calendar clients can't send an `Authorization` header) — scoped in
+`server.ts`'s `isAuthorised`, so every other endpoint still refuses a URL token (verified: `GET
+/api/v1/items?token=…` → 401, and a `calendar.ics/../items` traversal normalises to `/api/v1/items`
+so the scoped token can't leak). The token-in-URL trade-off is documented in the README with an HA
+**Remote Calendar** subscribe example. Optional `?type=loans|bookings|maintenance|warranty` (comma-
+separated) narrows the feed; an unknown type is a `400`. Added the `calendar` tag +
+`/api/v1/calendar.ics` path to `openapi.ts` and regenerated `openapi.yaml` (drift guard green).
+**Decisions at entry:** token-in-query default (documented) and per-type feeds — both taken as
+recommended; and **no new `GUBBINS_BRIDGE_*` flag** — the calendar is a read-only *pull* surface
+like `items.csv`, not an outbound/write capability, so it is always available (invariant #2 gates
+outbound/write surfaces, not reads). **Zero new dependencies.** 33 new bridge tests (354 total, all
+green — emitter units for folding/escaping/edge-date arithmetic, a feed test over a dedicated
+synthetic fixture asserting each source's VEVENTs + stable/unique UIDs + the type filter + an empty
+VCALENDAR, and a server test for content-type, header-vs-query-token auth, the `?type=` 400, and
+UID stability across refetches); `tsc --noEmit` clean. A live `serve.mjs` smoke passed the
+acceptance verbatim: subscribing to `…/calendar.ics?token=<t>` returned a `text/calendar` VCALENDAR
+with loan/booking/maintenance/warranty VEVENTs; `?type=warranty` returned only those; a bad `type`
+was a `400`; a missing/wrong token was a `401`. **Review gate:** `/code-review high` ran across all
+eight angles (correctness, removed-behaviour, cross-file callers, reuse, simplification, efficiency,
+altitude, CLAUDE.md conventions) — **no confirmed or plausible findings**; the two highest-risk
+spots (calendar-line injection and the scoped-token path-traversal bypass) were verified safe.
 
 **Continuation prompt — emit on completion (starts EI-3):**
 
@@ -548,18 +585,20 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-2** (EI-1 is complete and merged — merge `d5f26a2`). Its
-kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces
-this with the next phase's embedded prompt.
+The current next step is **Phase EI-3** (EI-1 and EI-2 are complete and merged). Its kick-off
+prompt (self-contained, for a cold session) is below; each completed phase replaces this with the
+next phase's embedded prompt.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-2 (iCalendar
-subscription feed). EI-1 (event model + webhooks + SSE) is complete and merged. Work in a
-NEW git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-ical -b
-feat/ecosystem-ical HEAD), follow the "How every phase runs" loop and the invariants at the
-top of the plan doc, gate with /code-review high before merging, then merge --no-ff into main
-and clean up the worktree/branch. Update the plan doc's EI-2 Outcome, then emit EI-3's
-continuation prompt as a raw fenced block. Build the read-only GET /api/v1/calendar.ics feed
-(loan due-backs, asset bookings, maintenance/service, warranty expiry) with a hand-rolled
-iCalendar emitter — no dependency — and stable per-source UIDs. Synthetic fixtures only.
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-3 (migration
+importers). EI-1 and EI-2 are complete and merged. Work in a NEW git worktree off local HEAD
+(git worktree add .claude/worktrees/ecosystem-importers -b feat/ecosystem-importers HEAD),
+follow the "How every phase runs" loop and the top-of-doc invariants, gate with /code-review
+high before merging, then merge --no-ff into main and clean up. Update the EI-3 Outcome, then
+emit EI-4's continuation prompt as a raw fenced block. Add named migration mappers (Homebox,
+Grocy, Sortly, Snipe-IT, InvenTree) as pure field-mappings in FRONT of the existing
+src/features/inventory/{text-import.ts, catalog-import.ts} pipeline (buildImportPlanFromRows →
+applyCatalogImportPlan) surfaced in ImportDataDialog.tsx — do NOT fork the pipeline. Use
+Foundry primitives + design tokens for any UI. Synthetic fixtures only (made-up parts,
+example.com).
 ```
