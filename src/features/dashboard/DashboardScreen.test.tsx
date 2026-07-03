@@ -20,6 +20,8 @@ vi.mock('./DashboardGrid', () => ({ DashboardGrid: () => <div data-testid="dashb
 vi.mock('./useWakeLock', () => ({ useWakeLock: () => {} }));
 // Reads the item count via TanStack Query (no provider in this focused test) — stub it.
 vi.mock('./DashboardGettingStarted', () => ({ DashboardGettingStarted: () => null }));
+// Likewise reads item count + auth via hooks that need providers; stub for this focused test.
+vi.mock('./DashboardBackupNudge', () => ({ DashboardBackupNudge: () => null }));
 
 const alertsMock = vi.fn();
 vi.mock('@/features/alerts/useAlerts', () => ({ useAlerts: () => alertsMock() }));

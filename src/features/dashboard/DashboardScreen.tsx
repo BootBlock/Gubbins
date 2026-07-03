@@ -9,6 +9,7 @@ import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
 import { DashboardActions } from './DashboardActions';
 import { DashboardGettingStarted } from './DashboardGettingStarted';
+import { DashboardBackupNudge } from './DashboardBackupNudge';
 import { DashboardBanner } from './DashboardBanner';
 import { DashboardVersion } from './DashboardVersion';
 
@@ -82,6 +83,10 @@ export function DashboardScreen() {
 
       {/* First-run guidance — self-hides once the inventory has any items. */}
       <DashboardGettingStarted />
+
+      {/* Data-safety nudge — the complement to the above: shows once there IS data but no
+          sync provider is connected, prompting a backup/sync. Dismissible and self-hiding. */}
+      <DashboardBackupNudge />
 
       <LiveRegion visuallyHidden>
         {alertCount > 0 ? `${alertCount} item${alertCount === 1 ? '' : 's'} need attention` : ''}

@@ -80,6 +80,8 @@ const NAV_TOOLTIPS: Record<Exclude<AppRoutePath, '/'>, string> = {
     '**Alerts** — what needs attention.\n\nLow-stock, expiring, overdue and **budget** warnings gathered into one actionable list. The badge shows how many are active.',
   '/sync':
     '**Sync** — cloud backup & devices.\n\nBack up and restore your vault, and **sync changes between devices** so your inventory follows you.',
+  '/home-assistant':
+    '**Home Assistant** — voice control setup.\n\nAn interactive, step-by-step guide to ask **“where are my …?”** from Home Assistant — run the bridge, connect it, and generate an access token.',
   '/settings':
     '**Settings** — preferences.\n\nTheme, currency & locale, scanner options, low-stock thresholds, kiosk mode and the rest of the app’s behaviour.',
   '/about':
