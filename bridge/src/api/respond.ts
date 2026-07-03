@@ -72,6 +72,21 @@ export function sendCsv(res: ServerResponse, status: number, body: string, filen
 }
 
 /**
+ * Write a `text/calendar` (iCalendar / RFC 5545) response — used by the calendar subscription
+ * feed. `inline` (not an attachment) so a calendar client that fetches the subscription URL
+ * renders it rather than offering it as a download; `no-store` so a subscriber always sees the
+ * current snapshot's events.
+ */
+export function sendCalendar(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    'content-type': 'text/calendar; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-disposition': 'inline; filename="gubbins.ics"',
+  });
+  res.end(body);
+}
+
+/**
  * Write an error response in whichever envelope the request path calls for: the
  * structured `{ error: { code, message } }` for v1, or the flat `{ error: message }` for
  * the legacy paths. The `code` is ignored for the legacy shape (kept identical to the

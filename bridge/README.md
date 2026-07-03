@@ -173,6 +173,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/$metadata` | OData v4 CSDL describing the read model (descriptive; see [OData-style options](#odata-style-query-options)). |
 | `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
 | `GET /api/v1/items.csv` | A spreadsheet-friendly CSV of the matching items (refreshable pull for Excel/Power BI). See [CSV export](#csv-export). |
+| `GET /api/v1/calendar.ics` | A read-only iCalendar feed of Gubbins' time-bearing facts (loan due-backs, bookings, maintenance, warranty) that any calendar app can **subscribe** to. See [Calendar subscription](#calendar-subscription). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
@@ -354,6 +355,61 @@ refreshable table; `Web.Contents` lets you attach the bearer token as a header:
 ```bash
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items.csv?\$filter=quantity gt 0&\$orderby=name" -o items.csv
 ```
+
+### Calendar subscription
+
+`GET /api/v1/calendar.ics` is a read-only **iCalendar** (RFC 5545) feed of Gubbins' time-bearing
+facts. Point any calendar app — Google Calendar, Apple Calendar, Outlook, Thunderbird, Home
+Assistant — at the URL as a **subscribed** calendar and its events appear alongside your own,
+refreshing whenever the client refetches.
+
+Four sources become calendar events (each a read-only projection through the app's own
+repositories — no bespoke SQL):
+
+| Source | Event | Where it comes from |
+| --- | --- | --- |
+| **Loan due-backs** | `Loan due: <item>` on the due date | open checkouts that carry a due date |
+| **Asset bookings** | `Booking: <item>` spanning the booked days | upcoming (not-yet-passed) asset bookings |
+| **Maintenance** | `Maintenance due: <schedule> — <item>` on the due date | time-based service schedules (usage-based ones have no calendar date, so they are omitted) |
+| **Warranty** | `Warranty expires: <item>` on the expiry date | items with a warranty-expiry date |
+
+Most events are **all-day**. Each carries a **stable, per-source `UID`** (`loan-…`, `booking-…`,
+`maintenance-…`, `warranty-…`), so a subscriber updates an event in place on refetch rather than
+duplicating it. A source with no data simply contributes nothing — an empty inventory yields a
+valid, event-free calendar.
+
+**Subscribing (the token-in-URL trade-off).** A calendar client subscribing by URL **cannot send
+an `Authorization` header**, so — for this path *only* — the bearer token may be supplied as a
+`token` query parameter:
+
+```
+http://127.0.0.1:8787/api/v1/calendar.ics?token=<YOUR_GUBBINS_BRIDGE_TOKEN>
+```
+
+A token in a URL is a weaker posture than a header (URLs get logged by proxies and saved in
+history), so this is deliberately scoped to the calendar path — every other endpoint still
+requires the header. Keep the bridge's default **loopback** bind (or a trusted LAN) in mind, and
+treat the subscribe URL as a secret. The `Authorization: Bearer` header still works too (e.g.
+`curl`), and a dedicated read-only calendar token is a possible future refinement.
+
+**Per-type feeds.** Add `?type=` to subscribe to just one (or a comma-separated subset) of the
+sources — handy for a separate "maintenance" calendar:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics"                    # everything
+curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=warranty"      # warranties only
+curl -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics?type=loans,bookings"
+```
+
+An unknown `type` is a `400`. Each source is bounded (up to 5,000 events) so a very large vault
+can't produce an unbounded feed. Dates from a stored calendar date (a warranty) are used verbatim;
+dates derived from a timestamp (bookings, due-backs) use UTC calendar components, so a far-eastern
+local day may appear shifted by one day — a documented limitation of a timezone-less feed.
+
+**Home Assistant.** Add the **Remote Calendar** integration (Settings → Devices & Services → Add
+Integration → *Remote Calendar*) and paste the subscribe URL above (including `?token=…`) as the
+calendar URL. HA then exposes a `calendar.gubbins` entity you can use in automations and on
+dashboards.
 
 ### OpenAPI spec
 
