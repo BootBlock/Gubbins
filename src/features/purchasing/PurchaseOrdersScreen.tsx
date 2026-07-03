@@ -12,6 +12,7 @@ import {
 import { AddIcon, DeleteIcon, LowStockIcon, ShoppingCartIcon, TruckIcon } from '@/components/icons';
 import { ReorderTab } from './ReorderTab';
 import type { Formatters } from '@/lib/format';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
@@ -125,7 +126,7 @@ export function PurchaseOrdersScreen() {
               ? 'Loading purchase orders…'
               : orders.length === 0
                 ? 'No purchase orders yet.'
-                : `${orders.length} purchase order${orders.length === 1 ? '' : 's'}.`}
+                : `${orders.length} ${plural(orders.length, 'purchase order')}.`}
           </p>
           {/* Order list */}
           <section aria-label="Purchase orders" className="flex flex-col gap-2">

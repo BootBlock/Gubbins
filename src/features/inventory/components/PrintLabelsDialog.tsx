@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
+import { plural } from '@/lib/plural';
 import { Banner, Button, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -95,7 +96,7 @@ export function PrintLabelsDialog({
       open={open}
       onClose={onClose}
       title="Print labels"
-      description={`${cells.length} label${cells.length === 1 ? '' : 's'}`}
+      description={`${cells.length} ${plural(cells.length, 'label')}`}
     >
       <div className="space-y-4">
         {truncated ? (
@@ -201,7 +202,7 @@ export function PrintLabelsDialog({
           </Button>
           <Button onClick={print} disabled={cells.length === 0} data-testid="print-labels-confirm">
             <PrintIcon />
-            Print {cells.length} label{cells.length === 1 ? '' : 's'}
+            Print {cells.length} {plural(cells.length, 'label')}
           </Button>
         </div>
       </div>

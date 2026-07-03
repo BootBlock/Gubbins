@@ -39,6 +39,7 @@ import {
   SettingsIcon,
   WarningIcon,
 } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { resolveTabKey } from '@/features/inventory/tab-keyboard';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -204,7 +205,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
         tone: 'success',
         icon: <WarningIcon />,
         heading: 'Data erased',
-        message: `Erased ${erased} categor${erased === 1 ? 'y' : 'ies'} from this device${
+        message: `Erased ${erased} ${plural(erased, 'category', 'categories')} from this device${
           tombstone ? ' and queued the deletion to sync.' : '.'
         }`,
       });
@@ -346,7 +347,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                         ) : target.scope === 'local' && (count === undefined || count === 0) ? (
                           'device'
                         ) : count !== undefined ? (
-                          `${count} record${count === 1 ? '' : 's'}`
+                          `${count} ${plural(count, 'record')}`
                         ) : (
                           '—'
                         )}
@@ -413,7 +414,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                   }
                 >
                   {' '}
-                  &middot; ~{totalRecords} record{totalRecords === 1 ? '' : 's'}
+                  &middot; ~{totalRecords} {plural(totalRecords, 'record')}
                 </span>
               ) : null}
             </div>

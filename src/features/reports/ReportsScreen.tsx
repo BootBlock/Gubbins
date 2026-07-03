@@ -12,6 +12,7 @@ import {
 import { ExportIcon, LowStockIcon, ReportIcon } from '@/components/icons';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
 import { MovementChart } from './components/MovementChart';
@@ -125,7 +126,7 @@ export function ReportsScreen() {
       setHygieneAnnouncement(
         flagged === 0
           ? 'Data hygiene ready — nothing needs tidying.'
-          : `Data hygiene ready — ${flagged} item${flagged === 1 ? '' : 's'} need attention.`,
+          : `Data hygiene ready — ${flagged} ${plural(flagged, 'item')} need attention.`,
       );
     }
   }, [hygiene.isLoading, hygiene.isError, hygiene.data]);

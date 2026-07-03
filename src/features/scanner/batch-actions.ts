@@ -13,6 +13,8 @@
  * aborts the rest and every batch reports what actually happened.
  */
 
+import { plural } from '@/lib/plural';
+
 /** The batch actions a Continuous-Mode working queue can be finalised with (§6.3). */
 export type ContinuousBatchAction = 'CHECKOUT' | 'MOVE';
 
@@ -45,10 +47,6 @@ export async function runBatch(
   return { succeeded, failed };
 }
 
-function plural(n: number): string {
-  return n === 1 ? 'item' : 'items';
-}
-
 /**
  * A human, screen-reader-friendly summary of a finished batch (§6.3). `target` is the
  * destination label — the location name for a `MOVE`, the contact name for a
@@ -61,6 +59,6 @@ export function summariseBatch(action: ContinuousBatchAction, outcome: BatchOutc
       ? action === 'MOVE'
         ? 'No items moved'
         : 'No items checked out'
-      : `${action === 'MOVE' ? 'Moved' : 'Checked out'} ${n} ${plural(n)} to ${target}`;
+      : `${action === 'MOVE' ? 'Moved' : 'Checked out'} ${n} ${plural(n, 'item')} to ${target}`;
   return outcome.failed.length > 0 ? `${base} · ${outcome.failed.length} failed` : base;
 }

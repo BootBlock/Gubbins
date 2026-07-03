@@ -1,3 +1,4 @@
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
@@ -89,7 +90,7 @@ export function DashboardScreen() {
       <DashboardBackupNudge />
 
       <LiveRegion visuallyHidden>
-        {alertCount > 0 ? `${alertCount} item${alertCount === 1 ? '' : 's'} need attention` : ''}
+        {alertCount > 0 ? `${alertCount} ${plural(alertCount, 'item')} need attention` : ''}
       </LiveRegion>
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the

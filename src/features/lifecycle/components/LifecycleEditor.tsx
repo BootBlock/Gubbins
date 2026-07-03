@@ -9,6 +9,7 @@ import { useId, useState } from 'react';
 import { Button, InfoHint, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { useUpdateItem } from '@/features/inventory/mutations';
 import { useFormatters } from '@/lib/useFormatters';
@@ -85,7 +86,7 @@ export function LifecycleEditor({ item }: { item: Item }) {
           {status === 'EXPIRED' ? <WarningIcon /> : <DueDateIcon />}
           {status === 'EXPIRED'
             ? `Expired ${fmt.date(item.expiryDate)}`
-            : `Expires ${fmt.date(item.expiryDate)}${days !== null ? ` (${days} day${days === 1 ? '' : 's'})` : ''}`}
+            : `Expires ${fmt.date(item.expiryDate)}${days !== null ? ` (${days} ${plural(days, 'day')})` : ''}`}
         </p>
       ) : null}
 

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { plural } from '@/lib/plural';
 import { Banner, Button, Modal, Textarea } from '@/components/foundry';
 import { UploadIcon } from '@/components/icons';
 import { useImportBom } from '../projects';
@@ -64,7 +65,7 @@ export function ImportBomDialog({
     importBom.mutate(parsed, {
       onSuccess: (result) => {
         setSummary(
-          `Imported ${result.added} line${result.added === 1 ? '' : 's'} — ${result.matched} auto-matched to inventory.`,
+          `Imported ${result.added} ${plural(result.added, 'line')} — ${result.matched} auto-matched to inventory.`,
         );
         setParsed(null);
         setText('');
@@ -134,7 +135,7 @@ export function ImportBomDialog({
 
         <div className="flex items-center justify-between pt-1">
           <p className="text-xs text-muted-foreground">
-            {parsed ? `${parsed.length} line${parsed.length === 1 ? '' : 's'} ready` : ' '}
+            {parsed ? `${parsed.length} ${plural(parsed.length, 'line')} ready` : ' '}
           </p>
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={close}>

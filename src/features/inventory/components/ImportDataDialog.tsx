@@ -22,6 +22,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Select, Spinner, Surface, Textarea } from '@/components/foundry';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { decimalSeparatorForLocale } from '@/lib/format';
 import { DatasheetIcon, ImportIcon, UploadIcon } from '@/components/icons';
@@ -688,7 +689,7 @@ function ImportWorkbench({
               data-testid="catalog-import-apply"
             >
               <ImportIcon />
-              Import {actionable} row{actionable === 1 ? '' : 's'}
+              Import {actionable} {plural(actionable, 'row')}
             </Button>
           </div>
         </>

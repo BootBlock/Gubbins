@@ -1,3 +1,5 @@
+import { plural } from '@/lib/plural';
+
 import type { LocationOption } from './components/LocationSelect';
 import { locationColorTextClass } from './location-color';
 
@@ -21,7 +23,7 @@ export interface ParentLocationRow {
  */
 export function itemCountMeta(count: number, quantity: (value: number) => string): string {
   if (count === 0) return '-';
-  return `${quantity(count)} ${count === 1 ? 'item' : 'items'}`;
+  return `${quantity(count)} ${plural(count, 'item')}`;
 }
 
 /**

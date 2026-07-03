@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
 import { AddIcon, ProjectIcon } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
 import { PROJECT_STATUS_LABELS } from './components/projects-ui';
@@ -76,7 +77,7 @@ export function ProjectsScreen() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{project.name}</span>
                       <span className="block text-xs opacity-70">
-                        {project.lineCount} part{project.lineCount === 1 ? '' : 's'} ·{' '}
+                        {project.lineCount} {plural(project.lineCount, 'part')} ·{' '}
                         {PROJECT_STATUS_LABELS[project.status]}
                       </span>
                     </span>
@@ -105,7 +106,7 @@ export function ProjectsScreen() {
               ? 'Loading projects…'
               : rows.length === 0
                 ? 'No projects yet.'
-                : `${rows.length} project${rows.length === 1 ? '' : 's'}.`}
+                : `${rows.length} ${plural(rows.length, 'project')}.`}
           </p>
           {selectedId ? (
             // Keyed by project id so picking a different project replays the swap-in

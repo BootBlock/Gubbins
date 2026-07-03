@@ -1,4 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react';
+
+import { plural } from '@/lib/plural';
 import { Button, Modal, Spinner, Tooltip } from '@/components/foundry';
 import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
@@ -175,9 +177,7 @@ export function LocationSidebar({
         title="Delete location?"
         description={
           confirmDelete
-            ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} item${
-                confirmDelete.itemCount === 1 ? '' : 's'
-              }. Deleting it will move ${confirmDelete.itemCount === 1 ? 'it' : 'them'} to Unassigned.`
+            ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} ${plural(confirmDelete.itemCount, 'item')}. Deleting it will move ${confirmDelete.itemCount === 1 ? 'it' : 'them'} to Unassigned.`
             : undefined
         }
       >

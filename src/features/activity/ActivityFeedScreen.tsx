@@ -25,6 +25,7 @@ import {
   Surface,
 } from '@/components/foundry';
 import { HistoryIcon } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
@@ -152,7 +153,7 @@ export function ActivityFeedScreen() {
     if (isLoading || announcedRef.current) return;
     announcedRef.current = true;
     const n = entries.length;
-    setAnnouncement(n === 0 ? 'No recent activity.' : `Showing ${n} recent event${n === 1 ? '' : 's'}.`);
+    setAnnouncement(n === 0 ? 'No recent activity.' : `Showing ${n} recent ${plural(n, 'event')}.`);
   }, [isLoading, entries.length]);
 
   return (

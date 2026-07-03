@@ -10,6 +10,7 @@ import {
   SettingsIcon,
   UploadIcon,
 } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { getItemRepository } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
@@ -415,8 +416,8 @@ function RestorePanel({
                     </p>
                     {impact ? (
                       <p data-testid="restore-impact">
-                        Replacing <strong>{impact.currentItems}</strong> current item
-                        {impact.currentItems === 1 ? '' : 's'} with <strong>{impact.backupItems}</strong> from
+                        Replacing <strong>{impact.currentItems}</strong> current{' '}
+                        {plural(impact.currentItems, 'item')} with <strong>{impact.backupItems}</strong> from
                         the backup.
                       </p>
                     ) : null}

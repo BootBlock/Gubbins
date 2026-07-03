@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { plural } from '@/lib/plural';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
 import {
   AddIcon,
@@ -348,7 +349,7 @@ function InventoryWorkspace() {
           <div className="pb-4" inert={!builderOpen}>
             <VisualBuilder
               resultSummary={
-                astActive ? `${flatItems.length} match${flatItems.length === 1 ? '' : 'es'}` : undefined
+                astActive ? `${flatItems.length} ${plural(flatItems.length, 'match', 'matches')}` : undefined
               }
             />
           </div>

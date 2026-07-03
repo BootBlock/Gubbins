@@ -10,6 +10,8 @@
  * read-only over data already stored, **no schema change**.
  */
 
+import { plural } from '@/lib/plural';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -201,7 +203,7 @@ export function buildHygieneReport(
       dupOffenders.push(
         toSample(
           item,
-          `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} other${group.length - 1 === 1 ? '' : 's'}`,
+          `MPN ${item.mpn!.trim()} · shared with ${group.length - 1} ${plural(group.length - 1, 'other')}`,
         ),
       );
     }

@@ -10,6 +10,7 @@
 import { useState, useMemo } from 'react';
 import { Button, Input, Surface, Spinner, LiveRegion } from '@/components/foundry';
 import { DownloadIcon, LowStockIcon, TruckIcon, WarningIcon } from '@/components/icons';
+import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { buildReorderCsv } from './reorder-csv';
 import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup, type ReorderPlanLine } from './reorder-plan';
@@ -91,7 +92,7 @@ export function ReorderTab() {
           ? 'Loading reorder list…'
           : totalLines === 0
             ? 'No items below their reorder point.'
-            : `${totalLines} item${totalLines === 1 ? '' : 's'} need${totalLines === 1 ? 's' : ''} reordering.`}
+            : `${totalLines} ${plural(totalLines, 'item')} need${totalLines === 1 ? 's' : ''} reordering.`}
       </p>
 
       {planQuery.isLoading ? (
@@ -114,7 +115,7 @@ export function ReorderTab() {
         <>
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {totalLines} item{totalLines === 1 ? '' : 's'} need{totalLines === 1 ? 's' : ''} reordering
+              {totalLines} {plural(totalLines, 'item')} need{totalLines === 1 ? 's' : ''} reordering
             </p>
             <Button variant="outline" onClick={handleExportCsv} data-testid="reorder-export-csv">
               <DownloadIcon />
@@ -173,7 +174,7 @@ function ReorderGroup({
             {group.supplierName}
           </span>
           <span className="text-xs text-muted-foreground">
-            {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
+            {group.lines.length} {plural(group.lines.length, 'line')}
           </span>
           {estimatedTotal > 0 && (
             <span className="text-xs text-muted-foreground">· est. {currency(estimatedTotal)}</span>
