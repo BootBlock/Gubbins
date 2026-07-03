@@ -36,6 +36,27 @@ describe('Markdown renderer', () => {
     expect(container.querySelectorAll('ul li')).toHaveLength(3);
   });
 
+  it('nests indented list items under their parent', () => {
+    const { container } = render(<Markdown content={'- Fruit\n  - Apple\n  - Pear\n- Veg'} />);
+    // One outer list with a single nested list beneath the first item.
+    expect(container.querySelectorAll('ul')).toHaveLength(2);
+    expect(container.querySelectorAll('ul ul')).toHaveLength(1);
+    expect(container.querySelectorAll('ul ul li')).toHaveLength(2);
+    // Two top-level items survive alongside the nested pair.
+    const outer = container.querySelector('ul')!;
+    const topItems = Array.from(outer.children).filter((el) => el.tagName === 'LI');
+    expect(topItems).toHaveLength(2);
+    expect(topItems[0]?.textContent).toContain('Apple');
+    expect(topItems[1]?.textContent).toBe('Veg');
+  });
+
+  it('nests an ordered list inside an unordered one', () => {
+    const { container } = render(<Markdown content={'- Steps\n  1. First\n  2. Second'} />);
+    const nested = container.querySelector('ul ol');
+    expect(nested).toBeInTheDocument();
+    expect(nested?.querySelectorAll('li')).toHaveLength(2);
+  });
+
   it('renders headings and fenced code blocks', () => {
     const { container } = render(<Markdown content={'# Title\n\n```\nplain\n```'} />);
     expect(container.querySelector('h3')?.textContent).toBe('Title');

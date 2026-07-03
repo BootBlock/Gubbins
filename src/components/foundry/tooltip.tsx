@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -94,6 +95,30 @@ export const INFO_OPEN_DELAY_MS = 300;
  */
 export const NAV_OPEN_DELAY_MS = 1500;
 const CLOSE_DELAY_MS = 120;
+/**
+ * Height (px) of the soft fade drawn at a *scrollable* edge of the content region, so it is
+ * visually obvious there is more to scroll. On a translucent glass panel a shadow overlay
+ * can't work (there is no solid surface to cast onto), so we instead fade the content itself
+ * to transparent with a `mask-image` — background-agnostic, and it simply melts the text into
+ * the frosted pane behind it. The opaque stop is white (not black) so the mask reads the same
+ * whether the engine treats it as alpha- or luminance-based.
+ */
+const SCROLL_FADE_PX = 20;
+
+/**
+ * Inline `mask-image` for the scroll region: fade the top and/or bottom edge to transparent
+ * only where there is off-screen content. Returns `undefined` (no mask) when the content
+ * fits, so a non-scrolling tooltip is never masked. See {@link SCROLL_FADE_PX}.
+ */
+function edgeFadeMaskStyle(edgeFade: { top: boolean; bottom: boolean }): CSSProperties | undefined {
+  if (!edgeFade.top && !edgeFade.bottom) return undefined;
+  // `white` vs `transparent` is a pure alpha stencil (never a rendered colour), so no design
+  // token applies — white is the opaque stop; see {@link SCROLL_FADE_PX} for why not black.
+  const start = edgeFade.top ? 'transparent' : 'white';
+  const end = edgeFade.bottom ? 'transparent' : 'white';
+  const mask = `linear-gradient(to bottom, ${start}, white ${SCROLL_FADE_PX}px, white calc(100% - ${SCROLL_FADE_PX}px), ${end})`;
+  return { maskImage: mask, WebkitMaskImage: mask };
+}
 
 export function Tooltip({
   content,
@@ -106,9 +131,11 @@ export function Tooltip({
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [edgeFade, setEdgeFade] = useState({ top: false, bottom: false });
   const reducedMotion = useReducedMotion();
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True for the brief window after a pointer press, so the focus it triggers does
@@ -207,6 +234,32 @@ export function Tooltip({
     };
   }, [open, placement, content]);
 
+  // Track whether the content region is scrolled away from its top/bottom edge, so the
+  // scroll-fade mask (below) only appears on the edge that actually has hidden content.
+  const updateEdgeFade = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.scrollHeight - el.clientHeight > 1;
+    const top = scrollable && el.scrollTop > 1;
+    const bottom = scrollable && el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    // Bail out when the edges are unchanged (the common case while scrolling within a region),
+    // so a scroll gesture doesn't re-render the tooltip — and re-parse its Markdown — every tick.
+    setEdgeFade((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+  }, []);
+
+  // Re-measure the fade edges when the tooltip opens, its content changes, or the viewport
+  // resizes (which can change the clamped max-height). Scrolling within is handled by the
+  // region's own onScroll.
+  useLayoutEffect(() => {
+    if (!open) {
+      setEdgeFade({ top: false, bottom: false });
+      return;
+    }
+    updateEdgeFade();
+    window.addEventListener('resize', updateEdgeFade);
+    return () => window.removeEventListener('resize', updateEdgeFade);
+  }, [open, content, updateEdgeFade]);
+
   // Escape closes the tooltip; a tap/click outside both the trigger and the bubble
   // closes it too (the dismissal path for touch, where there is no mouse-leave).
   useEffect(() => {
@@ -287,7 +340,7 @@ export function Tooltip({
                 // hairline inset highlight so it reads as a pane catching light rather than a
                 // flat dark box. `overflow-hidden` clips the sheen + scroll region to the
                 // rounded corners.
-                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/45 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110',
+                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/35 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110',
                 'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-glass-sheen before:to-transparent',
                 SIZE_MAX_WIDTH[size],
                 !reducedMotion && 'animate-fade-in',
@@ -296,8 +349,15 @@ export function Tooltip({
               {/* Tall content scrolls vertically within the bubble rather than overflowing the
                   viewport — the tooltip doubles as a documentation panel, so long help stays
                   readable. `relative` lifts it above the sheen ::before; padding lives here (not
-                  on the glass panel) so the scrollbar tucks inside the rounded, clipped edge. */}
-              <div className="relative max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+                  on the glass panel) so the scrollbar tucks inside the rounded, clipped edge. The
+                  mask fades content into the pane at any edge with more to scroll (see
+                  {@link SCROLL_FADE_PX}). */}
+              <div
+                ref={scrollRef}
+                onScroll={updateEdgeFade}
+                style={edgeFadeMaskStyle(edgeFade)}
+                className="relative max-h-[min(70vh,28rem)] overflow-y-auto p-3"
+              >
                 <Markdown content={content} />
               </div>
             </div>,
