@@ -2,7 +2,16 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, InfoHint, Input, Modal, SelectField, Textarea } from '@/components/foundry';
+import {
+  AutocompleteField,
+  Button,
+  FormField,
+  InfoHint,
+  Input,
+  Modal,
+  SelectField,
+  Textarea,
+} from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   IN_TRANSIT_LOCATION_ID,
@@ -22,6 +31,7 @@ import {
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
+import { useFieldSuggestions } from '../queries';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
 import { buildItemLocationOptions } from '../parent-options';
 import { isLocationFull } from '../location-fullness';
@@ -97,6 +107,8 @@ export function CreateItemDialog({
   const applyScrape = useApplyScrape();
   const notifyScrape = useScrapeNotifier();
   const { data: categories } = useCategories();
+  const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
+  const { data: unitSuggestions } = useFieldSuggestions('unitOfMeasure');
   const fmt = useFormatters();
   const locationLabelId = useId();
   // Focus the Name field on open so the dialog is ready to type into (the Modal otherwise
@@ -454,12 +466,20 @@ export function CreateItemDialog({
           >
             <Input placeholder="e.g. NE555P" {...register('mpn')} />
           </FormField>
-          <FormField
-            label="Manufacturer (optional)"
-            hint="Who makes the part (e.g. *Texas Instruments*). Helps distinguish otherwise identically-named parts from different makers."
-          >
-            <Input placeholder="e.g. Texas Instruments" {...register('manufacturer')} />
-          </FormField>
+          <Controller
+            control={control}
+            name="manufacturer"
+            render={({ field }) => (
+              <AutocompleteField
+                label="Manufacturer (optional)"
+                hint="Who makes the part (e.g. *Texas Instruments*). Helps distinguish otherwise identically-named parts from different makers. Type-ahead suggests makers already in your catalogue."
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                suggestions={manufacturerSuggestions ?? []}
+                placeholder="e.g. Texas Instruments"
+              />
+            )}
+          />
         </div>
         <FormField
           label="Unit cost (optional)"
@@ -576,13 +596,21 @@ export function CreateItemDialog({
 
         {trackingMode === 'CONSUMABLE_GAUGE' ? (
           <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-secondary/20 p-3">
-            <FormField
-              label="Unit"
-              error={errors.unitOfMeasure?.message}
-              hint="The unit the gauge is measured in — `g`, `ml`, `m`, etc. This labels the capacity and remaining amounts everywhere."
-            >
-              <Input placeholder="g, ml, m…" {...register('unitOfMeasure')} />
-            </FormField>
+            <Controller
+              control={control}
+              name="unitOfMeasure"
+              render={({ field }) => (
+                <AutocompleteField
+                  label="Unit"
+                  error={errors.unitOfMeasure?.message}
+                  hint="The unit the gauge is measured in — `g`, `ml`, `m`, etc. This labels the capacity and remaining amounts everywhere."
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  suggestions={unitSuggestions ?? []}
+                  placeholder="g, ml, m…"
+                />
+              )}
+            />
             <FormField
               label="Full capacity"
               error={errors.grossCapacity?.message}

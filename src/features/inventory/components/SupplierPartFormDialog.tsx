@@ -1,8 +1,9 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { Button, FormField, Input, Modal } from '@/components/foundry';
+import { AutocompleteField, Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { CURRENCY_OPTIONS } from '@/features/settings/settings';
+import { useFieldSuggestions } from '../queries';
 
 /**
  * URL-field help: which suppliers the companion extension can scrape, listed from the
@@ -107,6 +108,7 @@ export function SupplierPartFormDialog({
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const currencyListId = useId();
+  const { data: supplierSuggestions } = useFieldSuggestions('supplierName');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -151,26 +153,24 @@ export function SupplierPartFormDialog({
       initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="supplier-part-form">
-        <FormField
+        <AutocompleteField
           label="Supplier"
           hint={
             'The distributor or shop you buy this part from (e.g. **DigiKey**, **RS**, or a local ' +
             'supplier). **Required.** An item can list several suppliers; **star** one in the table ' +
             "to mark it preferred — its unit cost feeds the item's valuation unless you've set a " +
-            'manual cost on the item.'
+            'manual cost on the item.\n\nType-ahead suggests suppliers already in your catalogue.'
           }
-        >
-          <Input
-            ref={nameRef}
-            value={supplierName}
-            onChange={(e) => {
-              setSupplierName(e.target.value);
-              setError(null);
-            }}
-            placeholder="e.g. DigiKey"
-            data-testid="supplier-part-name"
-          />
-        </FormField>
+          inputRef={nameRef}
+          value={supplierName}
+          onChange={(value) => {
+            setSupplierName(value);
+            setError(null);
+          }}
+          suggestions={supplierSuggestions ?? []}
+          placeholder="e.g. DigiKey"
+          data-testid="supplier-part-name"
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <FormField

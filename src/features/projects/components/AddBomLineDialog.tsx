@@ -1,8 +1,9 @@
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
+import { AutocompleteField, Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
+import { useFieldSuggestions } from '@/features/inventory/queries';
 import { useAddBomLine } from '../projects';
 
 /**
@@ -33,6 +34,7 @@ export function AddBomLineDialog({
   items: readonly Item[];
 }) {
   const addLine = useAddBomLine(projectId);
+  const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
   const {
     control,
     register,
@@ -125,9 +127,19 @@ export function AddBomLineDialog({
           <FormField label="MPN">
             <Input placeholder="RC0805FR-0710KL" {...register('mpn')} />
           </FormField>
-          <FormField label="Manufacturer">
-            <Input placeholder="Yageo" {...register('manufacturer')} />
-          </FormField>
+          <Controller
+            control={control}
+            name="manufacturer"
+            render={({ field }) => (
+              <AutocompleteField
+                label="Manufacturer"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                suggestions={manufacturerSuggestions ?? []}
+                placeholder="Yageo"
+              />
+            )}
+          />
         </div>
 
         <div className="flex justify-end gap-2 pt-1">

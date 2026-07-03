@@ -12,9 +12,12 @@ import {
   MAX_LIST_PAGES,
   getItemRepository,
   getLocationRepository,
+  getSuggestionRepository,
   getSupplierPartRepository,
   type ItemListFilters,
+  type SuggestionField,
 } from '@/db/repositories';
+import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
 
 /** Stable filter slice used both as a query-key segment and the repository arg. */
 export type ItemQueryFilters = Pick<
@@ -71,7 +74,28 @@ export const inventoryKeys = {
   maintenance: () => [...inventoryKeys.all, 'maintenance'] as const,
   itemMaintenance: (itemId: string) => [...inventoryKeys.item(itemId), 'maintenance'] as const,
   maintenanceDue: () => [...inventoryKeys.maintenance(), 'due'] as const,
+  // Field auto-completion — distinct existing values for a suggestible free-text field.
+  fieldSuggestions: (field: SuggestionField) => [...inventoryKeys.all, 'suggestions', field] as const,
 } as const;
+
+/**
+ * Type-ahead suggestions for a free-text form field (manufacturer, supplier, gauge unit,
+ * currency). The list unions the distinct values already in the catalogue with a seeded set
+ * of popular defaults, so it is useful even on an empty database. Suggestions are a
+ * shortcut, never a constraint — the caller stays free to type any value.
+ */
+export function useFieldSuggestions(field: SuggestionField) {
+  return useQuery({
+    queryKey: inventoryKeys.fieldSuggestions(field),
+    queryFn: async () => {
+      const existing = await getSuggestionRepository().distinctValues(field);
+      return mergeSuggestions(existing, PRESET_SUGGESTIONS[field]);
+    },
+    // The catalogue's distinct set changes slowly; keep it briefly fresh to avoid a fetch
+    // on every dialog open without going stale for a whole session.
+    staleTime: 60_000,
+  });
+}
 
 /** An item's supplier/alternative part aliases (§4 Universal Alias Mapping). */
 export function useItemAliases(itemId: string | undefined) {

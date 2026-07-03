@@ -12,6 +12,13 @@ export { Surface } from './surface';
 export { Spinner, type SpinnerProps } from './spinner';
 export { Input, Textarea } from './input';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
+export {
+  Autocomplete,
+  AutocompleteField,
+  type AutocompleteProps,
+  type AutocompleteFieldProps,
+} from './autocomplete';
+export { filterSuggestions } from './autocomplete-filter';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

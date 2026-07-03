@@ -22,6 +22,7 @@ import { ProjectRepository } from './ProjectRepository';
 import { PurchaseOrderRepository } from './PurchaseOrderRepository';
 import { ReportRepository } from './ReportRepository';
 import { StorageRepository } from './StorageRepository';
+import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
@@ -41,6 +42,7 @@ export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
 export { CheckoutRepository } from './CheckoutRepository';
 export { AssetBookingRepository } from './AssetBookingRepository';
+export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';
 export {
   TombstoneRepository,
@@ -83,6 +85,7 @@ let contactRepository: ContactRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
 let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
+let suggestionRepository: SuggestionRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
@@ -163,6 +166,11 @@ export function getAssetBookingRepository(): AssetBookingRepository {
 export function getSupplierPartRepository(): SupplierPartRepository {
   supplierPartRepository ??= new SupplierPartRepository(getDatabaseDriver(), productionOptions);
   return supplierPartRepository;
+}
+
+export function getSuggestionRepository(): SuggestionRepository {
+  suggestionRepository ??= new SuggestionRepository(getDatabaseDriver(), productionOptions);
+  return suggestionRepository;
 }
 
 export function getTombstoneRepository(): TombstoneRepository {

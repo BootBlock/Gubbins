@@ -23,6 +23,13 @@ vi.mock('../categories', () => ({
   useCreateCategory: () => ({ mutate: spies.createCategory, isPending: false }),
 }));
 
+// Keep the real queries module (other dialog children read from it) but stub the field
+// suggestions so no QueryClient/DB is needed for the autocomplete fields.
+vi.mock('../queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../queries')>()),
+  useFieldSuggestions: () => ({ data: [] }),
+}));
+
 // The scrape panel needs the companion extension plumbing — inert here.
 vi.mock('@/features/scraping', () => ({
   ScrapeSupplierPanel: () => null,

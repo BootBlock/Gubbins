@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button, FormField, Input, SelectField, Textarea } from '@/components/foundry';
+import { AutocompleteField, Button, FormField, Input, SelectField, Textarea } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
+import { useFieldSuggestions } from '../queries';
 
 /**
  * Core-fields editor — the "Edit item" home for the identity fields set when the
@@ -18,6 +19,7 @@ import { useUpdateItem } from '../mutations';
 export function ItemDetailsEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const { data: categories } = useCategories();
+  const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
 
   const [name, setName] = useState(item.name);
   const [description, setDescription] = useState(item.description ?? '');
@@ -102,13 +104,14 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         >
           <Input value={mpn} onChange={(e) => setMpn(e.target.value)} placeholder="e.g. NE555P" />
         </FormField>
-        <FormField label="Manufacturer (optional)" hint="Who makes the part (e.g. *Texas Instruments*).">
-          <Input
-            value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)}
-            placeholder="e.g. Texas Instruments"
-          />
-        </FormField>
+        <AutocompleteField
+          label="Manufacturer (optional)"
+          hint="Who makes the part (e.g. *Texas Instruments*). Type-ahead suggests makers already in your catalogue."
+          value={manufacturer}
+          onChange={setManufacturer}
+          suggestions={manufacturerSuggestions ?? []}
+          placeholder="e.g. Texas Instruments"
+        />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

@@ -13,6 +13,10 @@ vi.mock('../categories', () => ({
   useCategories: () => ({ data: { rows: [{ id: 'cat-1', name: 'Resistors' }] } }),
 }));
 
+vi.mock('../queries', () => ({
+  useFieldSuggestions: () => ({ data: [] }),
+}));
+
 afterEach(() => {
   cleanup();
   spies.update.mockReset();
