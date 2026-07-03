@@ -36,6 +36,8 @@ import {
   PackageIcon,
   CloseIcon,
 } from '@/components/icons';
+import { requestHighlight } from '@/lib/highlight';
+import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { groupByKind, type Alert, type AlertKind, type AlertSeverity } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { useAlerts } from './useAlerts';
@@ -70,9 +72,14 @@ function KindIcon({ kind }: { kind: AlertKind }) {
 // Severity badge
 // ---------------------------------------------------------------------------
 
+// Each badge tints a faint fill with the *same* hue used for its text, so the label
+// stays legible on both themes. `warning-foreground` is the near-black label meant to
+// sit on a *solid* warning fill — on this 10%-opacity tint it was near-invisible in
+// dark mode; the `warning` token itself is the correct on-tint text colour (mirroring
+// how `critical` uses `text-destructive`, not `text-destructive-foreground`).
 const SEVERITY_TOKEN: Record<AlertSeverity, string> = {
   critical: 'bg-destructive/10 text-destructive',
-  warning: 'bg-warning/10 text-warning-foreground',
+  warning: 'bg-warning/15 text-warning',
   info: 'bg-muted text-muted-foreground',
 };
 
@@ -121,9 +128,16 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{alert.detail}</p>
-      {}
+      {/* Deep-link: seed the inventory search so the target item is loaded and on-screen,
+          then ask the global highlight service to scroll it into view and flash it — the
+          user lands on a filtered list with their item unmistakably called out. */}
       <Link
         to={alert.target.route}
+        onClick={() => {
+          const { itemId, itemName } = alert.target;
+          if (itemName) useInventoryEntry.getState().requestSearch(itemName);
+          if (itemId) requestHighlight(itemId);
+        }}
         className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
         data-testid={`alert-link-${alert.id}`}
       >

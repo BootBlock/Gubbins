@@ -3,6 +3,7 @@ import { Surface } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { useHighlightTarget } from '@/lib/highlight';
 import { ChangeFlash } from './ChangeFlash';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
@@ -32,12 +33,15 @@ export function ItemCard({
   selection?: ItemSelection;
 }) {
   const fmt = useFormatters();
+  const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   return (
     <Surface
+      ref={ref}
       className={cn(
         'flex flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10',
         !item.isActive && 'opacity-60',
         selection?.selectedIds.has(item.id) && 'ring-2 ring-primary/60',
+        isHighlighted && 'animate-highlight',
       )}
     >
       <div className="flex items-start justify-between gap-3">

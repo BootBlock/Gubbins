@@ -45,8 +45,10 @@ export type AlertSeverity = 'info' | 'warning' | 'critical';
 export interface AlertTarget {
   /** TanStack Router path, e.g. `'/inventory'`. */
   readonly route: string;
-  /** Optional item id for filtering / pre-selecting on the destination screen. */
+  /** Optional item id — used to scroll-to + flash the item card on arrival. */
   readonly itemId?: string;
+  /** The item's name — seeds the destination search so the item is loaded & on-screen. */
+  readonly itemName?: string;
 }
 
 /**
@@ -136,7 +138,7 @@ function buildLowStockAlerts(sources: readonly LowStockSource[]): Alert[] {
     title: `Low stock — ${item.name}`,
     detail: 'This item is at or below its reorder point.',
     dueAt: null,
-    target: { route: '/inventory', itemId: item.id },
+    target: { route: '/inventory', itemId: item.id, itemName: item.name },
   }));
 }
 
@@ -160,7 +162,7 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
       title: `${status === 'EXPIRED' ? 'Expired' : 'Expiring soon'} — ${item.name}`,
       detail,
       dueAt,
-      target: { route: '/inventory', itemId: item.id },
+      target: { route: '/inventory', itemId: item.id, itemName: item.name },
     });
   }
   return alerts;
@@ -177,7 +179,7 @@ function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[], now
       title: `Maintenance due — ${schedule.itemName}`,
       detail: `Schedule: "${schedule.name}"${dueAt ? `. Due ${dueAt.slice(0, 10)}.` : '.'}`,
       dueAt,
-      target: { route: '/inventory', itemId: schedule.itemId },
+      target: { route: '/inventory', itemId: schedule.itemId, itemName: schedule.itemName },
     };
   });
 }
@@ -207,7 +209,7 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
       title: `${status === 'expired' ? 'Warranty expired' : 'Warranty expiring soon'} — ${item.name}`,
       detail,
       dueAt,
-      target: { route: '/inventory', itemId: item.id },
+      target: { route: '/inventory', itemId: item.id, itemName: item.name },
     });
   }
   return alerts;

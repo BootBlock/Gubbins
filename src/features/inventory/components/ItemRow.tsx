@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
+import { useHighlightTarget } from '@/lib/highlight';
 import { GaugeRing } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { TrackingBadge } from './TrackingBadge';
@@ -27,12 +28,15 @@ export function ItemRow({
   selection?: ItemSelection;
 }) {
   const fmt = useFormatters();
+  const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   return (
     <div
+      ref={ref}
       className={cn(
         'flex items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80',
         !item.isActive && 'opacity-60',
         selection?.selectedIds.has(item.id) && 'border-primary/60 bg-primary/5',
+        isHighlighted && 'animate-highlight',
       )}
     >
       {selection ? (

@@ -67,6 +67,14 @@
   --warning: oklch(0.7 0.15 75);
   --warning-foreground: oklch(0.22 0.04 70);
 
+  /*
+   * Call-to-attention highlight (the global `useHighlightTarget` flash) — a vivid
+   * indigo, kin to `--primary`/`--ring`, painted as a pulsing ring around an element
+   * a system has just navigated the user to (e.g. an alert's "View in inventory"). A
+   * saturated hue that reads as "look here" without being an error/warning colour.
+   */
+  --highlight: oklch(0.62 0.19 277);
+
   --border: oklch(0.2 0.02 280 / 12%);
   --input: oklch(0.2 0.02 280 / 15%);
   --ring: oklch(0.55 0.2 277);
@@ -210,6 +218,9 @@
   --warning: oklch(0.8 0.15 78);
   --warning-foreground: oklch(0.2 0.03 60);
 
+  /* Brighter for the dark surface so the highlight ring stays vivid (see :root). */
+  --highlight: oklch(0.7 0.18 277);
+
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.64 0.2 277);
@@ -303,6 +314,10 @@
 
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+
+  /* Call-to-attention highlight → `text-highlight` / `ring-highlight` etc. The
+   * `animate-highlight` flash references the raw `--highlight` var directly. */
+  --color-highlight: var(--highlight);
 
   --color-border: var(--border);
   --color-input: var(--input);
@@ -513,6 +528,43 @@
 }
 
 /*
+ * Call-to-attention flash for the global `useHighlightTarget` service. A ring
+ * "sonar-pulses" around a just-navigated-to element a few times over 3 seconds then
+ * fades to nothing, so it draws the eye without leaving any residue on the element.
+ * Purely a box-shadow ring (plus a fading wash) — no layout/paint thrash, and it
+ * follows the element's own border-radius. Both endpoints are transparent so the
+ * element returns cleanly to its resting state; reduced-motion users have the whole
+ * animation neutralised by the global catch-all (they still get the instant scroll).
+ */
+@keyframes gubbins-highlight {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+  10% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--highlight) 75%, transparent);
+    background-color: color-mix(in oklab, var(--highlight) 14%, transparent);
+  }
+  30% {
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--highlight) 35%, transparent);
+    background-color: color-mix(in oklab, var(--highlight) 6%, transparent);
+  }
+  45% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--highlight) 70%, transparent);
+    background-color: color-mix(in oklab, var(--highlight) 12%, transparent);
+  }
+  65% {
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--highlight) 30%, transparent);
+    background-color: color-mix(in oklab, var(--highlight) 5%, transparent);
+  }
+  80% {
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--highlight) 55%, transparent);
+    background-color: color-mix(in oklab, var(--highlight) 8%, transparent);
+  }
+}
+
+/*
  * Content-swap entrance — a quick "fade-through" incoming half (Material-style) for
  * when a panel's content is replaced in place: selecting a different Location filters
  * the item list, picking another Project swaps the detail pane, etc. Keyed remounts
@@ -648,6 +700,10 @@
 
 @utility animate-pulse-success {
   animation: gubbins-pulse-success 0.6s ease-out;
+}
+
+@utility animate-highlight {
+  animation: gubbins-highlight 3s var(--ease-emphasized) both;
 }
 
 @utility animate-ghost {
