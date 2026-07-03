@@ -10,9 +10,9 @@ import { cn } from '@/lib/utils';
  * It is deliberately not a full CommonMark implementation, but it covers the subset
  * that makes it a capable engine for **rich tooltips and in-app documentation**:
  *
- * - Block: headings (`#`–`####`), paragraphs, bullet / ordered lists, task lists
- *   (`- [ ]` / `- [x]`), blockquotes (`>`), GitHub-flavoured pipe **tables** (with
- *   per-column alignment), fenced code blocks, and horizontal rules (`---`).
+ * - Block: headings (`#`–`####`), paragraphs, bullet / ordered lists (with indent-based
+ *   nesting) and task lists (`- [ ]` / `- [x]`), blockquotes (`>`), GitHub-flavoured pipe
+ *   **tables** (with per-column alignment), fenced code blocks, and horizontal rules (`---`).
  * - Inline: **bold**, *italic*, ~~strikethrough~~, `code`, [links](https://…) and bare
  *   auto-linked URLs, with `\`-escapes to show a literal marker.
  *
@@ -32,6 +32,8 @@ export function Markdown({ content, className }: { content: string; className?: 
 const HR = /^ {0,3}([-*_])(?: *\1){2,} *$/;
 /** Matches a GFM table delimiter row, e.g. `| --- | :--: | ---: |`. */
 const TABLE_DELIMITER = /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/;
+/** Matches a bullet or ordered list item, capturing its leading indent (for nesting). */
+const LIST_ITEM = /^(\s*)(?:[-*]|\d+\.)\s+/;
 
 function renderBlocks(source: string): ReactNode[] {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
@@ -44,7 +46,8 @@ function renderBlocks(source: string): ReactNode[] {
     const line = lines[n];
     if (line === undefined) return false;
     return (
-      /^(#{1,4}\s|[-*]\s|\d+\.\s|```|>)/.test(line) ||
+      /^(#{1,4}\s|```|>)/.test(line) ||
+      LIST_ITEM.test(line) ||
       HR.test(line) ||
       (line.includes('|') && lines[n + 1] !== undefined && TABLE_DELIMITER.test(lines[n + 1]!))
     );
@@ -133,36 +136,16 @@ function renderBlocks(source: string): ReactNode[] {
       continue;
     }
 
-    // Unordered list (with optional `[ ]` / `[x]` task-list checkboxes).
-    if (/^[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i]!)) {
-        items.push(lines[i]!.replace(/^[-*]\s+/, ''));
+    // List (ordered/unordered) — indent-aware, so items may nest, with optional
+    // `[ ]` / `[x]` task-list checkboxes. Gathers the whole block (all consecutive list
+    // lines at any depth) and builds it recursively.
+    if (LIST_ITEM.test(line)) {
+      const rawItems: string[] = [];
+      while (i < lines.length && lines[i]!.trim() !== '' && LIST_ITEM.test(lines[i]!)) {
+        rawItems.push(lines[i]!);
         i++;
       }
-      const isTaskList = items.every((item) => /^\[[ xX]\]\s+/.test(item));
-      blocks.push(
-        <ul key={key++} className={cn('ml-4 space-y-1', isTaskList ? 'ml-1 list-none' : 'list-disc')}>
-          {items.map((item, idx) => renderListItem(item, `ul${key}-${idx}`, idx))}
-        </ul>,
-      );
-      continue;
-    }
-
-    // Ordered list.
-    if (/^\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i]!)) {
-        items.push(lines[i]!.replace(/^\d+\.\s+/, ''));
-        i++;
-      }
-      blocks.push(
-        <ol key={key++} className="ml-4 list-decimal space-y-1">
-          {items.map((item, idx) => (
-            <li key={idx}>{parseInline(item, `ol${key}-${idx}`)}</li>
-          ))}
-        </ol>,
-      );
+      blocks.push(buildList(rawItems, `list${key++}`));
       continue;
     }
 
@@ -179,28 +162,77 @@ function renderBlocks(source: string): ReactNode[] {
   return blocks;
 }
 
-/** Render one `<li>`, drawing a leading `[ ]` / `[x]` as a task-list checkbox. */
-function renderListItem(item: string, keyBase: string, idx: number): ReactNode {
-  const task = /^\[([ xX])\]\s+(.*)$/.exec(item);
+/** One item of a list: its own text, plus any deeper-indented lines that nest beneath it. */
+interface ListEntry {
+  readonly content: string;
+  readonly children: string[];
+}
+
+/** Leading-whitespace width of a line, used to decide list nesting depth. */
+function indentOf(line: string): number {
+  return LIST_ITEM.exec(line)?.[1]?.length ?? 0;
+}
+
+/**
+ * Build a (possibly nested) `<ul>`/`<ol>` from a run of raw list lines. Items at this list's
+ * base indent are its direct children; any deeper-indented lines are gathered under the item
+ * above them and rendered as a nested list recursively.
+ */
+function buildList(rawItems: string[], keyBase: string): ReactNode {
+  const baseIndent = Math.min(...rawItems.map(indentOf));
+  const ordered = /^\s*\d+\.\s+/.test(rawItems[0] ?? '');
+  const entries: ListEntry[] = [];
+  for (const raw of rawItems) {
+    if (indentOf(raw) <= baseIndent || entries.length === 0) {
+      entries.push({ content: raw.replace(LIST_ITEM, ''), children: [] });
+    } else {
+      entries[entries.length - 1]!.children.push(raw);
+    }
+  }
+
+  const isTaskList = !ordered && entries.every((e) => /^\[[ xX]\]\s+/.test(e.content));
+  const className = ordered
+    ? 'ml-4 list-decimal space-y-1'
+    : cn('ml-4 space-y-1', isTaskList ? 'ml-1 list-none' : 'list-disc');
+
+  return createElement(
+    ordered ? 'ol' : 'ul',
+    { key: keyBase, className },
+    entries.map((entry, idx) => renderListItem(entry, `${keyBase}-${idx}`, idx)),
+  );
+}
+
+/** Render one `<li>`: a leading `[ ]` / `[x]` becomes a task checkbox; children nest below. */
+function renderListItem(entry: ListEntry, keyBase: string, idx: number): ReactNode {
+  const nested = entry.children.length ? buildList(entry.children, `${keyBase}-sub`) : null;
+  const task = /^\[([ xX])\]\s+(.*)$/.exec(entry.content);
   if (!task) {
-    return <li key={idx}>{parseInline(item, keyBase)}</li>;
+    return (
+      <li key={idx}>
+        {parseInline(entry.content, keyBase)}
+        {nested}
+      </li>
+    );
   }
   const checked = task[1]!.toLowerCase() === 'x';
   return (
-    <li key={idx} className="flex items-start gap-2">
-      <span
-        role="img"
-        aria-label={checked ? 'Done' : 'Not done'}
-        className={cn(
-          'mt-0.5 grid size-3.5 shrink-0 place-items-center rounded border text-[0.6rem] leading-none',
-          checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent',
-        )}
-      >
-        {checked ? '✓' : ''}
+    <li key={idx}>
+      <span className="flex items-start gap-2">
+        <span
+          role="img"
+          aria-label={checked ? 'Done' : 'Not done'}
+          className={cn(
+            'mt-0.5 grid size-3.5 shrink-0 place-items-center rounded border text-[0.6rem] leading-none',
+            checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent',
+          )}
+        >
+          {checked ? '✓' : ''}
+        </span>
+        <span className={cn(checked && 'text-muted-foreground line-through')}>
+          {parseInline(task[2]!, keyBase)}
+        </span>
       </span>
-      <span className={cn(checked && 'text-muted-foreground line-through')}>
-        {parseInline(task[2]!, keyBase)}
-      </span>
+      {nested}
     </li>
   );
 }
