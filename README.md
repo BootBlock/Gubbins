@@ -101,7 +101,14 @@ Every surface is **bearer-token-protected**, **loopback-by-default**, and rate-l
 
 - **A read-only HTTP API** — `GET /health`, `/search?q=…`, `/where?q=…` plus a versioned,
   OpenAPI-described `/api/v1` (items, locations, categories, capabilities). Anything that speaks
-  HTTP can query your inventory.
+  HTTP can query your inventory, and shape the response to exactly what it needs:
+  - **Field selection** — ask for just the fields you want (`fields=name,unitCost` → only the
+    price) or opt into extended ones (`include=capabilities,notes`).
+  - **A familiar OData-style query subset** — `$select`/`$expand`/`$top`/`$skip`/`$orderby`, a
+    constrained `$filter`, `$count`/`$search`, and a CSDL `$metadata` document (a convenience
+    subset, not a full OData service).
+  - **CSV export** — `GET /api/v1/items.csv` (honouring the same filter/sort/search), a
+    refreshable pull you can point Excel / Power BI at.
 - **A Home Assistant integration** — a HACS-compatible custom component with a
   *"Where are my {item}?"* voice intent (it speaks the location back), a dashboard sensor, and
   **auto-discovery** so you usually don't even type the host/port.
