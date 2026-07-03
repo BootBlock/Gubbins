@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
@@ -13,8 +14,14 @@ import type { ItemSelection } from './inventory-ui';
  * Data-Heavy item presentation (spec §3): a dense, tabular row optimised for
  * scanning many records at once. When `selection` is provided (the §6 batch
  * QR-label flow, Phase 49) a selection checkbox is shown.
+ *
+ * Wrapped in {@link memo}: this renders inside the virtualised list, so as the user
+ * scrolls (or the parent re-renders for unrelated reasons) a row whose `item`,
+ * `locations`, name/colour and `selection` are all referentially unchanged skips its
+ * subtree entirely. The list keeps `item`/`locations`/`selection` stable, so only rows
+ * that genuinely changed re-render.
  */
-export function ItemRow({
+export const ItemRow = memo(function ItemRow({
   item,
   locations,
   locationName,
@@ -91,4 +98,4 @@ export function ItemRow({
       <ItemActions item={item} locations={locations} compact />
     </div>
   );
-}
+});

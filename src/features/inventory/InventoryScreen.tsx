@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { plural } from '@/lib/plural';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
@@ -185,26 +185,31 @@ function InventoryWorkspace() {
   const listKey = `view-${density}-${selectedLocationId ?? 'all'}`;
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
-  const selection: ItemSelection | undefined = selecting
-    ? {
-        selectedIds,
-        onToggle: (item: Item) =>
-          setSelected((prev) => {
-            const next = new Map(prev);
-            if (next.has(item.id)) next.delete(item.id);
-            else {
-              next.set(item.id, {
-                id: item.id,
-                name: item.name,
-                mpn: item.mpn,
-                locationName: locationName(item.locationId),
-                quantity: item.quantity,
-              });
-            }
-            return next;
-          }),
+  // Keep `onToggle`'s only external read (the location-name lookup) behind a ref so the
+  // callback identity can stay stable — otherwise `selection` churns every render and
+  // defeats the `memo` on every visible ItemRow/ItemCard.
+  const locationNamesRef = useRef(locationNames);
+  locationNamesRef.current = locationNames;
+  const onToggleSelect = useCallback((item: Item) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else {
+        next.set(item.id, {
+          id: item.id,
+          name: item.name,
+          mpn: item.mpn,
+          locationName: locationNamesRef.current.get(item.locationId) ?? 'Unassigned',
+          quantity: item.quantity,
+        });
       }
-    : undefined;
+      return next;
+    });
+  }, []);
+  const selection: ItemSelection | undefined = useMemo(
+    () => (selecting ? { selectedIds, onToggle: onToggleSelect } : undefined),
+    [selecting, selectedIds, onToggleSelect],
+  );
   const selectedLabels = useMemo(() => Array.from(selected.values()), [selected]);
   const selectedItemIds = useMemo(() => Array.from(selected.keys()), [selected]);
   const toggleSelecting = () => {

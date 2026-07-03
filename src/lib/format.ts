@@ -128,6 +128,25 @@ export function makeFormatters(
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+  // `percent` and `bytes` vary only by `maximumFractionDigits`, so memoise the
+  // (heavyweight) `Intl.NumberFormat` per digit-count rather than rebuilding one on
+  // every call — these run in list rows (dashboard widgets, ABC breakdown, storage).
+  const percentFormatters = new Map<number, Intl.NumberFormat>();
+  const percentFormatterFor = (maximumFractionDigits: number): Intl.NumberFormat => {
+    const cached = percentFormatters.get(maximumFractionDigits);
+    if (cached) return cached;
+    const fmt = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits });
+    percentFormatters.set(maximumFractionDigits, fmt);
+    return fmt;
+  };
+  const byteFormatters = new Map<number, Intl.NumberFormat>();
+  const byteFormatterFor = (maximumFractionDigits: number): Intl.NumberFormat => {
+    const cached = byteFormatters.get(maximumFractionDigits);
+    if (cached) return cached;
+    const fmt = new Intl.NumberFormat(locale, { maximumFractionDigits });
+    byteFormatters.set(maximumFractionDigits, fmt);
+    return fmt;
+  };
 
   return {
     currency(value, currencyOverride) {
@@ -138,17 +157,13 @@ export function makeFormatters(
       return computeCurrencyParts(value, currencyOverride);
     },
     percent(ratio, maximumFractionDigits = 0) {
-      return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits }).format(
-        clamp01(ratio),
-      );
+      return percentFormatterFor(maximumFractionDigits).format(clamp01(ratio));
     },
     bytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
       const index = Math.min(SI_UNITS.length - 1, Math.floor(Math.log10(bytes) / 3));
       const value = bytes / 1000 ** index;
-      const formatted = new Intl.NumberFormat(locale, {
-        maximumFractionDigits: value < 10 ? 1 : 0,
-      }).format(value);
+      const formatted = byteFormatterFor(value < 10 ? 1 : 0).format(value);
       return `${formatted} ${SI_UNITS[index] ?? 'B'}`;
     },
     quantity(value) {
@@ -165,4 +180,28 @@ export function makeFormatters(
       return dateTimeFormat.format(new Date(ms));
     },
   };
+}
+
+/**
+ * Process-wide cache of {@link Formatters} bundles keyed by `locale|currency`. Every
+ * component formats through {@link useFormatters}, which memoises per component; this
+ * shared cache goes one further and lets *all* of them reuse a single bundle (and its
+ * heavyweight `Intl.*Format` objects) per preference pair, instead of one bundle per
+ * component. The set of `[locale, currency]` pairs a running app sees is tiny (it only
+ * changes when the user edits a preference), so the map never grows unbounded. The
+ * bundle is immutable — its internal maps are memoisation only — so sharing is safe.
+ */
+const formattersCache = new Map<string, Formatters>();
+
+/** A shared {@link Formatters} bundle for `locale`/`currency`, built once and reused. */
+export function getFormatters(
+  locale: string = DEFAULT_LOCALE,
+  currency: string = DEFAULT_CURRENCY,
+): Formatters {
+  const key = `${locale}|${currency}`;
+  const cached = formattersCache.get(key);
+  if (cached) return cached;
+  const bundle = makeFormatters(locale, currency);
+  formattersCache.set(key, bundle);
+  return bundle;
 }

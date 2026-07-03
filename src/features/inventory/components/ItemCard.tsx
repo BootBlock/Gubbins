@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Surface } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
@@ -18,8 +19,11 @@ import type { ItemSelection } from './inventory-ui';
  * typography, the gauge visualisation front-and-centre, and tactile hover lift.
  * When `selection` is provided (the §6 batch QR-label flow, Phase 49) a selection
  * checkbox is shown.
+ *
+ * Wrapped in {@link memo}: like {@link ItemRow} it renders inside the virtualised list,
+ * so a card whose props are referentially unchanged skips re-rendering as siblings scroll.
  */
-export function ItemCard({
+export const ItemCard = memo(function ItemCard({
   item,
   locations,
   locationName,
@@ -126,4 +130,4 @@ export function ItemCard({
       </div>
     </Surface>
   );
-}
+});
