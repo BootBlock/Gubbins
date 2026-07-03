@@ -24,7 +24,7 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1, EI-2 & EI-3 complete & merged (2026-07-03). Next: EI-4._ Phase order: **EI-1 → EI-7**.
+> **Status:** _EI-1, EI-2, EI-3 & EI-4 complete & merged (2026-07-03). Next: EI-5._ Phase order: **EI-1 → EI-7**.
 > EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
 > could be reordered, but the embedded prompts assume this order.
 
@@ -407,21 +407,21 @@ for all UI. Synthetic examples only.
 **Goal:** open Gubbins *inbound* from the mobile OS — "Share to Gubbins" and deep links — so
 capturing an item is one gesture. PWA-side; the service worker is the mechanism (no server).
 
-- [ ] **`share_target`** in the web app manifest (VitePWA config in `vite.config.ts`): accept
+- [x] **`share_target`** in the web app manifest (VitePWA config in `vite.config.ts`): accept
       shared **URL / text / title** and (POST + `multipart/form-data`) an **image**. Because
       the PWA has no server, the **service worker** (`src/sw.ts`) intercepts the share POST,
       stashes the payload, and redirects to a share-landing route.
-- [ ] **Share-landing route:** opens a **pre-filled add-item draft** (never auto-commits) —
+- [x] **Share-landing route:** opens a **pre-filled add-item draft** (never auto-commits) —
       hydrate it via the existing add-item enrichment: a shared URL → the supplier-scraper /
       Amazon-ASIN paths; shared text → the import parser; a shared image → the item image flow.
       The user reviews and confirms.
-- [ ] **`file_handlers`:** register `.json` / `.csv` (and any Gubbins export type) to open the
+- [x] **`file_handlers`:** register `.json` / `.csv` (and any Gubbins export type) to open the
       import dialog directly.
-- [ ] **`protocol_handlers`:** a `web+gubbins:` handler (e.g. `web+gubbins://item/<id>`) for
+- [x] **`protocol_handlers`:** a `web+gubbins:` handler (e.g. `web+gubbins://item/<id>`) for
       deep links from notes/other apps.
-- [ ] **Docs:** a short "Add to Gubbins from other apps" section (install the PWA, then Share /
+- [x] **Docs:** a short "Add to Gubbins from other apps" section (install the PWA, then Share /
       open-with / deep-link).
-- [ ] **Tests:** unit-test the SW share-intercept payload handling and the draft-hydration
+- [x] **Tests:** unit-test the SW share-intercept payload handling and the draft-hydration
       mapping (URL vs. text vs. image); a smoke that a shared URL lands on a pre-filled draft.
       Manifest JSON validates.
 
@@ -435,7 +435,50 @@ dialog; all new UI uses Foundry primitives + design tokens.
 
 **Review gate:** `/code-review high` (touches the SW / install surface — high blast radius; review carefully).
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `src/features/share/*` + three new routes and merged to
+`main` (merge `7bd49c9`, feature commit `3645977`). Gubbins now opens **inbound** from the
+mobile OS — every path landing on a **reviewable draft the user confirms** (never auto-committed,
+the non-negotiable decision-at-entry). The web app manifest (VitePWA config in `vite.config.ts`)
+declares three surfaces, all relative to the `/Gubbins/` scope: a **`share_target`** (`POST` +
+`multipart/form-data`, so a shared image file can arrive), **`file_handlers`** for
+`.csv/.tsv/.json/.md/.txt`, and a **`web+gubbins:` `protocol_handler`**. Because the PWA has no
+server, the **service worker** (`src/sw.ts`) is the mechanism: a "Share to Gubbins" `POST` to the
+share path is intercepted, parsed (`parseShareForm`), stashed in a dedicated **Cache Storage inbox**
+(`share-inbox.ts`, origin-anchored keys so the worker-writer and page-reader derive an identical
+key without sharing the base-path build constant), and answered with a `303` redirect to
+`share-target?share=<id>`; the landing route reads the stash back, opens the draft, and clears it
+(a one-shot inbox). The `activate` cache prune now **preserves** the inbox (an in-flight share must
+survive a mid-share SW update) and a TTL sweep (`pruneStaleShares`, 1 h) reclaims any share whose
+landing tab was dismissed before the draft opened, so an abandoned image blob can't linger forever.
+Hydration reuses existing seams, never a fork: the pure **`share-draft.ts`** maps a payload →
+add-item draft — a shared URL runs through the **Amazon-ASIN parser** (`parseAsin`/`findAsin`, EI-3
+era) so a listing link fills the SKU/MPN **and** pre-seeds the supplier-scraper panel's URL box
+(new `initialUrl` prop) for one-tap enrichment; the title/text become the name + a provenance note
+(nothing shared is silently dropped). The three landing routes render **existing dialogs**
+pre-filled through new optional props: `CreateItemDialog` gained `initialValues` + `initialImage`
+(the shared image is attached after create, best-effort, via `useAddItemImage`); `ImportDataDialog`
+gained `initialText`/`initialFilename` (a `file_handlers` launch consumes `window.launchQueue`);
+`web+gubbins://item/<id>` opens `ItemDetailDialog`, `add?…` opens a draft, anything else falls back
+to inventory. All UI is Foundry primitives + design tokens (a shared `LandingScaffold` wires the
+`PageHeader` + `<main id="main-content">` + skip-link + spinner shell once). **Decisions at entry:**
+always a reviewable draft (taken, non-negotiable) and the URL→scraper/ASIN, text→name+note,
+image→attach-after-create mapping (taken as recommended). **Zero new dependencies.** New unit tests
+(`share-draft`, `deep-link`, `share-inbox` incl. the TTL sweep, + `CreateItemDialog` pre-fill and
+image-attach) and a **real service-worker end-to-end** PWA smoke step: with the built app under a
+SW-controlled context, a `multipart` share `POST` is intercepted, redirected, and the landing route
+opens a draft pre-filled with the shared title **and** the ASIN-derived MPN; the manifest's
+share/file/protocol members are asserted present. Full suite green (2227 app tests + the 5-step PWA
+smoke); `tsc --noEmit` clean; production `vite build` emits the manifest members and a SW carrying
+the intercept. **Review gate:** `/code-review high` ran (2 finder angles across correctness +
+conventions/cleanup, then verification) — **no correctness bugs**; the one low-severity finding (an
+unconsumed share leaking in the inbox, since the `activate` prune now spares that cache) was fixed
+with the TTL sweep, and the cleanup findings (triplicated landing scaffold → shared `LandingScaffold`;
+a mirrored default-location expression → new `markedDefaultLocationId` helper reused in
+`InventoryScreen`; three speculative `CreateItemInitialValues` fields → trimmed to what a share can
+populate) were all applied. **Known bound (documented):** the share/file/protocol entry points only
+appear **after the PWA is installed** (they are OS-registered manifest members), and the SW is
+disabled in dev — so they are exercisable only against the built/installed app (the PWA smoke covers
+this).
 
 **Continuation prompt — emit on completion (starts EI-5):**
 
@@ -621,23 +664,22 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-4** (EI-1, EI-2 and EI-3 are complete and merged). Its
+The current next step is **Phase EI-5** (EI-1 through EI-4 are complete and merged). Its
 kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces this
 with the next phase's embedded prompt.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-4 (Web Share Target
-+ file/protocol handlers). EI-1 through EI-3 are complete and merged. Work in a NEW git
-worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-share -b
-feat/ecosystem-share HEAD), follow the "How every phase runs" loop and the top-of-doc
-invariants, gate with /code-review high before merging (this touches the service-worker /
-install surface — high blast radius, so review carefully), then merge --no-ff into main and
-clean up. Update the
-EI-4 Outcome, then emit EI-5's continuation prompt as a raw fenced block. This
-is a PWA-side phase: register a web app manifest share_target (handled in src/sw.ts, since the
-PWA has no server) so "Share to Gubbins" from the OS share sheet opens a PRE-FILLED add-item
-DRAFT the user confirms (never auto-commit); reuse the add-item enrichment / supplier-scraper /
-import seams to hydrate the draft. Add file_handlers and a web+gubbins: protocol handler.
-Manifest lives in the VitePWA config in vite.config.ts. Use Foundry primitives + design tokens
-for all UI. Synthetic examples only.
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-5 (MQTT publish +
+Home Assistant MQTT discovery). EI-1 through EI-4 are complete and merged. Work in a NEW git
+worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-mqtt -b
+feat/ecosystem-mqtt HEAD), follow the "How every phase runs" loop and the top-of-doc
+invariants, gate with /code-review high before merging, then merge --no-ff into main and
+clean up. Update the EI-5 Outcome, then emit EI-6's continuation prompt as a raw fenced block.
+Add an opt-in (GUBBINS_BRIDGE_MQTT=on, off by default) mode where the bridge connects OUT to a
+user's MQTT broker and publishes inventory state + the EI-1 events to topics, optionally
+emitting Home Assistant MQTT-discovery config so HA auto-creates entities with NO custom
+component. DECISION AT ENTRY: hand-rolled MQTT 3.1.1 publish-only client (preserve zero-dep)
+vs. the first vetted MIT dependency (e.g. `mqtt`) — vet licence/maintenance and decide
+explicitly; this is the sanctioned place to reconsider the zero-dependency rule. Secrets in
+.env only; synthetic fixtures only.
 ```
