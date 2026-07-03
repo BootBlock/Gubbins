@@ -71,8 +71,12 @@ export function DashboardScreen() {
             to the far right — the same top-right slot AppNav occupies on every other screen
             (which reach it via PageHeader; the dashboard hero is a PageHeader exception, so
             it renders AppNav itself). The wrapper is sized to its content, so the version's
-            own `ml-auto` collapses and the group stays adjacent. */}
-        <div className="ml-auto flex items-center gap-3">
+            own `ml-auto` collapses and the group stays adjacent.
+
+            `self-start` + `items-start` top-align this cluster to the header's top edge
+            rather than letting it centre in the taller brand hero — so the menu button lands
+            at the exact same Y as it does on every PageHeader screen, instead of ~22px lower. */}
+        <div className="ml-auto flex items-start gap-3 self-start">
           {/* Pre-1.0 data-loss warning — gated behind SHOW_WIP_BANNER in DashboardBanner. */}
           <DashboardBanner />
 
