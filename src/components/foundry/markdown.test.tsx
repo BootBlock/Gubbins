@@ -36,6 +36,27 @@ describe('Markdown renderer', () => {
     expect(container.querySelectorAll('ul li')).toHaveLength(3);
   });
 
+  it('nests indented list items under their parent', () => {
+    const { container } = render(<Markdown content={'- Fruit\n  - Apple\n  - Pear\n- Veg'} />);
+    // One outer list with a single nested list beneath the first item.
+    expect(container.querySelectorAll('ul')).toHaveLength(2);
+    expect(container.querySelectorAll('ul ul')).toHaveLength(1);
+    expect(container.querySelectorAll('ul ul li')).toHaveLength(2);
+    // Two top-level items survive alongside the nested pair.
+    const outer = container.querySelector('ul')!;
+    const topItems = Array.from(outer.children).filter((el) => el.tagName === 'LI');
+    expect(topItems).toHaveLength(2);
+    expect(topItems[0]?.textContent).toContain('Apple');
+    expect(topItems[1]?.textContent).toBe('Veg');
+  });
+
+  it('nests an ordered list inside an unordered one', () => {
+    const { container } = render(<Markdown content={'- Steps\n  1. First\n  2. Second'} />);
+    const nested = container.querySelector('ul ol');
+    expect(nested).toBeInTheDocument();
+    expect(nested?.querySelectorAll('li')).toHaveLength(2);
+  });
+
   it('renders headings and fenced code blocks', () => {
     const { container } = render(<Markdown content={'# Title\n\n```\nplain\n```'} />);
     expect(container.querySelector('h3')?.textContent).toBe('Title');
@@ -107,5 +128,31 @@ describe('Markdown renderer', () => {
   it('renders headings up to level four', () => {
     const { container } = render(<Markdown content={'#### Deep'} />);
     expect(container.querySelector('h6')?.textContent).toBe('Deep');
+  });
+
+  it('honours backslash escapes for literal markers', () => {
+    const { container } = render(<Markdown content={'2 \\* 3 and \\`code\\` and a \\| pipe'} />);
+    // The escaped asterisk/backticks/pipe must survive as literal text, un-parsed.
+    expect(container.querySelector('em')).toBeNull();
+    expect(container.querySelector('code')).toBeNull();
+    expect(container.textContent).toBe('2 * 3 and `code` and a | pipe');
+  });
+
+  it('auto-links a bare URL and peels trailing punctuation', () => {
+    render(<Markdown content="See https://example.com/docs. Thanks." />);
+    const link = screen.getByRole('link', { name: /example\.com\/docs/ });
+    expect(link).toHaveAttribute('href', 'https://example.com/docs');
+    // The trailing full stop is text, not part of the link.
+    expect(link).not.toHaveAttribute('href', 'https://example.com/docs.');
+    expect(screen.getByText(/Thanks\./)).toBeInTheDocument();
+  });
+
+  it('marks external links with an aria-hidden ↗ affordance but not in-app links', () => {
+    render(<Markdown content="[out](https://example.com) and [in](/inventory)" />);
+    const external = screen.getByRole('link', { name: 'out' });
+    const internal = screen.getByRole('link', { name: 'in' });
+    // The arrow is decorative (aria-hidden) so the accessible name stays clean.
+    expect(external.querySelector('[aria-hidden]')?.textContent).toBe('↗');
+    expect(internal.querySelector('[aria-hidden]')).toBeNull();
   });
 });

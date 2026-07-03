@@ -87,6 +87,28 @@ describe('Tooltip', () => {
     expect(scroller?.textContent).toContain('Lots of documentation.');
   });
 
+  it('fades the scroll edges only where there is off-screen content', async () => {
+    render(
+      <Tooltip content="Lots and lots of documentation that overflows.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    fireEvent.focus(screen.getByText('info').parentElement!);
+    const tip = await screen.findByRole('tooltip');
+    const scroller = tip.querySelector('.overflow-y-auto') as HTMLElement;
+
+    // happy-dom reports zero layout, so the region starts un-masked (nothing to scroll).
+    expect(scroller.style.maskImage).toBeFalsy();
+
+    // Simulate an overflowing region scrolled to the middle: both edges should fade.
+    Object.defineProperty(scroller, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+    Object.defineProperty(scroller, 'scrollTop', { value: 100, configurable: true });
+    fireEvent.scroll(scroller);
+    expect(scroller.style.maskImage).toContain('linear-gradient');
+    expect(scroller.style.maskImage).toContain('transparent');
+  });
+
   it('gives a larger size tier a firm width so tables get room', async () => {
     render(
       <Tooltip content="Wide table content." size="lg">

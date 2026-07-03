@@ -154,9 +154,10 @@ describe('CreateItemDialog', () => {
     renderDialog();
     fireEvent.change(itemDialog().getByLabelText('Name'), { target: { value: 'Calipers' } });
 
-    // Open the location picker and choose the pinned "＋ New location…" row.
+    // Open the location picker and choose the pinned "＋ New location…" row. The listbox is
+    // portalled to document.body (to escape the dialog's scroll clip), so query it via screen.
     fireEvent.click(itemDialog().getByRole('combobox', { name: 'Location' }));
-    fireEvent.click(itemDialog().getByRole('option', { name: /New location…/ }));
+    fireEvent.click(screen.getByRole('option', { name: /New location…/ }));
 
     const locDialog = within(await screen.findByRole('dialog', { name: 'Add location' }));
     fireEvent.change(locDialog.getByLabelText('Name'), { target: { value: 'Drawer 9' } });
