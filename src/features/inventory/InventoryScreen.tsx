@@ -25,6 +25,7 @@ import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { type Item } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useFeature } from '@/features/modules/useFeature';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
 import { astError, useAstSearch } from '@/features/search/queries';
@@ -66,6 +67,10 @@ export function InventoryScreen() {
 
 function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
+  // Live camera scanning is the `scanner` capability (modular-ui-plan §4, Phase 6): with it
+  // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
+  // stay regardless — and manually reachable flows are untouched.
+  const scannerEnabled = useFeature('scanner');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -284,10 +289,12 @@ function InventoryWorkspace() {
 
             <LayoutToggle />
 
-            <Button variant="outline" onClick={() => setScannerOpen(true)}>
-              <ScanIcon />
-              Scan
-            </Button>
+            {scannerEnabled ? (
+              <Button variant="outline" onClick={() => setScannerOpen(true)}>
+                <ScanIcon />
+                Scan
+              </Button>
+            ) : null}
 
             <Menu
               label="More inventory actions"

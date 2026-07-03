@@ -16,6 +16,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as ModulesRouteImport } from './routes/modules'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as HomeAssistantRouteImport } from './routes/home-assistant'
@@ -60,6 +61,11 @@ const PurchaseOrdersRoute = PurchaseOrdersRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModulesRoute = ModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InventoryRoute = InventoryRouteImport.update({
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
+  '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
+  '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
+  '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/home-assistant'
     | '/import'
     | '/inventory'
+    | '/modules'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/home-assistant'
     | '/import'
     | '/inventory'
+    | '/modules'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/home-assistant'
     | '/import'
     | '/inventory'
+    | '/modules'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
@@ -242,6 +254,7 @@ export interface RootRouteChildren {
   HomeAssistantRoute: typeof HomeAssistantRoute
   ImportRoute: typeof ImportRoute
   InventoryRoute: typeof InventoryRoute
+  ModulesRoute: typeof ModulesRoute
   ProjectsRoute: typeof ProjectsRoute
   PurchaseOrdersRoute: typeof PurchaseOrdersRoute
   ReportsRoute: typeof ReportsRoute
@@ -300,6 +313,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/modules': {
+      id: '/modules'
+      path: '/modules'
+      fullPath: '/modules'
+      preLoaderRoute: typeof ModulesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inventory': {
@@ -386,6 +406,7 @@ const rootRouteChildren: RootRouteChildren = {
   HomeAssistantRoute: HomeAssistantRoute,
   ImportRoute: ImportRoute,
   InventoryRoute: InventoryRoute,
+  ModulesRoute: ModulesRoute,
   ProjectsRoute: ProjectsRoute,
   PurchaseOrdersRoute: PurchaseOrdersRoute,
   ReportsRoute: ReportsRoute,

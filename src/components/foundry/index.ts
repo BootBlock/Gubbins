@@ -58,6 +58,7 @@ export {
   type MediaQueryProvider,
 } from './useReducedMotion';
 export { useMediaQuery, useLargeFormat } from './useMediaQuery';
+export { useRovingRadioGroup } from './useRovingRadioGroup';
 export {
   useInstallPrompt,
   browserInstallPromptApi,

@@ -54,11 +54,21 @@ export function useSetParent() {
 
 // --- Perishables & In Transit (spec §4, §3 widgets) ----------------------------
 
-/** Active perishables expiring within the window (default 30 days), soonest first. */
-export function useExpiringItems(withinDays: number = EXPIRY_SOON_WINDOW_DAYS) {
+/**
+ * Active perishables expiring within the window (default 30 days), soonest first.
+ *
+ * `options.enabled` lets a caller behind a feature flag (e.g. the alert centre when the
+ * Expiry-tracking capability is off) skip the fetch entirely rather than fetch-then-discard.
+ * Defaults to enabled so existing callers are unaffected.
+ */
+export function useExpiringItems(
+  withinDays: number = EXPIRY_SOON_WINDOW_DAYS,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: [...inventoryKeys.expiring(), withinDays],
     queryFn: () => getItemRepository().listExpiringWithin(withinDays, Date.now(), { limit: 100 }),
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -198,11 +208,17 @@ export function useItemMaintenance(itemId: string | undefined) {
   });
 }
 
-/** Currently due/overdue maintenance schedules across all active items (dashboard). */
-export function useDueMaintenance() {
+/**
+ * Currently due/overdue maintenance schedules across all active items (dashboard).
+ *
+ * `options.enabled` lets a caller behind a feature flag (e.g. the alert centre when the
+ * Maintenance capability is off) skip the fetch. Defaults to enabled.
+ */
+export function useDueMaintenance(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: inventoryKeys.maintenanceDue(),
     queryFn: () => getMaintenanceRepository().listDue(Date.now(), { limit: 100 }),
+    enabled: options?.enabled ?? true,
   });
 }
 

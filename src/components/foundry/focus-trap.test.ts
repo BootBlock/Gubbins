@@ -40,7 +40,10 @@ describe('nextTrapIndex', () => {
   });
 
   it('excludes negative-tabindex and disabled controls from the selector', () => {
-    expect(FOCUSABLE_SELECTOR).toContain('button:not([disabled])');
-    expect(FOCUSABLE_SELECTOR).toContain('[tabindex]:not([tabindex="-1"])');
+    // Every clause carries both exclusions — so a natively-focusable element that opts out
+    // of the tab order with tabindex="-1" (e.g. an unchecked roving radio) is skipped too.
+    expect(FOCUSABLE_SELECTOR).toContain('button:not([disabled]):not([tabindex="-1"])');
+    expect(FOCUSABLE_SELECTOR).toContain('[tabindex]:not([disabled]):not([tabindex="-1"])');
+    expect(FOCUSABLE_SELECTOR).not.toMatch(/button:not\(\[disabled\]\),/);
   });
 });

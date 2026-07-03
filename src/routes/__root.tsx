@@ -4,11 +4,13 @@ import { StorageBanners } from '@/features/storage/StorageBanners';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
+import { FirstRunModules } from '@/features/modules/FirstRunModules';
 
 /**
  * Root route layout (spec §2.4.2). Hosts the always-visible app chrome — the
- * skip-to-content bypass, the storage warning stack, the offline indicator and the
- * PWA "new version ready" update prompt — above the routed content. The {@link SkipLink} is the first focusable element on
+ * skip-to-content bypass, the storage warning stack, the offline indicator, the
+ * PWA "new version ready" update prompt and the one-time Modular UI first-run chooser —
+ * above the routed content. The {@link SkipLink} is the first focusable element on
  * every route; each screen carries the `#main-content` landmark it targets (spec §3
  * — WCAG 2.4.1).
  */
@@ -27,6 +29,7 @@ function RootLayout() {
       <OfflineIndicator />
       <PwaUpdatePrompt />
       <CommandPalette />
+      <FirstRunModules />
     </div>
   );
 }

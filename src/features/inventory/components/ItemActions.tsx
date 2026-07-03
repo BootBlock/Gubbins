@@ -11,6 +11,7 @@ import {
 } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
+import { useFeature } from '@/features/modules/useFeature';
 import { useRestoreItem, useSoftDeleteItem } from '../mutations';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
@@ -34,6 +35,10 @@ export function ItemActions({
   const [dialog, setDialog] = useState<'move' | 'gauge' | 'details' | 'qr' | 'checkout' | null>(null);
   const softDelete = useSoftDeleteItem();
   const restore = useRestoreItem();
+  // Checking out loans an item to a contact, so the entry point belongs to the Contacts
+  // module (modular-ui-plan §4, Phase 6). Hidden when Contacts is off — the checkout
+  // mutation and any existing loans stay intact, only the way in disappears.
+  const contactsEnabled = useFeature('contacts');
   const size = compact ? 'size-8' : '';
 
   return (
@@ -104,7 +109,10 @@ export function ItemActions({
           </Button>
         </span>
       </Tooltip>
-      {item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' && item.trackingMode !== 'UNTRACKED' ? (
+      {contactsEnabled &&
+      item.isActive &&
+      item.trackingMode !== 'CONSUMABLE_GAUGE' &&
+      item.trackingMode !== 'UNTRACKED' ? (
         <Tooltip
           content="Loan this item to a contact, tracking who has it and when it is due back."
           triggerTabIndex={-1}

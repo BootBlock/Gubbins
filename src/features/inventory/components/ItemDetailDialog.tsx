@@ -18,6 +18,8 @@ import {
 } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import type { Item } from '@/db/repositories';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
+import type { FeatureId } from '@/features/modules/feature-registry';
 import { LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
 import { resolveTabKey } from '../tab-keyboard';
 import { ActivityLog } from './ActivityLog';
@@ -54,7 +56,13 @@ export function ItemDetailDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const tabs = buildTabs(item);
+  // Gate the per-item facets by the enabled feature set (modular-ui-plan §4, Phase 6):
+  // a capability that is switched off drops its section, and a tab left with no surviving
+  // sections is dropped entirely. The underlying editors and data are untouched — only the
+  // way in disappears. Passing the resolved set into the pure `buildTabs` keeps the hook out
+  // of the tab-building logic.
+  const enabledFeatures = useEnabledFeatures();
+  const tabs = buildTabs(item, enabledFeatures);
   const [activeId, setActiveId] = useState(tabs[0]!.id);
   // Roving-tabindex refs for the rail buttons, so arrow-key navigation can move
   // DOM focus to the newly-selected tab (the APG automatic-activation model).
@@ -155,11 +163,22 @@ export function ItemDetailDialog({
   );
 }
 
+interface SectionDef {
+  readonly title: string;
+  readonly icon: ReactNode;
+  readonly content: ReactNode;
+  /**
+   * The capability that gates this section, if any. When that feature is switched off the
+   * section is dropped; a section with no `feature` is always shown (a core facet).
+   */
+  readonly feature?: FeatureId;
+}
+
 interface TabDef {
   readonly id: string;
   readonly label: string;
   readonly icon: ReactNode;
-  readonly sections: readonly { title: string; icon: ReactNode; content: ReactNode }[];
+  readonly sections: readonly SectionDef[];
 }
 
 /**
@@ -169,9 +188,12 @@ interface TabDef {
  * there is no shared in-flight state to preserve across a switch. "Details" leads:
  * it is the edit-item home for the core identity fields (name, description, notes,
  * MPN, manufacturer, cost, category) plus the item's location.
+ *
+ * `enabled` is the resolved feature set: feature-gated sections whose capability is off are
+ * dropped, and any tab left with no surviving sections is dropped entirely (§4, Phase 6).
  */
-function buildTabs(item: Item): readonly TabDef[] {
-  return [
+export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly TabDef[] {
+  const tabs: readonly TabDef[] = [
     {
       id: 'details',
       label: 'Details',
@@ -201,8 +223,18 @@ function buildTabs(item: Item): readonly TabDef[] {
       icon: <DueDateIcon />,
       sections: [
         { title: 'Lifecycle & variants', icon: <DueDateIcon />, content: <LifecycleEditor item={item} /> },
-        { title: 'Asset details', icon: <CostIcon />, content: <AssetEditor item={item} /> },
-        { title: 'Maintenance', icon: <SettingsIcon />, content: <MaintenanceEditor itemId={item.id} /> },
+        {
+          title: 'Asset details',
+          icon: <CostIcon />,
+          content: <AssetEditor item={item} />,
+          feature: 'warranty',
+        },
+        {
+          title: 'Maintenance',
+          icon: <SettingsIcon />,
+          content: <MaintenanceEditor itemId={item.id} />,
+          feature: 'maintenance',
+        },
       ],
     },
     {
@@ -211,7 +243,12 @@ function buildTabs(item: Item): readonly TabDef[] {
       icon: <ImageIcon />,
       sections: [
         { title: 'Images', icon: <ImageIcon />, content: <ImageManager itemId={item.id} /> },
-        { title: 'Datasheets', icon: <DatasheetIcon />, content: <AttachmentManager itemId={item.id} /> },
+        {
+          title: 'Datasheets',
+          icon: <DatasheetIcon />,
+          content: <AttachmentManager itemId={item.id} />,
+          feature: 'tags-attachments',
+        },
       ],
     },
     {
@@ -219,9 +256,24 @@ function buildTabs(item: Item): readonly TabDef[] {
       label: 'Classification',
       icon: <TagsIcon />,
       sections: [
-        { title: 'Tags', icon: <TagsIcon />, content: <TagEditor itemId={item.id} /> },
-        { title: 'Capabilities', icon: <CapabilityIcon />, content: <CapabilityEditor itemId={item.id} /> },
-        { title: 'Custom fields', icon: <CategoryIcon />, content: <CustomFieldsEditor itemId={item.id} /> },
+        {
+          title: 'Tags',
+          icon: <TagsIcon />,
+          content: <TagEditor itemId={item.id} />,
+          feature: 'tags-attachments',
+        },
+        {
+          title: 'Capabilities',
+          icon: <CapabilityIcon />,
+          content: <CapabilityEditor itemId={item.id} />,
+          feature: 'custom-fields',
+        },
+        {
+          title: 'Custom fields',
+          icon: <CategoryIcon />,
+          content: <CustomFieldsEditor itemId={item.id} />,
+          feature: 'custom-fields',
+        },
       ],
     },
     {
@@ -231,6 +283,14 @@ function buildTabs(item: Item): readonly TabDef[] {
       sections: [{ title: 'Activity log', icon: <HistoryIcon />, content: <ActivityLog itemId={item.id} /> }],
     },
   ];
+
+  // Drop feature-gated sections whose capability is off, then any tab left with no sections.
+  return tabs
+    .map((tab) => ({
+      ...tab,
+      sections: tab.sections.filter((s) => s.feature === undefined || enabled.has(s.feature)),
+    }))
+    .filter((tab) => tab.sections.length > 0);
 }
 
 /**

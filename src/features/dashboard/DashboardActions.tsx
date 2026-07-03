@@ -16,11 +16,15 @@ import { buttonVariants } from '@/components/foundry';
 import { AddIcon, ScanIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
+import { useFeature } from '@/features/modules/useFeature';
 import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 
 export function DashboardActions() {
   const showSearch = usePreferencesStore((s) => s.dashboardCommandPalette);
   const showQuickActions = usePreferencesStore((s) => s.dashboardQuickActions);
+  // The Scan quick action opens live camera scanning — the `scanner` capability
+  // (modular-ui-plan §4, Phase 6). Hidden when Scanner is off; Add item always stays.
+  const scannerEnabled = useFeature('scanner');
   if (!showSearch && !showQuickActions) return null;
 
   return (
@@ -40,15 +44,17 @@ export function DashboardActions() {
             <AddIcon />
             Add item
           </Link>
-          <Link
-            to="/inventory"
-            onClick={() => useInventoryEntry.getState().requestIntent('scan')}
-            className={cn(buttonVariants({ variant: 'outline' }))}
-            data-testid="dashboard-scan"
-          >
-            <ScanIcon />
-            Scan
-          </Link>
+          {scannerEnabled ? (
+            <Link
+              to="/inventory"
+              onClick={() => useInventoryEntry.getState().requestIntent('scan')}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+              data-testid="dashboard-scan"
+            >
+              <ScanIcon />
+              Scan
+            </Link>
+          ) : null}
         </>
       ) : null}
     </div>

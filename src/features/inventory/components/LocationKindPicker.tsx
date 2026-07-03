@@ -1,5 +1,5 @@
-import { useRef, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { useRovingRadioGroup } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import { LOCATION_KINDS, locationKindLabel, type LocationKind } from '../location-kind';
 import { LocationKindIcon } from './LocationKindIcon';
@@ -27,45 +27,15 @@ export function LocationKindPicker({
   /** Id of the visible label element naming this group. */
   labelledBy: string;
 }) {
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const selectedIndex = Math.max(
     0,
     CHOICES.findIndex((c) => c === value),
   );
 
-  const selectAt = (index: number) => {
-    const next = ((index % CHOICES.length) + CHOICES.length) % CHOICES.length;
-    onChange(CHOICES[next]!);
-    refs.current[next]?.focus();
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    switch (event.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        event.preventDefault();
-        selectAt(index + 1);
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        event.preventDefault();
-        selectAt(index - 1);
-        break;
-      case 'Home':
-        event.preventDefault();
-        selectAt(0);
-        break;
-      case 'End':
-        event.preventDefault();
-        selectAt(CHOICES.length - 1);
-        break;
-      case ' ':
-      case 'Enter':
-        event.preventDefault();
-        selectAt(index);
-        break;
-    }
-  };
+  const { refs, selectAt, onKeyDown } = useRovingRadioGroup<HTMLButtonElement>({
+    count: CHOICES.length,
+    onSelect: (index) => onChange(CHOICES[index]!),
+  });
 
   return (
     <div role="radiogroup" aria-labelledby={labelledBy} className="flex flex-wrap gap-2">

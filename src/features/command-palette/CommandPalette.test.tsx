@@ -26,14 +26,19 @@ import { CommandPalette } from './CommandPalette';
 import { useCommandPaletteStore } from './useCommandPaletteStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 
 beforeEach(() => {
   navigateMock.mockClear();
   usePreferencesStore.setState({ dashboardCommandPalette: true });
   useCommandPaletteStore.setState({ open: false });
   useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null });
+  useModulesStore.setState({ intent: {} });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useModulesStore.setState({ intent: {} });
+});
 
 describe('CommandPalette', () => {
   it('renders nothing when the feature is disabled', () => {
@@ -145,6 +150,38 @@ describe('CommandPalette', () => {
       expect(screens[0].textContent).toContain('Home Assistant');
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(navigateMock).toHaveBeenCalledWith({ to: '/home-assistant' });
+    });
+
+    it('omits a screen whose feature is switched off', () => {
+      useModulesStore.getState().setFeatureIntent('projects', false);
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: '>' } });
+      const labels = screen.getAllByTestId('command-palette-screen').map((s) => s.textContent);
+      expect(labels.some((l) => l?.includes('Projects'))).toBe(false);
+      // Core screens remain jumpable.
+      expect(labels.some((l) => l?.includes('Inventory'))).toBe(true);
+      expect(labels.some((l) => l?.includes('Settings'))).toBe(true);
+    });
+
+    it('drops a disabled feature and its dependents together (contacts ⇒ purchase orders, bookings)', () => {
+      useModulesStore.getState().setFeatureIntent('contacts', false);
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: '>' } });
+      const labels = screen.getAllByTestId('command-palette-screen').map((s) => s.textContent);
+      expect(labels.some((l) => l?.includes('Contacts'))).toBe(false);
+      expect(labels.some((l) => l?.includes('Purchase orders'))).toBe(false);
+      expect(labels.some((l) => l?.includes('Bookings'))).toBe(false);
+    });
+
+    it('still searches items when a feature is off — item search is core inventory', async () => {
+      useModulesStore.getState().applyPreset('minimal');
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'resistor' } });
+      const results = await screen.findAllByTestId('command-palette-result');
+      expect(results).toHaveLength(2);
     });
   });
 });

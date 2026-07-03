@@ -19,12 +19,18 @@ vi.mock('@/features/alerts/useAlerts', () => ({
 
 import { AppNav } from './AppNav';
 import { NAV_DESTINATIONS } from './nav-destinations';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 
 beforeEach(() => {
   routerState.pathname = '/inventory';
   alertsMock.mockReturnValue({ alerts: [], allAlerts: [], isLoading: false, isError: false });
+  // Start every test from the default everything-on intent.
+  useModulesStore.setState({ intent: {} });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useModulesStore.setState({ intent: {} });
+});
 
 function openNav() {
   fireEvent.click(screen.getByTestId('app-nav'));
@@ -96,5 +102,50 @@ describe('AppNav — global navigation menu (spec §2.4.2)', () => {
     });
     render(<AppNav />);
     expect(screen.getByTestId('app-nav-alert-badge').textContent).toBe('99+');
+  });
+});
+
+const CORE_LABELS = ['Dashboard', 'Inventory', 'Settings', 'About'];
+
+describe('AppNav — feature gating (Phase 2)', () => {
+  it('drops a row whose feature is switched off, keeping the core always present', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<AppNav />);
+    openNav();
+    expect(screen.queryByRole('menuitem', { name: /Projects/ })).toBeNull();
+    for (const label of CORE_LABELS) {
+      expect(screen.getByRole('menuitem', { name: new RegExp(label) })).toBeTruthy();
+    }
+  });
+
+  it('cascades: turning contacts off also hides its dependents (purchase orders, bookings)', () => {
+    useModulesStore.getState().setFeatureIntent('contacts', false);
+    render(<AppNav />);
+    openNav();
+    expect(screen.queryByRole('menuitem', { name: /Contacts/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Purchase orders/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Bookings/ })).toBeNull();
+  });
+
+  it('collapses an emptied group and drops its separator so none dangles', () => {
+    // The whole `manage` group is optional (contacts/bookings/upcoming/activity/alerts);
+    // switching every member off must remove the section AND the separator it would carry.
+    for (const id of ['contacts', 'bookings', 'upcoming', 'activity', 'alerts'] as const) {
+      useModulesStore.getState().setFeatureIntent(id, false);
+    }
+    render(<AppNav />);
+    openNav();
+    // Two surviving groups (primary + system) ⇒ exactly one separator between them.
+    expect(screen.getAllByRole('separator')).toHaveLength(1);
+    for (const label of ['Contacts', 'Bookings', 'Upcoming', 'Activity', 'Alerts']) {
+      expect(screen.queryByRole('menuitem', { name: new RegExp(label) })).toBeNull();
+    }
+  });
+
+  it('is identical to today when everything is on (default intent)', () => {
+    render(<AppNav />);
+    openNav();
+    // Every destination plus the injected Wiki row — matches the default-state assertion above.
+    expect(screen.getAllByRole('menuitem')).toHaveLength(NAV_DESTINATIONS.length + 1);
   });
 });

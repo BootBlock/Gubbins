@@ -71,6 +71,7 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Optional Home Assistant / query bridge: ask a voice assistant where your items are — or push your whole dataset straight to it (see [below](#home-assistant--external-query-bridge-optional)).
 
 **Interface & accessibility**
+- Modular UI — hide pages and cross-cutting capabilities you don't use (Projects, Purchase orders, Bookings, Maintenance, Scanner, Batches, and more) for a leaner app, per-device. Start from a curated preset in the skippable first-run chooser or fine-tune every module on the **Modules** screen; the underlying features stay fully functional and your data is untouched, so anything can be switched back on at any time. Turning a module off removes it everywhere — nav menu, dashboard tiles and widgets, command palette, item-detail tabs, and the Alerts/Upcoming feeds — with dependent features cascaded and confirmed.
 - Customisable drag-and-drop dashboard widget board, plus an About screen with a lightweight cinematic starfield.
 - Dark / light / system-auto theming, plus currency and locale formatting (base currency guessed on first run).
 - Installable PWA with an offline indicator.

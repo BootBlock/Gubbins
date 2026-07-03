@@ -3,7 +3,8 @@ import { useRouterState } from '@tanstack/react-router';
 import { Menu, MenuLink, MenuExternalLink, MenuSeparator } from '@/components/foundry';
 import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
-import { NAV_DESTINATIONS, NAV_GROUP_ORDER, type NavGroup } from './nav-destinations';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { NAV_DESTINATIONS, NAV_GROUP_ORDER } from './nav-destinations';
 
 /**
  * The project wiki — help, tips and support. It lives on GitHub, so it is an external
@@ -24,6 +25,15 @@ export function AppNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
+  const enabledFeatures = useEnabledFeatures();
+
+  // Drop rows whose feature is switched off, then discard any group left with no rows so no
+  // empty section — or the separator that would precede it — is rendered (§3, Phase 2). Core
+  // destinations are `alwaysOn`, so they always survive the filter.
+  const visibleGroups = NAV_GROUP_ORDER.map((group) => ({
+    group,
+    destinations: NAV_DESTINATIONS.filter((d) => d.group === group && enabledFeatures.has(d.feature)),
+  })).filter((g) => g.destinations.length > 0);
 
   return (
     <Menu
@@ -46,10 +56,10 @@ export function AppNav() {
         </span>
       }
     >
-      {NAV_GROUP_ORDER.map((group: NavGroup, groupIndex) => (
+      {visibleGroups.map(({ group, destinations }, groupIndex) => (
         <Fragment key={group}>
           {groupIndex > 0 && <MenuSeparator />}
-          {NAV_DESTINATIONS.filter((d) => d.group === group).map((dest) => (
+          {destinations.map((dest) => (
             <Fragment key={dest.to}>
               <MenuLink
                 to={dest.to}
