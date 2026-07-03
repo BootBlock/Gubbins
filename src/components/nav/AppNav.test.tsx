@@ -35,11 +35,30 @@ describe('AppNav — global navigation menu (spec §2.4.2)', () => {
     render(<AppNav />);
     openNav();
     const items = screen.getAllByRole('menuitem');
-    expect(items).toHaveLength(NAV_DESTINATIONS.length);
+    // Every route, plus the one external row (the Wiki) injected under Settings.
+    expect(items).toHaveLength(NAV_DESTINATIONS.length + 1);
     // The previously-unreachable screens are present from anywhere.
     for (const label of ['About', 'Settings', 'Dashboard', 'Activity']) {
       expect(screen.getByRole('menuitem', { name: new RegExp(label) })).toBeTruthy();
     }
+  });
+
+  it('offers the GitHub wiki as an external link that opens in a new tab', () => {
+    render(<AppNav />);
+    openNav();
+    const wiki = screen.getByTestId('app-nav-wiki');
+    expect(wiki.getAttribute('href')).toBe('https://github.com/BootBlock/Gubbins/wiki');
+    expect(wiki.getAttribute('target')).toBe('_blank');
+    expect(wiki.getAttribute('rel')).toContain('noreferrer');
+  });
+
+  it('places the wiki directly under Settings, above About', () => {
+    render(<AppNav />);
+    openNav();
+    const labels = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
+    const settings = labels.indexOf('Settings');
+    expect(labels[settings + 1]).toBe('Wiki');
+    expect(labels[settings + 2]).toBe('About');
   });
 
   it('marks the current route with aria-current="page"', () => {

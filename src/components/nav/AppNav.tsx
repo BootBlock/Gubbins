@@ -1,9 +1,16 @@
 import { Fragment } from 'react';
 import { useRouterState } from '@tanstack/react-router';
-import { Menu, MenuLink, MenuSeparator } from '@/components/foundry';
-import { MenuIcon } from '@/components/icons';
+import { Menu, MenuLink, MenuExternalLink, MenuSeparator } from '@/components/foundry';
+import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { NAV_DESTINATIONS, NAV_GROUP_ORDER, type NavGroup } from './nav-destinations';
+
+/**
+ * The project wiki — help, tips and support. It lives on GitHub, so it is an external
+ * link rather than a {@link NAV_DESTINATIONS} route (which are all in-app screens), and
+ * is injected into the System group between Settings and About.
+ */
+const WIKI_URL = 'https://github.com/BootBlock/Gubbins/wiki';
 
 /**
  * AppNav — the global navigation menu, rendered by {@link PageHeader} on every screen
@@ -43,24 +50,36 @@ export function AppNav() {
         <Fragment key={group}>
           {groupIndex > 0 && <MenuSeparator />}
           {NAV_DESTINATIONS.filter((d) => d.group === group).map((dest) => (
-            <MenuLink
-              key={dest.to}
-              to={dest.to}
-              icon={<dest.Icon />}
-              current={pathname === dest.to}
-              trailing={
-                dest.to === '/alerts' && alertCount > 0 ? (
-                  <span
-                    className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
-                    data-testid="app-nav-alerts-count"
-                  >
-                    {alertCount > 99 ? '99+' : alertCount}
-                  </span>
-                ) : undefined
-              }
-            >
-              {dest.label}
-            </MenuLink>
+            <Fragment key={dest.to}>
+              <MenuLink
+                to={dest.to}
+                icon={<dest.Icon />}
+                current={pathname === dest.to}
+                trailing={
+                  dest.to === '/alerts' && alertCount > 0 ? (
+                    <span
+                      className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
+                      data-testid="app-nav-alerts-count"
+                    >
+                      {alertCount > 99 ? '99+' : alertCount}
+                    </span>
+                  ) : undefined
+                }
+              >
+                {dest.label}
+              </MenuLink>
+              {/* Wiki (external) sits directly under Settings, above About. */}
+              {dest.to === '/settings' && (
+                <MenuExternalLink
+                  href={WIKI_URL}
+                  icon={<WikiIcon />}
+                  trailing={<ExternalLinkIcon className="ml-auto opacity-60" aria-hidden />}
+                  data-testid="app-nav-wiki"
+                >
+                  Wiki
+                </MenuExternalLink>
+              )}
+            </Fragment>
           ))}
         </Fragment>
       ))}
