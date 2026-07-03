@@ -34,10 +34,14 @@ export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
  */
 export type TooltipSize = 'sm' | 'md' | 'lg';
 
+// `sm` hugs its content (a ceiling it rarely reaches — right for a sentence of help).
+// `md`/`lg` take a *firm* width instead, so richer content (a table, a code block) is
+// given real room rather than being squeezed to the width of the intro line above it.
+// Each is clamped to the viewport so it never overflows a narrow screen.
 const SIZE_MAX_WIDTH: Record<TooltipSize, string> = {
   sm: 'max-w-xs',
-  md: 'max-w-sm',
-  lg: 'max-w-md',
+  md: 'w-[22rem] max-w-[calc(100vw-1rem)]',
+  lg: 'w-[28rem] max-w-[calc(100vw-1rem)]',
 };
 
 export interface TooltipProps {
@@ -277,20 +281,23 @@ export function Tooltip({
                 visibility: coords ? 'visible' : 'hidden',
               }}
               className={cn(
-                // Glass panel: a translucent popover surface behind a heavy blur + saturation
-                // boost so the content beneath tints through, ringed by a hairline highlight and
-                // lifted on a deep shadow. `overflow-hidden` keeps the rounded corners clipping
-                // the scroll region within.
-                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/75 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150',
+                // Frosted-glass panel: a *translucent* popover surface (low alpha, so the
+                // content behind genuinely blurs through) sat behind a heavy blur + saturation +
+                // brightness lift, finished with a top-left specular `sheen` gradient and a
+                // hairline inset highlight so it reads as a pane catching light rather than a
+                // flat dark box. `overflow-hidden` clips the sheen + scroll region to the
+                // rounded corners.
+                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/60 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110',
+                'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-glass-sheen before:to-transparent',
                 SIZE_MAX_WIDTH[size],
                 !reducedMotion && 'animate-fade-in',
               )}
             >
               {/* Tall content scrolls vertically within the bubble rather than overflowing the
                   viewport — the tooltip doubles as a documentation panel, so long help stays
-                  readable. Padding lives here (not on the glass panel) so the scrollbar tucks
-                  neatly inside the rounded, clipped edge. */}
-              <div className="max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+                  readable. `relative` lifts it above the sheen ::before; padding lives here (not
+                  on the glass panel) so the scrollbar tucks inside the rounded, clipped edge. */}
+              <div className="relative max-h-[min(70vh,28rem)] overflow-y-auto p-3">
                 <Markdown content={content} />
               </div>
             </div>,

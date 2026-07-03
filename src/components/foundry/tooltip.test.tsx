@@ -87,7 +87,7 @@ describe('Tooltip', () => {
     expect(scroller?.textContent).toContain('Lots of documentation.');
   });
 
-  it('widens the bubble for the requested size tier', async () => {
+  it('gives a larger size tier a firm width so tables get room', async () => {
     render(
       <Tooltip content="Wide table content." size="lg">
         <span>info</span>
@@ -95,7 +95,10 @@ describe('Tooltip', () => {
     );
     fireEvent.focus(screen.getByText('info').parentElement!);
     const tip = await screen.findByRole('tooltip');
-    expect(tip.className).toContain('max-w-md');
+    // `lg` takes a firm width (clamped to the viewport) rather than a max-width ceiling the
+    // content would never reach, so a table is not squeezed to the intro line's width.
+    expect(tip.className).toContain('w-[28rem]');
+    expect(tip.className).toContain('max-w-[calc(100vw-1rem)]');
   });
 
   it('closes on Escape', async () => {

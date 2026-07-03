@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
+import { type TooltipSize } from './tooltip';
 
 /** One choice in a {@link Select} list. */
 export interface SelectOption {
@@ -270,6 +271,8 @@ export interface SelectFieldProps {
   readonly error?: string;
   /** Optional rich-Markdown help, surfaced via an {@link InfoHint} `i` badge (like {@link FormField}). */
   readonly hint?: string;
+  /** Widen the hint bubble for richer help (tables, code, longer docs). Defaults to `sm`. */
+  readonly hintSize?: TooltipSize;
   readonly className?: string;
   readonly placeholder?: string;
   readonly disabled?: boolean;
@@ -291,6 +294,7 @@ export function SelectField({
   onChange,
   error,
   hint,
+  hintSize,
   className,
   placeholder,
   disabled,
@@ -320,7 +324,7 @@ export function SelectField({
       />
       {hint ? (
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={hint} />
+          <InfoHint content={hint} size={hintSize} />
         </span>
       ) : null}
       {hasError ? (

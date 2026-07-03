@@ -299,10 +299,15 @@ export function CreateItemDialog({
         <FormField
           label="Name"
           error={errors.name?.message}
+          hintSize="md"
           hint={
             'The item’s display name — how it appears in lists, search and on labels.\n\n' +
-            'Be **specific and consistent** so similar parts stay together, e.g. `M3 × 10 socket screws` rather than just `screws`. ' +
-            'Supplier part numbers go in **MPN** below, not here.'
+            'Be **specific and consistent** so similar parts stay together:\n\n' +
+            '| Prefer | Avoid |\n' +
+            '| --- | --- |\n' +
+            '| `M3 × 10 socket screws` | `screws` |\n' +
+            '| `NE555 timer IC` | `chip` |\n\n' +
+            '> Supplier part numbers go in **MPN** below, not here.'
           }
         >
           <Input
@@ -351,7 +356,8 @@ export function CreateItemDialog({
                   '- Pick the **most specific** place it sits.\n' +
                   '- **Unassigned** is the holding pen for items not yet shelved.\n' +
                   '- **In Transit** is for stock on its way in.\n\n' +
-                  'You can move it later, and split a quantity across several locations from the item’s **Lifecycle** tab.'
+                  '> **Tip:** you can move it later, and split a quantity across several locations ' +
+                  'from the item’s **Lifecycle** tab.'
                 }
               />
             </span>
@@ -386,12 +392,16 @@ export function CreateItemDialog({
             render={({ field }) => (
               <SelectField
                 label="Tracking"
+                hintSize="lg"
                 hint={
-                  'How this item’s stock is counted — **this can’t be changed later**, so choose with care:\n\n' +
-                  '- **Discrete** — a plain quantity of identical units (e.g. 100 screws).\n' +
-                  '- **Serialised** — each unit is its own record with a serial number; pick this for tools and assets you check out individually.\n' +
-                  '- **Consumable (gauge)** — measured by how *full* it is rather than counted, e.g. a filament spool or a fluid by weight.\n' +
-                  '- **Untracked** — presence only: catalogued, searchable and locatable, but with no quantity to count (e.g. a reference manual or the bench vice).'
+                  'How this item’s stock is counted:\n\n' +
+                  '| Mode | Counts | Example |\n' +
+                  '| --- | --- | --- |\n' +
+                  '| **Discrete** | a plain quantity | 100 screws |\n' +
+                  '| **Serialised** | each unit separately | a tool you check out |\n' +
+                  '| **Consumable** | how *full* it is | a filament spool |\n' +
+                  '| **Untracked** | presence only | a reference manual |\n\n' +
+                  '> **Note:** this **can’t be changed later**, so choose with care.'
                 }
                 options={TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] }))}
                 value={field.value}
@@ -432,10 +442,14 @@ export function CreateItemDialog({
         <div className="grid grid-cols-2 gap-3">
           <FormField
             label="MPN (optional)"
+            hintSize="lg"
             hint={
-              'The **Manufacturer Part Number** — the maker’s canonical code for this part ' +
-              '(e.g. `NE555P`).\n\nUsed to de-duplicate and to match supplier scrapes. Distributor ' +
-              'order codes are mapped separately as **aliases**.'
+              'The **Manufacturer Part Number** — the maker’s canonical code for this part.\n\n' +
+              '| Code type | Example | Stored as |\n' +
+              '| --- | --- | --- |\n' +
+              '| Manufacturer (MPN) | `NE555P` | this field |\n' +
+              '| Distributor code | `1826764` | an **alias** |\n\n' +
+              '> Used to de-duplicate items and to match supplier scrapes.'
             }
           >
             <Input placeholder="e.g. NE555P" {...register('mpn')} />
@@ -451,7 +465,7 @@ export function CreateItemDialog({
           label="Unit cost (optional)"
           hint={
             'What **one unit** costs, in your base currency. Drives inventory valuation and ' +
-            'project costing.\n\nEnter the price *per unit*, not the total for a pack.'
+            'project costing.\n\n> Enter the price *per unit*, not the total for a pack.'
           }
         >
           <Input type="number" min={0} step="any" placeholder="0.00" {...register('unitCost')} />
@@ -489,8 +503,9 @@ export function CreateItemDialog({
           <FormField
             label="Batch no. (optional)"
             hint={
-              'A maker/supplier **batch** identifier for traceability. Stock received under different ' +
-              'batches is kept as separate lots and consumed **oldest-first (FEFO)**.'
+              'A maker/supplier **batch** identifier for traceability.\n\n' +
+              '> Stock received under different batches is kept as separate lots and consumed ' +
+              '**oldest-first (FEFO)**.'
             }
           >
             <Input placeholder="e.g. B-42" {...register('batchNumber')} />
