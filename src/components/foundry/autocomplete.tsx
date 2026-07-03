@@ -1,9 +1,11 @@
 import { forwardRef, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
 import { filterSuggestions } from './autocomplete-filter';
 import { InfoHint } from './info-hint';
+import { useAnchoredPopover } from './use-anchored-popover';
 
 export interface AutocompleteProps {
   readonly value: string;
@@ -82,16 +84,21 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
 
   const matches = filterSuggestions(suggestions, value, maxOptions);
   const isOpen = open && matches.length > 0;
+  // The listbox is portalled out of the (clipping) dialog scroll box and positioned
+  // against the field — see {@link useAnchoredPopover}.
+  const { popoverRef, style: popoverStyle } = useAnchoredPopover(rootRef, isOpen);
 
-  // Dismiss when a pointer goes down anywhere outside this control.
+  // Dismiss when a pointer goes down anywhere outside this control — counting the
+  // portalled listbox as "inside" so choosing an option doesn't self-dismiss first.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
+  }, [open, popoverRef]);
 
   // Keep the active option in view while navigating with the keyboard.
   useEffect(() => {
@@ -221,41 +228,46 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         <ChevronDownIcon className={cn('size-4 transition-transform', isOpen && 'rotate-180')} />
       </button>
 
-      {isOpen ? (
-        <div
-          role="listbox"
-          id={listboxId}
-          aria-label={ariaLabel}
-          aria-labelledby={ariaLabelledBy}
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
-        >
-          {matches.map((match, index) => (
-            // eslint-disable-next-line jsx-a11y/interactive-supports-focus -- APG editable combobox: focus intentionally stays on the input via aria-activedescendant, so options are deliberately not tab stops; the input's onKeyDown provides full keyboard parity and onMouseDown is a pointer affordance only.
+      {isOpen && popoverStyle
+        ? createPortal(
             <div
-              key={match}
-              ref={(el) => {
-                optionRefs.current[index] = el;
-              }}
-              id={optionId(index)}
-              role="option"
-              aria-selected={index === activeIndex}
-              // onMouseDown (not onClick) so the choice lands before the input's blur closes
-              // the list; preventDefault keeps focus on the input through the selection.
-              onMouseDown={(event) => {
-                event.preventDefault();
-                choose(index);
-              }}
-              onMouseEnter={() => setActiveIndex(index)}
-              className={cn(
-                'cursor-pointer truncate rounded-md px-2 py-1.5 text-sm text-foreground',
-                index === activeIndex && 'bg-secondary',
-              )}
+              ref={popoverRef}
+              role="listbox"
+              id={listboxId}
+              aria-label={ariaLabel}
+              aria-labelledby={ariaLabelledBy}
+              style={popoverStyle}
+              className="z-[70] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
             >
-              {match}
-            </div>
-          ))}
-        </div>
-      ) : null}
+              {matches.map((match, index) => (
+                // eslint-disable-next-line jsx-a11y/interactive-supports-focus -- APG editable combobox: focus intentionally stays on the input via aria-activedescendant, so options are deliberately not tab stops; the input's onKeyDown provides full keyboard parity and onMouseDown is a pointer affordance only.
+                <div
+                  key={match}
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  // onMouseDown (not onClick) so the choice lands before the input's blur closes
+                  // the list; preventDefault keeps focus on the input through the selection.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    choose(index);
+                  }}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  className={cn(
+                    'cursor-pointer truncate rounded-md px-2 py-1.5 text-sm text-foreground',
+                    index === activeIndex && 'bg-secondary',
+                  )}
+                >
+                  {match}
+                </div>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 });

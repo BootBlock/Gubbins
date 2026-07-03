@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
 import { type TooltipSize } from './tooltip';
+import { useAnchoredPopover } from './use-anchored-popover';
 
 /** One choice in a {@link Select} list. */
 export interface SelectOption {
@@ -93,16 +95,21 @@ export function Select({
   const rootRef = useRef<HTMLDivElement>(null);
   const comboRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // The listbox is portalled out of the (clipping) dialog scroll box and positioned
+  // against the trigger — see {@link useAnchoredPopover}.
+  const { popoverRef, style: popoverStyle } = useAnchoredPopover(rootRef, open);
 
-  // Dismiss when a pointer goes down anywhere outside this control.
+  // Dismiss when a pointer goes down anywhere outside this control — counting the
+  // portalled listbox as "inside" so choosing an option doesn't self-dismiss first.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
+  }, [open, popoverRef]);
 
   // Keep the active option in view while navigating with the keyboard.
   useEffect(() => {
@@ -211,53 +218,58 @@ export function Select({
         />
       </div>
 
-      {open ? (
-        <div
-          role="listbox"
-          id={listboxId}
-          aria-labelledby={ariaLabelledBy}
-          aria-label={ariaLabel}
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
-        >
-          {options.map((option, index) => {
-            const isAction = option.kind === 'action';
-            return (
-              // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
-              <div
-                key={option.value}
-                ref={(el) => {
-                  optionRefs.current[index] = el;
-                }}
-                id={optionId(index)}
-                role="option"
-                aria-selected={index === selectedIndex}
-                onClick={() => choose(index)}
-                onMouseEnter={() => setActiveIndex(index)}
-                className={cn(
-                  'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
-                  index === activeIndex && 'bg-secondary',
-                  index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
-                  // A command row (e.g. "＋ New location…") is fenced off from the options
-                  // above it with a divider so it never reads as one of them.
-                  isAction && 'mt-1 border-t border-border/60 pt-2 font-medium',
-                )}
-              >
-                <span
-                  className={cn(
-                    'min-w-0 flex-1 truncate text-left',
-                    isAction ? 'text-accent' : option.colorClass,
-                  )}
-                >
-                  {option.label}
-                </span>
-                {option.meta ? (
-                  <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {open && popoverStyle
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              role="listbox"
+              id={listboxId}
+              aria-labelledby={ariaLabelledBy}
+              aria-label={ariaLabel}
+              style={popoverStyle}
+              className="z-[70] overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg animate-fade-in"
+            >
+              {options.map((option, index) => {
+                const isAction = option.kind === 'action';
+                return (
+                  // eslint-disable-next-line jsx-a11y/interactive-supports-focus, jsx-a11y/click-events-have-key-events -- APG combobox+listbox: focus stays on the role="combobox" trigger via aria-activedescendant, so options are deliberately not tab stops, and the combobox's onKeyDown handles Enter/Space selection — the option's onClick is a pointer affordance with full keyboard parity.
+                  <div
+                    key={option.value}
+                    ref={(el) => {
+                      optionRefs.current[index] = el;
+                    }}
+                    id={optionId(index)}
+                    role="option"
+                    aria-selected={index === selectedIndex}
+                    onClick={() => choose(index)}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm',
+                      index === activeIndex && 'bg-secondary',
+                      index === selectedIndex ? 'font-medium text-primary' : 'text-foreground',
+                      // A command row (e.g. "＋ New location…") is fenced off from the options
+                      // above it with a divider so it never reads as one of them.
+                      isAction && 'mt-1 border-t border-border/60 pt-2 font-medium',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-left',
+                        isAction ? 'text-accent' : option.colorClass,
+                      )}
+                    >
+                      {option.label}
+                    </span>
+                    {option.meta ? (
+                      <span className="shrink-0 tabular-nums text-item-count">{option.meta}</span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

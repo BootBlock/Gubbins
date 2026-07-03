@@ -55,6 +55,11 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
     fireEvent.change(input, { target: { value: 'te' } });
     expect(input.getAttribute('aria-expanded')).toBe('true');
+    // The listbox is portalled to document.body so it escapes any scroll-clip ancestor —
+    // it must NOT be nested inside the field's wrapper.
+    const listbox = screen.getByRole('listbox');
+    expect(listbox.closest('[role="combobox"]')).toBeNull();
+    expect(input.parentElement?.contains(listbox)).toBe(false);
     const options = screen.getAllByRole('option').map((o) => o.textContent);
     expect(options).toEqual(['Texas Instruments', 'TE Connectivity']);
     // Free text that matches nothing is still accepted (value is not constrained to the list).
