@@ -24,7 +24,7 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1, EI-2, EI-3, EI-4 & EI-5 complete & merged (2026-07-03). Next: EI-6._ Phase order: **EI-1 → EI-7**.
+> **Status:** _EI-1, EI-2, EI-3, EI-4, EI-5 & EI-6 complete & merged (2026-07-03). Next: EI-7._ Phase order: **EI-1 → EI-7**.
 > EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
 > could be reordered, but the embedded prompts assume this order.
 
@@ -618,19 +618,19 @@ fixtures only.
 **Goal:** cheap, standards-based read surfaces — a human "what changed" feed for any reader,
 and machine metrics for Grafana/Prometheus home-labs (the same audience running the bridge).
 
-- [ ] **Syndication feeds:** `GET /api/v1/activity.rss` (+ `.atom`, `.json` [JSON Feed 1.1])
+- [x] **Syndication feeds:** `GET /api/v1/activity.rss` (+ `.atom`, `.json` [JSON Feed 1.1])
       rendering the Phase 80 activity feed — the `item_history` projection, reusing the EI-1
       event model and the `activity-kind` / `describeHistoryEntry` seams. Hand-rolled XML/JSON
       emitter (same posture as the YAML/iCal emitters — **no dependency**). Bounded item count.
-- [ ] **`GET /metrics`** in OpenMetrics/Prometheus text format:
+- [x] **`GET /metrics`** in OpenMetrics/Prometheus text format:
       `gubbins_items_total`, `gubbins_low_stock_items`, `gubbins_out_of_stock_items`,
       `gubbins_locations_total`, and storage/fullness gauges — counts sourced through the
-      existing repositories / `countByAst`, never bespoke SQL. Decide auth posture (recommend:
+      existing repositories, never bespoke SQL. Decide auth posture (recommend:
       same bearer token; document if left open for a scrape job on loopback).
-- [ ] **Docs + spec:** `bridge/README.md` "Feeds & metrics" section (a Grafana/Prometheus
+- [x] **Docs + spec:** `bridge/README.md` "Feeds & metrics" section (a Grafana/Prometheus
       scrape-config example, feed URLs); add the paths to `bridge/src/openapi.ts` +
       `openapi.yaml` (drift-guard).
-- [ ] **Tests:** feed-emitter unit tests (valid RSS/Atom/JSON Feed, escaping); a `/metrics`
+- [x] **Tests:** feed-emitter unit tests (valid RSS/Atom/JSON Feed, escaping); a `/metrics`
       test asserting the metric names/values over the synthetic fixture; OpenAPI drift-guard.
 
 **Decisions to confirm at entry:** *feed auth* (token vs. open-on-loopback) and *metrics auth*
@@ -641,7 +641,53 @@ activity; `curl .../metrics` returns valid OpenMetrics a Prometheus scrape accep
 
 **Review gate:** `/code-review high`.
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `bridge/src/feeds/*` and merged to `main`. Two cheap,
+standards-based **read** surfaces, both read-only *pulls* like `calendar.ics` / `items.csv` — so,
+per invariant #2 (which gates only *outbound/write* capabilities), **no `GUBBINS_BRIDGE_*` flag**;
+they are always available and gated only by the bearer token. **(1) Syndication feeds.** `GET
+/api/v1/activity.{rss,atom,json}` render the Phase 80 cross-item **activity log** (the
+`item_history` projection the app's Activity screen shows), newest-first, in RSS 2.0, Atom 1.0 and
+[JSON Feed 1.1](https://jsonfeed.org). A pure `feed-model.ts` maps each `ActivityFeedEntry` →
+transport-neutral `FeedItem`, **reusing the EI-1 seams verbatim** (`describeHistoryEntry`,
+`activityKindForAction`, and the event model's `eventTypeForAction` — so a feed item's dotted
+`type` matches the webhook/SSE event for the same ledger row); `feed.ts` reads the newest slice
+through `ItemRepository.getHistoryFeed` (no bespoke SQL); three **hand-rolled emitters**
+(`emitters.ts`, **zero dependencies** — the same stdlib-first posture as the iCal/YAML/mDNS
+encoders) serialise it, with `escapeXml` on every human string (a hostile item name can't inject
+feed structure) and `JSON.stringify` (structure, not concatenation) for JSON Feed. Each entry
+carries a **stable, host-free URN id** (`urn:gubbins:activity:<ledger-id>` — no real host committed,
+so a reader updates in place, not duplicates); `?limit=` narrows the window (clamped `[1, 50]`).
+**(2) Prometheus `/metrics`.** At the **root** `/metrics` (the scrape convention, not under
+`/api/v1`), a `text/plain; version=0.0.4` exposition a Prometheus scrape accepts directly:
+`gubbins_items_total`, `gubbins_low_stock_items`, `gubbins_out_of_stock_items`,
+`gubbins_locations_total`, plus per-location `gubbins_location_items` / `_capacity` /
+`_fullness_ratio` (labelled by `location_id` + `location`). The projection reads through
+`ItemRepository` / `LocationRepository` only; the pure `metrics-format.ts` renders it (`escapeLabel`
+guards the one free-text sink). **Auth (decisions at entry):** *feeds* accept the token in the
+`?token=` query string as well as the header (a feed reader can't send `Authorization` — the same
+posture as the EI-2 calendar, generalised into a `pathAllowsUrlToken` predicate over one
+`API_V1_FEED_PATHS` SSOT, scoped to just the feed/calendar paths; the token is stripped from the
+feed's self-URL so it is never echoed into the body); *metrics* is **header-only** (Prometheus
+scrape configs send a bearer header / `bearer_token_file`), with the loopback-scrape exception
+documented. Both paths added to `openapi.ts` (`feeds` + `metrics` tags) and the regenerated
+`openapi.yaml`; the drift-guard test gained a documented root-path exception for `/metrics`.
+**Zero new dependencies.** 34 new bridge tests over a dedicated synthetic fixture (444 total, all
+green — pure emitter/escaping/date units, the feed-model mapping, the metrics formatter, and a
+server-level suite asserting content types, header-vs-query-token auth, the metric names/values,
+and stable ids across refetches); `tsc --noEmit` clean for bridge and app. A live `serve.mjs` smoke
+passed the acceptance verbatim: with the fixture loaded, `activity.rss/.atom/.json` returned the
+right media types with the newest activity first, `?token=` worked and never leaked the token,
+`/metrics` returned the expected counts (3 items, 2 low, 1 out, 2 locations, Store Room fullness
+0.2), and `/metrics?token=` was correctly `401` while the feeds' `?token=` was `200`. **Review
+gate:** `/code-review high` ran (a correctness sweep + a reuse/conventions sweep, then
+verification) — **no correctness bugs**. It caught one medium **reuse** finding: the drift-critical
+low/out-of-stock counting scan (plus `forEachPage` + the scan-cap constants) was duplicated
+byte-for-byte between the new `feeds/metrics.ts` and the shipped EI-5 `mqtt/state.ts`, silently
+undermining the very "counts can never drift from the events/MQTT" guarantee both modules document.
+Fixed by extracting a shared `bridge/src/inventory-scan.ts` (`countStockLevels` + `forEachPage` +
+caps) that **both** subsystems now consume, making that guarantee structural rather than
+by-convention. Two low-severity hardenings were also applied (`escapeLabel` now collapses `CR`/`CRLF`
+as well as `LF`; `pathAllowsUrlToken` uses `Object.hasOwn` rather than the prototype-walking `in`).
 
 **Continuation prompt — emit on completion (starts EI-7):**
 
@@ -717,21 +763,21 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-6** (EI-1 through EI-5 are complete and merged). Its
-kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces this
-with the next phase's embedded prompt.
+The current next step is **Phase EI-7** (EI-1 through EI-6 are complete and merged) — the **final**
+phase. Its kick-off prompt (self-contained, for a cold session) is below.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-6 (RSS/Atom/JSON
-Feed + Prometheus /metrics). EI-1 through EI-5 are complete and merged. Work in a NEW git
-worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-feeds -b
-feat/ecosystem-feeds HEAD), follow the "How every phase runs" loop and the top-of-doc
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-7 (documentation
+truth-up + ecosystem finalisation). EI-1 through EI-6 are complete and merged. Work in a NEW
+git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-docs -b
+feat/ecosystem-docs HEAD), follow the "How every phase runs" loop and the top-of-doc
 invariants, gate with /code-review high before merging, then merge --no-ff into main and clean
-up. Update the EI-6 Outcome, then emit EI-7's continuation prompt as a raw fenced block. Add
-cheap standards read-surfaces on the bridge: GET /api/v1/activity.rss (+ .atom, .json) rendering
-the Phase 80 activity feed (item_history projection, reuse the EI-1 event model / activity-kind
-seams) via a hand-rolled emitter (no dependency), and GET /metrics in OpenMetrics/Prometheus
-text format (gubbins_items_total, gubbins_low_stock_items, gubbins_locations_total,
-gubbins_out_of_stock_items, storage/fullness gauges). Add both to the OpenAPI spec. Synthetic
-fixtures only.
+up. This is the FINAL phase: update ALL integration docs to detail EXACTLY what is now
+supported — bridge/README.md, the MCP server section + tool table, homeassistant/README.md and
+custom_components/gubbins docs, the top-level README's integration section, and make the
+OpenAPI spec complete for every /api/v1 surface. Add a single "permission & security matrix"
+listing every GUBBINS_BRIDGE_* opt-in flag and what it exposes. Verify every example is
+synthetic. After merging, mark the whole plan complete in the plan doc and update the memory
+index. There is NO next phase — emit an "all phases complete" summary instead of a continuation
+prompt.
 ```
