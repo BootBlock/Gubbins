@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Banner } from '@/components/foundry';
-import { ExtensionIcon, ExternalLinkIcon, InfoIcon, PackageIcon, TerminalIcon } from '@/components/icons';
+import {
+  ExtensionIcon,
+  ExternalLinkIcon,
+  InfoIcon,
+  PackageIcon,
+  TerminalIcon,
+  WarningIcon,
+} from '@/components/icons';
 import { CommandBlock, ChoiceCards, BranchPanel, StepCard } from '../components';
 import { useGuide, tokenForDisplay } from '../context';
 import { GuideLink } from '../links';
@@ -135,6 +142,14 @@ export function IntegrationStep() {
               You still need the voice sentences from the "Voice sentences" step. With the YAML recipe you can{' '}
               <span className="text-foreground">skip the next "Connect" step</span> — there's no config-flow
               UI to fill in.
+            </Banner>
+            <Banner tone="warning" icon={<WarningIcon />} heading="If Home Assistant mangles the URL">
+              On some setups <code className="rounded bg-secondary/60 px-1">rest_command</code> can truncate a
+              URL that combines a custom port with a template. If replies are always "not found", switch to
+              the <span className="text-foreground">conversation automation</span> option on the "Voice
+              sentences" step instead — it uses a{' '}
+              <code className="rounded bg-secondary/60 px-1">shell_command</code> +{' '}
+              <code className="rounded bg-secondary/60 px-1">curl</code>, which sidesteps the quirk entirely.
             </Banner>
             <p className="text-sm text-muted-foreground">
               The full recipe and a dashboard-sensor variant are in the{' '}
