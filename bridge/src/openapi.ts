@@ -281,6 +281,13 @@ export const openapiDocument: JsonValue = {
     { name: 'meta', description: 'Liveness and API description.' },
     { name: 'search', description: 'Relevance search and "where is X?".' },
     { name: 'items', description: 'Browse items and look one up by id.' },
+    {
+      name: 'calendar',
+      description:
+        'A read-only iCalendar (.ics) subscription feed of Gubbins’ time-bearing facts — loan ' +
+        'due-backs, asset bookings, maintenance/service dates, and warranty expiries — that any ' +
+        'calendar app can subscribe to by URL.',
+    },
     { name: 'locations', description: 'Browse the locations hierarchy.' },
     { name: 'categories', description: 'Browse categories and their custom-field schema.' },
     { name: 'capabilities', description: 'Browse the queryable capability vocabulary.' },
@@ -491,6 +498,61 @@ export const openapiDocument: JsonValue = {
                 example:
                   'id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost\r\n' +
                   'item-esp32,ESP32 Dev Board,,,DISCRETE,7,DEV-ESP32,Synthetic Silicon Co,',
+              },
+            },
+          },
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
+    '/api/v1/calendar.ics': {
+      get: {
+        tags: ['calendar'],
+        summary: 'Subscribe to the read-only iCalendar feed',
+        description:
+          'A text/calendar (RFC 5545) VCALENDAR of Gubbins’ time-bearing facts, as VEVENTs with a ' +
+          'stable per-source UID so a subscriber updates each event in place rather than ' +
+          'duplicating it on refetch. Sources: loan due-backs (open checkouts with a due date), ' +
+          'asset bookings (upcoming, not-yet-passed), maintenance/service due dates (time-based ' +
+          'schedules), and warranty expiries. Most events are all-day. A source with no data ' +
+          'simply contributes nothing (a valid, empty calendar is the natural result). Because a ' +
+          'calendar client cannot send an Authorization header, this endpoint ALSO accepts the ' +
+          'bearer token as a `token` query parameter (a deliberately weaker token-in-URL posture, ' +
+          'scoped to this one path — keep the bridge loopback/LAN posture in mind). Read-only.',
+        parameters: [
+          {
+            name: 'token',
+            in: 'query',
+            required: false,
+            description:
+              'The shared bearer token, for calendar clients that cannot send an Authorization ' +
+              'header. Accepted on THIS path only; prefer the Authorization header everywhere else.',
+            schema: { type: 'string' },
+          },
+          {
+            name: 'type',
+            in: 'query',
+            required: false,
+            description:
+              'Restrict the feed to a comma-separated subset of sources: loans, bookings, ' +
+              'maintenance, warranty. Omitted = all four. An unknown value is a 400.',
+            schema: { type: 'string' },
+            example: 'loans,warranty',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'The iCalendar document.',
+            content: {
+              'text/calendar': {
+                schema: { type: 'string' },
+                example:
+                  'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Gubbins//Bridge Calendar//EN\r\n' +
+                  'CALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:Gubbins\r\nBEGIN:VEVENT\r\n' +
+                  'UID:warranty-item-esp32@gubbins.invalid\r\nDTSTAMP:20250627T045320Z\r\n' +
+                  'DTSTART;VALUE=DATE:20270615\r\nDTEND;VALUE=DATE:20270616\r\n' +
+                  'SUMMARY:Warranty expires: ESP32 Dev Board\r\nCATEGORIES:Gubbins,Warranty\r\n' +
+                  'END:VEVENT\r\nEND:VCALENDAR\r\n',
               },
             },
           },

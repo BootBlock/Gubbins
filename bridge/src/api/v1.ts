@@ -20,7 +20,8 @@ import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
-import { sendError, sendJson, sendText, sendXml, sendCsv } from './respond.ts';
+import { sendError, sendJson, sendText, sendXml, sendCsv, sendCalendar } from './respond.ts';
+import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '../ical/feed.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
 import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { odataMetadataXml } from './odata-metadata.ts';
@@ -53,6 +54,15 @@ import { loadItemDetail } from '../item-detail.ts';
 
 /** The versioned API base path. */
 export const API_V1_BASE = '/api/v1';
+
+/**
+ * The read-only iCalendar subscription feed path (`GET /api/v1/calendar.ics`). Exported so
+ * `server.ts` can special-case its auth: a calendar client cannot send an `Authorization`
+ * header, so — **for this path only** — the bearer token may also arrive as a `?token=` query
+ * parameter (the standard for calendar subscriptions). Keeping that weaker token-in-URL posture
+ * scoped to this one endpoint limits the blast radius.
+ */
+export const API_V1_CALENDAR_PATH = `${API_V1_BASE}/calendar.ics`;
 
 /** True when a request path belongs to the versioned API (the base itself or below it). */
 export function isApiV1Path(pathname: string): boolean {
@@ -136,6 +146,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       break;
     case 'items.csv':
       if (segments.length === 1) return void (await handleItemsCsv(res, driver, url));
+      break;
+    case 'calendar.ics':
+      if (segments.length === 1) return void (await handleCalendar(res, state, url));
       break;
     case 'locations':
       if (segments.length === 1) return void (await handleLocations(res, driver, url));
@@ -243,6 +256,7 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): un
       `${API_V1_BASE}/where`,
       `${API_V1_BASE}/items`,
       `${API_V1_BASE}/items.csv`,
+      `${API_V1_BASE}/calendar.ics`,
       `${API_V1_BASE}/items/{id}`,
       `${API_V1_BASE}/items/$count`,
       `${API_V1_BASE}/locations`,
@@ -411,6 +425,58 @@ async function collectAllItems(
     if (!page.hasMore) break;
   }
   return rows.length > MAX_CSV_ROWS ? rows.slice(0, MAX_CSV_ROWS) : rows;
+}
+
+// --- calendar (read-only iCalendar subscription feed) -----------------------------
+
+/**
+ * `GET /api/v1/calendar.ics` — the read-only iCalendar feed: loan due-backs, asset bookings,
+ * maintenance/service dates, and warranty expiries as VEVENTs with stable per-source UIDs (see
+ * `ical/feed.ts`). The optional `?type=loans|bookings|maintenance|warranty` (comma-separated)
+ * narrows it to selected sources; an unknown type is a 400. `DTSTAMP` is the snapshot's
+ * generation instant, so the output is stable across refetches of the same snapshot. Auth
+ * (bearer header **or** the `?token=` query param, see `server.ts`) and the rate limit are
+ * applied by the caller before routing here.
+ */
+async function handleCalendar(res: ServerResponse, state: BridgeServerState, url: URL): Promise<void> {
+  const types = parseCalendarTypes(url);
+  if (types === null) {
+    return void sendError(
+      res,
+      400,
+      'bad_request',
+      'Unknown "type"; expected a comma-separated subset of loans, bookings, maintenance, warranty.',
+      { v1: true },
+    );
+  }
+  const now = Date.now();
+  // Stamp events with the snapshot's generation time when known (stable across refetches),
+  // else fall back to "now". `snapshotGeneratedAt` is an ISO string; parse it back to ms.
+  const parsed = state.snapshotGeneratedAt !== null ? Date.parse(state.snapshotGeneratedAt) : NaN;
+  const dtstamp = Number.isFinite(parsed) ? parsed : now;
+  const ics = await buildCalendar(state.driver, { dtstamp, now, ...(types !== undefined ? { types } : {}) });
+  sendCalendar(res, 200, ics);
+}
+
+/**
+ * Parse the optional `?type=` selector into a validated source list. Absent (or blank) ⇒
+ * `undefined` (the whole calendar); a comma-separated list of known sources ⇒ that subset; any
+ * unknown token ⇒ `null` (the caller sends a 400).
+ */
+function parseCalendarTypes(url: URL): readonly CalendarSourceType[] | undefined | null {
+  const raw = url.searchParams.get('type');
+  if (raw === null) return undefined;
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+  if (parts.length === 0) return undefined;
+  const types: CalendarSourceType[] = [];
+  for (const part of parts) {
+    if (!isCalendarSourceType(part)) return null;
+    if (!types.includes(part)) types.push(part);
+  }
+  return types;
 }
 
 /** The active-scope + non-page item list filters (location/category/$search), shared by rows + $count. */

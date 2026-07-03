@@ -1,0 +1,108 @@
+{
+  "formatVersion": 1,
+  "generatedAt": 1751000000000,
+  "tables": {
+    "locations": [
+      { "id": "loc-workshop", "name": "Workshop", "parent_id": null, "is_system": 0, "updated_at": 1751000000000 },
+      { "id": "loc-shelf-a", "name": "Shelf A", "parent_id": null, "is_system": 0, "updated_at": 1751000000000 }
+    ],
+    "categories": [
+      { "id": "cat-tools", "name": "Tools", "updated_at": 1751000000000 }
+    ],
+    "items": [
+      {
+        "id": "item-drill",
+        "name": "Cordless Drill",
+        "description": "Synthetic serialised power tool.",
+        "location_id": "loc-workshop",
+        "category_id": "cat-tools",
+        "tracking_mode": "SERIALISED",
+        "quantity": 1,
+        "mpn": "TOOL-DRILL-1",
+        "manufacturer": "Acme Tools",
+        "warranty_expires_at": "2027-03-15",
+        "is_active": 1,
+        "created_at": 1700000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-multimeter",
+        "name": "Multimeter",
+        "description": "Synthetic discrete test instrument.",
+        "location_id": "loc-shelf-a",
+        "category_id": "cat-tools",
+        "tracking_mode": "DISCRETE",
+        "quantity": 3,
+        "mpn": "TOOL-DMM-1",
+        "manufacturer": "Synthetic Instruments",
+        "warranty_expires_at": "2026-11-01",
+        "is_active": 1,
+        "created_at": 1700000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-label-printer",
+        "name": "Label Printer",
+        "description": "Synthetic discrete asset with a warranty only.",
+        "location_id": "loc-shelf-a",
+        "category_id": "cat-tools",
+        "tracking_mode": "DISCRETE",
+        "quantity": 1,
+        "mpn": "TOOL-LBL-1",
+        "manufacturer": "Synthetic Print Co",
+        "warranty_expires_at": "2028-01-20",
+        "is_active": 1,
+        "created_at": 1700000000000,
+        "updated_at": 1751000000000
+      },
+      {
+        "id": "item-bandsaw",
+        "name": "Bandsaw",
+        "description": "Synthetic serialised tool with a usage-based service schedule.",
+        "location_id": "loc-workshop",
+        "category_id": "cat-tools",
+        "tracking_mode": "SERIALISED",
+        "quantity": 1,
+        "mpn": "TOOL-SAW-1",
+        "manufacturer": "Acme Tools",
+        "is_active": 1,
+        "created_at": 1700000000000,
+        "updated_at": 1751000000000
+      }
+    ],
+    "item_stock": [
+      { "id": "item-drill|loc-workshop", "item_id": "item-drill", "location_id": "loc-workshop", "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-multimeter|loc-shelf-a", "item_id": "item-multimeter", "location_id": "loc-shelf-a", "quantity": 3, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-label-printer|loc-shelf-a", "item_id": "item-label-printer", "location_id": "loc-shelf-a", "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-bandsaw|loc-workshop", "item_id": "item-bandsaw", "location_id": "loc-workshop", "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 }
+    ],
+    "stock_batches": [
+      { "id": "item-drill|loc-workshop|", "item_id": "item-drill", "location_id": "loc-workshop", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-multimeter|loc-shelf-a|", "item_id": "item-multimeter", "location_id": "loc-shelf-a", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 3, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-label-printer|loc-shelf-a|", "item_id": "item-label-printer", "location_id": "loc-shelf-a", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "item-bandsaw|loc-workshop|", "item_id": "item-bandsaw", "location_id": "loc-workshop", "batch_key": "", "batch_number": null, "lot_number": null, "expiry_date": null, "quantity": 1, "created_at": 1700000000000, "updated_at": 1751000000000 }
+    ],
+    "capabilities": [],
+    "contacts": [
+      { "id": "contact-alex", "name": "Alex Rivera", "note": null, "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "contact-sam", "name": "Sam Okoro", "note": null, "created_at": 1700000000000, "updated_at": 1751000000000 }
+    ],
+    "checkouts": [
+      { "id": "checkout-open-due", "item_id": "item-multimeter", "contact_id": "contact-alex", "quantity": 1, "due_date": 1754006400000, "checked_out_at": 1750000000000, "returned_at": null, "note": "Bench calibration loan", "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 },
+      { "id": "checkout-open-nodue", "item_id": "item-multimeter", "contact_id": "contact-sam", "quantity": 1, "due_date": null, "checked_out_at": 1750000000000, "returned_at": null, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 },
+      { "id": "checkout-returned", "item_id": "item-multimeter", "contact_id": "contact-alex", "quantity": 1, "due_date": 1753000000000, "checked_out_at": 1749000000000, "returned_at": 1750500000000, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 }
+    ],
+    "asset_bookings": [
+      { "id": "booking-active", "item_id": "item-drill", "contact_id": "contact-sam", "start_date": 2064268800000, "end_date": 2064441600000, "note": "Site visit", "cancelled_at": null, "converted_checkout_id": null, "created_at": 1751000000000, "updated_at": 1751000000000 },
+      { "id": "booking-cancelled", "item_id": "item-drill", "contact_id": "contact-alex", "start_date": 2066860800000, "end_date": 2066947200000, "note": null, "cancelled_at": 1751500000000, "converted_checkout_id": null, "created_at": 1751000000000, "updated_at": 1751000000000 }
+    ],
+    "maintenance_schedules": [
+      { "id": "sched-time-drill", "item_id": "item-drill", "name": "Chuck lubrication", "basis": "TIME", "interval_days": 90, "interval_usage": null, "usage_unit": null, "usage_since_service": 0, "accrue_checkout_hours": 0, "location_id": null, "last_performed_at": 1748000000000, "note": "Grease the chuck and gears.", "created_at": 1700000000000, "updated_at": 1751000000000 },
+      { "id": "sched-usage-bandsaw", "item_id": "item-bandsaw", "name": "Blade replacement", "basis": "USAGE", "interval_days": null, "interval_usage": 100, "usage_unit": "hours", "usage_since_service": 20, "accrue_checkout_hours": 0, "location_id": null, "last_performed_at": null, "note": null, "created_at": 1700000000000, "updated_at": 1751000000000 }
+    ]
+  },
+  "tombstones": [],
+  "gaugeHistory": [],
+  "itemTags": [],
+  "itemHistory": []
+}

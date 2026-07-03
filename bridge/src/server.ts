@@ -34,7 +34,7 @@ import { searchItems, whereIs } from './query.ts';
 import type { RateLimiter } from './rate-limit.ts';
 import { sendError, sendJson } from './api/respond.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
-import { API_V1_BASE, handleApiV1, isApiV1Path } from './api/v1.ts';
+import { API_V1_BASE, API_V1_CALENDAR_PATH, handleApiV1, isApiV1Path } from './api/v1.ts';
 import type { WriteOperation } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { ItemDetailDto } from './api/dto.ts';
@@ -201,7 +201,7 @@ export async function handleRequest(
       return;
     }
 
-    if (!isAuthorised(req, options.token)) {
+    if (!isAuthorised(req, options.token, url)) {
       req.resume();
       sendError(res, 401, 'unauthorized', 'Unauthorised', {
         v1,
@@ -394,13 +394,25 @@ function clientKey(req: IncomingMessage): string {
   return req.socket.remoteAddress ?? 'unknown';
 }
 
-/** Constant-time bearer-token check. A missing/malformed header is simply unauthorised. */
-function isAuthorised(req: IncomingMessage, token: string): boolean {
+/**
+ * Constant-time bearer-token check. The token normally arrives as an `Authorization: Bearer …`
+ * header. A missing/malformed header is unauthorised — **except** on the calendar feed path
+ * (`GET /api/v1/calendar.ics`), where the token may instead be supplied as a `?token=` query
+ * parameter, because a calendar client subscribing by URL cannot send an auth header. That
+ * weaker token-in-URL posture (URLs get logged by proxies / browser history) is deliberately
+ * scoped to just this one read-only path.
+ */
+function isAuthorised(req: IncomingMessage, token: string, url: URL): boolean {
   const header = req.headers.authorization;
-  if (typeof header !== 'string') return false;
   const prefix = 'Bearer ';
-  if (!header.startsWith(prefix)) return false;
-  return constantTimeEqual(header.slice(prefix.length).trim(), token);
+  if (typeof header === 'string' && header.startsWith(prefix)) {
+    if (constantTimeEqual(header.slice(prefix.length).trim(), token)) return true;
+  }
+  if (url.pathname === API_V1_CALENDAR_PATH) {
+    const queryToken = url.searchParams.get('token');
+    if (queryToken !== null && constantTimeEqual(queryToken, token)) return true;
+  }
+  return false;
 }
 
 /** Length-safe constant-time string comparison (avoids leaking the token via timing). */
