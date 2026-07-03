@@ -2,6 +2,7 @@ import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
+import { AppNav } from '@/components/nav/AppNav';
 import { ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -66,8 +67,11 @@ export function DashboardScreen() {
         </a>
 
         {/* Right-aligned group: the pre-1.0 work-in-progress banner sits immediately to
-            the left of the version + release date. The wrapper is sized to its content, so
-            the version's own `ml-auto` collapses and the two stay adjacent. */}
+            the left of the version + release date, with the global navigation menu pinned
+            to the far right — the same top-right slot AppNav occupies on every other screen
+            (which reach it via PageHeader; the dashboard hero is a PageHeader exception, so
+            it renders AppNav itself). The wrapper is sized to its content, so the version's
+            own `ml-auto` collapses and the group stays adjacent. */}
         <div className="ml-auto flex items-center gap-3">
           {/* Pre-1.0 data-loss warning — gated behind SHOW_WIP_BANNER in DashboardBanner. */}
           <DashboardBanner />
@@ -75,6 +79,11 @@ export function DashboardScreen() {
           {/* Version + release date — landing-page only (the other screens use PageHeader,
               which has no version slot). Clicking it runs a manual update check. */}
           <DashboardVersion />
+
+          {/* The same global navigation menu every other screen shows top-right via
+              PageHeader. Rendered directly here so the dashboard is reachable-from and
+              reaches every destination without leaving the landing page. */}
+          <AppNav />
         </div>
       </header>
 

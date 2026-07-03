@@ -14,6 +14,12 @@ vi.mock('@/components/BrandMark', () => ({
   BrandMark: () => <span data-testid="brand-mark" />,
 }));
 
+// AppNav reads the live route via `useRouterState` (not provided by the plain-anchor Link
+// mock above) and alerts via a hook — out of scope for this grid-focused test, so stub it.
+vi.mock('@/components/nav/AppNav', () => ({
+  AppNav: () => <div data-testid="app-nav" />,
+}));
+
 // The widget board and wake-lock are out of scope here; stub them so the test
 // stays focused on the quick-nav grid driven by NAV_DESTINATIONS.
 vi.mock('./DashboardGrid', () => ({ DashboardGrid: () => <div data-testid="dashboard-grid" /> }));
@@ -42,6 +48,14 @@ describe('DashboardScreen — quick-nav grid (spec §2.4.2)', () => {
     // One tile per destination, minus the current (Dashboard/home) screen.
     expect(links).toHaveLength(NAV_DESTINATIONS.length - 1);
     expect(within(nav).queryByText('Dashboard')).toBeNull();
+  });
+
+  it('renders the global navigation menu in the header (parity with every other screen)', () => {
+    render(<DashboardScreen />);
+    // The dashboard hero is a PageHeader exception, so it mounts AppNav itself — the same
+    // top-right menu button PageHeader gives every other screen. Guards against regressing
+    // back to a menu-less landing page.
+    expect(screen.getByTestId('app-nav')).toBeInTheDocument();
   });
 
   it('renders Inventory as the primary call-to-action ("Open inventory")', () => {
