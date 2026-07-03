@@ -152,11 +152,40 @@ describe('parseFreeformLine', () => {
     });
   });
 
-  it('combines a SKU label and a quantity multiplier', () => {
-    expect(parseFreeformLine('Widget mpn: W-9 x12')).toEqual({
+  it('combines a quantity multiplier and a SKU label', () => {
+    // Shorthand quantity precedes the trailing labels; the label value is a single token.
+    expect(parseFreeformLine('Widget x12 mpn: W-9')).toEqual({
       name: 'Widget',
       quantity: 12,
       sku: 'W-9',
+    });
+  });
+
+  it('extracts an inline manufacturer (multi-word) and defaults quantity to 1', () => {
+    expect(parseFreeformLine('Multimeter manu: Fluke Corporation')).toEqual({
+      name: 'Multimeter',
+      quantity: 1,
+      sku: null,
+      manufacturer: 'Fluke Corporation',
+    });
+  });
+
+  it('extracts an inline location and tracking mode', () => {
+    expect(parseFreeformLine('Oscilloscope loc: Bench track: serialised')).toEqual({
+      name: 'Oscilloscope',
+      quantity: 1,
+      sku: null,
+      location: 'Bench',
+      trackingMode: 'serialised',
+    });
+  });
+
+  it('reads a labelled quantity anywhere in the line', () => {
+    expect(parseFreeformLine('Bolts q: 200 loc: Drawer 3')).toEqual({
+      name: 'Bolts',
+      quantity: 200,
+      sku: null,
+      location: 'Drawer 3',
     });
   });
 });
@@ -176,16 +205,21 @@ describe('parseFreeformText', () => {
 // ---------------------------------------------------------------------------
 
 describe('extractImport', () => {
-  it('flattens a line list into name / quantity / sku columns', () => {
+  it('flattens a line list into name / quantity / sku / manufacturer / location / tracking columns', () => {
     const ex = extractImport('Resistor 10k x50\nArduino Uno');
     expect(ex.format).toBe('lines');
     expect(ex.isTabular).toBe(false);
-    expect(ex.columns).toEqual(['Name', 'Quantity', 'SKU']);
-    // Explicit quantity kept; default (1) left blank so it does not overwrite stock.
+    expect(ex.columns).toEqual(['Name', 'Quantity', 'SKU', 'Manufacturer', 'Location', 'Tracking']);
+    // Explicit quantity kept; a bare name defaults to 1 (unlikely to be added with none).
     expect(ex.dataRows).toEqual([
-      ['Resistor 10k', '50', ''],
-      ['Arduino Uno', '', ''],
+      ['Resistor 10k', '50', '', '', '', ''],
+      ['Arduino Uno', '1', '', '', '', ''],
     ]);
+  });
+
+  it('carries inline manufacturer / location / tracking into the line-list columns', () => {
+    const ex = extractImport('Multimeter manu: Fluke loc: Bench track: serialised q: 2');
+    expect(ex.dataRows).toEqual([['Multimeter', '2', '', 'Fluke', 'Bench', 'serialised']]);
   });
 
   it('parses a TSV paste and infers the mapping from headers', () => {
@@ -267,13 +301,13 @@ describe('buildImportPlan + buildPreviewRows', () => {
     expect(plan.errors).toHaveLength(0);
     expect(plan.create[0]!.input.name).toBe('Resistor 10k');
     expect(plan.create[0]!.input.quantity).toBe(50);
-    // A blank quantity cell falls back to the catalogue default of 0.
-    expect(plan.create[1]!.input.quantity).toBe(0);
+    // A bare name defaults to quantity 1.
+    expect(plan.create[1]!.input.quantity).toBe(1);
 
     const preview = buildPreviewRows(ex.dataRows, ex.mapping, plan);
     expect(preview).toEqual([
-      { sourceRow: 1, name: 'Resistor 10k', quantity: '50', sku: '', status: 'create' },
-      { sourceRow: 2, name: 'Arduino Uno', quantity: '', sku: '', status: 'create' },
+      { sourceRow: 1, name: 'Resistor 10k', quantity: '50', sku: '', manufacturer: '', status: 'create' },
+      { sourceRow: 2, name: 'Arduino Uno', quantity: '1', sku: '', manufacturer: '', status: 'create' },
     ]);
   });
 
@@ -286,6 +320,20 @@ describe('buildImportPlan + buildPreviewRows', () => {
 
     const preview = buildPreviewRows(ex.dataRows, ex.mapping, plan);
     expect(preview[0]!.status).toBe('update');
+  });
+
+  it('resolves an inline location name and applies a batch default tracking mode', () => {
+    const ex = extractImport('Widget loc: Workshop\nGizmo');
+    const plan = buildImportPlan(ex, ex.mapping, [], {
+      locations: [{ id: 'loc-1', name: 'Workshop' }],
+      defaultLocationId: 'loc-0',
+      defaultTrackingMode: 'SERIALISED',
+    });
+    expect(plan.errors).toHaveLength(0);
+    // Inline location wins for row 1; the batch default fills row 2.
+    expect(plan.create[0]!.input.locationId).toBe('loc-1');
+    expect(plan.create[1]!.input.locationId).toBe('loc-0');
+    expect(plan.create.every((c) => c.input.trackingMode === 'SERIALISED')).toBe(true);
   });
 
   it('surfaces per-row errors in the preview', () => {

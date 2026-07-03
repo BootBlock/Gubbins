@@ -24,7 +24,15 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, LiveRegion, Modal, Select, Spinner, Surface, Textarea } from '@/components/foundry';
 import { cn } from '@/lib/utils';
 import { DatasheetIcon, ImportIcon, UploadIcon } from '@/components/icons';
-import { getCategoryRepository, getItemRepository, type CategoryField, type Item } from '@/db/repositories';
+import {
+  getCategoryRepository,
+  getItemRepository,
+  getLocationRepository,
+  type CategoryField,
+  type Item,
+} from '@/db/repositories';
+import { TRACKING_MODES, type TrackingMode } from '@/db/repositories/constants';
+import { TRACKING_MODE_LABELS } from './inventory-ui';
 import {
   CATALOG_FIELD_LABELS,
   CATALOG_FIELDS,
@@ -74,9 +82,27 @@ async function loadAllCustomFields(): Promise<CategoryField[]> {
   return fields;
 }
 
+/** Minimal location shape the importer needs: id + name for the picker and resolution. */
+interface ImportLocation {
+  readonly id: string;
+  readonly name: string;
+}
+
+async function loadAllLocations(): Promise<ImportLocation[]> {
+  const repo = getLocationRepository();
+  const all: ImportLocation[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await repo.list({ limit: 100, offset });
+    for (const loc of page.rows) all.push({ id: loc.id, name: loc.name });
+    if (!page.hasMore) break;
+  }
+  return all;
+}
+
 interface Catalogue {
   readonly items: readonly Item[];
   readonly customFields: readonly CategoryField[];
+  readonly locations: readonly ImportLocation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -153,25 +179,43 @@ function MappingTable({
 
 const MAX_PREVIEW_ROWS = 100;
 
+/**
+ * A sticky preview-table header cell. The background is a *solid* token (not a
+ * translucent tint) and it is raised with `z-10`, so rows scroll cleanly behind the
+ * header instead of bleeding through it. The bottom border lives on the cell because
+ * the table uses `border-separate` (required for `position: sticky` to paint borders).
+ */
+function HeaderCell({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="sticky top-0 z-10 border-b border-border bg-secondary px-3 py-2 text-left font-medium text-muted-foreground">
+      {children}
+    </th>
+  );
+}
+
 function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
   const shown = rows.slice(0, MAX_PREVIEW_ROWS);
   const hidden = rows.length - shown.length;
   return (
     <div>
       <div className="max-h-56 overflow-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-secondary/40 backdrop-blur">
-            <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Qty</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">SKU</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
+        <table className="w-full border-separate border-spacing-0 text-sm">
+          {/* Sticky header: each cell carries its own solid background + z-index so
+              scrolled rows pass cleanly *behind* it (a translucent `<thead>` let the
+              rows show through). */}
+          <thead>
+            <tr>
+              <HeaderCell>#</HeaderCell>
+              <HeaderCell>Name</HeaderCell>
+              <HeaderCell>Qty</HeaderCell>
+              <HeaderCell>SKU</HeaderCell>
+              <HeaderCell>Manufacturer</HeaderCell>
+              <HeaderCell>Status</HeaderCell>
             </tr>
           </thead>
           <tbody>
             {shown.map((row) => (
-              <tr key={row.sourceRow} className="border-b border-border last:border-0 align-top">
+              <tr key={row.sourceRow} className="align-top [&>td]:border-b [&>td]:border-border">
                 <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{row.sourceRow}</td>
                 <td className="px-3 py-1.5 text-foreground">
                   {row.name || <span className="text-muted-foreground">(none)</span>}
@@ -179,6 +223,7 @@ function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
                 </td>
                 <td className="px-3 py-1.5 tabular-nums text-foreground">{row.quantity || '—'}</td>
                 <td className="px-3 py-1.5 font-mono text-xs text-foreground">{row.sku || '—'}</td>
+                <td className="px-3 py-1.5 text-foreground">{row.manufacturer || '—'}</td>
                 <td className="px-3 py-1.5">
                   <StatusBadge status={row.status} />
                 </td>
@@ -269,9 +314,15 @@ function ImportWorkbench({
   const formatId = useId();
   const matchKeyId = useId();
   const headerId = useId();
+  const locationId = useId();
+  const trackingId = useId();
   const [formatOverride, setFormatOverride] = useState<ImportFormat | null>(null);
   const [hasHeader, setHasHeader] = useState(true);
   const [matchKey, setMatchKey] = useState<MatchKey>('name');
+  // Batch defaults, applied to every row that does not specify its own value inline.
+  // Empty string means "leave to each row / the catalogue default".
+  const [defaultLocationId, setDefaultLocationId] = useState('');
+  const [defaultTrackingMode, setDefaultTrackingMode] = useState('');
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [result, setResult] = useState<CatalogApplyResult | null>(null);
@@ -308,8 +359,20 @@ function ImportWorkbench({
       buildImportPlan(extraction, mapping, catalogue.items, {
         matchKey,
         customFields: catalogue.customFields,
+        locations: catalogue.locations,
+        ...(defaultLocationId ? { defaultLocationId } : {}),
+        ...(defaultTrackingMode ? { defaultTrackingMode: defaultTrackingMode as TrackingMode } : {}),
       }),
-    [extraction, mapping, catalogue.items, catalogue.customFields, matchKey],
+    [
+      extraction,
+      mapping,
+      catalogue.items,
+      catalogue.customFields,
+      catalogue.locations,
+      matchKey,
+      defaultLocationId,
+      defaultTrackingMode,
+    ],
   );
   const previewRows = useMemo(
     () => buildPreviewRows(extraction.dataRows, mapping, plan),
@@ -405,6 +468,50 @@ function ImportWorkbench({
             options={[
               { value: 'name', label: 'Name' },
               { value: 'sku', label: 'SKU / MPN' },
+            ]}
+          />
+        </div>
+      </div>
+
+      {/* Batch location + tracking defaults (applied to rows that don't specify their own) */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <span
+            id={`${locationId}-label`}
+            className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Location for imported items
+          </span>
+          <Select
+            id={locationId}
+            aria-labelledby={`${locationId}-label`}
+            value={defaultLocationId}
+            onChange={setDefaultLocationId}
+            className="h-9"
+            data-testid="import-default-location"
+            options={[
+              { value: '', label: 'Unassigned (or inline “loc:”)' },
+              ...catalogue.locations.map((loc) => ({ value: loc.id, label: loc.name })),
+            ]}
+          />
+        </div>
+        <div className="space-y-1">
+          <span
+            id={`${trackingId}-label`}
+            className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >
+            Tracking for new items
+          </span>
+          <Select
+            id={trackingId}
+            aria-labelledby={`${trackingId}-label`}
+            value={defaultTrackingMode}
+            onChange={setDefaultTrackingMode}
+            className="h-9"
+            data-testid="import-default-tracking"
+            options={[
+              { value: '', label: 'Bulk (or inline “track:”)' },
+              ...TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] })),
             ]}
           />
         </div>
@@ -531,8 +638,12 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
       </label>
       <p className="text-sm text-muted-foreground">
         Paste tabular data from a spreadsheet, CSV/TSV, JSON, a Markdown table, or just one item per line with
-        shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>. The format is detected
-        automatically — override it with “Interpret as” below.
+        shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>. Per line you can label
+        extra details: <span className="font-mono text-xs">sku:</span>,{' '}
+        <span className="font-mono text-xs">manu:</span>, <span className="font-mono text-xs">q:</span>,{' '}
+        <span className="font-mono text-xs">loc:</span> and <span className="font-mono text-xs">track:</span>{' '}
+        (e.g. <span className="font-mono text-xs">Multimeter manu: Fluke loc: Bench track: serialised</span>).
+        The format is detected automatically — override it with “Interpret as” below.
       </p>
       <Textarea
         id={inputId}
@@ -540,7 +651,7 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
         onChange={(e) => onTextChange(e.target.value)}
         rows={6}
         className="font-mono text-xs"
-        placeholder={'Resistor 10k x50\nCapacitor 100nF\n3x Arduino Uno, sku: ARD-UNO'}
+        placeholder={'Resistor 10k x50\nCapacitor 100nF, sku: C-100\n3x Arduino Uno manu: Arduino'}
         data-testid="import-text-input"
         spellCheck={false}
       />
@@ -685,8 +796,12 @@ export function ImportDataDialog({ open, onClose }: { open: boolean; onClose: ()
     setLoadError(null);
     void (async () => {
       try {
-        const [items, customFields] = await Promise.all([loadAllItems(), loadAllCustomFields()]);
-        if (!cancelled) setCatalogue({ items, customFields });
+        const [items, customFields, locations] = await Promise.all([
+          loadAllItems(),
+          loadAllCustomFields(),
+          loadAllLocations(),
+        ]);
+        if (!cancelled) setCatalogue({ items, customFields, locations });
       } catch {
         if (!cancelled) setLoadError('Could not load the existing catalogue — please try again.');
       }

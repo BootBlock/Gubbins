@@ -95,6 +95,33 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   /**
+   * Create many independent items in a **single** atomic transaction — the bulk-import
+   * fast path. Every item's INSERT + ledger-seed + CREATED-log statements are gathered
+   * and committed once, so a paste of N rows costs one OPFS commit (one fsync) instead
+   * of N. This is the difference between an import of a few dozen rows feeling instant
+   * versus taking many seconds (each standalone `create` pays a full commit). Because it
+   * is one transaction it is all-or-nothing: an invalid row rolls the whole batch back,
+   * which suits a pre-validated dry-run plan. Returns the created items in input order.
+   */
+  async createMany(inputs: readonly CreateItemInput[]): Promise<Item[]> {
+    this.assertWritable();
+    if (inputs.length === 0) return [];
+
+    const ids: string[] = [];
+    const statements: SqlStatement[] = [];
+    for (const input of inputs) {
+      const resolved = resolveCreate(input);
+      const id = crypto.randomUUID();
+      ids.push(id);
+      statements.push(...buildInsert(id, resolved, null));
+    }
+    await this.driver.transaction(statements);
+
+    const created = await Promise.all(ids.map((id) => this.getById(id)));
+    return created.filter((i): i is Item => i !== undefined);
+  }
+
+  /**
    * Create N distinct SERIALISED instance records that share a name (spec §4
    * "Serialised" auto-clone). Each record gets quantity 1 and a serial number
    * 1..N, and logs its own CREATED entry, all in one atomic transaction. A `count`

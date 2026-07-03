@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { parseCsv } from '../projects/bom-import';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import type { TrackingMode } from '@/db/repositories/constants';
 import type { CategoryField, CreateItemInput, UpdateItemInput, Item } from '@/db/repositories/types';
 
 // Re-export so callers import from one place.
@@ -479,6 +480,70 @@ export interface BuildPlanOptions {
    * A column targeting a field not in this list collects a row error.
    */
   readonly customFields?: readonly CategoryField[];
+  /**
+   * Known locations, so a `locationId` cell holding a **location name** (typed inline
+   * as `loc: Workshop`, or a spreadsheet "Location" column) resolves to its id. A cell
+   * that already holds a known id passes through. When omitted, location cells are
+   * passed through verbatim (legacy behaviour). A non-empty, unresolvable location
+   * collects a row error rather than silently creating the item in the wrong place.
+   */
+  readonly locations?: readonly { readonly id: string; readonly name: string }[];
+  /**
+   * Batch default location id, applied to every row that does not specify its own
+   * location. Chosen from the import dialog's "Location" dropdown.
+   */
+  readonly defaultLocationId?: string;
+  /**
+   * Batch default tracking mode, applied to every row that does not specify its own
+   * tracking. Chosen from the import dialog's "Tracking" dropdown.
+   */
+  readonly defaultTrackingMode?: TrackingMode;
+}
+
+/**
+ * Normalise a raw tracking cell into a {@link TrackingMode}, accepting both the enum
+ * values (`SERIALISED`) and the British-English UI labels (`Serialised`, `Bulk`,
+ * `Consumable`, `Untracked`) case-insensitively, so an inline `track: serialised` or a
+ * spreadsheet column reading "Bulk" both resolve. Returns `null` for an unknown value.
+ */
+export function normaliseTrackingMode(raw: string): TrackingMode | null {
+  const key = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]/g, '');
+  switch (key) {
+    case 'discrete':
+    case 'bulk':
+      return 'DISCRETE';
+    case 'serialised':
+    case 'serialized':
+    case 'serial':
+      return 'SERIALISED';
+    case 'consumablegauge':
+    case 'consumable':
+    case 'gauge':
+      return 'CONSUMABLE_GAUGE';
+    case 'untracked':
+    case 'none':
+      return 'UNTRACKED';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Resolve a raw location cell (an id or a name) against the known locations. An exact
+ * id match wins; otherwise a case-insensitive name match. Returns `null` when nothing
+ * matches (the caller turns that into a row error).
+ */
+function resolveLocationId(
+  raw: string,
+  byId: ReadonlyMap<string, string>,
+  byName: ReadonlyMap<string, string>,
+): string | null {
+  const trimmed = raw.trim();
+  if (byId.has(trimmed)) return trimmed;
+  return byName.get(trimmed.toLowerCase()) ?? null;
 }
 
 /**
@@ -545,6 +610,13 @@ export function buildImportPlanFromRows(
   // Field-definition lookup for validating each custom-field column's value.
   const defById = new Map(customFields.map((d) => [d.id, d]));
 
+  // Location resolution maps (id → id, lower-cased name → id). Only built when the
+  // caller supplies the known locations; otherwise location cells pass through as-is.
+  const locations = options.locations ?? [];
+  const resolveLocations = locations.length > 0;
+  const locationById = new Map(locations.map((l) => [l.id, l.id]));
+  const locationByName = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
+
   // Build fast lookup maps from existing items.
   const byName = new Map<string, Item>();
   const byMpn = new Map<string, Item>();
@@ -562,6 +634,36 @@ export function buildImportPlanFromRows(
     const row = dataRows[i]!;
 
     const raw = extractRow(row, resolvedMapping);
+
+    // Resolve the tracking mode: a supplied cell is normalised (enum or label);
+    // otherwise the batch default (if any) applies. An unknown value is a row error.
+    const rawTracking = raw.core.trackingMode ?? null;
+    if (rawTracking !== null) {
+      const mode = normaliseTrackingMode(rawTracking);
+      if (mode === null) {
+        errors.push({ sourceRow, message: `Unknown tracking mode "${rawTracking}".` });
+        continue;
+      }
+      raw.core.trackingMode = mode;
+    } else if (options.defaultTrackingMode !== undefined) {
+      raw.core.trackingMode = options.defaultTrackingMode;
+    }
+
+    // Resolve the location: a supplied cell (id or name) is resolved against the known
+    // locations; otherwise the batch default (if any) applies. An unresolvable name is
+    // a row error so the item is never silently created in the wrong place.
+    const rawLocation = raw.core.locationId ?? null;
+    if (rawLocation !== null && resolveLocations) {
+      const resolved = resolveLocationId(rawLocation, locationById, locationByName);
+      if (resolved === null) {
+        errors.push({ sourceRow, message: `Unknown location "${rawLocation}".` });
+        continue;
+      }
+      raw.core.locationId = resolved;
+    } else if (rawLocation === null && options.defaultLocationId !== undefined) {
+      raw.core.locationId = options.defaultLocationId;
+    }
+
     const coerced = coerceRow(raw.core);
 
     // Validate with Zod — collect errors, never throw.
@@ -650,6 +752,14 @@ export function buildImportPlanFromRows(
 export interface CatalogItemRepository {
   create(input: CreateItemInput): Promise<Item>;
   update(id: string, input: UpdateItemInput): Promise<Item>;
+  /**
+   * Optional bulk-create fast path: create all inputs in one atomic transaction
+   * (one commit for the whole batch). When present it is used for the plan's `create`
+   * partition, collapsing the per-row commits that make a large import slow. Returns
+   * the created items in input order. Absent on lightweight test doubles, which fall
+   * back to per-row {@link create}.
+   */
+  createMany?(inputs: readonly CreateItemInput[]): Promise<Item[]>;
 }
 
 /**
@@ -711,21 +821,49 @@ export async function applyCatalogImportPlan(
 ): Promise<CatalogApplyResult> {
   const rows: ApplyRowResult[] = [];
 
-  for (const entry of plan.create) {
+  if (repo.createMany && plan.create.length > 0) {
+    // Bulk fast path: one transaction for the whole create partition (one commit).
     try {
-      const created = await repo.create(entry.input);
-      const fieldError = await applyFieldValues(categories, created.id, entry.fieldValues);
-      rows.push({
-        sourceRow: entry.sourceRow,
-        kind: 'created',
-        ...(fieldError ? { error: fieldError } : {}),
-      });
+      const created = await repo.createMany(plan.create.map((entry) => entry.input));
+      for (let i = 0; i < plan.create.length; i += 1) {
+        const entry = plan.create[i]!;
+        const item = created[i];
+        if (!item) {
+          rows.push({ sourceRow: entry.sourceRow, kind: 'skipped', error: 'Item was not created.' });
+          continue;
+        }
+        const fieldError = await applyFieldValues(categories, item.id, entry.fieldValues);
+        rows.push({
+          sourceRow: entry.sourceRow,
+          kind: 'created',
+          ...(fieldError ? { error: fieldError } : {}),
+        });
+      }
     } catch (err) {
-      rows.push({
-        sourceRow: entry.sourceRow,
-        kind: 'skipped',
-        error: err instanceof Error ? err.message : 'Unknown error during create.',
-      });
+      // The batch is atomic: if it throws (e.g. the Hard Stop, or a constraint) no item
+      // was created, so every create row is recorded as skipped with the same reason.
+      const message = err instanceof Error ? err.message : 'Unknown error during create.';
+      for (const entry of plan.create) {
+        rows.push({ sourceRow: entry.sourceRow, kind: 'skipped', error: message });
+      }
+    }
+  } else {
+    for (const entry of plan.create) {
+      try {
+        const created = await repo.create(entry.input);
+        const fieldError = await applyFieldValues(categories, created.id, entry.fieldValues);
+        rows.push({
+          sourceRow: entry.sourceRow,
+          kind: 'created',
+          ...(fieldError ? { error: fieldError } : {}),
+        });
+      } catch (err) {
+        rows.push({
+          sourceRow: entry.sourceRow,
+          kind: 'skipped',
+          error: err instanceof Error ? err.message : 'Unknown error during create.',
+        });
+      }
     }
   }
 

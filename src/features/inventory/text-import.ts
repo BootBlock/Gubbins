@@ -179,13 +179,24 @@ export function detectImportFormat(text: string): ImportFormat {
 // Free-form line parsing
 // ---------------------------------------------------------------------------
 
-/** One item recovered from a free-form line. */
+/**
+ * One item recovered from a free-form line. `sku` is always present (null when
+ * unlabelled); the batch-oriented `manufacturer` / `location` / `trackingMode`
+ * fields are only present when the line labels them, so a bare name stays the
+ * minimal `{ name, quantity, sku }` shape.
+ */
 export interface FreeformItem {
   readonly name: string;
   /** Extracted quantity; defaults to 1 when none is recognised. */
   readonly quantity: number;
   /** Extracted SKU / part number, or `null` when none was labelled. */
   readonly sku: string | null;
+  /** Labelled manufacturer (`manu:` / `manufacturer:`), when present. */
+  readonly manufacturer?: string;
+  /** Labelled location *name* (`loc:` / `location:`), when present. */
+  readonly location?: string;
+  /** Labelled tracking mode (`track:` / `tracking:`) — enum or label, when present. */
+  readonly trackingMode?: string;
 }
 
 /** Parse a non-negative integer, or `null` if the text is not a clean integer. */
@@ -194,20 +205,43 @@ function toCount(text: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** A labelled SKU / part number anywhere in the line ("sku: X", "MPN #Y", "P/N Z"). */
-const SKU_PATTERN = /\b(?:sku|mpn|p\/n|pn|part(?:\s*(?:no\.?|number|#))?)\s*[:#]\s*(\S+)/i;
+/** The logical fields an inline `key: value` label can target. */
+type LabelField = 'sku' | 'manufacturer' | 'location' | 'trackingMode' | 'quantity';
+
+/**
+ * Recognised inline labels, matched anywhere in a line as `key: value` (also `=` or
+ * `#` as the separator). A label's value runs to the start of the *next* label, or to
+ * the end of the line — so multi-word values (a manufacturer, a location name) are
+ * captured whole. Single-token fields (SKU, tracking) keep only the first token of
+ * their value and integer fields (quantity) keep the first number, so any trailing
+ * shorthand is not swallowed.
+ *
+ * Longest alternatives are listed first, and every keyword must be followed by a
+ * separator, so `q:` never shadows `quantity:` and a word like "Manual" (no colon)
+ * is never mistaken for `manu:`.
+ */
+const LABEL_SCAN =
+  /\b(manufacturer|manu|location|loc|tracking|track|quantity|qty|sku|mpn|p\/n|pn|part\s*(?:no\.?|number)?|count|amount|q)\s*[:=#]/gi;
+
+/** Map a matched label keyword to its logical {@link LabelField}. */
+function labelFieldOf(keyword: string): LabelField {
+  const k = keyword.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (k === 'manufacturer' || k === 'manu') return 'manufacturer';
+  if (k === 'location' || k === 'loc') return 'location';
+  if (k === 'tracking' || k === 'track') return 'trackingMode';
+  if (k === 'quantity' || k === 'qty' || k === 'q' || k === 'count' || k === 'amount') return 'quantity';
+  return 'sku'; // sku / mpn / pn / p/n / part…
+}
 
 /** A leading multiplier: "50x Widget", "50 × Widget", "50 * Widget". */
 const LEADING_QTY = /^\s*(\d+)\s*[x×*]\s+/i;
 
 /**
  * Trailing quantity shorthands, tried in order. Each captures the count in group 1
- * and, crucially, is anchored to the end of the (SKU-stripped) line so removing the
+ * and, crucially, is anchored to the end of the (label-stripped) line so removing the
  * match leaves a clean name.
  */
 const TRAILING_QTY_PATTERNS: readonly RegExp[] = [
-  // "… qty: 50", "… (quantity = 50)", "… count 50"
-  /[\s,([]*(?:qty|quantity|count|amount)\s*[:=]?\s*(\d+)\s*[)\]]?\s*$/i,
   // "… x50", "… × 50", "… *50" (a space must precede the multiplier)
   /\s[x×*]\s*(\d+)\s*$/i,
   // "… [50]" / "… (50)"
@@ -224,17 +258,74 @@ function cleanName(text: string): string {
     .trim();
 }
 
-/** Pull a labelled SKU out of the line, returning it and the remaining text. */
-function extractSku(input: string): { sku: string | null; rest: string } {
-  const m = SKU_PATTERN.exec(input);
-  if (m && m.index !== undefined) {
-    return { sku: m[1]!, rest: input.slice(0, m.index) + input.slice(m.index + m[0].length) };
-  }
-  return { sku: null, rest: input };
+/** The first whitespace-delimited token of a value, or `null` when it is blank. */
+function firstToken(value: string): string | null {
+  const token = value.trim().split(/\s+/)[0];
+  return token && token.length > 0 ? token : null;
 }
 
-/** Pull a quantity out of the line, returning it and the remaining text. */
-function extractQuantity(input: string): { quantity: number; rest: string } {
+/** The labelled fields pulled from a line, plus the leading "head" before them. */
+interface LabelledFields {
+  readonly head: string;
+  readonly sku: string | null;
+  readonly manufacturer: string | null;
+  readonly location: string | null;
+  readonly trackingMode: string | null;
+  readonly quantity: number | null;
+}
+
+/**
+ * Extract every inline `key: value` label from a line. The returned `head` is the
+ * text before the first label (the item name plus any quantity shorthand); each
+ * field holds the first labelled occurrence (first wins). Fields with no label are
+ * `null`.
+ */
+function extractLabelledFields(input: string): LabelledFields {
+  const matches = [...input.matchAll(LABEL_SCAN)];
+  if (matches.length === 0) {
+    return { head: input, sku: null, manufacturer: null, location: null, trackingMode: null, quantity: null };
+  }
+
+  let sku: string | null = null;
+  let manufacturer: string | null = null;
+  let location: string | null = null;
+  let trackingMode: string | null = null;
+  let quantity: number | null = null;
+
+  for (let i = 0; i < matches.length; i += 1) {
+    const m = matches[i]!;
+    const field = labelFieldOf(m[1]!);
+    const valueStart = m.index + m[0].length;
+    const valueEnd = i + 1 < matches.length ? matches[i + 1]!.index : input.length;
+    const value = input.slice(valueStart, valueEnd).trim();
+
+    switch (field) {
+      case 'sku':
+        sku ??= firstToken(value);
+        break;
+      case 'manufacturer':
+        if (manufacturer === null && value.length > 0) manufacturer = value;
+        break;
+      case 'location':
+        if (location === null && value.length > 0) location = value;
+        break;
+      case 'trackingMode':
+        trackingMode ??= firstToken(value);
+        break;
+      case 'quantity':
+        if (quantity === null) quantity = toCount(value.match(/\d+/)?.[0] ?? '');
+        break;
+    }
+  }
+
+  // The head is everything before the first label; drop a dangling opener (e.g. the
+  // "(" in "Widget (qty: 5)") so the name does not keep a stray bracket.
+  const head = input.slice(0, matches[0]!.index).replace(/[([{]\s*$/, '');
+  return { head, sku, manufacturer, location, trackingMode, quantity };
+}
+
+/** Pull a shorthand quantity out of the head text, or `null` when none is present. */
+function extractQuantityShorthand(input: string): { quantity: number | null; rest: string } {
   const lead = LEADING_QTY.exec(input);
   if (lead) {
     const qty = toCount(lead[1]!);
@@ -249,30 +340,42 @@ function extractQuantity(input: string): { quantity: number; rest: string } {
       }
     }
   }
-  return { quantity: 1, rest: input };
+  return { quantity: null, rest: input };
 }
 
 /**
  * Best-effort parse of a single free-form line into a {@link FreeformItem}. Returns
- * `null` for a blank line. SKU is extracted first (so a number inside a part code is
- * not mistaken for a quantity), then a quantity shorthand, and whatever remains is
- * the item name. A line that is *only* a quantity/SKU falls back to using the raw
- * line as the name so nothing is silently dropped.
+ * `null` for a blank line. Inline labels (`sku:`, `manu:`, `loc:`, `track:`, `q:`) are
+ * extracted first — so a number inside a part code is never mistaken for a quantity —
+ * then a quantity shorthand from what precedes them, and whatever remains is the item
+ * name. Quantity defaults to 1 (an item is unlikely to be added with none). A line
+ * that is *only* labels falls back to the raw line as the name so nothing is dropped.
  */
 export function parseFreeformLine(line: string): FreeformItem | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
 
-  const { sku, rest: afterSku } = extractSku(trimmed);
-  const { quantity, rest: afterQty } = extractQuantity(afterSku);
-  const name = cleanName(afterQty);
+  const labelled = extractLabelledFields(trimmed);
 
+  // Always strip a shorthand quantity from the head so it never leaks into the name,
+  // but a labelled quantity (`q:`) takes precedence over the shorthand's value.
+  const shorthand = extractQuantityShorthand(labelled.head);
+  const quantity = labelled.quantity ?? shorthand.quantity;
+  const rest = shorthand.rest;
+
+  const extras = {
+    ...(labelled.manufacturer !== null ? { manufacturer: labelled.manufacturer } : {}),
+    ...(labelled.location !== null ? { location: labelled.location } : {}),
+    ...(labelled.trackingMode !== null ? { trackingMode: labelled.trackingMode } : {}),
+  };
+
+  const name = cleanName(rest);
   if (name.length === 0) {
     const fallback = cleanName(trimmed);
     if (fallback.length === 0) return null;
-    return { name: fallback, quantity: 1, sku };
+    return { name: fallback, quantity: quantity ?? 1, sku: labelled.sku, ...extras };
   }
-  return { name, quantity, sku };
+  return { name, quantity: quantity ?? 1, sku: labelled.sku, ...extras };
 }
 
 /** Parse a whole block of free-form text into items, one per non-blank line. */
@@ -374,9 +477,16 @@ function parseMarkdownRows(text: string): { headerRow: string[]; dataRows: strin
 // ---------------------------------------------------------------------------
 
 /** The canonical columns synthesised for a free-form line list. */
-const LINES_HEADER: readonly string[] = ['name', 'quantity', 'sku'];
-const LINES_COLUMNS: readonly string[] = ['Name', 'Quantity', 'SKU'];
-const LINES_MAPPING: ColumnMapping = ['name', 'quantity', 'sku'];
+const LINES_HEADER: readonly string[] = ['name', 'quantity', 'sku', 'manufacturer', 'location', 'tracking'];
+const LINES_COLUMNS: readonly string[] = ['Name', 'Quantity', 'SKU', 'Manufacturer', 'Location', 'Tracking'];
+const LINES_MAPPING: ColumnMapping = [
+  'name',
+  'quantity',
+  'sku',
+  'manufacturer',
+  'locationId',
+  'trackingMode',
+];
 
 /** The normalised, parse-ready form of an import: a header + data-row matrix. */
 export interface ImportExtraction {
@@ -452,10 +562,16 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
   const hasHeader = options.hasHeader ?? true;
 
   if (format === 'lines') {
+    // A line list defaults each item to quantity 1 (a new item is unlikely to be
+    // added with none) and carries any inline manufacturer / location / tracking
+    // through to the shared plan builder via the synthetic columns.
     const dataRows = parseFreeformText(text).map((item) => [
       item.name,
-      item.quantity === 1 && !hasExplicitQuantity(item) ? '' : String(item.quantity),
+      String(item.quantity),
       item.sku ?? '',
+      item.manufacturer ?? '',
+      item.location ?? '',
+      item.trackingMode ?? '',
     ]);
     return {
       format,
@@ -496,17 +612,6 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
   return tabularExtraction(format, syntheticHeaders(width), allRows, customFields);
 }
 
-/**
- * Whether a free-form item's quantity was explicitly recognised (as opposed to the
- * default of 1). We can't tell from the {@link FreeformItem} alone, so we treat a
- * quantity of exactly 1 as "unspecified" and leave the cell blank, letting the
- * catalogue default (0 on create, unchanged on update) apply — this avoids silently
- * writing "1" over an existing quantity when a bare name is imported.
- */
-function hasExplicitQuantity(item: FreeformItem): boolean {
-  return item.quantity !== 1;
-}
-
 // ---------------------------------------------------------------------------
 // Plan building + preview
 // ---------------------------------------------------------------------------
@@ -532,13 +637,14 @@ export interface ImportPreviewRow {
   readonly name: string;
   readonly quantity: string;
   readonly sku: string;
+  readonly manufacturer: string;
   readonly status: 'create' | 'update' | 'error';
   /** Present when `status === 'error'`. */
   readonly message?: string;
 }
 
 /** First column index whose mapping targets the given core field, or `-1`. */
-function indexOfField(mapping: ColumnMapping, field: 'name' | 'quantity' | 'sku'): number {
+function indexOfField(mapping: ColumnMapping, field: 'name' | 'quantity' | 'sku' | 'manufacturer'): number {
   return mapping.findIndex((m) => m === field);
 }
 
@@ -561,6 +667,7 @@ export function buildPreviewRows(
   const nameIdx = indexOfField(mapping, 'name');
   const qtyIdx = indexOfField(mapping, 'quantity');
   const skuIdx = indexOfField(mapping, 'sku');
+  const manuIdx = indexOfField(mapping, 'manufacturer');
   const cell = (row: readonly string[], idx: number) => (idx >= 0 ? (row[idx] ?? '').trim() : '');
 
   return dataRows.map((row, i) => {
@@ -571,6 +678,7 @@ export function buildPreviewRows(
       name: cell(row, nameIdx),
       quantity: cell(row, qtyIdx),
       sku: cell(row, skuIdx),
+      manufacturer: cell(row, manuIdx),
       status: outcome.status,
       ...(outcome.message ? { message: outcome.message } : {}),
     };

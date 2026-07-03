@@ -18,6 +18,7 @@ import {
   isCustomFieldTarget,
   buildCatalogImportPlan,
   applyCatalogImportPlan,
+  normaliseTrackingMode,
   type CatalogItemRepository,
   type ColumnMapping,
 } from './catalog-import';
@@ -478,6 +479,107 @@ describe('applyCatalogImportPlan — stub repository', () => {
     expect(result.created).toBe(0);
     expect(result.skipped).toBe(1);
     expect(result.rows[0]!.error).toMatch(/simulated/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyCatalogImportPlan — bulk fast path (createMany)
+// ---------------------------------------------------------------------------
+
+describe('applyCatalogImportPlan — bulk create fast path', () => {
+  it('creates the whole partition in a single createMany call', async () => {
+    const csv = 'name,quantity\r\nA,1\r\nB,2\r\nC,3\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    const batchSizes: number[] = [];
+    let n = 0;
+
+    const stub: CatalogItemRepository = {
+      create: async () => {
+        throw new Error('per-row create must not be used when createMany exists');
+      },
+      update: async () => {
+        throw new Error('no updates');
+      },
+      createMany: async (inputs) => {
+        batchSizes.push(inputs.length);
+        return inputs.map((input) => stubItem(`gen-${n++}`, input.name));
+      },
+    };
+
+    const result = await applyCatalogImportPlan(plan, stub);
+    expect(batchSizes).toEqual([3]); // one commit for all three rows
+    expect(result.created).toBe(3);
+    expect(result.skipped).toBe(0);
+  });
+
+  it('skips every create row when the atomic batch throws', async () => {
+    const csv = 'name\r\nX\r\nY\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+
+    const stub: CatalogItemRepository = {
+      create: async () => {
+        throw new Error('unused');
+      },
+      update: async () => {
+        throw new Error('unused');
+      },
+      createMany: async () => {
+        throw new Error('WRITE_SUSPENDED: writes are suspended');
+      },
+    };
+
+    const result = await applyCatalogImportPlan(plan, stub);
+    expect(result.created).toBe(0);
+    expect(result.skipped).toBe(2);
+    expect(result.rows.every((r) => /suspended/i.test(r.error ?? ''))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tracking-mode normalisation + location / tracking plan options
+// ---------------------------------------------------------------------------
+
+describe('normaliseTrackingMode', () => {
+  it('accepts enum values and UI labels, case-insensitively', () => {
+    expect(normaliseTrackingMode('SERIALISED')).toBe('SERIALISED');
+    expect(normaliseTrackingMode('serialised')).toBe('SERIALISED');
+    expect(normaliseTrackingMode('Bulk')).toBe('DISCRETE');
+    expect(normaliseTrackingMode('discrete')).toBe('DISCRETE');
+    expect(normaliseTrackingMode('Consumable')).toBe('CONSUMABLE_GAUGE');
+    expect(normaliseTrackingMode('Untracked')).toBe('UNTRACKED');
+  });
+
+  it('returns null for an unrecognised value', () => {
+    expect(normaliseTrackingMode('nonsense')).toBeNull();
+  });
+});
+
+describe('buildCatalogImportPlan — location & tracking options', () => {
+  it('resolves a location name to its id and applies a default tracking mode', () => {
+    const csv = 'name,location\r\nWidget,Workshop\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [{ id: 'loc-1', name: 'Workshop' }],
+      defaultTrackingMode: 'SERIALISED',
+    });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('loc-1');
+    expect(plan.create[0]!.input.trackingMode).toBe('SERIALISED');
+  });
+
+  it('applies the default location to a row without one', () => {
+    const csv = 'name\r\nWidget\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { defaultLocationId: 'loc-9' });
+    expect(plan.create[0]!.input.locationId).toBe('loc-9');
+  });
+
+  it('flags an unknown location name as a row error', () => {
+    const csv = 'name,location\r\nWidget,Nowhere\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [{ id: 'loc-1', name: 'Workshop' }],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Unknown location/);
   });
 });
 
