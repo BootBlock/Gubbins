@@ -287,7 +287,7 @@ export function Tooltip({
                 // hairline inset highlight so it reads as a pane catching light rather than a
                 // flat dark box. `overflow-hidden` clips the sheen + scroll region to the
                 // rounded corners.
-                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/60 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110',
+                'z-[60] overflow-hidden rounded-xl border border-border bg-popover/45 shadow-2xl shadow-black/40 ring-1 ring-inset ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110',
                 'before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-glass-sheen before:to-transparent',
                 SIZE_MAX_WIDTH[size],
                 !reducedMotion && 'animate-fade-in',

@@ -108,4 +108,30 @@ describe('Markdown renderer', () => {
     const { container } = render(<Markdown content={'#### Deep'} />);
     expect(container.querySelector('h6')?.textContent).toBe('Deep');
   });
+
+  it('honours backslash escapes for literal markers', () => {
+    const { container } = render(<Markdown content={'2 \\* 3 and \\`code\\` and a \\| pipe'} />);
+    // The escaped asterisk/backticks/pipe must survive as literal text, un-parsed.
+    expect(container.querySelector('em')).toBeNull();
+    expect(container.querySelector('code')).toBeNull();
+    expect(container.textContent).toBe('2 * 3 and `code` and a | pipe');
+  });
+
+  it('auto-links a bare URL and peels trailing punctuation', () => {
+    render(<Markdown content="See https://example.com/docs. Thanks." />);
+    const link = screen.getByRole('link', { name: /example\.com\/docs/ });
+    expect(link).toHaveAttribute('href', 'https://example.com/docs');
+    // The trailing full stop is text, not part of the link.
+    expect(link).not.toHaveAttribute('href', 'https://example.com/docs.');
+    expect(screen.getByText(/Thanks\./)).toBeInTheDocument();
+  });
+
+  it('marks external links with an aria-hidden ↗ affordance but not in-app links', () => {
+    render(<Markdown content="[out](https://example.com) and [in](/inventory)" />);
+    const external = screen.getByRole('link', { name: 'out' });
+    const internal = screen.getByRole('link', { name: 'in' });
+    // The arrow is decorative (aria-hidden) so the accessible name stays clean.
+    expect(external.querySelector('[aria-hidden]')?.textContent).toBe('↗');
+    expect(internal.querySelector('[aria-hidden]')).toBeNull();
+  });
 });
