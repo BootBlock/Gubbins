@@ -13,7 +13,10 @@
  * explicit, logged choice.
  */
 import os from 'node:os';
-import { isLanExposed, loadConfig, type Env } from './config.ts';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { isLanExposed, loadConfig, type BridgeConfig, type Env } from './config.ts';
 import { createBridgeServer } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { createWriteExecutor } from './write.ts';
@@ -23,6 +26,9 @@ import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
+import { createEventPipeline, type EventSink } from './events/pipeline.ts';
+import { createSseHub, type SseHub } from './events/sse.ts';
+import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
 import type { Server } from 'node:http';
 
 export interface RunningBridge {
@@ -36,10 +42,24 @@ export interface RunningBridge {
 export async function startBridge(env: Env = process.env): Promise<RunningBridge> {
   const config = loadConfig(env);
 
+  // EI-1 events / webhooks / SSE (opt-in). The stream + webhooks share one event pipeline: the
+  // SSE hub and the webhook deliverer are just sinks. When neither is enabled, nothing is wired
+  // and `GET /api/v1/events` is a 404 (the feature is invisible).
+  const sinks: EventSink[] = [];
+  const sseHub: SseHub | undefined = config.events ? createSseHub() : undefined;
+  if (sseHub) sinks.push(sseHub);
+  const webhookTargets = config.webhooks ? loadWebhookTargets(config) : [];
+  if (webhookTargets.length > 0) sinks.push(createWebhookDeliverer({ targets: webhookTargets }));
+  const pipeline = config.events ? createEventPipeline({ sinks }) : undefined;
+
   const watcher = createSnapshotWatcher({
     snapshotPath: config.snapshotPath,
-    onReload: (state) =>
-      console.log(`Snapshot loaded (generated ${state.snapshotGeneratedAt ?? 'unknown'}).`),
+    onReload: async (state) => {
+      console.log(`Snapshot loaded (generated ${state.snapshotGeneratedAt ?? 'unknown'}).`);
+      // The pipeline reads the just-swapped driver (guaranteed live because the watcher awaits
+      // this hook) and fans any new events to the sinks. It never throws.
+      if (pipeline) await pipeline.onGeneration(state.driver);
+    },
     onError: (error) => console.error(`Snapshot reload failed: ${error.message}`),
   });
   await watcher.start();
@@ -67,6 +87,8 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     rateLimiter,
     write,
     push,
+    // Present only when events are enabled → `GET /api/v1/events` streams; otherwise a 404.
+    events: sseHub,
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -109,11 +131,29 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   } else {
     console.log('Snapshot push: disabled. Set GUBBINS_BRIDGE_ALLOW_PUSH=on to enable.');
   }
+  if (config.webhooks) {
+    console.warn(
+      `Webhooks ENABLED (GUBBINS_BRIDGE_WEBHOOKS=on): ${webhookTargets.length} target(s). Each event is ` +
+        'POSTed with an HMAC-SHA256 X-Gubbins-Signature.' +
+        (webhookTargets.length === 0
+          ? ' No targets configured — set GUBBINS_BRIDGE_WEBHOOKS_FILE or _TARGETS (nothing will be sent).'
+          : ''),
+    );
+  }
+  if (config.events) {
+    console.log('Event stream available at GET /api/v1/events (SSE, read-only, same bearer token).');
+  } else {
+    console.log(
+      'Events/webhooks: disabled. Set GUBBINS_BRIDGE_EVENTS=on for the SSE stream, or ' +
+        'GUBBINS_BRIDGE_WEBHOOKS=on for outbound webhooks.',
+    );
+  }
 
   const mdns = await maybeStartMdns(config);
 
   const shutdown = (): void => {
     void mdns?.stop();
+    sseHub?.close();
     void watcher.stop();
     server.close();
   };
@@ -154,6 +194,45 @@ async function maybeStartMdns(
   });
   await advertiser.start();
   return advertiser;
+}
+
+/**
+ * Load the webhook targets from the inline env JSON (`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`, which
+ * wins) or the git-ignored file (`GUBBINS_BRIDGE_WEBHOOKS_FILE`, default `webhooks.json`).
+ * Best-effort: a missing file or a malformed list logs a **secret-free** warning and yields no
+ * targets rather than aborting startup. Never logs the file's contents (they carry secrets).
+ */
+function loadWebhookTargets(config: BridgeConfig): WebhookTarget[] {
+  try {
+    if (config.webhooksInline !== undefined) {
+      return parseWebhookTargets(JSON.parse(config.webhooksInline));
+    }
+    // Default to `webhooks.json` in the bridge package (resolved from this module, not the cwd),
+    // so it always lands in the git-ignored `bridge/webhooks.json` — never somewhere committable —
+    // regardless of the directory the bridge is launched from. An explicit file path is honoured as-is.
+    const file =
+      config.webhooksFile !== undefined
+        ? path.resolve(config.webhooksFile)
+        : fileURLToPath(new URL('../webhooks.json', import.meta.url));
+    let text: string;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch {
+      console.warn(
+        `Webhooks enabled but no target file found at ${file} (and no GUBBINS_BRIDGE_WEBHOOKS_TARGETS). ` +
+          'No webhooks will be sent until you add one.',
+      );
+      return [];
+    }
+    return parseWebhookTargets(JSON.parse(text));
+  } catch (err) {
+    // The parse errors are secret-free by construction; still, we only surface the message.
+    console.error(
+      `Failed to load webhook targets: ${err instanceof Error ? err.message : String(err)}. ` +
+        'No webhooks will be sent.',
+    );
+    return [];
+  }
 }
 
 startBridge().catch((error: unknown) => {

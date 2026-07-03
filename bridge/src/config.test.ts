@@ -24,7 +24,38 @@ describe('loadConfig (HA-3)', () => {
       allowWrites: false,
       allowPush: false,
       maxPushBytes: DEFAULT_MAX_PUSH_BYTES,
+      events: false,
+      webhooks: false,
+      webhooksFile: undefined,
+      webhooksInline: undefined,
     });
+  });
+
+  it('keeps events + webhooks off by default and opts in explicitly', () => {
+    expect(loadConfig(VALID).events).toBe(false);
+    expect(loadConfig(VALID).webhooks).toBe(false);
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_EVENTS: 'on' }).events).toBe(true);
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_WEBHOOKS: 'on' }).webhooks).toBe(true);
+  });
+
+  it('enabling webhooks implies the event stream (shared pipeline)', () => {
+    const config = loadConfig({ ...VALID, GUBBINS_BRIDGE_WEBHOOKS: 'on' });
+    expect(config.webhooks).toBe(true);
+    expect(config.events).toBe(true);
+  });
+
+  it('carries the webhook target sources without inlining a secret into config shape', () => {
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_WEBHOOKS: 'on',
+      GUBBINS_BRIDGE_WEBHOOKS_FILE: '/tmp/synthetic/webhooks.json',
+    });
+    expect(config.webhooksFile).toBe('/tmp/synthetic/webhooks.json');
+    expect(config.webhooksInline).toBeUndefined();
+  });
+
+  it('rejects a non-boolean events flag', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_EVENTS: 'perhaps' })).toThrow(/GUBBINS_BRIDGE_EVENTS/);
   });
 
   it('keeps writes off by default and opts in only when explicitly enabled', () => {

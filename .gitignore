@@ -51,5 +51,12 @@ __pycache__/
 .env.*
 !.env.example
 
+# Bridge webhook targets — carry per-target signing secrets; keep the example only.
+bridge/webhooks.json
+bridge/webhooks.*.json
+!bridge/webhooks.example.json
+# Belt-and-braces: a root-level webhooks.json (if the bridge is ever run from the repo root).
+/webhooks.json
+
 # Local browser-smoke artefact
 scripts/.smoke-screenshot.png

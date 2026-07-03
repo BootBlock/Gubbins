@@ -72,6 +72,12 @@ export interface ApiV1Context {
    * the discovery index can report `pushable`.
    */
   readonly push?: PushCapability;
+  /**
+   * Whether the opt-in event stream is enabled (`GUBBINS_BRIDGE_EVENTS=on`, or implied by
+   * webhooks). The `GET /api/v1/events` connection itself is handled in `server.ts` (it holds
+   * the socket open); this flag is threaded through only so the discovery index can advertise it.
+   */
+  readonly streamable?: boolean;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
 }
@@ -92,7 +98,11 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
 
   // Static, state-independent endpoints first.
   if (segments.length === 0) {
-    return void sendJson(res, 200, apiIndex(ctx.write !== undefined, ctx.push !== undefined));
+    return void sendJson(
+      res,
+      200,
+      apiIndex(ctx.write !== undefined, ctx.push !== undefined, ctx.streamable === true),
+    );
   }
   if (segments.length === 1 && segments[0] === 'openapi.json') {
     return void sendJson(res, 200, openapiDocument);
@@ -214,7 +224,7 @@ function parseAdjustBody(
 
 // --- meta -------------------------------------------------------------------------
 
-function apiIndex(writable: boolean, pushable: boolean): unknown {
+function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): unknown {
   return {
     name: 'Gubbins Bridge API',
     version: '1.0.0',
@@ -223,6 +233,8 @@ function apiIndex(writable: boolean, pushable: boolean): unknown {
     writable,
     /** Whether this bridge has the opt-in snapshot-ingest endpoint enabled (PWA "push to bridge"). */
     pushable,
+    /** Whether this bridge has the opt-in read-only SSE event stream enabled. */
+    streamable,
     endpoints: [
       `${API_V1_BASE}/openapi.json`,
       `${API_V1_BASE}/$metadata`,
@@ -242,6 +254,7 @@ function apiIndex(writable: boolean, pushable: boolean): unknown {
         ? [`POST ${API_V1_BASE}/items/{id}/adjust-quantity`, `POST ${API_V1_BASE}/items/{id}/adjust-gauge`]
         : []),
       ...(pushable ? [`POST ${API_V1_BASE}/snapshot`] : []),
+      ...(streamable ? [`${API_V1_BASE}/events`] : []),
     ],
   };
 }

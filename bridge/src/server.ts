@@ -68,6 +68,19 @@ export interface PushCapability {
   readonly ingest: (body: AsyncIterable<Uint8Array>) => Promise<PushSummary>;
 }
 
+/** The read-only SSE event stream path (`GET /api/v1/events`); opt-in, present only when events are enabled. */
+export const API_V1_EVENTS_PATH = `${API_V1_BASE}/events`;
+
+/**
+ * The opt-in **event stream** capability (`GUBBINS_BRIDGE_EVENTS=on`, or implied by
+ * `GUBBINS_BRIDGE_WEBHOOKS=on`). Its presence is the runtime gate: when absent, `GET
+ * /api/v1/events` is a `404` (the feature is invisible). `handleConnection` upgrades the
+ * request to a long-lived `text/event-stream` — see `events/sse.ts`. Strictly read-only.
+ */
+export interface EventStreamCapability {
+  readonly handleConnection: (req: IncomingMessage, res: ServerResponse, url: URL) => void;
+}
+
 /** A parsed request body: a successfully-parsed JSON value, or a marker that parsing failed. */
 export type ParsedBody = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
@@ -104,6 +117,12 @@ export interface BridgeServerOptions {
    * Independent of {@link write}.
    */
   readonly push?: PushCapability;
+  /**
+   * The opt-in read-only event-stream capability (`GUBBINS_BRIDGE_EVENTS=on`, or implied by
+   * `GUBBINS_BRIDGE_WEBHOOKS=on`). Omit to keep `GET /api/v1/events` a `404` (the SSE stream is
+   * then unavailable). Read-only — it never mutates inventory.
+   */
+  readonly events?: EventStreamCapability;
 }
 
 /**
@@ -211,6 +230,7 @@ export async function handleRequest(
         getState: options.getState,
         write: options.write,
         push: options.push,
+        streamable: options.events !== undefined,
         body,
       });
       return;
@@ -219,12 +239,21 @@ export async function handleRequest(
     // GET: no body to consume — drain anything sent so the socket closes cleanly.
     req.resume();
 
+    // The SSE event stream is a long-lived response that needs the raw request (socket + close
+    // events), so it is handled here rather than through the res-only v1 router. When events are
+    // not enabled this falls through and the router answers 404 (the feature is invisible).
+    if (options.events && url.pathname === API_V1_EVENTS_PATH) {
+      options.events.handleConnection(req, res, url);
+      return;
+    }
+
     if (v1) {
       await handleApiV1(res, url, {
         method: 'GET',
         getState: options.getState,
         write: options.write,
         push: options.push,
+        streamable: options.events !== undefined,
       });
       return;
     }

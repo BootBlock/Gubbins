@@ -24,6 +24,14 @@
  *                                  "push to bridge"). OFF by default, independent of writes.
  *   GUBBINS_BRIDGE_MAX_PUSH_BYTES (optional) — hard cap on a pushed snapshot's size in bytes;
  *                                  defaults to {@link DEFAULT_MAX_PUSH_BYTES} (64 MiB).
+ *   GUBBINS_BRIDGE_EVENTS         (optional) — enable the read-only SSE event stream at
+ *                                  GET /api/v1/events. Off by default; implied by _WEBHOOKS.
+ *   GUBBINS_BRIDGE_WEBHOOKS       (optional) — enable opt-in signed outbound webhooks. Off by
+ *                                  default; also lights up the event stream (shared pipeline).
+ *   GUBBINS_BRIDGE_WEBHOOKS_FILE  (optional) — path to the git-ignored JSON webhook-target list
+ *                                  (default `webhooks.json`); the target SECRETS live only here.
+ *   GUBBINS_BRIDGE_WEBHOOKS_TARGETS (optional) — inline JSON target list (wins over the file);
+ *                                  carries secrets, so keep it in the git-ignored .env only.
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 
@@ -84,6 +92,32 @@ export interface BridgeConfig {
   readonly allowPush: boolean;
   /** Hard cap (bytes) on a pushed snapshot body. Defaults to {@link DEFAULT_MAX_PUSH_BYTES}. */
   readonly maxPushBytes: number;
+  /**
+   * Whether the operator opted into the read-only **event stream** (`GUBBINS_BRIDGE_EVENTS=on`)
+   * — the EI-1 `GET /api/v1/events` SSE feed. **Off by default.** Also implied by {@link webhooks}
+   * (webhook delivery reuses the same event pipeline, so enabling webhooks lights up the stream
+   * too). When neither is on, `GET /api/v1/events` is a `404`. Read-only; carries no secret.
+   */
+  readonly events: boolean;
+  /**
+   * Whether the operator opted into **outbound webhooks** (`GUBBINS_BRIDGE_WEBHOOKS=on`).
+   * **Off by default.** When on, each event is POSTed (HMAC-signed) to every configured target;
+   * the targets + their secrets come from {@link webhooksFile} or {@link webhooksInline}, never
+   * from a committed file. Read-only w.r.t. inventory (a webhook never mutates data).
+   */
+  readonly webhooks: boolean;
+  /**
+   * Path to the git-ignored JSON file listing the webhook targets (`GUBBINS_BRIDGE_WEBHOOKS_FILE`);
+   * `undefined` falls back to `webhooks.json` in the working directory. Only read when
+   * {@link webhooks} is on. The **secrets live only in this file** (or {@link webhooksInline}).
+   */
+  readonly webhooksFile: string | undefined;
+  /**
+   * Inline JSON webhook-target list (`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`), for operators who prefer
+   * env-only config; when set it wins over {@link webhooksFile}. Carries the target secrets, so it
+   * belongs in the git-ignored `.env` only.
+   */
+  readonly webhooksInline: string | undefined;
 }
 
 /** The subset of the environment we read; `process.env`-shaped for easy injection in tests. */
@@ -109,6 +143,11 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const mdnsInstanceName = (env.GUBBINS_BRIDGE_MDNS_NAME ?? '').trim() || undefined;
   const allowWrites = parseBool(env.GUBBINS_BRIDGE_ALLOW_WRITES, false, 'GUBBINS_BRIDGE_ALLOW_WRITES');
   const allowPush = parseBool(env.GUBBINS_BRIDGE_ALLOW_PUSH, false, 'GUBBINS_BRIDGE_ALLOW_PUSH');
+  const webhooks = parseBool(env.GUBBINS_BRIDGE_WEBHOOKS, false, 'GUBBINS_BRIDGE_WEBHOOKS');
+  // The event stream is on when explicitly enabled OR implied by webhooks (they share the pipeline).
+  const events = parseBool(env.GUBBINS_BRIDGE_EVENTS, false, 'GUBBINS_BRIDGE_EVENTS') || webhooks;
+  const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
+  const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
   const maxPushBytes = Math.floor(
     parsePositive(
       env.GUBBINS_BRIDGE_MAX_PUSH_BYTES,
@@ -131,6 +170,10 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     allowWrites,
     allowPush,
     maxPushBytes,
+    events,
+    webhooks,
+    webhooksFile,
+    webhooksInline,
   };
 }
 
