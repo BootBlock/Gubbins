@@ -92,6 +92,43 @@ export async function readAllImages(): Promise<OpfsImageFile[]> {
 }
 
 /**
+ * List the bare filenames of every full-resolution image file in OPFS, without
+ * reading any bytes (cheap directory metadata only). Used by the Database
+ * Maintenance orphan sweep to find raw files no `item_images` row points at (left
+ * behind if a DB write failed after the OPFS file landed — see the media pipeline).
+ * Returns `null` when OPFS or the async-iterable directory handle is unavailable
+ * (e.g. happy-dom), so the caller can report "unsupported" rather than delete
+ * against an empty list. An absent `images/` directory is an empty list (`[]`).
+ */
+export async function listImageFilenames(): Promise<string[] | null> {
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await imagesDirectory(false);
+  } catch {
+    // Absent images/ directory (nothing stored yet) reads as an empty sweep, but only
+    // if OPFS itself is available — otherwise we must report "unsupported" (null) so the
+    // caller never deletes against a falsely-empty list.
+    try {
+      await navigator.storage.getDirectory();
+      return [];
+    } catch {
+      return null;
+    }
+  }
+  const iterable = (
+    dir as unknown as {
+      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+    }
+  ).entries;
+  if (typeof iterable !== 'function') return null;
+  const names: string[] = [];
+  for await (const [name, handle] of iterable.call(dir)) {
+    if (handle.kind === 'file') names.push(name);
+  }
+  return names;
+}
+
+/**
  * Sum the real on-disk size (bytes) of every full-resolution image file in OPFS, for
  * a *truer* Storage-Triage estimate than the row-count heuristic (spec §7.6.2). Reads
  * only each file's `size` (cheap metadata — no byte copy into memory). Returns `null`

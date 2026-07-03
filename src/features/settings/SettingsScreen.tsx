@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
+import { DatabaseMaintenance } from '@/features/maintenance';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
@@ -422,6 +423,8 @@ export function SettingsScreen() {
             </Link>
           </SettingRow>
         </SettingsSection>
+
+        <DatabaseMaintenance />
 
         <DangerZone />
 
