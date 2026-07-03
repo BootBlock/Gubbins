@@ -24,7 +24,7 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** _EI-1 & EI-2 complete & merged (2026-07-03). Next: EI-3._ Phase order: **EI-1 → EI-7**.
+> **Status:** _EI-1, EI-2 & EI-3 complete & merged (2026-07-03). Next: EI-4._ Phase order: **EI-1 → EI-7**.
 > EI-1 (the event model) is a hard prerequisite for EI-2 and EI-6; the rest are independent and
 > could be reordered, but the embedded prompts assume this order.
 
@@ -316,20 +316,20 @@ example.com).
 adoption lever. Each migration is a **pure field-mapping** in front of the existing import
 pipeline; no new architecture.
 
-- [ ] **Source-format mappers** (`src/features/inventory/importers/*`, pure + tested): one per
+- [x] **Source-format mappers** (`src/features/inventory/importers/*`, pure + tested): one per
       tool, turning that tool's export (their column/field names) into the row shape
       `buildImportPlanFromRows` already consumes. Reuse the auto-detecting `text-import.ts`
       and `catalog-import.ts` (`applyCatalogImportPlan`) unchanged.
-- [ ] **Format detection / selection:** auto-detect where a format is unambiguous (a
+- [x] **Format detection / selection:** auto-detect where a format is unambiguous (a
       recognisable header row); otherwise a **source picker** in `ImportDataDialog.tsx` (a
       Foundry `Select` — see the app-wide Select convention). Map unknown/extra columns to
       notes or drop them explicitly, never silently mis-map.
-- [ ] **Field coverage:** name, quantity, location, category, price/currency (via the Money/
+- [x] **Field coverage:** name, quantity, location, category, price/currency (via the Money/
       currency conventions), identifiers (mpn/gtin), and notes — mapped to Gubbins fields;
       unmapped source fields folded into `items.notes` with a clear provenance line.
-- [ ] **Docs:** a "Migrating from another tool" section (PWA import docs / top-level README as
+- [x] **Docs:** a "Migrating from another tool" section (PWA import docs / top-level README as
       appropriate) listing supported sources and how to export from each.
-- [ ] **Tests:** one synthetic fixture export per source (made-up parts) asserting the produced
+- [x] **Tests:** one synthetic fixture export per source (made-up parts) asserting the produced
       import plan matches expectations, including the "extra columns → notes" and
       "ambiguous format → picker" paths.
 
@@ -343,7 +343,43 @@ message; all UI uses Foundry primitives + tokens.
 
 **Review gate:** `/code-review high`.
 
-**Outcome (____-__-__).** _(fill in on completion)_
+**Outcome (2026-07-03).** Shipped in `src/features/inventory/importers/migrations.ts` (pure,
+zero-dependency) and merged to `main` (merge `824b604`, feature commit `467b568`). Five **named
+migration mappers** — Homebox, Grocy, Sortly, Snipe-IT, InvenTree — sit **in front of** the
+existing generalised-import pipeline as pure field-mappings: each is a declarative
+`{ signature, rules, exportHint }` spec, recognised by a set of header columns unique to that
+tool (`detectMigrationSource`, unambiguous — at most one matches), then `mapMigration` reshapes
+the *already-parsed* header + data-row matrix into the canonical Gubbins fields and hands it to
+the **unchanged** `buildImportPlanFromRows` → `applyCatalogImportPlan` (no forked pipeline, no
+new SQL, no new write path). Every column a source exports that has no clean Gubbins field —
+labels, tags, serial numbers, warranty dates, and each tool's **category/group name** — is
+folded into that item's `notes` with an "Imported from &lt;tool&gt;:" provenance line, so nothing
+is silently mis-mapped or lost; a native notes/description column is preserved and the fold
+appended. Identifier columns (model/part/barcode/IPN) target the `mpn` slot; asset-oriented
+Snipe-IT rows (no quantity column) gain a synthesised quantity of 1. **Category is deliberately
+folded, not mapped** — Gubbins categories are referenced by id (with per-category custom fields)
+and the sources export only a name, so fabricating a `categoryId` would create a dangling
+reference; the name is kept in the provenance note for manual assignment. A one-line
+`applyMigration` bridge in `text-import.ts` adapts an `ImportExtraction` (no-op for free-form
+line lists / empty input, preserves any parse `note`). Surfaced in `ImportDataDialog.tsx` via a
+Foundry `Select` **"Import source"** picker (Auto-detect / Generic / the five tools) that reshapes
+columns *before* the shared plan builder and live preview see them — Auto-detect names the
+recognised tool, Generic bypasses the mapper for hand-mapping. **Decisions at entry:** Homebox +
+Grocy first (same self-hosted audience) — all five shipped together as the mapping cost is small;
+and auto-detect-with-manual-override (taken as recommended). **Zero new dependencies.** UI uses
+only existing design tokens + the Foundry `Select` (no raw palette/colour literals). Added a
+"Migrating from another tool" README section (per-source export instructions + folding/category
+posture). **Tests:** a dedicated `migrations.test.ts` with a synthetic export fixture per source
+(made-up parts, `example.com`) asserting each produced `CreateItemInput`, the extras→notes fold,
+first-wins target claiming, the "two columns → same field" fold, quantity synthesis, unknown-source
+pass-through, and the `applyMigration` bridge end-to-end (124 import tests green; 488 inventory
+tests green; `tsc --noEmit` clean; production `vite build` succeeded). **Review gate:**
+`/code-review high` ran across all eight angles (line-by-line, removed-behaviour, cross-file
+callers, reuse, simplification, efficiency, altitude, CLAUDE.md conventions) — **no confirmed or
+plausible findings**; the one candidate examined (a migrated `Location` name that doesn't yet
+exist erroring its row) is pre-existing, by-design shared-pipeline behaviour identical to a generic
+CSV with a Location column (the dialog's default-location control and the "Generic" escape hatch
+cover it), not a regression.
 
 **Continuation prompt — emit on completion (starts EI-4):**
 
@@ -585,20 +621,23 @@ summary in chat instead of a continuation prompt.
 
 ## Continuation prompt (current)
 
-The current next step is **Phase EI-3** (EI-1 and EI-2 are complete and merged). Its kick-off
-prompt (self-contained, for a cold session) is below; each completed phase replaces this with the
-next phase's embedded prompt.
+The current next step is **Phase EI-4** (EI-1, EI-2 and EI-3 are complete and merged). Its
+kick-off prompt (self-contained, for a cold session) is below; each completed phase replaces this
+with the next phase's embedded prompt.
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-3 (migration
-importers). EI-1 and EI-2 are complete and merged. Work in a NEW git worktree off local HEAD
-(git worktree add .claude/worktrees/ecosystem-importers -b feat/ecosystem-importers HEAD),
-follow the "How every phase runs" loop and the top-of-doc invariants, gate with /code-review
-high before merging, then merge --no-ff into main and clean up. Update the EI-3 Outcome, then
-emit EI-4's continuation prompt as a raw fenced block. Add named migration mappers (Homebox,
-Grocy, Sortly, Snipe-IT, InvenTree) as pure field-mappings in FRONT of the existing
-src/features/inventory/{text-import.ts, catalog-import.ts} pipeline (buildImportPlanFromRows →
-applyCatalogImportPlan) surfaced in ImportDataDialog.tsx — do NOT fork the pipeline. Use
-Foundry primitives + design tokens for any UI. Synthetic fixtures only (made-up parts,
-example.com).
+Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-4 (Web Share Target
++ file/protocol handlers). EI-1 through EI-3 are complete and merged. Work in a NEW git
+worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-share -b
+feat/ecosystem-share HEAD), follow the "How every phase runs" loop and the top-of-doc
+invariants, gate with /code-review high before merging (this touches the service-worker /
+install surface — high blast radius, so review carefully), then merge --no-ff into main and
+clean up. Update the
+EI-4 Outcome, then emit EI-5's continuation prompt as a raw fenced block. This
+is a PWA-side phase: register a web app manifest share_target (handled in src/sw.ts, since the
+PWA has no server) so "Share to Gubbins" from the OS share sheet opens a PRE-FILLED add-item
+DRAFT the user confirms (never auto-commit); reuse the add-item enrichment / supplier-scraper /
+import seams to hydrate the draft. Add file_handlers and a web+gubbins: protocol handler.
+Manifest lives in the VitePWA config in vite.config.ts. Use Foundry primitives + design tokens
+for all UI. Synthetic examples only.
 ```
