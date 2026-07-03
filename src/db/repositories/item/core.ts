@@ -36,7 +36,10 @@ import {
   normaliseUnitCost,
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
-import { THUMBNAIL_SUBQUERY } from './sql';
+import { itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
+
+/** The default ordering for a list read when the caller requests no explicit sort. */
+const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at ASC';
 
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
@@ -45,6 +48,8 @@ export interface ItemListFilters extends PageParams {
   readonly search?: string;
   /** Include soft-deleted items. Defaults to false (active inventory only). */
   readonly includeInactive?: boolean;
+  /** Explicit sort (whitelisted fields); omit to keep the default name/serial/created order. */
+  readonly sort?: readonly ItemSort[];
 }
 
 export class ItemCoreRepository extends BaseRepository {
@@ -61,9 +66,10 @@ export class ItemCoreRepository extends BaseRepository {
     const { limit, offset } = this.resolvePage(filters);
     const [clause, params] = buildListFilter(filters);
     params.push(limit, offset);
+    const order = itemOrderByClause(filters.sort) ?? DEFAULT_ITEM_ORDER;
     const rows = await this.driver.query<ItemRow>(
       `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${clause}
-       ORDER BY name COLLATE NOCASE ASC, serial_no ASC, created_at ASC
+       ORDER BY ${order}
        LIMIT ? OFFSET ?;`,
       params,
     );

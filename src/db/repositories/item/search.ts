@@ -7,7 +7,7 @@ import { collectCapabilityKeys, parseASTtoSQL } from '../../search/parseASTtoSQL
 import type { SearchAST } from '../../search/ast';
 import { rowToItem } from '../mappers';
 import type { Item, ItemRow, Page, PageParams } from '../types';
-import { capabilityMatchScore, THUMBNAIL_SUBQUERY } from './sql';
+import { capabilityMatchScore, itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -15,6 +15,12 @@ import type { ItemCoreRepository } from './core';
 export interface SearchByAstParams extends PageParams {
   /** Include soft-deleted items. Defaults to false (active inventory only). */
   readonly includeInactive?: boolean;
+  /**
+   * Explicit sort (whitelisted fields). When set it **replaces** the default
+   * capability-rank/alphabetical ordering with the caller's `ORDER BY`; omit to keep the
+   * relevance ordering.
+   */
+  readonly sort?: readonly ItemSort[];
 }
 
 export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
@@ -40,9 +46,15 @@ export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: 
       const rankParams = capabilityKeys.length > 0 ? capabilityKeys : [];
       const rankOrder = capabilityKeys.length > 0 ? 'match_score DESC, ' : '';
 
+      // An explicit sort replaces the relevance ordering entirely; otherwise keep the
+      // capability-rank-then-alphabetical default (zero behavioural change when unsorted).
+      const order =
+        itemOrderByClause(params.sort) ??
+        `${rankOrder}name COLLATE NOCASE ASC, serial_no ASC, created_at ASC`;
+
       const rows = await this.driver.query<ItemRow>(
         `SELECT items.*, ${THUMBNAIL_SUBQUERY}${rankSelect} FROM items WHERE (${where})${active}
-         ORDER BY ${rankOrder}name COLLATE NOCASE ASC, serial_no ASC, created_at ASC
+         ORDER BY ${order}
          LIMIT ? OFFSET ?;`,
         [...rankParams, ...whereParams, limit, offset],
       );

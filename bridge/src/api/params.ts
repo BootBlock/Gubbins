@@ -30,10 +30,12 @@ export function readQueryParam(res: ServerResponse, url: URL, v1: boolean): stri
 
 /**
  * Parse the optional result `limit` for the relevance search (the query core does the real
- * clamping to its own ceiling). Returns undefined when absent or non-numeric.
+ * clamping to its own ceiling). Returns undefined when absent or non-numeric. `allowOData`
+ * additionally accepts the `$top` alias — the versioned API passes `true`; the frozen legacy
+ * `/search` path passes `false`, so OData options never leak onto the unversioned contract.
  */
-export function readResultLimit(url: URL): number | undefined {
-  const raw = url.searchParams.get('limit');
+export function readResultLimit(url: URL, allowOData = false): number | undefined {
+  const raw = (allowOData ? url.searchParams.get('$top') : null) ?? url.searchParams.get('limit');
   if (raw === null) return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
@@ -51,9 +53,20 @@ export interface PageRequest {
  * the defaults rather than erroring, so a malformed query still returns a sane first page.
  */
 export function readPage(url: URL): PageRequest {
+  // The OData `$top`/`$skip` aliases win over the plain `limit`/`offset` when both are present.
   return {
-    limit: clampInt(url.searchParams.get('limit'), DEFAULT_PAGE_LIMIT, 1, MAX_PAGE_LIMIT),
-    offset: clampInt(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER),
+    limit: clampInt(
+      url.searchParams.get('$top') ?? url.searchParams.get('limit'),
+      DEFAULT_PAGE_LIMIT,
+      1,
+      MAX_PAGE_LIMIT,
+    ),
+    offset: clampInt(
+      url.searchParams.get('$skip') ?? url.searchParams.get('offset'),
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
   };
 }
 

@@ -31,6 +31,11 @@ import {
   ITEM_SUMMARY_DEFAULT_FIELDS,
   SEARCH_DEFAULT_FIELDS,
 } from './item-view.ts';
+import { BadQueryError, parseOrderBy, readOption } from './odata.ts';
+import { parseODataFilter } from './odata-filter.ts';
+import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
+import type { ItemSort } from '@/db/repositories/item/sql.ts';
+import type { Page, Item } from '@/db/repositories/types';
 import {
   toCapabilityKey,
   toCategoryDetail,
@@ -234,7 +239,7 @@ async function handleHealth(res: ServerResponse, state: BridgeServerState): Prom
 async function handleSearch(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
   const q = readQueryParam(res, url, true);
   if (q === null) return;
-  const limit = readResultLimit(url);
+  const limit = readResultLimit(url, true); // versioned API honours the $top alias
   const raw = readSelection(url);
 
   // With a `fields`/`include` selection, project the raw rows through the item field engine;
@@ -269,14 +274,11 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
     : undefined;
   if (selection === null) return; // a 400 was already sent
 
-  const items = new ItemRepository(driver);
-  const result = await items.list({
-    limit: page.limit,
-    offset: page.offset,
-    locationId: url.searchParams.get('location') ?? undefined,
-    categoryId: url.searchParams.get('category') ?? undefined,
-    includeInactive: url.searchParams.get('includeInactive') === 'true',
-  });
+  const sort = parseOrderByOr400(res, url);
+  if (sort === null) return;
+
+  const result = await queryItemsOr400(res, driver, url, page, sort);
+  if (result === null) return; // an invalid $filter already sent a 400
 
   // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
   // rather than an N+1 lookup per row.
@@ -295,6 +297,48 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
           ),
         );
   sendList(res, data, page, result.hasMore);
+}
+
+/**
+ * Run the item query for `GET /api/v1/items`, honouring an optional OData `$filter`. With a
+ * `$filter` present the rows come from `searchByAst` (the constrained filter compiled to the
+ * app's SearchAST); otherwise from the plain `list` with its `location`/`category` scope. A
+ * malformed `$filter` (or one the AST rejects) sends a `400` and returns `null`.
+ */
+async function queryItemsOr400(
+  res: ServerResponse,
+  driver: Driver,
+  url: URL,
+  page: PageRequest,
+  sort: readonly ItemSort[] | undefined,
+): Promise<Page<Item> | null> {
+  const items = new ItemRepository(driver);
+  const includeInactive = url.searchParams.get('includeInactive') === 'true';
+  const filterRaw = url.searchParams.get('$filter');
+
+  if (filterRaw !== null) {
+    try {
+      const ast = parseODataFilter(filterRaw);
+      return await items.searchByAst(ast, { limit: page.limit, offset: page.offset, includeInactive, sort });
+    } catch (err) {
+      // A syntax error (BadQueryError) and an AST-translation error (SearchAstError — e.g. an
+      // operator not valid for the field, or too-deep nesting) are both the caller's fault → 400.
+      if (err instanceof BadQueryError || err instanceof SearchAstError) {
+        sendError(res, 400, 'bad_request', err.message, { v1: true });
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  return items.list({
+    limit: page.limit,
+    offset: page.offset,
+    locationId: url.searchParams.get('location') ?? undefined,
+    categoryId: url.searchParams.get('category') ?? undefined,
+    includeInactive,
+    sort,
+  });
 }
 
 async function handleItem(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
@@ -359,14 +403,36 @@ async function handleCapabilities(res: ServerResponse, driver: Driver, url: URL)
 
 type Driver = BridgeServerState['driver'];
 
-/** Read the optional `fields`/`include` selection parameters off the query string. */
+/**
+ * Read the optional field-selection parameters off the query string, accepting both the plain
+ * REST names (`fields`/`include`) and their OData aliases (`$select`/`$expand`, which win when
+ * both are present).
+ */
 function readSelection(url: URL): RawSelection {
-  const fields = url.searchParams.get('fields');
-  const include = url.searchParams.get('include');
+  const fields = readOption(url, '$select', 'fields');
+  const include = readOption(url, '$expand', 'include');
   return {
     ...(fields !== null ? { fields } : {}),
     ...(include !== null ? { include } : {}),
   };
+}
+
+/**
+ * Parse the optional `$orderby` into a validated sort spec, or send a `400` and return `null`.
+ * Returns `undefined` when `$orderby` is absent (keep the endpoint's default ordering).
+ */
+function parseOrderByOr400(res: ServerResponse, url: URL): readonly ItemSort[] | undefined | null {
+  const raw = url.searchParams.get('$orderby');
+  if (raw === null) return undefined;
+  try {
+    return parseOrderBy(raw);
+  } catch (err) {
+    if (err instanceof BadQueryError) {
+      sendError(res, 400, 'bad_request', err.message, { v1: true });
+      return null;
+    }
+    throw err;
+  }
 }
 
 /**

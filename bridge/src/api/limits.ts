@@ -26,3 +26,9 @@ export const MAX_PAGE_LIMIT = 100;
  * the whole item vocabulary (~33 fields), so it never bites a legitimate caller.
  */
 export const MAX_SELECTED_FIELDS = 100;
+
+/** Hard cap on `$orderby` terms — an abuse guard against an absurdly long sort key. */
+export const MAX_ORDERBY_TERMS = 8;
+
+/** Hard cap on the raw `$filter` string length — an abuse guard against a pathological filter. */
+export const MAX_FILTER_LENGTH = 512;

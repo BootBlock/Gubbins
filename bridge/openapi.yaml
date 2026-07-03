@@ -193,6 +193,30 @@ paths:
         schema:
           type: "string"
         example: "capabilities,notes"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
+      -
+        name: "$top"
+        in: "query"
+        required: false
+        description: "OData-style alias of `limit` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "10"
       responses:
         "200":
           description: "The matches."
@@ -295,7 +319,7 @@ paths:
       tags:
       - "items"
       summary: "Browse items (paginated)"
-      description: "Paginated item summaries. Use `fields` to project a sparse fieldset or `include` to add extended fields to every row."
+      description: "Paginated item summaries. Use `fields`/`$select` to project a sparse fieldset, `include`/`$expand` to add extended fields, `$orderby` to sort, and `$filter` for a constrained OData-style boolean filter. `$top`/`$skip` alias `limit`/`offset`."
       parameters:
       -
         name: "limit"
@@ -320,14 +344,14 @@ paths:
         name: "location"
         in: "query"
         required: false
-        description: "Filter to items whose home location is this location id."
+        description: "Filter to items whose home location is this location id (ignored when $filter is set)."
         schema:
           type: "string"
       -
         name: "category"
         in: "query"
         required: false
-        description: "Filter to items in this category id."
+        description: "Filter to items in this category id (ignored when $filter is set)."
         schema:
           type: "string"
       -
@@ -354,6 +378,54 @@ paths:
         schema:
           type: "string"
         example: "capabilities,notes"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
+      -
+        name: "$top"
+        in: "query"
+        required: false
+        description: "OData-style alias of `limit` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "10"
+      -
+        name: "$skip"
+        in: "query"
+        required: false
+        description: "OData-style alias of `offset` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "0"
+      -
+        name: "$orderby"
+        in: "query"
+        required: false
+        description: "Sort the result: a comma-separated list of \"<field> [asc|desc]\" terms (default asc). Sortable fields: name, quantity, unitCost, mpn, manufacturer, createdAt, updatedAt, serialNo. NULLs sort last; ties break on id for stable pagination. An unknown field is a 400."
+        schema:
+          type: "string"
+        example: "quantity desc,name"
+      -
+        name: "$filter"
+        in: "query"
+        required: false
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        schema:
+          type: "string"
+        example: "quantity gt 10 and contains(name,'bolt')"
       responses:
         "200":
           description: "A page of results."
@@ -410,7 +482,7 @@ paths:
       tags:
       - "items"
       summary: "Look up one item by id (with placements and capabilities)"
-      description: "One item with its full detail. Use `fields` to project a sparse fieldset (e.g. just the price) or `include` to add extended fields beyond the default detail payload."
+      description: "One item with its full detail. Use `fields`/`$select` to project a sparse fieldset (e.g. just the price) or `include`/`$expand` to add extended fields beyond the default detail payload."
       parameters:
       -
         name: "id"
@@ -432,6 +504,22 @@ paths:
         in: "query"
         required: false
         description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
         schema:
           type: "string"
         example: "capabilities,notes"

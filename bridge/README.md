@@ -158,6 +158,9 @@ every endpoint is **GET-only** and strictly read-only.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.
+- **OData-style options** — the item endpoints also accept a convenience subset of the OData
+  query options (`$select`, `$expand`, `$top`, `$skip`, `$orderby`, `$filter`). See
+  [OData-style query options](#odata-style-query-options) below.
 - All ids are the app's stable record ids; timestamps are UNIX-ms integers (as stored).
 
 ### Endpoints
@@ -169,7 +172,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
-| `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields). |
+| `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
 | `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/locations?limit=&offset=` | Paginated locations with live item counts (`Location`). |
 | `GET /api/v1/locations/{id}` | One location; `404` if unknown. |
@@ -250,6 +253,58 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,un
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
 ```
+
+### OData-style query options
+
+For callers already fluent in **OData**, the item endpoints accept a small, familiar subset of
+the OData v4 query options. This is a **convenience alias layer, not a compliant OData service** —
+there is deliberately **no** `$metadata`/CSDL document, `$batch`, `$apply`, or navigation-property
+semantics (see [the earlier discussion](#versioned-rest-api-apiv1) of why full OData isn't a fit
+for a zero-dependency bridge). It adds **no dependency** and ships **nothing** to the PWA.
+
+| Option | Maps to | Notes |
+| --- | --- | --- |
+| `$select` | `fields` | Sparse fieldset (projection). |
+| `$expand` | `include` | Field expansion. |
+| `$top` | `limit` | Page size / result cap. |
+| `$skip` | `offset` | Row offset (list endpoints). |
+| `$orderby` | *(new)* | Sort — see below. |
+| `$filter` | *(new)* | Constrained boolean filter — see below. |
+
+Each `$`-prefixed option is an **alias** of its plain REST name and **wins** when both are given
+(`?$top=5&limit=9` ⇒ 5). `$select`/`$expand`/`$top` work on `/search`, `/items` and `/items/{id}`;
+`$skip`, `$orderby` and `$filter` apply to the `/items` list.
+
+**`$orderby`** — a comma-separated list of `<field> [asc|desc]` terms (direction defaults to
+`asc`). Sortable fields: `name`, `quantity`, `unitCost`, `mpn`, `manufacturer`, `createdAt`,
+`updatedAt`, `serialNo`. NULLs sort last regardless of direction, and ties break on `id` so
+pagination is stable. An unknown field is a `400`.
+
+**`$filter`** — a **constrained** boolean filter that is compiled to the app's own search AST and
+run through the single parameterised `parseASTtoSQL` (so it can never drift from the app's search
+semantics and has no injection surface — it is **never** bespoke SQL). Supported subset:
+
+- comparisons: `eq`, `gt`, `lt` (e.g. `quantity gt 10`, `name eq 'M3 Bolt'`)
+- the `contains(field, 'text')` function (free-text, FTS-backed)
+- boolean composition with `and`, `or`, and parentheses
+- literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
+- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `quantity`,
+  `category`(`Id`), `location`(`Id`)
+
+Anything outside the subset (`ne`/`ge`/`le`, `not`, `startswith`/`endswith`, arithmetic, lambdas,
+an unknown field) is a `400` naming what *is* supported. When `$filter` is present it is the sole
+row filter, so the `location`/`category` query params are ignored.
+
+```bash
+# Sort by quantity, biggest first, top 5:
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items?\$orderby=quantity desc&\$top=5"
+
+# Everything with more than ten in stock whose name contains "bolt", names only:
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/items?\$filter=quantity gt 10 and contains(name,'bolt')&\$select=name"
+```
+
+(Escape the literal `$` for your shell, as above, or single-quote the whole URL.)
 
 ### OpenAPI spec
 
@@ -690,12 +745,16 @@ bridge/
       dto.ts            # stable public DTOs + pure row→DTO mappers
       field-select.ts   # generic fields/include projection engine (parse + validate + lazy project)
       item-view.ts      # item field vocabulary + lazy relational context (SSOT for projectable fields)
+      odata.ts          # OData-style option layer: $-alias reader + $orderby parser
+      odata-filter.ts   # constrained OData $filter → SearchAST compiler (never bespoke SQL)
       respond.ts        # shared JSON / error-envelope helpers (legacy flat + v1 structured)
-      params.ts         # shared q / pagination parsing (clamped)
+      params.ts         # shared q / pagination parsing (clamped; $top/$skip aliases)
       limits.ts         # shared request/pagination bounds
-      v1.test.ts        # in-process /api/v1 endpoint + pagination + auth + 404 + field-selection tests
+      v1.test.ts        # in-process /api/v1 endpoint + pagination + auth + 404 + field-selection + OData tests
       field-select.test.ts # unit tests for the generic projection engine
       item-view.test.ts # item registry drift-guard + lazy-resolution tests
+      odata.test.ts     # $orderby validation + alias-reader tests
+      odata-filter.test.ts # $filter parser grammar + rejection tests
     hydrate.test.ts     # hydration tests over the synthetic fixture
     sqlite-source.test.ts # raw .sqlite source tests (generated synthetic .sqlite, detection, write-gating)
     query.test.ts       # query-core tests over the synthetic fixture

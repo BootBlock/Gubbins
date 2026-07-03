@@ -28,3 +28,52 @@ export function capabilityMatchScore(keyCount: number): string {
     WHERE c.item_id = items.id AND c.key COLLATE NOCASE IN (${placeholders})
   ) AS match_score`;
 }
+
+/** The scalar item fields a caller may sort a list read by (an explicit `ORDER BY`). */
+export type ItemSortField =
+  'name' | 'quantity' | 'unitCost' | 'mpn' | 'manufacturer' | 'createdAt' | 'updatedAt' | 'serialNo';
+
+/** One sort term: a whitelisted field and a direction. */
+export interface ItemSort {
+  readonly field: ItemSortField;
+  readonly direction: 'asc' | 'desc';
+}
+
+/**
+ * The sortable-field allow-list: field name → real column (+ whether it collates
+ * case-insensitively). Only these fixed identifiers ever reach the SQL text — the sort
+ * field is **never** interpolated from free user input — so there is no injection surface.
+ */
+const ITEM_SORT_COLUMNS: Readonly<Record<ItemSortField, { column: string; collate: boolean }>> = {
+  name: { column: 'items.name', collate: true },
+  quantity: { column: 'items.quantity', collate: false },
+  unitCost: { column: 'items.unit_cost', collate: false },
+  mpn: { column: 'items.mpn', collate: true },
+  manufacturer: { column: 'items.manufacturer', collate: true },
+  createdAt: { column: 'items.created_at', collate: false },
+  updatedAt: { column: 'items.updated_at', collate: false },
+  serialNo: { column: 'items.serial_no', collate: false },
+};
+
+/** The sortable field names, for validating a caller's requested sort before it reaches SQL. */
+export const ITEM_SORT_FIELDS: readonly ItemSortField[] = Object.keys(ITEM_SORT_COLUMNS) as ItemSortField[];
+
+/**
+ * Build the column list for an explicit `ORDER BY` from a validated sort spec, or `null` when
+ * there is nothing to sort by (so callers keep their default ordering). NULLs are forced last
+ * regardless of direction (SQLite puts them first on `DESC`), and a stable `items.id` tiebreak
+ * is always appended so pagination is deterministic across pages even on a non-unique key.
+ */
+export function itemOrderByClause(sort: readonly ItemSort[] | undefined): string | null {
+  if (sort === undefined || sort.length === 0) return null;
+  const terms: string[] = [];
+  for (const { field, direction } of sort) {
+    const meta = ITEM_SORT_COLUMNS[field];
+    const dir = direction === 'desc' ? 'DESC' : 'ASC';
+    const collate = meta.collate ? ' COLLATE NOCASE' : '';
+    terms.push(`(${meta.column} IS NULL)`); // non-NULL first, NULL last, either direction
+    terms.push(`${meta.column}${collate} ${dir}`);
+  }
+  terms.push('items.id ASC'); // stable tiebreak → deterministic pagination
+  return terms.join(', ');
+}

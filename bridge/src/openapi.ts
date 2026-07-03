@@ -129,6 +129,51 @@ const includeParam: JsonValue = {
   example: 'capabilities,notes',
 };
 
+/**
+ * OData-style query-option aliases (a convenience subset, NOT a compliant OData service — no
+ * $metadata, $batch or $apply). Each is an alias of a plain REST parameter and wins when both
+ * are supplied. `$orderby` and `$filter` add genuinely new capability on the items list.
+ */
+const odataAlias = (name: string, of: string, example: string): JsonValue => ({
+  name,
+  in: 'query',
+  required: false,
+  description: `OData-style alias of \`${of}\` (this alias wins if both are given).`,
+  schema: { type: 'string' },
+  example,
+});
+
+const selectParam = odataAlias('$select', 'fields', 'name,unitCost');
+const expandParam = odataAlias('$expand', 'include', 'capabilities,notes');
+const topParam = odataAlias('$top', 'limit', '10');
+const skipParam = odataAlias('$skip', 'offset', '0');
+
+const orderbyParam: JsonValue = {
+  name: '$orderby',
+  in: 'query',
+  required: false,
+  description:
+    'Sort the result: a comma-separated list of "<field> [asc|desc]" terms (default asc). ' +
+    'Sortable fields: name, quantity, unitCost, mpn, manufacturer, createdAt, updatedAt, ' +
+    'serialNo. NULLs sort last; ties break on id for stable pagination. An unknown field is a 400.',
+  schema: { type: 'string' },
+  example: 'quantity desc,name',
+};
+
+const filterParam: JsonValue = {
+  name: '$filter',
+  in: 'query',
+  required: false,
+  description:
+    'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
+    'SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with ' +
+    'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, ' +
+    'category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
+    'lambdas) are a 400. When present it is the sole row filter (location/category are ignored).',
+  schema: { type: 'string' },
+  example: "quantity gt 10 and contains(name,'bolt')",
+};
+
 /** Standard error responses reused across operations. */
 const errorResponses = (...codes: number[]): JsonValue => {
   const all: Record<number, JsonValue> = {
@@ -287,6 +332,9 @@ export const openapiDocument: JsonValue = {
           },
           fieldsParam,
           includeParam,
+          selectParam,
+          expandParam,
+          topParam,
         ],
         responses: {
           200: response('The matches.', '#/components/schemas/SearchResult'),
@@ -310,8 +358,9 @@ export const openapiDocument: JsonValue = {
         tags: ['items'],
         summary: 'Browse items (paginated)',
         description:
-          'Paginated item summaries. Use `fields` to project a sparse fieldset or `include` to ' +
-          'add extended fields to every row.',
+          'Paginated item summaries. Use `fields`/`$select` to project a sparse fieldset, ' +
+          '`include`/`$expand` to add extended fields, `$orderby` to sort, and `$filter` for a ' +
+          'constrained OData-style boolean filter. `$top`/`$skip` alias `limit`/`offset`.',
         parameters: [
           limitParam,
           offsetParam,
@@ -319,14 +368,15 @@ export const openapiDocument: JsonValue = {
             name: 'location',
             in: 'query',
             required: false,
-            description: 'Filter to items whose home location is this location id.',
+            description:
+              'Filter to items whose home location is this location id (ignored when $filter is set).',
             schema: { type: 'string' },
           },
           {
             name: 'category',
             in: 'query',
             required: false,
-            description: 'Filter to items in this category id.',
+            description: 'Filter to items in this category id (ignored when $filter is set).',
             schema: { type: 'string' },
           },
           {
@@ -338,6 +388,12 @@ export const openapiDocument: JsonValue = {
           },
           fieldsParam,
           includeParam,
+          selectParam,
+          expandParam,
+          topParam,
+          skipParam,
+          orderbyParam,
+          filterParam,
         ],
         responses: {
           200: okList('#/components/schemas/ItemSummary'),
@@ -350,9 +406,10 @@ export const openapiDocument: JsonValue = {
         tags: ['items'],
         summary: 'Look up one item by id (with placements and capabilities)',
         description:
-          'One item with its full detail. Use `fields` to project a sparse fieldset (e.g. just ' +
-          'the price) or `include` to add extended fields beyond the default detail payload.',
-        parameters: [idParam('item'), fieldsParam, includeParam],
+          'One item with its full detail. Use `fields`/`$select` to project a sparse fieldset ' +
+          '(e.g. just the price) or `include`/`$expand` to add extended fields beyond the ' +
+          'default detail payload.',
+        parameters: [idParam('item'), fieldsParam, includeParam, selectParam, expandParam],
         responses: {
           200: response('The item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 429, 503) as Record<string, JsonValue>),

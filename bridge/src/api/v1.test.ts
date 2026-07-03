@@ -239,6 +239,75 @@ describe('field selection (fields / include)', () => {
   });
 });
 
+describe('OData-style query options', () => {
+  it('$select / $expand / $top alias fields / include / limit', async () => {
+    const items = await json('/api/v1/items?$select=id,name');
+    for (const row of items.data) expect(Object.keys(row).sort()).toEqual(['id', 'name']);
+
+    const search = await json('/api/v1/search?q=M3&$top=1&$select=name');
+    expect(search.matches).toHaveLength(1);
+    expect(Object.keys(search.matches[0])).toEqual(['name']);
+
+    const expanded = await json('/api/v1/items/item-esp32?$expand=notes');
+    expect(expanded).toHaveProperty('notes');
+  });
+
+  it('keeps the OData options off the frozen legacy /search path', async () => {
+    // $top is a versioned-API alias only; the unversioned /search must ignore it (default 5),
+    // so M3 still returns both fixture matches rather than being capped to 1.
+    const legacy = await json('/search?q=M3&$top=1');
+    expect(legacy.matches.length).toBeGreaterThan(1);
+    // …whereas the versioned endpoint honours it.
+    const v1 = await json('/api/v1/search?q=M3&$top=1');
+    expect(v1.matches).toHaveLength(1);
+  });
+
+  it('$top / $skip alias limit / offset on the list endpoints', async () => {
+    const page = await json('/api/v1/items?$top=2&$skip=2&$orderby=quantity');
+    expect(page.data).toHaveLength(2);
+    expect(page.pagination).toMatchObject({ limit: 2, offset: 2 });
+  });
+
+  it('$orderby sorts (NULLs and ties handled), honouring direction', async () => {
+    const desc = await json('/api/v1/items?$orderby=quantity desc');
+    expect(desc.data.map((i: any) => i.quantity)).toEqual([200, 100, 42, 7]);
+
+    const asc = await json('/api/v1/items?$orderby=quantity');
+    expect(asc.data.map((i: any) => i.quantity)).toEqual([7, 42, 100, 200]);
+  });
+
+  it('$filter compiles to the search AST: comparison', async () => {
+    const body = await json('/api/v1/items?$filter=quantity gt 10&$orderby=quantity');
+    expect(body.data.map((i: any) => i.id)).toEqual(['item-m3-bolt', 'item-m3-washer', 'item-resistor']);
+  });
+
+  it('$filter compiles the contains() function to an FTS match', async () => {
+    const body = await json("/api/v1/items?$filter=contains(name,'ESP32')");
+    expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32']);
+  });
+
+  it('$filter composes with and/or', async () => {
+    const body = await json(
+      "/api/v1/items?$filter=quantity gt 50 or contains(name,'ESP32')&$orderby=quantity",
+    );
+    expect(body.data.map((i: any) => i.id)).toEqual(['item-esp32', 'item-m3-washer', 'item-resistor']);
+  });
+
+  it('$filter projects and sorts together', async () => {
+    const body = await json("/api/v1/items?$filter=contains(name,'M3')&$select=name&$orderby=name");
+    expect(body.data.map((i: any) => i.name)).toEqual(['M3 Nylon Washer', 'M3 x 10 Hex Bolt']);
+    for (const row of body.data) expect(Object.keys(row)).toEqual(['name']);
+  });
+
+  it('400s an unsupported $filter operator, unknown field, and bad $orderby', async () => {
+    expect((await get('/api/v1/items?$filter=quantity ge 10')).status).toBe(400);
+    expect((await get('/api/v1/items?$filter=bogus eq 1')).status).toBe(400);
+    expect((await get('/api/v1/items?$orderby=bogus')).status).toBe(400);
+    const body = await (await get('/api/v1/items?$filter=quantity ge 10')).json();
+    expect(body.error.code).toBe('bad_request');
+  });
+});
+
 describe('GET /api/v1/locations', () => {
   it('lists locations with live item counts (incl. the seeded system locations)', async () => {
     const body = await json('/api/v1/locations');
