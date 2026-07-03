@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
  * - Block: headings (`#`–`####`), paragraphs, bullet / ordered lists, task lists
  *   (`- [ ]` / `- [x]`), blockquotes (`>`), GitHub-flavoured pipe **tables** (with
  *   per-column alignment), fenced code blocks, and horizontal rules (`---`).
- * - Inline: **bold**, *italic*, ~~strikethrough~~, `code`, and [links](https://…).
+ * - Inline: **bold**, *italic*, ~~strikethrough~~, `code`, [links](https://…) and bare
+ *   auto-linked URLs, with `\`-escapes to show a literal marker.
  *
  * The subset keeps the parser small, predictable and easy to unit-test.
  */
@@ -264,8 +265,11 @@ function renderTable(header: string[], aligns: ColumnAlign[], rows: string[][], 
 
 // Order matters: code first (its contents are literal), then bold, then strikethrough,
 // then italic, then links. Non-greedy bodies keep adjacent marks from being swallowed.
+// A leading backslash-escape is matched *first* so authored docs can show a literal marker
+// (`\*`, `\|`, …); a bare `http(s)://…` URL is auto-linked *last*, so an explicit
+// `[label](url)` always wins over the bare form.
 const INLINE =
-  /(`[^`]+`)|(\*\*[\s\S]+?\*\*|__[\s\S]+?__)|(~~[\s\S]+?~~)|(\*[\s\S]+?\*|_[\s\S]+?_)|(\[[^\]]+\]\([^)]+\))/;
+  /(\\[\\`*_~[\]()#>|-])|(`[^`]+`)|(\*\*[\s\S]+?\*\*|__[\s\S]+?__)|(~~[\s\S]+?~~)|(\*[\s\S]+?\*|_[\s\S]+?_)|(\[[^\]]+\]\([^)]+\))|(https?:\/\/[^\s<]+)/;
 
 function parseInline(text: string, keyBase: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -284,6 +288,9 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
     const key = `${keyBase}-${counter++}`;
 
     if (match[1]) {
+      // Backslash escape → the literal character, with its markdown meaning suppressed.
+      nodes.push(match[1]!.slice(1));
+    } else if (match[2]) {
       nodes.push(
         <code
           key={key}
@@ -292,48 +299,72 @@ function parseInline(text: string, keyBase: string): ReactNode[] {
           {token.slice(1, -1)}
         </code>,
       );
-    } else if (match[2]) {
+    } else if (match[3]) {
       nodes.push(
         <strong key={key} className="font-semibold text-foreground">
           {parseInline(token.slice(2, -2), key)}
         </strong>,
       );
-    } else if (match[3]) {
+    } else if (match[4]) {
       nodes.push(
         <s key={key} className="text-muted-foreground">
           {parseInline(token.slice(2, -2), key)}
         </s>,
       );
-    } else if (match[4]) {
+    } else if (match[5]) {
       nodes.push(
         <em key={key} className="italic">
           {parseInline(token.slice(1, -1), key)}
         </em>,
       );
-    } else {
+    } else if (match[6]) {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(token)!;
       const href = safeHref(link[2]!);
-      nodes.push(
-        href ? (
-          <a
-            key={key}
-            href={href}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >
-            {link[1]}
-          </a>
-        ) : (
-          link[1]
-        ),
-      );
+      nodes.push(href ? renderLink(href, link[1]!, key) : link[1]!);
+    } else {
+      // Bare URL autolink. Trailing sentence punctuation (`.`, `)`, `,` …) almost never
+      // belongs to the URL, so peel it off and emit it as plain text after the link.
+      let url = token;
+      let trailing = '';
+      const trail = /[),.;:!?'"]+$/.exec(url);
+      if (trail) {
+        trailing = trail[0];
+        url = url.slice(0, -trailing.length);
+      }
+      const href = safeHref(url);
+      if (href) {
+        nodes.push(renderLink(href, url, key));
+        if (trailing) nodes.push(trailing);
+      } else {
+        nodes.push(token);
+      }
     }
 
     rest = rest.slice(match.index + token.length);
   }
 
   return nodes;
+}
+
+/** A safe anchor with an unobtrusive ↗ affordance when it opens an external site. */
+function renderLink(href: string, label: ReactNode, key: string): ReactNode {
+  const external = /^https?:\/\//i.test(href);
+  return (
+    <a
+      key={key}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+    >
+      {label}
+      {external ? (
+        <span aria-hidden className="ml-0.5 text-[0.85em]">
+          ↗
+        </span>
+      ) : null}
+    </a>
+  );
 }
 
 /**
