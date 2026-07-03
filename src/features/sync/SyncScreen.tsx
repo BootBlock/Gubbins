@@ -22,6 +22,7 @@ import {
   SyncIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
+import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -67,6 +68,9 @@ export function SyncScreen() {
   const [reconnectable, setReconnectable] = useState(false);
   const [googleReconnectable, setGoogleReconnectable] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  // Push-to-bridge outcome shown inline beside the "Push now" button (rather than a
+  // top-of-page banner far from where the user is looking).
+  const [pushResult, setPushResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Surface a one-off success message after a backup restore reloaded the app.
   useEffect(() => {
@@ -211,8 +215,10 @@ export function SyncScreen() {
 
   async function pushToBridge() {
     setBusy(true);
+    // Clear any stale top banner from another action; the push outcome shows inline below.
     setError(null);
     setNotice(null);
+    setPushResult(null);
     try {
       const json = await buildPushSnapshotJson(getSyncDriver());
       const result = await pushSnapshotToBridge({
@@ -221,10 +227,9 @@ export function SyncScreen() {
         json,
         fetchImpl: (url, init) => fetch(url, init),
       });
-      if (result.ok) setNotice(result.message);
-      else setError(result.message);
+      setPushResult({ ok: result.ok, message: result.message });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Push failed.');
+      setPushResult({ ok: false, message: err instanceof Error ? err.message : 'Push failed.' });
     } finally {
       setBusy(false);
     }
@@ -466,6 +471,20 @@ export function SyncScreen() {
                   Enter the bridge URL and token to enable pushing.
                 </span>
               ) : null}
+              {/* The push outcome appears in place beside the button — close to where the
+                user just clicked — rather than as a banner at the top they might miss. The
+                region is always mounted so screen readers announce the later content change
+                (WCAG 4.1.3), and errors interrupt (assertive) while successes queue (polite). */}
+              <LiveRegion
+                urgency={pushResult && !pushResult.ok ? 'assertive' : 'polite'}
+                className={cn(
+                  'text-sm',
+                  pushResult ? (pushResult.ok ? 'text-glyph-success' : 'text-glyph-danger') : undefined,
+                )}
+                data-testid="push-result"
+              >
+                {pushResult ? pushResult.message : null}
+              </LiveRegion>
             </div>
           </Surface>
         </section>
