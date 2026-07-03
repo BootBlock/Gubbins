@@ -20,9 +20,11 @@ import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
-import { sendError, sendJson, sendText, sendXml } from './respond.ts';
+import { sendError, sendJson, sendText, sendXml, sendCsv } from './respond.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
+import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { odataMetadataXml } from './odata-metadata.ts';
+import { buildItemsCsv } from '@/features/export/export-data.ts';
 import { FieldSelectionError, hasSelection, type RawSelection, type SelectedField } from './field-select.ts';
 import {
   createItemViewContext,
@@ -121,6 +123,9 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
         return void (await handleItemCount(res, driver, url));
       }
       if (segments.length === 2) return void (await handleItem(res, driver, url, decode(segments[1]!)));
+      break;
+    case 'items.csv':
+      if (segments.length === 1) return void (await handleItemsCsv(res, driver, url));
       break;
     case 'locations':
       if (segments.length === 1) return void (await handleLocations(res, driver, url));
@@ -225,6 +230,7 @@ function apiIndex(writable: boolean, pushable: boolean): unknown {
       `${API_V1_BASE}/search`,
       `${API_V1_BASE}/where`,
       `${API_V1_BASE}/items`,
+      `${API_V1_BASE}/items.csv`,
       `${API_V1_BASE}/items/{id}`,
       `${API_V1_BASE}/items/$count`,
       `${API_V1_BASE}/locations`,
@@ -298,19 +304,8 @@ async function handleItems(res: ServerResponse, driver: Driver, url: URL): Promi
   let result: Page<Item>;
   let total: number | undefined;
   try {
-    if (ast !== undefined) {
-      // $filter path: the compiled AST is the sole row filter (location/category/$search ignored).
-      result = await items.searchByAst(ast, {
-        limit: page.limit,
-        offset: page.offset,
-        includeInactive: filters.includeInactive,
-        sort,
-      });
-      if (wantCount) total = await items.countByAst(ast, { includeInactive: filters.includeInactive });
-    } else {
-      result = await items.list({ ...filters, limit: page.limit, offset: page.offset, sort });
-      if (wantCount) total = await items.count(filters);
-    }
+    result = await itemPage(items, ast, filters, sort, page.limit, page.offset);
+    if (wantCount) total = await itemCount(items, ast, filters);
   } catch (err) {
     // An AST-translation error (SearchAstError — e.g. an operator not valid for the field, or a
     // too-deep filter) is the caller's fault → 400.
@@ -350,11 +345,7 @@ async function handleItemCount(res: ServerResponse, driver: Driver, url: URL): P
   const items = new ItemRepository(driver);
   const filters = readItemListFilters(url);
   try {
-    const total =
-      ast !== undefined
-        ? await items.countByAst(ast, { includeInactive: filters.includeInactive })
-        : await items.count(filters);
-    sendText(res, 200, String(total));
+    sendText(res, 200, String(await itemCount(items, ast, filters)));
   } catch (err) {
     if (err instanceof SearchAstError) {
       return void sendError(res, 400, 'bad_request', err.message, { v1: true });
@@ -363,13 +354,61 @@ async function handleItemCount(res: ServerResponse, driver: Driver, url: URL): P
   }
 }
 
+/**
+ * `GET /api/v1/items.csv` — a spreadsheet-friendly CSV of the matching items (the same column
+ * shape and RFC-4180 quoting as the app's own export, reused verbatim so the two never drift).
+ * A refreshable pull for Excel/Power BI "From Web". Honours the same `$filter`/`$search`/
+ * `$orderby`/location/category/includeInactive scope as `GET /api/v1/items`; unlike the JSON
+ * list it returns **all** matching rows (up to {@link MAX_CSV_ROWS}), not a single page.
+ */
+async function handleItemsCsv(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
+  const sort = parseOrderByOr400(res, url);
+  if (sort === null) return;
+  const ast = parseItemFilterOr400(res, url);
+  if (ast === null) return;
+
+  const filters = readItemListFilters(url);
+  try {
+    const rows = await collectAllItems(driver, ast, filters, sort);
+    sendCsv(res, 200, buildItemsCsv(rows), 'items.csv');
+  } catch (err) {
+    if (err instanceof SearchAstError) {
+      return void sendError(res, 400, 'bad_request', err.message, { v1: true });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Gather every matching item (for the CSV export) by looping the repository a page at a time,
+ * stopping at {@link MAX_CSV_ROWS} so a huge dataset can't buffer unbounded. Uses the same
+ * `$filter`-vs-`list` split as the JSON endpoint, so the CSV row set matches `GET /items`.
+ */
+async function collectAllItems(
+  driver: Driver,
+  ast: SearchAST | undefined,
+  filters: ItemQueryFilters,
+  sort: readonly ItemSort[] | undefined,
+): Promise<readonly Item[]> {
+  const items = new ItemRepository(driver);
+  const rows: Item[] = [];
+  for (let offset = 0; rows.length < MAX_CSV_ROWS; offset += MAX_PAGE_LIMIT) {
+    const page = await itemPage(items, ast, filters, sort, MAX_PAGE_LIMIT, offset);
+    rows.push(...page.rows);
+    if (!page.hasMore) break;
+  }
+  return rows.length > MAX_CSV_ROWS ? rows.slice(0, MAX_CSV_ROWS) : rows;
+}
+
 /** The active-scope + non-page item list filters (location/category/$search), shared by rows + $count. */
-function readItemListFilters(url: URL): {
+type ItemQueryFilters = {
   locationId?: string;
   categoryId?: string;
   search?: string;
   includeInactive: boolean;
-} {
+};
+
+function readItemListFilters(url: URL): ItemQueryFilters {
   return {
     locationId: url.searchParams.get('location') ?? undefined,
     categoryId: url.searchParams.get('category') ?? undefined,
@@ -377,6 +416,36 @@ function readItemListFilters(url: URL): {
     search: url.searchParams.get('$search') ?? undefined,
     includeInactive: url.searchParams.get('includeInactive') === 'true',
   };
+}
+
+/**
+ * Fetch one page of items, single-sourcing the `$filter`-vs-`list` split every item query uses:
+ * with a `$filter` the compiled `ast` is the **sole** row filter (location/category/$search are
+ * ignored); without one, the plain `list` honours those scope filters. May throw
+ * `SearchAstError` when the AST is invalid for a field — the caller maps that to a `400`.
+ */
+function itemPage(
+  items: ItemRepository,
+  ast: SearchAST | undefined,
+  filters: ItemQueryFilters,
+  sort: readonly ItemSort[] | undefined,
+  limit: number,
+  offset: number,
+): Promise<Page<Item>> {
+  return ast !== undefined
+    ? items.searchByAst(ast, { limit, offset, includeInactive: filters.includeInactive, sort })
+    : items.list({ ...filters, limit, offset, sort });
+}
+
+/** The `$count` twin of {@link itemPage}: the grand total under the same filter, no paging. */
+function itemCount(
+  items: ItemRepository,
+  ast: SearchAST | undefined,
+  filters: ItemQueryFilters,
+): Promise<number> {
+  return ast !== undefined
+    ? items.countByAst(ast, { includeInactive: filters.includeInactive })
+    : items.count(filters);
 }
 
 /**

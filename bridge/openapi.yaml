@@ -594,6 +594,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/items.csv:
+    get:
+      tags:
+      - "items"
+      summary: "Export matching items as a CSV (refreshable spreadsheet pull)"
+      description: "A spreadsheet-friendly CSV download of the matching items (columns: id, name, description, notes, trackingMode, quantity, mpn, manufacturer, unitCost — the same shape as the app's own export). Honours the same $filter/$search/$orderby/location/category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows (up to a hard cap), not a single page. Point Excel/Power BI \"From Web\" at it for a refreshable pull."
+      parameters:
+      -
+        name: "$filter"
+        in: "query"
+        required: false
+        description: "A constrained OData-style boolean filter compiled to the app search AST (never bespoke SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, lambdas) are a 400. When present it is the sole row filter (location/category are ignored)."
+        schema:
+          type: "string"
+        example: "quantity gt 10 and contains(name,'bolt')"
+      -
+        name: "$search"
+        in: "query"
+        required: false
+        description: "Free-text search across the item name/description/notes/mpn/manufacturer via the FTS5 index (ignored when $filter is set)."
+        schema:
+          type: "string"
+        example: "esp32"
+      -
+        name: "$orderby"
+        in: "query"
+        required: false
+        description: "Sort the result: a comma-separated list of \"<field> [asc|desc]\" terms (default asc). Sortable fields: name, quantity, unitCost, mpn, manufacturer, createdAt, updatedAt, serialNo. NULLs sort last; ties break on id for stable pagination. An unknown field is a 400."
+        schema:
+          type: "string"
+        example: "quantity desc,name"
+      responses:
+        "200":
+          description: "The CSV file (RFC-4180, CRLF rows)."
+          content:
+            text/csv:
+              schema:
+                type: "string"
+              example: "id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost\r\nitem-esp32,ESP32 Dev Board,,,DISCRETE,7,DEV-ESP32,Synthetic Silicon Co,"
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/items/{id}:
     get:
       tags:

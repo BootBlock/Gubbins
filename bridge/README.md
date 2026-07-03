@@ -172,6 +172,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/openapi.json` | This API's OpenAPI 3 document. |
 | `GET /api/v1/$metadata` | OData v4 CSDL describing the read model (descriptive; see [OData-style options](#odata-style-query-options)). |
 | `GET /api/v1/items/$count` | The count of matching items as a bare `text/plain` integer (honours `$filter`/`$search`). |
+| `GET /api/v1/items.csv` | A spreadsheet-friendly CSV of the matching items (refreshable pull for Excel/Power BI). See [CSV export](#csv-export). |
 | `GET /api/v1/health` | `{ ok, itemCount, snapshotGeneratedAt }` (alias of `/health`). |
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
@@ -332,6 +333,26 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/\$metadata"
 ```
 
 (Escape the literal `$` for your shell, as above, or single-quote the whole URL.)
+
+### CSV export
+
+`GET /api/v1/items.csv` returns a spreadsheet-friendly **CSV** of the matching items — the same
+column shape and RFC-4180 quoting as the app's own catalogue export (`id, name, description,
+notes, trackingMode, quantity, mpn, manufacturer, unitCost`), reused verbatim so the two never
+drift. Unlike the JSON list it returns **all** matching rows (up to a hard cap of 100,000), not a
+single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`category`/
+`includeInactive` scope.
+
+> The Gubbins **app** already exports far richer CSVs (a round-trippable catalogue with custom-field
+> columns, plus ten analytics reports) from its **Export Wizard** — use that for a one-off download.
+> This endpoint exists for the one thing the app can't do: a **refreshable** pull over HTTP.
+
+Point Excel/Power BI **From Web** (not the OData connector — see the note above) at the URL for a
+refreshable table; `Web.Contents` lets you attach the bearer token as a header:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items.csv?\$filter=quantity gt 0&\$orderby=name" -o items.csv
+```
 
 ### OpenAPI spec
 

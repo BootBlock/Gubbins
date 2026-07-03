@@ -353,6 +353,53 @@ describe('OData-style query options', () => {
   });
 });
 
+describe('CSV export (GET /api/v1/items.csv)', () => {
+  const HEADER = 'id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost';
+
+  async function csvLines(path: string): Promise<string[]> {
+    const res = await get(path);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/csv');
+    return (await res.text()).split('\r\n');
+  }
+
+  it('serves a downloadable CSV with the export column header and every item', async () => {
+    const res = await get('/api/v1/items.csv');
+    expect(res.headers.get('content-type')).toContain('text/csv');
+    expect(res.headers.get('content-disposition')).toContain('attachment');
+    const lines = (await res.text()).split('\r\n');
+    expect(lines[0]).toBe(HEADER);
+    expect(lines).toHaveLength(1 + 4); // header + the 4 fixture items
+  });
+
+  it('honours $orderby', async () => {
+    const lines = await csvLines('/api/v1/items.csv?$orderby=quantity desc');
+    // Assert on the id (column 0 — never quoted, unlike descriptions that may contain commas).
+    const ids = lines.slice(1).map((l) => l.split(',')[0]);
+    expect(ids).toEqual(['item-resistor', 'item-m3-washer', 'item-m3-bolt', 'item-esp32']);
+  });
+
+  it('honours $filter and $search', async () => {
+    const filtered = await csvLines('/api/v1/items.csv?$filter=quantity gt 10');
+    expect(filtered.slice(1)).toHaveLength(3);
+
+    const searched = await csvLines('/api/v1/items.csv?$search=ESP32');
+    const rows = searched.slice(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain('item-esp32');
+  });
+
+  it('400s an invalid $filter', async () => {
+    const res = await get('/api/v1/items.csv?$filter=quantity ge 10');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('bad_request');
+  });
+
+  it('is listed in the discovery index', async () => {
+    expect((await json('/api/v1')).endpoints).toContain('/api/v1/items.csv');
+  });
+});
+
 describe('GET /api/v1/locations', () => {
   it('lists locations with live item counts (incl. the seeded system locations)', async () => {
     const body = await json('/api/v1/locations');

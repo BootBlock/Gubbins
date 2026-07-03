@@ -32,3 +32,10 @@ export const MAX_ORDERBY_TERMS = 8;
 
 /** Hard cap on the raw `$filter` string length — an abuse guard against a pathological filter. */
 export const MAX_FILTER_LENGTH = 512;
+
+/**
+ * Hard ceiling on the number of rows a single CSV export may serialise — an abuse/memory guard
+ * so a `.csv` pull can't be coerced into buffering an unbounded result set. Generous enough that
+ * it never bites a real personal inventory; a larger dataset is truncated to this many rows.
+ */
+export const MAX_CSV_ROWS = 100_000;

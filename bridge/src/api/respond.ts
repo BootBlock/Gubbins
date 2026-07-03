@@ -59,6 +59,19 @@ export function sendXml(res: ServerResponse, status: number, body: string): void
 }
 
 /**
+ * Write a `text/csv` response as a downloadable attachment — used by the `items.csv` export.
+ * The `filename` is a fixed, safe literal (never user input), so no escaping is required.
+ */
+export function sendCsv(res: ServerResponse, status: number, body: string, filename: string): void {
+  res.writeHead(status, {
+    'content-type': 'text/csv; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-disposition': `attachment; filename="${filename}"`,
+  });
+  res.end(body);
+}
+
+/**
  * Write an error response in whichever envelope the request path calls for: the
  * structured `{ error: { code, message } }` for v1, or the flat `{ error: message }` for
  * the legacy paths. The `code` is ignored for the legacy shape (kept identical to the

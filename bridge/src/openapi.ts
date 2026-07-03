@@ -463,6 +463,34 @@ export const openapiDocument: JsonValue = {
         },
       },
     },
+    '/api/v1/items.csv': {
+      get: {
+        tags: ['items'],
+        summary: 'Export matching items as a CSV (refreshable spreadsheet pull)',
+        description:
+          'A spreadsheet-friendly CSV download of the matching items (columns: id, name, ' +
+          'description, notes, trackingMode, quantity, mpn, manufacturer, unitCost — the same ' +
+          "shape as the app's own export). Honours the same $filter/$search/$orderby/location/" +
+          'category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows ' +
+          '(up to a hard cap), not a single page. Point Excel/Power BI "From Web" at it for a ' +
+          'refreshable pull.',
+        parameters: [filterParam, searchParam, orderbyParam],
+        responses: {
+          200: {
+            description: 'The CSV file (RFC-4180, CRLF rows).',
+            content: {
+              'text/csv': {
+                schema: { type: 'string' },
+                example:
+                  'id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost\r\n' +
+                  'item-esp32,ESP32 Dev Board,,,DISCRETE,7,DEV-ESP32,Synthetic Silicon Co,',
+              },
+            },
+          },
+          ...(errorResponses(400, 401, 429, 503) as Record<string, JsonValue>),
+        },
+      },
+    },
     '/api/v1/items/{id}': {
       get: {
         tags: ['items'],
