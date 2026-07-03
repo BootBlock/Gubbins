@@ -40,10 +40,12 @@ export { PageContainer, type PageContainerProps } from './page-container';
 export {
   Menu,
   MenuLink,
+  MenuExternalLink,
   MenuAction,
   MenuSeparator,
   type MenuProps,
   type MenuLinkProps,
+  type MenuExternalLinkProps,
   type MenuActionProps,
 } from './menu';
 export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-region';
