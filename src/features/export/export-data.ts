@@ -39,6 +39,7 @@ const CSV_COLUMNS = [
   'notes',
   'trackingMode',
   'quantity',
+  'isUnlimited',
   'mpn',
   'manufacturer',
   'unitCost',
@@ -48,7 +49,12 @@ const CSV_COLUMNS = [
 export function buildItemsCsv(items: readonly Item[]): string {
   const header = CSV_COLUMNS.join(',');
   const rows = items.map((item) =>
-    CSV_COLUMNS.map((col) => csvCell((item as unknown as Record<string, unknown>)[col])).join(','),
+    CSV_COLUMNS.map((col) => {
+      // An unlimited-supply item (Phase 82) has no finite count — leave its quantity cell
+      // blank (∞ has no numeric CSV representation); the `isUnlimited` column carries the truth.
+      if (col === 'quantity' && item.isUnlimited) return '';
+      return csvCell((item as unknown as Record<string, unknown>)[col]);
+    }).join(','),
   );
   return [header, ...rows].join('\r\n');
 }
@@ -80,6 +86,7 @@ const CATALOG_CSV_COLUMNS = [
   'condition',
   'reorderPoint',
   'reorderQty',
+  'isUnlimited',
 ] as const;
 
 type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];

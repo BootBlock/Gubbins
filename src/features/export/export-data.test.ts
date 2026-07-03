@@ -53,6 +53,25 @@ describe('export-data builders', () => {
     expect(row).toContain('"a ""good"" one"');
   });
 
+  it('exports isUnlimited and leaves the quantity cell blank for an unlimited row (Phase 82)', () => {
+    const csv = buildItemsCsv([
+      makeItem({ id: 'fin', name: 'Bolt', quantity: 12, isUnlimited: false }),
+      makeItem({ id: 'inf', name: 'Tap water', quantity: 999, isUnlimited: true }),
+    ]);
+    const [header, finite, unlimited] = csv.split('\r\n');
+    const cols = header.split(',');
+    const qtyIdx = cols.indexOf('quantity');
+    const unlimitedIdx = cols.indexOf('isUnlimited');
+    expect(qtyIdx).toBeGreaterThanOrEqual(0);
+    expect(unlimitedIdx).toBeGreaterThanOrEqual(0);
+    // Finite item: real quantity, isUnlimited=false.
+    expect(finite.split(',')[qtyIdx]).toBe('12');
+    expect(finite.split(',')[unlimitedIdx]).toBe('false');
+    // Unlimited item: blank quantity cell, isUnlimited=true.
+    expect(unlimited.split(',')[qtyIdx]).toBe('');
+    expect(unlimited.split(',')[unlimitedIdx]).toBe('true');
+  });
+
   it('builds a vault file with YAML frontmatter and an activity table', () => {
     const history: ItemHistoryEntry[] = [
       {

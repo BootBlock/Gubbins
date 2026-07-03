@@ -49,6 +49,7 @@ function stubItem(id: string, name: string, mpn: string | null = null): Item {
     reorderPoint: null,
     reorderGaugePercent: null,
     reorderQty: null,
+    isUnlimited: false,
     isActive: true,
     createdAt: 0,
     updatedAt: 0,
@@ -731,5 +732,32 @@ describe('applyCatalogImportPlan — custom fields land on the item (:memory:)',
 
     expect(result.created).toBe(1);
     expect(result.rows[0]!.error).toMatch(/category/i);
+  });
+});
+
+describe('buildCatalogImportPlan — unlimited supply (Phase 82)', () => {
+  it('auto-detects an `unlimited` column and carries the flag onto a create', () => {
+    const csv = 'name,unlimited\r\nTap water,true\r\nM3 bolt,false';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create).toHaveLength(2);
+    expect(plan.create.find((c) => c.input.name === 'Tap water')?.input.isUnlimited).toBe(true);
+    expect(plan.create.find((c) => c.input.name === 'M3 bolt')?.input.isUnlimited).toBe(false);
+  });
+
+  it('rejects unlimited = true on a non-DISCRETE row with a clear error (mirrors the DB CHECK)', () => {
+    const csv = 'name,trackingMode,unlimited\r\nSerial widget,SERIALISED,true';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/only discrete/i);
+  });
+
+  it('round-trips isUnlimited through the exported catalogue CSV headers', () => {
+    // The `isUnlimited` header the exporter writes is auto-detected on re-import.
+    const csv = 'name,quantity,isUnlimited\r\nTap water,,true';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]?.input.isUnlimited).toBe(true);
   });
 });

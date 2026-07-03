@@ -35,11 +35,17 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
       this.assertWritable();
       const project = await this.requireProject(projectId);
 
-      const matched = await this.driver.query<{ item_id: string }>(
-        'SELECT DISTINCT item_id FROM project_bom_lines WHERE project_id = ? AND item_id IS NOT NULL;',
+      const matched = await this.driver.query<{ item_id: string; is_unlimited: number }>(
+        `SELECT DISTINCT l.item_id AS item_id, COALESCE(i.is_unlimited, 0) AS is_unlimited
+           FROM project_bom_lines l JOIN items i ON i.id = l.item_id
+          WHERE l.project_id = ? AND l.item_id IS NOT NULL;`,
         [projectId],
       );
       const partIds = matched.map((r) => r.item_id);
+      // An unlimited-supply part (Phase 82) is an infinite source: consuming it must NOT
+      // retire the item — it stays in inventory for the next build — though the CONSUMED
+      // activity-log entry is still written (the ledger no-op rule; see `unlimited.ts`).
+      const unlimitedIds = new Set(matched.filter((r) => Number(r.is_unlimited) === 1).map((r) => r.item_id));
 
       const statements: SqlStatement[] = [];
       const result: { locationId?: string; itemId?: string } = {};
@@ -83,10 +89,10 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
             metadata: { projectId, fromParts: partIds },
           }),
         );
-        this.consume(statements, partIds, project.name);
+        this.consume(statements, partIds, project.name, unlimitedIds);
       } else {
         // PERMANENT_CONSUMPTION
-        this.consume(statements, partIds, project.name);
+        this.consume(statements, partIds, project.name, unlimitedIds);
       }
 
       statements.push({
@@ -98,16 +104,30 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
       return result;
     }
 
-    /** Append soft-delete + CONSUMED ledger statements for each matched part. */
-    private consume(statements: SqlStatement[], partIds: readonly string[], projectName: string): void {
+    /**
+     * Append soft-delete + CONSUMED ledger statements for each matched part. An
+     * unlimited-supply part (`unlimitedIds`, Phase 82) is an infinite source: it logs
+     * CONSUMED for the activity trail but is **not** soft-deleted — it remains available
+     * for the next build (consumption never depletes it).
+     */
+    private consume(
+      statements: SqlStatement[],
+      partIds: readonly string[],
+      projectName: string,
+      unlimitedIds: ReadonlySet<string>,
+    ): void {
       for (const itemId of partIds) {
-        statements.push({
-          sql: 'UPDATE items SET is_active = 0 WHERE id = ?;',
-          params: [itemId],
-        });
+        if (!unlimitedIds.has(itemId)) {
+          statements.push({
+            sql: 'UPDATE items SET is_active = 0 WHERE id = ?;',
+            params: [itemId],
+          });
+        }
         statements.push(
           historyStatement(itemId, 'CONSUMED', {
-            note: `Permanently consumed by assembly of "${projectName}".`,
+            note: unlimitedIds.has(itemId)
+              ? `Consumed by assembly of "${projectName}" (unlimited supply — stock unchanged).`
+              : `Permanently consumed by assembly of "${projectName}".`,
           }),
         );
       }

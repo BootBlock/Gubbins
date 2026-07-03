@@ -23,7 +23,9 @@ const p = (name: string, type: string, nullable = true): EdmProperty => ({ name,
 export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('id', 'Edm.String', false),
   p('name', 'Edm.String', false),
-  p('quantity', 'Edm.Int64', false),
+  // Nullable: an unlimited-supply item (isUnlimited) has no finite count, so quantity is null.
+  p('quantity', 'Edm.Int64'),
+  p('isUnlimited', 'Edm.Boolean', false),
   p('locationId', 'Edm.String', false),
   p('locationName', 'Edm.String'),
   p('categoryId', 'Edm.String'),

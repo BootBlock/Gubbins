@@ -105,8 +105,8 @@ const fieldsParam: JsonValue = {
     'set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so ' +
     '`fields=name,unitCost` returns just those two. Nest an array field with a dot: ' +
     '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
-    'locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, ' +
-    'isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, ' +
+    'isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, ' +
+    'trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, ' +
     'expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
     'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
     'updatedAt, placements, capabilities.',
@@ -483,8 +483,9 @@ export const openapiDocument: JsonValue = {
         summary: 'Export matching items as a CSV (refreshable spreadsheet pull)',
         description:
           'A spreadsheet-friendly CSV download of the matching items (columns: id, name, ' +
-          'description, notes, trackingMode, quantity, mpn, manufacturer, unitCost — the same ' +
-          "shape as the app's own export). Honours the same $filter/$search/$orderby/location/" +
+          'description, notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost — ' +
+          "the same shape as the app's own export; the quantity cell is blank for an unlimited-" +
+          'supply row). Honours the same $filter/$search/$orderby/location/' +
           'category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows ' +
           '(up to a hard cap), not a single page. Point Excel/Power BI "From Web" at it for a ' +
           'refreshable pull.',
@@ -496,8 +497,8 @@ export const openapiDocument: JsonValue = {
               'text/csv': {
                 schema: { type: 'string' },
                 example:
-                  'id,name,description,notes,trackingMode,quantity,mpn,manufacturer,unitCost\r\n' +
-                  'item-esp32,ESP32 Dev Board,,,DISCRETE,7,DEV-ESP32,Synthetic Silicon Co,',
+                  'id,name,description,notes,trackingMode,quantity,isUnlimited,mpn,manufacturer,unitCost\r\n' +
+                  'item-esp32,ESP32 Dev Board,,,DISCRETE,7,false,DEV-ESP32,Synthetic Silicon Co,',
               },
             },
           },
@@ -799,7 +800,13 @@ export const openapiDocument: JsonValue = {
         properties: {
           id: { type: 'string', example: 'item-esp32' },
           name: { type: 'string', example: 'ESP32 Dev Board' },
-          quantity: { type: 'integer', example: 7 },
+          quantity: {
+            type: 'integer',
+            nullable: true,
+            example: 7,
+            description:
+              'On-hand grand total; **null** for an unlimited-supply item (an infinite source has no finite count).',
+          },
           locationName: { type: 'string', nullable: true, example: 'Shelf 2' },
           mpn: { type: 'string', nullable: true, example: 'DEV-ESP32' },
           manufacturer: { type: 'string', nullable: true, example: 'Synthetic Silicon Co' },
@@ -863,6 +870,7 @@ export const openapiDocument: JsonValue = {
           'id',
           'name',
           'quantity',
+          'isUnlimited',
           'locationId',
           'locationName',
           'categoryId',
@@ -874,7 +882,19 @@ export const openapiDocument: JsonValue = {
         properties: {
           id: { type: 'string', example: 'item-m3-bolt' },
           name: { type: 'string', example: 'M3 x 10 Hex Bolt' },
-          quantity: { type: 'integer', example: 42 },
+          quantity: {
+            type: 'integer',
+            nullable: true,
+            example: 42,
+            description:
+              'On-hand grand total across every location. **null** for an unlimited-supply ' +
+              'item (`isUnlimited: true`) — an effectively infinite source has no finite count.',
+          },
+          isUnlimited: {
+            type: 'boolean',
+            example: false,
+            description: 'True for an effectively infinite source (e.g. tap water); its `quantity` is null.',
+          },
           locationId: { type: 'string', example: 'loc-drawer-a' },
           locationName: { type: 'string', nullable: true, example: 'Drawer A' },
           categoryId: { type: 'string', nullable: true, example: 'cat-fasteners' },

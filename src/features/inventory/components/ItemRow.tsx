@@ -2,9 +2,10 @@ import { cn } from '@/lib/utils';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
+import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
 import { GaugeRing } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
-import { TrackingBadge } from './TrackingBadge';
+import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 import type { ItemSelection } from './inventory-ui';
 
@@ -58,9 +59,18 @@ export function ItemRow({
       </div>
 
       <TrackingBadge mode={item.trackingMode} className="hidden sm:inline-flex" />
+      {isUnlimited(item) ? <UnlimitedBadge className="hidden sm:inline-flex" /> : null}
 
       <div className="flex w-40 items-center justify-end gap-2">
-        {item.gauge ? (
+        {isUnlimited(item) ? (
+          <span
+            className="text-lg font-semibold text-glyph-scan"
+            aria-label="Unlimited supply"
+            title="Unlimited supply"
+          >
+            {UNLIMITED_GLYPH}
+          </span>
+        ) : item.gauge ? (
           <>
             <span className="text-xs tabular-nums text-muted-foreground">
               {fmt.measure(item.gauge.currentNetValue, item.gauge.unitOfMeasure)}

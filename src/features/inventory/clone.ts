@@ -19,8 +19,8 @@ export const CLONE_NAME_SUFFIX = ' (copy)';
  * Build a {@link CreateItemInput} seed from a source item.
  *
  * **Copied** (template identity): name (+ suffix), description, location, category, MPN,
- * manufacturer, unit cost, condition, reorder thresholds, depreciation months, tracking mode and
- * — for gauges — the gauge shape (unit / capacity / tare).
+ * manufacturer, unit cost, condition, reorder thresholds, depreciation months, tracking mode,
+ * the unlimited-supply flag and — for gauges — the gauge shape (unit / capacity / tare).
  *
  * **Stripped** (per-instance): serial number (auto-assigned afresh), batch/lot number, expiry
  * date, acquired-at, warranty-expiry, purchase price and free-text notes — these describe *this
@@ -43,6 +43,9 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
     manufacturer: source.manufacturer,
     unitCost: source.unitCost,
     condition: source.condition,
+    // "Unlimited supply" is a template property (Phase 82) — the copy is the same kind of
+    // source. Harmless on the zero-quantity clone (the flag ignores quantity anyway).
+    isUnlimited: source.isUnlimited,
     reorderPoint: source.reorderPoint,
     reorderGaugePercent: source.reorderGaugePercent,
     reorderQty: source.reorderQty,

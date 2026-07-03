@@ -83,6 +83,15 @@ function notAVariantParent(col: string): string {
 }
 
 /**
+ * SQL fragment excluding unlimited-supply items (Phase 82) from valuation and dead-stock:
+ * `qty × cost` is undefined for an infinite source, and an infinite source is never "dead".
+ * `col` is the qualified `is_unlimited` column to test (e.g. `i.is_unlimited`).
+ */
+function notUnlimited(col: string): string {
+  return `${col} = 0`;
+}
+
+/**
  * Correlated subquery yielding the **preferred** supplier part's `unit_cost` for an item
  * (NULL when none is marked or the preferred row is unpriced). Feeds the `preferredSupplierCost`
  * fallback so valuation honours the Phase-60 cost precedence — a manual `items.unit_cost` wins,
@@ -118,7 +127,7 @@ export class ReportRepository extends BaseRepository {
               ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
          FROM items i
          LEFT JOIN categories c ON c.id = i.category_id
-        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
+        WHERE i.is_active = 1 AND ${notAVariantParent('i.id')} AND ${notUnlimited('i.is_unlimited')};`,
     );
 
     const itemValuations: ItemValuationRow[] = itemRows.map((r) => ({
@@ -147,7 +156,7 @@ export class ReportRepository extends BaseRepository {
          FROM item_stock s
          JOIN items i ON i.id = s.item_id
          LEFT JOIN locations l ON l.id = s.location_id
-        WHERE i.is_active = 1 AND s.quantity > 0;`,
+        WHERE i.is_active = 1 AND s.quantity > 0 AND ${notUnlimited('i.is_unlimited')};`,
     );
     const locationRows: ValuationRow[] = stockRows.map((r) => ({
       groupId: r.location_id,
@@ -224,6 +233,7 @@ export class ReportRepository extends BaseRepository {
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT COUNT(*) AS n FROM items
         WHERE is_active = 1
+          AND is_unlimited = 0
           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
           AND (
             (tracking_mode = 'DISCRETE' AND quantity <= ?)
@@ -260,7 +270,8 @@ export class ReportRepository extends BaseRepository {
          FROM items i
         WHERE i.is_active = 1
           AND i.quantity > 0
-          AND ${notAVariantParent('i.id')};`,
+          AND ${notAVariantParent('i.id')}
+          AND ${notUnlimited('i.is_unlimited')};`,
     );
     const candidates: DeadStockCandidate[] = rows.map((r) => ({
       id: r.id,
@@ -318,6 +329,7 @@ export class ReportRepository extends BaseRepository {
                 ON sp.item_id = i.id AND sp.is_preferred = 1
         WHERE i.is_active = 1
           AND i.tracking_mode = 'DISCRETE'
+          AND i.is_unlimited = 0
           AND i.quantity <= COALESCE(i.reorder_point, ?)
           AND i.id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
         ORDER BY (CAST(i.quantity AS REAL) / MAX(COALESCE(i.reorder_point, ?), 1)) ASC,

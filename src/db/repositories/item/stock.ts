@@ -83,8 +83,9 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * on the item's *primary* `location_id` and reports the item's grand total — this reads
      * the `item_stock` ledger, so it correctly includes an item whose primary location is
      * elsewhere but which holds a secondary placement here, and reports *this location's*
-     * quantity as the expected count. SERIALISED instances (audited by presence) and gauges
-     * are excluded — only DISCRETE quantities are blind-counted.
+     * quantity as the expected count. SERIALISED instances (audited by presence), gauges and
+     * unlimited-supply items (an infinite source is not counted, Phase 82) are excluded — only
+     * finite DISCRETE quantities are blind-counted.
      */
     async listStockAtLocation(locationId: string): Promise<LocationStockLine[]> {
       const rows = await this.driver.query<{
@@ -95,7 +96,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
         `SELECT s.item_id, i.name AS item_name, s.quantity
          FROM item_stock s JOIN items i ON i.id = s.item_id
          WHERE s.location_id = ? AND s.quantity > 0
-           AND i.tracking_mode = 'DISCRETE' AND i.is_active = 1
+           AND i.tracking_mode = 'DISCRETE' AND i.is_active = 1 AND i.is_unlimited = 0
          ORDER BY s.quantity DESC, i.name COLLATE NOCASE ASC;`,
         [locationId],
       );
@@ -161,7 +162,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
                 s.expiry_date, s.quantity
          FROM stock_batches s JOIN items i ON i.id = s.item_id
          WHERE s.location_id = ? AND s.quantity > 0
-           AND i.tracking_mode = 'DISCRETE' AND i.is_active = 1
+           AND i.tracking_mode = 'DISCRETE' AND i.is_active = 1 AND i.is_unlimited = 0
          ORDER BY i.name COLLATE NOCASE ASC,
                   CASE WHEN s.expiry_date IS NULL THEN 1 ELSE 0 END ASC, s.expiry_date ASC, s.batch_key ASC;`,
         [locationId],

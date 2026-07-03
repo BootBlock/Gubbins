@@ -232,11 +232,15 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 | Endpoint | Default fields |
 | --- | --- |
 | `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
-| `/items` | the above + `locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
+| `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
 | `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
 
+> **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
+> mains air) reports `isUnlimited: true` and its `quantity` as **`null`** (JSON has no `Infinity`);
+> in the CSV export its quantity cell is left blank.
+
 **Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
-`quantity`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
+`quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
 `trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNo`, `parentId`,
 `unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
 `warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
@@ -340,7 +344,8 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/\$metadata"
 
 `GET /api/v1/items.csv` returns a spreadsheet-friendly **CSV** of the matching items — the same
 column shape and RFC-4180 quoting as the app's own catalogue export (`id, name, description,
-notes, trackingMode, quantity, mpn, manufacturer, unitCost`), reused verbatim so the two never
+notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost`; an unlimited-supply
+row's quantity cell is blank), reused verbatim so the two never
 drift. Unlike the JSON list it returns **all** matching rows (up to a hard cap of 100,000), not a
 single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`category`/
 `includeInactive` scope.

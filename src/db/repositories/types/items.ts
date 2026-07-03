@@ -35,6 +35,12 @@ export interface ItemRow {
   readonly condition: Condition | null;
   /** Parent item id when this is a child variant; null otherwise (§4 Variant, v8). */
   readonly parent_id: string | null;
+  /**
+   * "Unlimited supply" flag (Phase 82): 1 = an effectively infinite source (tap water,
+   * mains air). DISCRETE-only (a DB CHECK enforces it); the stored `quantity` is ignored
+   * for display and consumption never depletes it.
+   */
+  readonly is_unlimited: number;
   /** Per-item DISCRETE quantity reorder floor; null = use the global default (v21). */
   readonly reorder_point: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null = use the global default (v21). */
@@ -103,6 +109,13 @@ export interface Item {
   readonly condition: Condition | null;
   /** Parent item id when this is a child variant; null for a standalone/parent item (§4). */
   readonly parentId: string | null;
+  /**
+   * "Unlimited supply" modifier (Phase 82): `true` = an effectively infinite source (tap
+   * water, mains air/electricity, a bulk pile). DISCRETE-only. When set, the on-hand
+   * `quantity` is ignored (rendered as ∞), the item is never low / never on the shopping
+   * list, and consuming it is a ledger no-op (see the pure `unlimited.ts` seam).
+   */
+  readonly isUnlimited: boolean;
   /**
    * This item's **own** low-stock trigger (spec §4, Phase 59), overriding the global
    * default when set:
@@ -179,6 +192,8 @@ export interface CreateItemInput {
   readonly lotNumber?: string | null;
   /** Operational condition enum (§4 Condition Tracking). */
   readonly condition?: Condition | null;
+  /** "Unlimited supply" modifier (Phase 82); DISCRETE-only, defaults to false. */
+  readonly isUnlimited?: boolean;
   /** Per-item DISCRETE quantity reorder floor; omit/null to use the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; omit/null to use the global default (§4, v21). */
@@ -227,6 +242,11 @@ export interface UpdateItemInput {
   readonly lotNumber?: string | null;
   /** Operational condition; a change is logged as `CONDITION_CHANGED` (§4). */
   readonly condition?: Condition | null;
+  /**
+   * "Unlimited supply" modifier (Phase 82); DISCRETE-only. Toggling it is a plain LWW
+   * update (no history action) and lossless — it never rewrites `quantity`.
+   */
+  readonly isUnlimited?: boolean;
   /** Per-item DISCRETE quantity reorder floor; null clears it back to the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null clears it back to the global default (§4, v21). */

@@ -72,6 +72,10 @@ export function withCosting<TBase extends Constructor<ProjectCoreRepository>>(Ba
          WHERE l.project_id = ?
            AND l.procurement_status = 'NONE'
            AND l.required_qty > l.reserved_qty
+           -- An unlimited-supply component (Phase 82) is always satisfiable — never a
+           -- shortfall, so it never surfaces on the shopping list. Unmatched lines
+           -- (i.is_unlimited IS NULL via the LEFT JOIN) still count.
+           AND COALESCE(i.is_unlimited, 0) = 0
          GROUP BY CASE WHEN l.item_id IS NOT NULL THEN l.item_id ELSE l.id END
          ORDER BY label COLLATE NOCASE ASC;`,
         [projectId],

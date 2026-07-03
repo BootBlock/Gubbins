@@ -75,6 +75,7 @@ export {
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,
   Bookmark as UntrackedIcon,
+  Infinity as InfinityIcon,
   History as HistoryIcon,
   Shapes as CategoryIcon,
   Tag as TagIcon,

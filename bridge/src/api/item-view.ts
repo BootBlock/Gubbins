@@ -102,7 +102,10 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   // Identity + core summary (the search/list defaults).
   ['id', { resolve: (c) => c.item.id }],
   ['name', { resolve: (c) => c.item.name }],
-  ['quantity', { resolve: (c) => c.item.quantity }],
+  // An unlimited-supply item has no finite on-hand count — null it (JSON has no Infinity);
+  // `isUnlimited` carries the distinction. Finite items serialise the real quantity.
+  ['quantity', { resolve: (c) => (c.item.isUnlimited ? null : c.item.quantity) }],
+  ['isUnlimited', { resolve: (c) => c.item.isUnlimited }],
   ['locationId', { resolve: (c) => c.item.locationId }],
   ['locationName', { resolve: (c) => c.locationName() }],
   ['categoryId', { resolve: (c) => c.item.categoryId }],
@@ -161,6 +164,7 @@ export const ITEM_SUMMARY_DEFAULT_FIELDS: readonly string[] = [
   'id',
   'name',
   'quantity',
+  'isUnlimited',
   'locationId',
   'locationName',
   'categoryId',
