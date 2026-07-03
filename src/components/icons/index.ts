@@ -181,6 +181,7 @@ export {
   SquareTerminal as TerminalIcon,
   ChevronLeft as ChevronLeftIcon,
   CircleHelp as HelpIcon,
+  BookOpen as WikiIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';
