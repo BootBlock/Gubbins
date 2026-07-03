@@ -79,10 +79,11 @@ Follow this identically for EI-1 … EI-7:
    the feature — do not let docs drift. The dedicated documentation truth-up is EI-7, but each
    phase still documents its own surface.
 4. **Review gate (mandatory).** Before merging, run the **`/code-review high`** skill on the
-   phase diff (use **`/code-review ultra`** for **EI-1, EI-4, and EI-5** — the largest /
-   highest-blast-radius phases: event delivery, the service-worker/install surface, and MQTT
-   networking). Resolve every **confirmed** finding; re-review until the diff is clean. Record
-   in the Outcome that the gate ran and what it caught.
+   phase diff — **every phase, always `high`** (never `ultra`). EI-1, EI-4, and EI-5 are the
+   largest / highest-blast-radius phases (event delivery, the service-worker/install surface,
+   and MQTT networking), so review those especially carefully — but still at `high`. Resolve
+   every **confirmed** finding; re-review until the diff is clean. Record in the Outcome that
+   the gate ran and what it caught.
 5. **Merge + clean up.** Exit the worktree, `git merge --no-ff` the branch into `main`, then
    `git worktree remove …` and `git branch -d …`. Verify with `git worktree list`.
 6. **Close the loop in this doc.** Tick the phase's boxes, append its **Outcome** paragraph,
@@ -167,7 +168,7 @@ snapshot (e.g. dropping an item below its low-stock bound) delivers a signed `it
 webhook whose signature verifies; `curl -N .../api/v1/events` streams the same event live; with
 the flag **off**, no webhook fires and `/api/v1/events` is `404`. Read-only w.r.t. inventory.
 
-**Review gate:** `/code-review ultra` (largest, highest-risk phase — delivery/retry/security).
+**Review gate:** `/code-review high` (largest, highest-risk phase — delivery/retry/security).
 
 **Outcome (____-__-__).** _(fill in on completion)_
 
@@ -284,8 +285,9 @@ Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-4 (Web
 + file/protocol handlers). EI-1 through EI-3 are complete and merged. Work in a NEW git
 worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-share -b
 feat/ecosystem-share HEAD), follow the "How every phase runs" loop and the top-of-doc
-invariants, gate with /code-review ultra before merging (this touches the service-worker /
-install surface — high blast radius), then merge --no-ff into main and clean up. Update the
+invariants, gate with /code-review high before merging (this touches the service-worker /
+install surface — high blast radius, so review carefully), then merge --no-ff into main and
+clean up. Update the
 EI-4 Outcome, then emit EI-5's continuation prompt as a raw fenced block. This
 is a PWA-side phase: register a web app manifest share_target (handled in src/sw.ts, since the
 PWA has no server) so "Share to Gubbins" from the OS share sheet opens a PRE-FILLED add-item
@@ -328,7 +330,7 @@ share maps to* — confirm the URL→scraper / text→import / image→image-flo
 Gubbins on a pre-filled add-item draft; opening a `.csv` via the OS routes to the import
 dialog; all new UI uses Foundry primitives + design tokens.
 
-**Review gate:** `/code-review ultra` (touches the SW / install surface — high blast radius).
+**Review gate:** `/code-review high` (touches the SW / install surface — high blast radius; review carefully).
 
 **Outcome (____-__-__).** _(fill in on completion)_
 
@@ -339,7 +341,7 @@ Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-5 (MQT
 Home Assistant MQTT discovery). EI-1 through EI-4 are complete and merged. Work in a NEW git
 worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-mqtt -b
 feat/ecosystem-mqtt HEAD), follow the "How every phase runs" loop and the top-of-doc
-invariants, gate with /code-review ultra before merging, then merge --no-ff into main and
+invariants, gate with /code-review high before merging, then merge --no-ff into main and
 clean up. Update the EI-5 Outcome, then emit EI-6's continuation prompt as a raw fenced block.
 Add an opt-in (GUBBINS_BRIDGE_MQTT=on, off by default) mode where the bridge connects OUT to a
 user's MQTT broker and publishes inventory state + the EI-1 events to topics, optionally
@@ -389,7 +391,7 @@ stays small; otherwise the vetted dep.
 Gubbins state + events appear on the expected topics; with HA discovery on, HA shows Gubbins
 entities without the custom component; with the flag off, nothing connects.
 
-**Review gate:** `/code-review ultra` (networking + the dependency decision).
+**Review gate:** `/code-review high` (networking + the dependency decision; review carefully).
 
 **Outcome (____-__-__).** _(fill in on completion)_
 
@@ -540,7 +542,7 @@ the drift-guard test. Reuse bridge/src/api/dto.ts shapes; keep parseASTtoSQL the
 zero new dependencies. Synthetic fixtures only; keep tsc --noEmit clean for both bridge and
 app; run a live serve.mjs smoke (flag on: a low-stock edit delivers a verifiable signed webhook
 and streams over SSE; flag off: no webhook and /api/v1/events is 404). Gate with /code-review
-ultra before merging and resolve all confirmed findings. Then merge --no-ff into main, remove
+high before merging and resolve all confirmed findings. Then merge --no-ff into main, remove
 the worktree + branch, fill in the EI-1 Outcome in the plan doc, and emit EI-2's continuation
 prompt (embedded under Phase EI-1) as a raw fenced block — the last thing in your reply.
 ```
