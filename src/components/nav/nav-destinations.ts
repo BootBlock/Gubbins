@@ -5,6 +5,7 @@ import {
   CloudIcon,
   ContactsIcon,
   DueDateIcon,
+  ExtensionIcon,
   HistoryIcon,
   HomeIcon,
   InfoIcon,
@@ -36,6 +37,7 @@ export type AppRoutePath =
   | '/activity'
   | '/alerts'
   | '/sync'
+  | '/home-assistant'
   | '/settings'
   | '/about';
 
@@ -64,6 +66,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
   { to: '/alerts', label: 'Alerts', Icon: AlertIcon, group: 'manage' },
   // System — sync, preferences and app info.
   { to: '/sync', label: 'Sync', Icon: CloudIcon, group: 'system' },
+  { to: '/home-assistant', label: 'Home Assistant', Icon: ExtensionIcon, group: 'system' },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon, group: 'system' },
   { to: '/about', label: 'About', Icon: InfoIcon, group: 'system' },
 ];

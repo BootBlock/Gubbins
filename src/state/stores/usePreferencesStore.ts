@@ -117,6 +117,12 @@ interface PreferencesStore {
   /** Show the first-run "getting started" panel while the inventory is still empty. */
   readonly dashboardGettingStarted: boolean;
   /**
+   * Whether the user has dismissed the dashboard "keep your data safe" backup/sync nudge.
+   * The nudge shows once there's data to protect and no sync provider is connected; dismissing
+   * it (or connecting a sync provider) hides it. Persisted so it stays dismissed across sessions.
+   */
+  readonly backupNudgeDismissed: boolean;
+  /**
    * "Push to bridge" target (Home Assistant query bridge). The base URL (e.g.
    * `http://127.0.0.1:8787`) of an optional companion bridge the user can push the dataset
    * to over HTTP, for those who don't use FS-Access folder sync. Empty until configured. The
@@ -151,6 +157,8 @@ interface PreferencesStore {
   setDashboardCommandPalette: (enabled: boolean) => void;
   setDashboardQuickActions: (enabled: boolean) => void;
   setDashboardGettingStarted: (enabled: boolean) => void;
+  /** Permanently dismiss the dashboard backup/sync nudge. */
+  dismissBackupNudge: () => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
 }
@@ -180,6 +188,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dashboardCommandPalette: true,
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
+      backupNudgeDismissed: false,
       bridgeUrl: '',
       bridgeToken: '',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
@@ -209,6 +218,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),
+      dismissBackupNudge: () => set({ backupNudgeDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
     }),

@@ -135,5 +135,16 @@ describe('CommandPalette', () => {
       expect(screen.queryAllByTestId('command-palette-screen')).toHaveLength(0);
       expect(screen.getByText(/No screens match/)).toBeTruthy();
     });
+
+    it('surfaces the Home Assistant setup guide and navigates to it', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: '>assistant' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens[0].textContent).toContain('Home Assistant');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/home-assistant' });
+    });
   });
 });
