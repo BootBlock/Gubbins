@@ -25,6 +25,8 @@ export interface ItemRow {
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress, v4). */
   readonly mpn: string | null;
   readonly manufacturer: string | null;
+  /** Retail barcode (GTIN — EAN/UPC), stored verbatim as printed; null if none. */
+  readonly barcode: string | null;
   /** Current replacement value per unit, in the base currency (v4). */
   readonly unit_cost: number | null;
   /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4, v8). */
@@ -97,6 +99,12 @@ export interface Item {
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress). */
   readonly mpn: string | null;
   readonly manufacturer: string | null;
+  /**
+   * Retail barcode (GTIN — EAN/UPC/EAN-8/GTIN-14) as printed on the article; null if
+   * none. Recognised by the scanner (see `scanner/gtin.ts`) and used for exact
+   * lookup-by-barcode and product enrichment. Distinct from `mpn` (the maker's code).
+   */
+  readonly barcode: string | null;
   /** Current replacement value per unit, in the base currency; null if unpriced. */
   readonly unitCost: number | null;
   /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4). */
@@ -184,6 +192,8 @@ export interface CreateItemInput {
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress). */
   readonly mpn?: string | null;
   readonly manufacturer?: string | null;
+  /** Retail barcode (GTIN — EAN/UPC); stored verbatim as printed. */
+  readonly barcode?: string | null;
   /** Current replacement value per unit, in the base currency. */
   readonly unitCost?: number | null;
   /** Perishable expiry instant (UNIX-ms); omit/null for non-perishables (§4). */
@@ -236,6 +246,8 @@ export interface UpdateItemInput {
   readonly categoryId?: string | null;
   readonly mpn?: string | null;
   readonly manufacturer?: string | null;
+  /** Retail barcode (GTIN — EAN/UPC); null clears it. */
+  readonly barcode?: string | null;
   readonly unitCost?: number | null;
   readonly expiryDate?: number | null;
   readonly batchNumber?: string | null;

@@ -4,6 +4,7 @@ import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Select, Surface, Tooltip } from '@/components/foundry';
 import {
+  AddIcon,
   CameraOffIcon,
   CheckoutIcon,
   CloseIcon,
@@ -38,16 +39,27 @@ export function ScannerOverlay({
   open,
   onClose,
   onLocationScanned,
+  onCreateFromBarcode,
 }: {
   open: boolean;
   onClose: () => void;
   /** Called with a scanned location id (Phase 73) — the parent selects it and closes. */
   onLocationScanned?: (locationId: string) => void;
+  /**
+   * Called with a valid retail barcode (GTIN) that no existing item carries — the parent
+   * opens the add-item form pre-filled with it (recommendation point 1). When omitted, an
+   * unknown barcode is still recognised but the "Add item" affordance is hidden.
+   */
+  onCreateFromBarcode?: (gtin: string) => void;
 }) {
   if (!open) return null;
   return (
     <ScannerQueueProvider>
-      <ScannerOverlayInner onClose={onClose} onLocationScanned={onLocationScanned} />
+      <ScannerOverlayInner
+        onClose={onClose}
+        onLocationScanned={onLocationScanned}
+        onCreateFromBarcode={onCreateFromBarcode}
+      />
     </ScannerQueueProvider>
   );
 }
@@ -55,9 +67,11 @@ export function ScannerOverlay({
 function ScannerOverlayInner({
   onClose,
   onLocationScanned,
+  onCreateFromBarcode,
 }: {
   onClose: () => void;
   onLocationScanned?: (locationId: string) => void;
+  onCreateFromBarcode?: (gtin: string) => void;
 }) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -76,6 +90,8 @@ function ScannerOverlayInner({
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
+  // A recognised retail barcode that no item carries yet — offer to create one (point 1).
+  const [gtinResult, setGtinResult] = useState<string | null>(null);
   const [checkoutItem, setCheckoutItem] = useState<Item | null>(null);
   const [batchName, setBatchName] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
@@ -96,10 +112,25 @@ function ScannerOverlayInner({
     async (raw: string) => {
       const code = parseScannedCode(raw);
       if (!code) {
-        setNotice('That code is not a Gubbins code.');
+        setNotice('That code isn’t a Gubbins code or a recognised barcode.');
         return;
       }
       const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
+
+      // A resolved item (from a Gubbins code, or a retail barcode an item already carries)
+      // is confirmed and either queued (Continuous) or shown for a Discrete action.
+      const presentItem = (item: Item) => {
+        setNotice(null);
+        setGtinResult(null);
+        if (state.mode === 'CONTINUOUS') {
+          const added = queue.offer(item.id, item.name);
+          if (added) feedback.current.confirm(confirmOpts);
+        } else {
+          feedback.current.confirm(confirmOpts);
+          dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view
+          setDiscreteResult(item);
+        }
+      };
 
       // A scanned location label jumps straight to that location (Phase 73). Validate
       // it against the loaded list, then hand off to the parent to select it + close.
@@ -115,20 +146,28 @@ function ScannerOverlayInner({
         return;
       }
 
+      // A retail barcode (GTIN): resolve it to an item that already records it; failing
+      // that, offer to create one (recommendation point 1). Never a dead end.
+      if (code.kind === 'gtin') {
+        const existing = await getItemRepository().getByBarcode(code.gtin);
+        if (existing) {
+          presentItem(existing);
+          return;
+        }
+        setNotice(null);
+        feedback.current.confirm(confirmOpts);
+        dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
+        setDiscreteResult(null);
+        setGtinResult(code.gtin);
+        return;
+      }
+
       const item = await getItemRepository().getById(code.id);
       if (!item) {
         setNotice('No matching item found.');
         return;
       }
-      setNotice(null);
-      if (state.mode === 'CONTINUOUS') {
-        const added = queue.offer(item.id, item.name);
-        if (added) feedback.current.confirm(confirmOpts);
-      } else {
-        feedback.current.confirm(confirmOpts);
-        dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view
-        setDiscreteResult(item);
-      }
+      presentItem(item);
     },
     [state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
   );
@@ -156,7 +195,18 @@ function ScannerOverlayInner({
 
   const scanAgain = () => {
     setDiscreteResult(null);
+    setGtinResult(null);
     dispatch({ type: 'RESUME_SCANNING' });
+  };
+
+  // Hand a fresh barcode to the parent to seed the add-item form, then close the scanner.
+  const createFromBarcode = () => {
+    if (!gtinResult) return;
+    const gtin = gtinResult;
+    setGtinResult(null);
+    dispatch({ type: 'CLOSE' });
+    onCreateFromBarcode?.(gtin);
+    onClose();
   };
 
   const reviewQueue = () => dispatch({ type: 'REVIEW_QUEUE' });
@@ -191,7 +241,11 @@ function ScannerOverlayInner({
       {/* Announce a discrete scan result for screen readers: the visible result card is
           interactive (buttons), so the announcement lives in a separate hidden region. */}
       <LiveRegion visuallyHidden data-testid="scanner-scan-announce">
-        {discreteResult ? `Scanned ${discreteResult.name}` : null}
+        {discreteResult
+          ? `Scanned ${discreteResult.name}`
+          : gtinResult
+            ? `Scanned barcode ${gtinResult}, not in your inventory`
+            : null}
       </LiveRegion>
 
       {/* Header */}
@@ -282,8 +336,30 @@ function ScannerOverlayInner({
           </div>
         ) : null}
 
+        {/* Unknown-barcode card: a valid GTIN no item carries yet (recommendation point 1).
+            Offer to create an item pre-filled with it (when the parent wired the handoff). */}
+        {gtinResult ? (
+          <div className="absolute inset-x-0 bottom-0 p-4">
+            <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-gtin-result">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">New barcode</p>
+              <p className="font-mono text-lg font-semibold tracking-wide">{gtinResult}</p>
+              <p className="text-sm text-muted-foreground">No item in your inventory has this barcode yet.</p>
+              <div className="flex gap-2">
+                {onCreateFromBarcode ? (
+                  <Button onClick={createFromBarcode} data-testid="scanner-create-from-barcode">
+                    <AddIcon /> Add item with this barcode
+                  </Button>
+                ) : null}
+                <Button variant="outline" onClick={scanAgain}>
+                  Scan again
+                </Button>
+              </div>
+            </Surface>
+          </div>
+        ) : null}
+
         {/* Continuous queue review */}
-        {state.status === 'PROCESSING_QUEUE' && !discreteResult ? (
+        {state.status === 'PROCESSING_QUEUE' && !discreteResult && !gtinResult ? (
           <div className="absolute inset-x-0 bottom-0 p-4">
             <Surface className="space-y-3 p-4 text-foreground">
               <p className="text-sm font-semibold">

@@ -72,6 +72,9 @@ function InventoryWorkspace() {
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // A retail barcode scanned for an item that doesn't exist yet — seeds the add-item form
+  // (recommendation point 1). Cleared when the dialog closes.
+  const [scanBarcode, setScanBarcode] = useState<string | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -494,13 +497,17 @@ function InventoryWorkspace() {
       {addOpen ? (
         <CreateItemDialog
           open
-          onClose={() => setAddOpen(false)}
+          onClose={() => {
+            setAddOpen(false);
+            setScanBarcode(null);
+          }}
           locations={flatLocations}
           defaultLocationId={defaultLocationForNewItem(
             selectedLocationId,
             flatLocations,
             markedDefaultLocationId(flatLocations),
           )}
+          initialValues={scanBarcode ? { barcode: scanBarcode } : undefined}
         />
       ) : null}
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
@@ -517,6 +524,11 @@ function InventoryWorkspace() {
         onLocationScanned={(id) => {
           setSelectedLocationId(id);
           setScannerOpen(false);
+        }}
+        onCreateFromBarcode={(gtin) => {
+          setScannerOpen(false);
+          setScanBarcode(gtin);
+          setAddOpen(true);
         }}
       />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />

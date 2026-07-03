@@ -115,6 +115,7 @@ export function rowToItem(row: ItemRow): Item {
     serialNo: row.serial_no,
     mpn: row.mpn,
     manufacturer: row.manufacturer,
+    barcode: row.barcode,
     unitCost: row.unit_cost,
     expiryDate: row.expiry_date,
     batchNumber: row.batch_number,

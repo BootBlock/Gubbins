@@ -16,12 +16,20 @@ import { z } from 'zod';
 /** Mandatory message signature (§9.2). A message without it is not ours. */
 export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
 
-/** The four message kinds exchanged across the Content Script Bridge (§9.2). */
+/**
+ * The message kinds exchanged across the Content Script Bridge (§9.2). The `SCRAPE_*`
+ * trio is the original supplier-URL scrape; the `PRODUCT_LOOKUP_*` trio is the keyless
+ * barcode → product-database enrichment (recommendation point 2), which shares the same
+ * secure bridge, correlation-id and error taxonomy but is keyed by a GTIN rather than a URL.
+ */
 export const EXTENSION_MESSAGE_TYPES = [
   'EXTENSION_READY',
   'SCRAPE_REQUEST',
   'SCRAPE_RESULT',
   'SCRAPE_ERROR',
+  'PRODUCT_LOOKUP_REQUEST',
+  'PRODUCT_LOOKUP_RESULT',
+  'PRODUCT_LOOKUP_ERROR',
 ] as const;
 export type ExtensionMessageType = (typeof EXTENSION_MESSAGE_TYPES)[number];
 
@@ -90,6 +98,31 @@ export const scrapeRequestPayloadSchema = z.object({
 });
 export type ScrapeRequestPayload = z.infer<typeof scrapeRequestPayloadSchema>;
 
+/**
+ * The PWA→extension request for a keyless product lookup (recommendation point 2): a
+ * retail barcode (GTIN) the extension resolves against an open product database. The
+ * GTIN is a bare digit string; the extension re-validates and refuses anything else.
+ */
+export const productLookupRequestPayloadSchema = z.object({
+  gtin: z.string().min(1),
+});
+export type ProductLookupRequestPayload = z.infer<typeof productLookupRequestPayloadSchema>;
+
+/**
+ * The strictly-typed payload the extension returns for a resolved product (point 2).
+ * Only `name` is guaranteed; `brand`/`description`/`quantity` are nullable because the
+ * open database may not carry them. A barcode the database does not know is a
+ * `PRODUCT_LOOKUP_ERROR` with `NOT_FOUND`, never an empty result.
+ */
+export const productLookupResultPayloadSchema = z.object({
+  gtin: z.string().min(1),
+  name: z.string().min(1),
+  brand: z.string().nullable(),
+  description: z.string().nullable(),
+  quantity: z.string().nullable(),
+});
+export type ProductLookupResultPayload = z.infer<typeof productLookupResultPayloadSchema>;
+
 const sourceLiteral = z.literal(EXTENSION_SOURCE);
 
 /**
@@ -129,6 +162,25 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
     requestId: requestIdSchema,
     payload: scrapeErrorPayloadSchema,
   }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('PRODUCT_LOOKUP_REQUEST'),
+    requestId: requestIdSchema,
+    payload: productLookupRequestPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('PRODUCT_LOOKUP_RESULT'),
+    requestId: requestIdSchema,
+    payload: productLookupResultPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('PRODUCT_LOOKUP_ERROR'),
+    requestId: requestIdSchema,
+    // Reuses the §9.4.2 error taxonomy — NOT_FOUND covers "no product for this barcode".
+    payload: scrapeErrorPayloadSchema,
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof extensionMessageSchema>;
@@ -136,6 +188,9 @@ export type ReadyMessage = Extract<ExtensionMessage, { type: 'EXTENSION_READY' }
 export type ScrapeRequestMessage = Extract<ExtensionMessage, { type: 'SCRAPE_REQUEST' }>;
 export type ScrapeResultMessage = Extract<ExtensionMessage, { type: 'SCRAPE_RESULT' }>;
 export type ScrapeErrorMessage = Extract<ExtensionMessage, { type: 'SCRAPE_ERROR' }>;
+export type ProductLookupRequestMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_REQUEST' }>;
+export type ProductLookupResultMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_RESULT' }>;
+export type ProductLookupErrorMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_ERROR' }>;
 
 /** Context for validating an inbound message: the event origin + the trusted set. */
 export interface MessageOriginContext {

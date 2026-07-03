@@ -15,20 +15,26 @@
 import {
   makeMessage,
   parseExtensionMessage,
+  type ProductLookupRequestMessage,
+  type ProductLookupResultPayload,
   type ScrapeRequestMessage,
 } from '../../src/features/scraping/protocol';
 import { runParser } from '../../src/features/scraping/parsers/registry';
 import { detectChallengePage } from '../../src/features/scraping/scrape-errors';
+import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const trustedOrigins = [window.location.origin];
+
+type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
+type LookupReply =
+  | { ok: true; product: ProductLookupResultPayload }
+  | { ok: false; errorType: ScrapeErrorType; reason: string };
 
 declare const chrome: {
   runtime: {
-    sendMessage: (
-      message: unknown,
-    ) => Promise<{ ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string }>;
+    sendMessage: <R>(message: unknown) => Promise<R>;
   };
 };
 
@@ -53,7 +59,7 @@ async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
   }
 
   try {
-    const fetched = await chrome.runtime.sendMessage({ kind: 'FETCH', url });
+    const fetched = await chrome.runtime.sendMessage<FetchReply>({ kind: 'FETCH', url });
     if (!fetched.ok) {
       post(
         makeMessage(
@@ -91,10 +97,42 @@ async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
   }
 }
 
+/**
+ * Service a barcode product lookup (recommendation point 2): delegate the JSON fetch +
+ * parse to the background worker (no DOM needed, so it returns the typed payload directly)
+ * and post back a strictly-typed PRODUCT_LOOKUP_RESULT or an explicit PRODUCT_LOOKUP_ERROR,
+ * echoing the correlation id so the PWA routes the outcome to the lookup that started it.
+ */
+async function handleLookup(msg: ProductLookupRequestMessage): Promise<void> {
+  const { gtin } = msg.payload;
+  const { requestId } = msg;
+  try {
+    const looked = await chrome.runtime.sendMessage<LookupReply>({ kind: 'LOOKUP', gtin });
+    post(
+      looked.ok
+        ? makeMessage('PRODUCT_LOOKUP_RESULT', looked.product, requestId)
+        : makeMessage(
+            'PRODUCT_LOOKUP_ERROR',
+            { domain: OPEN_FOOD_FACTS_HOST, error_type: looked.errorType, reason: looked.reason },
+            requestId,
+          ),
+    );
+  } catch (err) {
+    post(
+      makeMessage(
+        'PRODUCT_LOOKUP_ERROR',
+        { domain: OPEN_FOOD_FACTS_HOST, error_type: 'NETWORK_TIMEOUT', reason: String(err) },
+        requestId,
+      ),
+    );
+  }
+}
+
 window.addEventListener('message', (event: MessageEvent) => {
   const msg = parseExtensionMessage(event.data, { origin: event.origin, trustedOrigins });
-  // §9.1: only act on a validated SCRAPE_REQUEST; everything else is dropped/ignored.
+  // §9.1: only act on a validated *_REQUEST from the PWA; everything else is dropped/ignored.
   if (msg?.type === 'SCRAPE_REQUEST') void handleScrape(msg);
+  else if (msg?.type === 'PRODUCT_LOOKUP_REQUEST') void handleLookup(msg);
 });
 
 // The PWA is a single-page app that may mount its listener slightly after we inject,

@@ -40,6 +40,7 @@ vi.mock('../queries', async (importOriginal) => ({
 // The scrape panel needs the companion extension plumbing — inert here.
 vi.mock('@/features/scraping', () => ({
   ScrapeSupplierPanel: () => null,
+  ProductLookupPanel: () => null,
   useScrapeNotifier: () => vi.fn(),
   buildScrapeMergePlan: vi.fn(),
   applyScrapeMerge: vi.fn(),
@@ -105,12 +106,15 @@ describe('CreateItemDialog', () => {
         initialValues={{
           name: 'USB-C Cable',
           mpn: 'B0F3XF5ZKF',
+          barcode: '4006381333931',
           notes: 'Added via Share to Gubbins.\nSource: https://example.test/c',
         }}
       />,
     );
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('USB-C Cable');
     expect((screen.getByLabelText('MPN (optional)') as HTMLInputElement).value).toBe('B0F3XF5ZKF');
+    // A scanned barcode (recommendation point 1) pre-fills its field.
+    expect((screen.getByLabelText('Barcode (optional)') as HTMLInputElement).value).toBe('4006381333931');
     expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
       'Added via Share to Gubbins.',
     );
@@ -120,6 +124,7 @@ describe('CreateItemDialog', () => {
     expect(spies.createItem.mock.calls[0][0]).toMatchObject({
       name: 'USB-C Cable',
       mpn: 'B0F3XF5ZKF',
+      barcode: '4006381333931',
     });
   });
 

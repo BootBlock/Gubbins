@@ -75,6 +75,10 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   manufacturer: { field: 'manufacturer', kind: 'text' },
   mfr: { field: 'manufacturer', kind: 'text' },
   make: { field: 'manufacturer', kind: 'text' },
+  barcode: { field: 'barcode', kind: 'text' },
+  gtin: { field: 'barcode', kind: 'text' },
+  upc: { field: 'barcode', kind: 'text' },
+  ean: { field: 'barcode', kind: 'text' },
   quantity: { field: 'quantity', kind: 'numeric' },
   qty: { field: 'quantity', kind: 'numeric' },
 };

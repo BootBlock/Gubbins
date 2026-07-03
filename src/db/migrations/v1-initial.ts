@@ -40,8 +40,9 @@ import { SQL_NOW_MS, type Migration } from './migration';
  * tail and a small set of deliberate edits in place: `items.notes` in the CREATE
  * TABLE, `notes` in the FTS index + its three sync triggers, the widened
  * tracking-mode CHECK (derived from `TRACKING_MODES`, so it can never drift from the
- * application constant), and (Phase 82) the additive `items.is_unlimited` boolean
- * column with its two CHECKs. ALTER-added columns are re-issued as ALTERs in their
+ * application constant), (Phase 82) the additive `items.is_unlimited` boolean column
+ * with its two CHECKs, and the additive `items.barcode` column (retail GTIN) — indexed
+ * and added to the FTS index + its three sync triggers alongside the MPN. ALTER-added columns are re-issued as ALTERs in their
  * original positions (SQLite stores such columns verbatim at the tail of the table's
  * stored `sql`). The `v1-initial.test.ts` golden-equivalence test locks the result
  * against the committed `__fixtures__/schema-baseline.snapshot.json`, so any
@@ -340,6 +341,12 @@ export const v1Initial: Migration = {
     { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
     { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL;` },
     { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
+    // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
+    // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
+    // lookup-by-barcode, and (below) FTS-indexed like the MPN so a barcode typed into
+    // the main search finds its item.
+    { sql: `ALTER TABLE items ADD COLUMN barcode TEXT;` },
+    { sql: `CREATE INDEX idx_items_barcode ON items(barcode COLLATE NOCASE);` },
     {
       sql: `
         CREATE TABLE item_aliases (
@@ -435,7 +442,7 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE VIRTUAL TABLE items_fts USING fts5(
-          name, description, notes, mpn, manufacturer,
+          name, description, notes, mpn, manufacturer, barcode,
           content='items',
           content_rowid='rowid'
         );
@@ -444,24 +451,24 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
-          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer)
-          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer)
-          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer);
-          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode);
         END;
       `,
     },
