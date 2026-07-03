@@ -72,6 +72,16 @@
   --ring: oklch(0.55 0.2 277);
 
   /*
+   * Glassmorphism specular sheen (spec §1.1, §2.4.1) — the faint light "reflection"
+   * painted as a top-left gradient over a frosted, translucent glass panel (the Foundry
+   * Tooltip) so it reads as a pane catching light rather than a flat translucent box. A
+   * white highlight is the correct specular colour on either theme; on the near-white
+   * light surface it is barely-there (glass over light content is inherently subtle), while
+   * on the near-black dark surface it does the heavy lifting of selling the glass look.
+   */
+  --glass-sheen: oklch(1 0 0 / 8%);
+
+  /*
    * Glyph tones (spec §2.4.1) — subtle pastel colours that tint *only the icon*
    * inside neutral (outline/ghost/icon) action buttons, so a row of otherwise
    * identical white glyphs reads at a glance: red = destructive, green = additive,
@@ -193,6 +203,10 @@
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.64 0.2 277);
 
+  /* Glass sheen, dark-theme variant — a touch stronger so the specular highlight reads on
+   * the near-black surface where it carries the frosted-glass look (see :root for rationale). */
+  --glass-sheen: oklch(1 0 0 / 12%);
+
   /* Glyph tones, dark-theme variant — lighter & softer so the pastel reads on the
    * near-black indigo surface (see the :root block for the rationale). */
   --glyph-danger: oklch(0.74 0.14 25);
@@ -278,6 +292,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Glass specular sheen → `from-glass-sheen` for the Foundry Tooltip's frosted highlight. */
+  --color-glass-sheen: var(--glass-sheen);
 
   /* Pastel glyph tones → `text-glyph-*` utilities (e.g. `text-glyph-danger`),
    * applied to the icon inside neutral action buttons. */
