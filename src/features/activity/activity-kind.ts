@@ -54,6 +54,7 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   SOFT_DELETED: 'lifecycle',
   RESTORED: 'lifecycle',
   CONDITION_CHANGED: 'lifecycle',
+  TRACKING_CHANGED: 'lifecycle',
   MAINTENANCE_LOGGED: 'lifecycle',
   // Supplier / external data.
   SCRAPE_APPLIED: 'supplier',

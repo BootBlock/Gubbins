@@ -413,7 +413,9 @@ export function CreateItemDialog({
                   '| **Serialised** | each unit separately | a tool you check out |\n' +
                   '| **Consumable** | how *full* it is | a filament spool |\n' +
                   '| **Untracked** | presence only | a reference manual |\n\n' +
-                  '> **Note:** this **can’t be changed later**, so choose with care.'
+                  '> **Note:** **Serialised** and **Consumable** are fixed once set, so choose them ' +
+                  'with care; **Discrete** and **Untracked** can be swapped later from the item’s ' +
+                  'Details tab.'
                 }
                 options={TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] }))}
                 value={field.value}

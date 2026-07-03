@@ -503,7 +503,7 @@ function ImportWorkbench({
 
       {/* Format + match-key controls */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <span
             id={`${formatId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -527,7 +527,7 @@ function ImportWorkbench({
             </p>
           ) : null}
         </div>
-        <div className="space-y-1">
+        <div className="space-y-field-gap-compact">
           <span
             id={`${matchKeyId}-label`}
             className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"

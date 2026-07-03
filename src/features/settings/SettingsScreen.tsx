@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
+  Input,
   PageContainer,
   PageHeader,
   Select,
@@ -299,13 +300,13 @@ export function SettingsScreen() {
             description={`How many days before an expiry date a perishable is flagged on the dashboard (${EXPIRY_WINDOW_BOUNDS.min}–${EXPIRY_WINDOW_BOUNDS.max}).`}
           >
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 aria-label="Expiring soon window (days)"
                 data-testid="setting-expiry-days"
                 type="number"
                 min={EXPIRY_WINDOW_BOUNDS.min}
                 max={EXPIRY_WINDOW_BOUNDS.max}
-                className="h-9 w-24 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                className="h-9 w-24"
                 value={prefs.expirySoonWindowDays}
                 onChange={(e) => prefs.setExpirySoonWindowDays(clampExpiryWindowDays(Number(e.target.value)))}
               />
@@ -317,13 +318,13 @@ export function SettingsScreen() {
             description={`The default reorder point for discrete items — those at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
           >
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 aria-label="Low-stock quantity threshold"
                 data-testid="setting-low-stock-qty"
                 type="number"
                 min={LOW_STOCK_QTY_BOUNDS.min}
                 max={LOW_STOCK_QTY_BOUNDS.max}
-                className="h-9 w-24 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                className="h-9 w-24"
                 value={prefs.lowStockQtyThreshold}
                 onChange={(e) => prefs.setLowStockQtyThreshold(clampLowStockQty(Number(e.target.value)))}
               />
@@ -335,13 +336,13 @@ export function SettingsScreen() {
             description={`The default reorder level for consumable-gauge items — those at or below this percentage remaining are flagged on the dashboard (${LOW_STOCK_GAUGE_BOUNDS.min}–${LOW_STOCK_GAUGE_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
           >
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 aria-label="Low-stock gauge threshold"
                 data-testid="setting-low-stock-gauge"
                 type="number"
                 min={LOW_STOCK_GAUGE_BOUNDS.min}
                 max={LOW_STOCK_GAUGE_BOUNDS.max}
-                className="h-9 w-24 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                className="h-9 w-24"
                 value={prefs.lowStockGaugePercent}
                 onChange={(e) =>
                   prefs.setLowStockGaugePercent(clampLowStockGaugePercent(Number(e.target.value)))
@@ -355,13 +356,13 @@ export function SettingsScreen() {
             description={`Projects are flagged on the dashboard once spending reaches this percentage of their budget (${BUDGET_WARN_BOUNDS.min}–${BUDGET_WARN_BOUNDS.max}).`}
           >
             <div className="flex items-center gap-2">
-              <input
+              <Input
                 aria-label="Budget warning threshold"
                 data-testid="setting-budget-warn"
                 type="number"
                 min={BUDGET_WARN_BOUNDS.min}
                 max={BUDGET_WARN_BOUNDS.max}
-                className="h-9 w-24 rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                className="h-9 w-24"
                 value={prefs.budgetWarnPercent}
                 onChange={(e) => prefs.setBudgetWarnPercent(clampBudgetWarnPercent(Number(e.target.value)))}
               />

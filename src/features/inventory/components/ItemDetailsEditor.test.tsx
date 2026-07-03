@@ -92,4 +92,28 @@ describe('ItemDetailsEditor', () => {
     expect(screen.getByTestId('item-details-save')).toHaveProperty('disabled', true);
     expect(screen.getByRole('alert').textContent).toMatch(/enter a name/i);
   });
+
+  it('offers the Bulk ↔ Untracked switch on a Discrete item and saves the new mode', () => {
+    render(<ItemDetailsEditor item={item} />);
+    // Tracking is a custom listbox combobox — open it and click the option.
+    const tracking = screen.getByRole('combobox', { name: 'Tracking' });
+    expect(tracking).toHaveTextContent('Bulk');
+
+    fireEvent.click(tracking);
+    fireEvent.click(screen.getByRole('option', { name: 'Untracked' }));
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(
+      expect.objectContaining({ trackingMode: 'UNTRACKED' }),
+    );
+  });
+
+  it('shows Tracking read-only for a Serialised item (no in-place conversion)', () => {
+    render(<ItemDetailsEditor item={{ ...item, trackingMode: 'SERIALISED' }} />);
+    const tracking = screen.getByLabelText('Tracking') as HTMLInputElement;
+    expect(tracking.tagName).toBe('INPUT');
+    expect(tracking).toHaveProperty('readOnly', true);
+    expect(tracking.value).toBe('Serialised');
+  });
 });

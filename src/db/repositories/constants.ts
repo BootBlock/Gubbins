@@ -69,6 +69,32 @@ export const TRACKING_MODES = ['DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UN
 export type TrackingMode = (typeof TRACKING_MODES)[number];
 
 /**
+ * The tracking modes whose stock is represented **identically** in storage — a plain
+ * `quantity` plus its per-location `item_stock` ledger row (Phase 25) — and so can be
+ * swapped for one another *in place* after creation with no data migration and no loss.
+ * `UNTRACKED` simply hides that quantity from the UI and excludes the item from low-stock,
+ * reorder, cycle count, checkout and bookings; the underlying stock is preserved, so
+ * flipping back to `DISCRETE` reveals it again unchanged.
+ *
+ * The other two modes can't be reached by an in-place edit: `SERIALISED` splits an item
+ * into N one-off instance rows (each qty 1 with its own serial number and history), and
+ * `CONSUMABLE_GAUGE` replaces the quantity with capacity/tare/net-value columns. Reaching
+ * either from a bulk item is a lossy row-split / column migration, so it is create-time
+ * only — make a new item instead.
+ */
+export const CONVERTIBLE_TRACKING_MODES = ['DISCRETE', 'UNTRACKED'] as const;
+
+/**
+ * Whether an item may be switched from tracking mode `from` to `to` by an in-place edit
+ * (see {@link CONVERTIBLE_TRACKING_MODES}). Both ends must be convertible and differ. The
+ * repository enforces this; the edit UI uses it to decide whether the mode is editable.
+ */
+export function isConvertibleTrackingChange(from: TrackingMode, to: TrackingMode): boolean {
+  const convertible = CONVERTIBLE_TRACKING_MODES as readonly TrackingMode[];
+  return from !== to && convertible.includes(from) && convertible.includes(to);
+}
+
+/**
  * Immutable Activity Log action types (spec §4 "Activity Log", §4.1.3). The set
  * is intentionally small for Phase 2; later phases append (never repurpose) values.
  */
@@ -98,6 +124,7 @@ export const HISTORY_ACTIONS = [
   'MAINTENANCE_LOGGED', // a maintenance/calibration service performed, resetting its schedule (§4.3)
   'CONDITION_CHANGED', // the item's Condition enum was changed (§4 Condition Tracking)
   'VARIANT_CREATED', // the item was created/attached as a child variant under a parent (§4 Variant/SKU)
+  'TRACKING_CHANGED', // the item's tracking mode was switched in place (Discrete ↔ Untracked)
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

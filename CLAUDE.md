@@ -92,3 +92,32 @@ Use them **where possible and appropriate**:
 
 This keeps the app themable, dark-mode-correct, and accessible (the reduced-motion and
 contrast handling all hang off the tokens).
+
+## Controls & spacing: no hand-rolled bodges
+
+The same discipline extends to **layout, spacing and controls**, not just colour and motion.
+A raw spacing/sizing value — or a hand-rolled control where a token or Foundry primitive
+already exists — is a smell for the same reason a raw colour is: it silently diverges from
+the system, drops the wiring the primitive gives you for free, and is easy to miss in review.
+
+- **Label→control spacing uses the field-gap tokens.** A form field's label sits above its
+  control at `mb-field-gap` (10px), or `mb-field-gap-compact` (8px) for the denser `text-xs`
+  labels in nested editors. Never hand-roll the gap with a raw sub-token value (`space-y-1`,
+  `flex flex-col gap-1`, `mb-1`, …) — that leaves the label crowding the control. Use
+  `gap-field-gap-compact` / `space-y-field-gap-compact` when the field is a flex column or a
+  stack rather than a block label.
+- **Prefer a Foundry primitive over hand-rolling.** A labelled input belongs in `FormField`
+  (it wires implicit label association, `aria-invalid` / `aria-describedby` error text and
+  the hint badge); a control is `Input` / `Select` / `Textarea`; a dialog is `Modal`; a
+  dropdown is `Menu`; a screen header is `PageHeader` (+ the global `AppNav`). Re-styling a
+  bare `<button>` / `<input>` that duplicates a primitive's variants, focus ring, sizing
+  (`h-10`) or ARIA is a bodge. If a genuinely new primitive is needed, add it to
+  [src/components/foundry](src/components/foundry) rather than one-off styling at the call site.
+- **Don't skip accessibility to save a few lines.** No interactive `<div>` / `<span>` without
+  a role + keyboard handler, no icon-only button without an `aria-label`, no error text
+  outside a `role="alert"`, no live status outside `LiveRegion`, no decorative icon without
+  `aria-hidden`, and every screen keeps its `<main id="main-content">` + skip-link wiring.
+
+When a fix introduces a token-based Tailwind utility, remember **unknown utilities fail
+silently** (no CSS, no error) — verify it actually emits by building the CSS and grepping the
+output before trusting it.

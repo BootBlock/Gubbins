@@ -207,6 +207,14 @@ export interface CreateItemInput {
 
 export interface UpdateItemInput {
   readonly name?: string;
+  /**
+   * Switch the item's tracking mode *in place*. Only the storage-identical pair
+   * `DISCRETE` ↔ `UNTRACKED` is permitted (see `isConvertibleTrackingChange`); any other
+   * change throws, as it would require a lossy row-split / column migration. A change is
+   * logged as `TRACKING_CHANGED`. The on-hand quantity is preserved either way — `UNTRACKED`
+   * merely hides it — so the switch is fully reversible.
+   */
+  readonly trackingMode?: TrackingMode;
   readonly description?: string | null;
   /** Free-text owner's notes; null clears them (§4). */
   readonly notes?: string | null;

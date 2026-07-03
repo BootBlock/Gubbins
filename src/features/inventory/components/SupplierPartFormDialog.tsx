@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { AutocompleteField, Button, FormField, Input, Modal } from '@/components/foundry';
+import { AutocompleteField, Button, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { CURRENCY_OPTIONS } from '@/features/settings/settings';
@@ -274,12 +274,11 @@ export function SupplierPartFormDialog({
           label="Price breaks"
           hint="Quantity price-breaks, one per line as `qty:unitCost` (e.g. `10:0.20`). The cheaper rate applies at that quantity and above."
         >
-          <textarea
+          <Textarea
             value={breaksText}
             onChange={(e) => setBreaksText(e.target.value)}
             rows={3}
             placeholder={'100:0.10\n1000:0.08'}
-            className="h-auto min-h-[4.5rem] w-full resize-y rounded-lg border border-border bg-input/40 px-3 py-2 text-sm leading-relaxed text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
             data-testid="supplier-part-breaks"
           />
         </FormField>

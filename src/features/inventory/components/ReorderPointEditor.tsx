@@ -85,8 +85,8 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium text-muted-foreground">
-          <span>Reorder point</span>
+        <label className="block text-xs font-medium text-muted-foreground">
+          <span className="mb-field-gap-compact block">Reorder point</span>
           <Input
             type="number"
             min={0}
@@ -98,8 +98,8 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
             data-testid="reorder-point-input"
           />
         </label>
-        <label className="space-y-1 text-xs font-medium text-muted-foreground">
-          <span>Reorder quantity (optional)</span>
+        <label className="block text-xs font-medium text-muted-foreground">
+          <span className="mb-field-gap-compact block">Reorder quantity (optional)</span>
           <Input
             type="number"
             min={0}
@@ -156,8 +156,8 @@ function GaugeReorderEditor({ item }: { item: Item }) {
         />
       </p>
 
-      <label className="block max-w-[14rem] space-y-1 text-xs font-medium text-muted-foreground">
-        <span>Reorder at (% remaining)</span>
+      <label className="block max-w-[14rem] text-xs font-medium text-muted-foreground">
+        <span className="mb-field-gap-compact block">Reorder at (% remaining)</span>
         <Input
           type="number"
           min={0}
