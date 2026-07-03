@@ -179,6 +179,42 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+        // Inbound entry points (plan EI-4). The PWA has no server, so the custom service worker
+        // (src/sw.ts) intercepts the share POST; these members merely declare the surfaces the OS
+        // wires up. All three open a *reviewable* flow — a share/deep link never auto-commits.
+        //
+        // "Share to Gubbins" from the OS share sheet. Declared as a POST + multipart/form-data so a
+        // shared image file can arrive; sw.ts captures it, stashes it, and redirects to the
+        // share-landing route which opens a pre-filled add-item draft. Paths are relative to the
+        // manifest (served under the `/Gubbins/` scope), matching start_url/scope above.
+        share_target: {
+          action: 'share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [{ name: 'image', accept: ['image/*'] }],
+          },
+        },
+        // Open a Gubbins/CSV/JSON export (or any tabular text) straight into the import dialog via
+        // the File Handling API; the `import` route consumes window.launchQueue.
+        file_handlers: [
+          {
+            action: 'import',
+            accept: {
+              'text/csv': ['.csv'],
+              'text/tab-separated-values': ['.tsv', '.tab'],
+              'application/json': ['.json'],
+              'text/markdown': ['.md', '.markdown'],
+              'text/plain': ['.txt'],
+            },
+          },
+        ],
+        // Deep links from notes/other apps, e.g. web+gubbins://item/<id>. The `%s` is the full
+        // custom-scheme URL, url-encoded; the `deep-link` route parses it (see features/share).
+        protocol_handlers: [{ protocol: 'web+gubbins', url: 'deep-link?target=%s' }],
       },
       // The Service Worker stays out of the way during local development; OPFS
       // and COI are exercised via the dev-server headers instead.

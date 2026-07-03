@@ -9,6 +9,7 @@ const spies = vi.hoisted(() => ({
   applyScrape: vi.fn(),
   createLocation: vi.fn(),
   createCategory: vi.fn(),
+  addImage: vi.fn(),
 }));
 
 vi.mock('../mutations', () => ({
@@ -16,6 +17,12 @@ vi.mock('../mutations', () => ({
   useCreateSerialisedItems: () => ({ mutate: spies.createSerialised, isPending: false }),
   useApplyScrape: () => ({ mutate: spies.applyScrape, isPending: false }),
   useCreateLocation: () => ({ mutate: spies.createLocation, isPending: false }),
+}));
+
+// The shared-image attach path (plan EI-4) uses useAddItemImage — stub it so no QueryClient/DB
+// is needed and we can assert the shared image is attached to the freshly-created item.
+vi.mock('../media', () => ({
+  useAddItemImage: () => ({ mutate: spies.addImage, isPending: false }),
 }));
 
 vi.mock('../categories', () => ({
@@ -44,6 +51,7 @@ afterEach(() => {
   spies.createSerialised.mockReset();
   spies.createLocation.mockReset();
   spies.createCategory.mockReset();
+  spies.addImage.mockReset();
 });
 
 const locations: LocationWithCount[] = [];
@@ -86,6 +94,52 @@ describe('CreateItemDialog', () => {
       reorderPoint: 3,
       reorderQty: 100,
     });
+  });
+
+  it('pre-fills a shared draft from initialValues and submits them (plan EI-4)', async () => {
+    render(
+      <CreateItemDialog
+        open
+        onClose={() => {}}
+        locations={locations}
+        initialValues={{
+          name: 'USB-C Cable',
+          mpn: 'B0F3XF5ZKF',
+          notes: 'Added via Share to Gubbins.\nSource: https://example.test/c',
+        }}
+      />,
+    );
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('USB-C Cable');
+    expect((screen.getByLabelText('MPN (optional)') as HTMLInputElement).value).toBe('B0F3XF5ZKF');
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
+      'Added via Share to Gubbins.',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0]).toMatchObject({
+      name: 'USB-C Cable',
+      mpn: 'B0F3XF5ZKF',
+    });
+  });
+
+  it('attaches a shared image to the item once it is created (plan EI-4)', async () => {
+    spies.createItem.mockImplementation((_input, opts) =>
+      opts?.onSuccess?.({ id: 'item-77', name: 'Shared thing' }),
+    );
+    const image = new File([new Uint8Array([1, 2, 3])], 'p.png', { type: 'image/png' });
+    render(
+      <CreateItemDialog
+        open
+        onClose={() => {}}
+        locations={locations}
+        initialValues={{ name: 'Shared thing' }}
+        initialImage={image}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.addImage).toHaveBeenCalledTimes(1));
+    expect(spies.addImage.mock.calls[0][0]).toMatchObject({ itemId: 'item-77', file: image });
   });
 
   it('omits blank optional fields from the create input', async () => {

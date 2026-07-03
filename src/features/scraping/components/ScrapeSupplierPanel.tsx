@@ -18,14 +18,17 @@ import type { ScrapeResultPayload } from '../protocol';
 export function ScrapeSupplierPanel({
   onResult,
   className,
+  initialUrl,
 }: {
   /** Called with the validated payload when a scrape succeeds. */
   onResult: (payload: ScrapeResultPayload) => void;
   className?: string;
+  /** Pre-seed the URL box — e.g. a link shared into Gubbins (plan EI-4). */
+  initialUrl?: string;
 }) {
   const bridge = useScrapeBridge();
   const { show } = useToast();
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(initialUrl ?? '');
   // Track only the scrape *this* panel started, by its requestId, so a concurrent
   // scrape elsewhere can never deliver its result here (§9 multi-scrape correlation).
   const [requestId, setRequestId] = useState<string | null>(null);

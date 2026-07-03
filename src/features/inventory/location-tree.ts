@@ -94,6 +94,18 @@ export function defaultLocationForNewItem(
 }
 
 /**
+ * The id of the user's marked **default** location (the single non-archived row flagged
+ * `isDefault`), or `undefined` when none is set. The natural `fallbackLocationId` to pass
+ * {@link defaultLocationForNewItem} when seeding "Add item" from a place that isn't itself a
+ * concrete home (the "All items" view, a share/deep-link draft).
+ */
+export function markedDefaultLocationId(
+  locations: readonly { id: string; isDefault?: boolean | null; archivedAt?: unknown }[],
+): string | undefined {
+  return locations.find((l) => l.isDefault && !l.archivedAt)?.id;
+}
+
+/**
  * A human-readable ancestry breadcrumb for a location, root-first and joined by
  * `" / "` (e.g. `Workshop / Cabinet A / Drawer 3`). Defensive against a broken
  * parent chain: a missing or cyclic ancestor simply stops the walk.

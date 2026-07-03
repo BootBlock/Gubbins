@@ -11,12 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UpcomingRouteImport } from './routes/upcoming'
 import { Route as SyncRouteImport } from './routes/sync'
+import { Route as ShareTargetRouteImport } from './routes/share-target'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as ImportRouteImport } from './routes/import'
 import { Route as HomeAssistantRouteImport } from './routes/home-assistant'
+import { Route as DeepLinkRouteImport } from './routes/deep-link'
 import { Route as ContactsRouteImport } from './routes/contacts'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AlertsRouteImport } from './routes/alerts'
@@ -32,6 +35,11 @@ const UpcomingRoute = UpcomingRouteImport.update({
 const SyncRoute = SyncRouteImport.update({
   id: '/sync',
   path: '/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTargetRoute = ShareTargetRouteImport.update({
+  id: '/share-target',
+  path: '/share-target',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -59,9 +67,19 @@ const InventoryRoute = InventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HomeAssistantRoute = HomeAssistantRouteImport.update({
   id: '/home-assistant',
   path: '/home-assistant',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeepLinkRoute = DeepLinkRouteImport.update({
+  id: '/deep-link',
+  path: '/deep-link',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactsRoute = ContactsRouteImport.update({
@@ -102,12 +120,15 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
+  '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
+  '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
   '/upcoming': typeof UpcomingRoute
 }
@@ -118,12 +139,15 @@ export interface FileRoutesByTo {
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
+  '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
+  '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
   '/upcoming': typeof UpcomingRoute
 }
@@ -135,12 +159,15 @@ export interface FileRoutesById {
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
   '/contacts': typeof ContactsRoute
+  '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
+  '/import': typeof ImportRoute
   '/inventory': typeof InventoryRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
   '/upcoming': typeof UpcomingRoute
 }
@@ -153,12 +180,15 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/bookings'
     | '/contacts'
+    | '/deep-link'
     | '/home-assistant'
+    | '/import'
     | '/inventory'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
     | '/settings'
+    | '/share-target'
     | '/sync'
     | '/upcoming'
   fileRoutesByTo: FileRoutesByTo
@@ -169,12 +199,15 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/bookings'
     | '/contacts'
+    | '/deep-link'
     | '/home-assistant'
+    | '/import'
     | '/inventory'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
     | '/settings'
+    | '/share-target'
     | '/sync'
     | '/upcoming'
   id:
@@ -185,12 +218,15 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/bookings'
     | '/contacts'
+    | '/deep-link'
     | '/home-assistant'
+    | '/import'
     | '/inventory'
     | '/projects'
     | '/purchase-orders'
     | '/reports'
     | '/settings'
+    | '/share-target'
     | '/sync'
     | '/upcoming'
   fileRoutesById: FileRoutesById
@@ -202,12 +238,15 @@ export interface RootRouteChildren {
   AlertsRoute: typeof AlertsRoute
   BookingsRoute: typeof BookingsRoute
   ContactsRoute: typeof ContactsRoute
+  DeepLinkRoute: typeof DeepLinkRoute
   HomeAssistantRoute: typeof HomeAssistantRoute
+  ImportRoute: typeof ImportRoute
   InventoryRoute: typeof InventoryRoute
   ProjectsRoute: typeof ProjectsRoute
   PurchaseOrdersRoute: typeof PurchaseOrdersRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
+  ShareTargetRoute: typeof ShareTargetRoute
   SyncRoute: typeof SyncRoute
   UpcomingRoute: typeof UpcomingRoute
 }
@@ -226,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/sync'
       fullPath: '/sync'
       preLoaderRoute: typeof SyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share-target': {
+      id: '/share-target'
+      path: '/share-target'
+      fullPath: '/share-target'
+      preLoaderRoute: typeof ShareTargetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -263,11 +309,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InventoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/home-assistant': {
       id: '/home-assistant'
       path: '/home-assistant'
       fullPath: '/home-assistant'
       preLoaderRoute: typeof HomeAssistantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deep-link': {
+      id: '/deep-link'
+      path: '/deep-link'
+      fullPath: '/deep-link'
+      preLoaderRoute: typeof DeepLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contacts': {
@@ -322,12 +382,15 @@ const rootRouteChildren: RootRouteChildren = {
   AlertsRoute: AlertsRoute,
   BookingsRoute: BookingsRoute,
   ContactsRoute: ContactsRoute,
+  DeepLinkRoute: DeepLinkRoute,
   HomeAssistantRoute: HomeAssistantRoute,
+  ImportRoute: ImportRoute,
   InventoryRoute: InventoryRoute,
   ProjectsRoute: ProjectsRoute,
   PurchaseOrdersRoute: PurchaseOrdersRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
+  ShareTargetRoute: ShareTargetRoute,
   SyncRoute: SyncRoute,
   UpcomingRoute: UpcomingRoute,
 }

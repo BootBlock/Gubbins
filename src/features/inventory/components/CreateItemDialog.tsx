@@ -33,6 +33,7 @@ import {
 import { useCategories } from '../categories';
 import { useFieldSuggestions } from '../queries';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
+import { useAddItemImage } from '../media';
 import { buildItemLocationOptions } from '../parent-options';
 import { isLocationFull } from '../location-fullness';
 import { CreateCategoryDialog } from './CreateCategoryDialog';
@@ -93,20 +94,39 @@ type FormValues = z.infer<typeof schema>;
 const CREATE_LOCATION_VALUE = '__create-location__';
 const CREATE_CATEGORY_VALUE = '__create-category__';
 
+/**
+ * Optional seed values for a pre-filled draft (Web Share Target / deep link — plan EI-4). Only the
+ * text fields a share can populate are accepted; the form keeps its own defaults for the rest and
+ * the user always confirms before anything is created. `sourceUrl` is not a form field — it
+ * pre-seeds the supplier-scraper panel's URL box so the shared link can be enriched in one click.
+ */
+export interface CreateItemInitialValues {
+  name?: string;
+  notes?: string;
+  mpn?: string;
+  sourceUrl?: string;
+}
+
 export function CreateItemDialog({
   open,
   onClose,
   locations,
   defaultLocationId,
+  initialValues,
+  initialImage,
 }: {
   open: boolean;
   onClose: () => void;
   locations: readonly LocationWithCount[];
   defaultLocationId?: string;
+  initialValues?: CreateItemInitialValues;
+  /** An image shared into Gubbins (plan EI-4), attached to the item once the user confirms. */
+  initialImage?: Blob;
 }) {
   const createItem = useCreateItem();
   const createSerialised = useCreateSerialisedItems();
   const applyScrape = useApplyScrape();
+  const addImage = useAddItemImage();
   const notifyScrape = useScrapeNotifier();
   const { data: categories } = useCategories();
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
@@ -134,13 +154,13 @@ export function CreateItemDialog({
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      name: '',
+      name: initialValues?.name ?? '',
       description: '',
-      notes: '',
+      notes: initialValues?.notes ?? '',
       locationId: defaultLocationId ?? UNASSIGNED_LOCATION_ID,
       categoryId: '',
       trackingMode: 'DISCRETE',
-      mpn: '',
+      mpn: initialValues?.mpn ?? '',
       manufacturer: '',
       unitCost: '',
       expiryDate: '',
@@ -258,12 +278,18 @@ export function CreateItemDialog({
       setInlineCreate(null);
       onClose();
     };
-    // Map the scraped supplier MPN(s) onto the freshly-created item (§4 alias mapping).
+    // After the item exists: map the scraped supplier MPN(s) onto it (§4 alias mapping), then
+    // attach any shared image (plan EI-4), then finish. Each step is best-effort — a failed alias
+    // map or image attach still lets the create complete and the dialog close.
     const mapAliases = (itemId: string, next: () => void) => {
-      if (pendingAliases.length === 0) return next();
+      const attachImage = () => {
+        if (!initialImage || !itemId) return next();
+        addImage.mutate({ itemId, file: initialImage }, { onSettled: next });
+      };
+      if (pendingAliases.length === 0) return attachImage();
       applyScrape.mutate(
         { id: itemId, write: { fields: {}, aliasAdditions: pendingAliases } },
-        { onSettled: next },
+        { onSettled: attachImage },
       );
     };
 
@@ -458,8 +484,9 @@ export function CreateItemDialog({
           )}
         />
 
-        {/* §9 supplier scrape — rendered only when the companion extension is present. */}
-        <ScrapeSupplierPanel onResult={onScrapeResult} />
+        {/* §9 supplier scrape — rendered only when the companion extension is present. A shared
+            URL (plan EI-4) pre-seeds the URL box so the draft can be enriched in one click. */}
+        <ScrapeSupplierPanel onResult={onScrapeResult} initialUrl={initialValues?.sourceUrl} />
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
