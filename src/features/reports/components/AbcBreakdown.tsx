@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { AbcReport } from '../abc-analysis';
 
@@ -44,7 +45,8 @@ export function AbcBreakdown({
                   <span className="text-xs font-normal text-muted-foreground">{meta.gloss}</span>
                 </span>
                 <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {formatters.quantity(tier.itemCount)} items · {formatters.currency(tier.totalValue)}
+                  {formatters.quantity(tier.itemCount)} items ·{' '}
+                  <Money value={tier.totalValue} formatters={formatters} />
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
@@ -76,9 +78,11 @@ export function AbcBreakdown({
                 </span>
                 <span className="min-w-0 truncate font-medium">{line.name}</span>
               </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {formatters.currency(line.annualValue)}
-              </span>
+              <Money
+                value={line.annualValue}
+                formatters={formatters}
+                className="shrink-0 text-muted-foreground"
+              />
             </li>
           ))}
         </ul>

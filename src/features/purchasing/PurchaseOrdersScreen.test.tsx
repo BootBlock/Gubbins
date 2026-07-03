@@ -72,6 +72,11 @@ vi.mock('@/features/inventory/queries', () => ({
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({
     currency: (v: number) => `£${v.toFixed(2)}`,
+    // Mirrors `currency` split into Intl-style parts so the <Money> control renders.
+    currencyParts: (v: number) => [
+      { type: 'currency', value: '£' },
+      { type: 'literal', value: v.toFixed(2) },
+    ],
     quantity: (v: number) => String(v),
     date: () => '',
     dateTime: () => '',

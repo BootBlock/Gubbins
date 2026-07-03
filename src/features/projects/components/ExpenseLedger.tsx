@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Spinner } from '@/components/foundry';
+import { Button, Money, Spinner } from '@/components/foundry';
 import { AddIcon, DeleteIcon, EditIcon, ExpenseIcon } from '@/components/icons';
 import type { ProjectBudgetCategory, ProjectExpense } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
@@ -80,7 +80,9 @@ export function ExpenseLedger({
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">
                     {fmt.date(expense.incurredAt)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt.currency(expense.amount)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <Money value={expense.amount} formatters={fmt} />
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1 [&_svg]:size-4">
                       <Button

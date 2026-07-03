@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, InfoHint } from '@/components/foundry';
+import { Button, InfoHint, Money } from '@/components/foundry';
 import { AddIcon, DeleteIcon, EditIcon, LinkIcon, NotPreferredIcon, PreferredIcon } from '@/components/icons';
 import type { CreateSupplierPartInput, Item, SupplierPart } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
@@ -94,9 +94,12 @@ export function SupplierPartsTable({ item }: { item: Item }) {
 
                 <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   {part.unitCost !== null ? (
-                    <span className="text-foreground">
-                      {fmt.currency(part.unitCost, part.currency ?? undefined)}
-                    </span>
+                    <Money
+                      value={part.unitCost}
+                      currency={part.currency ?? undefined}
+                      formatters={fmt}
+                      className="text-foreground"
+                    />
                   ) : (
                     <span>No price</span>
                   )}
@@ -122,7 +125,8 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                         key={b.qty}
                         className="rounded bg-secondary/60 px-1.5 py-0.5 text-xs text-muted-foreground"
                       >
-                        {b.qty}+: {fmt.currency(b.unitCost, part.currency ?? undefined)}
+                        {b.qty}+:{' '}
+                        <Money value={b.unitCost} currency={part.currency ?? undefined} formatters={fmt} />
                       </span>
                     ))}
                   </div>

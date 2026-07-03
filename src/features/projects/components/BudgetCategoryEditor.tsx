@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, Input, Spinner } from '@/components/foundry';
+import { useState, type ReactNode } from 'react';
+import { Button, Input, Money, Spinner } from '@/components/foundry';
 import { AddIcon, DeleteIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { summariseBudgetCategory, type BudgetCategorySummary } from '../budget';
@@ -57,7 +57,7 @@ export function BudgetCategoryEditor({
               <CategoryRow
                 key={category.id}
                 summary={summary}
-                money={(n) => fmt.currency(n)}
+                money={(n) => <Money value={n} formatters={fmt} />}
                 onRemove={() => removeCategory.mutate(category.id)}
                 removing={removeCategory.isPending}
               />
@@ -115,7 +115,7 @@ function CategoryRow({
   removing,
 }: {
   summary: BudgetCategorySummary;
-  money: (n: number) => string;
+  money: (n: number) => ReactNode;
   onRemove: () => void;
   removing: boolean;
 }) {

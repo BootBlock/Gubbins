@@ -35,6 +35,15 @@ export interface Formatters {
    * simply renders with the code itself as the symbol.)
    */
   currency(value: number, currencyOverride?: string): string;
+  /**
+   * The same money value as {@link Formatters.currency}, but broken into its
+   * {@link Intl.NumberFormatPart}s so a caller can style the pieces independently — most
+   * notably tinting the `currency`-type part (the symbol/code) apart from the digits (the
+   * Foundry `Money` control). Returns `null` for a non-finite value (the caller renders its
+   * own placeholder). `currencyOverride` behaves exactly as it does for `currency`, malformed
+   * fallback included (the trailing raw code arrives as a `literal` part).
+   */
+  currencyParts(value: number, currencyOverride?: string): Intl.NumberFormatPart[] | null;
   /** A 0..1 ratio as a percentage, clamped (e.g. `50%`). */
   percent(ratio: number, maximumFractionDigits?: number): string;
   /** A human-readable SI byte size (e.g. `1.5 kB`). */
@@ -75,6 +84,24 @@ export function makeFormatters(
       return null;
     }
   };
+  /**
+   * The single source of truth for money formatting — resolves the override/fallback rules
+   * once and returns the `Intl` parts (or `null` for a non-finite value). Both the string
+   * `currency` formatter and the structured `currencyParts` delegate here, so the two can
+   * never disagree.
+   */
+  const computeCurrencyParts = (value: number, currencyOverride?: string): Intl.NumberFormatPart[] | null => {
+    if (!Number.isFinite(value)) return null;
+    const code = currencyOverride?.trim().toUpperCase();
+    if (code && code !== currency) {
+      const fmt = currencyFormatterFor(code);
+      if (fmt) return fmt.formatToParts(value);
+      // Malformed/unformattable code: keep the number legible under the base symbol and
+      // append the raw code (as a literal part) so its provenance is never lost.
+      return [...currencyFormat.formatToParts(value), { type: 'literal', value: ` ${code}` }];
+    }
+    return currencyFormat.formatToParts(value);
+  };
   const dateFormat = new Intl.DateTimeFormat(locale, {
     day: '2-digit',
     month: 'short',
@@ -87,16 +114,11 @@ export function makeFormatters(
 
   return {
     currency(value, currencyOverride) {
-      if (!Number.isFinite(value)) return '—';
-      const code = currencyOverride?.trim().toUpperCase();
-      if (code && code !== currency) {
-        const fmt = currencyFormatterFor(code);
-        if (fmt) return fmt.format(value);
-        // Unknown/unformattable code: keep the number legible under the base symbol and
-        // append the raw code so its provenance is never lost.
-        return `${currencyFormat.format(value)} ${code}`;
-      }
-      return currencyFormat.format(value);
+      const parts = computeCurrencyParts(value, currencyOverride);
+      return parts ? parts.map((p) => p.value).join('') : '—';
+    },
+    currencyParts(value, currencyOverride) {
+      return computeCurrencyParts(value, currencyOverride);
     },
     percent(ratio, maximumFractionDigits = 0) {
       return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits }).format(

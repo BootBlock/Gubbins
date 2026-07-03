@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Modal,
+  Money,
   Select,
   Spinner,
   Surface,
@@ -75,7 +76,6 @@ export function ProjectDetail({
     return <p className="p-8 text-sm text-muted-foreground">Project not found.</p>;
   }
 
-  const money = (value: number) => fmt.currency(value);
   const lineRows = lines.data?.rows ?? [];
   const list = shoppingList.data ?? [];
   const projectName = project.data.name;
@@ -157,7 +157,7 @@ export function ProjectDetail({
           <span className="text-sm font-medium text-foreground">Estimated cost</span>
         </div>
         <span className="text-lg font-semibold tabular-nums" data-testid="project-total-cost">
-          {costing.data ? money(costing.data.totalCost) : '—'}
+          {costing.data ? <Money value={costing.data.totalCost} formatters={fmt} /> : '—'}
         </span>
         {costing.data && costing.data.unpricedLineCount > 0 ? (
           <Tooltip
@@ -219,7 +219,11 @@ export function ProjectDetail({
                       <td className="px-3 py-2 font-mono text-xs">{entry.mpn ?? '—'}</td>
                       <td className="px-3 py-2 tabular-nums">{entry.shortfallQty}</td>
                       <td className="px-3 py-2 tabular-nums">
-                        {entry.estimatedCost == null ? '—' : money(entry.estimatedCost)}
+                        {entry.estimatedCost == null ? (
+                          '—'
+                        ) : (
+                          <Money value={entry.estimatedCost} formatters={fmt} />
+                        )}
                       </td>
                     </tr>
                   ))}

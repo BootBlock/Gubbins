@@ -11,7 +11,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Money, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
   DatabaseIcon,
   StorageIcon,
@@ -136,7 +136,7 @@ function WidgetSkeleton() {
   );
 }
 
-function WidgetRow({ label, meta }: { label: string; meta?: string }) {
+function WidgetRow({ label, meta }: { label: string; meta?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       <span className="truncate font-medium">{label}</span>
@@ -379,15 +379,17 @@ function BudgetAlertsWidget() {
       {flagged.length === 0 ? (
         <EmptyRow>All budgets on track.</EmptyRow>
       ) : (
-        flagged
-          .slice(0, 3)
-          .map((a) => (
-            <WidgetRow
-              key={a.projectId}
-              label={a.projectName}
-              meta={`${fmt.currency(a.spentSoFar)} / ${fmt.currency(a.budget)}`}
-            />
-          ))
+        flagged.slice(0, 3).map((a) => (
+          <WidgetRow
+            key={a.projectId}
+            label={a.projectName}
+            meta={
+              <>
+                <Money value={a.spentSoFar} formatters={fmt} /> / <Money value={a.budget} formatters={fmt} />
+              </>
+            }
+          />
+        ))
       )}
     </WidgetShell>
   );
@@ -446,7 +448,7 @@ function InventoryTotalsWidget() {
         <span className="tabular-nums">{totalItems}</span>
       </StatusRow>
       <StatusRow label="Stock value">
-        <span className="tabular-nums">{fmt.currency(totalValue)}</span>
+        <Money value={totalValue} formatters={fmt} />
       </StatusRow>
       <StatusRow label="Locations">
         <span className="tabular-nums">{locationCount}</span>

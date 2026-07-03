@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { AutocompleteField, Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
@@ -20,9 +20,22 @@ const URL_HINT = [
 
 /** Help for the auto-completing Currency field (now drives the displayed symbol). */
 const CURRENCY_HINT =
-  'Pick a common currency or type any ISO-4217 code (e.g. **EUR**, **JPY**). This ' +
-  "supplier's costs are then shown with that currency's own symbol — e.g. `€1.23` — exactly " +
-  'as entered and **never converted**. Leave blank to use your base currency (set in Settings).';
+  'Pick from the list (open it with the ▾ arrow) or type any ISO-4217 code (e.g. **EUR**, ' +
+  "**JPY**). This supplier's costs are then shown with that currency's own symbol — e.g. " +
+  '`€1.23` — exactly as entered and **never converted**. Leave blank to use your base ' +
+  'currency (set in Settings).';
+
+/**
+ * Currency picker options as `"CODE — Name"` strings (e.g. `"GBP — British Pound"`), so the
+ * dropdown is self-explanatory to a user who does not know the codes. Selecting one is stripped
+ * back to the bare code by {@link codeFromCurrencyChoice}; typing a code stands as-is.
+ */
+const CURRENCY_SUGGESTIONS = CURRENCY_OPTIONS.map((c) => `${c.value} — ${c.label}`);
+
+/** Reduce a Currency-field value to its ISO code: `"GBP — British Pound"` → `"GBP"`. */
+function codeFromCurrencyChoice(value: string): string {
+  return value.split(' — ')[0]!.trim().toUpperCase();
+}
 
 /**
  * Add/edit dialog for a single supplier part (§4 supplier facet; Phase 60). Local controlled
@@ -107,7 +120,6 @@ export function SupplierPartFormDialog({
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const currencyListId = useId();
   const { data: supplierSuggestions } = useFieldSuggestions('supplierName');
 
   const handleSubmit = (e: FormEvent) => {
@@ -214,17 +226,17 @@ export function SupplierPartFormDialog({
               data-testid="supplier-part-unit-cost"
             />
           </FormField>
-          <FormField label="Currency" hint={CURRENCY_HINT}>
-            <Input
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-              list={currencyListId}
-              maxLength={3}
-              autoComplete="off"
-              placeholder="—"
-              data-testid="supplier-part-currency"
-            />
-          </FormField>
+          <AutocompleteField
+            label="Currency"
+            hint={CURRENCY_HINT}
+            value={currency}
+            onChange={(value) => setCurrency(codeFromCurrencyChoice(value))}
+            suggestions={CURRENCY_SUGGESTIONS}
+            maxOptions={CURRENCY_SUGGESTIONS.length}
+            maxLength={3}
+            placeholder="—"
+            data-testid="supplier-part-currency"
+          />
           <FormField
             label="Pack qty"
             hint={
@@ -240,13 +252,6 @@ export function SupplierPartFormDialog({
             />
           </FormField>
         </div>
-        <datalist id={currencyListId}>
-          {CURRENCY_OPTIONS.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </datalist>
 
         <div className="grid grid-cols-2 gap-3">
           <FormField

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Button,
   LiveRegion,
+  Money,
   PageContainer,
   PageHeader,
   Spinner,
@@ -166,7 +167,7 @@ export function ReportsScreen() {
             label="Inventory value"
             testId="stat-total-value"
             loading={value.isLoading}
-            value={value.data ? f.currency(value.data.totalValue) : '—'}
+            value={value.data ? <Money value={value.data.totalValue} formatters={f} /> : '—'}
             sub={value.data ? `${f.quantity(value.data.totalQuantity)} units` : undefined}
           />
           <StatCard
@@ -191,7 +192,7 @@ export function ReportsScreen() {
             label={`Dead stock (${DEAD_STOCK_SINCE_DAYS}d)`}
             testId="stat-dead-stock"
             loading={deadStock.isLoading}
-            value={deadStock.data ? f.currency(deadStock.data.totalValue) : '—'}
+            value={deadStock.data ? <Money value={deadStock.data.totalValue} formatters={f} /> : '—'}
             sub={deadStock.data ? `${f.quantity(deadStock.data.lines.length)} idle items` : undefined}
           />
         </section>
@@ -243,7 +244,7 @@ export function ReportsScreen() {
                   <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
                     <span>{f.quantity(line.quantity)} units</span>
                     <span>{line.idleDays}d idle</span>
-                    <span className="font-medium text-foreground">{f.currency(line.value)}</span>
+                    <Money value={line.value} formatters={f} className="font-medium text-foreground" />
                   </span>
                 </li>
               ))}
@@ -444,7 +445,7 @@ function StatCard({
   testId,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   sub?: string;
   loading?: boolean;
   tone?: 'warning';

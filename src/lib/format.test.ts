@@ -38,6 +38,30 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.currency(1.23, 'ZZ')).toBe('£1.23 ZZ');
   });
 
+  it('exposes the money value as Intl parts, agreeing with the string form', () => {
+    const parts = gb.currencyParts(1234.5);
+    expect(parts).not.toBeNull();
+    // The pieces re-join to exactly the string form (the two share one source of truth).
+    expect(parts!.map((p) => p.value).join('')).toBe('£1,234.50');
+    // Exactly one `currency` part carries the symbol, so a caller can tint just that.
+    const symbols = parts!.filter((p) => p.type === 'currency');
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]!.value).toBe('£');
+  });
+
+  it('returns null parts for a non-finite value', () => {
+    expect(gb.currencyParts(Number.NaN)).toBeNull();
+    expect(gb.currencyParts(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it('carries a malformed override code as a trailing literal part', () => {
+    const parts = gb.currencyParts(1.23, 'ZZ');
+    expect(parts!.map((p) => p.value).join('')).toBe('£1.23 ZZ');
+    // The base £ is still the (tintable) currency part; the raw code rides along as a literal.
+    expect(parts!.some((p) => p.type === 'currency' && p.value === '£')).toBe(true);
+    expect(parts!.some((p) => p.type === 'literal' && p.value === ' ZZ')).toBe(true);
+  });
+
   it('formats a 0..1 ratio as a percentage, clamping out-of-range/non-finite input', () => {
     expect(gb.percent(0)).toBe('0%');
     expect(gb.percent(0.5)).toBe('50%');

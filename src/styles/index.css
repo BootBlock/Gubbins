@@ -144,6 +144,17 @@
   --cond-good: oklch(0.62 0.15 130);
 
   /*
+   * Money symbol tint (spec §2.4.1) — the currency symbol/prefix drawn ahead of every
+   * monetary value by the Foundry `Money` control. A quiet blue, deliberately set apart
+   * from the neutral `--foreground` the number itself uses so the symbol reads as a
+   * distinct affordance, yet carries no semantic weight of its own (it is not
+   * success/warning). Rendered at 0.8 opacity by the component so it recedes a touch
+   * behind the figure. Never the sole signal — the number always reads — so this stays
+   * within WCAG 1.4.1; the .dark block lifts it for the near-black surface.
+   */
+  --money-symbol: oklch(0.55 0.1 255);
+
+  /*
    * Decorative starfield (About screen). Theme-aware so the field reads on either
    * surface: on the near-white light theme the stars are *dark* dots; the .dark
    * block flips them to a cool near-white. `--star-flare` tints the occasional
@@ -244,6 +255,10 @@
    * dark-variant semantic tokens. */
   --cond-good: oklch(0.82 0.14 130);
 
+  /* Money symbol tint, dark-theme variant — the quiet blue lifted for the near-black
+   * surface (see :root for the rationale). */
+  --money-symbol: oklch(0.76 0.09 255);
+
   /* Starfield, dark-theme variant — cool near-white stars and a cyan-tinted flare
    * glow on the near-black surface (see :root for the rationale). */
   --star: oklch(0.96 0.012 250);
@@ -331,6 +346,10 @@
   /* Condition "Good" lime → `text-cond-good` (the one condition hue not already a
    * semantic token; Mint/Out-for-calibration/Needs-repair use success/warning/destructive). */
   --color-cond-good: var(--cond-good);
+
+  /* Money symbol tint → `text-money-symbol`, used by the Foundry `Money` control to
+   * colourise the currency symbol distinctly from the numeric value. */
+  --color-money-symbol: var(--money-symbol);
 
   /* Starfield tokens → exposed as `*-star` utilities for completeness; the
    * .gubbins-star / .gubbins-flare classes reference the raw vars directly. */

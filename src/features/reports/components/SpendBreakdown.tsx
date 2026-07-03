@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { SpendGroup, SpendReport } from '../spend-analytics';
 import { SPEND_SOURCE_LABEL } from '../spend-analytics';
@@ -27,7 +28,7 @@ function SpendBar({
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="min-w-0 truncate font-medium">{name}</span>
         <span className="shrink-0 tabular-nums text-muted-foreground">
-          {formatters.currency(total)} · {Math.round(share * 100)}%
+          <Money value={total} formatters={formatters} /> · {Math.round(share * 100)}%
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
@@ -75,7 +76,7 @@ export function SpendBreakdown({ report, formatters }: { report: SpendReport; fo
     <div className="flex flex-col gap-6" data-testid="spend-breakdown">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm text-muted-foreground">Total spend</span>
-        <span className="text-lg font-semibold tabular-nums">{formatters.currency(report.total)}</span>
+        <Money value={report.total} formatters={formatters} className="text-lg font-semibold" />
       </div>
 
       {/* Spend over time — one bar per bucket, scaled to the busiest bucket. */}

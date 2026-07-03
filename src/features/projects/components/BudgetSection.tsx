@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button, Spinner, Surface, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { useState, type ReactNode } from 'react';
+import { Button, Money, Spinner, Surface, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { BudgetIcon, EditIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
@@ -32,7 +32,7 @@ export function BudgetSection({ projectId }: { projectId: string }) {
   }
 
   const summary = summariseBudget(budgetQuery.data, warnPercent);
-  const money = (n: number) => fmt.currency(n);
+  const money = (n: number) => <Money value={n} formatters={fmt} />;
   const hasBudget = summary.budget != null;
   const categories = categoriesQuery.data ?? [];
 
@@ -131,7 +131,7 @@ function Figure({
   hint,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: string;
   hint?: string;
 }) {

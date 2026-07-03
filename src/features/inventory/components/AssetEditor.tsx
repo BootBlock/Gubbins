@@ -10,7 +10,7 @@
  * a purchase price is present.
  */
 import { useEffect, useState } from 'react';
-import { Button, InfoHint, Input } from '@/components/foundry';
+import { Button, InfoHint, Input, Money } from '@/components/foundry';
 import { CostIcon, SecureIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
@@ -109,10 +109,10 @@ export function AssetEditor({ item }: { item: Item }) {
       {bookValue !== null ? (
         <p className="flex items-center gap-1.5 text-sm font-medium text-foreground [&_svg]:size-4">
           <CostIcon />
-          Current value: {fmt.currency(bookValue)}
+          Current value: <Money value={bookValue} formatters={fmt} />
           {item.purchasePrice != null && item.purchasePrice !== bookValue ? (
             <span className="font-normal text-muted-foreground">
-              · purchased at {fmt.currency(item.purchasePrice)}
+              · purchased at <Money value={item.purchasePrice} formatters={fmt} />
             </span>
           ) : null}
         </p>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   LiveRegion,
+  Money,
   PageContainer,
   PageHeader,
   Spinner,
@@ -10,6 +11,7 @@ import {
 } from '@/components/foundry';
 import { AddIcon, DeleteIcon, LowStockIcon, ShoppingCartIcon, TruckIcon } from '@/components/icons';
 import { ReorderTab } from './ReorderTab';
+import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
@@ -141,7 +143,7 @@ export function PurchaseOrdersScreen() {
                   key={po.id}
                   po={po}
                   active={po.id === selected}
-                  currency={f.currency}
+                  formatters={f}
                   onSelect={() => setSelectedId(po.id)}
                 />
               ))
@@ -227,12 +229,12 @@ function TabButton({
 function OrderListRow({
   po,
   active,
-  currency,
+  formatters,
   onSelect,
 }: {
   po: PurchaseOrderWithLines;
   active: boolean;
-  currency: (value: number) => string;
+  formatters: Formatters;
   onSelect: () => void;
 }) {
   const status = poStatusPresentation(po.effectiveStatus);
@@ -252,7 +254,7 @@ function OrderListRow({
       </div>
       <div className="flex w-full items-center justify-between text-xs text-muted-foreground">
         <span>{po.reference ?? 'No reference'}</span>
-        <span>{currency(estimatedValue(po.lines))}</span>
+        <Money value={estimatedValue(po.lines)} formatters={formatters} />
       </div>
     </button>
   );
@@ -453,7 +455,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                     <span className="truncate text-sm font-medium">{label}</span>
                     <span className="text-xs text-muted-foreground">
                       {f.quantity(line.receivedQty)} / {f.quantity(line.orderedQty)} received
-                      {line.unitCost != null && ` · ${f.currency(line.unitCost)} each`}
+                      {line.unitCost != null && (
+                        <>
+                          {' · '}
+                          <Money value={line.unitCost} formatters={f} /> each
+                        </>
+                      )}
                     </span>
                   </div>
                   {isActive && outstanding > 0 && (

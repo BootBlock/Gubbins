@@ -4,6 +4,7 @@
  * last few recorded points. Read-only; rendered only when ≥1 point exists. Design tokens
  * only (colours via `currentColor` driven by a `text-*` token) — no chart dependency.
  */
+import { Money } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import { useSupplierPartPriceHistory } from '../queries';
 import { buildPriceSeries, sparklinePolyline, type PriceDirection } from '../price-history';
@@ -53,14 +54,11 @@ export function SupplierPartPriceHistory({
   // currency so the symbol matches the figures listed below it.
   const latestCurrency = recent[0]?.currency ?? undefined;
 
-  const changeLabel =
-    series.changeAbs === null || series.changeAbs === 0
-      ? null
-      : `${series.changeAbs > 0 ? '+' : '−'}${fmt.currency(Math.abs(series.changeAbs), latestCurrency)}${
-          series.changePct === null
-            ? ''
-            : ` (${series.changePct > 0 ? '+' : '−'}${Math.abs(Math.round(series.changePct))}%)`
-        }`;
+  const change = series.changeAbs;
+  const changePctLabel =
+    series.changePct === null
+      ? ''
+      : ` (${series.changePct > 0 ? '+' : '−'}${Math.abs(Math.round(series.changePct))}%)`;
 
   return (
     <div className="mt-2 rounded-lg bg-secondary/40 p-2" data-testid="supplier-part-price-history">
@@ -68,10 +66,12 @@ export function SupplierPartPriceHistory({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Price history
         </span>
-        {changeLabel ? (
+        {change !== null && change !== 0 ? (
           <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${tone}`}>
             <span aria-hidden>{DIRECTION_GLYPH[series.direction]}</span>
-            {changeLabel}
+            {change > 0 ? '+' : '−'}
+            <Money value={Math.abs(change)} currency={latestCurrency} formatters={fmt} />
+            {changePctLabel}
           </span>
         ) : null}
       </div>
@@ -100,9 +100,12 @@ export function SupplierPartPriceHistory({
       <ul className="mt-1 flex flex-col gap-0.5">
         {recent.map((p) => (
           <li key={p.id} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span className="text-foreground tabular-nums">
-              {fmt.currency(p.unitCost, p.currency ?? undefined)}
-            </span>
+            <Money
+              value={p.unitCost}
+              currency={p.currency ?? undefined}
+              formatters={fmt}
+              className="text-foreground"
+            />
             <span className="flex items-center gap-2">
               {p.source === 'SCRAPE' ? (
                 <span className="text-[10px] uppercase tracking-wide">Scraped</span>

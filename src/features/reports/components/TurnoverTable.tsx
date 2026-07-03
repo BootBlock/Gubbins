@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { TurnoverReport } from '../turnover';
 
@@ -65,7 +66,7 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
                 <td className="max-w-0 truncate py-1.5 pr-3 font-medium">{line.name}</td>
                 <td className="py-1.5 px-3 text-right tabular-nums">{formatRatio(line.turnover)}</td>
                 <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
-                  {formatters.currency(line.cogs)}
+                  <Money value={line.cogs} formatters={formatters} />
                 </td>
                 <td className="py-1.5 pl-3 text-right tabular-nums text-muted-foreground">
                   {formatDays(line.daysOnHand, formatters)}

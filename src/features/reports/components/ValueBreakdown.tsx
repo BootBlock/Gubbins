@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { ValueGroup } from '../reports';
 
@@ -29,9 +30,7 @@ export function ValueBreakdown({
           <li key={group.id ?? 'ungrouped'} className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="min-w-0 truncate font-medium">{group.name}</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {formatters.currency(group.value)}
-              </span>
+              <Money value={group.value} formatters={formatters} className="shrink-0 text-muted-foreground" />
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
               <div

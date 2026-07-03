@@ -19,6 +19,7 @@ export {
   type AutocompleteFieldProps,
 } from './autocomplete';
 export { filterSuggestions } from './autocomplete-filter';
+export { Money, type MoneyProps } from './money';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

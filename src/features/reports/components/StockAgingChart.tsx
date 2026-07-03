@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { StockAgingReport } from '../stock-aging';
 
@@ -33,7 +34,7 @@ export function StockAgingChart({
               <span className="font-medium">{bucket.label}</span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatters.quantity(bucket.itemCount)} items · {formatters.quantity(bucket.quantity)} units ·{' '}
-                {formatters.currency(bucket.value)}
+                <Money value={bucket.value} formatters={formatters} />
               </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">

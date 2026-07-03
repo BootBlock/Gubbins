@@ -1,3 +1,4 @@
+import { Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { ValuationTrendReport } from '../valuation-trend';
 
@@ -55,19 +56,15 @@ export function ValuationSparkline({
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
         <span className="text-muted-foreground">
           Start{' '}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatters.currency(report.startValue)}
-          </span>
+          <Money value={report.startValue} formatters={formatters} className="font-medium text-foreground" />
         </span>
         <span className="text-muted-foreground">
           Now{' '}
-          <span className="font-medium text-foreground tabular-nums">
-            {formatters.currency(report.endValue)}
-          </span>
+          <Money value={report.endValue} formatters={formatters} className="font-medium text-foreground" />
         </span>
         <span className={`font-medium tabular-nums ${rising ? 'text-success' : 'text-destructive'}`}>
           {rising ? '+' : '−'}
-          {formatters.currency(Math.abs(report.changeValue))}
+          <Money value={Math.abs(report.changeValue)} formatters={formatters} />
         </span>
       </div>
     </div>
