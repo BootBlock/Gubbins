@@ -35,6 +35,7 @@ import {
   type ColumnMapping,
 } from './catalog-import';
 import { findAsin } from './asin';
+import { mapMigration, type MigrationSourceId } from './importers/migrations';
 import type { CategoryField, Item } from '@/db/repositories/types';
 
 // ---------------------------------------------------------------------------
@@ -709,6 +710,32 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
   }
   const width = allRows.reduce((max, r) => Math.max(max, r.length), 0);
   return tabularExtraction(format, syntheticHeaders(width), allRows, customFields);
+}
+
+// ---------------------------------------------------------------------------
+// Migration mapping (Phase EI-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reshape a tabular {@link ImportExtraction} through a named migration mapper (Homebox,
+ * Grocy, …) so another tool's export columns become the canonical Gubbins fields the
+ * shared plan builder understands. A no-op for a free-form line list or an empty
+ * extraction (neither has source columns to remap). The returned extraction carries an
+ * *explicit* mapping (`isTabular: true`), so the pipeline maps by it directly rather than
+ * re-inferring from the rewritten headers; a `note`, if any, is preserved.
+ */
+export function applyMigration(extraction: ImportExtraction, source: MigrationSourceId): ImportExtraction {
+  if (!extraction.isTabular || extraction.headerRow.length === 0) return extraction;
+  const mapped = mapMigration(source, extraction.headerRow, extraction.dataRows);
+  return {
+    format: extraction.format,
+    headerRow: mapped.headerRow,
+    dataRows: mapped.dataRows,
+    mapping: mapped.mapping,
+    columns: mapped.headerRow,
+    isTabular: true,
+    ...(extraction.note ? { note: extraction.note } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
