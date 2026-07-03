@@ -5,13 +5,14 @@ import { CommandBlock, ChoiceCards, BranchPanel, StepCard } from '../components'
 import { useGuide, tokenForDisplay } from '../context';
 import { GuideLink } from '../links';
 
-type Trouble = 'not-found' | 'unreachable' | 'nothing' | null;
+type Trouble = 'not-found' | 'unreachable' | 'nothing' | 'google' | null;
 
 /**
  * Step 8 — try it, and troubleshoot.
  *
  * Celebrates the finish, gives concrete phrases to try, and offers a small symptom-driven
- * troubleshooter for the three failures a user is most likely to hit at the voice layer.
+ * troubleshooter for the failures a user is most likely to hit at the voice layer — including
+ * the Google Home two-step handoff, which behaves differently from talking to Assist directly.
  */
 export function FinishStep() {
   const { token } = useGuide();
@@ -36,6 +37,11 @@ export function FinishStep() {
           <span className="text-foreground">"Your M3 x 10 Hex Bolt is in Drawer A — 42 in stock."</span> For
           an item in several places it says how it's split across them.
         </p>
+        <p className="text-sm text-muted-foreground">
+          On a <span className="text-foreground">Google Home / Nest</span> speaker it's two beats — say{' '}
+          <span className="text-foreground">"Hey Google, check location"</span> first to hand off to Home
+          Assistant, then ask your question.
+        </p>
       </StepCard>
 
       <StepCard title="Something not working?">
@@ -56,6 +62,11 @@ export function FinishStep() {
               description: 'It says the bridge is offline.',
             },
             { id: 'nothing', title: "Assist doesn't react", description: 'It ignores the phrase entirely.' },
+            {
+              id: 'google',
+              title: 'Google Home ignores me',
+              description: 'The "check location" handoff doesn\'t work.',
+            },
           ]}
         />
         {trouble === 'not-found' ? (
@@ -99,14 +110,61 @@ export function FinishStep() {
         ) : trouble === 'nothing' ? (
           <BranchPanel>
             <p className="text-sm text-muted-foreground">
-              If Assist doesn't respond at all, it hasn't learned the sentences. Re-check the "Voice
-              sentences" step: the file must be at{' '}
-              <code className="rounded bg-secondary/60 px-1">
-                {'<config>/custom_sentences/en/gubbins.yaml'}
-              </code>{' '}
-              and Home Assistant must have been restarted afterwards. Try the exact phrase{' '}
-              <span className="text-foreground">"where is my M3 bolt"</span> first before your own wording.
+              If Assist doesn't respond at all, it hasn't learned the phrases. Re-check the "Voice sentences"
+              step for whichever wiring you chose:
             </p>
+            <ul className="ml-4 list-disc space-y-1 text-sm text-muted-foreground">
+              <li>
+                <span className="text-foreground">Sentences file</span> — it must be at{' '}
+                <code className="rounded bg-secondary/60 px-1">
+                  {'<config>/custom_sentences/en/gubbins.yaml'}
+                </code>{' '}
+                and Home Assistant restarted afterwards.
+              </li>
+              <li>
+                <span className="text-foreground">Conversation automation</span> — it must be saved and
+                enabled, and automations reloaded (or HA restarted). Try the exact phrase{' '}
+                <span className="text-foreground">"where is my M3 bolt"</span> before your own wording.
+              </li>
+            </ul>
+            <Banner tone="info" icon={<InfoIcon />} heading="Upgrading from an older Gubbins integration?">
+              If your HA logs show <code className="rounded bg-secondary/60 px-1">AttributeError</code> or{' '}
+              <code className="rounded bg-secondary/60 px-1">ImportError</code> from a{' '}
+              <code className="rounded bg-secondary/60 px-1">custom_components/gubbins</code> you installed
+              long ago, remove that old copy (and reinstall via HACS if you want the integration). A stale,
+              incompatible component can stop the intent engine from loading.
+            </Banner>
+          </BranchPanel>
+        ) : trouble === 'google' ? (
+          <BranchPanel>
+            <p className="text-sm text-muted-foreground">
+              Google speakers don't hand free-form words to a skill directly — so it's a{' '}
+              <span className="text-foreground">two-step</span> flow, not one sentence. First say your Routine
+              trigger, wait for the handoff, then ask your question:
+            </p>
+            <ul className="ml-1 space-y-1.5 text-sm">
+              <li className="text-foreground">
+                "Hey Google, check location." <span className="text-muted-foreground">(then wait)</span>
+              </li>
+              <li className="text-foreground">"Where did I put the nails?"</li>
+            </ul>
+            <ul className="ml-4 list-disc space-y-1 text-sm text-muted-foreground">
+              <li>
+                Check the <span className="text-foreground">Google Home Routine</span> exists and its action
+                is <span className="text-foreground">"Talk to Home Assistant"</span> (see the "Voice
+                sentences" step).
+              </li>
+              <li>
+                Make sure Home Assistant is{' '}
+                <span className="text-foreground">linked to Google Assistant</span> (Nabu Casa Home Assistant
+                Cloud, or the manual Google Assistant integration) — the handoff can't work otherwise.
+              </li>
+              <li>
+                Once you're in the HA conversation, it uses the same phrases as direct Assist — so confirm
+                those work in <span className="text-foreground">Settings → Voice assistants → Try it</span>{' '}
+                first.
+              </li>
+            </ul>
           </BranchPanel>
         ) : null}
       </StepCard>

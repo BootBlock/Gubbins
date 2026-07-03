@@ -65,6 +65,12 @@ export function OverviewStep() {
             bridge ships inside it). We'll cover getting it in the next steps.
           </ChecklistItem>
           <ChecklistItem>
+            A way to talk to it — <span className="text-foreground">Home Assistant's Assist</span> (the HA
+            app, a Voice Preview Edition, or a wake-word device), or a{' '}
+            <span className="text-foreground">Google Home / Nest</span> speaker (we cover the extra Routine
+            that one needs).
+          </ChecklistItem>
+          <ChecklistItem>
             About <span className="text-foreground">15–20 minutes</span>. You do not need to be a programmer —
             every command is copy-and-paste.
           </ChecklistItem>

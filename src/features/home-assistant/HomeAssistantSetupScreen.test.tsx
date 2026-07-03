@@ -89,4 +89,20 @@ describe('HomeAssistantSetupScreen', () => {
     renderGuide();
     expect(screen.getByTestId('guide-prev')).toBeDisabled();
   });
+
+  it('covers Google Home and reveals the conversation-automation wiring on the sentences step', async () => {
+    const user = userEvent.setup();
+    renderGuide();
+
+    const rail = screen.getByRole('navigation', { name: /setup steps/i });
+    await user.click(within(rail).getByRole('button', { name: /Voice sentences/i }));
+
+    // Google Home / Nest coverage is always shown on this step (the real-world gap).
+    expect(screen.getByText(/Using a Google Home or Nest speaker/i)).toBeInTheDocument();
+
+    // The conversation-automation branch (no file editing) is revealed on demand.
+    expect(screen.queryByText('No grammar script needed')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /conversation automation/i }));
+    expect(screen.getByText('No grammar script needed')).toBeInTheDocument();
+  });
 });

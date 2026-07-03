@@ -79,7 +79,7 @@ export const GUIDE_STEPS: readonly GuideStep[] = [
   {
     id: 'sentences',
     label: 'Voice sentences',
-    summary: 'Teach the Assist voice agent the phrases that query your inventory.',
+    summary: 'Teach Assist the phrases — and bridge a Google Home / Nest speaker if you use one.',
     Icon: VoiceIcon,
   },
   {
