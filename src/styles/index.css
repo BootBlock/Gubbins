@@ -13,6 +13,23 @@
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * `large-format:` variant (spec §2.4.2 canonical page frame; §3 adaptive layout).
+ *
+ * Targets a large-format *touch* device — a tablet, or a foldable like the Pixel Fold
+ * unfolded — so screens can reclaim the horizontal room the standard `max-w-6xl` frame
+ * leaves as empty margin there, without altering the layout on a standard phone or
+ * laptop. See `lib/env/device.ts` for why this exact query (coarse pointer separates a
+ * slate from a same-width desktop; the height floor excludes a phone in landscape); this
+ * variant and `LARGE_FORMAT_QUERY` are kept identical. Page-level layout switches like
+ * this belong in a media query — component-internal reflow stays in container queries.
+ */
+@custom-variant large-format {
+  @media (min-width: 768px) and (min-height: 600px) and (pointer: coarse) {
+    @slot;
+  }
+}
+
 :root {
   color-scheme: light;
 

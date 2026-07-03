@@ -24,12 +24,18 @@ export interface PageContainerProps {
  * pick their own `max-w-*` (3xl … 7xl) and top padding, so the whole frame — and the
  * header with it — jumped around as you navigated. The `max-w-6xl` width matches the root
  * chrome's storage-banner container, so the page aligns with the app shell too.
+ *
+ * On a **large-format** touch device (tablet / unfolded foldable) the `max-w-6xl` cap is
+ * relaxed to a wider ceiling (and the side gutter widened), so the frame reclaims the room
+ * it would otherwise leave as empty margin — see the `large-format:` variant in
+ * `styles/index.css` and `lib/env/device.ts`. Standard phones and laptops are untouched.
  */
 export function PageContainer({ children, fullHeight, className }: PageContainerProps) {
   return (
     <div
       className={cn(
         'mx-auto flex w-full max-w-6xl flex-col px-4 pt-6',
+        'large-format:max-w-[90rem] large-format:px-8',
         fullHeight ? 'h-dvh pb-6' : 'min-h-dvh gap-6 pb-16',
         className,
       )}

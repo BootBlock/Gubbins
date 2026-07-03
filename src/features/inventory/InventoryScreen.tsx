@@ -355,7 +355,7 @@ function InventoryWorkspace() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-6">
+      <div className="flex min-h-0 flex-1 gap-6 large-format:gap-8">
         {tree.data && flat.data ? (
           <LocationSidebar
             tree={tree.data}
@@ -365,7 +365,7 @@ function InventoryWorkspace() {
             totalCount={totalCount.data ?? 0}
           />
         ) : (
-          <div className="w-64 shrink-0" />
+          <div className="w-64 shrink-0 large-format:w-72" />
         )}
 
         <main

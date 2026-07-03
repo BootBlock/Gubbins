@@ -55,6 +55,7 @@ export {
   type MediaQueryLike,
   type MediaQueryProvider,
 } from './useReducedMotion';
+export { useMediaQuery, useLargeFormat } from './useMediaQuery';
 export {
   useInstallPrompt,
   browserInstallPromptApi,

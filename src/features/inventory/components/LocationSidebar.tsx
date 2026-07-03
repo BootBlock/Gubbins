@@ -81,7 +81,7 @@ export function LocationSidebar({
   const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-2">
+    <aside className="flex w-64 shrink-0 flex-col gap-2 large-format:w-72">
       <div className="flex items-center justify-between px-1">
         <h2
           id="locations-heading"
