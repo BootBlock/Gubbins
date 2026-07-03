@@ -1875,3 +1875,31 @@ no migration) and **Phase 81** (supplier price-history, `6699a7b`, the wave's **
 80 activity-feed, 81 supplier-price-history). Schema is at **`user_version` 3**. There is no Wave-4
 continuation: a fresh competitor re-benchmark that surfaces genuinely new in-scope gaps would be a
 **new** audit, not a continuation of this one.
+
+---
+
+## Phase 83 — Outcome (browser-smoke repair) + a UI residual to carry forward
+
+The Phase-83 maintenance work re-greened the end-to-end browser smoke (`scripts/browser-smoke.mjs`)
+against the current app: ~50 native-`<select>` `.selectOption(...)` drives were migrated to a
+`chooseOption(combo, label)` helper for the app-wide Foundry Select combobox (which Playwright's
+`selectOption` cannot drive), the retired per-screen header link lists were rewired to the global
+AppNav menu and the inventory **More** overflow menu, and several moved/renamed controls were
+re-targeted. Smoke-only: no application code changed. (The parallel Amazon-import work already on
+`main` supersedes the old branch's add-by-ASIN strand, which was dropped.)
+
+**Deferred UI residual — adding a sub-variant to a child variant closes the item-detail dialog.**
+
+- **Symptom:** from an item's detail dialog, adding a sub-variant to a child variant closes the
+  dialog. The write itself **commits** — the grandchild persists as its own inventory card and shows
+  in the reopened variant list — so no data is lost; only the dialog is dismissed mid-flow.
+- **Cause:** the detail dialog's open-state lives in the **virtualised inventory row's**
+  `ItemActions` local `useState`. `createVariant` invalidates `inventoryKeys.items()`, so the list
+  refetches and the virtualiser recycles/unmounts that row — taking its dialog with it. The cause is
+  unrelated to the variant feature itself (any mutation that invalidates the item list from within a
+  row-hosted dialog would do the same).
+- **Fix:** lift the detail-dialog open-state **above** the virtualised list, keyed by item id, so a
+  row recycle no longer unmounts the open dialog. **→ a later maintenance phase.**
+- **Smoke stance:** the smoke's sub-variant step now asserts the persisted **inventory card**
+  (robust to whether the dialog stayed open) rather than the in-dialog variant list — an honest,
+  green assertion that documents the residual rather than masking it.

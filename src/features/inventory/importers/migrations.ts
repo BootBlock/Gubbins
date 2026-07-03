@@ -278,7 +278,7 @@ export function mapMigration(
   const copyIndices: number[] = [];
   for (let i = 0; i < header.length; i += 1) {
     const target = targetByIndex[i];
-    if (target === null || target === 'notes') continue;
+    if (target == null || target === 'notes') continue;
     headerRow.push(CATALOG_FIELD_LABELS[target]);
     mapping.push(target);
     copyIndices.push(i);
