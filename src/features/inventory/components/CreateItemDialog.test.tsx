@@ -272,11 +272,10 @@ describe('CreateItemDialog', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
 
-    // A valid ASIN confirms inline and seeds the notes provenance.
+    // A valid ASIN confirms inline. The ASIN and listing URL are captured structurally on the
+    // supplier part (order code + link), so Notes is left untouched — no redundant provenance.
     expect(screen.getByTestId('item-asin-applied')).toHaveTextContent('B0TEST0001');
-    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
-      'Amazon ASIN: B0TEST0001',
-    );
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toBe('');
 
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
     await waitFor(() => expect(spies.createSupplierPart).toHaveBeenCalledTimes(1));
