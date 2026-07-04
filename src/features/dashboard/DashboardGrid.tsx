@@ -15,8 +15,10 @@ import { useMemo, useState, type CSSProperties, type DragEvent, type KeyboardEve
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { buttonVariants, Surface, Tooltip, useReducedMotion } from '@/components/foundry';
-import { CustomiseIcon, DragHandleIcon, HideIcon, ShowIcon, CheckIcon, ResetIcon } from '@/components/icons';
+import { DragHandleIcon, HideIcon, ShowIcon, ResetIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useDashboardCustomise } from './useDashboardCustomise';
+import { useReorderFlip } from './useReorderFlip';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
@@ -51,7 +53,9 @@ const PLACEMENT = 'sm:[grid-column:var(--gx)] sm:[grid-row:var(--gy)]';
 export function DashboardGrid() {
   const stored = useLayoutStore((s) => s.dashboardLayout);
   const setLayout = useLayoutStore((s) => s.setDashboardLayout);
-  const [editing, setEditing] = useState(false);
+  // Edit mode is the hub's single, shared "Customise" state (toggled by the one button up in
+  // DashboardNav) — the widget board no longer has its own Customise button.
+  const editing = useDashboardCustomise((s) => s.editing);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Drop the ghost's decorative motion at source for reduced-motion users (mirrors the
   // Foundry Modal/Tooltip seam) — they still get a static dashed highlight of the target.
@@ -86,6 +90,12 @@ export function DashboardGrid() {
 
   const placed = placedWidgets(layout);
   const hidden = layout.filter((p) => !p.visible);
+
+  // Glide each widget to its new cell when the board is rearranged (FLIP), on the signature
+  // easing. Keyed on the placed widgets' coordinates, so a drag/arrow-key move or a show/hide
+  // reflow plays; gated on edit mode and reduced-motion (reduced-motion gets the instant jump).
+  const orderKey = placed.map((p) => `${p.id}:${p.x},${p.y}`).join('|');
+  const registerTile = useReorderFlip(orderKey, editing && !reduced);
 
   const apply = (next: DashboardLayout) => {
     // Pure ops return the same reference on a no-op; only persist a real change. The
@@ -147,6 +157,9 @@ export function DashboardGrid() {
 
   return (
     <section className="mt-8" aria-labelledby="dashboard-widgets-heading">
+      {/* No Customise toggle here: the single button up in DashboardNav drives this board's
+          edit mode too (shared `useDashboardCustomise`). Only the widget-specific Reset lives
+          here, shown while customising. */}
       <div className="mb-3 flex items-center gap-3">
         <h2 id="dashboard-widgets-heading" className="text-sm font-semibold text-muted-foreground">
           Dashboard
@@ -166,26 +179,10 @@ export function DashboardGrid() {
               className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             >
               <ResetIcon />
-              Reset
+              Reset widgets
             </button>
           </Tooltip>
         ) : null}
-        <Tooltip
-          content="Rearrange the board: drag or arrow-key tiles to move them, and hide widgets you don't need. Your layout is saved on this device."
-          triggerTabIndex={-1}
-          className={cn(!editing && 'ml-auto')}
-        >
-          <button
-            type="button"
-            onClick={() => setEditing((v) => !v)}
-            data-testid="customise-dashboard"
-            aria-pressed={editing}
-            className={cn(buttonVariants({ variant: editing ? 'primary' : 'outline', size: 'sm' }))}
-          >
-            {editing ? <CheckIcon /> : <CustomiseIcon />}
-            {editing ? 'Done' : 'Customise'}
-          </button>
-        </Tooltip>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:auto-rows-min sm:grid-cols-3">
@@ -207,6 +204,7 @@ export function DashboardGrid() {
               editing={editing}
               linkActive={linkActive}
               isDropTarget={p.id === ghostTargetId}
+              nodeRef={registerTile(p.id)}
               onDragStart={() => setDraggingId(p.id)}
               onDragEnd={endDrag}
               onDragOver={markOver(p.x, p.y)}
@@ -295,6 +293,7 @@ function WidgetTile({
   editing,
   linkActive,
   isDropTarget,
+  nodeRef,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -310,6 +309,8 @@ function WidgetTile({
   /** Whether this tile's `to` link is live (its target route's feature is enabled). */
   linkActive: boolean;
   isDropTarget: boolean;
+  /** FLIP ref: the outermost (grid-placed) element, so it can glide to its new cell. */
+  nodeRef: (el: HTMLElement | null) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDragOver: (e: DragEvent) => void;
@@ -327,6 +328,7 @@ function WidgetTile({
   if (editing) {
     return (
       <Surface
+        ref={nodeRef}
         data-testid={`widget-${def.id}`}
         style={cellStyle(x, y)}
         draggable
@@ -399,6 +401,7 @@ function WidgetTile({
   if (def.to === '/settings' && linkActive) {
     return (
       <button
+        ref={nodeRef}
         type="button"
         onClick={openSettings}
         style={cellStyle(x, y)}
@@ -410,13 +413,13 @@ function WidgetTile({
   }
   if (def.to && linkActive) {
     return (
-      <Link to={def.to} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
+      <Link ref={nodeRef} to={def.to} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
         {card}
       </Link>
     );
   }
   return (
-    <div style={cellStyle(x, y)} className={PLACEMENT}>
+    <div ref={nodeRef} style={cellStyle(x, y)} className={PLACEMENT}>
       {card}
     </div>
   );

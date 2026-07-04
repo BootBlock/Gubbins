@@ -44,16 +44,24 @@ vi.mock('./widgets', () => {
 import { DashboardGrid } from './DashboardGrid';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useDashboardCustomise } from './useDashboardCustomise';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
+
+/** The widget board no longer owns the Customise toggle — enter edit mode via the shared store. */
+function enterCustomise(): void {
+  act(() => useDashboardCustomise.setState({ editing: true }));
+}
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ dashboardLayout: [] });
+  useDashboardCustomise.setState({ editing: false });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ dashboardLayout: [] });
+  useDashboardCustomise.setState({ editing: false });
   useSettingsDialog.setState({ open: false });
 });
 
@@ -86,7 +94,7 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
   it('omits a gated widget from the Customise "Hidden widgets" picker', () => {
     useModulesStore.getState().setFeatureIntent('projects', false);
     render(<DashboardGrid />);
-    fireEvent.click(screen.getByTestId('customise-dashboard'));
+    enterCustomise();
     // A gated widget is neither on the board nor offered as re-addable in the picker.
     expect(screen.queryByTestId('widget-add-beta')).toBeNull();
     expect(screen.queryByText('Beta body')).toBeNull();
@@ -132,7 +140,7 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
 
     // Edit the visible board: hide Gamma. This persists a new layout — the gated Beta must
     // ride along untouched so re-enabling Projects restores its exact placement.
-    fireEvent.click(screen.getByTestId('customise-dashboard'));
+    enterCustomise();
     fireEvent.click(screen.getByTestId('widget-hide-gamma'));
 
     const persisted = useLayoutStore.getState().dashboardLayout;
@@ -158,5 +166,19 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
       y: 0,
       visible: true,
     });
+  });
+});
+
+describe('DashboardGrid — shared Customise mode', () => {
+  it('has no Customise button of its own; edit mode comes from the shared store', () => {
+    render(<DashboardGrid />);
+    // The board's own toggle is gone (a single button up in DashboardNav drives both boards).
+    expect(screen.queryByTestId('customise-dashboard')).toBeNull();
+    // In view mode there are no per-widget edit affordances…
+    expect(screen.queryByTestId('widget-hide-alpha')).toBeNull();
+    // …but flipping the shared store puts this board into edit mode.
+    enterCustomise();
+    expect(screen.getByTestId('widget-hide-alpha')).toBeInTheDocument();
+    expect(screen.getByTestId('reset-dashboard')).toBeInTheDocument();
   });
 });
