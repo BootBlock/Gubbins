@@ -49,6 +49,8 @@ const gauge = (over: Partial<Item> = {}): Item => ({
   ...over,
 });
 
+const policy = (name: 'default' | 'custom' | 'never') => screen.getByTestId(`low-stock-policy-${name}`);
+
 beforeEach(() => {
   // The global blanket defaults to off (0); keep it deterministic across tests.
   usePreferencesStore.setState({ lowStockQtyThreshold: 0, lowStockGaugePercent: 0 });
@@ -59,26 +61,24 @@ afterEach(() => {
   spies.update.mockReset();
 });
 
-describe('ReorderPointEditor — opt-in toggle', () => {
-  it('starts off for an unconfigured item, with the trigger hidden and Save pristine', () => {
+describe('ReorderPointEditor — policy picker', () => {
+  it('starts on "Default" for an unconfigured item, trigger hidden, Save pristine', () => {
     render(<ReorderPointEditor item={discrete()} />);
-    const toggle = screen.getByTestId('reorder-alert-toggle') as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    expect(policy('default')).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByTestId('reorder-point-input')).toBeNull();
     expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', true);
   });
 
-  it('reveals the trigger pre-seeded with the suggestion when switched on', () => {
+  it('reveals the trigger pre-seeded with the suggestion when "Custom" is chosen', () => {
     render(<ReorderPointEditor item={discrete()} />);
-    fireEvent.click(screen.getByTestId('reorder-alert-toggle'));
+    fireEvent.click(policy('custom'));
     expect(screen.getByTestId('reorder-point-input')).toHaveValue(5);
-    // Now dirty (a value would be written), so Save is enabled.
     expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', false);
   });
 
-  it('saves the per-item reorder point (and top-up) once opted in', () => {
+  it('saves the per-item reorder point (and top-up) for the Custom policy', () => {
     render(<ReorderPointEditor item={discrete()} />);
-    fireEvent.click(screen.getByTestId('reorder-alert-toggle'));
+    fireEvent.click(policy('custom'));
     fireEvent.change(screen.getByTestId('reorder-point-input'), { target: { value: '20' } });
     fireEvent.change(screen.getByTestId('reorder-qty-input'), { target: { value: '50' } });
     fireEvent.click(screen.getByTestId('reorder-point-save'));
@@ -88,17 +88,33 @@ describe('ReorderPointEditor — opt-in toggle', () => {
     });
   });
 
-  it('starts on (with the value shown) for an already-watched item, pristine', () => {
+  it('saves a hard exemption (reorderPoint 0) for the "Never" policy', () => {
+    render(<ReorderPointEditor item={discrete()} />);
+    fireEvent.click(policy('never'));
+    expect(screen.queryByTestId('reorder-point-input')).toBeNull();
+    fireEvent.click(screen.getByTestId('reorder-point-save'));
+    expect(spies.update).toHaveBeenCalledWith({
+      id: 'item-1',
+      input: { reorderPoint: 0, reorderQty: null },
+    });
+  });
+
+  it('starts on "Custom" with the value shown for an already-watched item, pristine', () => {
     render(<ReorderPointEditor item={discrete({ reorderPoint: 20, reorderQty: 50 })} />);
-    const toggle = screen.getByTestId('reorder-alert-toggle') as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
+    expect(policy('custom')).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByTestId('reorder-point-input')).toHaveValue(20);
     expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', true);
   });
 
-  it('clears the override when switched off', () => {
+  it('starts on "Never" and stays pristine for an already-exempt item', () => {
+    render(<ReorderPointEditor item={discrete({ reorderPoint: 0 })} />);
+    expect(policy('never')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', true);
+  });
+
+  it('clears the override when switched back to "Default"', () => {
     render(<ReorderPointEditor item={discrete({ reorderPoint: 20, reorderQty: 50 })} />);
-    fireEvent.click(screen.getByTestId('reorder-alert-toggle')); // turn off
+    fireEvent.click(policy('default'));
     expect(screen.queryByTestId('reorder-point-input')).toBeNull();
     fireEvent.click(screen.getByTestId('reorder-point-save'));
     expect(spies.update).toHaveBeenCalledWith({
@@ -107,16 +123,10 @@ describe('ReorderPointEditor — opt-in toggle', () => {
     });
   });
 
-  it('treats a stored 0 (exempt) as off without a spurious unsaved change', () => {
-    render(<ReorderPointEditor item={discrete({ reorderPoint: 0 })} />);
-    expect((screen.getByTestId('reorder-alert-toggle') as HTMLInputElement).checked).toBe(false);
-    expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', true);
-  });
-
-  it('drives the gauge variant: seeds a percentage and saves it', () => {
+  it('drives the gauge variant: Custom seeds a percentage and saves it', () => {
     render(<ReorderPointEditor item={gauge()} />);
     expect(screen.queryByTestId('reorder-gauge-input')).toBeNull();
-    fireEvent.click(screen.getByTestId('reorder-alert-toggle'));
+    fireEvent.click(policy('custom'));
     expect(screen.getByTestId('reorder-gauge-input')).toHaveValue(15);
     fireEvent.click(screen.getByTestId('reorder-point-save'));
     expect(spies.update).toHaveBeenCalledWith({
@@ -125,9 +135,19 @@ describe('ReorderPointEditor — opt-in toggle', () => {
     });
   });
 
-  it('shows a "bulk stock only" note for serialised items (no toggle)', () => {
+  it('exempts a gauge item (0) for the "Never" policy', () => {
+    render(<ReorderPointEditor item={gauge()} />);
+    fireEvent.click(policy('never'));
+    fireEvent.click(screen.getByTestId('reorder-point-save'));
+    expect(spies.update).toHaveBeenCalledWith({
+      id: 'item-1',
+      input: { reorderGaugePercent: 0 },
+    });
+  });
+
+  it('shows a "bulk stock only" note for serialised items (no picker)', () => {
     render(<ReorderPointEditor item={discrete({ trackingMode: 'SERIALISED' })} />);
-    expect(screen.queryByTestId('reorder-alert-toggle')).toBeNull();
+    expect(screen.queryByTestId('low-stock-policy-custom')).toBeNull();
     expect(screen.getByText(/serialised single assets/i)).toBeInTheDocument();
   });
 });
