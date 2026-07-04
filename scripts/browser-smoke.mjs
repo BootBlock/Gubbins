@@ -977,10 +977,9 @@ try {
       await screwCard().getByRole('button', { name: 'Item details' }).click();
       let dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
-      // The trigger fields are revealed by the opt-in toggle (seeded with a suggestion,
-      // which we overwrite). Only click it if the item isn't already opted in.
-      const alertToggle = dialog.getByTestId('reorder-alert-toggle');
-      if (!(await alertToggle.isChecked())) await alertToggle.click();
+      // Choose the "Custom" low-stock policy to reveal the trigger fields (seeded with a
+      // suggestion, which we overwrite).
+      await dialog.getByTestId('low-stock-policy-custom').click();
       await dialog.getByTestId('reorder-point-input').fill('200');
       await dialog.getByTestId('reorder-qty-input').fill('300');
       const saveBtn = dialog.getByTestId('reorder-point-save');
@@ -1009,12 +1008,12 @@ try {
       await widget.getByText(/reorder 300/).waitFor({ state: 'visible', timeout: 5000 });
 
       // Clear the override so the screws return to "healthy" for any later assertions —
-      // switching the opt-in toggle off clears the per-item reorder point and top-up.
+      // the "Default" policy clears the per-item reorder point and top-up.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       await screwCard().getByRole('button', { name: 'Item details' }).click();
       dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
-      await dialog.getByTestId('reorder-alert-toggle').uncheck();
+      await dialog.getByTestId('low-stock-policy-default').click();
       const clearBtn = dialog.getByTestId('reorder-point-save');
       await clearBtn.click();
       await clearBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
