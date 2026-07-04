@@ -26,6 +26,19 @@ export interface ScrapeRequestState {
   readonly error: ScrapeErrorPayload | null;
 }
 
+/**
+ * An **unsolicited** active-tab scrape delivered by the extension (Path A2). Unlike a
+ * scrape or lookup, the PWA never requested it — the user triggered it from the browser
+ * chrome while on their Amazon tab — so it arrives already settled (a SUCCESS payload or a
+ * typed error), keyed by the extension's correlation id purely to dedupe re-delivery.
+ */
+export interface IncomingScrapeState {
+  readonly id: string;
+  readonly status: 'SUCCESS' | 'ERROR';
+  readonly result: ScrapeResultPayload | null;
+  readonly error: ScrapeErrorPayload | null;
+}
+
 /** Lifecycle of a single tracked product lookup (recommendation point 2). */
 export type ProductLookupStatus = 'LOOKING_UP' | 'SUCCESS' | 'ERROR';
 
@@ -45,12 +58,15 @@ export interface BridgeState {
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
   /** In-flight and recently-finished product lookups, keyed by `requestId` (point 2). */
   readonly lookups: Readonly<Record<string, ProductLookupState>>;
+  /** Unsolicited active-tab scrapes pushed by the extension (Path A2), keyed by id. */
+  readonly incoming: Readonly<Record<string, IncomingScrapeState>>;
 }
 
 export const initialBridgeState: BridgeState = {
   ready: false,
   requests: {},
   lookups: {},
+  incoming: {},
 };
 
 export type BridgeAction =
@@ -62,7 +78,10 @@ export type BridgeAction =
   | { type: 'LOOKUP_REQUEST'; id: string; gtin: string }
   | { type: 'LOOKUP_RESULT'; id: string; payload: ProductLookupResultPayload }
   | { type: 'LOOKUP_ERROR'; id: string; payload: ScrapeErrorPayload }
-  | { type: 'LOOKUP_CLEAR'; id: string };
+  | { type: 'LOOKUP_CLEAR'; id: string }
+  | { type: 'INCOMING_RESULT'; id: string; payload: ScrapeResultPayload }
+  | { type: 'INCOMING_ERROR'; id: string; payload: ScrapeErrorPayload }
+  | { type: 'INCOMING_CLEAR'; id: string };
 
 /**
  * Resolve a finished outcome onto a tracked request in a keyed map, or ignore an
@@ -97,6 +116,17 @@ function withRequests(state: BridgeState, requests: BridgeState['requests']): Br
 /** Reseat the lookups map, preserving the state's identity when it did not change. */
 function withLookups(state: BridgeState, lookups: BridgeState['lookups']): BridgeState {
   return lookups === state.lookups ? state : { ...state, lookups };
+}
+
+/**
+ * Insert an already-settled incoming active-tab scrape, ignoring a **re-delivered** id.
+ * The extension may push the same payload to more than one open PWA tab (or re-push after
+ * a `PWA_READY` handshake), so a first-write-wins insert keeps a single review prompt per
+ * scrape rather than stacking duplicates.
+ */
+function addIncoming(state: BridgeState, id: string, entry: IncomingScrapeState): BridgeState {
+  if (id in state.incoming) return state;
+  return { ...state, incoming: { ...state.incoming, [id]: entry } };
 }
 
 export function bridgeReducer(state: BridgeState, action: BridgeAction): BridgeState {
@@ -160,6 +190,24 @@ export function bridgeReducer(state: BridgeState, action: BridgeAction): BridgeS
       );
     case 'LOOKUP_CLEAR':
       return withLookups(state, drop(state.lookups, action.id));
+    case 'INCOMING_RESULT':
+      return addIncoming(state, action.id, {
+        id: action.id,
+        status: 'SUCCESS',
+        result: action.payload,
+        error: null,
+      });
+    case 'INCOMING_ERROR':
+      return addIncoming(state, action.id, {
+        id: action.id,
+        status: 'ERROR',
+        result: null,
+        error: action.payload,
+      });
+    case 'INCOMING_CLEAR': {
+      const incoming = drop(state.incoming, action.id);
+      return incoming === state.incoming ? state : { ...state, incoming };
+    }
     default:
       return state;
   }

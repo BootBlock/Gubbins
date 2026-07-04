@@ -26,7 +26,9 @@ import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
 import {
   applyScrapeMerge,
   buildScrapeMergePlan,
+  buildSupplierPartPlan,
   ProductLookupPanel,
+  resolveSupplierPartWrite,
   ScrapeSupplierPanel,
   useScrapeNotifier,
   type ProductLookupResultPayload,
@@ -34,7 +36,7 @@ import {
 } from '@/features/scraping';
 import { useCategories } from '../categories';
 import { useFieldSuggestions } from '../queries';
-import { useApplyScrape, useCreateItem, useCreateSerialisedItems } from '../mutations';
+import { useApplyScrape, useCreateItem, useCreateSerialisedItems, useCreateSupplierPart } from '../mutations';
 import { useAddItemImage } from '../media';
 import { buildItemLocationOptions } from '../parent-options';
 import { isLocationFull } from '../location-fullness';
@@ -107,6 +109,12 @@ export interface CreateItemInitialValues {
   name?: string;
   notes?: string;
   mpn?: string;
+  /** Pre-fills the Description field — e.g. a listing title from an active-tab scrape (Path A2). */
+  description?: string;
+  /** Pre-fills the Manufacturer field — e.g. the brand from an active-tab scrape. */
+  manufacturer?: string;
+  /** Pre-fills the Unit cost field (a decimal string) — e.g. an Amazon buy-box price. */
+  unitCost?: string;
   /** Retail barcode (GTIN) — pre-filled when adding an item from a scanned barcode (point 1). */
   barcode?: string;
   sourceUrl?: string;
@@ -119,6 +127,7 @@ export function CreateItemDialog({
   defaultLocationId,
   initialValues,
   initialImage,
+  initialScrape,
 }: {
   open: boolean;
   onClose: () => void;
@@ -127,10 +136,19 @@ export function CreateItemDialog({
   initialValues?: CreateItemInitialValues;
   /** An image shared into Gubbins (plan EI-4), attached to the item once the user confirms. */
   initialImage?: Blob;
+  /**
+   * An active-tab scrape (Path A2) whose per-supplier pricing is persisted as an **Amazon
+   * supplier part** once the item is created — the ASIN as its order code, the buy-box price
+   * as its unit cost — through the §4 no-overwrite-safe {@link resolveSupplierPartWrite}. The
+   * item's own fields are pre-filled separately via {@link initialValues}; this carries the
+   * supplier-side data that has no form field. Omitted for every other add-item entry point.
+   */
+  initialScrape?: ScrapeResultPayload;
 }) {
   const createItem = useCreateItem();
   const createSerialised = useCreateSerialisedItems();
   const applyScrape = useApplyScrape();
+  const createSupplierPart = useCreateSupplierPart();
   const addImage = useAddItemImage();
   const notifyScrape = useScrapeNotifier();
   const { data: categories } = useCategories();
@@ -160,15 +178,15 @@ export function CreateItemDialog({
     resolver: zodResolver(schema),
     defaultValues: {
       name: initialValues?.name ?? '',
-      description: '',
+      description: initialValues?.description ?? '',
       notes: initialValues?.notes ?? '',
       locationId: defaultLocationId ?? UNASSIGNED_LOCATION_ID,
       categoryId: '',
       trackingMode: 'DISCRETE',
       mpn: initialValues?.mpn ?? '',
-      manufacturer: '',
+      manufacturer: initialValues?.manufacturer ?? '',
       barcode: initialValues?.barcode ?? '',
-      unitCost: '',
+      unitCost: initialValues?.unitCost ?? '',
       expiryDate: '',
       batchNumber: '',
       lotNumber: '',
@@ -324,13 +342,24 @@ export function CreateItemDialog({
       );
     };
 
+    // Path A2: persist the active-tab scrape's per-supplier pricing as an Amazon supplier
+    // part (ASIN → order code, buy-box price → unit cost). §4 no-overwrite-safe — a fresh
+    // item has no supplier rows, so this only ever *creates* one, never clobbers a value.
+    const persistAmazonSupplier = (itemId: string, next: () => void) => {
+      if (!initialScrape || !itemId) return next();
+      const write = resolveSupplierPartWrite(buildSupplierPartPlan(initialScrape, []));
+      if (write.kind !== 'create') return next();
+      createSupplierPart.mutate({ itemId, input: write.input }, { onSettled: next });
+    };
+
+    // After the item exists: map any scraped aliases + attach a shared image, then persist an
+    // Amazon supplier part (Path A2), then finish.
+    const finish = (itemId: string) => mapAliases(itemId, () => persistAmazonSupplier(itemId, done));
+
     if (values.trackingMode === 'SERIALISED') {
       // Auto-clone N distinct instance records sharing a name (spec §4).
       const count = Math.max(1, Math.floor(Number(values.count) || 1));
-      createSerialised.mutate(
-        { ...base, count },
-        { onSuccess: (items) => mapAliases(items[0]?.id ?? '', done) },
-      );
+      createSerialised.mutate({ ...base, count }, { onSuccess: (items) => finish(items[0]?.id ?? '') });
       return;
     }
 
@@ -354,7 +383,7 @@ export function CreateItemDialog({
         },
       };
     }
-    createItem.mutate(input, { onSuccess: (item) => mapAliases(item.id, done) });
+    createItem.mutate(input, { onSuccess: (item) => finish(item.id) });
   };
 
   const handleClose = () => {

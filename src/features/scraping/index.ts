@@ -21,6 +21,7 @@ export {
   type ProductLookupResultPayload,
 } from './protocol';
 export { buildProductLookupUrl, parseOpenFoodFactsProduct } from './product-lookup';
+export { describeScrapeError } from './scrape-errors';
 export {
   buildScrapeMergePlan,
   applyScrapeMerge,

@@ -22,8 +22,8 @@ const product: ProductLookupResultPayload = {
 const ready: BridgeState = bridgeReducer(initialBridgeState, { type: 'READY' });
 
 describe('bridgeReducer (§9.3 lifecycle)', () => {
-  it('starts not-ready with no requests or lookups', () => {
-    expect(initialBridgeState).toEqual({ ready: false, requests: {}, lookups: {} });
+  it('starts not-ready with no requests, lookups or incoming scrapes', () => {
+    expect(initialBridgeState).toEqual({ ready: false, requests: {}, lookups: {}, incoming: {} });
   });
 
   it('READY flips the gate and is idempotent', () => {
@@ -112,5 +112,37 @@ describe('bridgeReducer — product lookups (recommendation point 2)', () => {
       payload: { ...product, name: 'Other' },
     });
     expect(again).toBe(s); // first outcome stands, no churn
+  });
+});
+
+describe('bridgeReducer — incoming active-tab scrapes (Path A2)', () => {
+  it('INCOMING_RESULT inserts an already-settled SUCCESS, untouching scrapes/lookups', () => {
+    const s = bridgeReducer(ready, { type: 'INCOMING_RESULT', id: 'ext-1', payload: result });
+    expect(s.incoming['ext-1']?.status).toBe('SUCCESS');
+    expect(s.incoming['ext-1']?.result).toEqual(result);
+    expect(s.requests).toEqual({});
+    expect(s.lookups).toEqual({});
+  });
+
+  it('INCOMING_ERROR inserts a settled error and INCOMING_CLEAR removes it', () => {
+    let s = bridgeReducer(ready, { type: 'INCOMING_ERROR', id: 'ext-1', payload: error });
+    expect(s.incoming['ext-1']?.status).toBe('ERROR');
+    expect(s.incoming['ext-1']?.error).toEqual(error);
+    s = bridgeReducer(s, { type: 'INCOMING_CLEAR', id: 'ext-1' });
+    expect(s.incoming['ext-1']).toBeUndefined();
+  });
+
+  it('ignores a re-delivered id (first payload wins, no churn — dedupe)', () => {
+    const s = bridgeReducer(ready, { type: 'INCOMING_RESULT', id: 'ext-1', payload: result });
+    const again = bridgeReducer(s, {
+      type: 'INCOMING_RESULT',
+      id: 'ext-1',
+      payload: { ...result, mpn: 'OTHER' },
+    });
+    expect(again).toBe(s); // same reference, first delivery stands
+  });
+
+  it('INCOMING_CLEAR for an unknown id preserves identity', () => {
+    expect(bridgeReducer(ready, { type: 'INCOMING_CLEAR', id: 'ghost' })).toBe(ready);
   });
 });

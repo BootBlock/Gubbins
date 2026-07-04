@@ -21,6 +21,14 @@ export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
  * trio is the original supplier-URL scrape; the `PRODUCT_LOOKUP_*` trio is the keyless
  * barcode → product-database enrichment (recommendation point 2), which shares the same
  * secure bridge, correlation-id and error taxonomy but is keyed by a GTIN rather than a URL.
+ *
+ * The `ACTIVE_TAB_*` pair is the **Amazon active-tab enrichment** (Path A2): unlike a
+ * scrape, it is *not* requested by the PWA — the user triggers it from the browser chrome
+ * (toolbar button / "Add to Gubbins" context menu) while on their live Amazon tab, so it
+ * arrives at the PWA **unsolicited**. It carries the same strict {@link scrapeResultPayloadSchema}
+ * a scrape does (the §9 parser is reused verbatim), with an *extension-generated* `requestId`
+ * so the PWA can dedupe re-delivery. There is no `ACTIVE_TAB_REQUEST`: the request originates
+ * outside the page, in the extension, on an explicit user gesture.
  */
 export const EXTENSION_MESSAGE_TYPES = [
   'EXTENSION_READY',
@@ -30,6 +38,8 @@ export const EXTENSION_MESSAGE_TYPES = [
   'PRODUCT_LOOKUP_REQUEST',
   'PRODUCT_LOOKUP_RESULT',
   'PRODUCT_LOOKUP_ERROR',
+  'ACTIVE_TAB_RESULT',
+  'ACTIVE_TAB_ERROR',
 ] as const;
 export type ExtensionMessageType = (typeof EXTENSION_MESSAGE_TYPES)[number];
 
@@ -181,6 +191,20 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
     // Reuses the §9.4.2 error taxonomy — NOT_FOUND covers "no product for this barcode".
     payload: scrapeErrorPayloadSchema,
   }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('ACTIVE_TAB_RESULT'),
+    // Extension-generated correlation id (the PWA never sent a request) — lets the PWA
+    // dedupe a re-delivered payload when several PWA tabs are open.
+    requestId: requestIdSchema,
+    payload: scrapeResultPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('ACTIVE_TAB_ERROR'),
+    requestId: requestIdSchema,
+    payload: scrapeErrorPayloadSchema,
+  }),
 ]);
 
 export type ExtensionMessage = z.infer<typeof extensionMessageSchema>;
@@ -191,6 +215,8 @@ export type ScrapeErrorMessage = Extract<ExtensionMessage, { type: 'SCRAPE_ERROR
 export type ProductLookupRequestMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_REQUEST' }>;
 export type ProductLookupResultMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_RESULT' }>;
 export type ProductLookupErrorMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_ERROR' }>;
+export type ActiveTabResultMessage = Extract<ExtensionMessage, { type: 'ACTIVE_TAB_RESULT' }>;
+export type ActiveTabErrorMessage = Extract<ExtensionMessage, { type: 'ACTIVE_TAB_ERROR' }>;
 
 /** Context for validating an inbound message: the event origin + the trusted set. */
 export interface MessageOriginContext {

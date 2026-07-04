@@ -156,6 +156,7 @@ describe('registry — strategy selection & uniform outcome', () => {
       'rs',
       'adafruit',
       'sparkfun',
+      'amazon',
       'generic-meta',
     ]);
   });

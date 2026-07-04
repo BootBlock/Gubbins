@@ -141,6 +141,41 @@ describe('parseExtensionMessage — payload validation (§9.4.2 no NaN/garbage)'
   });
 });
 
+describe('ACTIVE_TAB_* — Amazon active-tab enrichment (Path A2)', () => {
+  it('accepts a well-formed ACTIVE_TAB_RESULT carrying a scrape payload + extension-generated id', () => {
+    const payload: ScrapeResultPayload = {
+      mpn: 'B0TEST00001',
+      manufacturer: 'Acme Tools',
+      description: 'Example Widget — 10 pack',
+      distributor_url: 'https://www.amazon.co.uk/dp/B0TEST00001',
+      scraped_pricing: { currency: 'GBP', value: 9.99 },
+    };
+    const msg = makeMessage('ACTIVE_TAB_RESULT', payload, 'ext-1');
+    const parsed = parseExtensionMessage(msg, ctx);
+    expect(parsed?.type).toBe('ACTIVE_TAB_RESULT');
+    expect(parsed?.type === 'ACTIVE_TAB_RESULT' && parsed.requestId).toBe('ext-1');
+  });
+
+  it('accepts an ACTIVE_TAB_ERROR from the §9.4.2 taxonomy', () => {
+    const msg = makeMessage(
+      'ACTIVE_TAB_ERROR',
+      { domain: 'amazon.co.uk', error_type: 'DOM_DRIFT', reason: 'no ASIN found' },
+      'ext-2',
+    );
+    const parsed = parseExtensionMessage(msg, ctx);
+    expect(parsed?.type).toBe('ACTIVE_TAB_ERROR');
+  });
+
+  it('still requires a non-blank requestId (dedupe correlation) and a trusted origin', () => {
+    const noId = { source: EXTENSION_SOURCE, type: 'ACTIVE_TAB_RESULT', payload: validResult };
+    expect(parseExtensionMessage(noId, ctx)).toBeNull();
+    const foreign = makeMessage('ACTIVE_TAB_RESULT', validResult, 'ext-3');
+    expect(
+      parseExtensionMessage(foreign, { origin: 'https://evil.test', trustedOrigins: [TRUSTED] }),
+    ).toBeNull();
+  });
+});
+
 describe('makeMessage', () => {
   it('stamps the mandatory source signature and the requestId', () => {
     const msg = makeMessage('SCRAPE_REQUEST', { url: 'https://www.mouser.co.uk/x' }, 'req-42');

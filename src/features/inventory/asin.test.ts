@@ -2,7 +2,16 @@
  * Unit tests for the Amazon ASIN parsing seam. Pure logic — no DB, no DOM.
  */
 import { describe, it, expect } from 'vitest';
-import { ASIN_RE, normaliseAsin, isAmazonHost, parseAsin, findAsin } from './asin';
+import {
+  ASIN_RE,
+  DEFAULT_AMAZON_MARKETPLACE,
+  asinToUrl,
+  marketplaceFromHost,
+  normaliseAsin,
+  isAmazonHost,
+  parseAsin,
+  findAsin,
+} from './asin';
 
 describe('normaliseAsin', () => {
   it('accepts a canonical 10-char ASIN and upper-cases it', () => {
@@ -74,6 +83,43 @@ describe('parseAsin', () => {
     expect(parseAsin('https://www.amazon.co.uk/gp/help')).toBeNull();
     expect(parseAsin('not a url or asin')).toBeNull();
     expect(parseAsin('   ')).toBeNull();
+  });
+});
+
+describe('marketplaceFromHost', () => {
+  it('returns the marketplace TLD of an Amazon host', () => {
+    expect(marketplaceFromHost('www.amazon.co.uk')).toBe('co.uk');
+    expect(marketplaceFromHost('amazon.com')).toBe('com');
+    expect(marketplaceFromHost('smile.amazon.de')).toBe('de');
+    expect(marketplaceFromHost('amazon.com.au')).toBe('com.au');
+  });
+
+  it('prefers the longest suffix so a two-part ccTLD wins over its single label', () => {
+    // `co.uk` must win — never the bare `uk` (which is not even a marketplace here).
+    expect(marketplaceFromHost('www.amazon.co.uk')).toBe('co.uk');
+  });
+
+  it('returns null for a non-Amazon or look-alike host', () => {
+    expect(marketplaceFromHost('example.com')).toBeNull();
+    expect(marketplaceFromHost('amazon.evil.com')).toBeNull();
+  });
+});
+
+describe('asinToUrl', () => {
+  it('synthesises the canonical /dp/ URL for the given marketplace', () => {
+    expect(asinToUrl('B0F3XF5ZKF', 'co.uk')).toBe('https://www.amazon.co.uk/dp/B0F3XF5ZKF');
+    expect(asinToUrl('B0F3XF5ZKF', 'com')).toBe('https://www.amazon.com/dp/B0F3XF5ZKF');
+  });
+
+  it('normalises the ASIN and falls back to the default marketplace for an unknown TLD', () => {
+    expect(asinToUrl('b0f3xf5zkf')).toBe(`https://www.amazon.${DEFAULT_AMAZON_MARKETPLACE}/dp/B0F3XF5ZKF`);
+    expect(asinToUrl('B0F3XF5ZKF', 'invalid-tld')).toBe(
+      `https://www.amazon.${DEFAULT_AMAZON_MARKETPLACE}/dp/B0F3XF5ZKF`,
+    );
+  });
+
+  it('round-trips with parseAsin', () => {
+    expect(parseAsin(asinToUrl('B0F3XF5ZKF', 'de'))).toBe('B0F3XF5ZKF');
   });
 });
 

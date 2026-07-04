@@ -17,14 +17,16 @@ import {
   parseExtensionMessage,
   type ProductLookupRequestMessage,
   type ProductLookupResultPayload,
+  type ScrapeErrorPayload,
   type ScrapeRequestMessage,
+  type ScrapeResultPayload,
 } from '../../src/features/scraping/protocol';
 import { runParser } from '../../src/features/scraping/parsers/registry';
 import { detectChallengePage } from '../../src/features/scraping/scrape-errors';
 import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const trustedOrigins = [window.location.origin];
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
@@ -32,9 +34,17 @@ type LookupReply =
   | { ok: true; product: ProductLookupResultPayload }
   | { ok: false; errorType: ScrapeErrorType; reason: string };
 
+/** An active-tab scrape outcome the background worker delivers to this PWA tab (Path A2). */
+type ActiveTabOutcome = { ok: true; payload: ScrapeResultPayload } | { ok: false; error: ScrapeErrorPayload };
+
 declare const chrome: {
   runtime: {
     sendMessage: <R>(message: unknown) => Promise<R>;
+    onMessage: {
+      addListener: (
+        cb: (message: unknown, sender: unknown, sendResponse: (r?: unknown) => void) => boolean | void,
+      ) => void;
+    };
   };
 };
 
@@ -135,8 +145,29 @@ window.addEventListener('message', (event: MessageEvent) => {
   else if (msg?.type === 'PRODUCT_LOOKUP_REQUEST') void handleLookup(msg);
 });
 
+/**
+ * Receive an active-tab Amazon scrape the background worker routes to this PWA tab (Path A2)
+ * and post it into the page as a validated ACTIVE_TAB_RESULT/ERROR. The extension generates
+ * the correlation id (the PWA never requested this), which the PWA bridge uses to dedupe a
+ * payload delivered to more than one open tab. The payload still passes through the same
+ * `parseExtensionMessage` origin/shape validation on the PWA side — this only *posts* it.
+ */
+chrome.runtime.onMessage.addListener((message) => {
+  const msg = message as { kind?: string; requestId?: string; outcome?: ActiveTabOutcome } | null;
+  if (msg?.kind !== 'DELIVER_ACTIVE_TAB' || typeof msg.requestId !== 'string' || !msg.outcome) return;
+  post(
+    msg.outcome.ok
+      ? makeMessage('ACTIVE_TAB_RESULT', msg.outcome.payload, msg.requestId)
+      : makeMessage('ACTIVE_TAB_ERROR', msg.outcome.error, msg.requestId),
+  );
+});
+
 // The PWA is a single-page app that may mount its listener slightly after we inject,
 // so announce readiness now and a couple more times shortly after (§9.3).
 announce();
 setTimeout(announce, 500);
 setTimeout(announce, 1500);
+
+// Tell the background worker this Gubbins tab is ready, so it can flush any active-tab
+// scrapes captured while no PWA tab was open (Path A2 "queue for the next open").
+void chrome.runtime.sendMessage({ kind: 'PWA_READY' }).catch(() => undefined);

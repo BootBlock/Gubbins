@@ -7,6 +7,7 @@ import { createQueryClient } from '@/state/query/queryClient';
 import { router } from '@/app/router';
 import { ToastProvider } from '@/components/foundry';
 import { ScrapeBridgeProvider } from '@/features/scraping';
+import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveTabScrapeListener';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
 
 /**
@@ -27,6 +28,9 @@ export function App() {
           <ScrapeBridgeProvider>
             <BootGate>
               <RouterProvider router={router} />
+              {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable
+                  add-item dialog. Inside BootGate so the DB/queries it needs are ready. */}
+              <ActiveTabScrapeListener />
             </BootGate>
           </ScrapeBridgeProvider>
         </ToastProvider>
