@@ -252,6 +252,31 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
+   * The number of active items **out of stock** — a headline count for the Dashboard nav tile
+   * (backlog A2). Unlike {@link lowStockCount} (a reorder-point *threshold*), this is the hard
+   * floor: a DISCRETE item at zero on-hand, or a CONSUMABLE_GAUGE with a real capacity now down
+   * to empty. It shares the same guards as low-stock — active only, unlimited-supply items are
+   * never "out" (an infinite source can't run dry), and abstract variant parents (which hold no
+   * stock of their own) are excluded. SERIALISED and UNTRACKED items are excluded deliberately:
+   * a serialised unit is present-or-removed rather than "out of stock", and an UNTRACKED item
+   * sits at quantity 0 *by design* (it opts out of stock counting), so counting either as
+   * out-of-stock would be misleading.
+   */
+  async outOfStockCount(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM items
+        WHERE is_active = 1
+          AND is_unlimited = 0
+          AND ${notAVariantParent('id')}
+          AND (
+            (tracking_mode = 'DISCRETE' AND quantity <= 0)
+            OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0 AND current_net_value <= 0)
+          );`,
+    );
+    return row?.n ?? 0;
+  }
+
+  /**
    * Dead stock (§3): active items holding stock that have **not moved in `sinceDays`**, with
    * the capital tied up. "Last moved" is the most recent `item_history` entry that changed
    * quantity or gauge value; an item that has never moved falls back to its `created_at`. The

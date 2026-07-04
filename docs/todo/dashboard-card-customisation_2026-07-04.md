@@ -43,11 +43,19 @@ uses **Modular UI** intent.
     PO has no expected-delivery date, so "overdue" is not derivable). They pair naturally with
     **A2**'s warning `tone`, which is where they earn their keep; add each as a new entry in
     `NAV_COUNT_METRIC_CONFIG` plus its (gated) data source at that point.
-- **A2 — Semantic colour for a "problem" count.** When a count represents something needing
-  attention (low-stock total, overdue POs, over-budget projects), tint the pill with a
-  warning/`destructive` token instead of the group hue, so a glance distinguishes "12 things"
-  from "12 *problems*". Add a `tone` to the count map; keep the accessible name explicit
-  ("3 overdue orders"). Don't reintroduce the Alerts badge's meaning — this is per-tile.
+- **A2 — Semantic colour for a "problem" count. ✅ Done (shipped the `tone` mechanism + the
+  data-backed problem metrics).** Each `NAV_COUNT_METRIC_CONFIG` option gained an optional
+  `tone` ('neutral' | 'warning' | 'danger'), threaded through `useNavCounts` onto the resolved
+  `NavCount` and mapped to a token in `DashboardNav` (`warning` → `text-warning`, `danger` →
+  `text-destructive`; the solid-primary Inventory CTA uses solid fills). The colour is never
+  load-bearing — the tile's accessible name states the metric in words ("5 low-stock items").
+  New opt-in problem metrics, each on a **gated** count query (fetched only when that metric is
+  the tile's current choice): Projects → *over-budget* (danger, shared `projectBudgetHealth` with
+  the Budget-alerts widget); Inventory (now configurable) → *low-stock* (warning, true-count
+  `useLowStockCount`) and *out-of-stock* (danger, new `ReportRepository.outOfStockCount`).
+  - **Still deferred (not derivable):** POs → *overdue* — a purchase order has no
+    expected-delivery-date column, so "overdue" cannot be computed. Revisit only if/when a PO
+    expected-delivery date is added to the model; then add it as a `tone: 'warning'` metric.
 - **A3 — Show-counts toggle (master + per-card override).** A global "Show counts on nav tiles"
   switch in Settings → Dashboard, plus a per-tile override, for users who find them noisy. When
   off, `useNavCounts` short-circuits (no queries) so it also saves the fetches.

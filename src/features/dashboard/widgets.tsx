@@ -41,7 +41,7 @@ import {
 } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
-import { budgetStatus } from '@/features/projects/budget';
+import { projectBudgetHealth } from '@/features/projects/budget';
 import { useItemCount, useLocations } from '@/features/inventory/queries';
 import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
@@ -351,11 +351,7 @@ function BudgetAlertsWidget() {
   const flagged = (alerts.data ?? [])
     .map((a) => {
       const spentSoFar = a.committedFromBom + a.manualExpenseTotal;
-      const projectedFinalCost = a.estimatedCost + a.manualExpenseTotal;
-      const status = budgetStatus(spentSoFar, a.budget, warnPercent);
-      const projectedStatus = budgetStatus(projectedFinalCost, a.budget, warnPercent);
-      const over = status === 'OVER' || projectedStatus === 'OVER';
-      const warn = status === 'WARN' || projectedStatus === 'WARN';
+      const { over, warn } = projectBudgetHealth(a, warnPercent);
       return { ...a, spentSoFar, over, warn };
     })
     .filter((a) => a.over || a.warn)

@@ -90,6 +90,40 @@ export function budgetStatus(value: number, limit: number | null, warnPercent: n
   return 'OK';
 }
 
+/** The minimal budget figures a cross-project alert (`ProjectBudgetAlert`) carries. */
+export interface BudgetAlertFigures {
+  readonly budget: number;
+  readonly committedFromBom: number;
+  readonly manualExpenseTotal: number;
+  readonly estimatedCost: number;
+}
+
+/** Whether a budgeted project is over budget and/or in the warning band. */
+export interface ProjectBudgetHealth {
+  /** Spend so far *or* projected final cost has passed the budget. */
+  readonly over: boolean;
+  /** Not yet over, but at/above the warning threshold on either measure. */
+  readonly warn: boolean;
+}
+
+/**
+ * Classify a budgeted project against both its **spend so far** (committed BOM + manual
+ * expenses) and its **projected final cost** (full BOM estimate + manual expenses): `over` when
+ * either has passed the budget, `warn` when either is merely in the warning band. The single
+ * definition shared by the dashboard "Budget alerts" widget and the over-budget nav-tile count
+ * (backlog A2), so the two can never drift.
+ */
+export function projectBudgetHealth(figures: BudgetAlertFigures, warnPercent: number): ProjectBudgetHealth {
+  const spentSoFar = figures.committedFromBom + figures.manualExpenseTotal;
+  const projectedFinalCost = figures.estimatedCost + figures.manualExpenseTotal;
+  const status = budgetStatus(spentSoFar, figures.budget, warnPercent);
+  const projectedStatus = budgetStatus(projectedFinalCost, figures.budget, warnPercent);
+  return {
+    over: status === 'OVER' || projectedStatus === 'OVER',
+    warn: status === 'WARN' || projectedStatus === 'WARN',
+  };
+}
+
 /** value / limit, or null when the limit is null or non-positive (avoids /0 and noise). */
 export function spentFraction(value: number, limit: number | null): number | null {
   if (limit == null || limit <= 0) return null;

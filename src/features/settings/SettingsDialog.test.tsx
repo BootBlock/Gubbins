@@ -87,9 +87,11 @@ describe('SettingsDialog — Projects off', () => {
   });
 });
 
-describe('SettingsDialog — nav-tile count pickers (A1)', () => {
+describe('SettingsDialog — nav-tile count pickers (A1/A2)', () => {
   it('shows a metric picker for each configurable tile on the Dashboard tab', () => {
     renderTab('Dashboard');
+    // Inventory gained a picker in A2 (total / low-stock / out-of-stock).
+    expect(screen.queryByTestId('setting-nav-count-/inventory')).not.toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/projects')).not.toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/purchase-orders')).not.toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/bookings')).not.toBeNull();
@@ -103,15 +105,17 @@ describe('SettingsDialog — nav-tile count pickers (A1)', () => {
     expect(screen.queryByTestId('setting-nav-count-/bookings')).not.toBeNull();
   });
 
-  it('drops the whole section only when every configurable tile is off', () => {
-    // Bookings & purchase-orders depend on contacts, so turning contacts + projects off
-    // removes all three configurable tiles — and with them the section heading.
+  it('keeps the always-on Inventory picker (and the section) even when the optional tiles are off', () => {
+    // Bookings & purchase-orders depend on contacts, so turning contacts + projects off removes
+    // those three configurable tiles — but Inventory is `alwaysOn`, so its picker (and the
+    // section heading) always remain.
     useModulesStore.getState().setFeatureIntent('projects', false);
     useModulesStore.getState().setFeatureIntent('contacts', false);
     renderTab('Dashboard');
     expect(screen.queryByTestId('setting-nav-count-/projects')).toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/purchase-orders')).toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/bookings')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Nav tile counts' })).toBeNull();
+    expect(screen.queryByTestId('setting-nav-count-/inventory')).not.toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Nav tile counts' })).not.toBeNull();
   });
 });

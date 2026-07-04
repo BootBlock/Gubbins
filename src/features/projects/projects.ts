@@ -112,11 +112,16 @@ export function useBudgetCategories(projectId: string | undefined) {
   });
 }
 
-/** Cross-project budget headlines for the dashboard "Budget alerts" widget. */
-export function useBudgetAlerts() {
+/**
+ * Cross-project budget headlines for the dashboard "Budget alerts" widget. Pass
+ * `{ enabled: false }` to mount the hook without fetching — the Dashboard nav tile gates it so
+ * the over-budget count query only runs when that metric is the tile's current choice (A2).
+ */
+export function useBudgetAlerts(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: projectKeys.budgetAlerts(),
     queryFn: () => getProjectRepository().listBudgetAlerts(),
+    enabled: options.enabled ?? true,
   });
 }
 

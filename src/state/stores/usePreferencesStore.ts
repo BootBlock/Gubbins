@@ -109,12 +109,12 @@ interface PreferencesStore {
    */
   readonly cardClickAction: CardClickAction;
   /**
-   * Which metric each configurable Dashboard nav tile counts (backlog A1). A device-local
+   * Which metric each configurable Dashboard nav tile counts (backlog A1/A2). A device-local
    * map of tile route → chosen metric id (e.g. `'/projects' → 'active'`); tiles absent from
    * the map, or holding a stale id, fall back to their shipped default at read time. The
-   * available metrics and their nouns are the `NAV_COUNT_METRIC_CONFIG` SSOT; the pure
-   * selectors live in `useNavCounts`. Single-metric tiles (Inventory, Contacts) are not keyed
-   * here. See {@link NavCountRoute}.
+   * available metrics, nouns and tones are the `NAV_COUNT_METRIC_CONFIG` SSOT; the selectors
+   * and gated problem-metric reads live in `useNavCounts`. The single-metric Contacts tile is
+   * not keyed here. See {@link NavCountRoute}.
    */
   readonly navCountMetrics: Record<NavCountRoute, string>;
   /**

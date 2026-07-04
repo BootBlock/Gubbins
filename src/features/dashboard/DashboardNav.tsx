@@ -25,6 +25,7 @@ import { CheckIcon, CustomiseIcon, DragHandleIcon, PinIcon, ResetIcon } from '@/
 import { type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
+import type { NavCountTone } from '@/features/settings/settings';
 import { useNavCounts } from './useNavCounts';
 import { useNavOrder, type NavMoveResult } from './useNavOrder';
 
@@ -82,6 +83,34 @@ const ARROW_DIRECTIONS: Record<string, 'up' | 'down' | 'left' | 'right'> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
 };
+
+/**
+ * "Problem" count-pill colours (backlog A2). When a tile's chosen metric counts something
+ * needing attention ({@link useNavCounts} sets a `warning` / `danger` tone), the pill drops the
+ * group hue for a warning / destructive token so the number reads as an alert, not a plain
+ * total — while the tile's accessible name still states *what* it is, so colour is never the
+ * only signal. On the translucent group tiles the soft same-hue wash matches the neutral pills
+ * (`tile`); on the solid-primary Inventory CTA a solid fill is used instead (`cta`) so the alert
+ * still pops against the primary background. All theme-aware tokens, dark-mode-correct for free.
+ */
+const TONE_COUNT_BADGE: Record<
+  Exclude<NavCountTone, 'neutral'>,
+  { readonly tile: string; readonly cta: string }
+> = {
+  warning: { tile: 'bg-warning/15 text-warning', cta: 'bg-warning text-warning-foreground' },
+  danger: { tile: 'bg-destructive/15 text-destructive', cta: 'bg-destructive text-destructive-foreground' },
+};
+
+/**
+ * Resolve a count pill's colour classes from its metric {@link NavCountTone}, the tile's group
+ * and whether it's the solid-primary Inventory CTA. A neutral tone keeps the group hue (or the
+ * CTA's inverse `primary-foreground`); a problem tone swaps in its warning/destructive token.
+ * Kept out of the JSX so the tile stays presentation and the mapping lives in one place.
+ */
+function countBadgeClass(tone: NavCountTone, group: NavGroup, isCta: boolean): string {
+  if (tone !== 'neutral') return isCta ? TONE_COUNT_BADGE[tone].cta : TONE_COUNT_BADGE[tone].tile;
+  return isCta ? 'bg-primary-foreground/15 text-primary-foreground' : GROUP_COUNT_BADGE[group];
+}
 
 /**
  * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
@@ -266,18 +295,18 @@ export function DashboardNav() {
                         {alertCount > 99 ? '99+' : alertCount}
                       </span>
                     )}
-                    {/* Collection count pill — right-aligned, group-coloured, capped so a huge
-                        catalogue can't stretch the tile. The spoken count rides on the tile's
-                        aria-label below, so the pill itself is decorative. */}
-                    {showCount && count !== undefined && (
+                    {/* Collection count pill — right-aligned, capped so a huge catalogue can't
+                        stretch the tile. Its colour follows the metric's tone (group hue for a
+                        plain total; a warning / destructive token for an A2 "problem" metric).
+                        The spoken count rides on the tile's aria-label below, so the pill itself
+                        is decorative. */}
+                    {showCount && count !== undefined && navCount && (
                       <span
                         aria-hidden
                         data-testid={`nav-count-${dest.to}`}
                         className={cn(
                           'ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums',
-                          isInventory
-                            ? 'bg-primary-foreground/15 text-primary-foreground'
-                            : GROUP_COUNT_BADGE[group],
+                          countBadgeClass(navCount.tone, group, isInventory),
                         )}
                       >
                         {count > 999 ? '999+' : count}

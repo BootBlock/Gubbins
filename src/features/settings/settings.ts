@@ -309,14 +309,27 @@ export function normaliseWindowMonths(value: number): number {
  * different metric than the one shipped as its default — generalising the fixed
  * "active projects / open orders / upcoming bookings" choices into a user preference.
  *
- * Only tiles with **more than one genuinely useful, already-loaded metric** appear here:
- * Inventory (always its item total) and Contacts (always all contacts) are single-metric,
- * so they carry no picker. Every metric is a pure selector over data the tile's existing
- * read hook already loads — no new query or column — which keeps the counts free (shared
- * TanStack cache) and unit-testable. This map is the SSOT for the Settings picker (option
- * values + labels), the store default/normalisation, and each tile's spoken noun; the
- * selectors themselves live beside the reads in `useNavCounts`.
+ * Only tiles with **more than one genuinely useful metric** appear here: Contacts (always all
+ * contacts) is single-metric, so it carries no picker. Most metrics are a pure selector over
+ * data the tile's existing read hook already loads — no new query — which keeps the count free
+ * (shared TanStack cache) and unit-testable. The A2 "problem" metrics (over-budget, low-stock,
+ * out-of-stock) are the exception: each reads a small dedicated count query that `useNavCounts`
+ * fetches **only when that metric is the tile's current choice**, so an unselected problem
+ * metric costs nothing. This map is the SSOT for the Settings picker (option values + labels),
+ * the store default/normalisation, each tile's spoken noun, and each metric's attention
+ * {@link NavCountTone}; the selectors/reads themselves live beside the hooks in `useNavCounts`.
  */
+
+/**
+ * How a nav-count pill is tinted (backlog A2). A `warning`/`danger` metric counts something
+ * needing attention (low-stock, out-of-stock, over-budget), so its pill takes a
+ * warning/destructive token rather than the tile's group hue — a glance distinguishes
+ * "12 things" from "12 *problems*". `neutral` (the default) keeps the group hue. The colour is
+ * never the only signal: the tile's accessible name always states the metric in words
+ * ("5 low-stock items"), so the distinction survives colour-blindness / high-contrast (WCAG).
+ */
+export type NavCountTone = 'neutral' | 'warning' | 'danger';
+
 export interface NavCountMetricOption {
   readonly value: string;
   /** The Settings picker label for this metric. */
@@ -329,23 +342,60 @@ export interface NavCountMetricOption {
    * this week"), so {@link plural} needs the irregular form.
    */
   readonly nounPlural: string;
+  /**
+   * Attention tone for the count pill (backlog A2); absent ⇒ `'neutral'` (the group hue).
+   * A problem metric ({@link NavCountTone} `warning`/`danger`) tints the pill so it reads as
+   * an alert, not a plain total.
+   */
+  readonly tone?: NavCountTone;
 }
 
 interface NavCountMetricConfig {
   /** The tile's Settings picker label ("Projects tile counts"). */
   readonly settingLabel: string;
-  /** The default metric — the behaviour shipped before A1 made it configurable. */
+  /** The default metric — the behaviour shipped before A1/A2 made it configurable. */
   readonly default: string;
   readonly options: readonly NavCountMetricOption[];
 }
 
 export const NAV_COUNT_METRIC_CONFIG = {
+  '/inventory': {
+    settingLabel: 'Inventory tile counts',
+    default: 'total',
+    options: [
+      { value: 'total', label: 'All items', noun: 'item', nounPlural: 'items' },
+      // A2 problem metrics — each reads a dedicated count query, fetched only when selected.
+      {
+        value: 'lowStock',
+        label: 'Low-stock items',
+        noun: 'low-stock item',
+        nounPlural: 'low-stock items',
+        tone: 'warning',
+      },
+      {
+        value: 'outOfStock',
+        label: 'Out-of-stock items',
+        noun: 'out-of-stock item',
+        nounPlural: 'out-of-stock items',
+        tone: 'danger',
+      },
+    ],
+  },
   '/projects': {
     settingLabel: 'Projects tile counts',
     default: 'active',
     options: [
       { value: 'active', label: 'Active projects', noun: 'active project', nounPlural: 'active projects' },
       { value: 'all', label: 'All projects', noun: 'project', nounPlural: 'projects' },
+      // A2 problem metric — over-budget projects, from the budget-alerts feed (fetched only
+      // when selected).
+      {
+        value: 'overBudget',
+        label: 'Over-budget projects',
+        noun: 'over-budget project',
+        nounPlural: 'over-budget projects',
+        tone: 'danger',
+      },
     ],
   },
   '/purchase-orders': {
@@ -416,4 +466,12 @@ export function normaliseNavCountMetrics(
 export function navCountOption(route: NavCountRoute, metric: string): NavCountMetricOption {
   const cfg = NAV_COUNT_METRIC_CONFIG[route];
   return cfg.options.find((o) => o.value === metric) ?? cfg.options.find((o) => o.value === cfg.default)!;
+}
+
+/**
+ * The attention {@link NavCountTone} for a tile's current metric (backlog A2) — `'neutral'`
+ * for a plain total (the tile's group hue), `'warning'`/`'danger'` for a problem metric.
+ */
+export function navCountTone(route: NavCountRoute, metric: string): NavCountTone {
+  return navCountOption(route, metric).tone ?? 'neutral';
 }

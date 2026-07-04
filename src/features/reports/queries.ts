@@ -57,12 +57,32 @@ export function useMovement(
   });
 }
 
-export function useLowStockCount() {
+/**
+ * Count of active items running low against the user-tuned Tier-2 thresholds (Phase 46). Pass
+ * `{ enabled: false }` to keep the hook mounted without fetching — the Dashboard nav tile uses
+ * this so the count query only runs when the "low-stock" metric is actually selected (A2).
+ */
+export function useLowStockCount(options: { enabled?: boolean } = {}) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   return useQuery({
     queryKey: ['reports', 'low-stock-count', qtyThreshold, gaugePercent],
     queryFn: () => getReportRepository().lowStockCount({ qtyThreshold, gaugePercent }),
+    enabled: options.enabled ?? true,
+  });
+}
+
+/**
+ * Count of active items **out of stock** (backlog A2) — a hard zero-on-hand floor, distinct
+ * from the reorder-point threshold of {@link useLowStockCount}. Takes no thresholds, so it needs
+ * no preference wiring. Pass `{ enabled: false }` to mount without fetching: the Dashboard nav
+ * tile gates it so the query only runs when the "out-of-stock" metric is selected.
+ */
+export function useOutOfStockCount(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['reports', 'out-of-stock-count'],
+    queryFn: () => getReportRepository().outOfStockCount(),
+    enabled: options.enabled ?? true,
   });
 }
 
