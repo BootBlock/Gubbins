@@ -3,6 +3,7 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useDeleteLocation, useUpdateLocation } from './mutations';
 import { resolveTreeKey, type TreeRow } from './tree-keyboard';
 import { defaultParentForNewLocation } from './location-tree';
+import { useLocationExpansionStore } from './useLocationExpansionStore';
 
 /** Sentinel id for the synthetic "All items" treeitem (selects the null filter). */
 export const ALL_ITEMS_ID = '__all__';
@@ -51,8 +52,10 @@ export function useLocationSidebar({
   // Expansion is "top-level (level 1) open by default; deeper collapsed" — including
   // freshly-created locations — with explicit user toggles recorded as overrides.
   // (This preserves the prior per-node `depth < 1` default as the tree grows.)
-  // Centralised here so the keyboard maths sees the whole visible tree.
-  const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  // The overrides persist to localStorage (device-local) so a user's expanded/collapsed
+  // shape survives reloads; the store is the single source, this hook the reader.
+  const overrides = useLocationExpansionStore((s) => s.overrides);
+  const setExpanded = useLocationExpansionStore((s) => s.setExpanded);
   // The roving-tabindex target: the one treeitem that is in the tab order.
   const [focusedId, setFocusedId] = useState<string>(ALL_ITEMS_ID);
   // The location currently open in the full Edit dialog (pencil / via the dialog), and
@@ -71,7 +74,7 @@ export function useLocationSidebar({
   const updateLocation = useUpdateLocation();
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
-  const isOpen = (id: string, level: number) => overrides.get(id) ?? level === 1;
+  const isOpen = (id: string, level: number) => overrides[id] ?? level === 1;
 
   // Seed the "+" dialog's parent with the current selection so adding inside a
   // location nests under it by default (policy in `defaultParentForNewLocation`).
@@ -82,7 +85,7 @@ export function useLocationSidebar({
     else rowRefs.current.delete(id);
   };
 
-  const toggle = (id: string, open: boolean) => setOverrides((current) => new Map(current).set(id, open));
+  const toggle = (id: string, open: boolean) => setExpanded(id, open);
 
   const select = (id: string) => {
     setFocusedId(id);
