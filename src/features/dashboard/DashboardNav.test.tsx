@@ -86,8 +86,8 @@ describe('DashboardNav — feature gating (Phase 2)', () => {
 describe('DashboardNav — collection count pills', () => {
   it('shows a right-aligned count pill on a counted tile and names it for screen readers', () => {
     navCountsMock.mockReturnValue({
-      '/projects': { count: 3, noun: 'active project', nounPlural: 'active projects' },
-      '/inventory': { count: 42, noun: 'item', nounPlural: 'items' },
+      '/projects': { count: 3, noun: 'active project', nounPlural: 'active projects', tone: 'neutral' },
+      '/inventory': { count: 42, noun: 'item', nounPlural: 'items', tone: 'neutral' },
     });
     render(<DashboardNav />);
 
@@ -101,7 +101,7 @@ describe('DashboardNav — collection count pills', () => {
   it('names a tile with the plural for its current (re-pointed) metric', () => {
     // The tile has been re-pointed at "all projects", so the noun follows the chosen metric.
     navCountsMock.mockReturnValue({
-      '/projects': { count: 5, noun: 'project', nounPlural: 'projects' },
+      '/projects': { count: 5, noun: 'project', nounPlural: 'projects', tone: 'neutral' },
     });
     render(<DashboardNav />);
     expect(tile('/projects')).toHaveAttribute('aria-label', 'Projects — 5 projects');
@@ -109,7 +109,7 @@ describe('DashboardNav — collection count pills', () => {
 
   it('omits the pill for a zero or absent count', () => {
     navCountsMock.mockReturnValue({
-      '/projects': { count: 0, noun: 'active project', nounPlural: 'active projects' },
+      '/projects': { count: 0, noun: 'active project', nounPlural: 'active projects', tone: 'neutral' },
     });
     render(<DashboardNav />);
 
@@ -121,12 +121,33 @@ describe('DashboardNav — collection count pills', () => {
 
   it('caps a very large count so it cannot stretch the tile', () => {
     navCountsMock.mockReturnValue({
-      '/inventory': { count: 100000, noun: 'item', nounPlural: 'items' },
+      '/inventory': { count: 100000, noun: 'item', nounPlural: 'items', tone: 'neutral' },
     });
     render(<DashboardNav />);
 
     expect(screen.getByTestId('nav-count-/inventory')).toHaveTextContent('999+');
     // The exact figure still rides on the accessible name.
     expect(tile('/inventory')).toHaveAttribute('aria-label', 'Open inventory — 100000 items');
+  });
+
+  it('tints a "problem"-tone count with a warning/destructive token, not the group hue (A2)', () => {
+    navCountsMock.mockReturnValue({
+      // Inventory is the solid-primary CTA → a solid destructive fill so the alert pops.
+      '/inventory': { count: 2, noun: 'out-of-stock item', nounPlural: 'out-of-stock items', tone: 'danger' },
+      // A translucent group tile → the soft warning wash + warning text token.
+      '/projects': { count: 7, noun: 'low thing', nounPlural: 'low things', tone: 'warning' },
+    });
+    render(<DashboardNav />);
+
+    const inventory = screen.getByTestId('nav-count-/inventory').className;
+    expect(inventory).toContain('bg-destructive');
+    expect(inventory).toContain('text-destructive-foreground');
+
+    const projects = screen.getByTestId('nav-count-/projects').className;
+    expect(projects).toContain('text-warning');
+    // The problem tone replaces the group hue entirely.
+    expect(projects).not.toContain('text-primary');
+    // The spoken name still states what the number is — colour is never the only signal.
+    expect(tile('/projects')).toHaveAttribute('aria-label', 'Projects — 7 low things');
   });
 });

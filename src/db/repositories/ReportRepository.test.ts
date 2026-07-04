@@ -199,6 +199,33 @@ describe('ReportRepository', () => {
     });
   });
 
+  describe('outOfStockCount (A2 nav-tile count)', () => {
+    it('counts DISCRETE items at zero and gauges run dry — but not items with stock', async () => {
+      await items.create({ name: 'Empty', quantity: 0 }); // out ✓
+      await items.create({ name: 'InStock', quantity: 5 }); // has stock ✗
+      await items.create({
+        name: 'DryResin',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 0 }, // empty ✓
+      });
+      await items.create({
+        name: 'HalfResin',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 500 }, // has stock ✗
+      });
+      expect(await reports.outOfStockCount()).toBe(2);
+    });
+
+    it('never counts unlimited-supply or UNTRACKED items sitting at zero', async () => {
+      // An infinite source can never run dry.
+      await items.create({ name: 'Tap water', quantity: 0, isUnlimited: true });
+      // UNTRACKED items sit at quantity 0 by design (they opt out of stock counting).
+      const untracked = await items.create({ name: 'Reference manual', quantity: 0 });
+      await items.update(untracked.id, { trackingMode: 'UNTRACKED' });
+      expect(await reports.outOfStockCount()).toBe(0);
+    });
+  });
+
   describe('deadStock', () => {
     it('lists items with no movement in N days, tying up their value', async () => {
       const now = Date.now();

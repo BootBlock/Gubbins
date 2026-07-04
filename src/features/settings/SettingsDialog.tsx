@@ -86,10 +86,16 @@ const LOCALE_OPTIONS = [
  * self-descriptive option labels gain the "why".
  */
 const NAV_COUNT_HINTS: Record<NavCountRoute, string> = {
+  '/inventory':
+    'What the Dashboard **Inventory** tile counts:\n\n' +
+    '- **All items** — every item in your catalogue (the default).\n' +
+    '- **Low-stock items** — items at or below their reorder point; the count turns a warning colour.\n' +
+    '- **Out-of-stock items** — items with nothing on hand; the count turns a danger colour.',
   '/projects':
     'What the Dashboard **Projects** tile counts:\n\n' +
     '- **Active projects** — everything not yet completed or archived (the default).\n' +
-    '- **All projects** — every project, whatever its status.',
+    '- **All projects** — every project, whatever its status.\n' +
+    '- **Over-budget projects** — budgeted projects whose spend or projected cost has passed the budget; the count turns a danger colour.',
   '/purchase-orders':
     'What the Dashboard **Purchase orders** tile counts:\n\n' +
     '- **Open orders** — draft, ordered or partially-received orders still in flight (the default).\n' +
@@ -130,6 +136,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
   // the always-present low-stock thresholds — no empty section shell).
   const scannerOn = useFeature('scanner');
   const perishablesOn = useFeature('perishables');
+  const inventoryOn = useFeature('inventory');
   const projectsOn = useFeature('projects');
   const purchaseOrdersOn = useFeature('purchase-orders');
   const bookingsOn = useFeature('bookings');
@@ -137,6 +144,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
   // A configurable nav-tile count picker is shown only when its tile's feature is enabled —
   // a hidden tile has no count to re-point. Keyed by the same route as NAV_COUNT_METRIC_CONFIG.
   const navCountFeatureOn: Record<NavCountRoute, boolean> = {
+    '/inventory': inventoryOn,
     '/projects': projectsOn,
     '/purchase-orders': purchaseOrdersOn,
     '/bookings': bookingsOn,

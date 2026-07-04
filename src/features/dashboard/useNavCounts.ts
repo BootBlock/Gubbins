@@ -14,13 +14,20 @@
  * | Contacts         | every contact                                                     |
  * | Bookings         | *upcoming* bookings (not cancelled/converted, not yet ended)      |
  *
- * The Projects / Purchase-orders / Bookings tiles are **configurable** (backlog A1): the
- * user can re-point them at a different metric (e.g. *all projects*, *bookings starting this
- * week*) from Settings → Dashboard. The choice is a Tier-2 preference (`navCountMetrics`); the
- * available metrics, their labels and their spoken nouns are the `NAV_COUNT_METRIC_CONFIG`
- * SSOT, and each metric is a **pure selector** over the same rows the tile's read hook already
- * loads — so switching metric costs no extra fetch. Inventory and Contacts have a single
- * meaningful metric, so they are not configurable.
+ * The Inventory / Projects / Purchase-orders / Bookings tiles are **configurable** (backlog
+ * A1): the user can re-point them at a different metric from Settings → Dashboard. The choice
+ * is a Tier-2 preference (`navCountMetrics`); the available metrics, their labels, spoken nouns
+ * and attention tone are the `NAV_COUNT_METRIC_CONFIG` SSOT. Most metrics are a **pure selector**
+ * over the same rows the tile's read hook already loads — so switching costs no extra fetch.
+ *
+ * A subset are **"problem" metrics** (backlog A2) that count something needing attention, so the
+ * pill takes a warning/danger tone instead of the group hue (`tone` on the resolved
+ * {@link NavCount}; {@link DashboardNav} maps it to a token). These read a small dedicated count
+ * query — Projects → *over-budget* via `useBudgetAlerts`, Inventory → *low-stock* via
+ * `useLowStockCount` (a true count, not the 100-capped list) / *out-of-stock* via
+ * `useOutOfStockCount` — each **gated so it only fetches when that metric is the tile's current
+ * choice**. (Purchase-order "overdue" is deliberately absent: a PO has no expected-delivery
+ * column, so it is not derivable.) Contacts stays single-metric, so it has no picker.
  *
  * Feeds (Upcoming / Activity) and the settings-y System tiles carry no count; Alerts keeps
  * its own dedicated attention badge in {@link DashboardNav}. A destination is omitted from
@@ -34,19 +41,32 @@
 import { useBookings } from '@/features/bookings/bookings';
 import { useContacts } from '@/features/contacts/contacts';
 import { useItemCount } from '@/features/inventory/queries';
-import { useProjects } from '@/features/projects/projects';
+import { budgetStatus } from '@/features/projects/budget';
+import { useBudgetAlerts, useProjects } from '@/features/projects/projects';
 import { usePurchaseOrders } from '@/features/purchasing/queries';
-import { navCountOption, normaliseNavCountMetric, type NavCountRoute } from '@/features/settings/settings';
+import { useLowStockCount, useOutOfStockCount } from '@/features/reports/queries';
+import {
+  navCountOption,
+  normaliseNavCountMetric,
+  type NavCountRoute,
+  type NavCountTone,
+} from '@/features/settings/settings';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
 
-/** One counted tile's badge: the figure plus the spoken nouns for its accessible name. */
+/** One counted tile's badge: the figure, the spoken nouns and the attention tone. */
 export interface NavCount {
   readonly count: number;
   /** Singular spoken noun ("active project"), pluralised with the count at the call site. */
   readonly noun: string;
   /** Plural spoken noun ("active projects") — the irregular form for phrase nouns. */
   readonly nounPlural: string;
+  /**
+   * Attention tone for the pill (backlog A2): `'neutral'` shows the tile's group hue, while a
+   * problem metric shows `'warning'` / `'danger'`. The tone is decorative — the spoken count
+   * on the tile's accessible name always states *what* the number is.
+   */
+  readonly tone: NavCountTone;
 }
 
 /** Milliseconds in a day — the width of the "starting this week" booking window. */
@@ -58,12 +78,6 @@ function startOfToday(): number {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
-
-/** Spoken nouns for the single-metric (non-configurable) tiles. */
-const FIXED_NOUNS: Partial<Record<AppRoutePath, Omit<NavCount, 'count'>>> = {
-  '/inventory': { noun: 'item', nounPlural: 'items' },
-  '/contacts': { noun: 'contact', nounPlural: 'contacts' },
-};
 
 // --- pure count selectors: (rows, metric) → count -----------------------------
 // Each operates only on rows the tile's existing read hook already loaded (bounded sets
@@ -77,11 +91,34 @@ type BookingRow = {
   readonly cancelledAt: number | null;
   readonly convertedCheckoutId: string | null;
 };
+type BudgetAlertRow = {
+  readonly budget: number;
+  readonly committedFromBom: number;
+  readonly manualExpenseTotal: number;
+  readonly estimatedCost: number;
+};
 
 /** Projects: all projects, or only the *active* ones (default — not finished or shelved). */
 export function countProjects(rows: readonly ProjectRow[], metric: string): number {
   if (metric === 'all') return rows.length;
   return rows.filter((p) => p.status !== 'COMPLETED' && p.status !== 'ARCHIVED').length;
+}
+
+/**
+ * Projects over budget (backlog A2): a budgeted project whose spend so far (committed BOM +
+ * manual expenses) *or* whose projected final cost (full BOM estimate + manual expenses) has
+ * passed its budget. Mirrors the Dashboard "Budget alerts" widget's `over` test so the count
+ * and the widget agree; `listBudgetAlerts` already returns only budgeted projects.
+ */
+export function countOverBudgetProjects(rows: readonly BudgetAlertRow[], warnPercent: number): number {
+  return rows.filter((a) => {
+    const spentSoFar = a.committedFromBom + a.manualExpenseTotal;
+    const projectedFinalCost = a.estimatedCost + a.manualExpenseTotal;
+    return (
+      budgetStatus(spentSoFar, a.budget, warnPercent) === 'OVER' ||
+      budgetStatus(projectedFinalCost, a.budget, warnPercent) === 'OVER'
+    );
+  }).length;
 }
 
 /** Purchase orders: all orders, or only the *open* ones (default — not RECEIVED / CANCELLED). */
@@ -109,15 +146,20 @@ export function countBookings(rows: readonly BookingRow[], metric: string): numb
   return live.filter((b) => b.endDate >= cutoff).length;
 }
 
-/** Resolve a configurable tile's current metric and build its {@link NavCount}. */
+/** Build a tile's {@link NavCount} from its resolved metric and computed count (carries the tone). */
+function navCountFor(route: NavCountRoute, metric: string, count: number): NavCount {
+  const opt = navCountOption(route, metric);
+  return { count, noun: opt.noun, nounPlural: opt.nounPlural, tone: opt.tone ?? 'neutral' };
+}
+
+/** Resolve a configurable tile's current metric and build its {@link NavCount} from a row selector. */
 function configurable(
   route: NavCountRoute,
   metrics: Record<NavCountRoute, string>,
   count: (metric: string) => number,
 ): NavCount {
   const metric = normaliseNavCountMetric(route, metrics[route] ?? '');
-  const opt = navCountOption(route, metric);
-  return { count: count(metric), noun: opt.noun, nounPlural: opt.nounPlural };
+  return navCountFor(route, metric, count(metric));
 }
 
 /**
@@ -126,21 +168,54 @@ function configurable(
  * `0` is worth a badge (it isn't).
  */
 export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
+  const metrics = usePreferencesStore((s) => s.navCountMetrics);
+  const budgetWarnPercent = usePreferencesStore((s) => s.budgetWarnPercent);
+
+  // Resolve the configurable tiles whose metric may need a *dedicated* count query up front,
+  // so those queries can be gated on the choice — an unselected problem metric must not fetch.
+  const inventoryMetric = normaliseNavCountMetric('/inventory', metrics['/inventory'] ?? '');
+  const projectsMetric = normaliseNavCountMetric('/projects', metrics['/projects'] ?? '');
+
   const itemCount = useItemCount();
+  const lowStock = useLowStockCount({ enabled: inventoryMetric === 'lowStock' });
+  const outOfStock = useOutOfStockCount({ enabled: inventoryMetric === 'outOfStock' });
   const projects = useProjects();
+  const budgetAlerts = useBudgetAlerts({ enabled: projectsMetric === 'overBudget' });
   const purchaseOrders = usePurchaseOrders();
   const contacts = useContacts();
   const bookings = useBookings();
-  const metrics = usePreferencesStore((s) => s.navCountMetrics);
 
   const counts: Partial<Record<AppRoutePath, NavCount>> = {};
 
-  if (typeof itemCount.data === 'number') {
-    counts['/inventory'] = { count: itemCount.data, ...FIXED_NOUNS['/inventory']! };
+  // Inventory — the item total (default) or an A2 problem metric. Exactly one source is active
+  // for the chosen metric; the tile appears only once that source has resolved.
+  if (inventoryMetric === 'lowStock') {
+    if (typeof lowStock.data === 'number') {
+      counts['/inventory'] = navCountFor('/inventory', inventoryMetric, lowStock.data);
+    }
+  } else if (inventoryMetric === 'outOfStock') {
+    if (typeof outOfStock.data === 'number') {
+      counts['/inventory'] = navCountFor('/inventory', inventoryMetric, outOfStock.data);
+    }
+  } else if (typeof itemCount.data === 'number') {
+    counts['/inventory'] = navCountFor('/inventory', inventoryMetric, itemCount.data);
   }
 
-  if (projects.data) {
-    counts['/projects'] = configurable('/projects', metrics, (m) => countProjects(projects.data.rows, m));
+  // Projects — a row selector (active / all), or the over-budget count from the budget feed.
+  if (projectsMetric === 'overBudget') {
+    if (budgetAlerts.data) {
+      counts['/projects'] = navCountFor(
+        '/projects',
+        projectsMetric,
+        countOverBudgetProjects(budgetAlerts.data, budgetWarnPercent),
+      );
+    }
+  } else if (projects.data) {
+    counts['/projects'] = navCountFor(
+      '/projects',
+      projectsMetric,
+      countProjects(projects.data.rows, projectsMetric),
+    );
   }
 
   if (purchaseOrders.data) {
@@ -150,7 +225,12 @@ export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
   }
 
   if (contacts.data) {
-    counts['/contacts'] = { count: contacts.data.rows.length, ...FIXED_NOUNS['/contacts']! };
+    counts['/contacts'] = {
+      count: contacts.data.rows.length,
+      noun: 'contact',
+      nounPlural: 'contacts',
+      tone: 'neutral',
+    };
   }
 
   if (bookings.data) {

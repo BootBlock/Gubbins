@@ -28,6 +28,7 @@ import {
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
   navCountOption,
+  navCountTone,
   normaliseNavCountMetric,
   normaliseNavCountMetrics,
   THEME_OPTIONS,
@@ -333,6 +334,7 @@ describe('nav-tile count metrics (A1)', () => {
   it('normaliseNavCountMetrics fills a partial/stale map with valid choices for every tile', () => {
     const result = normaliseNavCountMetrics({ '/projects': 'all', '/bookings': 'bogus' });
     expect(result).toEqual({
+      '/inventory': 'total', // filled from default (absent)
       '/projects': 'all', // kept
       '/purchase-orders': 'open', // filled from default (absent)
       '/bookings': 'upcoming', // coerced (bogus)
@@ -344,6 +346,29 @@ describe('nav-tile count metrics (A1)', () => {
   it('navCountOption resolves the chosen option, falling back to the default option', () => {
     expect(navCountOption('/projects', 'all').noun).toBe('project');
     expect(navCountOption('/projects', 'nonsense').value).toBe('active');
+  });
+});
+
+describe('nav-tile count metric tones (A2)', () => {
+  it('tags each problem metric with its attention tone and leaves plain totals neutral', () => {
+    // Inventory: total is a plain count; low-stock warns; out-of-stock is a danger.
+    expect(navCountTone('/inventory', 'total')).toBe('neutral');
+    expect(navCountTone('/inventory', 'lowStock')).toBe('warning');
+    expect(navCountTone('/inventory', 'outOfStock')).toBe('danger');
+    // Projects: active/all are neutral; over-budget is a danger.
+    expect(navCountTone('/projects', 'active')).toBe('neutral');
+    expect(navCountTone('/projects', 'overBudget')).toBe('danger');
+  });
+
+  it('falls back to the tile default tone for a stale/unknown metric id', () => {
+    // Coerces '/inventory' → its default ('total'), whose tone is neutral.
+    expect(navCountTone('/inventory', 'nonsense')).toBe('neutral');
+  });
+
+  it('the problem metrics carry the spoken nouns that state what the number is (a11y)', () => {
+    expect(navCountOption('/inventory', 'lowStock').nounPlural).toBe('low-stock items');
+    expect(navCountOption('/inventory', 'outOfStock').nounPlural).toBe('out-of-stock items');
+    expect(navCountOption('/projects', 'overBudget').nounPlural).toBe('over-budget projects');
   });
 });
 
