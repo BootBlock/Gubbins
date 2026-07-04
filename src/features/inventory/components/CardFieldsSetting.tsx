@@ -3,7 +3,7 @@ import { Button, ReorderList, type ReorderListItem } from '@/components/foundry'
 import { ResetIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
-  BUILTIN_CARD_FIELDS,
+  builtinCardFieldLabel,
   DEFAULT_CARD_FIELDS,
   moveCardField,
   normaliseCardFields,
@@ -41,7 +41,6 @@ export function CardFieldsSetting() {
 
   // Resolve each field id to a display label + a plain accessible name for its controls.
   const items = useMemo<ReorderListItem[]>(() => {
-    const builtinLabels = new Map(BUILTIN_CARD_FIELDS.map((f) => [f.id as string, f.label]));
     const fieldById = new Map((allFields.data ?? []).map((f) => [f.id, f]));
     return config.map((entry) => {
       const customId = parseCustomCardFieldId(entry.id);
@@ -61,12 +60,17 @@ export function CardFieldsSetting() {
           ),
         };
       }
-      const label = builtinLabels.get(entry.id) ?? entry.id;
+      const label = builtinCardFieldLabel(entry.id) ?? entry.id;
       return { id: entry.id, name: label, visible: entry.visible, label };
     });
   }, [config, allFields.data, categoryNames]);
 
-  const isDefault = savedConfig === DEFAULT_CARD_FIELDS;
+  // Value-compare (not reference): the persisted config rehydrates as a fresh array, so a
+  // never-touched install would otherwise show Reset enabled forever after a reload.
+  const isDefault = useMemo(
+    () => JSON.stringify(config) === JSON.stringify(normaliseCardFields(DEFAULT_CARD_FIELDS, customFieldIds)),
+    [config, customFieldIds],
+  );
 
   return (
     <div className="space-y-3">

@@ -209,6 +209,21 @@ describe('resolveCardFields — built-ins', () => {
     });
   });
 
+  it('shows em-dash for total value when the count is meaningless (unlimited or gauge)', () => {
+    // An unlimited item's quantity is ∞-ignored, a gauge tracks a measure — unitCost × quantity
+    // would read as a misleading £0.00, so both decline to a value like the quantity field does.
+    expect(
+      resolveCardFields(['value'], makeItem({ isUnlimited: true, unitCost: 5, quantity: 0 }), ctx())[0].value,
+    ).toEqual({ kind: 'empty' });
+    expect(
+      resolveCardFields(
+        ['value'],
+        makeItem({ trackingMode: 'CONSUMABLE_GAUGE', unitCost: 5, quantity: 0 }),
+        ctx(),
+      )[0].value,
+    ).toEqual({ kind: 'empty' });
+  });
+
   it('shows the unlimited glyph for an unlimited item and em-dash for a gauge quantity', () => {
     expect(resolveCardFields(['quantity'], makeItem({ isUnlimited: true }), ctx())[0].value).toEqual({
       kind: 'text',

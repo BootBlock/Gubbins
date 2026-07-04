@@ -40,6 +40,11 @@ export const BUILTIN_CARD_FIELDS: readonly BuiltinCardField[] = [
 
 const BUILTIN_LABELS = new Map<string, string>(BUILTIN_CARD_FIELDS.map((f) => [f.id, f.label]));
 
+/** The label for a built-in card field id, or undefined if the id isn't a built-in. */
+export function builtinCardFieldLabel(id: string): string | undefined {
+  return BUILTIN_LABELS.get(id);
+}
+
 /**
  * Prefix namespacing a category custom-field id when it is used as a card-field id, so a
  * field UUID can never collide with a built-in id (`custom:<fieldUuid>`).
@@ -270,7 +275,12 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
         value: item.condition ? { kind: 'condition', condition: item.condition } : EMPTY,
       };
     case 'value': {
-      const priced = item.unitCost != null && Number.isFinite(item.unitCost);
+      // Total value = unit cost × on-hand count, so it needs a *real* count. An unlimited
+      // item's quantity is ∞-ignored and a gauge tracks a measure (not units), so for either
+      // the product is meaningless (it would read £0.00) — show em-dash, matching how the
+      // `quantity` field itself declines to show those (see {@link quantityValue}).
+      const countable = !item.isUnlimited && item.trackingMode !== 'CONSUMABLE_GAUGE';
+      const priced = countable && item.unitCost != null && Number.isFinite(item.unitCost);
       return {
         id,
         label: 'Total value',
