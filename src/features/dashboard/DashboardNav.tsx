@@ -21,6 +21,7 @@ import {
 } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -96,6 +97,7 @@ export function DashboardNav() {
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
+  const openSettings = useSettingsDialog((s) => s.openSettings);
 
   return (
     <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
@@ -119,6 +121,36 @@ export function DashboardNav() {
               {destinations.map((dest) => {
                 const isInventory = dest.to === '/inventory';
                 const isAlerts = dest.to === '/alerts';
+                // Settings is a dialog, not a screen: its tile opens the dialog over the
+                // dashboard rather than navigating (and a Link would prefetch-open it on
+                // hover). See `useSettingsDialog` / `SettingsDialogHost`.
+                const isSettings = dest.to === '/settings';
+                const surface = (
+                  <Surface
+                    className={cn(
+                      'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
+                      isInventory
+                        ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
+                        : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
+                    )}
+                  >
+                    <dest.Icon aria-hidden />
+                    <span className="min-w-0 text-sm font-medium leading-tight">
+                      {isInventory ? 'Open inventory' : dest.label}
+                    </span>
+                    {isAlerts && alertCount > 0 && (
+                      <span
+                        aria-hidden
+                        data-testid="alerts-badge"
+                        className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
+                      >
+                        {alertCount > 99 ? '99+' : alertCount}
+                      </span>
+                    )}
+                  </Surface>
+                );
+                const tileClassName =
+                  'block h-full w-full rounded-2xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
                 return (
                   <li key={dest.to}>
                     <Tooltip
@@ -127,39 +159,29 @@ export function DashboardNav() {
                       openDelayMs={NAV_OPEN_DELAY_MS}
                       className="block h-full"
                     >
-                      <Link
-                        to={dest.to}
-                        data-testid={isAlerts ? 'nav-alerts' : undefined}
-                        aria-label={
-                          isAlerts && alertCount > 0
-                            ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
-                            : undefined
-                        }
-                        className="block h-full rounded-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                      >
-                        <Surface
-                          className={cn(
-                            'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
-                            isInventory
-                              ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
-                              : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
-                          )}
+                      {isSettings ? (
+                        <button
+                          type="button"
+                          data-testid="nav-settings"
+                          onClick={openSettings}
+                          className={tileClassName}
                         >
-                          <dest.Icon aria-hidden />
-                          <span className="min-w-0 text-sm font-medium leading-tight">
-                            {isInventory ? 'Open inventory' : dest.label}
-                          </span>
-                          {isAlerts && alertCount > 0 && (
-                            <span
-                              aria-hidden
-                              data-testid="alerts-badge"
-                              className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
-                            >
-                              {alertCount > 99 ? '99+' : alertCount}
-                            </span>
-                          )}
-                        </Surface>
-                      </Link>
+                          {surface}
+                        </button>
+                      ) : (
+                        <Link
+                          to={dest.to}
+                          data-testid={isAlerts ? 'nav-alerts' : undefined}
+                          aria-label={
+                            isAlerts && alertCount > 0
+                              ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
+                              : undefined
+                          }
+                          className={tileClassName}
+                        >
+                          {surface}
+                        </Link>
+                      )}
                     </Tooltip>
                   </li>
                 );

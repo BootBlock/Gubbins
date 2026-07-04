@@ -1,5 +1,5 @@
-import { type KeyboardEvent, type ReactNode, useRef, useState } from 'react';
-import { Modal } from '@/components/foundry';
+import { type ReactNode } from 'react';
+import { RailModal, type RailTab } from '@/components/foundry';
 import {
   CapabilityIcon,
   CategoryIcon,
@@ -16,12 +16,10 @@ import {
   SupplierIcon,
   TagsIcon,
 } from '@/components/icons';
-import { cn } from '@/lib/utils';
 import type { Item } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
-import { resolveTabKey } from '../tab-keyboard';
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
@@ -63,103 +61,33 @@ export function ItemDetailDialog({
   // of the tab-building logic.
   const enabledFeatures = useEnabledFeatures();
   const tabs = buildTabs(item, enabledFeatures);
-  const [activeId, setActiveId] = useState(tabs[0]!.id);
-  // Roving-tabindex refs for the rail buttons, so arrow-key navigation can move
-  // DOM focus to the newly-selected tab (the APG automatic-activation model).
-  const tabRefs = useRef(new Map<string, HTMLButtonElement | null>());
 
-  // Guard against a stale selection if the tab set ever changes shape.
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]!;
-
-  const select = (id: string) => {
-    setActiveId(id);
-    tabRefs.current.get(id)?.focus();
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const next = resolveTabKey(
-      tabs.map((t) => t.id),
-      active.id,
-      e.key,
-    );
-    if (next === null) return;
-    e.preventDefault();
-    select(next);
-  };
+  // Map each tab's grouped sections into the rail's panel content: the shared RailModal
+  // owns the Modal frame, the rail and its keyboard navigation, so this dialog only
+  // decides what each panel shows. Each section stays wrapped in its own Section card so
+  // a tab that holds two or three facets still reads as distinct, scannable blocks.
+  const railTabs: readonly RailTab[] = tabs.map((tab) => ({
+    id: tab.id,
+    label: tab.label,
+    icon: tab.icon,
+    content: tab.sections.map((section) => (
+      <Section key={section.title} title={section.title} icon={section.icon}>
+        {section.content}
+      </Section>
+    )),
+  }));
 
   return (
-    <Modal
+    <RailModal
       open={open}
       onClose={onClose}
       title={item.serialNo === null ? item.name : `${item.name} #${item.serialNo}`}
       description="Edit details — plus images, tags, capabilities, custom fields & datasheets."
       className="max-w-4xl"
-    >
-      {/* Fixed-height frame: the dialog stays the same size as content streams in
-          and as you switch tabs, so the rail never shifts and the panel scrolls
-          within rather than resizing (and re-centring) the whole modal. */}
-      <div className="flex h-[74vh] gap-4 sm:gap-5">
-        <div
-          role="tablist"
-          aria-orientation="vertical"
-          aria-label="Item sections"
-          className="flex shrink-0 flex-col gap-1"
-        >
-          {tabs.map((tab) => {
-            const selected = tab.id === active.id;
-            return (
-              <button
-                key={tab.id}
-                ref={(el) => {
-                  tabRefs.current.set(tab.id, el);
-                }}
-                type="button"
-                role="tab"
-                id={`item-tab-${tab.id}`}
-                aria-label={tab.label}
-                aria-selected={selected}
-                aria-controls={`item-panel-${tab.id}`}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => select(tab.id)}
-                onKeyDown={onKeyDown}
-                className={cn(
-                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium',
-                  'transition-colors ease-emphasized',
-                  'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  selected
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground',
-                )}
-              >
-                <span
-                  className={cn(
-                    'grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4',
-                    selected ? 'bg-primary/15 text-primary' : 'bg-secondary/50 text-muted-foreground',
-                  )}
-                >
-                  {tab.icon}
-                </span>
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div
-          role="tabpanel"
-          id={`item-panel-${active.id}`}
-          aria-labelledby={`item-tab-${active.id}`}
-          tabIndex={0}
-          className="min-w-0 flex-1 space-y-4 overflow-y-auto dialog-scroll focus-visible:outline-none"
-        >
-          {active.sections.map((section) => (
-            <Section key={section.title} title={section.title} icon={section.icon}>
-              {section.content}
-            </Section>
-          ))}
-        </div>
-      </div>
-    </Modal>
+      railAriaLabel="Item sections"
+      idPrefix="item"
+      tabs={railTabs}
+    />
   );
 }
 

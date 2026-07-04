@@ -41,7 +41,7 @@ import {
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { resolveTabKey } from '@/features/inventory/tab-keyboard';
+import { resolveTabKey } from '@/components/foundry';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { hardResetLocalData } from '@/app/error/safe-mode-actions';
 import {

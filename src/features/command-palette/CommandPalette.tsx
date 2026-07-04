@@ -40,6 +40,7 @@ import {
 import { cn } from '@/lib/utils';
 import { rankFuzzy } from '@/lib/fuzzy';
 import { NAV_DESTINATIONS, type NavDestination } from '@/components/nav/nav-destinations';
+import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
@@ -99,6 +100,7 @@ function optionId(entry: PaletteEntry): string {
 
 function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const navigate = useNavigate();
+  const openSettings = useSettingsDialog((s) => s.openSettings);
   const enabledFeatures = useEnabledFeatures();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -180,6 +182,11 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     if (!entry) return;
     if (entry.kind === 'screen') {
       onClose();
+      // Settings is a dialog, not a routed screen — open it rather than navigating.
+      if (entry.dest.to === '/settings') {
+        openSettings();
+        return;
+      }
       void navigate({ to: entry.dest.to });
     } else {
       openItem(entry.item.name);

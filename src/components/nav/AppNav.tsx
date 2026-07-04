@@ -1,9 +1,10 @@
 import { Fragment } from 'react';
 import { useRouterState } from '@tanstack/react-router';
-import { Menu, MenuLink, MenuExternalLink, MenuSeparator } from '@/components/foundry';
+import { Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from '@/components/foundry';
 import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { NAV_DESTINATIONS, NAV_GROUP_ORDER } from './nav-destinations';
 
 /**
@@ -26,6 +27,7 @@ export function AppNav() {
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
+  const openSettings = useSettingsDialog((s) => s.openSettings);
 
   // Drop rows whose feature is switched off, then discard any group left with no rows so no
   // empty section — or the separator that would precede it — is rendered (§3, Phase 2). Core
@@ -61,23 +63,32 @@ export function AppNav() {
           {groupIndex > 0 && <MenuSeparator />}
           {destinations.map((dest) => (
             <Fragment key={dest.to}>
-              <MenuLink
-                to={dest.to}
-                icon={<dest.Icon />}
-                current={pathname === dest.to}
-                trailing={
-                  dest.to === '/alerts' && alertCount > 0 ? (
-                    <span
-                      className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
-                      data-testid="app-nav-alerts-count"
-                    >
-                      {alertCount > 99 ? '99+' : alertCount}
-                    </span>
-                  ) : undefined
-                }
-              >
-                {dest.label}
-              </MenuLink>
+              {dest.to === '/settings' ? (
+                // Settings is a dialog, not a screen: open it over the current route rather
+                // than navigating (a link would also prefetch-open it on hover). See
+                // `useSettingsDialog` / `SettingsDialogHost`.
+                <MenuAction icon={<dest.Icon />} onSelect={openSettings} data-testid="app-nav-settings">
+                  {dest.label}
+                </MenuAction>
+              ) : (
+                <MenuLink
+                  to={dest.to}
+                  icon={<dest.Icon />}
+                  current={pathname === dest.to}
+                  trailing={
+                    dest.to === '/alerts' && alertCount > 0 ? (
+                      <span
+                        className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-destructive-foreground"
+                        data-testid="app-nav-alerts-count"
+                      >
+                        {alertCount > 99 ? '99+' : alertCount}
+                      </span>
+                    ) : undefined
+                  }
+                >
+                  {dest.label}
+                </MenuLink>
+              )}
               {/* Wiki (external) sits directly under Settings, above About. */}
               {dest.to === '/settings' && (
                 <MenuExternalLink

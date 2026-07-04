@@ -2,11 +2,12 @@
  * Danger Zone settings section (§3).
  *
  * Renders a single settings section that opens the `EraseDataDialog` on demand.
- * Uses the exported `SettingsSection` and `SettingRow` helpers from the Settings
- * screen so the visual appearance is consistent with the rest of the settings page.
+ * Uses the shared `SettingsSection` and `SettingRow` helpers so the visual appearance
+ * is consistent with the rest of the settings.
  *
- * Mount this as the LAST section in `SettingsScreen` so the Danger Zone sits at
- * the bottom — below About — where destructive actions conventionally live.
+ * The Settings dialog gives this its own tinted rail tab at the very foot of the rail —
+ * set apart from the ordinary sections above it — where destructive actions
+ * conventionally live.
  */
 import { useState } from 'react';
 import { Button } from '@/components/foundry';

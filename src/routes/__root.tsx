@@ -5,14 +5,16 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
 import { FirstRunModules } from '@/features/modules/FirstRunModules';
+import { SettingsDialogHost } from '@/features/settings/SettingsDialogHost';
 
 /**
  * Root route layout (spec §2.4.2). Hosts the always-visible app chrome — the
  * skip-to-content bypass, the storage warning stack, the offline indicator, the
- * PWA "new version ready" update prompt and the one-time Modular UI first-run chooser —
- * above the routed content. The {@link SkipLink} is the first focusable element on
- * every route; each screen carries the `#main-content` landmark it targets (spec §3
- * — WCAG 2.4.1).
+ * PWA "new version ready" update prompt, the one-time Modular UI first-run chooser and
+ * the app-wide Settings dialog — above the routed content. The {@link SkipLink} is the
+ * first focusable element on every route; each screen carries the `#main-content`
+ * landmark it targets (spec §3 — WCAG 2.4.1). Settings lives here (rather than a screen)
+ * so it can open over any route while still resolving its links to Modules / About.
  */
 export const Route = createRootRoute({
   component: RootLayout,
@@ -30,6 +32,7 @@ function RootLayout() {
       <PwaUpdatePrompt />
       <CommandPalette />
       <FirstRunModules />
+      <SettingsDialogHost />
     </div>
   );
 }

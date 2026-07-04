@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveTabKey } from './tab-keyboard';
 
-/** The five ItemDetailDialog tab ids, in render order. */
+/** A representative set of rail tab ids, in render order (the ItemDetailDialog rail). */
 const tabs = ['supplier', 'lifecycle', 'media', 'classification', 'activity'] as const;
 
 describe('resolveTabKey — APG vertical tabs keyboard navigation', () => {
