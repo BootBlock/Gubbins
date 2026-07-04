@@ -212,6 +212,69 @@ describe('CreateItemDialog', () => {
     });
   });
 
+  it('rejects an invalid ASIN with an accessible error', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
+      target: { value: 'not-an-asin' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid Amazon ASIN/i);
+    // No confirmation is shown for a rejected value.
+    expect(screen.queryByTestId('item-asin-applied')).toBeNull();
+  });
+
+  it('records an Amazon supplier part from a typed ASIN link on create (offline single-item add)', async () => {
+    const scraping = await import('@/features/scraping');
+    // The synthesised payload is fed through the real §4 write path in production; here the
+    // scraping module is mocked, so drive the two seams to return a create for a fresh item.
+    vi.mocked(scraping.buildSupplierPartPlan).mockReturnValue({
+      supplierName: 'Amazon',
+      matchedId: null,
+      proposals: [],
+    });
+    vi.mocked(scraping.resolveSupplierPartWrite).mockReturnValue({
+      kind: 'create',
+      input: {
+        supplierName: 'Amazon',
+        orderCode: 'B0TEST0001',
+        url: 'https://www.amazon.co.uk/dp/B0TEST0001',
+        source: 'SCRAPE',
+      },
+    });
+    spies.createItem.mockImplementation((_input, opts) =>
+      opts?.onSuccess?.({ id: 'item-42', name: 'USB-C Cable' }),
+    );
+
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'USB-C Cable' } });
+    fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
+      target: { value: 'https://www.amazon.co.uk/dp/B0TEST0001?ref=example' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
+
+    // A valid ASIN confirms inline and seeds the notes provenance.
+    expect(screen.getByTestId('item-asin-applied')).toHaveTextContent('B0TEST0001');
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
+      'Amazon ASIN: B0TEST0001',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.createSupplierPart).toHaveBeenCalledTimes(1));
+
+    // The synthesised payload carries the ASIN as the order code + its canonical listing URL.
+    expect(vi.mocked(scraping.buildSupplierPartPlan).mock.calls[0][0]).toMatchObject({
+      mpn: 'B0TEST0001',
+      distributor_url: 'https://www.amazon.co.uk/dp/B0TEST0001',
+    });
+    // The supplier part is attached to the freshly-created item (§4 no-overwrite-safe create).
+    expect(spies.createSupplierPart.mock.calls[0][0]).toMatchObject({
+      itemId: 'item-42',
+      input: { supplierName: 'Amazon', orderCode: 'B0TEST0001' },
+    });
+    // The ASIN is Amazon's order code, not the item's own MPN — the MPN field stays empty.
+    expect((screen.getByLabelText('MPN (optional)') as HTMLInputElement).value).toBe('');
+  });
+
   it('creates a location inline without losing the form, then submits with it', async () => {
     spies.createLocation.mockImplementation((_input, opts) =>
       opts?.onSuccess?.({ id: 'loc-9', name: 'Drawer 9' }),
