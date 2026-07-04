@@ -4,7 +4,7 @@
  * (never raw SQL in the component). The low-stock count honours the user-tuned Tier-2
  * thresholds (Phase 46), so the Reports figure agrees with the dashboard widget.
  */
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
@@ -84,6 +84,9 @@ export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
   return useQuery({
     queryKey: ['reports', 'turnover', windowDays],
     queryFn: () => getReportRepository().turnover(windowDays),
+    // The window toggle re-keys this query; hold the previous window's table on screen
+    // while the new one loads so toggling never flashes the panel to a spinner and back.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -98,6 +101,9 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
   return useQuery({
     queryKey: ['reports', 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
+    // Re-keyed by the same analytics window toggle — keep the previous sparkline visible
+    // while the new window loads (flicker-free, mirrors useTurnover above).
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -123,5 +129,8 @@ export function useSpendAnalytics(
     queryKey: ['reports', 'spend', windowDays, SPEND_BUCKETS],
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
     enabled: options?.enabled ?? true,
+    // The spend window toggle re-keys this query; hold the previous breakdown on screen
+    // while the new window loads instead of flashing the panel to a spinner.
+    placeholderData: keepPreviousData,
   });
 }
