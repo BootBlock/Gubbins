@@ -123,6 +123,18 @@ describe('ItemRow — content branches', () => {
     expect(root.classList.contains('active:cursor-grabbing')).toBe(true);
   });
 
+  it('renders the configured fields inline (E1), dropping fields with no value', () => {
+    renderRow(makeItem({ categoryId: 'cat', condition: 'GOOD' }), {
+      fieldOrder: ['location', 'category', 'condition'],
+      categoryName: 'Resistors',
+    });
+    expect(screen.getByText('Workshop')).not.toBeNull();
+    expect(screen.getByText('Resistors')).not.toBeNull();
+    expect(screen.getByText('Good')).not.toBeNull();
+    // An unset field (no category name) is omitted from the dense row — no em-dash clutter.
+    expect(screen.queryByText('—')).toBeNull();
+  });
+
   it('shows a static quantity (no stepper) for an archived item', () => {
     renderRow(makeItem({ isActive: false, quantity: 9 }));
     expect(screen.queryByTestId('quantity-stepper')).toBeNull();

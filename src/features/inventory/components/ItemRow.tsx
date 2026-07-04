@@ -5,11 +5,14 @@ import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
 import { useItemDragSource } from '../item-drag';
+import { DEFAULT_VISIBLE_CARD_FIELD_IDS, type CardCustomField } from '../card-fields';
 import { GaugeRing } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
+import { CardFieldSummary } from './ItemCardFields';
+import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -30,6 +33,10 @@ export const ItemRow = memo(function ItemRow({
   locationColorClass,
   selection,
   selected = false,
+  fieldOrder = DEFAULT_VISIBLE_CARD_FIELD_IDS,
+  categoryName = null,
+  customFields = EMPTY_CUSTOM_FIELDS,
+  customValues,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -39,9 +46,24 @@ export const ItemRow = memo(function ItemRow({
   selection?: ItemSelection;
   /** Whether this row is currently selected (only meaningful when `selection` is set). */
   selected?: boolean;
+  /** Visible card-field ids in order (backlog E1); defaults to the shipped Location + Category. */
+  fieldOrder?: readonly string[];
+  /** This item's resolved category name, or null when it has no category. */
+  categoryName?: string | null;
+  /** The live custom-field catalog, keyed by field id (stable across the list). */
+  customFields?: ReadonlyMap<string, CardCustomField>;
+  /** This item's stored custom-field values (fieldId → raw value), if loaded. */
+  customValues?: ReadonlyMap<string, string>;
 }) {
   const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
+  const fields = useResolvedCardFields(item, {
+    order: fieldOrder,
+    locationName,
+    categoryName,
+    customFields,
+    customValues,
+  });
   // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
   // a press-drag from selecting the row's text; the control-origin guard lives in the hook.
   const dragProps = useItemDragSource(item);
@@ -77,9 +99,9 @@ export const ItemRow = memo(function ItemRow({
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{item.name}</p>
-        <p className={cn('truncate text-xs', locationColorClass ?? 'text-muted-foreground')}>
-          {locationName}
-        </p>
+        {/* The user-configured fields (backlog E1) as a compact one-line summary; empties are
+            dropped, so the row keeps its dense two-line height regardless of the field set. */}
+        <CardFieldSummary fields={fields} locationColorClass={locationColorClass} />
       </div>
 
       <TrackingBadge mode={item.trackingMode} className="hidden sm:inline-flex" />

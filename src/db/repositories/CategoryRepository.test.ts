@@ -217,4 +217,38 @@ describe('CategoryRepository', () => {
     const lockedDelete = new CategoryRepository(driver, { isWriteSuspended: () => true });
     await expect(lockedDelete.delete(cat.id)).resolves.toBeUndefined();
   });
+
+  // --- E1 item-card field reads (bulk catalog + values) --------------------------
+
+  it('lists every custom field across all categories (the card-field catalog)', async () => {
+    const resistors = await categories.create({ name: 'Resistors' });
+    const caps = await categories.create({ name: 'Capacitors' });
+    await categories.addField(resistors.id, { name: 'Resistance', fieldType: 'NUMBER' });
+    await categories.addField(caps.id, { name: 'Voltage', fieldType: 'NUMBER' });
+
+    const all = await categories.listAllFields();
+    expect(all.map((f) => f.name).sort()).toEqual(['Resistance', 'Voltage']);
+    // Grouped by category so the catalog is stable and browsable.
+    expect(new Set(all.map((f) => f.categoryId))).toEqual(new Set([resistors.id, caps.id]));
+  });
+
+  it('bulk-reads stored field values for a set of items (only stored rows, per item)', async () => {
+    const cat = await categories.create({ name: 'Resistors' });
+    const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'TEXT' });
+    const a = await items.create({ name: 'R1', categoryId: cat.id });
+    const b = await items.create({ name: 'R2', categoryId: cat.id });
+    const c = await items.create({ name: 'R3', categoryId: cat.id }); // no stored value
+    await categories.setItemFieldValues(a.id, { [voltage.id]: '5V' });
+    await categories.setItemFieldValues(b.id, { [voltage.id]: '12V' });
+
+    const values = await categories.getItemFieldValues([a.id, b.id, c.id]);
+    expect(values.get(a.id)?.get(voltage.id)).toBe('5V');
+    expect(values.get(b.id)?.get(voltage.id)).toBe('12V');
+    // An item with no stored value simply has no entry (lenient defaulting happens at render).
+    expect(values.has(c.id)).toBe(false);
+  });
+
+  it('returns an empty map (no query) for no item ids', async () => {
+    expect((await categories.getItemFieldValues([])).size).toBe(0);
+  });
 });

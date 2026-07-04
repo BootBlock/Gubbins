@@ -9,6 +9,7 @@
 export { Button, buttonVariants, type ButtonProps } from './button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface, type SurfaceProps } from './surface';
+export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';
 export { Spinner, type SpinnerProps } from './spinner';
 export { Input, Textarea, Checkbox } from './input';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';

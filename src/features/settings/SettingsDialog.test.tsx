@@ -24,6 +24,9 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/features/danger-zone/DangerZone', () => ({ DangerZone: () => null }));
 vi.mock('@/features/maintenance', () => ({ DatabaseMaintenance: () => null }));
 vi.mock('@/features/storage/StorageTriageDialog', () => ({ StorageTriageDialog: () => null }));
+// The card-field picker (E1) fetches the custom-field catalog, so it needs a QueryClient;
+// stub it out like the other data-heavy children so this test stays provider-free.
+vi.mock('@/features/inventory/components/CardFieldsSetting', () => ({ CardFieldsSetting: () => null }));
 
 import SettingsDialog from './SettingsDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';

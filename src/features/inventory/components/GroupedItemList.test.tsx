@@ -33,6 +33,11 @@ vi.mock('./ItemCard', () => ({
 vi.mock('./ItemRow', () => ({
   ItemRow: ({ item }: { item: { id: string } }) => <div data-testid="stub-row">{item.id}</div>,
 }));
+// Each section fetches its own on-screen custom-field values (E1); the default config shows
+// no custom field, so the query is disabled — stub it so no QueryClient is needed here.
+vi.mock('../categories', () => ({
+  useItemFieldValues: () => ({ data: undefined }),
+}));
 
 import { GroupedItemList } from './GroupedItemList';
 
@@ -79,6 +84,12 @@ const PROPS = {
   includeInactive: false,
   locations: [],
   locationName: (id: string) => id,
+  cardFieldsConfig: {
+    order: [] as string[],
+    customFields: new Map(),
+    categoryName: () => null,
+    hasCustomFields: false,
+  },
 };
 
 beforeEach(() => {

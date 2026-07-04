@@ -132,6 +132,13 @@ export function visibleCardFieldIds(config: CardFieldsConfig): string[] {
 }
 
 /**
+ * The shipped-default visible field ids (`['location', 'category']`) as a stable module
+ * constant, so a card/row rendered without an explicit config (e.g. a test, or before the
+ * preference has resolved) still shows a sensible set without allocating on every render.
+ */
+export const DEFAULT_VISIBLE_CARD_FIELD_IDS: readonly string[] = visibleCardFieldIds(DEFAULT_CARD_FIELDS);
+
+/**
  * Move a field one slot up or down. Returns the same reference on a no-op (unknown id, or
  * already at the end in that direction) so a store setter can skip a pointless write — the
  * same contract as the pure `dashboard-layout.ts` ops.
@@ -140,9 +147,12 @@ export function moveCardField(config: CardFieldsConfig, id: string, dir: 'up' | 
   const i = config.findIndex((f) => f.id === id);
   if (i < 0) return config;
   const j = dir === 'up' ? i - 1 : i + 1;
-  if (j < 0 || j >= config.length) return config;
+  const a = config[i];
+  const b = config[j];
+  if (a === undefined || b === undefined) return config; // out of range in that direction
   const next = config.slice();
-  [next[i], next[j]] = [next[j], next[i]];
+  next[i] = b;
+  next[j] = a;
   return next;
 }
 
@@ -153,9 +163,10 @@ export function setCardFieldVisible(
   visible: boolean,
 ): CardFieldsConfig {
   const i = config.findIndex((f) => f.id === id);
-  if (i < 0 || config[i].visible === visible) return config;
+  const current = config[i];
+  if (current === undefined || current.visible === visible) return config;
   const next = config.slice();
-  next[i] = { ...next[i], visible };
+  next[i] = { ...current, visible };
   return next;
 }
 
