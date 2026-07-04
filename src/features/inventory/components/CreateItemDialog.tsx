@@ -11,6 +11,7 @@ import {
   Modal,
   SelectField,
   Textarea,
+  useToast,
 } from '@/components/foundry';
 import { useFormatters } from '@/lib/useFormatters';
 import {
@@ -152,6 +153,7 @@ export function CreateItemDialog({
   const createSupplierPart = useCreateSupplierPart();
   const addImage = useAddItemImage();
   const notifyScrape = useScrapeNotifier();
+  const { show } = useToast();
   const { data: categories } = useCategories();
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
   const { data: unitSuggestions } = useFieldSuggestions('unitOfMeasure');
@@ -403,10 +405,24 @@ export function CreateItemDialog({
     // Amazon supplier part (Path A2), then finish.
     const finish = (itemId: string) => mapAliases(itemId, () => persistAmazonSupplier(itemId, done));
 
+    // Surface a create failure rather than swallowing it: without this the dialog would
+    // sit silently open on any error (e.g. a `no such column` from a schema-stale local DB),
+    // giving the user no signal that nothing was saved. The raw message is shown so the
+    // cause is diagnosable; the dialog stays open so a corrected retry loses nothing.
+    const onError = (e: unknown) =>
+      show({
+        tone: 'danger',
+        heading: 'Couldn’t create item',
+        message: e instanceof Error ? e.message : 'The item was not saved. Please try again.',
+      });
+
     if (values.trackingMode === 'SERIALISED') {
       // Auto-clone N distinct instance records sharing a name (spec §4).
       const count = Math.max(1, Math.floor(Number(values.count) || 1));
-      createSerialised.mutate({ ...base, count }, { onSuccess: (items) => finish(items[0]?.id ?? '') });
+      createSerialised.mutate(
+        { ...base, count },
+        { onSuccess: (items) => finish(items[0]?.id ?? ''), onError },
+      );
       return;
     }
 
@@ -430,7 +446,7 @@ export function CreateItemDialog({
         },
       };
     }
-    createItem.mutate(input, { onSuccess: (item) => finish(item.id) });
+    createItem.mutate(input, { onSuccess: (item) => finish(item.id), onError });
   };
 
   const resetAsin = () => {

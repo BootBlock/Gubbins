@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import type { LocationWithCount } from '@/db/repositories';
+import { ToastProvider } from '@/components/foundry';
 import { CreateItemDialog } from './CreateItemDialog';
 
 const spies = vi.hoisted(() => ({
@@ -63,8 +64,10 @@ afterEach(() => {
 
 const locations: LocationWithCount[] = [];
 
+// The dialog surfaces create failures through the Foundry toast, so every render is wrapped
+// in a ToastProvider (as it is under <App>) — without it useToast() throws on mount.
 function renderDialog() {
-  render(<CreateItemDialog open onClose={() => {}} locations={locations} />);
+  render(<CreateItemDialog open onClose={() => {}} locations={locations} />, { wrapper: ToastProvider });
 }
 
 const itemDialog = () => within(screen.getByRole('dialog', { name: 'Add item' }));
@@ -116,6 +119,7 @@ describe('CreateItemDialog', () => {
           notes: 'Added via Share to Gubbins.\nSource: https://example.test/c',
         }}
       />,
+      { wrapper: ToastProvider },
     );
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('USB-C Cable');
     expect((screen.getByLabelText('MPN (optional)') as HTMLInputElement).value).toBe('B0F3XF5ZKF');
@@ -147,6 +151,7 @@ describe('CreateItemDialog', () => {
         initialValues={{ name: 'Shared thing' }}
         initialImage={image}
       />,
+      { wrapper: ToastProvider },
     );
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
     await waitFor(() => expect(spies.addImage).toHaveBeenCalledTimes(1));
@@ -163,6 +168,21 @@ describe('CreateItemDialog', () => {
     expect(input.description).toBeUndefined();
     expect(input.notes).toBeUndefined();
     expect(input.reorderPoint).toBeUndefined();
+  });
+
+  it('surfaces a create failure in a toast instead of silently doing nothing', async () => {
+    // A failing create (e.g. a `no such column` from a schema-stale local DB) must tell the
+    // user — the dialog previously swallowed the error and just sat there.
+    spies.createItem.mockImplementation((_input, opts) =>
+      opts?.onError?.(new Error('no such column: is_unlimited')),
+    );
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Doomed item' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    // The raw error message is shown so the cause is diagnosable.
+    expect(await screen.findByText('no such column: is_unlimited')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t create item')).toBeInTheDocument();
   });
 
   it('offers Untracked and hides quantity + low-stock fields for it', async () => {
