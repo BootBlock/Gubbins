@@ -448,8 +448,10 @@ export function CreateItemDialog({
   // pure {@link parseAsin} seam. Invalid input surfaces an accessible error; a valid one
   // synthesises an Amazon supplier part — the ASIN as its order code, the canonical listing
   // URL as its link (marketplace derived from a pasted URL's host, else the locale default) —
-  // recorded on create through the same §4 no-overwrite-safe path Path A2 uses. Fully offline:
-  // no field is overwritten and the notes provenance is filled only when the user left it blank.
+  // recorded on create through the same §4 no-overwrite-safe path Path A2 uses. Fully offline
+  // and non-destructive: no item field is touched, since the ASIN and listing URL are already
+  // captured structurally on the supplier part (order code + link) — duplicating them into the
+  // free-text Notes would be redundant and presumptuous.
   const applyAsin = () => {
     const raw = asinInput.trim();
     const asin = parseAsin(raw);
@@ -473,9 +475,6 @@ export function CreateItemDialog({
       distributor_url: url,
       scraped_pricing: null,
     });
-    if (!getValues('notes')?.trim()) {
-      setValue('notes', `Amazon ASIN: ${asin}\nListing: ${url}`, { shouldDirty: true });
-    }
   };
 
   const onSubmit = (values: FormValues) => {

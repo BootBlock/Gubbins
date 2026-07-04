@@ -76,18 +76,48 @@ function classifyNumber(current: number | null, scraped: number | null): Supplie
 }
 
 /**
+ * Second-level public-suffix labels that sit *under* a two-letter country-code TLD — the
+ * `co` in `amazon.co.uk`, `com` in `amazon.com.au`, `co` in `amazon.co.jp`. These are
+ * registry labels, not the site's own name, so when one appears just before a ccTLD the
+ * real registrable label is one segment further left. Without this, `amazon.co.uk` would
+ * yield the meaningless supplier name "Co". A curated set (rather than a full public-suffix
+ * list) keeps the module dependency-free while covering the marketplaces we actually meet.
+ */
+const SECOND_LEVEL_TLD_LABELS: ReadonlySet<string> = new Set([
+  'co',
+  'com',
+  'org',
+  'net',
+  'gov',
+  'ac',
+  'edu',
+  'ltd',
+  'plc',
+  'me',
+]);
+
+/**
  * Derive a human supplier name from a distributor host: take the **registrable label** (the
- * segment immediately before the TLD), so a regional subdomain is ignored
- * (`www.digikey.com` → `Digikey`, `uk.rs-online.com` → `Rs-online`). Title-cases the label.
- * Falls back to a generic name when the host cannot be parsed.
+ * site's own name, ignoring any regional subdomain and the public suffix), so
+ * `www.digikey.com` → `Digikey`, `uk.rs-online.com` → `Rs-online`, and — crucially —
+ * `www.amazon.co.uk` → `Amazon` rather than `Co`. Two-part country suffixes (`.co.uk`,
+ * `.com.au`, `.co.jp`) are handled via {@link SECOND_LEVEL_TLD_LABELS}. Title-cases the
+ * label. Falls back to a generic name when the host cannot be parsed.
  */
 export function supplierNameFromUrl(url: string): string {
   const host = hostOf(url);
   if (host.length === 0) return 'Supplier';
   const labels = host.split('.').filter((l) => l.length > 0);
   if (labels.length === 0) return 'Supplier';
-  // The registrable label sits just before the TLD; for a bare single label use it directly.
-  const label = labels.length >= 2 ? labels[labels.length - 2]! : labels[0]!;
+  // The registrable label normally sits just before the TLD. For a bare single label use it
+  // directly. When the TLD is a two-letter ccTLD preceded by a second-level registry label
+  // (`co.uk`, `com.au`, …), step one further left to reach the site's own name.
+  let idx = labels.length >= 2 ? labels.length - 2 : 0;
+  const tld = labels[labels.length - 1]!;
+  if (tld.length === 2 && idx > 0 && SECOND_LEVEL_TLD_LABELS.has(labels[idx]!)) {
+    idx -= 1;
+  }
+  const label = labels[idx]!;
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
