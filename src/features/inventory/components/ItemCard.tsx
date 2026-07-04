@@ -56,12 +56,15 @@ export const ItemCard = memo(function ItemCard({
   return (
     <Surface
       ref={ref}
+      interactive
       {...dragProps}
       onClick={onClick}
       className={cn(
-        // No hover grab-hand: the grabbing cursor appears only while actively pressing to drag
+        // Surface's `interactive` supplies the transition + hover shadow; the card takes a
+        // slightly bigger lift (`-translate-y-1`, twMerge keeps the last), and no hover
+        // grab-hand: the grabbing cursor appears only while actively pressing to drag
         // (`:active`); hover shows a pointer when the card body is click-actionable, else default.
-        'flex select-none flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 active:cursor-grabbing',
+        'flex select-none flex-col gap-4 p-5 hover:-translate-y-1 active:cursor-grabbing',
         clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',

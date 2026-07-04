@@ -10,7 +10,7 @@
  */
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Money, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Money, AnimatedNumber, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import {
   DatabaseIcon,
   StorageIcon,
@@ -32,7 +32,6 @@ import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
-import { ChangeFlash } from '@/features/inventory/components/ChangeFlash';
 import { shortfall } from '@/features/inventory/reorder-policy';
 import {
   useExpiringItems,
@@ -110,12 +109,10 @@ function WidgetShell({
         {icon}
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
         {showCount ? (
-          <ChangeFlash
-            flashKey={count}
-            className={cn('ml-auto text-lg font-semibold tabular-nums', TONE_COUNT[tone])}
-          >
-            {count}
-          </ChangeFlash>
+          // The ticker rolls to the new figure and plays a settle-pop, so a count that
+          // changes while the board is open reads as live (replaces the old colour-only
+          // glow). Reduced-motion users get the figure instantly (the primitive snaps).
+          <AnimatedNumber value={count} className={cn('ml-auto text-lg font-semibold', TONE_COUNT[tone])} />
         ) : null}
       </div>
       <div className="mt-2 space-y-1">
@@ -135,8 +132,8 @@ function WidgetShell({
 function WidgetSkeleton() {
   return (
     <div className="space-y-1.5" aria-hidden data-testid="widget-skeleton">
-      <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-      <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+      <div className="shimmer h-3 w-3/4 rounded" />
+      <div className="shimmer h-3 w-1/2 rounded" />
     </div>
   );
 }
@@ -416,17 +413,19 @@ function InventoryTotalsWidget() {
   const error = value.isError || itemCount.isError || locations.isError || categories.isError;
   return (
     <WidgetShell icon={<ValueIcon />} title="Inventory totals" loading={loading} error={error}>
+      {/* The at-a-glance pulse — its headline figures "count in" from zero on load (and
+          roll on any later change). Reduced motion snaps to the final value. */}
       <StatusRow label="Items">
-        <span className="tabular-nums">{totalItems}</span>
+        <AnimatedNumber value={totalItems} animateOnMount />
       </StatusRow>
       <StatusRow label="Stock value">
         <Money value={totalValue} formatters={fmt} />
       </StatusRow>
       <StatusRow label="Locations">
-        <span className="tabular-nums">{locationCount}</span>
+        <AnimatedNumber value={locationCount} animateOnMount />
       </StatusRow>
       <StatusRow label="Categories">
-        <span className="tabular-nums">{categoryCount}</span>
+        <AnimatedNumber value={categoryCount} animateOnMount />
       </StatusRow>
     </WidgetShell>
   );

@@ -8,7 +8,7 @@
  */
 export { Button, buttonVariants, type ButtonProps } from './button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
-export { Surface } from './surface';
+export { Surface, type SurfaceProps } from './surface';
 export { Spinner, type SpinnerProps } from './spinner';
 export { Input, Textarea, Checkbox } from './input';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
@@ -20,6 +20,7 @@ export {
 } from './autocomplete';
 export { filterSuggestions } from './autocomplete-filter';
 export { Money, type MoneyProps } from './money';
+export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
