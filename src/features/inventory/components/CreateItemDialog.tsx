@@ -1,5 +1,5 @@
-import { useId, useMemo, useRef, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Controller, useForm, type UseFormRegister } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -23,6 +23,7 @@ import {
   type Location,
   type LocationWithCount,
 } from '@/db/repositories';
+import { LOW_STOCK_GAUGE_SUGGESTED, LOW_STOCK_QTY_SUGGESTED } from '@/db/repositories/constants';
 import { DEFAULT_AMAZON_MARKETPLACE, asinToUrl, marketplaceFromHost, parseAsin } from '../asin';
 import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
 import {
@@ -78,6 +79,9 @@ const schema = z
     grossCapacity: z.string().optional(),
     tareWeight: z.string().optional(),
     currentNetValue: z.string().optional(),
+    // Low-stock alerts are opt-in: this toggle arms them for the item (Add-item dialog).
+    // When off, the reorder fields below are hidden and never submitted (item stays off).
+    lowStockAlert: z.boolean().optional(),
     reorderPoint: z.string().optional(),
     reorderQty: z.string().optional(),
     reorderGaugePercent: z.string().optional(),
@@ -120,6 +124,53 @@ export interface CreateItemInitialValues {
   /** Retail barcode (GTIN) — pre-filled when adding an item from a scanned barcode (point 1). */
   barcode?: string;
   sourceUrl?: string;
+}
+
+/** Shared copy for the "alert me when this runs low" opt-in (both tracking modes). */
+const LOW_STOCK_ALERT_HINT =
+  'Watch this item and flag it on the dashboard’s **Low Stock** list — and in reorder ' +
+  'suggestions — when it runs low.\n\nLow-stock alerts are **opt-in**: off by default, so ' +
+  'nothing nags unless you switch it on here. You set the trigger level next, and can change ' +
+  'it (or turn it off) later from the item’s **Supplier & ops** tab.';
+
+/**
+ * The "alert me when this runs low" opt-in for the Add-item dialog — an explicit,
+ * discoverable switch for the otherwise-implicit reorder point. It is **off by default**
+ * (matching the opt-in low-stock model), and only when it is on are the threshold fields
+ * (`children`) revealed and submitted. `onToggle` seeds a suggested trigger the moment it
+ * is enabled, so the revealed field is never left blank.
+ *
+ * A plain checkbox (not a Foundry primitive — none exists yet) matching the sibling
+ * "Unlimited supply" control's pattern in this dialog.
+ */
+function LowStockAlertToggle({
+  register,
+  enabled,
+  onToggle,
+  children,
+}: {
+  register: UseFormRegister<FormValues>;
+  enabled: boolean;
+  onToggle: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-3">
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="size-4 accent-primary"
+          data-testid="item-low-stock-alert"
+          {...register('lowStockAlert', {
+            onChange: (e) => onToggle((e.target as HTMLInputElement).checked),
+          })}
+        />
+        Alert me when this runs low
+        <InfoHint content={LOW_STOCK_ALERT_HINT} />
+      </label>
+      {enabled ? children : null}
+    </div>
+  );
 }
 
 export function CreateItemDialog({
@@ -209,6 +260,7 @@ export function CreateItemDialog({
       grossCapacity: '1000',
       tareWeight: '0',
       currentNetValue: '',
+      lowStockAlert: false,
       reorderPoint: '',
       reorderQty: '',
       reorderGaugePercent: '',
@@ -217,6 +269,21 @@ export function CreateItemDialog({
   });
 
   const trackingMode = watch('trackingMode');
+  const lowStockAlert = watch('lowStockAlert') ?? false;
+  const isUnlimited = watch('isUnlimited') ?? false;
+
+  // Opting an item in seeds a friendly non-zero reorder point so the user isn't left
+  // staring at a blank required-feeling field (they can still change or clear it). Only
+  // seeds when currently empty, so re-ticking never clobbers a value they've typed.
+  const seedLowStockDefaults = (checked: boolean) => {
+    if (!checked) return;
+    if (trackingMode === 'DISCRETE' && !getValues('reorderPoint')?.trim()) {
+      setValue('reorderPoint', String(LOW_STOCK_QTY_SUGGESTED));
+    }
+    if (trackingMode === 'CONSUMABLE_GAUGE' && !getValues('reorderGaugePercent')?.trim()) {
+      setValue('reorderGaugePercent', String(LOW_STOCK_GAUGE_SUGGESTED));
+    }
+  };
   const isPending = createItem.isPending || createSerialised.isPending;
 
   // Every location is a valid home — including the system Unassigned / In Transit rows —
@@ -360,10 +427,14 @@ export function CreateItemDialog({
       ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
       ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
       ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
-      // Per-item low-stock overrides (Phase 59 reorder policy) — blank = global default.
-      ...(values.reorderPoint?.trim() ? { reorderPoint: Number(values.reorderPoint) } : {}),
-      ...(values.reorderQty?.trim() ? { reorderQty: Number(values.reorderQty) } : {}),
-      ...(values.reorderGaugePercent?.trim()
+      // Per-item low-stock overrides (Phase 59 reorder policy). Low-stock alerts are
+      // opt-in — only sent when the "alert me when this runs low" toggle is on, so leaving
+      // it off keeps the item unwatched even if a stale value lingers in a hidden field.
+      ...(values.lowStockAlert && values.reorderPoint?.trim()
+        ? { reorderPoint: Number(values.reorderPoint) }
+        : {}),
+      ...(values.lowStockAlert && values.reorderQty?.trim() ? { reorderQty: Number(values.reorderQty) } : {}),
+      ...(values.lowStockAlert && values.reorderGaugePercent?.trim()
         ? { reorderGaugePercent: Number(values.reorderGaugePercent) }
         : {}),
     };
@@ -787,36 +858,48 @@ export function CreateItemDialog({
             >
               <Input type="number" min={0} step={1} {...register('quantity')} />
             </FormField>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                label="Low-stock alert at (optional)"
-                hint={
-                  'This item’s **own** low-stock trigger: it is flagged on the dashboard and in ' +
-                  'reorder suggestions when on-hand quantity falls to or below this.\n\nLow-stock ' +
-                  'alerts are **opt-in** — set a value to watch this item. Left blank it follows ' +
-                  'the global default in **Settings → Inventory**, which is **off** unless you’ve ' +
-                  'raised it. Editable later from the item’s **Supplier & ops** tab.'
-                }
+            {!isUnlimited ? (
+              <LowStockAlertToggle
+                register={register}
+                enabled={lowStockAlert}
+                onToggle={seedLowStockDefaults}
               >
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="Off unless set"
-                  data-testid="item-reorder-point"
-                  {...register('reorderPoint')}
-                />
-              </FormField>
-              <FormField
-                label="Reorder quantity (optional)"
-                hint={
-                  'A suggested **top-up amount** for the shopping list when this item runs low. ' +
-                  'Left blank, the shortfall back up to the low-stock level is used.'
-                }
-              >
-                <Input type="number" min={0} step={1} placeholder="Shortfall" {...register('reorderQty')} />
-              </FormField>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    label="Low-stock alert at"
+                    hint={
+                      'This item’s **own** low-stock trigger: it is flagged on the dashboard and ' +
+                      'in reorder suggestions when on-hand quantity falls to or below this. Editable ' +
+                      'later from the item’s **Supplier & ops** tab.'
+                    }
+                  >
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder={`e.g. ${LOW_STOCK_QTY_SUGGESTED}`}
+                      data-testid="item-reorder-point"
+                      {...register('reorderPoint')}
+                    />
+                  </FormField>
+                  <FormField
+                    label="Reorder quantity (optional)"
+                    hint={
+                      'A suggested **top-up amount** for the shopping list when this item runs low. ' +
+                      'Left blank, the shortfall back up to the low-stock level is used.'
+                    }
+                  >
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Shortfall"
+                      {...register('reorderQty')}
+                    />
+                  </FormField>
+                </div>
+              </LowStockAlertToggle>
+            ) : null}
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -893,12 +976,16 @@ export function CreateItemDialog({
             >
               <Input type="number" min={0} step="any" placeholder="full" {...register('currentNetValue')} />
             </FormField>
+          </div>
+        ) : null}
+
+        {trackingMode === 'CONSUMABLE_GAUGE' ? (
+          <LowStockAlertToggle register={register} enabled={lowStockAlert} onToggle={seedLowStockDefaults}>
             <FormField
-              label="Low-stock alert (% left, optional)"
+              label="Low-stock alert at (% left)"
               hint={
                 'This consumable’s **own** low-stock trigger: it is flagged when its remaining ' +
-                'percentage falls to or below this.\n\nLeave blank to use the global default from ' +
-                '**Settings → Inventory**. Editable later from the item’s **Supplier & ops** tab.'
+                'percentage falls to or below this. Editable later from the item’s **Supplier & ops** tab.'
               }
             >
               <Input
@@ -906,11 +993,12 @@ export function CreateItemDialog({
                 min={0}
                 max={100}
                 step={1}
-                placeholder="Global default"
+                placeholder={`e.g. ${LOW_STOCK_GAUGE_SUGGESTED}`}
+                data-testid="item-reorder-gauge"
                 {...register('reorderGaugePercent')}
               />
             </FormField>
-          </div>
+          </LowStockAlertToggle>
         ) : null}
 
         <FormField

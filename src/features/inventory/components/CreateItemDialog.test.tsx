@@ -78,7 +78,7 @@ describe('CreateItemDialog', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Name'));
   });
 
-  it('submits description, notes and the per-item low-stock override', async () => {
+  it('submits description, notes and the per-item low-stock override once opted in', async () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'M3 screws' } });
     fireEvent.change(screen.getByLabelText('Description (optional)'), {
@@ -87,9 +87,10 @@ describe('CreateItemDialog', () => {
     fireEvent.change(screen.getByLabelText('Notes (optional)'), {
       target: { value: 'Bought at the swap meet' },
     });
-    fireEvent.change(screen.getByLabelText('Low-stock alert at (optional)'), {
-      target: { value: '3' },
-    });
+    // Low-stock is opt-in: the threshold fields are hidden until the toggle is switched on.
+    expect(screen.queryByTestId('item-reorder-point')).toBeNull();
+    fireEvent.click(screen.getByTestId('item-low-stock-alert'));
+    fireEvent.change(screen.getByLabelText('Low-stock alert at'), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText('Reorder quantity (optional)'), {
       target: { value: '100' },
     });
@@ -104,6 +105,30 @@ describe('CreateItemDialog', () => {
       reorderPoint: 3,
       reorderQty: 100,
     });
+  });
+
+  it('leaves low-stock alerts off by default — no reorder point unless opted in', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unwatched' } });
+    // Deliberately do NOT touch the "Alert me when this runs low" toggle.
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    const input = spies.createItem.mock.calls[0][0];
+    expect(input.reorderPoint).toBeUndefined();
+    expect(input.reorderQty).toBeUndefined();
+  });
+
+  it('seeds a suggested reorder point the moment low-stock alerts are switched on', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Watched' } });
+    fireEvent.click(screen.getByTestId('item-low-stock-alert'));
+    // The revealed field is pre-filled with the suggested trigger (5), not left blank.
+    expect(screen.getByLabelText('Low-stock alert at')).toHaveValue(5);
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0].reorderPoint).toBe(5);
   });
 
   it('pre-fills a shared draft from initialValues and submits them (plan EI-4)', async () => {
@@ -192,7 +217,8 @@ describe('CreateItemDialog', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Untracked' }));
 
     expect(screen.queryByLabelText('Initial quantity')).toBeNull();
-    expect(screen.queryByLabelText('Low-stock alert at (optional)')).toBeNull();
+    // The low-stock opt-in (and its threshold field) only exist for stock-bearing modes.
+    expect(screen.queryByTestId('item-low-stock-alert')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bench vice' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));

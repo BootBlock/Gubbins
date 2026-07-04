@@ -177,6 +177,18 @@ export const LOW_STOCK_QTY_THRESHOLD = 0;
 export const LOW_STOCK_GAUGE_PERCENT = 0;
 
 /**
+ * Suggested starting reorder points offered when a user *opts an item in* to low-stock
+ * alerts (e.g. the Add-item dialog pre-fills these the moment the "alert me when this runs
+ * low" toggle is switched on). Deliberately distinct from the now-off-by-default global
+ * {@link LOW_STOCK_QTY_THRESHOLD} / {@link LOW_STOCK_GAUGE_PERCENT}: those govern whether an
+ * item is watched *at all* (0 = off), while these are just a friendly non-zero default to
+ * save the user typing once they've decided they do want an alert. The old blanket defaults
+ * (5 units / 15 %) make sensible starting points.
+ */
+export const LOW_STOCK_QTY_SUGGESTED = 5;
+export const LOW_STOCK_GAUGE_SUGGESTED = 15;
+
+/**
  * Default warning threshold for the §4 project budget feature: a project's budget
  * indicator turns to a warning tone once spend reaches this percentage of the budget,
  * and an over-budget state once it exceeds 100%. Surfaced as the user-tunable Tier-2
