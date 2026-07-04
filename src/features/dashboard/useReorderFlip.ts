@@ -37,39 +37,52 @@ export function useReorderFlip(
   );
 
   useLayoutEffect(() => {
+    const nodeList = nodes.current;
+
+    // Cancel any glide still in flight before measuring: `getBoundingClientRect` includes the
+    // live transform, so a reorder within the settle window (e.g. a held arrow key) would
+    // otherwise sample a mid-animation position and glide from a wrong origin. Disabling the
+    // transition first makes clearing the transform snap to the true position, not ease to it.
+    nodeList.forEach((el) => {
+      el.style.transition = 'none';
+      el.style.transform = '';
+    });
+
     const after = new Map<string, DOMRect>();
-    nodes.current.forEach((el, id) => after.set(id, el.getBoundingClientRect()));
+    nodeList.forEach((el, id) => after.set(id, el.getBoundingClientRect()));
 
     const before = prevRects.current;
     // Animate only a real rearrangement held within a sustained edit session — never the reflow
-    // when the mode toggles (`active` flipped) or the first measurement (`before === null`).
+    // when the mode toggles (`active` flipped) or the first measurement (`before === null`). A
+    // layout shift that doesn't change `orderKey` (a slow widget growing, a resize) isn't
+    // re-baselined until the next order change — an acceptable cosmetic edge for a delight glide.
     const shouldAnimate = active && prevActive.current && prevKey.current !== orderKey && before !== null;
 
-    if (shouldAnimate) {
-      nodes.current.forEach((el, id) => {
-        const from = before.get(id);
-        const to = after.get(id);
-        if (!from || !to) return;
-        const dx = from.left - to.left;
-        const dy = from.top - to.top;
-        if (dx === 0 && dy === 0) return;
-        // Invert: snap the node back to where it was, with no transition.
-        el.style.transition = 'none';
-        el.style.transform = `translate(${dx}px, ${dy}px)`;
-        // Play: on the next frame, release it to its real place on the emphasized easing token
-        // (referenced via its CSS variable — not a raw cubic-bezier literal).
-        requestAnimationFrame(() => {
-          el.style.transition = `transform ${FLIP_MS}ms var(--ease-emphasized)`;
+    nodeList.forEach((el, id) => {
+      const from = shouldAnimate ? before.get(id) : undefined;
+      const to = after.get(id);
+      const dx = from && to ? from.left - to.left : 0;
+      const dy = from && to ? from.top - to.top : 0;
+      if (dx === 0 && dy === 0) {
+        // Nothing to play — drop the temporary `transition: none` set above so it doesn't linger.
+        el.style.transition = '';
+        return;
+      }
+      // Invert: the transition is already `none`, so placing it back at its old spot is instant.
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      // Play: next frame, release it to its real place on the emphasized easing token (referenced
+      // via its CSS variable — not a raw cubic-bezier literal).
+      requestAnimationFrame(() => {
+        el.style.transition = `transform ${FLIP_MS}ms var(--ease-emphasized)`;
+        el.style.transform = '';
+        const clear = () => {
+          el.style.transition = '';
           el.style.transform = '';
-          const clear = () => {
-            el.style.transition = '';
-            el.style.transform = '';
-            el.removeEventListener('transitionend', clear);
-          };
-          el.addEventListener('transitionend', clear);
-        });
+          el.removeEventListener('transitionend', clear);
+        };
+        el.addEventListener('transitionend', clear);
       });
-    }
+    });
 
     prevRects.current = after;
     prevActive.current = active;
