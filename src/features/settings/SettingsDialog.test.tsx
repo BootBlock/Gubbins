@@ -86,3 +86,32 @@ describe('SettingsDialog — Projects off', () => {
     expect(screen.queryByTestId('setting-low-stock-qty')).not.toBeNull();
   });
 });
+
+describe('SettingsDialog — nav-tile count pickers (A1)', () => {
+  it('shows a metric picker for each configurable tile on the Dashboard tab', () => {
+    renderTab('Dashboard');
+    expect(screen.queryByTestId('setting-nav-count-/projects')).not.toBeNull();
+    expect(screen.queryByTestId('setting-nav-count-/purchase-orders')).not.toBeNull();
+    expect(screen.queryByTestId('setting-nav-count-/bookings')).not.toBeNull();
+  });
+
+  it('drops a tile’s picker when that tile’s feature is switched off', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    renderTab('Dashboard');
+    expect(screen.queryByTestId('setting-nav-count-/projects')).toBeNull();
+    // The other tiles' pickers remain.
+    expect(screen.queryByTestId('setting-nav-count-/bookings')).not.toBeNull();
+  });
+
+  it('drops the whole section only when every configurable tile is off', () => {
+    // Bookings & purchase-orders depend on contacts, so turning contacts + projects off
+    // removes all three configurable tiles — and with them the section heading.
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    useModulesStore.getState().setFeatureIntent('contacts', false);
+    renderTab('Dashboard');
+    expect(screen.queryByTestId('setting-nav-count-/projects')).toBeNull();
+    expect(screen.queryByTestId('setting-nav-count-/purchase-orders')).toBeNull();
+    expect(screen.queryByTestId('setting-nav-count-/bookings')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Nav tile counts' })).toBeNull();
+  });
+});

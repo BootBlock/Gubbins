@@ -24,6 +24,12 @@ import {
   normaliseVisualCardMetric,
   normaliseWindowMonths,
   DEFAULT_VISUAL_CARD_METRIC,
+  DEFAULT_NAV_COUNT_METRICS,
+  NAV_COUNT_METRIC_CONFIG,
+  NAV_COUNT_ROUTES,
+  navCountOption,
+  normaliseNavCountMetric,
+  normaliseNavCountMetrics,
   THEME_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
@@ -304,5 +310,59 @@ describe('usePreferencesStore — Phase 58 budget warn percent', () => {
     expect(usePreferencesStore.getState().budgetWarnPercent).toBe(BUDGET_WARN_BOUNDS.max);
     usePreferencesStore.getState().setBudgetWarnPercent(0);
     expect(usePreferencesStore.getState().budgetWarnPercent).toBe(BUDGET_WARN_BOUNDS.min);
+  });
+});
+
+describe('nav-tile count metrics (A1)', () => {
+  it('derives a default for every configurable tile from the config, no drift', () => {
+    for (const route of NAV_COUNT_ROUTES) {
+      expect(DEFAULT_NAV_COUNT_METRICS[route]).toBe(NAV_COUNT_METRIC_CONFIG[route].default);
+      // Each default is one of the tile's actual options.
+      expect(
+        NAV_COUNT_METRIC_CONFIG[route].options.some((o) => o.value === DEFAULT_NAV_COUNT_METRICS[route]),
+      ).toBe(true);
+    }
+  });
+
+  it('normaliseNavCountMetric passes valid ids and coerces stale ones to the tile default', () => {
+    expect(normaliseNavCountMetric('/projects', 'all')).toBe('all');
+    expect(normaliseNavCountMetric('/projects', 'nonsense')).toBe('active');
+    expect(normaliseNavCountMetric('/bookings', '')).toBe('upcoming');
+  });
+
+  it('normaliseNavCountMetrics fills a partial/stale map with valid choices for every tile', () => {
+    const result = normaliseNavCountMetrics({ '/projects': 'all', '/bookings': 'bogus' });
+    expect(result).toEqual({
+      '/projects': 'all', // kept
+      '/purchase-orders': 'open', // filled from default (absent)
+      '/bookings': 'upcoming', // coerced (bogus)
+    });
+    // A wholly-undefined map yields the shipped defaults.
+    expect(normaliseNavCountMetrics(undefined)).toEqual(DEFAULT_NAV_COUNT_METRICS);
+  });
+
+  it('navCountOption resolves the chosen option, falling back to the default option', () => {
+    expect(navCountOption('/projects', 'all').noun).toBe('project');
+    expect(navCountOption('/projects', 'nonsense').value).toBe('active');
+  });
+});
+
+describe('usePreferencesStore — nav-tile count metrics (A1)', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ navCountMetrics: { ...DEFAULT_NAV_COUNT_METRICS } });
+  });
+
+  it('defaults to the shipped per-tile metrics', () => {
+    expect(usePreferencesStore.getState().navCountMetrics).toEqual(DEFAULT_NAV_COUNT_METRICS);
+  });
+
+  it('sets one tile through its setter without disturbing the others, and normalises', () => {
+    usePreferencesStore.getState().setNavCountMetric('/projects', 'all');
+    expect(usePreferencesStore.getState().navCountMetrics['/projects']).toBe('all');
+    // Other tiles are untouched.
+    expect(usePreferencesStore.getState().navCountMetrics['/bookings']).toBe('upcoming');
+    // A stale id coerces to the tile default.
+    usePreferencesStore.getState().setNavCountMetric('/purchase-orders', 'nonsense');
+    expect(usePreferencesStore.getState().navCountMetrics['/purchase-orders']).toBe('open');
   });
 });

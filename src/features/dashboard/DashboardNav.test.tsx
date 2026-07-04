@@ -16,8 +16,8 @@ vi.mock('@/features/alerts/useAlerts', () => ({
 }));
 
 // The count pills are fed by useNavCounts, which reaches TanStack Query / the repositories;
-// stub it so this suite stays a pure render test (the real filters are covered in
-// useNavCounts.test.ts). NAV_COUNT_NOUNS is kept real so the aria-label wording is exercised.
+// stub it so this suite stays a pure render test (the real selectors + nouns are covered in
+// useNavCounts.test.ts). Each entry carries the spoken nouns for the tile's current metric.
 const navCountsMock = vi.fn();
 vi.mock('./useNavCounts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./useNavCounts')>()),
@@ -85,7 +85,10 @@ describe('DashboardNav — feature gating (Phase 2)', () => {
 
 describe('DashboardNav — collection count pills', () => {
   it('shows a right-aligned count pill on a counted tile and names it for screen readers', () => {
-    navCountsMock.mockReturnValue({ '/projects': 3, '/inventory': 42 });
+    navCountsMock.mockReturnValue({
+      '/projects': { count: 3, noun: 'active project', nounPlural: 'active projects' },
+      '/inventory': { count: 42, noun: 'item', nounPlural: 'items' },
+    });
     render(<DashboardNav />);
 
     expect(screen.getByTestId('nav-count-/projects')).toHaveTextContent('3');
@@ -95,8 +98,19 @@ describe('DashboardNav — collection count pills', () => {
     expect(tile('/inventory')).toHaveAttribute('aria-label', 'Open inventory — 42 items');
   });
 
+  it('names a tile with the plural for its current (re-pointed) metric', () => {
+    // The tile has been re-pointed at "all projects", so the noun follows the chosen metric.
+    navCountsMock.mockReturnValue({
+      '/projects': { count: 5, noun: 'project', nounPlural: 'projects' },
+    });
+    render(<DashboardNav />);
+    expect(tile('/projects')).toHaveAttribute('aria-label', 'Projects — 5 projects');
+  });
+
   it('omits the pill for a zero or absent count', () => {
-    navCountsMock.mockReturnValue({ '/projects': 0 });
+    navCountsMock.mockReturnValue({
+      '/projects': { count: 0, noun: 'active project', nounPlural: 'active projects' },
+    });
     render(<DashboardNav />);
 
     expect(screen.queryByTestId('nav-count-/projects')).toBeNull();
@@ -106,7 +120,9 @@ describe('DashboardNav — collection count pills', () => {
   });
 
   it('caps a very large count so it cannot stretch the tile', () => {
-    navCountsMock.mockReturnValue({ '/inventory': 100000 });
+    navCountsMock.mockReturnValue({
+      '/inventory': { count: 100000, noun: 'item', nounPlural: 'items' },
+    });
     render(<DashboardNav />);
 
     expect(screen.getByTestId('nav-count-/inventory')).toHaveTextContent('999+');

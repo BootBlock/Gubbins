@@ -22,7 +22,7 @@ import {
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
-import { NAV_COUNT_NOUNS, useNavCounts } from './useNavCounts';
+import { useNavCounts } from './useNavCounts';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -143,15 +143,19 @@ export function DashboardNav() {
                 // hover). See `useSettingsDialog` / `SettingsDialogHost`.
                 const isSettings = dest.to === '/settings';
                 // Collection count for this tile (Inventory/Projects/…); undefined or 0 ⇒ no pill.
-                const count = navCounts[dest.to];
+                // The entry carries the spoken nouns for the tile's *current* metric, which the
+                // user may have re-pointed (e.g. "all projects" instead of "active projects").
+                const navCount = navCounts[dest.to];
+                const count = navCount?.count;
                 const showCount = typeof count === 'number' && count > 0;
                 // Spoken form of the count for the tile's accessible name — a bare "3" next to
                 // "Projects" is ambiguous, so name it ("Projects — 3 active projects").
                 const countLabel =
-                  showCount && count !== undefined
+                  showCount && navCount
                     ? `${isInventory ? 'Open inventory' : dest.label} — ${count} ${plural(
                         count,
-                        NAV_COUNT_NOUNS[dest.to] ?? 'item',
+                        navCount.noun,
+                        navCount.nounPlural,
                       )}`
                     : undefined;
                 const surface = (

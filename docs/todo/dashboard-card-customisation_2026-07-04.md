@@ -27,12 +27,22 @@ uses **Modular UI** intent.
 
 ## A. Count-pill enhancements (extend what just shipped)
 
-- **A1 — Per-card configurable count metric.** Let the user choose *what* each tile counts:
-  Projects → active / all / over-budget; Inventory → total / low-stock / out-of-stock; POs →
-  open / overdue; Bookings → upcoming / this week. Persist the choice per tile as a Tier-2
-  preference; drive it from a small map in `useNavCounts` so each metric is one pure selector.
-  Surface the picker in Settings → Dashboard (and/or a per-card menu — see B4/C). *Highest-value
-  customisation win; directly generalises the current fixed "active/open" choice.*
+- **A1 — Per-card configurable count metric. ✅ Done (shipped the mechanism + zero-fetch
+  metrics).** `NAV_COUNT_METRIC_CONFIG` (in `settings.ts`) is the SSOT: per configurable tile it
+  holds the metric options, the shipped default, and the spoken nouns. `useNavCounts` resolves
+  the chosen metric (Tier-2 `navCountMetrics`, normalised per tile) and applies one **pure
+  selector** per metric over the rows the tile's read hook already loads — `countProjects`
+  (active / all), `countPurchaseOrders` (open / all), `countBookings` (upcoming / starting this
+  week / all). The picker is a "Nav tile counts" section in **Settings → Dashboard**, one row per
+  tile, feature-gated (a hidden tile shows no picker). Inventory (item total) and Contacts (all)
+  stay single-metric — no picker.
+  - **Deferred to land with A2:** the "problem" metrics — Projects → *over-budget*, Inventory →
+    *low-stock / out-of-stock*, POs → *overdue*. Each needs data **not** on the nav-count path
+    (over-budget needs the budget-alerts spend feed; low/out-of-stock need an accurate count
+    query — `useLowStockItems` caps at 100 so it can't count) or a column that does not exist (a
+    PO has no expected-delivery date, so "overdue" is not derivable). They pair naturally with
+    **A2**'s warning `tone`, which is where they earn their keep; add each as a new entry in
+    `NAV_COUNT_METRIC_CONFIG` plus its (gated) data source at that point.
 - **A2 — Semantic colour for a "problem" count.** When a count represents something needing
   attention (low-stock total, overdue POs, over-budget projects), tint the pill with a
   warning/`destructive` token instead of the group hue, so a glance distinguishes "12 things"
