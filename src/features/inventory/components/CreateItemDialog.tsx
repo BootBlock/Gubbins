@@ -22,6 +22,7 @@ import {
   type Location,
   type LocationWithCount,
 } from '@/db/repositories';
+import { DEFAULT_AMAZON_MARKETPLACE, asinToUrl, marketplaceFromHost, parseAsin } from '../asin';
 import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
 import {
   applyScrapeMerge,
@@ -165,6 +166,15 @@ export function CreateItemDialog({
   // choosing "＋ New location…"/"＋ New category…" in a picker opens it; the half-filled
   // item form underneath stays mounted, so nothing the user has typed is lost.
   const [inlineCreate, setInlineCreate] = useState<'location' | 'category' | null>(null);
+  // "Add by ASIN / Amazon URL" (single-item, extension-free): the raw box value, its
+  // validation error, and the synthesised Amazon supplier part a valid ASIN produces. The
+  // part rides to the create the same way an A2 active-tab scrape does (`persistAmazonSupplier`
+  // below), so nothing hits the network — the ASIN becomes an Amazon order code + canonical
+  // listing URL through the §4 no-overwrite-safe write path. Typed input wins over any
+  // `initialScrape`, since it is the more recent, explicit user intent.
+  const [asinInput, setAsinInput] = useState('');
+  const [asinError, setAsinError] = useState<string | undefined>(undefined);
+  const [asinPart, setAsinPart] = useState<ScrapeResultPayload | null>(null);
   const {
     control,
     register,
@@ -297,6 +307,40 @@ export function CreateItemDialog({
     );
   };
 
+  // "Add by ASIN / Amazon URL": parse the box (a bare ASIN or a `/dp/` listing link) via the
+  // pure {@link parseAsin} seam. Invalid input surfaces an accessible error; a valid one
+  // synthesises an Amazon supplier part — the ASIN as its order code, the canonical listing
+  // URL as its link (marketplace derived from a pasted URL's host, else the locale default) —
+  // recorded on create through the same §4 no-overwrite-safe path Path A2 uses. Fully offline:
+  // no field is overwritten and the notes provenance is filled only when the user left it blank.
+  const applyAsin = () => {
+    const raw = asinInput.trim();
+    const asin = parseAsin(raw);
+    if (!asin) {
+      setAsinPart(null);
+      setAsinError('Enter a valid Amazon ASIN (like B0F3XF5ZKF) or a product link.');
+      return;
+    }
+    let marketplace = DEFAULT_AMAZON_MARKETPLACE;
+    try {
+      marketplace = marketplaceFromHost(new URL(raw).hostname) ?? DEFAULT_AMAZON_MARKETPLACE;
+    } catch {
+      // A bare ASIN is not a URL — keep the locale default marketplace.
+    }
+    const url = asinToUrl(asin, marketplace);
+    setAsinError(undefined);
+    setAsinPart({
+      mpn: asin,
+      manufacturer: '',
+      description: '',
+      distributor_url: url,
+      scraped_pricing: null,
+    });
+    if (!getValues('notes')?.trim()) {
+      setValue('notes', `Amazon ASIN: ${asin}\nListing: ${url}`, { shouldDirty: true });
+    }
+  };
+
   const onSubmit = (values: FormValues) => {
     const base = {
       name: values.name.trim(),
@@ -325,6 +369,7 @@ export function CreateItemDialog({
       reset();
       setPendingAliases([]);
       setInlineCreate(null);
+      resetAsin();
       onClose();
     };
     // After the item exists: map the scraped supplier MPN(s) onto it (§4 alias mapping), then
@@ -346,8 +391,10 @@ export function CreateItemDialog({
     // part (ASIN → order code, buy-box price → unit cost). §4 no-overwrite-safe — a fresh
     // item has no supplier rows, so this only ever *creates* one, never clobbers a value.
     const persistAmazonSupplier = (itemId: string, next: () => void) => {
-      if (!initialScrape || !itemId) return next();
-      const write = resolveSupplierPartWrite(buildSupplierPartPlan(initialScrape, []));
+      // A typed ASIN (this dialog's own field) takes precedence over an A2 active-tab scrape.
+      const supplierPayload = asinPart ?? initialScrape;
+      if (!supplierPayload || !itemId) return next();
+      const write = resolveSupplierPartWrite(buildSupplierPartPlan(supplierPayload, []));
       if (write.kind !== 'create') return next();
       createSupplierPart.mutate({ itemId, input: write.input }, { onSettled: next });
     };
@@ -386,10 +433,17 @@ export function CreateItemDialog({
     createItem.mutate(input, { onSuccess: (item) => finish(item.id) });
   };
 
+  const resetAsin = () => {
+    setAsinInput('');
+    setAsinError(undefined);
+    setAsinPart(null);
+  };
+
   const handleClose = () => {
     reset();
     setPendingAliases([]);
     setInlineCreate(null);
+    resetAsin();
     onClose();
   };
 
@@ -551,6 +605,50 @@ export function CreateItemDialog({
         {/* §9 supplier scrape — rendered only when the companion extension is present. A shared
             URL (plan EI-4) pre-seeds the URL box so the draft can be enriched in one click. */}
         <ScrapeSupplierPanel onResult={onScrapeResult} initialUrl={initialValues?.sourceUrl} />
+
+        {/* Add by ASIN / Amazon URL — the extension-free, network-free single-item path: paste a
+            bare ASIN or a listing link and record an Amazon supplier part on create. Always
+            available (unlike the extension-gated scrape panel above). */}
+        <div className="space-y-field-gap-compact rounded-xl border border-border bg-secondary/20 p-3">
+          <FormField
+            label="Add by Amazon ASIN or link (optional)"
+            error={asinError}
+            hintSize="lg"
+            hint={
+              'Paste an **ASIN** (`B0F3XF5ZKF`) or an Amazon **listing link** ' +
+              '(`amazon.co.uk/dp/…`) to record this item as an **Amazon supplier part** — the ' +
+              'ASIN as its order code and a canonical listing link — with no extension and no ' +
+              'network.\n\n> The item’s own fields are still yours to fill; nothing is overwritten.'
+            }
+          >
+            <Input
+              value={asinInput}
+              onChange={(e) => {
+                setAsinInput(e.target.value);
+                if (asinError) setAsinError(undefined);
+              }}
+              placeholder="e.g. B0F3XF5ZKF or https://www.amazon.co.uk/dp/…"
+              data-testid="item-asin"
+            />
+          </FormField>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={applyAsin}
+              disabled={!asinInput.trim()}
+              data-testid="item-asin-apply"
+            >
+              Record Amazon part
+            </Button>
+            {asinPart ? (
+              <span role="status" className="text-xs text-muted-foreground" data-testid="item-asin-applied">
+                Amazon supplier part ready: order code {asinPart.mpn}.
+              </span>
+            ) : null}
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
