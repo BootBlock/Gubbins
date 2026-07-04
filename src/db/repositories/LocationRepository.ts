@@ -37,6 +37,31 @@ const SELECT_WITH_COUNT = `
   LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1
 `;
 
+/**
+ * Cycle guard for a parent move (§7.5.3), designed to live in the WHERE clause of the
+ * parent-setting `UPDATE` so the check and the write are ONE statement. The recursive CTE walks
+ * up from the proposed new parent collecting its ancestors; if the moving node appears there, the
+ * move would make a location its own descendant, the `NOT EXISTS` is false, and the `UPDATE`
+ * matches zero rows instead of committing the loop.
+ *
+ * This closes a check-then-write race the standalone {@link LocationRepository.assertParentMoveValid}
+ * pre-check cannot: because that check and the write are separate worker messages, two concurrent
+ * re-parents (e.g. spamming drag-to-nest) could each pass the pre-check against pre-move state and
+ * then both commit, forming A→B→A. Folding the guard into the write makes it atomic under the DB
+ * worker's serialised message loop, so a cycle can never be committed no matter the interleaving.
+ *
+ * Binds, in order: the new parent id (CTE seed), then the moving location's id (the membership
+ * test). Kept as a bare `NOT EXISTS (…)` fragment so callers append it to an existing WHERE.
+ */
+const PARENT_MOVE_CYCLE_GUARD = `NOT EXISTS (
+  WITH RECURSIVE ancestors(id) AS (
+    SELECT ?
+    UNION ALL
+    SELECT l.parent_id FROM locations l JOIN ancestors a ON l.id = a.id WHERE l.parent_id IS NOT NULL
+  )
+  SELECT 1 FROM ancestors WHERE id = ?
+)`;
+
 export class LocationRepository extends BaseRepository {
   async getById(id: string): Promise<Location | undefined> {
     const row = await this.driver.queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?;', [id]);
@@ -155,23 +180,42 @@ export class LocationRepository extends BaseRepository {
       params.push(input.archivedAt);
     }
 
+    // Only guard when nesting under a real parent — a move to the root (null) can never cycle.
+    const guardCycle = input.parentId != null;
     if (sets.length > 0) {
       const statements: SqlStatement[] = [];
       // Promoting this row to the default demotes any other default in the same
-      // transaction (§4 single-default invariant); exclude self so the flag survives.
+      // transaction (§4 single-default invariant); exclude self so the flag survives. The demotion
+      // carries the SAME cycle guard as the main update below, so that if a concurrent re-parent
+      // has made this an illegal move the whole transaction no-ops together — never clearing the
+      // old default while the guarded main update refuses to set the new one.
       if (input.isDefault === true) {
         statements.push({
-          sql: 'UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?;',
-          params: [id],
+          sql: `UPDATE locations SET is_default = 0 WHERE is_default = 1 AND id <> ?${guardCycle ? ` AND ${PARENT_MOVE_CYCLE_GUARD}` : ''};`,
+          params: guardCycle ? [id, input.parentId, id] : [id],
         });
       }
+      // The cycle guard rides in the WHERE so the check is atomic with the write (see
+      // PARENT_MOVE_CYCLE_GUARD): a concurrent re-parent cannot slip a loop past it. When it
+      // vetoes the move the whole UPDATE matches zero rows — detected via the re-read below.
       statements.push({
-        sql: `UPDATE locations SET ${sets.join(', ')} WHERE id = ?;`,
-        params: [...params, id],
+        sql: `UPDATE locations SET ${sets.join(', ')} WHERE id = ?${guardCycle ? ` AND ${PARENT_MOVE_CYCLE_GUARD}` : ''};`,
+        params: guardCycle ? [...params, id, input.parentId, id] : [...params, id],
       });
       await this.driver.transaction(statements);
     }
-    return (await this.getById(id))!;
+    const updated = (await this.getById(id))!;
+    // If a requested (non-null) parent move didn't land, the atomic guard refused it because a
+    // concurrent re-parent had already made the target a descendant between our pre-check and our
+    // write. Surface the same cycle error the pre-check raises so the loser of the race is told,
+    // rather than reporting a silent no-op as success.
+    if (guardCycle && updated.parentId !== input.parentId) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'Moving this location there would create a cyclical nesting loop.',
+      );
+    }
+    return updated;
   }
 
   /**

@@ -99,6 +99,12 @@ export function LocationSidebar({
   // cycle-checks it (§7.5.3); on success we expand the new parent so the moved child is visible
   // and announce the move for assistive tech. Unnesting stays in the Edit dialog's Parent field.
   const nestLocation = (draggedId: string, targetId: string) => {
+    // Refuse a second re-parent while one is still in flight. Each nest reshapes the tree through
+    // an invalidation round-trip that takes a moment; letting the user spam drops would stack
+    // concurrent re-parents whose cached `flat` view is stale between them. One at a time keeps the
+    // gesture predictable — the atomic DB-side guard in LocationRepository is the correctness
+    // backstop; this is the UX one.
+    if (updateLocation.isPending) return;
     const dragged = flat.find((l) => l.id === draggedId);
     const target = flat.find((l) => l.id === targetId);
     if (!dragged || !target) return;
@@ -304,8 +310,10 @@ export function LocationSidebar({
           }
           // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto
           // another such location to nest beneath it. System/archived rows are neither a valid
-          // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter).
-          draggable={!node.isSystem && node.archivedAt == null}
+          // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter). While a
+          // nest is in flight no row is draggable, so the user can't start stacking a second
+          // re-parent on top of the first (see the `isPending` gate in `nestLocation`).
+          draggable={!node.isSystem && node.archivedAt == null && !updateLocation.isPending}
           onDropLocation={
             node.isSystem || node.archivedAt != null
               ? undefined

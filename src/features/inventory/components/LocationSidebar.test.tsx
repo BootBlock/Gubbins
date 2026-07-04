@@ -361,4 +361,24 @@ describe('LocationSidebar — drag-to-nest', () => {
     // …while an unaffected sibling row stays idle.
     expect(screen.getByRole('treeitem', { name: 'Workshop' }).getAttribute('aria-busy')).toBeNull();
   });
+
+  it('will not start a second re-parent while one is already in flight', () => {
+    // A nest is mid-flight, so rows are non-draggable and `nestLocation` self-guards — spamming a
+    // fresh drag-and-drop must not stack a second concurrent re-parent.
+    updateState.isPending = true;
+    renderWithDrag();
+
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' }); // reveal Drawer
+    const drawer = screen.getByRole('treeitem', { name: 'Drawer' });
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+
+    document.elementFromPoint = vi.fn(() => workshop);
+    firePointer(drawer, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(spies.update).not.toHaveBeenCalled();
+  });
 });
