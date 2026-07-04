@@ -5,7 +5,7 @@ import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
-import { ITEM_DND_MIME, isInteractiveDragOrigin } from '../item-dnd';
+import { useItemDragSource } from '../item-drag';
 import { DiscreteCardMetric } from './DiscreteCardMetric';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
@@ -43,23 +43,15 @@ export const ItemCard = memo(function ItemCard({
   selected?: boolean;
 }) {
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
+  // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
+  // a press-drag from selecting the card's text; the control-origin guard lives in the hook.
+  const dragProps = useItemDragSource(item);
   return (
     <Surface
       ref={ref}
-      draggable
-      onDragStart={(e) => {
-        // A drag begun on a control (± stepper, select box, action button) belongs to that
-        // control — suppress the card drag so its own gesture works.
-        if (isInteractiveDragOrigin(e.target)) {
-          e.preventDefault();
-          return;
-        }
-        e.dataTransfer.setData(ITEM_DND_MIME, item.id);
-        e.dataTransfer.setData('text/plain', item.name);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
+      {...dragProps}
       className={cn(
-        'flex cursor-grab flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 active:cursor-grabbing',
+        'flex cursor-grab select-none flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 active:cursor-grabbing',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',
         isHighlighted && 'animate-highlight',

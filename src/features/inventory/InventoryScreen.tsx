@@ -37,6 +37,7 @@ import {
   type ItemQueryFilters,
 } from './queries';
 import { useInventoryEntry } from './useInventoryEntry';
+import { ItemDragProvider } from './item-drag';
 import { LayoutToggle } from './components/LayoutToggle';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
@@ -374,137 +375,146 @@ function InventoryWorkspace() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-6 large-format:gap-8">
-        {tree.data && flat.data ? (
-          <LocationSidebar
-            tree={tree.data}
-            flat={flatLocations}
-            selectedId={selectedLocationId}
-            onSelect={setSelectedLocationId}
-            totalCount={totalCount.data ?? 0}
-          />
-        ) : (
-          <div className="w-64 shrink-0 large-format:w-72" />
-        )}
+      {/* Drag-to-move (spec §4): the provider owns the unified pointer drag and must wrap both
+          the drop targets (the sidebar) and the drag sources (the item list). */}
+      <ItemDragProvider>
+        <div className="flex min-h-0 flex-1 gap-6 large-format:gap-8">
+          {tree.data && flat.data ? (
+            <LocationSidebar
+              tree={tree.data}
+              flat={flatLocations}
+              selectedId={selectedLocationId}
+              onSelect={setSelectedLocationId}
+              totalCount={totalCount.data ?? 0}
+            />
+          ) : (
+            <div className="w-64 shrink-0 large-format:w-72" />
+          )}
 
-        <main
-          id={MAIN_CONTENT_ID}
-          tabIndex={-1}
-          className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
-        >
-          <div className="flex items-center justify-between pb-3">
-            <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-              {active.isSuccess
-                ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
-                : 'Loading…'}
-            </p>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={includeInactive}
-                onChange={(e) => setIncludeInactive(e.target.checked)}
-                className="size-3.5 accent-primary"
-              />
-              Show removed
-            </label>
-          </div>
-
-          {selecting ? (
-            <div
-              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
-              data-testid="selection-bar"
-            >
-              <span className="text-sm font-medium" data-testid="selection-count">
-                {selected.size} selected
-              </span>
-              <div className="ml-auto flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelected(new Map())}
-                  disabled={selected.size === 0}
-                >
-                  Clear
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBulkEditOpen(true)}
-                  disabled={selected.size === 0}
-                  data-testid="bulk-edit"
-                >
-                  <EditIcon />
-                  Bulk edit
-                </Button>
-                <Tooltip
-                  content="Seed a new item from this one (item-as-template). Select exactly one item."
-                  triggerTabIndex={-1}
-                >
-                  <span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={duplicateSelected}
-                      disabled={selected.size !== 1 || cloneItem.isPending}
-                      data-testid="duplicate-item"
-                    >
-                      <DuplicateTabIcon />
-                      {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Button
-                  size="sm"
-                  onClick={() => setPrintOpen(true)}
-                  disabled={selected.size === 0}
-                  data-testid="print-labels"
-                >
-                  <PrintIcon />
-                  Print labels
-                </Button>
-                <Tooltip content="Leave select mode and clear the current selection." triggerTabIndex={-1}>
-                  <span>
-                    <Button variant="outline" size="sm" onClick={toggleSelecting} aria-label="Done selecting">
-                      <CloseIcon />
-                    </Button>
-                  </span>
-                </Tooltip>
-              </div>
+          <main
+            id={MAIN_CONTENT_ID}
+            tabIndex={-1}
+            className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
+          >
+            <div className="flex items-center justify-between pb-3">
+              <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                {active.isSuccess
+                  ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
+                  : 'Loading…'}
+              </p>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={includeInactive}
+                  onChange={(e) => setIncludeInactive(e.target.checked)}
+                  className="size-3.5 accent-primary"
+                />
+                Show removed
+              </label>
             </div>
-          ) : null}
 
-          {/* Keyed by the selected location *and* the density so switching either re-mounts
+            {selecting ? (
+              <div
+                className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
+                data-testid="selection-bar"
+              >
+                <span className="text-sm font-medium" data-testid="selection-count">
+                  {selected.size} selected
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelected(new Map())}
+                    disabled={selected.size === 0}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkEditOpen(true)}
+                    disabled={selected.size === 0}
+                    data-testid="bulk-edit"
+                  >
+                    <EditIcon />
+                    Bulk edit
+                  </Button>
+                  <Tooltip
+                    content="Seed a new item from this one (item-as-template). Select exactly one item."
+                    triggerTabIndex={-1}
+                  >
+                    <span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={duplicateSelected}
+                        disabled={selected.size !== 1 || cloneItem.isPending}
+                        data-testid="duplicate-item"
+                      >
+                        <DuplicateTabIcon />
+                        {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Button
+                    size="sm"
+                    onClick={() => setPrintOpen(true)}
+                    disabled={selected.size === 0}
+                    data-testid="print-labels"
+                  >
+                    <PrintIcon />
+                    Print labels
+                  </Button>
+                  <Tooltip content="Leave select mode and clear the current selection." triggerTabIndex={-1}>
+                    <span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={toggleSelecting}
+                        aria-label="Done selecting"
+                      >
+                        <CloseIcon />
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Keyed by the selected location *and* the density so switching either re-mounts
               this region and replays an entrance — the list visibly arrives rather than
               blinking into place. A location change plays the quick vertical swap-in; a
               view-mode change plays the horizontal slide chosen in `listEntrance`.
               (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
               list.) Reduced-motion is handled by the global catch-all. */}
-          <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
-            {active.isLoading ? (
-              <div className="flex flex-1 items-center justify-center">
-                <Spinner />
-              </div>
-            ) : (
-              <ItemList
-                items={flatItems}
-                firstItemIndex={firstItemIndex}
-                locations={flatLocations}
-                density={density}
-                locationName={locationName}
-                locationColorClass={locationColorClass}
-                hasNextPage={active.hasNextPage}
-                isFetchingNextPage={active.isFetchingNextPage}
-                fetchNextPage={() => void active.fetchNextPage()}
-                hasPreviousPage={active.hasPreviousPage}
-                isFetchingPreviousPage={active.isFetchingPreviousPage}
-                fetchPreviousPage={() => void active.fetchPreviousPage()}
-                selection={selection}
-                selectedIds={selectedIds}
-              />
-            )}
-          </div>
-        </main>
-      </div>
+            <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
+              {active.isLoading ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : (
+                <ItemList
+                  items={flatItems}
+                  firstItemIndex={firstItemIndex}
+                  locations={flatLocations}
+                  density={density}
+                  locationName={locationName}
+                  locationColorClass={locationColorClass}
+                  hasNextPage={active.hasNextPage}
+                  isFetchingNextPage={active.isFetchingNextPage}
+                  fetchNextPage={() => void active.fetchNextPage()}
+                  hasPreviousPage={active.hasPreviousPage}
+                  isFetchingPreviousPage={active.isFetchingPreviousPage}
+                  fetchPreviousPage={() => void active.fetchPreviousPage()}
+                  selection={selection}
+                  selectedIds={selectedIds}
+                />
+              )}
+            </div>
+          </main>
+        </div>
+      </ItemDragProvider>
 
       {/* Mounted only while open so the location default is re-seeded from the current
           sidebar selection on every open — a real, user-created location pre-fills the
