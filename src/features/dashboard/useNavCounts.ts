@@ -41,7 +41,7 @@
 import { useBookings } from '@/features/bookings/bookings';
 import { useContacts } from '@/features/contacts/contacts';
 import { useItemCount } from '@/features/inventory/queries';
-import { budgetStatus } from '@/features/projects/budget';
+import { projectBudgetHealth, type BudgetAlertFigures } from '@/features/projects/budget';
 import { useBudgetAlerts, useProjects } from '@/features/projects/projects';
 import { usePurchaseOrders } from '@/features/purchasing/queries';
 import { useLowStockCount, useOutOfStockCount } from '@/features/reports/queries';
@@ -91,13 +91,6 @@ type BookingRow = {
   readonly cancelledAt: number | null;
   readonly convertedCheckoutId: string | null;
 };
-type BudgetAlertRow = {
-  readonly budget: number;
-  readonly committedFromBom: number;
-  readonly manualExpenseTotal: number;
-  readonly estimatedCost: number;
-};
-
 /** Projects: all projects, or only the *active* ones (default — not finished or shelved). */
 export function countProjects(rows: readonly ProjectRow[], metric: string): number {
   if (metric === 'all') return rows.length;
@@ -105,20 +98,13 @@ export function countProjects(rows: readonly ProjectRow[], metric: string): numb
 }
 
 /**
- * Projects over budget (backlog A2): a budgeted project whose spend so far (committed BOM +
- * manual expenses) *or* whose projected final cost (full BOM estimate + manual expenses) has
- * passed its budget. Mirrors the Dashboard "Budget alerts" widget's `over` test so the count
- * and the widget agree; `listBudgetAlerts` already returns only budgeted projects.
+ * Projects over budget (backlog A2): count of budgeted projects whose spend so far or projected
+ * final cost has passed the budget. Shares {@link projectBudgetHealth} with the Dashboard
+ * "Budget alerts" widget, so the count and the widget can never drift; `listBudgetAlerts` already
+ * returns only budgeted projects.
  */
-export function countOverBudgetProjects(rows: readonly BudgetAlertRow[], warnPercent: number): number {
-  return rows.filter((a) => {
-    const spentSoFar = a.committedFromBom + a.manualExpenseTotal;
-    const projectedFinalCost = a.estimatedCost + a.manualExpenseTotal;
-    return (
-      budgetStatus(spentSoFar, a.budget, warnPercent) === 'OVER' ||
-      budgetStatus(projectedFinalCost, a.budget, warnPercent) === 'OVER'
-    );
-  }).length;
+export function countOverBudgetProjects(rows: readonly BudgetAlertFigures[], warnPercent: number): number {
+  return rows.filter((a) => projectBudgetHealth(a, warnPercent).over).length;
 }
 
 /** Purchase orders: all orders, or only the *open* ones (default — not RECEIVED / CANCELLED). */

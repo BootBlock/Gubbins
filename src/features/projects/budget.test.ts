@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { ProjectBudget } from '@/db/repositories';
-import { budgetStatus, spentFraction, summariseBudget, summariseBudgetCategory } from './budget';
+import {
+  budgetStatus,
+  projectBudgetHealth,
+  spentFraction,
+  summariseBudget,
+  summariseBudgetCategory,
+} from './budget';
 
 const facts = (over: Partial<ProjectBudget> = {}): ProjectBudget => ({
   budget: 500,
@@ -40,6 +46,61 @@ describe('budgetStatus', () => {
   it('honours a tighter or looser warn percent', () => {
     expect(budgetStatus(50, 100, 40)).toBe('WARN'); // tight: warn from 40%
     expect(budgetStatus(50, 100, 100)).toBe('OK'); // loose: only warn at 100%
+  });
+});
+
+describe('projectBudgetHealth', () => {
+  const warnPercent = 80;
+
+  it('flags over when spend so far has passed the budget', () => {
+    // committed + expenses = 110 > 100.
+    expect(
+      projectBudgetHealth(
+        { budget: 100, committedFromBom: 90, manualExpenseTotal: 20, estimatedCost: 90 },
+        warnPercent,
+      ),
+    ).toEqual({
+      over: true,
+      warn: false,
+    });
+  });
+
+  it('flags over when the projected final cost has passed the budget, even if spend so far is fine', () => {
+    // spend so far = 30 (OK); projected = estimate 90 + expenses 20 = 110 > 100.
+    expect(
+      projectBudgetHealth(
+        { budget: 100, committedFromBom: 10, manualExpenseTotal: 20, estimatedCost: 90 },
+        warnPercent,
+      ),
+    ).toEqual({
+      over: true,
+      warn: false,
+    });
+  });
+
+  it('flags warn (not over) in the warning band', () => {
+    // spend so far = 85 (≥80% and ≤100%); projected = 85 too.
+    expect(
+      projectBudgetHealth(
+        { budget: 100, committedFromBom: 85, manualExpenseTotal: 0, estimatedCost: 85 },
+        warnPercent,
+      ),
+    ).toEqual({
+      over: false,
+      warn: true,
+    });
+  });
+
+  it('flags neither when comfortably within budget', () => {
+    expect(
+      projectBudgetHealth(
+        { budget: 100, committedFromBom: 10, manualExpenseTotal: 0, estimatedCost: 10 },
+        warnPercent,
+      ),
+    ).toEqual({
+      over: false,
+      warn: false,
+    });
   });
 });
 
