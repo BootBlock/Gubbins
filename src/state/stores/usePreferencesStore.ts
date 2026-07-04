@@ -21,13 +21,16 @@ import {
   clampLowStockGaugePercent,
   clampLowStockQty,
   DEFAULT_CARD_CLICK_ACTION,
+  DEFAULT_NAV_COUNT_METRICS,
   DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
   normaliseCardClickAction,
+  normaliseNavCountMetric,
   normaliseVisualCardMetric,
   normaliseWindowMonths,
   type CardClickAction,
+  type NavCountRoute,
   type VisualCardMetric,
 } from '@/features/settings/settings';
 import {
@@ -117,6 +120,15 @@ interface PreferencesStore {
    */
   readonly cardFields: CardFieldsConfig;
   /**
+   * Which metric each configurable Dashboard nav tile counts (backlog A1). A device-local
+   * map of tile route → chosen metric id (e.g. `'/projects' → 'active'`); tiles absent from
+   * the map, or holding a stale id, fall back to their shipped default at read time. The
+   * available metrics and their nouns are the `NAV_COUNT_METRIC_CONFIG` SSOT; the pure
+   * selectors live in `useNavCounts`. Single-metric tiles (Inventory, Contacts) are not keyed
+   * here. See {@link NavCountRoute}.
+   */
+  readonly navCountMetrics: Record<NavCountRoute, string>;
+  /**
    * Blanket reorder point: a DISCRETE item is flagged on the §3 "Low Stock" widget at/below
    * this on-hand quantity. **0 = off** — low-stock alerts are opt-in, so at 0 nothing is
    * flagged until an item is given its own reorder point (the friction-free default).
@@ -190,6 +202,8 @@ interface PreferencesStore {
   setCardFields: (fields: CardFieldsConfig) => void;
   /** Restore the shipped default card-field configuration. */
   resetCardFields: () => void;
+  /** Point a configurable Dashboard nav tile at a different count metric. */
+  setNavCountMetric: (route: NavCountRoute, metric: string) => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -224,6 +238,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
       cardClickAction: DEFAULT_CARD_CLICK_ACTION,
       cardFields: DEFAULT_CARD_FIELDS,
+      navCountMetrics: DEFAULT_NAV_COUNT_METRICS,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -260,6 +275,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // live custom-field catalog (`normaliseCardFields`), so no store-side normalisation.
       setCardFields: (cardFields) => set({ cardFields }),
       resetCardFields: () => set({ cardFields: DEFAULT_CARD_FIELDS }),
+      // Merge one tile's choice (normalised) over the map, leaving the other tiles untouched.
+      setNavCountMetric: (route, metric) =>
+        set((state) => ({
+          navCountMetrics: { ...state.navCountMetrics, [route]: normaliseNavCountMetric(route, metric) },
+        })),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
