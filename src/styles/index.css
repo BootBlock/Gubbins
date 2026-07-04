@@ -480,10 +480,10 @@
    * Windows' native thin *overlay* scrollbar widens on hover/scroll and paints over the
    * content beneath it. Defining a custom `::-webkit-scrollbar` opts out of that overlay and
    * renders a fixed-width (10px), non-expanding bar instead, which sits comfortably inside
-   * the stable gutter that `dialog-scroll` reserves. The 2px transparent, padding-box-
+   * the 1rem gutter that `dialog-scroll` bleeds open. The 2px transparent, padding-box-
    * clipped border keeps the visible thumb slim within that tidy 10px track. (The overlap
-   * fix itself is `dialog-scroll`'s `scrollbar-gutter: stable`; forcing a classic bar here
-   * is what makes that reservation reliable rather than a no-op against an overlay bar.)
+   * fix itself is `dialog-scroll`'s bleed — engine-agnostic, and correct for the overlay
+   * bars this doesn't reach; this is the matching cosmetic for the classic bar it forces.)
    */
   ::-webkit-scrollbar {
     width: 10px;
@@ -689,31 +689,33 @@
 }
 
 /*
- * Standard scrollable region for dialogs (spec §2.4.1). The scrollbar must never paint
- * over the content, and a horizontal bar must never appear at all — this is a *vertical*
- * scroll region only.
+ * Standard scrollable region for dialogs (spec §2.4.1). The scrollbar must never paint over
+ * the content — on a classic (space-taking) bar OR a floating *overlay* bar — and a
+ * horizontal bar must never appear at all; this is a *vertical* scroll region only.
  *
- * `scrollbar-gutter: stable` reserves the track's width up-front, so the vertical bar sits
- * in its own reserved gutter (never over content) and content doesn't jump when it appears.
- * That reservation is *reliable here* because the app forces a classic, fixed-width bar
- * (see the `::-webkit-scrollbar` block above for Blink/WebKit; `scrollbar-width: thin` for
- * Firefox) — the "reserves nothing for overlay bars" caveat only bites engines left on their
- * native overlay scrollbars, which this app opts out of. `overflow-x: hidden` guarantees no
- * horizontal bar (dialog bodies are laid out to fit the width; nothing should scroll
- * sideways). Centralised so every dialog scroll area shares the behaviour, and it tunes in
- * one place.
+ * The reliable, engine-agnostic fix is to bleed the scroll viewport outward into the dialog's
+ * own padding by exactly as much as we then pad the content back: the negative `margin-right`
+ * and equal `padding-right` cancel, so the content stays aligned with the header, while the
+ * scrollbar — overlay OR classic — lives in the bled 1rem gutter instead of over the content.
+ * `scrollbar-gutter: stable` was tried and reverted: it reserves *nothing* for overlay bars
+ * (Windows/Edge with auto-hiding scrollbars), so the floating bar still paints over content
+ * there; the bleed handles both because it moves the content, not just the track.
  *
- * NB: a previous version bled the viewport outward with a negative `margin-right`; that only
- * works when the scroll element is a *direct child* of the padded Surface. Nested inside
- * `Modal`'s own scroll wrapper it overflowed that wrapper's box, forcing a spurious
- * horizontal bar (which painted over the last row of content) and parking the intended
- * vertical bar off-screen in the overflowed gutter. `scrollbar-gutter` has no such leak at
- * any nesting depth.
+ * The bleed only stays put when the scroll element's path out to the padded Surface is
+ * `overflow: visible` — otherwise the 1rem overhang leaks a spurious horizontal bar into an
+ * intermediate scroll container (which then paints over the last row of content, and parks the
+ * vertical bar off-screen). `Modal` guarantees that path: its body region carries this bleed
+ * directly (a direct child of the padded Surface), and a dialog with its own inner scroller
+ * passes `scrollBody={false}` so the body stays `overflow: visible`. So there is exactly one
+ * bleed-scroller per dialog — never one nested inside another. `overflow-x: hidden` on the
+ * element itself stops a stray-wide child from adding a horizontal bar. Centralised so every
+ * dialog scroll area shares the behaviour and it tunes in one place.
  */
 @utility dialog-scroll {
-  overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
+  overflow-y: auto;
+  margin-right: -1rem;
+  padding-right: 1rem;
 }
 
 @utility animate-fade-in {

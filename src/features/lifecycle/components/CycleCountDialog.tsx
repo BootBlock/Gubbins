@@ -103,7 +103,7 @@ function CycleCountBody({
           </div>
         </div>
       ) : (
-        <div className="max-h-[70vh] space-y-4 dialog-scroll">
+        <div className="space-y-4">
           <CycleCountLines count={count} />
 
           <div className="flex items-center justify-between pt-1">

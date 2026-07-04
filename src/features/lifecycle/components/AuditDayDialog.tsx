@@ -183,7 +183,7 @@ function ScopePicker({ onClose }: { onClose: () => void }) {
       {mode === 'selected' ? (
         <fieldset className="space-y-field-gap-compact">
           <legend className="mb-field-gap text-sm font-medium">Locations to walk</legend>
-          <div className="dialog-scroll max-h-56 space-y-0.5 rounded-lg border border-border p-2">
+          <div className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-border p-2">
             {walkable.length === 0 ? (
               <p className="p-2 text-sm text-muted-foreground">No walkable locations.</p>
             ) : (
@@ -386,7 +386,7 @@ function AuditLocationPanel({
   const hasVariances = totalToApply > 0;
 
   return (
-    <div className="dialog-scroll max-h-[55vh] space-y-4">
+    <div className="space-y-4">
       <CycleCountLines count={count} />
 
       <div className="flex items-center justify-between pt-1">

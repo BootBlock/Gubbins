@@ -90,7 +90,14 @@ export function RailModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={title} description={description} className={className}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      description={description}
+      className={className}
+      scrollBody={false}
+    >
       {/* Fixed-height frame: the dialog stays the same size as you switch tabs, so the
           rail never shifts and the panel scrolls within rather than resizing (and
           re-centring) the whole modal. A trailing footer stays pinned below it. */}

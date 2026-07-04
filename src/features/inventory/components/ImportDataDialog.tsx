@@ -278,7 +278,7 @@ function ResultView({ result, onClose }: { result: CatalogApplyResult; onClose: 
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive">
             Rows skipped during import
           </p>
-          <ul className="max-h-36 space-y-1 dialog-scroll">
+          <ul className="max-h-36 space-y-1 overflow-y-auto">
             {result.rows
               .filter((r) => r.kind === 'skipped')
               .map((r) => (
@@ -666,7 +666,7 @@ function ImportWorkbench({
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive">
                 Rows with errors — these will be skipped
               </p>
-              <ul className="max-h-28 space-y-1 dialog-scroll">
+              <ul className="max-h-28 space-y-1 overflow-y-auto">
                 {plan.errors.map((err) => (
                   <li key={err.sourceRow} className="text-xs text-destructive">
                     <span className="font-medium">Row {err.sourceRow}:</span> {err.message}
@@ -918,7 +918,7 @@ export function ImportDataDialog({
       onClose={handleClose}
       title="Import items"
       description="Bring items in from pasted text or a file."
-      className="w-full max-w-4xl max-h-[85vh] overflow-y-auto"
+      className="w-full max-w-4xl"
     >
       <div className="flex flex-col gap-5 sm:flex-row">
         <div
