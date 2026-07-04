@@ -23,6 +23,8 @@ export { Money, type MoneyProps } from './money';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
+export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
+export { resolveTabKey } from './tab-keyboard';
 export { Markdown } from './markdown';
 export { InfoHint } from './info-hint';
 export {

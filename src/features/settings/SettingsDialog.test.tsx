@@ -1,18 +1,18 @@
 /**
- * Component tests for SettingsScreen feature gating (Modular UI Phase 7).
+ * Component tests for the Settings dialog's feature gating (Modular UI Phase 7).
  *
  * When a capability is off, its settings must disappear too so no orphaned control is left
- * behind: the whole Scanner group drops (`scanner`), and the "expiring soon" window
+ * behind: the whole Scanner section drops (`scanner`), and the "expiring soon" window
  * (`perishables`) and budget-warn threshold (`projects`) rows drop individually — while their
- * Inventory & lifecycle section stays for the always-present low-stock thresholds (no empty
- * section shell).
+ * Inventory tab keeps the always-present low-stock thresholds (no empty section shell).
  *
- * The screen's heavy children (router Link, the global nav, Danger Zone, Database maintenance,
- * Storage triage) are stubbed so the test stays in happy-dom with no providers; the preferences
- * and modules stores are the real Zustand stores.
+ * The dialog is a {@link RailModal}: only the active tab's panel is mounted, so each test
+ * clicks into the relevant rail tab before asserting. The dialog's heavy children (router
+ * Link, Danger zone, Database maintenance, Storage triage) are stubbed so the test stays in
+ * happy-dom with no providers; the preferences and modules stores are the real Zustand stores.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) => (
@@ -21,15 +21,18 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }));
-vi.mock('@/components/nav/AppNav', () => ({
-  AppNav: () => <button type="button" data-testid="app-nav" aria-label="Navigation menu" />,
-}));
 vi.mock('@/features/danger-zone/DangerZone', () => ({ DangerZone: () => null }));
 vi.mock('@/features/maintenance', () => ({ DatabaseMaintenance: () => null }));
 vi.mock('@/features/storage/StorageTriageDialog', () => ({ StorageTriageDialog: () => null }));
 
-import { SettingsScreen } from './SettingsScreen';
+import SettingsDialog from './SettingsDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+
+/** Open the dialog fresh and click into the named rail tab. */
+function renderTab(tabName: string) {
+  render(<SettingsDialog open onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('tab', { name: tabName }));
+}
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
@@ -39,33 +42,35 @@ afterEach(() => {
   useModulesStore.setState({ intent: {} });
 });
 
-describe('SettingsScreen — all features on (default)', () => {
-  it('shows the Scanner group, the expiring-soon window and the budget-warn threshold', () => {
-    render(<SettingsScreen />);
+describe('SettingsDialog — all features on (default)', () => {
+  it('shows the Scanner section, the expiring-soon window and the budget-warn threshold', () => {
+    renderTab('Scanning & labels');
     expect(screen.queryByTestId('setting-scanner-symbology')).not.toBeNull();
+
+    cleanup();
+    renderTab('Inventory');
     expect(screen.queryByTestId('setting-expiry-days')).not.toBeNull();
     expect(screen.queryByTestId('setting-budget-warn')).not.toBeNull();
   });
 });
 
-describe('SettingsScreen — Live camera scanning off', () => {
-  it('drops the whole Scanner group, leaving the other sections intact', () => {
+describe('SettingsDialog — Live camera scanning off', () => {
+  it('drops the whole Scanner section, leaving Labels & QR codes intact', () => {
     useModulesStore.getState().setFeatureIntent('scanner', false);
-    render(<SettingsScreen />);
+    renderTab('Scanning & labels');
     expect(screen.queryByTestId('setting-scanner-symbology')).toBeNull();
     expect(screen.queryByTestId('setting-scanner-beep')).toBeNull();
     expect(screen.queryByTestId('setting-scanner-haptics')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Scanner' })).toBeNull();
-    // Unrelated sections remain (Labels & QR codes stays — printed labels work regardless).
+    // The Labels & QR codes section stays — printed labels work regardless of the scanner.
     expect(screen.queryByTestId('setting-label-base-url')).not.toBeNull();
-    expect(screen.queryByTestId('setting-currency')).not.toBeNull();
   });
 });
 
-describe('SettingsScreen — Expiry tracking off', () => {
-  it('drops the expiring-soon window row but keeps the Inventory & lifecycle section', () => {
+describe('SettingsDialog — Expiry tracking off', () => {
+  it('drops the expiring-soon window row but keeps the low-stock thresholds', () => {
     useModulesStore.getState().setFeatureIntent('perishables', false);
-    render(<SettingsScreen />);
+    renderTab('Inventory');
     expect(screen.queryByTestId('setting-expiry-days')).toBeNull();
     // The section stays for the always-present low-stock thresholds — no empty section shell.
     expect(screen.queryByTestId('setting-low-stock-qty')).not.toBeNull();
@@ -73,10 +78,10 @@ describe('SettingsScreen — Expiry tracking off', () => {
   });
 });
 
-describe('SettingsScreen — Projects off', () => {
+describe('SettingsDialog — Projects off', () => {
   it('drops the budget-warn threshold row but keeps the low-stock thresholds', () => {
     useModulesStore.getState().setFeatureIntent('projects', false);
-    render(<SettingsScreen />);
+    renderTab('Inventory');
     expect(screen.queryByTestId('setting-budget-warn')).toBeNull();
     expect(screen.queryByTestId('setting-low-stock-qty')).not.toBeNull();
   });

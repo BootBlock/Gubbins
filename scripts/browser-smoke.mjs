@@ -38,8 +38,8 @@
  * base64-encoded `item_images` thumbnails (with the local-only §7.6.3-B downgrade marker
  * held back) — and that an item's tag and image survive the full download → import →
  * re-sync round-trip;
- * plus the Phase 12 flows (Settings & preferences UI, §3): opening Settings from the
- * dashboard gear and proving the theme toggle is actually applied to the document
+ * plus the Phase 12 flows (Settings & preferences UI, §3): opening the Settings dialog
+ * and proving the theme toggle is actually applied to the document
  * (`.dark` on <html>), that preference controls (the §4 expiry window and the §7.6.3
  * prune window) persist to localStorage, and that the Storage Triage dashboard now has
  * a permanent entry-point (independent of the critical/locked banner) that honours the
@@ -245,6 +245,22 @@ async function expectComboLabel(combo, label) {
     await page.waitForTimeout(150);
   }
   throw new Error(`combobox did not show "${label}"`);
+}
+
+/**
+ * Open the Settings dialog and (optionally) switch to a named rail tab.
+ *
+ * Settings is a dialog, not a screen: deep-linking to `/settings` opens it over the
+ * dashboard, which is the simplest way to reach it here. The dialog groups its controls
+ * into rail tabs and only mounts the active tab's panel, so pass the tab (its `role="tab"`
+ * accessible name, e.g. `'Inventory'`, `'Data & storage'`) whose control you need.
+ * `page.goto` is a full navigation, so a later `goto` to any other route resets the dialog
+ * to closed — no explicit close is needed between areas.
+ */
+async function openSettingsTab(tabName) {
+  await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 6000 });
+  if (tabName) await page.getByRole('tab', { name: tabName }).click();
 }
 
 /**
@@ -503,7 +519,7 @@ try {
       });
 
       // Opt into kiosk mode via the Settings control (default is off).
-      await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+      await openSettingsTab('Dashboard');
       const kiosk = page.getByTestId('setting-kiosk-mode');
       await kiosk.waitFor({ state: 'visible', timeout: 5000 });
       await chooseOption(kiosk, 'On');
@@ -524,7 +540,7 @@ try {
       if (supported && requests < 1) throw new Error('kiosk dashboard did not request a screen wake lock');
 
       // Turn kiosk mode back off and return to the inventory workspace for later steps.
-      await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+      await openSettingsTab('Dashboard');
       await chooseOption(page.getByTestId('setting-kiosk-mode'), 'Off');
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
@@ -1429,10 +1445,9 @@ try {
         const datasheetUrl = `https://smoke.test/${stamp}.pdf`;
 
         // Option B (Hybrid Pointers) must be enabled before a LOCAL_POINTER can be added.
-        // Settings is reached from the dashboard root (the Inventory screen has no gear).
-        await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('link', { name: 'Settings' }).first().click();
-        await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 6000 });
+        // Settings is a dialog opened over the current screen; the attachment mode control
+        // lives on its "Notifications & files" tab.
+        await openSettingsTab('Notifications & files');
         await chooseOption(page.getByLabel('Attachment mode'), 'URLs and local file pointers');
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
         await printerCard()
@@ -3384,14 +3399,14 @@ try {
     });
 
     // --- Phase 12: Settings & preferences UI (§3) -------------------------------
-    // The previously-headless preferences now have a real screen, reached from the
-    // dashboard gear. Theme is applied to the document; the storage windows persist;
-    // and the Storage Triage dashboard has a permanent (non-banner) entry-point.
+    // The previously-headless preferences now live in a Settings *dialog* that opens over
+    // the current screen, its controls grouped into rail tabs. Theme is applied to the
+    // document; the storage windows persist; and the Storage Triage dashboard has a
+    // permanent (non-banner) entry-point. These steps share one open dialog (no `goto`
+    // between them, so it stays open); Appearance is the default tab.
 
-    await step('opens Settings from the dashboard gear and applies the theme (§3)', async () => {
-      await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('link', { name: 'Settings' }).first().click();
-      await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 6000 });
+    await step('opens the Settings dialog and applies the theme (§3)', async () => {
+      await openSettingsTab();
       const isDark = () => page.evaluate(() => document.documentElement.classList.contains('dark'));
       // The default theme is dark and is now actually projected onto <html>.
       if (!(await isDark())) throw new Error('expected the dark theme to be applied by default');
@@ -3407,9 +3422,12 @@ try {
     });
 
     await step('changes and persists preference controls (§3, §4 expiry, §7.6.3 windows)', async () => {
+      // The expiry window lives on the Inventory tab; the purge window on Data & storage.
+      await page.getByRole('tab', { name: 'Inventory' }).click();
       const expiry = page.getByLabel('Expiring soon window (days)');
       await expiry.fill('45');
       await expiry.blur();
+      await page.getByRole('tab', { name: 'Data & storage' }).click();
       const pruneWindow = page.getByLabel('Default purge window');
       await chooseOption(pruneWindow, '12 months');
       await expectComboLabel(pruneWindow, '12 months');
@@ -3429,6 +3447,7 @@ try {
       // The §3 "Low Stock" widget shipped fixed thresholds in Phase 45; Phase 46 surfaces
       // them as Tier-2 preferences (clamped, mirroring the expiry window). Set both,
       // assert they persist to localStorage, and that an out-of-range value is clamped.
+      await page.getByRole('tab', { name: 'Inventory' }).click();
       const qty = page.getByLabel('Low-stock quantity threshold');
       await qty.fill('8');
       await qty.blur();
@@ -3455,6 +3474,7 @@ try {
     });
 
     await step('reaches Storage Triage from the permanent Settings entry-point (§7.6.2)', async () => {
+      await page.getByRole('tab', { name: 'Data & storage' }).click();
       await page.getByTestId('open-storage-triage-settings').click();
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
       await dialog.waitFor({ state: 'visible', timeout: 5000 });
@@ -3471,7 +3491,8 @@ try {
     // new "System" theme tracks the OS colour scheme reactively.
 
     await step('honours the chosen base currency end-to-end (§3 currency propagation)', async () => {
-      // Still on Settings: switch to USD / en-US and confirm the choice persists.
+      // Still on the open Settings dialog: currency & locale are on the Appearance tab.
+      await page.getByRole('tab', { name: 'Appearance' }).click();
       await chooseOption(page.getByTestId('setting-currency'), 'US Dollar', { exact: false });
       await chooseOption(page.getByTestId('setting-locale'), 'United States', { exact: false });
       const stored = await page.evaluate(() =>
@@ -3491,7 +3512,7 @@ try {
         { timeout: 5000 },
       );
       // Restore the locked GBP / en-GB defaults so later steps + the screenshot stay clean.
-      await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+      await openSettingsTab('Appearance');
       await chooseOption(page.getByTestId('setting-currency'), 'British Pound', { exact: false });
       await chooseOption(page.getByTestId('setting-locale'), 'United Kingdom', { exact: false });
     });
@@ -3561,7 +3582,7 @@ try {
     await step(
       'captures beforeinstallprompt and offers a one-tap PWA install (§2 installation, Phase 44)',
       async () => {
-        await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+        await openSettingsTab('App');
         // Before any install event, the affordance falls back to manual guidance.
         await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: 10000 });
 
@@ -3594,7 +3615,7 @@ try {
     // single format (~4× cheaper per frame). Prove the Settings control persists the choice,
     // then restore the default so the live-scan steps keep scanning everything.
     await step('persists the single-format scanner symbology preference (§6.6)', async () => {
-      await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+      await openSettingsTab('Scanning & labels');
       await chooseOption(page.getByTestId('setting-scanner-symbology'), 'QR codes only');
       const stored = await page.evaluate(() =>
         JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
@@ -3611,7 +3632,7 @@ try {
     // The beep + haptic confirmation fires on every scan and is now user-mutable.
     // Prove the Settings controls persist both flags, then restore the defaults.
     await step('persists the mutable scanner beep/haptic preferences (§6.5)', async () => {
-      await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+      await openSettingsTab('Scanning & labels');
       await chooseOption(page.getByTestId('setting-scanner-beep'), 'Off');
       await chooseOption(page.getByTestId('setting-scanner-haptics'), 'Off');
       const stored = await page.evaluate(() =>
