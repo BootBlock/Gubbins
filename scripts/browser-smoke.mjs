@@ -322,6 +322,20 @@ try {
       await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
     });
 
+    await step('dismisses the first-run module chooser on a fresh profile (§4 modular UI)', async () => {
+      // On a first-ever load (a fresh browser profile, as every clean build+preview run is) the
+      // root-mounted "Set up your modules" chooser opens over the app and traps focus / intercepts
+      // clicks until dismissed. Skipping it completes the flow without changing anything (everything
+      // stays on) and persists `firstRunComplete`, so it never re-shows for the rest of the run —
+      // including across the reloads later steps perform. Resilient by design: if the profile has
+      // already completed first-run, the modal is absent and this is a no-op.
+      const skip = page.getByTestId('first-run-skip');
+      if (await skip.isVisible().catch(() => false)) {
+        await skip.click();
+        await skip.waitFor({ state: 'hidden', timeout: 5000 });
+      }
+    });
+
     await step(
       'a clean boot migrates to the consolidated v1 baseline and serves a queryable DB (Phase 69)',
       async () => {
@@ -646,6 +660,91 @@ try {
 
       // Restore the "All items" filter so downstream steps see the whole inventory.
       await tree.getByRole('treeitem', { name: 'All items' }).click();
+    });
+
+    await step('drags an item card onto a location row to move it (§4 pointer drag-to-move)', async () => {
+      const dragLocName = `Drag Target ${stamp}`;
+      const dragItemName = `Smoke Drag ${stamp}`;
+
+      // A dedicated destination location (top-level, starts empty) and a discrete item to
+      // move into it. The item is created in the default location, so it starts elsewhere.
+      await page.getByRole('button', { name: 'Add location' }).click();
+      let dialog = page.getByRole('dialog', { name: 'Add location' });
+      await dialog.getByLabel('Name').fill(dragLocName);
+      await dialog.getByRole('button', { name: 'Create' }).click();
+      const target = page.getByRole('treeitem', { name: dragLocName });
+      await target.waitFor({ state: 'visible', timeout: 5000 });
+
+      await page.getByRole('button', { name: 'Add item' }).click();
+      dialog = page.getByRole('dialog', { name: 'Add item' });
+      await dialog.getByLabel('Name').fill(dragItemName);
+      await chooseOption(dialog.getByLabel('Tracking'), 'Bulk');
+      await dialog.getByLabel('Initial quantity').fill('1');
+      await dialog.getByRole('button', { name: 'Create item' }).click();
+      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+
+      // Visual density renders the item as a card whose <h3> title is a safe, non-interactive
+      // drag handle — a press begun on a control (± stepper, action button) is deliberately
+      // suppressed by the interactive-origin guard, so we grab the heading.
+      await page.getByRole('radio', { name: 'Visual' }).click();
+      const handle = page.getByRole('heading', { name: dragItemName });
+      await handle.waitFor({ state: 'visible', timeout: 5000 });
+
+      const from = await handle.boundingBox();
+      const to = await target.boundingBox();
+      if (!from || !to) throw new Error('could not resolve drag source/target geometry');
+
+      // Real pointer drag (the unified Pointer Events path replaced native HTML5 DnD so it
+      // works for touch too): press the card, cross the ~5px activation threshold, move over
+      // the location row (its data-tree-id is hit-tested), then release to drop.
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2 + 12);
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+      await page.mouse.up();
+
+      // The moved item's card now shows the destination as its location — proving the move
+      // round-tripped through the worker + list refetch, not just a transient drag highlight.
+      const movedCard = page
+        .locator('div')
+        .filter({ hasText: dragItemName })
+        .filter({ has: page.getByRole('button', { name: 'Item details' }) })
+        .last();
+      await movedCard.getByText(dragLocName).waitFor({ state: 'visible', timeout: 8000 });
+    });
+
+    await step('deletes a location from the Edit dialog footer (§4 considered delete)', async () => {
+      const delLocName = `Smoke Del Loc ${stamp}`;
+
+      // A fresh, empty top-level location to delete.
+      await page.getByRole('button', { name: 'Add location' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Add location' });
+      await dialog.getByLabel('Name').fill(delLocName);
+      await dialog.getByRole('button', { name: 'Create' }).click();
+      const row = page.getByRole('treeitem', { name: delLocName });
+      await row.waitFor({ state: 'visible', timeout: 5000 });
+
+      // Deletion moved out of the cramped hover row into the Edit dialog's footer (a considered,
+      // spacious context). The per-row Edit affordance only reveals on hover; open it from there.
+      await row.hover();
+      await page.getByRole('button', { name: `Edit ${delLocName}` }).click();
+      const editDialog = page.getByRole('dialog', { name: 'Edit location' });
+      await editDialog.waitFor({ state: 'visible', timeout: 5000 });
+
+      // The Edit dialog is tall (every location field plus its read-only metadata), so its
+      // footer Delete button falls below the default headless fold — the centred modal has no
+      // internal scroll. Grow the viewport for the interaction so the button is on-screen and
+      // actionable, then restore the original size.
+      const viewport = page.viewportSize();
+      await page.setViewportSize({ width: viewport?.width ?? 1280, height: 1200 });
+      try {
+        // The location is empty, so deleting it re-parents nothing and needs no confirm — the
+        // row simply disappears from the tree.
+        await editDialog.getByTestId('edit-location-delete').click();
+        await row.waitFor({ state: 'detached', timeout: 5000 });
+      } finally {
+        if (viewport) await page.setViewportSize(viewport);
+      }
     });
 
     // --- Phase 3 flows ------------------------------------------------------------
