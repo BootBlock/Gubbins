@@ -147,6 +147,27 @@ export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEF
   });
 }
 
+/**
+ * Item pages for one collapsible **location section** in the grouped inventory view
+ * (spec §3 grouping axis). Mirrors {@link useInventoryItems} but deliberately omits
+ * `maxPages`: a section renders its loaded pages as plain DOM rather than through the
+ * virtualiser, so front-trimming would make earlier items *vanish* as the user pages
+ * further down a large location. Every loaded page is retained while the section is
+ * expanded; collapsing it unmounts the consumer, so the cache is released on `gcTime`.
+ *
+ * The `'section'` key suffix keeps this cache distinct from the flat list's cache for the
+ * same filters (they configure `maxPages` differently) while staying under the
+ * `inventoryKeys.items()` prefix, so item mutations invalidate it just the same.
+ */
+export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DEFAULT_PAGE_SIZE) {
+  return useInfiniteQuery({
+    queryKey: [...inventoryKeys.itemList(filters), 'section'],
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
+  });
+}
+
 /** Live count of items matching a filter (for headers / dashboard widgets). */
 export function useItemCount(filters: ItemQueryFilters = {}) {
   return useQuery({
