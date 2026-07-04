@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ReorderList, type ReorderListItem } from './reorder-list';
 
@@ -68,5 +69,46 @@ describe('ReorderList', () => {
       />,
     );
     expect(screen.queryByTestId('reorder-toggle-a')).toBeNull();
+  });
+});
+
+/** A controlled harness that actually applies moves, so focus-follow can be exercised. */
+function Harness({ initial }: { initial: ReorderListItem[] }) {
+  const [items, setItems] = useState(initial);
+  return (
+    <ReorderList
+      aria-label="Fields"
+      items={items}
+      onMove={(id, dir) =>
+        setItems((prev) => {
+          const i = prev.findIndex((x) => x.id === id);
+          const j = dir === 'up' ? i - 1 : i + 1;
+          if (j < 0 || j >= prev.length) return prev;
+          const next = prev.slice();
+          [next[i], next[j]] = [next[j], next[i]];
+          return next;
+        })
+      }
+    />
+  );
+}
+
+const plain = (id: string): ReorderListItem => ({ id, label: id, name: id });
+
+describe('ReorderList — keyboard focus follows a moved row', () => {
+  it('keeps focus on the same-direction button while it stays enabled', () => {
+    render(<Harness initial={[plain('a'), plain('b'), plain('c')]} />);
+    // Move 'a' down: it lands in the middle, so its move-down button is still enabled and keeps focus.
+    fireEvent.click(screen.getByTestId('reorder-down-a'));
+    expect(document.activeElement).toBe(screen.getByTestId('reorder-down-a'));
+  });
+
+  it('re-homes focus to the opposite button when the row reaches an end (pressed button disables)', () => {
+    render(<Harness initial={[plain('a'), plain('b')]} />);
+    // Move 'a' down: it becomes last, so move-down disables — focus falls to its move-up button.
+    fireEvent.click(screen.getByTestId('reorder-down-a'));
+    const downA = screen.getByTestId('reorder-down-a') as HTMLButtonElement;
+    expect(downA.disabled).toBe(true);
+    expect(document.activeElement).toBe(screen.getByTestId('reorder-up-a'));
   });
 });

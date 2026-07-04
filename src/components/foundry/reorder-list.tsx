@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, ChevronUpIcon, DragHandleIcon, HideIcon, ShowIcon } from '@/components/icons';
 
@@ -38,12 +38,15 @@ function IconButton({
   onClick,
   disabled,
   testId,
+  moveKey,
   children,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
   testId?: string;
+  /** `"<dir>:<id>"` marker on a move button, so focus can re-home to it after a reorder. */
+  moveKey?: string;
   children: ReactNode;
 }) {
   return (
@@ -53,6 +56,7 @@ function IconButton({
       disabled={disabled}
       aria-label={label}
       data-testid={testId}
+      data-reorder-move={moveKey}
       className={cn(
         'rounded-md p-1 text-muted-foreground transition-colors [&_svg]:size-4',
         'hover:bg-muted hover:text-foreground',
@@ -73,6 +77,12 @@ function IconButton({
  * counterpart to the dashboard board's drag affordance, for a simple one-dimensional list
  * (the item-card field picker, and future tile/column ordering). Controlled: the caller owns
  * the order and applies each `onMove` / `onToggleVisible` (pure ops make this a one-liner).
+ *
+ * Keyboard focus follows a moved row: after a move re-renders the list, the pressed button may
+ * have shifted and/or become disabled (the row reached an end), which would silently drop
+ * focus. `handleMove` records the move and, once the new order paints, focus is re-homed onto
+ * that row — the same-direction button if it's still live, else the opposite one (guaranteed
+ * live at an end) — so a keyboard user can nudge a row repeatedly without re-finding it.
  */
 export function ReorderList({
   items,
@@ -82,8 +92,31 @@ export function ReorderList({
   'aria-label': ariaLabel,
   'data-testid': testId,
 }: ReorderListProps) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const pendingFocus = useRef<{ id: string; dir: 'up' | 'down' } | null>(null);
+
+  const handleMove = (id: string, dir: 'up' | 'down') => {
+    pendingFocus.current = { id, dir };
+    onMove(id, dir);
+  };
+
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === null) return;
+    pendingFocus.current = null;
+    const root = listRef.current;
+    if (root === null) return;
+    const button = (dir: 'up' | 'down') =>
+      root.querySelector<HTMLButtonElement>(`[data-reorder-move="${dir}:${pending.id}"]`);
+    const primary = button(pending.dir);
+    // The pressed button if it's still enabled, else the opposite (a row at an end always has
+    // one live move button), so focus never lands on a disabled control.
+    const target = primary && !primary.disabled ? primary : button(pending.dir === 'up' ? 'down' : 'up');
+    target?.focus();
+  }, [items]);
+
   return (
-    <ul aria-label={ariaLabel} data-testid={testId} className={cn('space-y-2', className)}>
+    <ul ref={listRef} aria-label={ariaLabel} data-testid={testId} className={cn('space-y-2', className)}>
       {items.map((item, index) => {
         const isFirst = index === 0;
         const isLast = index === items.length - 1;
@@ -102,17 +135,19 @@ export function ReorderList({
             <div className="flex shrink-0 items-center gap-0.5">
               <IconButton
                 label={`Move ${item.name} up`}
-                onClick={() => onMove(item.id, 'up')}
+                onClick={() => handleMove(item.id, 'up')}
                 disabled={isFirst}
                 testId={`reorder-up-${item.id}`}
+                moveKey={`up:${item.id}`}
               >
                 <ChevronUpIcon />
               </IconButton>
               <IconButton
                 label={`Move ${item.name} down`}
-                onClick={() => onMove(item.id, 'down')}
+                onClick={() => handleMove(item.id, 'down')}
                 disabled={isLast}
                 testId={`reorder-down-${item.id}`}
+                moveKey={`down:${item.id}`}
               >
                 <ChevronDownIcon />
               </IconButton>
