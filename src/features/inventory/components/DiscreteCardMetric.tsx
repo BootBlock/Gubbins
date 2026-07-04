@@ -2,8 +2,10 @@ import { cn } from '@/lib/utils';
 import { Money } from '@/components/foundry';
 import { LowStockIcon, SuccessIcon, WarningIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { useFormatters } from '@/lib/useFormatters';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { discreteStockLevel, shortfall, type StockLevel } from '../reorder-policy';
+import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
 
 /**
  * The Visual card's hero slot for a plain DISCRETE item (spec §3). The card's ± stepper
@@ -14,13 +16,26 @@ import { discreteStockLevel, shortfall, type StockLevel } from '../reorder-polic
  *   stock) derived from the item's effective reorder point, with a "reorder N" hint when low.
  * - `value` — the item's total stock value (`unitCost × quantity`) via the Foundry Money
  *   control, or a muted "Unpriced" when it has no unit cost.
+ * - `lastUpdated` — how long ago the item last changed, as a relative time (e.g. "3 days
+ *   ago") via the shared `relativeTime` formatter.
+ * - `condition` — the item's tracked condition, tinted with its `text-cond-*` token, or a
+ *   muted "Untracked" when it has none.
  *
  * Reads its inputs from the Tier-2 preferences store; the reorder-policy maths is the pure,
  * shared {@link discreteStockLevel}/{@link shortfall} seam (never recomputed here).
  */
 export function DiscreteCardMetric({ item }: { item: Item }) {
   const metric = usePreferencesStore((s) => s.visualCardMetric);
-  return metric === 'value' ? <ValueMetric item={item} /> : <StockHealthMetric item={item} />;
+  switch (metric) {
+    case 'value':
+      return <ValueMetric item={item} />;
+    case 'lastUpdated':
+      return <LastUpdatedMetric item={item} />;
+    case 'condition':
+      return <ConditionMetric item={item} />;
+    default:
+      return <StockHealthMetric item={item} />;
+  }
 }
 
 const STOCK_STYLE: Record<StockLevel, { text: string; label: string; Icon: typeof SuccessIcon }> = {
@@ -60,6 +75,32 @@ function ValueMetric({ item }: { item: Item }) {
         <span className="text-2xl font-bold text-muted-foreground">—</span>
       )}
       <span className="text-xs text-muted-foreground">{priced ? 'total value' : 'unpriced'}</span>
+    </div>
+  );
+}
+
+function LastUpdatedMetric({ item }: { item: Item }) {
+  const fmt = useFormatters();
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-lg font-semibold text-foreground">{fmt.relativeTime(item.updatedAt)}</span>
+      <span className="text-xs text-muted-foreground">last updated</span>
+    </div>
+  );
+}
+
+function ConditionMetric({ item }: { item: Item }) {
+  const tracked = item.condition != null;
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {tracked ? (
+        <span className={cn('text-lg font-semibold', CONDITION_COLOR_CLASS[item.condition!])}>
+          {CONDITION_LABELS[item.condition!]}
+        </span>
+      ) : (
+        <span className="text-lg font-semibold text-muted-foreground">Untracked</span>
+      )}
+      <span className="text-xs text-muted-foreground">condition</span>
     </div>
   );
 }

@@ -113,3 +113,44 @@ describe('DiscreteCardMetric — total-value branch', () => {
     expect(screen.getByText('—')).not.toBeNull();
   });
 });
+
+describe('DiscreteCardMetric — last-updated branch', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  beforeEach(() => usePreferencesStore.setState({ visualCardMetric: 'lastUpdated' }));
+
+  it('renders how long ago the item last changed as a relative time', () => {
+    // updatedAt three days before "now" → the real relativeTime formatter reads "3 days ago".
+    render(<DiscreteCardMetric item={makeItem({ updatedAt: Date.now() - 3 * DAY })} />);
+    expect(screen.getByText('3 days ago')).not.toBeNull();
+    expect(screen.getByText('last updated')).not.toBeNull();
+  });
+
+  it('reads "now" for an item touched at the current instant', () => {
+    render(<DiscreteCardMetric item={makeItem({ updatedAt: Date.now() })} />);
+    expect(screen.getByText('now')).not.toBeNull();
+  });
+});
+
+describe('DiscreteCardMetric — condition branch', () => {
+  beforeEach(() => usePreferencesStore.setState({ visualCardMetric: 'condition' }));
+
+  it('renders a tracked condition label tinted with its condition token', () => {
+    render(<DiscreteCardMetric item={makeItem({ condition: 'NEEDS_REPAIR' })} />);
+    const label = screen.getByText('Needs repair');
+    // Colour comes from the shared CONDITION_COLOR_CLASS token, never a raw literal.
+    expect(label.className).toContain('text-destructive');
+    expect(screen.getByText('condition')).not.toBeNull();
+  });
+
+  it('uses the dedicated cond-good token for the "Good" condition', () => {
+    render(<DiscreteCardMetric item={makeItem({ condition: 'GOOD' })} />);
+    expect(screen.getByText('Good').className).toContain('text-cond-good');
+  });
+
+  it('shows a muted "Untracked" when the item has no condition', () => {
+    render(<DiscreteCardMetric item={makeItem({ condition: null })} />);
+    const label = screen.getByText('Untracked');
+    expect(label.className).toContain('text-muted-foreground');
+    expect(screen.getByText('condition')).not.toBeNull();
+  });
+});
