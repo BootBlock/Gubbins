@@ -499,6 +499,7 @@ function InventoryWorkspace() {
                   firstItemIndex={firstItemIndex}
                   locations={flatLocations}
                   density={density}
+                  selectedLocationId={selectedLocationId}
                   locationName={locationName}
                   locationColorClass={locationColorClass}
                   hasNextPage={active.hasNextPage}
