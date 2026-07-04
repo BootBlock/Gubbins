@@ -61,13 +61,18 @@ Hard-coded Tailwind palette classes bypass theming and dark-mode. **Fix: use the
 token** (`success`, `warning`, `text-glyph-*`).
 
 **Impact: MEDIUM (dark-mode / theming correctness). Confidence: HIGH.**
+**Status: DONE ✅ — all 4 findings fixed in Phase 2. The emerald/amber palette literals now
+use the theme-aware `success` / `warning` tokens (`bg-success/15 text-success`,
+`bg-warning/15 text-warning`, `text-warning`), so they track light/dark correctly; the `dark:`
+override on B2 is dropped (the token is already theme-aware). `--warning` is a light amber
+(L≈0.7–0.8) in both themes, so B4 stays legible over the fixed-dark camera overlay.**
 
 | # | file:line | What's wrong | Proper fix | Conf | Status |
 |---|-----------|--------------|-----------|------|--------|
-| B1 | [SyncScreen.tsx:263](src/features/sync/SyncScreen.tsx#L263) | "Connected/synced" chip `bg-emerald-500/15 text-emerald-400` | `bg-success/15 text-success` (or `text-glyph-success`) | High | pending |
-| B2 | [CapabilityEditor.tsx:46](src/features/inventory/components/CapabilityEditor.tsx#L46) | Capability pill `bg-amber-500/15 text-amber-600 dark:text-amber-400` (colour only — **not** the field-gap, which is excluded) | `bg-warning/15 text-warning` | High | pending |
-| B3 | [CapabilityEditor.tsx:55](src/features/inventory/components/CapabilityEditor.tsx#L55) | Pill remove-button `hover:bg-amber-500/25` | `hover:bg-warning/25` | High | pending |
-| B4 | [ScannerOverlay.tsx:377](src/features/scanner/components/ScannerOverlay.tsx#L377) | Notice text `text-amber-300` | `text-warning` | Med | pending |
+| B1 | [SyncScreen.tsx](src/features/sync/SyncScreen.tsx) | "Connected/synced" chip `bg-emerald-500/15 text-emerald-400` | `bg-success/15 text-success` | High | **done** |
+| B2 | [CapabilityEditor.tsx](src/features/inventory/components/CapabilityEditor.tsx) | Capability pill `bg-amber-500/15 text-amber-600 dark:text-amber-400` (colour only — **not** the field-gap, which is excluded) | `bg-warning/15 text-warning` | High | **done** |
+| B3 | [CapabilityEditor.tsx](src/features/inventory/components/CapabilityEditor.tsx) | Pill remove-button `hover:bg-amber-500/25` | `hover:bg-warning/25` | High | **done** |
+| B4 | [ScannerOverlay.tsx](src/features/scanner/components/ScannerOverlay.tsx) | Notice text `text-amber-300` | `text-warning` | Med | **done** |
 
 **Deliberately NOT flagged in B** (documented exceptions — see "Considered but not flagged"):
 the rest of `ScannerOverlay`'s `white`/`black` chrome (camera viewfinder surface over live
@@ -86,23 +91,31 @@ focus-visible:ring-primary` (thinner, different colour token) or, worse, `focus:
 ring-ring` pattern** (or move the ring into the primitive where one applies).
 
 **Impact: MEDIUM (a11y focus-indicator consistency). Confidence: MEDIUM.**
+**Status: DONE ✅ — C2–C10 fixed in Phase 3 (C1 was already closed via A11 in Phase 1).**
+**Key finding that made this safe: `--ring` and `--primary` are the *identical* oklch value in
+both themes, so switching `ring-primary → ring-ring` is a zero-colour-change normalisation —
+only the width (`ring-2 → ring-[3px]`) and `focus:` → `focus-visible:` actually change. The
+house widths were applied per element role: button-like controls + card links → `ring-ring/50`,
+the inline-rename field → `ring-ring/40`, and the swatch/kind radios kept their existing
+`ring-ring` + offset (their `checked` selection ring is a separate indicator, left untouched).**
 
 | # | file:line | What's wrong | Proper fix | Conf | Status |
 |---|-----------|--------------|-----------|------|--------|
-| C1 | [ReorderTab.tsx:255](src/features/purchasing/ReorderTab.tsx#L255) | `ring-ring focus:ring-2` — **non-`focus-visible`**, shows on mouse click (folds into A11) | house `focus-visible:ring-[3px] ring-ring/40` | High | **done** (via A11, Phase 1) |
-| C2 | [InventoryScreen.tsx:258](src/features/inventory/InventoryScreen.tsx#L258) | Clear-search button `focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C3 | [CommandPalette.tsx:138](src/features/command-palette/CommandPalette.tsx#L138) | Close button `focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C4 | [DashboardVersion.tsx:49](src/features/dashboard/DashboardVersion.tsx#L49) | `focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C5 | [DashboardScreen.tsx:49](src/features/dashboard/DashboardScreen.tsx#L49) | Hero card link `focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C6 | [DashboardNav.tsx:128](src/features/dashboard/DashboardNav.tsx#L128) | `focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C7 | [DashboardGrid.tsx:311](src/features/dashboard/DashboardGrid.tsx#L311) | `focus:outline-none focus-visible:ring-2 focus-visible:ring-primary` | house ring pattern | Med | pending |
-| C8 | [ItemDetailDialog.tsx:118](src/features/inventory/components/ItemDetailDialog.tsx#L118) | Tab `focus-visible:ring-2 focus-visible:ring-ring` (ring-2 vs [3px]) | house ring pattern | Low | pending |
-| C9 | [LocationInlineRename.tsx:54](src/features/inventory/components/LocationInlineRename.tsx#L54) | `focus-visible:ring-2 focus-visible:ring-primary/60` on ad-hoc inline input | house ring pattern | Low | pending |
-| C10 | [ColorSwatchPicker.tsx:93](src/features/inventory/components/ColorSwatchPicker.tsx#L93) / [LocationKindPicker.tsx:90](src/features/inventory/components/LocationKindPicker.tsx#L90) | Swatch/kind radios roll their own focus treatment | reconcile with house ring | Low | pending |
+| C1 | [ReorderTab.tsx](src/features/purchasing/ReorderTab.tsx) | `ring-ring focus:ring-2` — **non-`focus-visible`**, shows on mouse click (folds into A11) | house `focus-visible:ring-[3px] ring-ring/40` | High | **done** (via A11, Phase 1) |
+| C2 | [InventoryScreen.tsx](src/features/inventory/InventoryScreen.tsx) | Clear-search button `focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C3 | [CommandPalette.tsx](src/features/command-palette/CommandPalette.tsx) | Close button `focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C4 | [DashboardVersion.tsx](src/features/dashboard/DashboardVersion.tsx) | `focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C5 | [DashboardScreen.tsx](src/features/dashboard/DashboardScreen.tsx) | Hero card link `focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C6 | [DashboardNav.tsx](src/features/dashboard/DashboardNav.tsx) | `focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C7 | [DashboardGrid.tsx](src/features/dashboard/DashboardGrid.tsx) | `focus:outline-none focus-visible:ring-2 focus-visible:ring-primary` | `focus-visible:ring-[3px] ring-ring/50` | Med | **done** |
+| C8 | [ItemDetailDialog.tsx](src/features/inventory/components/ItemDetailDialog.tsx) | Tab `focus-visible:ring-2 focus-visible:ring-ring` (ring-2 vs [3px]) | `focus-visible:ring-[3px] ring-ring/50` | Low | **done** |
+| C9 | [LocationInlineRename.tsx](src/features/inventory/components/LocationInlineRename.tsx) | `focus-visible:ring-2 focus-visible:ring-primary/60` on ad-hoc inline input | `focus-visible:ring-[3px] ring-ring/40` (field) | Low | **done** |
+| C10 | [ColorSwatchPicker.tsx](src/features/inventory/components/ColorSwatchPicker.tsx) / [LocationKindPicker.tsx](src/features/inventory/components/LocationKindPicker.tsx) | Swatch/kind radios roll their own focus treatment | `ring-2 → ring-[3px]` (keep `ring-ring` + offset; leave the `checked` selection ring) | Low | **done** |
 
-> Verify during the fix: some of these sit on non-field elements (cards, tabs, swatches)
-> where `ring-primary` may be an intentional accent. Keep the **width/`focus-visible`**
-> consistent even if the colour token legitimately differs; don't force cosmetic churn.
+> Note honoured during the fix: because `ring` and `primary` resolve to the same colour, there
+> was no real accent to preserve — the width/`focus-visible` normalisation was applied without
+> any colour churn. The swatch/kind pickers' `checked` selection rings (a separate visual
+> signal) were deliberately left as-is.
 
 ---
 
@@ -114,16 +127,33 @@ row" (Settings), so this is partly a **convention** question: either accept `h-9
 compact tier by adding a Foundry `size` for it, or normalise to `h-8`/`h-10`.
 
 **Impact: LOW (cosmetic consistency). Confidence: LOW–MED (some are intentional).**
+**Status: RESOLVED ✅ — Phase 4 outcome is a deliberate, documented NO-CHANGE (the sanctioned
+resolution below). `h-9` (2.25rem) is accepted as the app's intentional *compact* control tier,
+used consistently for dense rows (Settings, the search `ConditionEditor`/`TextQueryInput`, the
+`CapabilityEditor`, `ImportDataDialog`). Decision rationale:**
+
+- **Codifying it as a Foundry `size` was considered and rejected as disproportionate.** `Input`
+  and `Select` have **no `size` system at all** (both are a fixed `h-10 fieldClasses` string),
+  and `Button`'s sizes are `sm=h-8 / default=h-10 / lg=h-11` with no `h-9`. Introducing a size
+  API to `Input` + `Select` and a new compact tier to `Button`, then migrating ~34 call sites,
+  is a broad, regression-prone primitive change for a **LOW-impact cosmetic** nit.
+- **Normalising `h-9 → h-8`/`h-10` was rejected as cosmetic churn against intent** — it would
+  change the deliberate density of Settings and the dense editors.
+- The `h-9` usage is already internally consistent, so it does not read as drift in practice.
+
+**If a future phase adds a genuine `size` system to the field primitives for another reason, fold
+this compact tier in then (revisit `size="compact"`); until then, `h-9` stays as-is by design.**
 
 | # | file:line | Note | Status |
 |---|-----------|------|--------|
-| D1 | [SettingsScreen.tsx](src/features/settings/SettingsScreen.tsx) (`h-9` ~14×) | Deliberate compact settings tier — candidate for a Foundry compact `size` | pending |
-| D2 | [ImportDataDialog.tsx:383](src/features/inventory/components/ImportDataDialog.tsx#L383), [:409](src/features/inventory/components/ImportDataDialog.tsx#L409) | `h-9` Buttons | pending |
-| D3 | [TextQueryInput.tsx:71](src/features/search/components/TextQueryInput.tsx#L71) / [ConditionEditor.tsx:74](src/features/search/components/ConditionEditor.tsx#L74) | `h-9` controls | pending |
-| D4 | [CapabilityEditor.tsx:86](src/features/inventory/components/CapabilityEditor.tsx#L86) (and 102/122/125) | `h-9` controls (sizing only — field-gap excluded) | pending |
+| D1 | [SettingsScreen.tsx](src/features/settings/SettingsScreen.tsx) (`h-9` ~19×) | Deliberate compact settings tier — accepted as-is | **no-change (documented)** |
+| D2 | [ImportDataDialog.tsx](src/features/inventory/components/ImportDataDialog.tsx) | `h-9` Buttons | **no-change (documented)** |
+| D3 | [TextQueryInput.tsx](src/features/search/components/TextQueryInput.tsx) / [ConditionEditor.tsx](src/features/search/components/ConditionEditor.tsx) | `h-9` controls | **no-change (documented)** |
+| D4 | [CapabilityEditor.tsx](src/features/inventory/components/CapabilityEditor.tsx) | `h-9` controls (sizing only — field-gap excluded) | **no-change (documented)** |
 
-> Resolve the convention first (add a compact `size` vs normalise). This phase may end as a
-> deliberate "no-change, documented" outcome — that is an acceptable resolution.
+> Resolved: deliberate documented no-change (the explicitly-sanctioned outcome). Codifying a
+> compact Foundry `size` is out of scope for this LOW-impact item — the field primitives have no
+> size system to extend cleanly, so it is not worth the app-wide risk now.
 
 ---
 
@@ -134,18 +164,22 @@ raw string (its own comment: *"instead of repeating the raw cubic-bezier string"
 `@utility` animation helpers still inline `cubic-bezier(0.16, 1, 0.3, 1)`.
 
 **Impact: LOW (no visual change — pure consistency). Confidence: HIGH. One file.**
+**Status: DONE ✅ — all 4 fixed in Phase 5. The `animate-zoom-in` / `animate-rise` /
+`animate-swap-in` / `animate-toast-out` `@utility` rules now use `var(--ease-emphasized)` like
+their `animate-slide-in-*` / `animate-highlight` siblings already did — which is itself the
+proof the var resolves inside these `@utility` rules. Verified in the built CSS: the compiled
+`gubbins-zoom-in` utility emits `var(--ease-emphasized)` (not the raw curve), and the only
+remaining `cubic-bezier(.16,1,.3,1)` in the sheet is the single token definition.**
 
 | # | file:line | What's wrong | Proper fix | Conf | Status |
 |---|-----------|--------------|-----------|------|--------|
-| E1 | [index.css:570](src/styles/index.css#L570) | `animate-zoom-in` inlines the raw curve | `var(--ease-emphasized)` | High | pending |
-| E2 | [index.css:574](src/styles/index.css#L574) | `animate-rise` inlines the raw curve | `var(--ease-emphasized)` | High | pending |
-| E3 | [index.css:578](src/styles/index.css#L578) | `animate-swap-in` inlines the raw curve | `var(--ease-emphasized)` | High | pending |
-| E4 | [index.css:590](src/styles/index.css#L590) | `animate-toast-out` inlines the raw curve | `var(--ease-emphasized)` | High | pending |
+| E1 | [index.css](src/styles/index.css) | `animate-zoom-in` inlines the raw curve | `var(--ease-emphasized)` | High | **done** |
+| E2 | [index.css](src/styles/index.css) | `animate-rise` inlines the raw curve | `var(--ease-emphasized)` | High | **done** |
+| E3 | [index.css](src/styles/index.css) | `animate-swap-in` inlines the raw curve | `var(--ease-emphasized)` | High | **done** |
+| E4 | [index.css](src/styles/index.css) | `animate-toast-out` inlines the raw curve | `var(--ease-emphasized)` | High | **done** |
 
-> The `--ease-emphasized` var is defined inside `@theme inline` (a Tailwind-compiled block);
-> confirm it resolves inside these `@utility` rules at build time before committing, or hoist
-> the raw curve to a plain `:root` custom property both can share. **Verify via
-> `npm run build` + grep the built CSS.**
+> Resolved: the var resolves inside `@utility` rules (the sibling `animate-slide-in-*` helpers
+> already relied on it), confirmed by grepping the built CSS after `npm run build`.
 
 ---
 
@@ -182,15 +216,22 @@ Ordered by impact × confidence. One category per session; review gate after eac
 | Phase | Category | Findings | Rationale for order | Status |
 |-------|----------|----------|--------------------|--------|
 | 1 | **A** — hand-rolled controls → Foundry | A1–A11 (11) | Highest: user-visible + restores focus ring/theming; clear correct fix | **done ✅** (also closes C1) |
-| 2 | **B** — raw palette colour → tokens | B1–B4 (4) | Dark-mode/theming correctness; small & unambiguous | pending |
-| 3 | **C** — focus-ring consistency | C1–C10 (~11) | a11y focus-indicator consistency; some judgment per element | pending |
-| 4 | **D** — off-grid `h-9` sizing | D1–D4 | Convention decision first; may end "documented no-change" | pending |
-| 5 | **E** — CSS easing token | E1–E4 (4) | Trivial one-file cleanup; needs build-CSS verification | pending |
+| 2 | **B** — raw palette colour → tokens | B1–B4 (4) | Dark-mode/theming correctness; small & unambiguous | **done ✅** |
+| 3 | **C** — focus-ring consistency | C1–C10 (~11) | a11y focus-indicator consistency; some judgment per element | **done ✅** |
+| 4 | **D** — off-grid `h-9` sizing | D1–D4 | Convention decision first; may end "documented no-change" | **done ✅ (documented no-change)** |
+| 5 | **E** — CSS easing token | E1–E4 (4) | Trivial one-file cleanup; needs build-CSS verification | **done ✅** |
 
 > C11 fix (A11/C1 overlap): ReorderTab's number input appears in both A and C — fix once in
 > Phase 1 (the whole control moves to Foundry `Input`, which resolves the focus ring too);
 > mark C1 `done` at that point.
 
-**Effort status:** Phase 1 (Category A) complete — all 11 findings fixed (A11 also closes
-C1); `tsc`, `eslint`, `prettier` and the full 1981-test suite pass. Awaiting review/approval
-before Phase 2 (Category B).
+**Effort status: COMPLETE ✅ — all five categories resolved.** Phase 1 (A) landed earlier;
+Phases 2–5 (B, C, D, E) were done together in one follow-up pass: B (palette→tokens) and C
+(focus-ring width/`focus-visible` normalisation, zero colour change since `ring`≡`primary`) and
+E (easing token) are code fixes; D is a deliberate documented no-change (compact `h-9` tier
+accepted). Checks: `tsc -b` clean, `eslint` clean (one pre-existing unrelated
+`react-refresh` warning in ItemDetailDialog), the full **2445**-test suite passes, `npm run
+build` succeeds, and the built CSS was grepped to confirm the token utilities
+(`bg/text-success`, `bg/text-warning`, `ring-[3px]`) and the `var(--ease-emphasized)` easing all
+emit. **Every finding is now `done` — per the doc header, move this file to
+`docs/todo/done/ui-bodge-audit.md`.**

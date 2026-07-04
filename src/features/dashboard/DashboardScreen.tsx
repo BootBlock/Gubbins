@@ -49,7 +49,7 @@ export function DashboardScreen() {
           target="_blank"
           rel="noreferrer"
           aria-label="Open the Gubbins GitHub repository (opens in a new tab)"
-          className="group flex items-center gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="group flex items-center gap-4 rounded-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <BrandMark className="size-12 rounded-2xl transition-transform duration-200 ease-emphasized group-hover:-translate-y-0.5" />
           <div>

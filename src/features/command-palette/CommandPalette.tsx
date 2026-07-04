@@ -197,7 +197,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
             }}
             aria-label="Clear search"
             data-testid="command-palette-clear"
-            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <CloseIcon />
           </button>

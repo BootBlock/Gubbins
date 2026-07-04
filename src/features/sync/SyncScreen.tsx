@@ -268,7 +268,7 @@ export function SyncScreen() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Connection</h2>
           {connected ? (
             <Surface className="flex flex-wrap items-center gap-3 p-4">
-              <span className="grid size-9 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 [&_svg]:size-5">
+              <span className="grid size-9 place-items-center rounded-xl bg-success/15 text-success [&_svg]:size-5">
                 <CloudIcon />
               </span>
               <div className="min-w-0 flex-1">

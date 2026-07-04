@@ -135,7 +135,7 @@ export function DashboardNav() {
                             ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
                             : undefined
                         }
-                        className="block h-full rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        className="block h-full rounded-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                       >
                         <Surface
                           className={cn(
