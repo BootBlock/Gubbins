@@ -248,6 +248,22 @@ async function expectComboLabel(combo, label) {
 }
 
 /**
+ * Poll a locator's text content until it *contains* the expected substring — the assertion
+ * counterpart to `expectComboLabel` for ordinary text nodes that re-render asynchronously
+ * (a progress heading advancing, a live scope count updating) rather than settling in one
+ * paint. Throws with the last-seen text so a genuine mismatch is legible.
+ */
+async function expectText(locator, substring) {
+  let last = '';
+  for (let i = 0; i < 40; i += 1) {
+    last = ((await locator.textContent().catch(() => '')) ?? '').trim();
+    if (last.includes(substring)) return;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`expected text to contain "${substring}", last saw "${last}"`);
+}
+
+/**
  * Navigate in-app via the global AppNav menu (spec §2.4.2). Every destination now lives
  * behind one "Menu" button (`data-testid="app-nav"`) that opens a portalled list of
  * `role="menuitem"` router links — the per-screen header link lists were retired. Kept
@@ -302,6 +318,12 @@ const batchNo = `LOT-${stamp}`;
 const maintScheduleName = `Lube ${stamp}`;
 const loanScheduleName = `Recalibrate ${stamp}`;
 const scopedScheduleName = `Bench calibrate ${stamp}`;
+// Audit-day guided stock-take (§4.4) — two dedicated sibling locations, each with one bulk
+// item, so the walk's figures (audited / variances / skipped) are fully deterministic.
+const auditBinOneName = `Audit Bin One ${stamp}`;
+const auditBinTwoName = `Audit Bin Two ${stamp}`;
+const auditItemOneName = `Audit Widget A ${stamp}`;
+const auditItemTwoName = `Audit Widget B ${stamp}`;
 // An expiry a few days out so it classifies as "expiring soon" (§4 / dashboard widget).
 const soonExpiry = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
 
@@ -3045,6 +3067,154 @@ try {
         serialAuditName,
         { timeout: 5000 },
       );
+    });
+
+    await step('walks a guided multi-location audit day: variance, skip & summary (§4.4)', async () => {
+      // Two dedicated top-level locations, each holding one bulk item at quantity 10, so the
+      // walk's arithmetic is deterministic regardless of what earlier steps created.
+      await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      for (const [locName, itemName] of [
+        [auditBinOneName, auditItemOneName],
+        [auditBinTwoName, auditItemTwoName],
+      ]) {
+        // Clear the selection first (adding a location while one is selected nests the new
+        // one under it) so both bins are independent top-level siblings.
+        await page.getByRole('treeitem', { name: 'All items' }).first().click();
+        await page.getByRole('button', { name: 'Add location' }).click();
+        const locDialog = page.getByRole('dialog', { name: 'Add location' });
+        await locDialog.getByLabel('Name').fill(locName);
+        await locDialog.getByRole('button', { name: 'Create', exact: true }).click();
+        await page
+          .getByRole('treeitem', { name: locName })
+          .first()
+          .waitFor({ state: 'visible', timeout: 5000 });
+
+        await page.getByRole('treeitem', { name: locName }).first().click();
+        await page.getByRole('button', { name: 'Add item' }).click();
+        const itemDialog = page.getByRole('dialog', { name: 'Add item' });
+        await itemDialog.getByLabel('Name').fill(itemName);
+        await itemDialog.getByRole('combobox', { name: 'Location' }).click();
+        await page.getByRole('option', { name: locName }).click();
+        await itemDialog.getByLabel('Initial quantity').fill('10');
+        await itemDialog.getByRole('button', { name: 'Create item' }).click();
+        await page.getByText(itemName).first().waitFor({ state: 'visible', timeout: 5000 });
+      }
+
+      // --- Open the guided stock-take and explore the scope picker ---------------
+      await openMoreMenu();
+      await page.getByTestId('open-audit-day').click();
+      const dlg = page.getByRole('dialog');
+      await dlg.getByTestId('audit-scope-mode').waitFor({ state: 'visible', timeout: 5000 });
+
+      // A sub-tree scope anchored on a childless bin previews exactly one location to walk —
+      // exercising the anchor picker without depending on the wider tree's shape.
+      await chooseOption(dlg.getByTestId('audit-scope-mode'), 'A location and everything inside it');
+      await dlg.getByTestId('audit-anchor').waitFor({ state: 'visible', timeout: 5000 });
+      await chooseOption(dlg.getByTestId('audit-anchor'), auditBinOneName, { exact: false });
+      await expectText(dlg.getByTestId('audit-scope-count'), '1 location to walk');
+
+      // Switch to hand-picked scope: with nothing ticked it is an empty scope, so Start is
+      // disabled and the count reads "No locations selected" (the empty-scope guard).
+      await chooseOption(dlg.getByTestId('audit-scope-mode'), 'Choose specific locations');
+      await expectText(dlg.getByTestId('audit-scope-count'), 'No locations selected');
+      if (!(await dlg.getByTestId('audit-start').isDisabled())) {
+        throw new Error('Start was enabled with an empty audit scope');
+      }
+
+      // Tick our two bins (in tree order One then Two) and start the walk over them.
+      await dlg.getByRole('checkbox', { name: auditBinOneName }).check();
+      await dlg.getByRole('checkbox', { name: auditBinTwoName }).check();
+      await expectText(dlg.getByTestId('audit-scope-count'), '2 locations to walk');
+      await dlg.getByTestId('audit-start').click();
+
+      // --- Location 1: blind-count a variance and authorise the reconcile --------
+      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: 5000 });
+      await expectText(dlg.getByTestId('audit-step-heading'), auditBinOneName);
+      await expectText(dlg.getByTestId('audit-step-heading'), 'Location 1 of 2');
+      const line1 = dlg.getByTestId('cycle-count-lines').locator('li').filter({ hasText: auditItemOneName });
+      await line1.waitFor({ state: 'visible', timeout: 5000 });
+      // Count 8 vs expected 10 → a −2 variance → authorise it and advance.
+      await line1.getByRole('spinbutton').fill('8');
+      await dlg.getByTestId('audit-authorise-continue').click();
+
+      // --- Location 2: reached with the running tally, then skipped --------------
+      await expectText(dlg.getByTestId('audit-step-heading'), auditBinTwoName);
+      await expectText(dlg.getByTestId('audit-step-heading'), 'Location 2 of 2');
+      await expectText(dlg.getByTestId('audit-variance-tally'), '1 with variance');
+      await dlg
+        .getByTestId('cycle-count-lines')
+        .locator('li')
+        .first()
+        .waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-skip').click();
+
+      // --- Summary: 1 audited (reconciled), 1 variance, 1 adjustment, 1 skipped --
+      await dlg.getByTestId('audit-summary').waitFor({ state: 'visible', timeout: 5000 });
+      const stat = async (label) => (await dlg.getByTestId(`audit-stat-${label}`).textContent())?.trim();
+      const audited = await stat('audited');
+      const variances = await stat('variances');
+      const adjustments = await stat('adjustments');
+      const skipped = await stat('skipped');
+      if (audited !== '1' || variances !== '1' || adjustments !== '1' || skipped !== '1') {
+        throw new Error(
+          `Audit summary figures wrong — audited ${audited}, variances ${variances}, ` +
+            `adjustments ${adjustments}, skipped ${skipped} (expected 1/1/1/1)`,
+        );
+      }
+      await expectText(dlg.getByTestId('audit-summary-variances'), auditBinOneName);
+      await expectText(dlg.getByTestId('audit-summary-skipped'), auditBinTwoName);
+      await dlg.getByTestId('audit-done').click();
+      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
+
+      // The Bin One item reconciled to the counted figure of 8 (the write really landed).
+      await page.getByRole('treeitem', { name: auditBinOneName }).first().click();
+      await page.waitForFunction(
+        (name) =>
+          [...document.querySelectorAll('*')].some(
+            (el) => el.textContent?.includes(name) && el.textContent?.includes('8'),
+          ),
+        auditItemOneName,
+        { timeout: 5000 },
+      );
+    });
+
+    await step('resumes a paused audit day on the first still-pending location (§4.4)', async () => {
+      // Start a fresh walk over the same two bins (the prior session was finished & cleared).
+      await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await openMoreMenu();
+      await page.getByTestId('open-audit-day').click();
+      let dlg = page.getByRole('dialog');
+      await chooseOption(dlg.getByTestId('audit-scope-mode'), 'Choose specific locations');
+      await dlg.getByRole('checkbox', { name: auditBinOneName }).check();
+      await dlg.getByRole('checkbox', { name: auditBinTwoName }).check();
+      await dlg.getByTestId('audit-start').click();
+
+      // Deal with location 1 (skip) so the walk advances to location 2, then pause & close.
+      await expectText(dlg.getByTestId('audit-step-heading'), auditBinOneName);
+      await dlg
+        .getByTestId('cycle-count-lines')
+        .locator('li')
+        .first()
+        .waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-skip').click();
+      await expectText(dlg.getByTestId('audit-step-heading'), auditBinTwoName);
+      await dlg.getByTestId('audit-pause').click();
+      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
+
+      // Reopen: the persisted Tier-3 session resumes straight onto the first pending
+      // location (Bin Two, 2 of 2) — not back at the already-skipped Bin One.
+      await openMoreMenu();
+      await page.getByTestId('open-audit-day').click();
+      dlg = page.getByRole('dialog');
+      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: 5000 });
+      await expectText(dlg.getByTestId('audit-step-heading'), auditBinTwoName);
+      await expectText(dlg.getByTestId('audit-step-heading'), 'Location 2 of 2');
+
+      // Abandon the whole stock-take to leave the persisted store clean for later steps.
+      await dlg.getByTestId('audit-abandon').click();
+      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
     });
 
     await step('surfaces the perishable on the dashboard "Soon to expire" widget (§3)', async () => {
