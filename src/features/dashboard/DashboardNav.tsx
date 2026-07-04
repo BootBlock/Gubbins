@@ -20,7 +20,14 @@ import { useState, type DragEvent, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { buttonVariants, LiveRegion, NAV_OPEN_DELAY_MS, Surface, Tooltip } from '@/components/foundry';
+import {
+  buttonVariants,
+  LiveRegion,
+  NAV_OPEN_DELAY_MS,
+  Surface,
+  Tooltip,
+  useReducedMotion,
+} from '@/components/foundry';
 import { CheckIcon, CustomiseIcon, DragHandleIcon, PinIcon, ResetIcon } from '@/components/icons';
 import { type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
@@ -157,6 +164,9 @@ export function DashboardNav() {
   const navCounts = useNavCounts();
   // The user's persisted tile arrangement, resolved against feature-gating + stale orders.
   const { groups, move, moveTo, togglePin, reset } = useNavOrder();
+  // Drop the drag glow's motion at source for reduced-motion users (mirrors the widget board);
+  // they still get the static dashed target indicator.
+  const reduced = useReducedMotion();
 
   // "Customise" edit mode + its screen-reader announcement of the last move. Drag state
   // tracks the tile being dragged and the drop target currently under the pointer.
@@ -338,11 +348,15 @@ export function DashboardNav() {
                         onKeyDown={handleTileKeyDown(dest.to)}
                         className={cn(
                           'flex h-full cursor-grab flex-col gap-2 p-3 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
-                          // Drop target: the same dashed "goes here" indicator the widget board
-                          // uses (DashboardGrid ghost), with the resting ring suppressed so the
-                          // dashed outline reads alone rather than doubled with a solid ring.
+                          // Drop target: the same dashed, breathing-glow "goes here" indicator
+                          // the widget board uses (DashboardGrid ghost + `animate-ghost`), with
+                          // the resting ring suppressed so the dashed outline reads alone rather
+                          // than doubled with a solid ring. Reduced-motion drops the pulse.
                           isOver
-                            ? 'border-2 border-dashed border-primary/60 bg-primary/10'
+                            ? cn(
+                                'border-2 border-dashed border-primary/60 bg-primary/10',
+                                !reduced && 'animate-ghost',
+                              )
                             : 'ring-2 ring-primary/40',
                         )}
                       >
