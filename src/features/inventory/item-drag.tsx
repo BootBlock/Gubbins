@@ -1,12 +1,18 @@
 /**
- * Unified pointer-based drag-to-move for inventory items (spec §4, §5).
+ * Unified pointer-based drag-to-move for the inventory workspace (spec §4, §5).
  *
  * The shipped drag-to-move was built on native HTML5 drag-and-drop, which never fires on
  * touchscreens — the exact hardware (tablets, wall-mounted kiosks) this app targets. This
  * module replaces it with a single Pointer Events path that behaves identically for mouse,
- * pen and touch: an item card/row is a drag *source*, a location row in the sidebar is a drop
- * *target*, and a floating preview follows the pointer while `document.elementFromPoint`
- * hit-tests the row underneath.
+ * pen and touch: a drag *source* (an item card/row, or a location row) is dragged onto a drop
+ * *target* (a location row in the sidebar), and a floating preview follows the pointer while
+ * `document.elementFromPoint` hit-tests the row underneath.
+ *
+ * A drag carries a small **payload** with a `kind` (`'item'` | `'location'`), so the one path
+ * serves two gestures: dragging an *item* onto a location moves the item there, and dragging a
+ * *location* onto another location nests it beneath that parent. Each drop target declares what
+ * it `accepts`, so a location can refuse an illegal nest (itself or one of its descendants —
+ * §7.5.3) and simply never highlight for it.
  *
  * Why one path rather than "native for mouse + something for touch": two parallel drag
  * systems fight over the same gestures (`touch-action`, passive listeners, the interactive
@@ -27,7 +33,8 @@
  *   is always the sidebar, so list auto-scroll isn't needed.
  *
  * This stays an *additive* affordance: the keyboard-accessible "Move item" action
- * ({@link MoveItemDialog}) remains the primary, a11y-complete path.
+ * ({@link MoveItemDialog}) and the Edit-location Parent field remain the primary,
+ * a11y-complete paths.
  */
 import {
   createContext,
@@ -57,17 +64,31 @@ const AUTOSCROLL_MAX_SPEED = 14;
 /** Offset (px) of the floating preview from the pointer so it clears the fingertip. */
 const PREVIEW_OFFSET = 14;
 
-/** The item being dragged — id to move, name for the floating preview. */
-interface DragItem {
+/** What is being dragged: an inventory item to move, or a location to re-nest. */
+export type DragKind = 'item' | 'location';
+
+/** The payload being dragged — id to act on, name for the floating preview. */
+export interface DragPayload {
+  readonly kind: DragKind;
   readonly id: string;
   readonly name: string;
 }
 
+/**
+ * A registered drop target (a location row). `accepts` gates both the hover highlight and the
+ * drop — a target that returns `false` for the current payload never lights up and never
+ * receives it. `onDrop` runs the move/nest when a drag is released over an accepting target.
+ */
+interface DropTarget {
+  onDrop(payload: DragPayload): void;
+  accepts(payload: DragPayload): boolean;
+}
+
 /** Stable actions a source/target uses to drive the drag. Its identity never changes. */
 interface ItemDragActions {
-  beginDrag(item: DragItem, event: ReactPointerEvent): void;
-  registerDropTarget(locationId: string, onDrop: (itemId: string) => void): void;
-  unregisterDropTarget(locationId: string): void;
+  beginDrag(payload: DragPayload, event: ReactPointerEvent): void;
+  registerDropTarget(id: string, target: DropTarget): void;
+  unregisterDropTarget(id: string): void;
 }
 
 const NOOP_ACTIONS: ItemDragActions = {
@@ -83,7 +104,7 @@ const ActiveDropContext = createContext<string | null>(null);
 
 /** Mutable per-gesture state, held in a ref so pointer ticks never re-render. */
 interface DragState {
-  item: DragItem;
+  payload: DragPayload;
   pointerId: number;
   pointerType: string;
   startX: number;
@@ -99,10 +120,14 @@ interface DragState {
 }
 
 /**
- * Props a drag source (item card/row) spreads onto its root element. Reads only the stable
- * actions context, so a source that spreads these never re-renders when a drag starts or ends.
+ * Shared source hook: a press on the element begins a drag of the given payload kind. Reads
+ * only the stable actions context, so an element that spreads these never re-renders when a
+ * drag starts or ends.
  */
-export function useItemDragSource(item: { id: string; name: string }): {
+function useDragSource(
+  kind: DragKind,
+  item: { id: string; name: string },
+): {
   onPointerDown: (event: ReactPointerEvent) => void;
   onDragStart: (event: ReactDragEvent) => void;
 } {
@@ -116,9 +141,9 @@ export function useItemDragSource(item: { id: string; name: string }): {
       // A press begun on a control (± stepper, select box, action button) belongs to that
       // control — leave the drag unarmed so its own gesture works.
       if (isInteractiveDragOrigin(event.target)) return;
-      beginDrag({ id, name }, event);
+      beginDrag({ kind, id, name }, event);
     },
-    [beginDrag, id, name],
+    [beginDrag, kind, id, name],
   );
   // Cancel any native HTML drag a descendant (e.g. an <img> thumbnail, selected text) would
   // otherwise start — the pointer path is the only drag system now.
@@ -127,44 +152,99 @@ export function useItemDragSource(item: { id: string; name: string }): {
 }
 
 /**
- * Register a location row as a drop target and report whether the pointer is currently over
- * it. `onDrop` is called with the dragged item's id when a drag is released here. Omit
- * `onDrop` for rows that can't receive items (the synthetic "All items" row, archived
- * locations) — they then never highlight and never accept a drop.
+ * Props a draggable inventory item (card/row) spreads onto its root element, making it a drag
+ * source that moves the item to whichever location row it is released over.
  */
-export function useItemDropTarget(locationId: string, onDrop?: (itemId: string) => void): boolean {
+export function useItemDragSource(item: { id: string; name: string }) {
+  return useDragSource('item', item);
+}
+
+/**
+ * Props a draggable location row spreads onto its root element, making it a drag source that
+ * nests the location beneath whichever location row it is released over. Omit on rows that
+ * can't be re-nested (the synthetic "All items" row, the system-locked Unassigned/In Transit
+ * rows, an archived location).
+ */
+export function useLocationDragSource(location: { id: string; name: string }) {
+  return useDragSource('location', location);
+}
+
+/**
+ * Register an element as a drop target and report whether the pointer is currently over it
+ * *and* it accepts the in-flight drag. Pass `null` for `target` when the row can't currently
+ * receive anything (it then never registers and never highlights). The `target` object must be
+ * referentially stable across renders (memoise it) so the registration effect doesn't churn.
+ */
+export function useDropTarget(id: string, target: DropTarget | null): boolean {
   const { registerDropTarget, unregisterDropTarget } = useContext(ItemDragActionsContext);
   const activeDropId = useContext(ActiveDropContext);
   useLayoutEffect(() => {
-    if (!onDrop) return;
-    registerDropTarget(locationId, onDrop);
-    return () => unregisterDropTarget(locationId);
-  }, [locationId, onDrop, registerDropTarget, unregisterDropTarget]);
-  return onDrop != null && activeDropId === locationId;
+    if (!target) return;
+    registerDropTarget(id, target);
+    return () => unregisterDropTarget(id);
+  }, [id, target, registerDropTarget, unregisterDropTarget]);
+  return target != null && activeDropId === id;
+}
+
+/**
+ * A location row's drop behaviour: it can receive a dragged **item** (move it here) and/or a
+ * dragged **location** (nest it here). `acceptsLocation` vetoes an illegal nest (a location
+ * onto itself or one of its own descendants — §7.5.3) so the row never highlights for it.
+ * Returns whether the row is the active, accepting target under the pointer.
+ */
+export function useLocationRowDrop(
+  id: string,
+  handlers: {
+    onDropItem?: (itemId: string) => void;
+    onDropLocation?: (locationId: string) => void;
+    acceptsLocation?: (draggedLocationId: string) => boolean;
+  },
+): boolean {
+  const { onDropItem, onDropLocation, acceptsLocation } = handlers;
+  const target = useMemo<DropTarget | null>(() => {
+    if (!onDropItem && !onDropLocation) return null;
+    return {
+      accepts: (payload) =>
+        payload.kind === 'item'
+          ? onDropItem != null
+          : onDropLocation != null && payload.id !== id && (acceptsLocation?.(payload.id) ?? true),
+      onDrop: (payload) => {
+        if (payload.kind === 'item') onDropItem?.(payload.id);
+        else onDropLocation?.(payload.id);
+      },
+    };
+  }, [id, onDropItem, onDropLocation, acceptsLocation]);
+  return useDropTarget(id, target);
 }
 
 /**
  * Owns the live drag: window pointer listeners, hit-testing, the floating preview, touch
  * long-press arming, scroll suppression and edge auto-scroll. Wrap the region containing both
- * the drag sources (the item list) and the drop targets (the location sidebar).
+ * the drag sources (the item list, the location tree) and the drop targets (the location
+ * sidebar).
  */
 export function ItemDragProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef<DragState | null>(null);
-  const dropTargets = useRef(new Map<string, (itemId: string) => void>());
+  const dropTargets = useRef(new Map<string, DropTarget>());
   const previewRef = useRef<HTMLDivElement | null>(null);
-  // The one item currently previewed (drives mounting the floating chip). Toggles once per
+  // The one payload currently previewed (drives mounting the floating chip). Toggles once per
   // drag, so it doesn't churn on pointer ticks.
-  const [previewItem, setPreviewItem] = useState<DragItem | null>(null);
+  const [previewItem, setPreviewItem] = useState<DragPayload | null>(null);
   const [activeDropId, setActiveDropId] = useState<string | null>(null);
 
   // Resolve the pointer position to a valid drop-target location id (or null). Pure — used
   // both while dragging (to highlight) and on release (to route the drop), so the release path
-  // reads live geometry instead of stale state.
+  // reads live geometry instead of stale state. Consults the target's `accepts` for the
+  // in-flight payload, so an illegal nest resolves to null (no highlight, no drop).
   const hitTest = useCallback((x: number, y: number): string | null => {
     const el = document.elementFromPoint(x, y);
     const row = el instanceof Element ? el.closest<HTMLElement>('[data-tree-id]') : null;
     const id = row?.getAttribute('data-tree-id') ?? null;
-    return id != null && dropTargets.current.has(id) ? id : null;
+    if (id == null) return null;
+    const target = dropTargets.current.get(id);
+    const payload = stateRef.current?.payload;
+    if (!target || !payload || !target.accepts(payload)) return null;
+    return id;
   }, []);
 
   const positionPreview = useCallback((x: number, y: number) => {
@@ -228,7 +308,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
         signal: s.listeners.signal,
       });
     }
-    setPreviewItem(s.item);
+    setPreviewItem(s.payload);
     setActiveDropId(hitTest(s.lastX, s.lastY));
     if (typeof requestAnimationFrame === 'function') s.raf = requestAnimationFrame(autoScrollStep);
   }, [autoScrollStep, hitTest]);
@@ -262,9 +342,9 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
       const s = stateRef.current;
       if (!s || event.pointerId !== s.pointerId) return;
       const dropId = s.active ? hitTest(event.clientX, event.clientY) : null;
-      const itemId = s.item.id;
+      const payload = s.payload;
       endGesture();
-      if (dropId) dropTargets.current.get(dropId)?.(itemId);
+      if (dropId) dropTargets.current.get(dropId)?.onDrop(payload);
     },
     [endGesture, hitTest],
   );
@@ -279,12 +359,12 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
   );
 
   const beginDrag = useCallback(
-    (item: DragItem, event: ReactPointerEvent) => {
+    (payload: DragPayload, event: ReactPointerEvent) => {
       if (stateRef.current) return;
       const listeners = new AbortController();
       const { signal } = listeners;
       stateRef.current = {
-        item,
+        payload,
         pointerId: event.pointerId,
         pointerType: event.pointerType,
         startX: event.clientX,
@@ -308,11 +388,11 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     [activateDrag, onPointerCancel, onPointerMove, onPointerUp],
   );
 
-  const registerDropTarget = useCallback((locationId: string, onDrop: (itemId: string) => void) => {
-    dropTargets.current.set(locationId, onDrop);
+  const registerDropTarget = useCallback((id: string, target: DropTarget) => {
+    dropTargets.current.set(id, target);
   }, []);
-  const unregisterDropTarget = useCallback((locationId: string) => {
-    dropTargets.current.delete(locationId);
+  const unregisterDropTarget = useCallback((id: string) => {
+    dropTargets.current.delete(id);
   }, []);
 
   const actions = useMemo<ItemDragActions>(

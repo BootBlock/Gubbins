@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import { ItemDragProvider } from '../item-drag';
 import { LocationSidebar } from './LocationSidebar';
 
 // Keep the test free of the Web Worker / QueryClient: the sidebar (and the
@@ -267,5 +268,72 @@ describe('LocationSidebar — accessible APG tree', () => {
     // …while an uncoloured location keeps the default colour.
     const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
     expect(cabinet.querySelector('.text-loc-teal')).toBeNull();
+  });
+});
+
+/** Dispatch a fully-populated pointer event (jsdom's PointerEvent is absent/partial). */
+function firePointer(
+  target: EventTarget,
+  type: 'pointerdown' | 'pointermove' | 'pointerup',
+  init: { x?: number; y?: number } = {},
+) {
+  const { x = 0, y = 0 } = init;
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { clientX: x, clientY: y, pointerType: 'mouse', pointerId: 1, button: 0 });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+}
+
+describe('LocationSidebar — drag-to-nest', () => {
+  afterEach(() => {
+    // Restore the hit-test stub some tests below install (jsdom has no layout).
+    // @ts-expect-error deleting the stubbed method restores jsdom's default (returns null).
+    delete document.elementFromPoint;
+  });
+
+  // Drag-to-nest needs the pointer-drag provider that InventoryScreen supplies in production.
+  function renderWithDrag() {
+    render(
+      <ItemDragProvider>
+        <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={vi.fn()} totalCount={7} />
+      </ItemDragProvider>,
+    );
+  }
+
+  it('re-parents a location dragged onto another location row', () => {
+    renderWithDrag();
+    // Reveal Drawer (nested under the collapsed Cabinet) so it can be dragged out to Workshop.
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    const drawer = screen.getByRole('treeitem', { name: 'Drawer' });
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+
+    // Point every hit-test at the Workshop row, then drag Drawer onto it.
+    document.elementFromPoint = vi.fn(() => workshop);
+    firePointer(drawer, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 }); // past the activation threshold
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'drawer', input: { parentId: 'workshop' } },
+      expect.anything(),
+    );
+  });
+
+  it('does not re-parent a location dropped onto its own current parent (a no-op)', () => {
+    renderWithDrag();
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+
+    // Cabinet already lives under Workshop, so nesting it there again is vetoed — no highlight,
+    // no update.
+    document.elementFromPoint = vi.fn(() => workshop);
+    firePointer(cabinet, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(spies.update).not.toHaveBeenCalled();
   });
 });
