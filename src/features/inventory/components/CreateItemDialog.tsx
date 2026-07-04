@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   AutocompleteField,
   Button,
+  Checkbox,
   FormField,
   InfoHint,
   Input,
@@ -157,9 +158,7 @@ function LowStockAlertToggle({
   return (
     <div className="space-y-3">
       <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-primary"
+        <Checkbox
           data-testid="item-low-stock-alert"
           {...register('lowStockAlert', {
             onChange: (e) => onToggle((e.target as HTMLInputElement).checked),
@@ -901,12 +900,7 @@ export function CreateItemDialog({
               </LowStockAlertToggle>
             ) : null}
             <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
-                data-testid="item-unlimited"
-                {...register('isUnlimited')}
-              />
+              <Checkbox data-testid="item-unlimited" {...register('isUnlimited')} />
               Unlimited supply
               <InfoHint
                 content={
