@@ -306,7 +306,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
             id={`erase-panel-${activeTab}`}
             aria-labelledby={`erase-tab-${activeTab}`}
             tabIndex={0}
-            className="min-w-0 flex-1 overflow-y-auto dialog-scroll focus-visible:outline-none"
+            className="min-w-0 flex-1 dialog-scroll focus-visible:outline-none"
           >
             {activeSection ? (
               <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
