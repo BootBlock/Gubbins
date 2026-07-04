@@ -9,6 +9,7 @@ import {
   CheckoutIcon,
   CloseIcon,
   DiscreteIcon,
+  EditIcon,
   MoveIcon,
   ScanIcon,
   SerialisedIcon,
@@ -16,8 +17,10 @@ import {
 import { getItemRepository, type Item } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useCheckoutItem } from '@/features/contacts/contacts';
-import { useLocations } from '@/features/inventory/queries';
+import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
+import { useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
+import { isUnlimited } from '@/features/inventory/unlimited';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
@@ -40,6 +43,7 @@ export function ScannerOverlay({
   onClose,
   onLocationScanned,
   onCreateFromBarcode,
+  onViewItem,
 }: {
   open: boolean;
   onClose: () => void;
@@ -51,6 +55,13 @@ export function ScannerOverlay({
    * unknown barcode is still recognised but the "Add item" affordance is hidden.
    */
   onCreateFromBarcode?: (gtin: string) => void;
+  /**
+   * Called with the scanned item when the user taps "View details" on the Discrete result
+   * card — the scanner has no deep-linkable item route (detail is dialog/list state), so the
+   * parent routes it (jump-to-item: seed the search + highlight the card), mirroring the
+   * command palette. When omitted the "View details" affordance is hidden.
+   */
+  onViewItem?: (item: Item) => void;
 }) {
   if (!open) return null;
   return (
@@ -59,6 +70,7 @@ export function ScannerOverlay({
         onClose={onClose}
         onLocationScanned={onLocationScanned}
         onCreateFromBarcode={onCreateFromBarcode}
+        onViewItem={onViewItem}
       />
     </ScannerQueueProvider>
   );
@@ -68,10 +80,12 @@ function ScannerOverlayInner({
   onClose,
   onLocationScanned,
   onCreateFromBarcode,
+  onViewItem,
 }: {
   onClose: () => void;
   onLocationScanned?: (locationId: string) => void;
   onCreateFromBarcode?: (gtin: string) => void;
+  onViewItem?: (item: Item) => void;
 }) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -95,6 +109,14 @@ function ScannerOverlayInner({
   const [checkoutItem, setCheckoutItem] = useState<Item | null>(null);
   const [batchName, setBatchName] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
+  // The Discrete result card's own move-target, kept separate from the Continuous
+  // `moveTarget` so the two never cross-talk.
+  const [singleMove, setSingleMove] = useState('');
+  // Track the scanned Discrete item live so the ± stepper's optimistic adjustments (which
+  // patch the `inventoryKeys.item(id)` cache) flow back into the card — `discreteResult` is
+  // only the snapshot taken at scan time. Falls back to that snapshot until the query loads.
+  const liveDiscrete = useItem(discreteResult?.id);
+  const scanned = discreteResult ? (liveDiscrete.data ?? discreteResult) : null;
   // The decoding engine is resolved asynchronously by useScanner (native → lazy WASM
   // → none); null until the camera is live. We only warn about manual-only entry once
   // it definitively resolves to 'none' (§6.6).
@@ -196,7 +218,32 @@ function ScannerOverlayInner({
   const scanAgain = () => {
     setDiscreteResult(null);
     setGtinResult(null);
+    setSingleMove('');
     dispatch({ type: 'RESUME_SCANNING' });
+  };
+
+  // Move the single scanned item to a location — the one-id peer of the Continuous
+  // `batchMove`, through the same `useMoveItem` seam. The card stays put afterwards so
+  // several actions can be applied to the same scanned item; the outcome is announced
+  // through the always-mounted notice region (the SR channel).
+  const moveScanned = async () => {
+    if (!discreteResult || singleMove === '') return;
+    const name = locationRows.find((l) => l.id === singleMove)?.name ?? 'the location';
+    await move.mutateAsync({ id: discreteResult.id, locationId: singleMove });
+    setNotice(`Moved ${discreteResult.name} to ${name}.`);
+    setSingleMove('');
+  };
+
+  // Hand the scanned item back to the parent to open its full record (jump-to-item), then
+  // close the scanner. The scanner has no deep-linkable item route, so the parent routes it.
+  const viewScanned = () => {
+    if (!discreteResult) return;
+    const item = discreteResult;
+    setDiscreteResult(null);
+    setSingleMove('');
+    dispatch({ type: 'CLOSE' });
+    onViewItem?.(item);
+    onClose();
   };
 
   // Hand a fresh barcode to the parent to seed the add-item form, then close the scanner.
@@ -318,18 +365,60 @@ function ScannerOverlayInner({
           <p className="absolute text-sm text-white/80">Requesting camera access…</p>
         ) : null}
 
-        {/* Discrete result card */}
-        {discreteResult ? (
+        {/* Discrete result card — act on one scanned item without leaving the scanner. */}
+        {scanned ? (
           <div className="absolute inset-x-0 bottom-0 p-4">
-            <Surface className="space-y-3 p-4 text-foreground">
+            <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-discrete-result">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Scanned</p>
-              <p className="text-lg font-semibold">{discreteResult.name}</p>
-              <div className="flex gap-2">
+              <p className="text-lg font-semibold">{scanned.name}</p>
+
+              {/* Record usage/restock inline for a countable item — the core scan→act loop.
+                  Gated exactly as the item card is: active, DISCRETE, not an unlimited source.
+                  Gauge / serialised / untracked / unlimited items skip ± (it doesn't apply) and
+                  keep check-out / move / view below. Reuses `QuantityStepper`, whose optimistic
+                  `useAdjustQuantity` writes flow back via the `useItem` subscription above. */}
+              {scanned.trackingMode === 'DISCRETE' && scanned.isActive && !isUnlimited(scanned) ? (
+                <div className="flex items-center gap-2" data-testid="scanner-adjust-quantity">
+                  <span className="text-xs text-muted-foreground">On hand</span>
+                  <QuantityStepper id={scanned.id} quantity={scanned.quantity} />
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
                 <Button onClick={() => setCheckoutItem(discreteResult)}>
                   <CheckoutIcon /> Check out
                 </Button>
+                {onViewItem ? (
+                  <Button variant="outline" onClick={viewScanned} data-testid="scanner-view-item">
+                    <EditIcon /> View details
+                  </Button>
+                ) : null}
                 <Button variant="outline" onClick={scanAgain}>
                   Scan again
+                </Button>
+              </div>
+
+              {/* Move this one item to a location — the single-item peer of the Continuous
+                  batch move, through the same `useMoveItem` seam. */}
+              <div className="flex gap-2 border-t border-border/60 pt-3">
+                <Select
+                  value={singleMove}
+                  onChange={setSingleMove}
+                  className="flex-1"
+                  aria-label="Move to location"
+                  data-testid="scanner-move-single-location"
+                  options={[
+                    { value: '', label: 'Move to…' },
+                    ...locationRows.map((loc) => ({ value: loc.id, label: loc.name })),
+                  ]}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => void moveScanned()}
+                  disabled={singleMove === '' || move.isPending}
+                  data-testid="scanner-move-single"
+                >
+                  <MoveIcon /> Move here
                 </Button>
               </div>
             </Surface>
@@ -473,6 +562,7 @@ function ScannerOverlayInner({
           onClose={() => {
             setCheckoutItem(null);
             setDiscreteResult(null);
+            setSingleMove('');
             dispatch({ type: 'RESUME_SCANNING' });
           }}
         />
