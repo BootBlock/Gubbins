@@ -10,6 +10,7 @@ const spies = vi.hoisted(() => ({
   createLocation: vi.fn(),
   createCategory: vi.fn(),
   addImage: vi.fn(),
+  createSupplierPart: vi.fn(),
 }));
 
 vi.mock('../mutations', () => ({
@@ -17,6 +18,8 @@ vi.mock('../mutations', () => ({
   useCreateSerialisedItems: () => ({ mutate: spies.createSerialised, isPending: false }),
   useApplyScrape: () => ({ mutate: spies.applyScrape, isPending: false }),
   useCreateLocation: () => ({ mutate: spies.createLocation, isPending: false }),
+  // Path A2 active-tab supplier-part persistence (only fired when `initialScrape` is passed).
+  useCreateSupplierPart: () => ({ mutate: spies.createSupplierPart, isPending: false }),
 }));
 
 // The shared-image attach path (plan EI-4) uses useAddItemImage — stub it so no QueryClient/DB
@@ -44,6 +47,8 @@ vi.mock('@/features/scraping', () => ({
   useScrapeNotifier: () => vi.fn(),
   buildScrapeMergePlan: vi.fn(),
   applyScrapeMerge: vi.fn(),
+  buildSupplierPartPlan: vi.fn(),
+  resolveSupplierPartWrite: vi.fn(),
 }));
 
 afterEach(() => {
@@ -53,6 +58,7 @@ afterEach(() => {
   spies.createLocation.mockReset();
   spies.createCategory.mockReset();
   spies.addImage.mockReset();
+  spies.createSupplierPart.mockReset();
 });
 
 const locations: LocationWithCount[] = [];

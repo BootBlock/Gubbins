@@ -33,6 +33,15 @@ const BARE_ASIN_RE = /\bB0[A-Z0-9]{8}\b/i;
 const AMAZON_URL_RE = /https?:\/\/[^\s<>"']*amazon\.[^\s<>"']*/i;
 
 /**
+ * The default Amazon marketplace TLD used to synthesise a canonical listing URL when
+ * none can be derived from context (e.g. a bare ASIN with no accompanying host). The
+ * active-tab parser ({@link ../scraping/parsers/amazon-parser}) always derives the real
+ * marketplace from the live page's host, so this default only covers the degenerate case.
+ * Chosen as the primary UK marketplace, matching the app's `en-GB` locale default.
+ */
+export const DEFAULT_AMAZON_MARKETPLACE = 'co.uk';
+
+/**
  * The marketplace TLDs Amazon operates under (single-label TLDs and the two-part ccTLD
  * suffixes). A curated set — rather than a loose `amazon.*` pattern — is what tells the
  * genuine registrable domain `amazon.co.uk` from a look-alike like `amazon.evil.com`,
@@ -123,6 +132,40 @@ export function parseAsin(input: string): string | null {
   }
   const query = url.searchParams.get('asin');
   return query ? normaliseAsin(query) : null;
+}
+
+/**
+ * The Amazon marketplace TLD of a host — `www.amazon.co.uk` → `co.uk`, `amazon.de` → `de` —
+ * or `null` when the host is not an Amazon marketplace. Preferring the longest matching
+ * suffix disambiguates the two-part ccTLDs (`co.uk`, `com.au`) from their single-label
+ * cousins. Used to carry the *live tab's* marketplace into a synthesised canonical URL so
+ * the enriched item links back to the same locale/currency the user was viewing.
+ */
+export function marketplaceFromHost(host: string): string | null {
+  const h = host.trim().toLowerCase().replace(/\.$/, '');
+  let best: string | null = null;
+  for (const tld of AMAZON_TLDS) {
+    const registrable = `amazon.${tld}`;
+    if ((h === registrable || h.endsWith(`.${registrable}`)) && (best === null || tld.length > best.length)) {
+      best = tld;
+    }
+  }
+  return best;
+}
+
+/**
+ * Synthesise the canonical Amazon listing URL for an ASIN on a given marketplace —
+ * `https://www.amazon.<tld>/dp/<ASIN>`. An ASIN maps 1:1 to this stable link, so it is
+ * the durable `distributor_url` a scrape or a bare-ASIN add records. `marketplace` is a
+ * TLD suffix (`co.uk`, `com`, …); an unrecognised one falls back to
+ * {@link DEFAULT_AMAZON_MARKETPLACE} so the result is always a well-formed URL. The ASIN
+ * is normalised (upper-cased/trimmed); callers should pass one already validated by
+ * {@link normaliseAsin} / {@link parseAsin}.
+ */
+export function asinToUrl(asin: string, marketplace: string = DEFAULT_AMAZON_MARKETPLACE): string {
+  const canonical = normaliseAsin(asin) ?? asin.trim().toUpperCase();
+  const tld = AMAZON_TLDS.has(marketplace) ? marketplace : DEFAULT_AMAZON_MARKETPLACE;
+  return `https://www.amazon.${tld}/dp/${canonical}`;
 }
 
 /**

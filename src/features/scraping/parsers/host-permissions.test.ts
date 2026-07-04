@@ -36,15 +36,28 @@ describe('extension host_permissions (§9 / §4 hardening)', () => {
     expect(manifest.host_permissions).toContain('https://*.openfoodfacts.org/*');
   });
 
-  it('covers every host-specific registered parser', () => {
-    // Each non-generic parser id should map to at least one allowed host pattern.
-    const hostParserIds = SUPPLIER_PARSERS.map((p) => p.id).filter((id) => id !== 'generic-meta');
-    for (const id of hostParserIds) {
+  it('covers every background-fetch parser (Amazon deliberately excepted — active-tab only)', () => {
+    // Each background-fetch parser id should map to at least one allowed host pattern. The
+    // generic fallback is not a supplier; `amazon` is Path A2 (active-tab, injected into the
+    // user's live tab), NOT Path A1 (background fetch) — so it is intentionally kept OUT of
+    // the fetch allow-list and host_permissions, and must not be asserted here.
+    const backgroundFetchIds = SUPPLIER_PARSERS.map((p) => p.id).filter(
+      (id) => id !== 'generic-meta' && id !== 'amazon',
+    );
+    for (const id of backgroundFetchIds) {
       const covered = EXTENSION_HOST_PERMISSIONS.some(
         (pat) => pat.includes(`.${id}.`) || pat.includes(`.${id}-`),
       );
       expect(covered, `no host_permission covers parser "${id}"`).toBe(true);
     }
+  });
+
+  it('does NOT grant a background-fetch host_permission for Amazon (A1 is declined)', () => {
+    // Guard the A2-vs-A1 decision: no Amazon host may leak into the fetch allow-list, and the
+    // background-fetch gate must refuse an Amazon URL (that path is the declined, ToS-hostile A1).
+    for (const pat of EXTENSION_HOST_PERMISSIONS) expect(pat).not.toContain('amazon');
+    expect(isAllowedSupplierUrl('https://www.amazon.co.uk/dp/B0TEST00001')).toBe(false);
+    expect(isAllowedSupplierUrl('https://www.amazon.com/dp/B0TEST00001')).toBe(false);
   });
 });
 

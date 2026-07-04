@@ -6,8 +6,11 @@
  * and Strategy-parser modules from `src/features/scraping/` — so the wire contract and
  * the DOM-drift handling are identical to the PWA's and covered by the unit suite.
  *
- *  - `content-script.js` — classic IIFE (MV3 content scripts cannot be ES modules).
- *  - `background.js`      — ES module service worker.
+ *  - `content-script.js`   — classic IIFE (MV3 content scripts cannot be ES modules).
+ *  - `background.js`        — ES module service worker.
+ *  - `active-tab-scrape.js` — classic IIFE injected into the user's live Amazon tab
+ *                             (Path A2) via `chrome.scripting.executeScript`; reuses the
+ *                             shared §9 parsers to read the rendered DOM.
  *
  * Output: `extension/dist/` (git-ignored). Load it unpacked via chrome://extensions.
  */
@@ -44,5 +47,6 @@ async function bundle(entry, name, format) {
 mkdirSync(outDir, { recursive: true });
 await bundle('src/background.ts', 'background', 'es');
 await bundle('src/content-script.ts', 'content-script', 'iife');
+await bundle('src/active-tab-scrape.ts', 'active-tab-scrape', 'iife');
 copyFileSync(resolve(root, 'manifest.json'), resolve(outDir, 'manifest.json'));
 console.log('✓ Gubbins extension built to', outDir);

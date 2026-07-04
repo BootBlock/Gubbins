@@ -25,6 +25,7 @@ import {
   bridgeReducer,
   initialBridgeState,
   pendingScrapeCount,
+  type IncomingScrapeState,
   type ProductLookupState,
   type ScrapeRequestState,
 } from './bridge-reducer';
@@ -36,6 +37,8 @@ interface ScrapeBridgeValue {
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
   /** Tracked barcode product lookups keyed by `requestId` (recommendation point 2). */
   readonly lookups: Readonly<Record<string, ProductLookupState>>;
+  /** Unsolicited active-tab scrapes pushed by the extension (Path A2), keyed by id. */
+  readonly incoming: Readonly<Record<string, IncomingScrapeState>>;
   /** Number of scrapes still awaiting an outcome (for UI affordances). */
   readonly pendingCount: number;
   /**
@@ -53,6 +56,8 @@ interface ScrapeBridgeValue {
   readonly requestLookup: (gtin: string) => string;
   /** Drop a single finished (or abandoned) product lookup by id. */
   readonly clearLookup: (id: string) => void;
+  /** Drop a single handled (or dismissed) active-tab scrape by id (Path A2). */
+  readonly clearIncoming: (id: string) => void;
 }
 
 const ScrapeBridgeContext = createContext<ScrapeBridgeValue | null>(null);
@@ -85,6 +90,13 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
         case 'PRODUCT_LOOKUP_ERROR':
           dispatch({ type: 'LOOKUP_ERROR', id: msg.requestId, payload: msg.payload });
           break;
+        case 'ACTIVE_TAB_RESULT':
+          // Unsolicited (Path A2): insert directly, deduped by the extension's id.
+          dispatch({ type: 'INCOMING_RESULT', id: msg.requestId, payload: msg.payload });
+          break;
+        case 'ACTIVE_TAB_ERROR':
+          dispatch({ type: 'INCOMING_ERROR', id: msg.requestId, payload: msg.payload });
+          break;
         // *_REQUEST kinds are outbound-only from the PWA — ignore our own echo.
       }
     };
@@ -111,18 +123,22 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
 
   const clearLookup = useCallback((id: string) => dispatch({ type: 'LOOKUP_CLEAR', id }), []);
 
+  const clearIncoming = useCallback((id: string) => dispatch({ type: 'INCOMING_CLEAR', id }), []);
+
   const value = useMemo<ScrapeBridgeValue>(
     () => ({
       ready: state.ready,
       requests: state.requests,
       lookups: state.lookups,
+      incoming: state.incoming,
       pendingCount: pendingScrapeCount(state),
       requestScrape,
       clear,
       requestLookup,
       clearLookup,
+      clearIncoming,
     }),
-    [state, requestScrape, clear, requestLookup, clearLookup],
+    [state, requestScrape, clear, requestLookup, clearLookup, clearIncoming],
   );
 
   return <ScrapeBridgeContext.Provider value={value}>{children}</ScrapeBridgeContext.Provider>;
