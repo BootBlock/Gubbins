@@ -309,7 +309,12 @@ export function DashboardNav() {
                         onKeyDown={handleTileKeyDown(dest.to)}
                         className={cn(
                           'flex h-full cursor-grab flex-col gap-2 p-3 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
-                          isOver ? 'ring-2 ring-primary/70' : 'ring-2 ring-primary/40',
+                          // Drop target: the same dashed "goes here" indicator the widget board
+                          // uses (DashboardGrid ghost), with the resting ring suppressed so the
+                          // dashed outline reads alone rather than doubled with a solid ring.
+                          isOver
+                            ? 'border-2 border-dashed border-primary/60 bg-primary/10'
+                            : 'ring-2 ring-primary/40',
                         )}
                       >
                         <div className="flex items-center gap-1.5 text-muted-foreground [&_svg]:size-4">
