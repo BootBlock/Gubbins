@@ -15,17 +15,38 @@
  * hit floats to the top and the matched characters are highlighted. The whole feature is
  * gated by the `dashboardCommandPalette` preference; when off, nothing renders and no
  * shortcut is bound.
+ *
+ * **Quick actions** (find → act): once an item is surfaced you can act on it without leaving
+ * the palette — mirroring the scanner's scan→act card. Enter still opens the item (the
+ * unchanged default); a secondary affordance (ArrowRight from the input, or the row's chevron
+ * for pointer users) opens an inline {@link ItemActions} panel over the highlighted item with
+ * the same tracking-mode-adaptive controls the item card offers: ± adjust (active DISCRETE,
+ * non-unlimited only), move to a location, check out (gated by the Contacts module), and open
+ * details. Escape / the Back control returns to the results; typing again resumes searching.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Input, Modal, Spinner } from '@/components/foundry';
-import { SearchIcon, PackageIcon, CloseIcon, ChevronRightIcon } from '@/components/icons';
+import { Button, Input, LiveRegion, Modal, Select, Spinner } from '@/components/foundry';
+import {
+  SearchIcon,
+  PackageIcon,
+  CloseIcon,
+  ChevronRightIcon,
+  ChevronLeftIcon,
+  MoveIcon,
+  CheckoutIcon,
+  EditIcon,
+} from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { rankFuzzy } from '@/lib/fuzzy';
 import { NAV_DESTINATIONS, type NavDestination } from '@/components/nav/nav-destinations';
-import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { useInventoryItems } from '@/features/inventory/queries';
+import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
+import { useMoveItem } from '@/features/inventory/mutations';
+import { useCheckoutItem } from '@/features/contacts/contacts';
+import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
+import { isUnlimited } from '@/features/inventory/unlimited';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useCommandPaletteStore } from './useCommandPaletteStore';
 
@@ -83,6 +104,9 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [active, setActive] = useState(0);
+  // The item whose quick-actions panel is open (find → act), or null while browsing. Holds
+  // the id + name so the panel can render immediately while its full record loads.
+  const [acting, setActing] = useState<{ readonly id: string; readonly name: string } | null>(null);
 
   // Focus the input once open — after the Modal's own focus effect has run (it parks
   // focus on the dialog container), so a quick timeout reliably wins it back.
@@ -100,6 +124,11 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 200);
     return () => clearTimeout(t);
+  }, [query]);
+
+  // Typing again dismisses any open action panel and returns to browsing the results.
+  useEffect(() => {
+    setActing(null);
   }, [query]);
 
   const itemSearch = isScreenMode ? '' : debounced;
@@ -138,17 +167,31 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     setActive((i) => (entries.length === 0 ? 0 : Math.min(i, entries.length - 1)));
   }, [entries.length]);
 
+  // Jump to an item's full record: seed the Inventory screen's search + go there, then close
+  // the palette. The shared "open details" path — Enter's default and the panel's primary.
+  const openItem = (name: string) => {
+    onClose();
+    useInventoryEntry.getState().requestSearch(name);
+    void navigate({ to: '/inventory' });
+  };
+
   const select = (index: number) => {
     const entry = entries[index];
     if (!entry) return;
-    onClose();
     if (entry.kind === 'screen') {
+      onClose();
       void navigate({ to: entry.dest.to });
     } else {
-      // Hand the item's name to the inventory screen and go there.
-      useInventoryEntry.getState().requestSearch(entry.item.name);
-      void navigate({ to: '/inventory' });
+      openItem(entry.item.name);
     }
+  };
+
+  // Reveal the quick-actions panel for an item entry (find → act). Restores focus to the
+  // input when it closes so the keyboard flow is never stranded.
+  const openActions = (item: { readonly id: string; readonly name: string }) => setActing(item);
+  const closeActions = () => {
+    setActing(null);
+    inputRef.current?.focus();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -161,13 +204,27 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       select(active);
+    } else if (e.key === 'ArrowRight') {
+      // Open quick actions for the highlighted item — but only when the caret is at the end
+      // of the query, so ArrowRight keeps editing text mid-word as usual.
+      const entry = entries[active];
+      const input = e.currentTarget;
+      const caretAtEnd = input.selectionStart === input.value.length;
+      if (entry?.kind === 'item' && caretAtEnd) {
+        e.preventDefault();
+        openActions(entry.item);
+      }
     }
   };
 
   const listId = 'command-palette-results';
   const activeEntry = entries[active];
+  // While the quick-actions panel is open, a dismiss (Escape / backdrop / the Close button)
+  // first backs out to the results — the Modal owns the document-level Escape listener, so
+  // routing "go back" through it is more robust than intercepting the key inside the panel.
+  const dismiss = () => (acting ? closeActions() : onClose());
   return (
-    <Modal open onClose={onClose} title="Command palette" className="max-w-xl">
+    <Modal open onClose={dismiss} title="Command palette" className="max-w-xl">
       <div className="flex items-center gap-2 rounded-lg border border-border bg-input/40 px-3 [&_svg]:size-4 [&_svg]:text-muted-foreground">
         {isScreenMode ? <ChevronRightIcon aria-hidden /> : <SearchIcon aria-hidden />}
         <Input
@@ -176,7 +233,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
           role="combobox"
           aria-expanded
           aria-controls={listId}
-          aria-activedescendant={activeEntry ? optionId(activeEntry) : undefined}
+          aria-activedescendant={activeEntry && !acting ? optionId(activeEntry) : undefined}
           aria-label="Search items, or type a greater-than sign to jump to a screen"
           placeholder="Search items, or type > to jump to a screen…"
           value={query}
@@ -204,94 +261,306 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
         ) : null}
       </div>
 
-      <ul
-        id={listId}
-        role="listbox"
-        aria-label={isScreenMode ? 'Screen results' : 'Item results'}
-        className="mt-3 max-h-80 space-y-1 overflow-y-auto"
-      >
-        {isScreenMode ? (
-          entries.length === 0 ? (
-            <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-              No screens match “{screenQuery}”.
-            </li>
-          ) : (
-            entries.map((entry, index) =>
-              entry.kind === 'screen' ? (
-                <EntryRow
-                  key={entry.dest.to}
-                  id={optionId(entry)}
-                  active={index === active}
-                  onSelect={() => select(index)}
-                  onHover={() => setActive(index)}
-                  icon={<entry.dest.Icon aria-hidden />}
-                  label={entry.dest.label}
-                  positions={entry.positions}
-                  testid="command-palette-screen"
-                />
-              ) : null,
-            )
-          )
-        ) : !hasItemQuery ? (
-          <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-            Start typing to find an item by name.
-          </li>
-        ) : loading ? (
-          <li className="px-2 py-6 text-center text-sm text-muted-foreground">Searching…</li>
-        ) : entries.length === 0 ? (
-          <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-            No items match “{debounced}”.
-          </li>
-        ) : (
-          entries.map((entry, index) =>
-            entry.kind === 'item' ? (
-              <EntryRow
-                key={entry.item.id}
-                id={optionId(entry)}
-                active={index === active}
-                onSelect={() => select(index)}
-                onHover={() => setActive(index)}
-                icon={<PackageIcon aria-hidden />}
-                label={entry.item.name}
-                positions={entry.positions}
-                testid="command-palette-result"
-              />
-            ) : null,
-          )
-        )}
-      </ul>
+      {acting ? (
+        <ItemActions
+          key={acting.id}
+          item={acting}
+          onBack={closeActions}
+          onOpenDetails={() => openItem(acting.name)}
+        />
+      ) : (
+        <>
+          <ul
+            id={listId}
+            role="listbox"
+            aria-label={isScreenMode ? 'Screen results' : 'Item results'}
+            className="mt-3 max-h-80 space-y-1 overflow-y-auto"
+          >
+            {isScreenMode ? (
+              entries.length === 0 ? (
+                <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+                  No screens match “{screenQuery}”.
+                </li>
+              ) : (
+                entries.map((entry, index) =>
+                  entry.kind === 'screen' ? (
+                    <EntryRow
+                      key={entry.dest.to}
+                      id={optionId(entry)}
+                      active={index === active}
+                      onSelect={() => select(index)}
+                      onHover={() => setActive(index)}
+                      icon={<entry.dest.Icon aria-hidden />}
+                      label={entry.dest.label}
+                      positions={entry.positions}
+                      testid="command-palette-screen"
+                    />
+                  ) : null,
+                )
+              )
+            ) : !hasItemQuery ? (
+              <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+                Start typing to find an item by name.
+              </li>
+            ) : loading ? (
+              <li className="px-2 py-6 text-center text-sm text-muted-foreground">Searching…</li>
+            ) : entries.length === 0 ? (
+              <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+                No items match “{debounced}”.
+              </li>
+            ) : (
+              entries.map((entry, index) =>
+                entry.kind === 'item' ? (
+                  <EntryRow
+                    key={entry.item.id}
+                    id={optionId(entry)}
+                    active={index === active}
+                    onSelect={() => select(index)}
+                    onHover={() => setActive(index)}
+                    onActions={() => openActions(entry.item)}
+                    icon={<PackageIcon aria-hidden />}
+                    label={entry.item.name}
+                    positions={entry.positions}
+                    testid="command-palette-result"
+                  />
+                ) : null,
+              )
+            )}
+          </ul>
+        </>
+      )}
 
       <p
         data-testid="command-palette-help"
         className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-xs text-muted-foreground"
       >
-        <span className="flex items-center gap-1">
-          <Kbd>↑</Kbd>
-          <Kbd>↓</Kbd>
-          to move
-        </span>
-        <span className="flex items-center gap-1">
-          <Kbd>↵</Kbd>
-          to select
-        </span>
-        <span className="flex items-center gap-1">
-          <Kbd>Esc</Kbd>
-          to close
-        </span>
-        <span className="ml-auto flex items-center gap-1">
-          Type <Kbd>&gt;</Kbd> to jump to a screen
-        </span>
+        {acting ? (
+          <span className="flex items-center gap-1">
+            <Kbd>Esc</Kbd>
+            to go back
+          </span>
+        ) : (
+          <>
+            <span className="flex items-center gap-1">
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              to move
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>↵</Kbd>
+              to open
+            </span>
+            {!isScreenMode && hasItemQuery ? (
+              <span className="flex items-center gap-1">
+                <Kbd>→</Kbd>
+                for actions
+              </span>
+            ) : null}
+            <span className="flex items-center gap-1">
+              <Kbd>Esc</Kbd>
+              to close
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              Type <Kbd>&gt;</Kbd> to jump to a screen
+            </span>
+          </>
+        )}
       </p>
     </Modal>
   );
 }
 
-/** One selectable row, shared by both modes; highlights the fuzzily-matched characters. */
+/**
+ * Quick-actions panel over one found item (find → act) — the palette's peer of the item card's
+ * action row ({@link import('@/features/inventory/components/ItemActions')}) and the scanner's
+ * Discrete result card. Reuses the very same mutations and gating so behaviour stays identical:
+ *
+ * - **± adjust** — only for an active DISCRETE, non-unlimited item (gauge / serialised /
+ *   untracked / unlimited items skip it); reuses {@link QuantityStepper}.
+ * - **Move** — a location picker → `useMoveItem`.
+ * - **Check out** — an inline contact-name field → `useCheckoutItem`, gated by the Contacts
+ *   module exactly as the item card is (hidden when Contacts is off, or for gauge / untracked /
+ *   removed items).
+ * - **Open details** — the palette's original jump-to-item, kept as the primary.
+ *
+ * The item's full record is loaded here (via {@link useItem}) so the controls can adapt to its
+ * tracking mode; every outcome is announced through a {@link LiveRegion} for assistive tech.
+ */
+function ItemActions({
+  item,
+  onBack,
+  onOpenDetails,
+}: {
+  readonly item: { readonly id: string; readonly name: string };
+  readonly onBack: () => void;
+  readonly onOpenDetails: () => void;
+}) {
+  const backRef = useRef<HTMLButtonElement>(null);
+  const detail = useItem(item.id);
+  const locationsQuery = useLocations();
+  const locationRows = locationsQuery.data?.rows ?? [];
+  const move = useMoveItem();
+  const checkout = useCheckoutItem();
+  const contactsEnabled = useFeature('contacts');
+
+  const [moveTarget, setMoveTarget] = useState('');
+  const [contactName, setContactName] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Land focus on Back when the panel opens, so the whole panel is keyboard-reachable from a
+  // known anchor and Escape/Back has an obvious visible home.
+  useEffect(() => {
+    backRef.current?.focus();
+  }, []);
+
+  const data = detail.data ?? null;
+
+  const moveHere = async () => {
+    if (moveTarget === '') return;
+    const name = locationRows.find((l) => l.id === moveTarget)?.name ?? 'the location';
+    await move.mutateAsync({ id: item.id, locationId: moveTarget });
+    setNotice(`Moved ${item.name} to ${name}.`);
+    setMoveTarget('');
+  };
+
+  const checkOut = async () => {
+    const contact = contactName.trim();
+    if (contact.length === 0) return;
+    await checkout.mutateAsync({ itemId: item.id, contactName: contact });
+    setNotice(`Checked out ${item.name} to ${contact}.`);
+    setContactName('');
+  };
+
+  // ± is countable-only, and matches the item card / scanner gate exactly.
+  const showAdjust = data?.trackingMode === 'DISCRETE' && data.isActive && !isUnlimited(data);
+  // Checking out belongs to the Contacts module (hidden when off), and never applies to a
+  // gauge / untracked / removed item — the same gate the item card uses.
+  const showCheckout =
+    contactsEnabled &&
+    data?.isActive === true &&
+    data.trackingMode !== 'CONSUMABLE_GAUGE' &&
+    data.trackingMode !== 'UNTRACKED';
+
+  return (
+    <div
+      role="group"
+      aria-label={`Quick actions for ${item.name}`}
+      className="mt-3 space-y-3 rounded-lg border border-border bg-card p-3"
+      data-testid="command-palette-action-panel"
+    >
+      <div className="flex items-center gap-2">
+        <Button
+          ref={backRef}
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={onBack}
+          aria-label="Back to results"
+          data-testid="command-palette-actions-back"
+        >
+          <ChevronLeftIcon />
+        </Button>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{item.name}</span>
+      </div>
+
+      {data ? (
+        <>
+          {showAdjust ? (
+            <div className="flex items-center gap-2" data-testid="command-palette-adjust">
+              <span className="text-xs text-muted-foreground">On hand</span>
+              <QuantityStepper id={data.id} quantity={data.quantity} />
+            </div>
+          ) : null}
+
+          {/* Move to a location — through the same `useMoveItem` seam as the card + scanner. */}
+          <div className="flex gap-2">
+            <Select
+              value={moveTarget}
+              onChange={setMoveTarget}
+              className="flex-1"
+              aria-label="Move to location"
+              data-testid="command-palette-move-location"
+              options={[
+                { value: '', label: 'Move to…' },
+                ...locationRows.map((loc) => ({ value: loc.id, label: loc.name })),
+              ]}
+            />
+            <Button
+              variant="outline"
+              onClick={() => void moveHere()}
+              disabled={moveTarget === '' || move.isPending}
+              data-testid="command-palette-move"
+            >
+              <MoveIcon /> Move
+            </Button>
+          </div>
+
+          {/* Check out — gated by the Contacts module exactly like the item card. */}
+          {showCheckout ? (
+            <div className="flex gap-2">
+              <Input
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void checkOut();
+                  }
+                }}
+                placeholder="Check out to…"
+                aria-label="Check out to contact"
+                data-testid="command-palette-checkout-contact"
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                onClick={() => void checkOut()}
+                disabled={contactName.trim().length === 0 || checkout.isPending}
+                data-testid="command-palette-checkout"
+              >
+                <CheckoutIcon /> Check out
+              </Button>
+            </div>
+          ) : null}
+
+          {/* Open the full record — the palette's original jump-to-item, kept as the primary. */}
+          <Button
+            variant="outline"
+            onClick={onOpenDetails}
+            className="w-full"
+            data-testid="command-palette-open-details"
+          >
+            <EditIcon /> Open details
+          </Button>
+        </>
+      ) : (
+        <div className="flex items-center gap-2 px-1 py-4 text-sm text-muted-foreground">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      )}
+
+      {/* Announce each action's outcome for assistive tech — the panel's SR channel. */}
+      <LiveRegion data-testid="command-palette-action-notice">
+        {notice ? <span className="text-xs text-muted-foreground">{notice}</span> : null}
+      </LiveRegion>
+    </div>
+  );
+}
+
+/**
+ * One selectable row, shared by both modes; highlights the fuzzily-matched characters.
+ *
+ * When `onActions` is given (item rows), a trailing chevron reveals the quick-actions panel —
+ * the pointer peer of the keyboard ArrowRight shortcut. It sits beside the `role="option"`
+ * button rather than inside it (an option can't nest a control) and is kept out of the Tab
+ * order (`tabIndex=-1`); keyboard users reach the same panel with ArrowRight.
+ */
 function EntryRow({
   id,
   active,
   onSelect,
   onHover,
+  onActions,
   icon,
   label,
   positions,
@@ -301,23 +570,26 @@ function EntryRow({
   readonly active: boolean;
   readonly onSelect: () => void;
   readonly onHover: () => void;
+  readonly onActions?: () => void;
   readonly icon: ReactNode;
   readonly label: string;
   readonly positions?: readonly number[];
   readonly testid: string;
 }) {
   return (
-    <li>
+    <li
+      className={cn('flex items-center rounded-lg transition-colors', active ? 'bg-primary/15' : null)}
+      onMouseMove={onHover}
+    >
       <button
         type="button"
         id={id}
         role="option"
         aria-selected={active}
         onClick={onSelect}
-        onMouseMove={onHover}
         className={cn(
-          'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground',
-          active ? 'bg-primary/15 text-foreground' : 'text-muted-foreground',
+          'flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground',
+          active ? 'text-foreground' : 'text-muted-foreground',
         )}
         data-testid={testid}
       >
@@ -326,6 +598,21 @@ function EntryRow({
           <Highlight text={label} positions={positions} />
         </span>
       </button>
+      {onActions ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={onActions}
+          aria-label={`Quick actions for ${label}`}
+          data-testid="command-palette-row-actions"
+          className={cn(
+            'mr-1 shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4',
+            active ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          <ChevronRightIcon aria-hidden />
+        </button>
+      ) : null}
     </li>
   );
 }
