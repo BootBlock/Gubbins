@@ -140,8 +140,12 @@ export function Modal({
           </Button>
         </div>
         {/* The scroll region: `min-h-0` lets this flex child shrink below its content height so
-            `overflow-y-auto` actually engages (without it the panel just grows past the cap). */}
-        <div className="mt-5 min-h-0 overflow-y-auto">{children}</div>
+            `overflow-y-auto` actually engages (without it the panel just grows past the cap).
+            `overflow-x-hidden` keeps a stray-wide child from ever producing a horizontal bar that
+            would paint over the content — dialog bodies are laid out to fit the width. Bodies that
+            want a reserved gutter opt into `dialog-scroll`; here a classic (space-taking) bar
+            already sits beside the content rather than over it. */}
+        <div className="mt-5 min-h-0 overflow-y-auto overflow-x-hidden">{children}</div>
       </Surface>
     </div>,
     document.body,
