@@ -177,6 +177,15 @@ function InventoryWorkspace() {
   const firstItemIndex = active.data?.pages[0]?.offset ?? 0;
   const flatLocations = flat.data?.rows ?? [];
 
+  // Child locations of the selected location, so a location that holds no items of its own
+  // but nests others can offer them as a "drill down" grid instead of a dead-end empty state.
+  // Suppressed while a text or visual-builder query is narrowing the list — the child cards
+  // would read as query matches — and for the "All locations" view (no selection).
+  const childLocations = useMemo(() => {
+    if (!selectedLocationId || search || astActive) return [];
+    return (flat.data?.rows ?? []).filter((loc) => loc.parentId === selectedLocationId && !loc.archivedAt);
+  }, [flat.data, selectedLocationId, search, astActive]);
+
   // Pick the list's entrance so it reflects whichever input changed. A view-mode switch
   // (Visual ↔ Data) slides the list in horizontally, tracking the segmented control: Data
   // (the right segment) enters from the right, Visual (the left segment) from the left. A
@@ -543,6 +552,8 @@ function InventoryWorkspace() {
                   hasPreviousPage={active.hasPreviousPage}
                   isFetchingPreviousPage={active.isFetchingPreviousPage}
                   fetchPreviousPage={() => void active.fetchPreviousPage()}
+                  childLocations={childLocations}
+                  onSelectLocation={setSelectedLocationId}
                   selection={selection}
                   selectedIds={selectedIds}
                 />

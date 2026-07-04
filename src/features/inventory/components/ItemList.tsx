@@ -8,6 +8,7 @@ import type { LayoutDensity } from '@/state/stores/useLayoutStore';
 import { listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
+import { SubLocationNav } from './SubLocationNav';
 import type { ItemSelection } from './inventory-ui';
 
 const VISUAL_CARD_MIN_WIDTH = 280;
@@ -36,6 +37,8 @@ export function ItemList({
   hasPreviousPage,
   isFetchingPreviousPage,
   fetchPreviousPage,
+  childLocations,
+  onSelectLocation,
   selection,
   selectedIds,
 }: {
@@ -55,6 +58,15 @@ export function ItemList({
   hasPreviousPage: boolean;
   isFetchingPreviousPage: boolean;
   fetchPreviousPage: () => void;
+  /**
+   * The selected location's direct, active child locations. When the location holds no
+   * items of its own but nests these, the empty state becomes a "drill down" grid of them
+   * instead of a dead-end banner. Empty/omitted for the flat "All locations" view, a
+   * childless location, or while a search/visual query is narrowing the list.
+   */
+  childLocations?: readonly LocationWithCount[];
+  /** Navigate into a child location (select it in the sidebar). */
+  onSelectLocation?: (id: string) => void;
   selection?: ItemSelection;
   /**
    * Ids of the currently-selected items. Held here rather than inside `selection` so
@@ -104,6 +116,19 @@ export function ItemList({
   }, [firstRow, columns, firstItemIndex, hasPreviousPage, isFetchingPreviousPage, fetchPreviousPage]);
 
   if (items.length === 0) {
+    // A location with no items of its own but with child locations drills down into them
+    // rather than dead-ending on the empty banner (spec: inventory location view).
+    if (childLocations && childLocations.length > 0 && onSelectLocation) {
+      return (
+        <SubLocationNav
+          childLocations={childLocations}
+          locations={locations}
+          density={density}
+          onSelect={onSelectLocation}
+          locationColorClass={locationColorClass}
+        />
+      );
+    }
     return <EmptyState selectedLocationId={selectedLocationId} />;
   }
 

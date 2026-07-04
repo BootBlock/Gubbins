@@ -1,7 +1,25 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import type { LocationWithCount } from '@/db/repositories';
 import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { ItemList } from './ItemList';
+
+function loc(id: string, name: string, parentId: string | null): LocationWithCount {
+  return {
+    id,
+    name,
+    parentId,
+    isSystem: false,
+    description: null,
+    color: null,
+    kind: null,
+    capacity: null,
+    isDefault: false,
+    archivedAt: null,
+    updatedAt: 0,
+    itemCount: 0,
+  };
+}
 
 /**
  * Empty-state coverage for {@link ItemList}. With no items the list short-circuits to
@@ -45,5 +63,27 @@ describe('ItemList empty state', () => {
     expect(screen.getByText('No items here yet')).toBeInTheDocument();
     expect(screen.getByText(/don't have a location yet/i)).toBeInTheDocument();
     expect(screen.queryByText(/add your first item/i)).not.toBeInTheDocument();
+  });
+
+  it('drills into child locations instead of the empty banner when a location nests them', () => {
+    const onSelectLocation = vi.fn();
+    render(
+      <ItemList
+        {...BASE_PROPS}
+        selectedLocationId="shed"
+        childLocations={[loc('a', 'Cabinet A', 'shed'), loc('b', 'Cabinet B', 'shed')]}
+        onSelectLocation={onSelectLocation}
+      />,
+    );
+    expect(screen.queryByText('No items here yet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Open Cabinet A/i }));
+    expect(onSelectLocation).toHaveBeenCalledWith('a');
+  });
+
+  it('still shows the empty banner when the location has no child locations', () => {
+    render(
+      <ItemList {...BASE_PROPS} selectedLocationId="shed" childLocations={[]} onSelectLocation={() => {}} />,
+    );
+    expect(screen.getByText('No items here yet')).toBeInTheDocument();
   });
 });
