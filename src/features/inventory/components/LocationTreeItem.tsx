@@ -45,10 +45,11 @@ export interface TreeItemProps {
   /**
    * Accept an inventory item dragged onto this row and move it here (spec §4 drag-to-move).
    * When set, the row becomes a drop target that highlights while an item hovers over it and
-   * calls this with the dropped item's id. Omit for rows that can't receive items (e.g. the
-   * synthetic "All items" row, or an archived location).
+   * calls this with the dropped item's id and name (the name lets the caller name the item in
+   * its move feedback). Omit for rows that can't receive items (e.g. the synthetic "All items"
+   * row, or an archived location).
    */
-  readonly onDropItem?: (itemId: string) => void;
+  readonly onDropItem?: (itemId: string, itemName: string) => void;
   /**
    * True ⇒ this row is a location drag *source*: it can be dragged onto another location row to
    * nest beneath it (spec §4 drag-to-nest). Off for rows that can't be re-nested (the synthetic
@@ -74,6 +75,14 @@ export interface TreeItemProps {
    * than an unexplained pause after the drop.
    */
   readonly nesting?: boolean;
+  /**
+   * True while an item just dropped onto this row is being moved here (spec §4 drag-to-move).
+   * The move settles quickly but the sidebar counts only refresh after an invalidation
+   * round-trip, so without this the drop looks like nothing happened. The row shows a spinner
+   * (in place of its count) and is marked `aria-busy` for the brief in-flight window, giving
+   * immediate "landing here…" feedback right where the item was dropped.
+   */
+  readonly receivingItem?: boolean;
   readonly ref: (el: HTMLDivElement | null) => void;
 }
 
@@ -116,6 +125,7 @@ export function LocationTreeItem({
   onDropLocation,
   acceptsLocation,
   nesting,
+  receivingItem,
   ref,
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
@@ -136,7 +146,7 @@ export function LocationTreeItem({
       aria-selected={selected}
       aria-expanded={expanded}
       aria-label={label}
-      aria-busy={nesting || undefined}
+      aria-busy={nesting || receivingItem || undefined}
       tabIndex={focused ? 0 : -1}
       data-tree-id={id}
       onFocus={onFocus}
@@ -207,6 +217,10 @@ export function LocationTreeItem({
               // The re-parent is in flight — a spinner takes the count's place so the row visibly
               // reports "moving…" until the tree reshapes (the count would be stale anyway).
               <Spinner className="ml-auto size-3.5 shrink-0" label={`Moving ${label}`} />
+            ) : receivingItem ? (
+              // An item is landing here — a spinner takes the count's place for the brief in-flight
+              // window so the drop reads as "something's happening" before the count refreshes.
+              <Spinner className="ml-auto size-3.5 shrink-0" label={`Moving item into ${label}`} />
             ) : (
               <span
                 className={cn(

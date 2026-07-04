@@ -40,6 +40,14 @@ export function useCardClickAction(suppressed: boolean): {
   const active = action !== 'none' && !suppressed;
   const onClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {
+      // Ignore clicks that bubbled up from one of the card's own dialogs. Those dialogs (Move,
+      // details, label, …) are React children of the card, so their clicks bubble here through
+      // the React tree — but they render in a portal *outside* the card's DOM. So a genuine
+      // card-body click has its `target` inside `currentTarget`, whereas a click from an open
+      // dialog does not. Without this, e.g. opening the Move dialog and clicking its Location
+      // combobox (a `role="combobox"`, which the interactive-origin guard below doesn't match)
+      // would re-fire the card action and pop the details dialog on top of it.
+      if (!event.currentTarget.contains(event.target as Node)) return;
       // Guarded again here (not just in `active`) so a click bubbling up from a button/stepper
       // never doubles as a card-body click.
       if (action === 'none' || isInteractiveDragOrigin(event.target)) return;

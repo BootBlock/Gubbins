@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
-import { ItemDragProvider } from '../item-drag';
+import { ToastProvider } from '@/components/foundry';
+import { ItemDragProvider, useItemDragSource } from '../item-drag';
 import { LocationSidebar } from './LocationSidebar';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
 
@@ -14,10 +15,15 @@ const spies = vi.hoisted(() => ({
   archive: vi.fn(),
   move: vi.fn(),
 }));
-// Mutable so a test can simulate an in-flight drag-to-nest re-parent (isPending + variables).
+// Mutable so a test can simulate an in-flight drag-to-nest re-parent / item move (isPending +
+// variables) and drive the receiving-row spinner.
 const updateState = vi.hoisted(() => ({
   isPending: false,
   variables: undefined as { id: string; input: unknown } | undefined,
+}));
+const moveState = vi.hoisted(() => ({
+  isPending: false,
+  variables: undefined as { id: string; locationId: string } | undefined,
 }));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
@@ -28,15 +34,21 @@ vi.mock('../mutations', () => ({
     variables: updateState.variables,
   }),
   useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
-  useMoveItem: () => ({ mutate: spies.move, isPending: false }),
+  useMoveItem: () => ({ mutate: spies.move, isPending: moveState.isPending, variables: moveState.variables }),
 }));
 
 afterEach(cleanup);
 beforeEach(() => {
   spies.update.mockClear();
   spies.del.mockClear();
+  // Default: the move mutation resolves synchronously as a success, so `onSuccess` (toast +
+  // announcement) fires. A test that needs a pending move sets `moveState.isPending` instead.
+  spies.move.mockReset();
+  spies.move.mockImplementation((_vars: unknown, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.());
   updateState.isPending = false;
   updateState.variables = undefined;
+  moveState.isPending = false;
+  moveState.variables = undefined;
   // Expansion is a persisted module-singleton store; clear it so each test starts from
   // the baseline (top-level open, deeper collapsed) rather than a prior test's toggles.
   useLocationExpansionStore.getState().reset();
@@ -117,7 +129,11 @@ const flat: LocationWithCount[] = [
 ];
 
 function renderSidebar(onSelect = vi.fn()) {
-  render(<LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={onSelect} totalCount={7} />);
+  render(
+    <ToastProvider>
+      <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={onSelect} totalCount={7} />
+    </ToastProvider>,
+  );
   return onSelect;
 }
 
@@ -347,9 +363,11 @@ describe('LocationSidebar — drag-to-nest', () => {
   // Drag-to-nest needs the pointer-drag provider that InventoryScreen supplies in production.
   function renderWithDrag() {
     render(
-      <ItemDragProvider>
-        <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={vi.fn()} totalCount={7} />
-      </ItemDragProvider>,
+      <ToastProvider>
+        <ItemDragProvider>
+          <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={vi.fn()} totalCount={7} />
+        </ItemDragProvider>
+      </ToastProvider>,
     );
   }
 
@@ -421,5 +439,69 @@ describe('LocationSidebar — drag-to-nest', () => {
     firePointer(window, 'pointerup', { x: 40, y: 40 });
 
     expect(spies.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('LocationSidebar — drag-to-move item feedback', () => {
+  afterEach(() => {
+    // @ts-expect-error restore jsdom's default hit-test (returns null).
+    delete document.elementFromPoint;
+  });
+
+  // An inventory item drag source (as ItemCard/ItemRow provide) plus the sidebar, both under the
+  // pointer-drag provider and a ToastProvider (as <App> supplies).
+  function renderWithItemSource() {
+    function ItemSource() {
+      const drag = useItemDragSource({ id: 'item-1', name: 'NE555 timer' });
+      return (
+        <div {...drag} data-testid="item-source">
+          NE555 timer
+        </div>
+      );
+    }
+    render(
+      <ToastProvider>
+        <ItemDragProvider>
+          <ItemSource />
+          <LocationSidebar tree={tree} flat={flat} selectedId={null} onSelect={vi.fn()} totalCount={7} />
+        </ItemDragProvider>
+      </ToastProvider>,
+    );
+  }
+
+  it('moves the item and surfaces a toast + live announcement when dropped on a location', () => {
+    renderWithItemSource();
+    const source = screen.getByTestId('item-source');
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+
+    document.elementFromPoint = vi.fn(() => workshop);
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    // The move dispatches to the dropped-on location…
+    expect(spies.move).toHaveBeenCalledWith({ id: 'item-1', locationId: 'workshop' }, expect.anything());
+    // …a visible (and aria-live) toast confirms the result, so the drop is never silent even
+    // before the sidebar counts refresh…
+    expect(screen.getByText('Moved NE555 timer to Workshop.')).toBeTruthy();
+    // …and the live region carries the immediate "Moving…" start cue (the toast owns the result,
+    // so there's no second "moved" message to double-announce).
+    expect(screen.getByTestId('location-move-live-region').textContent).toContain(
+      'Moving NE555 timer to Workshop…',
+    );
+  });
+
+  it('shows a busy spinner on the location currently receiving a dragged item', () => {
+    // Simulate the move mutation being in flight, targeting Workshop.
+    moveState.isPending = true;
+    moveState.variables = { id: 'item-1', locationId: 'workshop' };
+    renderWithItemSource();
+
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    expect(workshop.getAttribute('aria-busy')).toBe('true');
+    // A labelled progress spinner takes the count's place while the item lands…
+    expect(screen.getByRole('status', { name: 'Moving item into Workshop' })).toBeTruthy();
+    // …while a sibling not receiving anything stays idle.
+    expect(screen.getByRole('treeitem', { name: 'Cabinet' }).getAttribute('aria-busy')).toBeNull();
   });
 });
