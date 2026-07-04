@@ -13,6 +13,7 @@ import {
 import {
   AppearanceIcon,
   CriticalIcon,
+  CustomiseIcon,
   DarkThemeIcon,
   DatasheetIcon,
   HomeIcon,
@@ -46,6 +47,8 @@ import {
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
+  NAV_COUNT_METRIC_CONFIG,
+  NAV_COUNT_ROUTES,
   THEME_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
@@ -53,6 +56,8 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  normaliseNavCountMetric,
+  type NavCountRoute,
 } from './settings';
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
@@ -74,6 +79,27 @@ const LOCALE_OPTIONS = [
   { value: 'de-DE', label: 'German (Germany)' },
   { value: 'fr-FR', label: 'French (France)' },
 ] as const;
+
+/**
+ * Rich-Markdown help for each configurable nav-tile count picker (backlog A1). Keyed by the
+ * same route as {@link NAV_COUNT_METRIC_CONFIG}; explains what each metric counts so the
+ * self-descriptive option labels gain the "why".
+ */
+const NAV_COUNT_HINTS: Record<NavCountRoute, string> = {
+  '/projects':
+    'What the Dashboard **Projects** tile counts:\n\n' +
+    '- **Active projects** — everything not yet completed or archived (the default).\n' +
+    '- **All projects** — every project, whatever its status.',
+  '/purchase-orders':
+    'What the Dashboard **Purchase orders** tile counts:\n\n' +
+    '- **Open orders** — draft, ordered or partially-received orders still in flight (the default).\n' +
+    '- **All orders** — every order, including received and cancelled ones.',
+  '/bookings':
+    'What the Dashboard **Bookings** tile counts:\n\n' +
+    '- **Upcoming bookings** — not cancelled or converted, and their last day hasn’t passed (the default).\n' +
+    '- **Starting this week** — upcoming bookings that begin within the next seven days.\n' +
+    '- **All bookings** — every booking on record.',
+};
 
 /**
  * Settings dialog (spec §3, §2.1 Tier-2 `usePreferencesStore`).
@@ -105,6 +131,17 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
   const scannerOn = useFeature('scanner');
   const perishablesOn = useFeature('perishables');
   const projectsOn = useFeature('projects');
+  const purchaseOrdersOn = useFeature('purchase-orders');
+  const bookingsOn = useFeature('bookings');
+
+  // A configurable nav-tile count picker is shown only when its tile's feature is enabled —
+  // a hidden tile has no count to re-point. Keyed by the same route as NAV_COUNT_METRIC_CONFIG.
+  const navCountFeatureOn: Record<NavCountRoute, boolean> = {
+    '/projects': projectsOn,
+    '/purchase-orders': purchaseOrdersOn,
+    '/bookings': bookingsOn,
+  };
+  const anyNavCountPicker = NAV_COUNT_ROUTES.some((route) => navCountFeatureOn[route]);
 
   const tabs: readonly RailTab[] = [
     {
@@ -222,6 +259,35 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               />
             </SettingRow>
           </SettingsSection>
+
+          {anyNavCountPicker ? (
+            <SettingsSection icon={<CustomiseIcon />} title="Nav tile counts">
+              {NAV_COUNT_ROUTES.filter((route) => navCountFeatureOn[route]).map((route) => {
+                const cfg = NAV_COUNT_METRIC_CONFIG[route];
+                // Defensive normalisation so a partial/stale persisted map (e.g. missing this
+                // route) shows the tile's default rather than an empty control.
+                const metric = normaliseNavCountMetric(route, prefs.navCountMetrics[route] ?? '');
+                return (
+                  <SettingRow
+                    key={route}
+                    label={cfg.settingLabel}
+                    description="Choose which metric this tile’s count shows on the dashboard."
+                    hintSize="md"
+                    hint={NAV_COUNT_HINTS[route]}
+                  >
+                    <Select
+                      aria-label={cfg.settingLabel}
+                      data-testid={`setting-nav-count-${route}`}
+                      className="h-9 w-56"
+                      value={metric}
+                      onChange={(value) => prefs.setNavCountMetric(route, value)}
+                      options={cfg.options.map((o) => ({ value: o.value, label: o.label }))}
+                    />
+                  </SettingRow>
+                );
+              })}
+            </SettingsSection>
+          ) : null}
 
           <SettingsSection icon={<KioskIcon />} title="Kiosk &amp; display">
             <SettingRow

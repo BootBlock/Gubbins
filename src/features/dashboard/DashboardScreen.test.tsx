@@ -29,6 +29,10 @@ vi.mock('./DashboardGettingStarted', () => ({ DashboardGettingStarted: () => nul
 // Likewise reads item count + auth via hooks that need providers; stub for this focused test.
 vi.mock('./DashboardBackupNudge', () => ({ DashboardBackupNudge: () => null }));
 
+// DashboardNav's collection-count pills reach TanStack Query via useNavCounts (no provider in
+// this grid-focused test) — stub it to an empty map so no tile shows a count.
+vi.mock('./useNavCounts', () => ({ useNavCounts: () => ({}) }));
+
 const alertsMock = vi.fn();
 vi.mock('@/features/alerts/useAlerts', () => ({ useAlerts: () => alertsMock() }));
 

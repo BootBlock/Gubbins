@@ -302,3 +302,118 @@ export const DEFAULT_WINDOW_MONTHS = 6;
 export function normaliseWindowMonths(value: number): number {
   return (WINDOW_MONTH_OPTIONS as readonly number[]).includes(value) ? value : DEFAULT_WINDOW_MONTHS;
 }
+
+/**
+ * Dashboard nav-tile count metrics (backlog A1). Each *collection* tile on the Dashboard
+ * hub shows a small count (see `useNavCounts`); these let the user re-point a tile at a
+ * different metric than the one shipped as its default — generalising the fixed
+ * "active projects / open orders / upcoming bookings" choices into a user preference.
+ *
+ * Only tiles with **more than one genuinely useful, already-loaded metric** appear here:
+ * Inventory (always its item total) and Contacts (always all contacts) are single-metric,
+ * so they carry no picker. Every metric is a pure selector over data the tile's existing
+ * read hook already loads — no new query or column — which keeps the counts free (shared
+ * TanStack cache) and unit-testable. This map is the SSOT for the Settings picker (option
+ * values + labels), the store default/normalisation, and each tile's spoken noun; the
+ * selectors themselves live beside the reads in `useNavCounts`.
+ */
+export interface NavCountMetricOption {
+  readonly value: string;
+  /** The Settings picker label for this metric. */
+  readonly label: string;
+  /** Singular spoken noun for the tile's accessible name (e.g. "active project"). */
+  readonly noun: string;
+  /**
+   * Plural spoken noun (e.g. "active projects"). Held explicitly because a phrase noun
+   * does not pluralise by a bare `+s` ("booking starting this week" → "bookings starting
+   * this week"), so {@link plural} needs the irregular form.
+   */
+  readonly nounPlural: string;
+}
+
+interface NavCountMetricConfig {
+  /** The tile's Settings picker label ("Projects tile counts"). */
+  readonly settingLabel: string;
+  /** The default metric — the behaviour shipped before A1 made it configurable. */
+  readonly default: string;
+  readonly options: readonly NavCountMetricOption[];
+}
+
+export const NAV_COUNT_METRIC_CONFIG = {
+  '/projects': {
+    settingLabel: 'Projects tile counts',
+    default: 'active',
+    options: [
+      { value: 'active', label: 'Active projects', noun: 'active project', nounPlural: 'active projects' },
+      { value: 'all', label: 'All projects', noun: 'project', nounPlural: 'projects' },
+    ],
+  },
+  '/purchase-orders': {
+    settingLabel: 'Purchase orders tile counts',
+    default: 'open',
+    options: [
+      { value: 'open', label: 'Open orders', noun: 'open order', nounPlural: 'open orders' },
+      { value: 'all', label: 'All orders', noun: 'order', nounPlural: 'orders' },
+    ],
+  },
+  '/bookings': {
+    settingLabel: 'Bookings tile counts',
+    default: 'upcoming',
+    options: [
+      {
+        value: 'upcoming',
+        label: 'Upcoming bookings',
+        noun: 'upcoming booking',
+        nounPlural: 'upcoming bookings',
+      },
+      {
+        value: 'thisWeek',
+        label: 'Starting this week',
+        noun: 'booking starting this week',
+        nounPlural: 'bookings starting this week',
+      },
+      { value: 'all', label: 'All bookings', noun: 'booking', nounPlural: 'bookings' },
+    ],
+  },
+} as const satisfies Record<string, NavCountMetricConfig>;
+
+/** The Dashboard tiles whose count metric is user-configurable (keys of {@link NAV_COUNT_METRIC_CONFIG}). */
+export type NavCountRoute = keyof typeof NAV_COUNT_METRIC_CONFIG;
+
+/** Every configurable tile route, for iteration/normalisation. */
+export const NAV_COUNT_ROUTES = Object.keys(NAV_COUNT_METRIC_CONFIG) as NavCountRoute[];
+
+/** The shipped default metric per configurable tile, derived from the config so it can't drift. */
+export const DEFAULT_NAV_COUNT_METRICS = Object.fromEntries(
+  NAV_COUNT_ROUTES.map((route) => [route, NAV_COUNT_METRIC_CONFIG[route].default]),
+) as Record<NavCountRoute, string>;
+
+/**
+ * Coerce a persisted metric id to a valid choice for `route`, falling back to the tile's
+ * shipped default. Kept total so a stale localStorage value from an older/newer build can
+ * never reach the count selector or the picker.
+ */
+export function normaliseNavCountMetric(route: NavCountRoute, value: string): string {
+  const cfg = NAV_COUNT_METRIC_CONFIG[route];
+  return cfg.options.some((o) => o.value === value) ? value : cfg.default;
+}
+
+/**
+ * Coerce a whole persisted map (possibly partial or stale — e.g. missing a route added in a
+ * later build) into a complete, valid one. Every configurable route gets a valid metric.
+ */
+export function normaliseNavCountMetrics(
+  value: Partial<Record<NavCountRoute, string>> | undefined,
+): Record<NavCountRoute, string> {
+  const out = {} as Record<NavCountRoute, string>;
+  for (const route of NAV_COUNT_ROUTES) {
+    out[route] = normaliseNavCountMetric(route, value?.[route] ?? '');
+  }
+  return out;
+}
+
+/** The resolved option for a tile's current metric (its labels + spoken nouns); never null. */
+export function navCountOption(route: NavCountRoute, metric: string): NavCountMetricOption {
+  const cfg = NAV_COUNT_METRIC_CONFIG[route];
+  return cfg.options.find((o) => o.value === metric) ?? cfg.options.find((o) => o.value === cfg.default)!;
+}
