@@ -22,6 +22,7 @@ import {
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
+import { NAV_COUNT_NOUNS, useNavCounts } from './useNavCounts';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -55,6 +56,19 @@ const GROUP_CARD_TINTS: Record<NavGroup, string> = {
   primary: 'bg-primary/10 hover:bg-primary/15',
   manage: 'bg-accent/10 hover:bg-accent/15',
   system: 'bg-loc-rose/10 hover:bg-loc-rose/15',
+};
+
+/**
+ * Count-pill colours per group (see {@link useNavCounts}) — the group's own hue as text on a
+ * soft same-hue wash, so the number reads as a distinct, quick-to-scan accent against the
+ * card's title without looking like the destructive Alerts badge. The Inventory tile is the
+ * solid-primary CTA, so its pill instead sits on the inverse `primary-foreground` (handled at
+ * the call site). Same theme-aware tokens as the card tints, dark-mode-correct for free.
+ */
+const GROUP_COUNT_BADGE: Record<NavGroup, string> = {
+  primary: 'bg-primary/15 text-primary',
+  manage: 'bg-accent/15 text-accent',
+  system: 'bg-loc-rose/15 text-loc-rose',
 };
 
 /**
@@ -98,6 +112,9 @@ export function DashboardNav() {
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
   const openSettings = useSettingsDialog((s) => s.openSettings);
+  // Per-destination "how many are in there" counts for the collection tiles (Inventory,
+  // Projects, …). A route absent from the map — or sitting at 0 — shows no pill.
+  const navCounts = useNavCounts();
 
   return (
     <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
@@ -125,6 +142,18 @@ export function DashboardNav() {
                 // dashboard rather than navigating (and a Link would prefetch-open it on
                 // hover). See `useSettingsDialog` / `SettingsDialogHost`.
                 const isSettings = dest.to === '/settings';
+                // Collection count for this tile (Inventory/Projects/…); undefined or 0 ⇒ no pill.
+                const count = navCounts[dest.to];
+                const showCount = typeof count === 'number' && count > 0;
+                // Spoken form of the count for the tile's accessible name — a bare "3" next to
+                // "Projects" is ambiguous, so name it ("Projects — 3 active projects").
+                const countLabel =
+                  showCount && count !== undefined
+                    ? `${isInventory ? 'Open inventory' : dest.label} — ${count} ${plural(
+                        count,
+                        NAV_COUNT_NOUNS[dest.to] ?? 'item',
+                      )}`
+                    : undefined;
                 const surface = (
                   <Surface
                     className={cn(
@@ -145,6 +174,23 @@ export function DashboardNav() {
                         className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
                       >
                         {alertCount > 99 ? '99+' : alertCount}
+                      </span>
+                    )}
+                    {/* Collection count pill — right-aligned, group-coloured, capped so a huge
+                        catalogue can't stretch the tile. The spoken count rides on the tile's
+                        aria-label below, so the pill itself is decorative. */}
+                    {showCount && count !== undefined && (
+                      <span
+                        aria-hidden
+                        data-testid={`nav-count-${dest.to}`}
+                        className={cn(
+                          'ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums',
+                          isInventory
+                            ? 'bg-primary-foreground/15 text-primary-foreground'
+                            : GROUP_COUNT_BADGE[group],
+                        )}
+                      >
+                        {count > 999 ? '999+' : count}
                       </span>
                     )}
                   </Surface>
@@ -175,7 +221,7 @@ export function DashboardNav() {
                           aria-label={
                             isAlerts && alertCount > 0
                               ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
-                              : undefined
+                              : countLabel
                           }
                           className={tileClassName}
                         >
