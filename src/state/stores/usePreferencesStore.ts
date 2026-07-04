@@ -101,8 +101,8 @@ interface PreferencesStore {
   /**
    * What a plain click on an item card/row body (outside its buttons) does (spec §3) — open
    * details, move, show the label, or nothing. A pointer-only shortcut that mirrors one of the
-   * card's own action buttons; defaults to `none` so the card stays inert until opted in. See
-   * {@link CardClickAction}.
+   * card's own action buttons; defaults to opening the item's details (or `none` to keep the
+   * body inert). See {@link CardClickAction}.
    */
   readonly cardClickAction: CardClickAction;
   /**

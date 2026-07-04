@@ -164,8 +164,8 @@ describe('normaliseCardClickAction', () => {
     }
   });
 
-  it('defaults to doing nothing until the user opts in', () => {
-    expect(DEFAULT_CARD_CLICK_ACTION).toBe('none');
+  it('defaults to opening the item details (the expected click-to-open)', () => {
+    expect(DEFAULT_CARD_CLICK_ACTION).toBe('details');
   });
 
   it('coerces an unknown/stale persisted value to the default', () => {

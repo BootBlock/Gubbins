@@ -253,12 +253,13 @@ export function normaliseVisualCardMetric(value: string): VisualCardMetric {
  * What tapping the empty space of an item card/row does (spec §3, §4). The card is a
  * drag source and hosts its own action buttons (details / move / label / …); this lets a
  * plain click on the card body — anywhere outside those controls — act as a shortcut to the
- * most-used of them, rather than doing nothing:
- * - `none` — a click does nothing (the buttons remain the only way in). The default keeps
- *   the card inert unless the user opts into a shortcut.
- * - `details` — open the full item record (the same dialog as the card's pencil button).
+ * most-used of them:
+ * - `details` — open the full item record (the same dialog as the card's pencil button). The
+ *   default: clicking a card to open it is the least-surprising behaviour.
  * - `move` — open "Move item" to relocate it to another location.
  * - `qr` — open the printable label (QR + barcode) dialog.
+ * - `none` — a click does nothing (the buttons remain the only way in), for users who'd rather
+ *   the card body stay inert.
  *
  * Only ever mirrors an action already reachable by a labelled button on the card, so it stays
  * a pointer-only convenience: keyboard/assistive-tech users use those buttons, and the shortcut
@@ -266,19 +267,19 @@ export function normaliseVisualCardMetric(value: string): VisualCardMetric {
  */
 export type CardClickAction = 'none' | 'details' | 'move' | 'qr';
 
-/** The default card-click action — inert until the user opts into a shortcut. */
-export const DEFAULT_CARD_CLICK_ACTION: CardClickAction = 'none';
+/** The default card-click action — open the item's full details (the expected click-to-open). */
+export const DEFAULT_CARD_CLICK_ACTION: CardClickAction = 'details';
 
 /** Choices for the Settings "Item card click" control (default listed first). */
 export const CARD_CLICK_ACTION_OPTIONS = [
-  { value: 'none', label: 'Do nothing' },
   { value: 'details', label: 'Open details' },
   { value: 'move', label: 'Move to location' },
   { value: 'qr', label: 'Show label' },
+  { value: 'none', label: 'Do nothing' },
 ] as const satisfies readonly { value: CardClickAction; label: string }[];
 
 /**
- * Coerce an arbitrary persisted value to a valid {@link CardClickAction} (default `none`).
+ * Coerce an arbitrary persisted value to a valid {@link CardClickAction} (default `details`).
  * Kept total so a stale localStorage value from an older/newer build can never drive the
  * card's click handler into an unknown dialog.
  */
