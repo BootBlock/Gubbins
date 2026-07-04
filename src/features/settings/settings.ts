@@ -162,13 +162,16 @@ export function clampExpiryWindowDays(value: number): number {
 /**
  * Inclusive bounds for the user-set low-stock thresholds (§3 "Low Stock Alerts",
  * §4). They lift the fixed {@link LOW_STOCK_QTY_THRESHOLD} /
- * {@link LOW_STOCK_GAUGE_PERCENT} constants (Phase 45) into configurable
- * preferences while keeping them sane: a DISCRETE quantity floor of at least 1
- * (a "low when ≤ 1" alert), and a gauge percentage strictly between 1 and 99 (0
- * would never fire; 100 would flag every gauge).
+ * {@link LOW_STOCK_GAUGE_PERCENT} constants (Phase 45) into configurable preferences
+ * while keeping them sane.
+ *
+ * **The floor is 0 = off.** Low-stock alerts are opt-in: at 0 the blanket default
+ * flags nothing, so items only alert once given their own reorder point (or the user
+ * raises the blanket above 0). The quantity ceiling is a generous 1000; the gauge
+ * percentage tops out at 99 (100 would flag every gauge).
  */
-export const LOW_STOCK_QTY_BOUNDS = { min: 1, max: 1000 } as const;
-export const LOW_STOCK_GAUGE_BOUNDS = { min: 1, max: 99 } as const;
+export const LOW_STOCK_QTY_BOUNDS = { min: 0, max: 1000 } as const;
+export const LOW_STOCK_GAUGE_BOUNDS = { min: 0, max: 99 } as const;
 
 /**
  * Clamp a low-stock DISCRETE quantity threshold to {@link LOW_STOCK_QTY_BOUNDS}.

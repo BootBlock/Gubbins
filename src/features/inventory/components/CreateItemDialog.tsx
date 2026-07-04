@@ -792,16 +792,17 @@ export function CreateItemDialog({
                 label="Low-stock alert at (optional)"
                 hint={
                   'This item’s **own** low-stock trigger: it is flagged on the dashboard and in ' +
-                  'reorder suggestions when on-hand quantity falls to or below this.\n\nLeave ' +
-                  'blank to use the global default from **Settings → Inventory**. Editable later ' +
-                  'from the item’s **Supplier & ops** tab.'
+                  'reorder suggestions when on-hand quantity falls to or below this.\n\nLow-stock ' +
+                  'alerts are **opt-in** — set a value to watch this item. Left blank it follows ' +
+                  'the global default in **Settings → Inventory**, which is **off** unless you’ve ' +
+                  'raised it. Editable later from the item’s **Supplier & ops** tab.'
                 }
               >
                 <Input
                   type="number"
                   min={0}
                   step={1}
-                  placeholder="Global default"
+                  placeholder="Off unless set"
                   data-testid="item-reorder-point"
                   {...register('reorderPoint')}
                 />

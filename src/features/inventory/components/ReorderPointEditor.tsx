@@ -70,14 +70,18 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
   return (
     <div className="space-y-3">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        Flag this item as low stock at or below its own quantity, rather than the global default.
+        Set a quantity to watch this item for low stock — alerts stay off until you do.
         <InfoHint
           content={
             'The on-hand quantity at or below which this item is flagged on the **Low Stock** ' +
-            'dashboard widget.\n\n' +
-            `Leave it blank to use the global default (currently **${globalDefault}** ` +
-            'units), set in **Settings → Inventory**. A common screw and a rare connector ' +
-            'can each carry their own minimum.\n\n' +
+            'dashboard widget. Low-stock alerts are **opt-in** — set a value here to switch ' +
+            'them on for this item; **0** turns them off again.\n\n' +
+            (globalDefault > 0
+              ? `Leave it blank to use the global default (currently **${globalDefault}** units), ` +
+                'set in **Settings → Inventory** — or set 0 here to opt this one item out.'
+              : 'Leave it blank and the item stays off — the global default in ' +
+                '**Settings → Inventory** is currently off, so nothing is watched until you set a value.') +
+            '\n\nA common screw and a rare connector can each carry their own minimum.\n\n' +
             'The optional **reorder quantity** is a suggested top-up — how many to buy when ' +
             're-ordering. Left blank, the shortfall back up to the reorder point is used.'
           }
@@ -93,7 +97,7 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
             inputMode="numeric"
             value={point}
             onChange={(e) => setPoint(e.target.value)}
-            placeholder={`Default (${globalDefault})`}
+            placeholder={globalDefault > 0 ? `Default (${globalDefault})` : 'Off — set to alert'}
             aria-label="Reorder point"
             data-testid="reorder-point-input"
           />
@@ -145,13 +149,17 @@ function GaugeReorderEditor({ item }: { item: Item }) {
   return (
     <div className="space-y-3">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        Flag this consumable as low when its remaining percentage drops to its own level.
+        Set a percentage to watch this consumable for low stock — alerts stay off until you do.
         <InfoHint
           content={
             'The percentage remaining at or below which this consumable is flagged on the ' +
-            '**Low Stock** dashboard widget.\n\n' +
-            `Leave it blank to use the global default (currently **${globalDefault}%**), set ` +
-            'in **Settings → Inventory**.'
+            '**Low Stock** dashboard widget. Low-stock alerts are **opt-in** — set a value here ' +
+            'to switch them on for this item; **0** turns them off again.\n\n' +
+            (globalDefault > 0
+              ? `Leave it blank to use the global default (currently **${globalDefault}%**), set ` +
+                'in **Settings → Inventory** — or set 0 here to opt this one item out.'
+              : 'Leave it blank and the item stays off — the global default in ' +
+                '**Settings → Inventory** is currently off.')
           }
         />
       </p>
@@ -165,7 +173,7 @@ function GaugeReorderEditor({ item }: { item: Item }) {
           inputMode="numeric"
           value={percent}
           onChange={(e) => setPercent(e.target.value)}
-          placeholder={`Default (${globalDefault}%)`}
+          placeholder={globalDefault > 0 ? `Default (${globalDefault}%)` : 'Off — set to alert'}
           aria-label="Reorder gauge percentage"
           data-testid="reorder-gauge-input"
         />
