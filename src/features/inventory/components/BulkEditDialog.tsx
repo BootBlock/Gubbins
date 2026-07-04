@@ -102,7 +102,7 @@ export function BulkEditDialog({
       title="Bulk edit"
       description={`Apply changes to ${itemIds.length} selected ${plural(itemIds.length, 'item')}.`}
     >
-      <div className="max-h-[72vh] space-y-3 dialog-scroll">
+      <div className="space-y-3">
         {/* Category ----------------------------------------------------- */}
         <FieldRow enabled={catOn} onToggle={setCatOn} label="Category" testId="bulk-field-category">
           <Select

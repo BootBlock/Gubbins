@@ -571,7 +571,7 @@ export function CreateItemDialog({
       description="Create a new inventory item."
       initialFocusRef={nameRef}
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="max-h-[78vh] space-y-4 dialog-scroll">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <FormField
           label="Name"
           error={errors.name?.message}

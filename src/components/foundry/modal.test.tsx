@@ -155,10 +155,11 @@ describe('Modal — accessible focus management', () => {
     const header = screen.getByRole('heading', { name: 'Edit location' }).closest('div')?.parentElement;
     expect(header?.className).toContain('shrink-0');
 
-    // The children live in a distinct overflow-y-auto region whose min-h-0 lets it shrink
-    // below content height so scrolling actually engages.
+    // The children live in a distinct `dialog-scroll` region (overflow-y auto, with its
+    // scrollbar bled into the Surface padding) whose min-h-0 lets it shrink below content
+    // height so scrolling actually engages.
     const body = screen.getByText('Field').closest('div')?.parentElement;
-    expect(body?.className).toContain('overflow-y-auto');
+    expect(body?.className).toContain('dialog-scroll');
     expect(body?.className).toContain('min-h-0');
     // …and that scroll region is a sibling of the header, not its ancestor.
     expect(body?.previousElementSibling).toBe(header);

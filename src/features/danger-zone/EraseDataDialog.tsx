@@ -247,6 +247,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       title="Erase data"
       description="Choose exactly what to remove from this device. This can't be undone."
       className="max-w-3xl"
+      scrollBody={false}
     >
       <div className="flex h-[68vh] flex-col gap-4">
         {/* Backup nudge */}

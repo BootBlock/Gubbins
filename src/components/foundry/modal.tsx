@@ -27,6 +27,18 @@ export interface ModalProps {
    * screen-reader-friendly default — the dialog is announced and the first Tab steps in).
    */
   readonly initialFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Whether the Modal owns the body's vertical scroll. Default `true`: the body region is the
+   * dialog's single scroll area — it bleeds its scrollbar into the Surface's padding (via
+   * `dialog-scroll`) so the bar never paints over content, on classic *or* overlay scrollbars.
+   *
+   * Set `false` for a dialog that manages its own inner scroll (e.g. a fixed-height rail with a
+   * scrolling panel — {@link RailModal}, the Erase-data rail). The body then lays out at its
+   * natural height with `overflow: visible`, so the inner scroller's own `dialog-scroll` bleed
+   * has a clear path out to the Surface's padding instead of leaking a spurious horizontal bar
+   * into an intermediate scroll container.
+   */
+  readonly scrollBody?: boolean;
 }
 
 export function Modal({
@@ -37,6 +49,7 @@ export function Modal({
   children,
   className,
   initialFocusRef,
+  scrollBody = true,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   // Honour the user's reduced-motion preference (§3 / WCAG 2.3.3): when set, the
@@ -139,13 +152,15 @@ export function Modal({
             <CloseIcon className="text-glyph-neutral" />
           </Button>
         </div>
-        {/* The scroll region: `min-h-0` lets this flex child shrink below its content height so
-            `overflow-y-auto` actually engages (without it the panel just grows past the cap).
-            `overflow-x-hidden` keeps a stray-wide child from ever producing a horizontal bar that
-            would paint over the content — dialog bodies are laid out to fit the width. Bodies that
-            want a reserved gutter opt into `dialog-scroll`; here a classic (space-taking) bar
-            already sits beside the content rather than over it. */}
-        <div className="mt-5 min-h-0 overflow-y-auto overflow-x-hidden">{children}</div>
+        {/* The body region. `min-h-0` lets this flex child shrink below its content height so a
+            too-tall dialog scrolls rather than growing past the cap. By default it *is* the
+            dialog's scroll area (`dialog-scroll`), which bleeds its scrollbar sideways into the
+            Surface's own padding — so the bar (classic OR floating overlay) sits over that padding,
+            never over the content, and content still aligns with the header. Because this region is
+            a direct child of the padded Surface, that bleed has nowhere to leak. A dialog that owns
+            its own inner scroller passes `scrollBody={false}`, leaving this region at `overflow:
+            visible` so the inner bleed can reach the Surface padding too. */}
+        <div className={cn('mt-5 min-h-0', scrollBody && 'dialog-scroll')}>{children}</div>
       </Surface>
     </div>,
     document.body,
