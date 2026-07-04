@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { ItemDragProvider, useItemDragSource, useItemDropTarget } from './item-drag';
+import { ItemDragProvider, useItemDragSource, useLocationDragSource, useLocationRowDrop } from './item-drag';
 
 /**
  * Exercises the unified pointer-drag machinery the way {@link ItemCard}/{@link ItemRow} (drag
@@ -41,7 +41,9 @@ function Source() {
 function Target({ onDrop }: { onDrop: (payload: { id: string; locationId: string }) => void }) {
   // Mirrors LocationSidebar's per-node wiring: the drop hands back the item id, the row folds
   // in its own location id.
-  const active = useItemDropTarget(LOCATION_ID, (itemId) => onDrop({ id: itemId, locationId: LOCATION_ID }));
+  const active = useLocationRowDrop(LOCATION_ID, {
+    onDropItem: (itemId) => onDrop({ id: itemId, locationId: LOCATION_ID }),
+  });
   return (
     <div data-tree-id={LOCATION_ID} data-testid="target" data-active={active ? 'true' : 'false'}>
       Workshop
@@ -171,5 +173,83 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(screen.queryByTestId('item-drag-preview')).toBeNull();
     firePointer(window, 'pointerup', { x: 10, y: 60, pointerType: 'touch' });
     expect(onDrop).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A location row is both a drag *source* (spread `useLocationDragSource`) and a drop *target*
+ * (`useLocationRowDrop`), so dragging one location onto another nests it. `acceptsLocation`
+ * vetoes an illegal nest (self / a descendant), which the provider honours by neither
+ * highlighting nor dropping.
+ */
+function LocationRow({
+  id,
+  name,
+  onDropLocation,
+  acceptsLocation,
+}: {
+  id: string;
+  name: string;
+  onDropLocation?: (draggedId: string) => void;
+  acceptsLocation?: (draggedId: string) => boolean;
+}) {
+  const drag = useLocationDragSource({ id, name });
+  const active = useLocationRowDrop(id, { onDropLocation, acceptsLocation });
+  return (
+    <div {...drag} data-tree-id={id} data-testid={`loc-${id}`} data-active={active ? 'true' : 'false'}>
+      {name}
+    </div>
+  );
+}
+
+describe('item-drag — location drag-to-nest', () => {
+  it('nests a location when dropped onto another location row', () => {
+    const onDropLocation = vi.fn();
+    render(
+      <ItemDragProvider>
+        <LocationRow id="child" name="Cabinet" />
+        <LocationRow id="parent" name="Workshop" onDropLocation={onDropLocation} />
+      </ItemDragProvider>,
+    );
+    const child = screen.getByTestId('loc-child');
+    const parent = screen.getByTestId('loc-parent');
+    pointHitTestAt(parent);
+
+    firePointer(child, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    // The preview shows the dragged location's name, and the parent lights up as the target.
+    expect(screen.getByTestId('item-drag-preview')).toHaveTextContent('Cabinet');
+    expect(parent.getAttribute('data-active')).toBe('true');
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    expect(onDropLocation).toHaveBeenCalledWith('child');
+  });
+
+  it('refuses to nest a location under a descendant (no highlight, no drop)', () => {
+    const onDropLocation = vi.fn();
+    render(
+      <ItemDragProvider>
+        <LocationRow id="ancestor" name="Workshop" />
+        {/* A descendant of "ancestor" rejects it as a parent — the cycle guard. */}
+        <LocationRow
+          id="descendant"
+          name="Drawer"
+          onDropLocation={onDropLocation}
+          acceptsLocation={(draggedId) => draggedId !== 'ancestor'}
+        />
+      </ItemDragProvider>,
+    );
+    const ancestor = screen.getByTestId('loc-ancestor');
+    const descendant = screen.getByTestId('loc-descendant');
+    pointHitTestAt(descendant);
+
+    firePointer(ancestor, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    // The vetoed target never highlights…
+    expect(descendant.getAttribute('data-active')).toBe('false');
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    // …and releasing over it drops nothing.
+    expect(onDropLocation).not.toHaveBeenCalled();
   });
 });

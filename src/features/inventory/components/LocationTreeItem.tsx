@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
 import { locationFullness } from '../location-fullness';
-import { useItemDropTarget } from '../item-drag';
+import { useLocationDragSource, useLocationRowDrop } from '../item-drag';
 import { LocationInlineRename } from './LocationInlineRename';
 import { LocationRowActions } from './LocationRowActions';
 
@@ -49,6 +49,24 @@ export interface TreeItemProps {
    * synthetic "All items" row, or an archived location).
    */
   readonly onDropItem?: (itemId: string) => void;
+  /**
+   * True ⇒ this row is a location drag *source*: it can be dragged onto another location row to
+   * nest beneath it (spec §4 drag-to-nest). Off for rows that can't be re-nested (the synthetic
+   * "All items" row, the system-locked Unassigned/In Transit rows, an archived location).
+   */
+  readonly draggable?: boolean;
+  /**
+   * Accept a location dragged onto this row and nest it here. When set, the row becomes a drop
+   * target for other locations; omit for rows that can't be a parent (the "All items" row, a
+   * system-locked or archived location).
+   */
+  readonly onDropLocation?: (locationId: string) => void;
+  /**
+   * Veto an illegal nest before it highlights: return `false` when `draggedLocationId` may not
+   * become this row's child (it is this row itself, one of this row's ancestors, or already this
+   * row's parent — §7.5.3). The row then never lights up and never accepts that drop.
+   */
+  readonly acceptsLocation?: (draggedLocationId: string) => boolean;
   readonly ref: (el: HTMLDivElement | null) => void;
 }
 
@@ -87,13 +105,20 @@ export function LocationTreeItem({
   onPrintLabel,
   printLabelLabel,
   onDropItem,
+  draggable,
+  onDropLocation,
+  acceptsLocation,
   ref,
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
-  // True while an inventory item is being dragged over this (drop-enabled) row. Registering the
-  // drop target and reading the highlight both flow through the pointer-drag provider; a row
-  // without `onDropItem` (the "All items" row, an archived location) never registers.
-  const dropActive = useItemDropTarget(id, onDropItem);
+  // True while a draggable *item* or *location* is over this (drop-enabled) row. Registering the
+  // drop target and reading the highlight both flow through the pointer-drag provider; a row with
+  // neither `onDropItem` nor `onDropLocation` (the "All items" row, an archived location) never
+  // registers, and an illegal nest is vetoed by `acceptsLocation` so it never highlights.
+  const dropActive = useLocationRowDrop(id, { onDropItem, onDropLocation, acceptsLocation });
+  // Location drag *source* wiring — spread only when this row may be re-nested. The hook is
+  // side-effect-free, so it is always called (Rules of Hooks) and the props conditionally spread.
+  const dragSource = useLocationDragSource({ id, name: label });
   return (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- APG tree: the container's onKeyDown (resolveTreeKey) handles Enter/Space activation for the focused row, so this row's onClick has full keyboard parity; a row-level key handler would double-fire.
     <div
@@ -107,9 +132,12 @@ export function LocationTreeItem({
       data-tree-id={id}
       onFocus={onFocus}
       onClick={onSelect}
+      {...(draggable ? dragSource : undefined)}
       className={cn(
         'group flex cursor-pointer items-center gap-1 rounded-lg pr-1 outline-none transition-colors',
         'focus-visible:ring-2 focus-visible:ring-primary/60',
+        // A draggable row grabs on press; `select-none` stops a press-drag selecting its text.
+        draggable && 'cursor-grab select-none active:cursor-grabbing',
         selected ? 'bg-primary/15' : 'hover:bg-secondary/60',
         archived && 'opacity-60',
         dropActive && 'bg-primary/20 ring-2 ring-primary ring-inset',

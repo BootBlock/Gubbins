@@ -6,9 +6,9 @@ import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
-import { pruneArchivedTree } from '../location-tree';
+import { collectDescendantIds, pruneArchivedTree } from '../location-tree';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
-import { useArchiveLocation, useMoveItem } from '../mutations';
+import { useArchiveLocation, useMoveItem, useUpdateLocation } from '../mutations';
 import { LocationTreeItem } from './LocationTreeItem';
 import { LocationKindIcon } from './LocationKindIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
@@ -44,8 +44,9 @@ export function LocationSidebar({
 }) {
   const archive = useArchiveLocation();
   const moveItem = useMoveItem();
+  const updateLocation = useUpdateLocation();
   // Announce a drag-and-drop move (WCAG 4.1.3) — the pointer-only drop has no other feedback
-  // for assistive tech, and the moved item may leave the current filter.
+  // for assistive tech, and the moved item/location may leave the current view.
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = useMemo(() => flat.filter((l) => l.archivedAt).length, [flat]);
@@ -85,6 +86,32 @@ export function LocationSidebar({
 
   // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above.
   const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
+
+  // Whether the dragged location may be nested under `targetId` (spec §4 drag-to-nest, §7.5.3):
+  // never under itself or one of its own descendants (that would be a cycle), and not under its
+  // current parent (a no-op). Computed over the full flat list so ancestry is always complete.
+  const canNest = (draggedId: string, targetId: string) => {
+    if (collectDescendantIds(draggedId, flat).has(targetId)) return false;
+    return flat.find((l) => l.id === draggedId)?.parentId !== targetId;
+  };
+
+  // Re-parent a dragged location under `targetId`. The repository re-validates the move and
+  // cycle-checks it (§7.5.3); on success we expand the new parent so the moved child is visible
+  // and announce the move for assistive tech. Unnesting stays in the Edit dialog's Parent field.
+  const nestLocation = (draggedId: string, targetId: string) => {
+    const dragged = flat.find((l) => l.id === draggedId);
+    const target = flat.find((l) => l.id === targetId);
+    if (!dragged || !target) return;
+    updateLocation.mutate(
+      { id: draggedId, input: { parentId: targetId } },
+      {
+        onSuccess: () => {
+          toggle(targetId, true);
+          setMoveAnnouncement(`${dragged.name} moved into ${target.name}.`);
+        },
+      },
+    );
+  };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-2 large-format:w-72">
@@ -267,6 +294,16 @@ export function LocationSidebar({
                     { onSuccess: () => setMoveAnnouncement(`Item moved to ${node.name}.`) },
                   )
           }
+          // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto
+          // another such location to nest beneath it. System/archived rows are neither a valid
+          // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter).
+          draggable={!node.isSystem && node.archivedAt == null}
+          onDropLocation={
+            node.isSystem || node.archivedAt != null
+              ? undefined
+              : (draggedId) => nestLocation(draggedId, node.id)
+          }
+          acceptsLocation={(draggedId) => canNest(draggedId, node.id)}
         />,
       );
       if (hasChildren && isExpanded) out.push(...renderNodes(node.children, level + 1));
