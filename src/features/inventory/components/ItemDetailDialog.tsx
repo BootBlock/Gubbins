@@ -209,7 +209,7 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
       icon: <SupplierIcon />,
       sections: [
         { title: 'Supplier data', icon: <SupplierIcon />, content: <SupplierDataEditor item={item} /> },
-        { title: 'Reorder point', icon: <LowStockIcon />, content: <ReorderPointEditor item={item} /> },
+        { title: 'Low-stock alert', icon: <LowStockIcon />, content: <ReorderPointEditor item={item} /> },
         {
           title: 'Operational parameters',
           icon: <GaugeIcon />,

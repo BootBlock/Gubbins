@@ -10,7 +10,7 @@ export { Button, buttonVariants, type ButtonProps } from './button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface } from './surface';
 export { Spinner, type SpinnerProps } from './spinner';
-export { Input, Textarea } from './input';
+export { Input, Textarea, Checkbox } from './input';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
 export {
   Autocomplete,

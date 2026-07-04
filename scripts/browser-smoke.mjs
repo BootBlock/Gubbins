@@ -963,9 +963,9 @@ try {
     });
 
     await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
-      // The bulk screws were created with qty 100 — comfortably above the global default
-      // (5), so they are NOT in the low-stock feed. Open the item and give it its own,
-      // much higher reorder point so it now counts as low.
+      // Low-stock alerts are opt-in and off by default, so the bulk screws (qty 100) are NOT
+      // in the low-stock feed. Open the item, switch on "Alert me when this runs low", and
+      // give it its own reorder point above the on-hand qty so it now counts as low.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       const screwCard = () =>
         page
@@ -977,6 +977,10 @@ try {
       await screwCard().getByRole('button', { name: 'Item details' }).click();
       let dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
+      // The trigger fields are revealed by the opt-in toggle (seeded with a suggestion,
+      // which we overwrite). Only click it if the item isn't already opted in.
+      const alertToggle = dialog.getByTestId('reorder-alert-toggle');
+      if (!(await alertToggle.isChecked())) await alertToggle.click();
       await dialog.getByTestId('reorder-point-input').fill('200');
       await dialog.getByTestId('reorder-qty-input').fill('300');
       const saveBtn = dialog.getByTestId('reorder-point-save');
@@ -1004,13 +1008,13 @@ try {
       await widget.getByText(screwName).waitFor({ state: 'visible', timeout: 5000 });
       await widget.getByText(/reorder 300/).waitFor({ state: 'visible', timeout: 5000 });
 
-      // Clear the override so the screws return to "healthy" for any later assertions.
+      // Clear the override so the screws return to "healthy" for any later assertions —
+      // switching the opt-in toggle off clears the per-item reorder point and top-up.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       await screwCard().getByRole('button', { name: 'Item details' }).click();
       dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
-      await dialog.getByTestId('reorder-point-input').fill('');
-      await dialog.getByTestId('reorder-qty-input').fill('');
+      await dialog.getByTestId('reorder-alert-toggle').uncheck();
       const clearBtn = dialog.getByTestId('reorder-point-save');
       await clearBtn.click();
       await clearBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
