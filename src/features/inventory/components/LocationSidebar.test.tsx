@@ -3,6 +3,7 @@ import { act, render, screen, cleanup, fireEvent } from '@testing-library/react'
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { ItemDragProvider } from '../item-drag';
 import { LocationSidebar } from './LocationSidebar';
+import { useLocationExpansionStore } from '../useLocationExpansionStore';
 
 // Keep the test free of the Web Worker / QueryClient: the sidebar (and the
 // CreateLocationDialog it mounts on demand) only need these mutation hooks to exist.
@@ -36,6 +37,9 @@ beforeEach(() => {
   spies.del.mockClear();
   updateState.isPending = false;
   updateState.variables = undefined;
+  // Expansion is a persisted module-singleton store; clear it so each test starts from
+  // the baseline (top-level open, deeper collapsed) rather than a prior test's toggles.
+  useLocationExpansionStore.getState().reset();
 });
 
 function node(
@@ -279,6 +283,43 @@ describe('LocationSidebar — accessible APG tree', () => {
     // …while an uncoloured location keeps the default colour.
     const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
     expect(cabinet.querySelector('.text-loc-teal')).toBeNull();
+  });
+
+  it('remembers a collapsed branch across a remount (persisted expansion)', () => {
+    renderSidebar();
+    // Workshop starts expanded (top-level default), so its child Cabinet is visible.
+    expect(screen.getByRole('treeitem', { name: 'Cabinet' })).toBeTruthy();
+    // Collapse Workshop via the keyboard.
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    workshop.focus();
+    fireEvent.keyDown(workshop, { key: 'ArrowLeft' });
+    expect(screen.queryByRole('treeitem', { name: 'Cabinet' })).toBeNull();
+
+    // Remount (as a page reload would) — the collapse is restored from the store, so
+    // the default "top-level open" no longer applies to Workshop.
+    cleanup();
+    renderSidebar();
+    expect(screen.queryByRole('treeitem', { name: 'Cabinet' })).toBeNull();
+    expect(screen.getByRole('treeitem', { name: 'Workshop' }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('restores a pre-seeded expansion override on mount', () => {
+    // A previous session expanded Cabinet (normally collapsed at level 2).
+    useLocationExpansionStore.getState().setExpanded('cabinet', true);
+    renderSidebar();
+    // Its child Drawer is visible without any interaction this session.
+    expect(screen.getByRole('treeitem', { name: 'Drawer' })).toBeTruthy();
+  });
+
+  it('prunes a stale override for a location that no longer exists', () => {
+    // A ghost id lingers from a since-deleted location; mounting reconciles against `flat`.
+    useLocationExpansionStore.getState().setExpanded('ghost', true);
+    useLocationExpansionStore.getState().setExpanded('cabinet', true);
+    renderSidebar();
+    const overrides = useLocationExpansionStore.getState().overrides;
+    expect(overrides).not.toHaveProperty('ghost');
+    // A live location's override is untouched.
+    expect(overrides.cabinet).toBe(true);
   });
 });
 

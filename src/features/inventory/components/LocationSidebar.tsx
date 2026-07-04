@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { plural } from '@/lib/plural';
 import { Button, LiveRegion, Modal, Spinner, Tooltip } from '@/components/foundry';
@@ -8,6 +8,7 @@ import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import { collectDescendantIds, pruneArchivedTree } from '../location-tree';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
+import { useLocationExpansionStore } from '../useLocationExpansionStore';
 import { useArchiveLocation, useMoveItem, useUpdateLocation } from '../mutations';
 import { LocationTreeItem } from './LocationTreeItem';
 import { LocationKindIcon } from './LocationKindIcon';
@@ -60,6 +61,18 @@ export function LocationSidebar({
     () => (showArchived ? flat : flat.filter((l) => !l.archivedAt)),
     [flat, showArchived],
   );
+
+  // Keep the persisted expansion overrides bounded: drop entries for locations that no
+  // longer exist (deleted since a prior session) so localStorage doesn't accumulate dead
+  // ids over the app's lifetime. Pruned against the *full* flat list — not the archived-
+  // filtered view — so hiding archived branches never discards their remembered state.
+  const pruneExpansion = useLocationExpansionStore((s) => s.prune);
+  useEffect(() => {
+    // Never prune against an empty list — that's the initial pre-load state (there are
+    // always at least the system locations), and it would wipe every remembered entry.
+    if (flat.length === 0) return;
+    pruneExpansion(new Set(flat.map((l) => l.id)));
+  }, [flat, pruneExpansion]);
 
   const {
     addOpen,
