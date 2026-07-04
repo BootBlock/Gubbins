@@ -4,7 +4,7 @@ import type { Item, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
-import { ITEM_DND_MIME, isInteractiveDragOrigin } from '../item-dnd';
+import { useItemDragSource } from '../item-drag';
 import { GaugeRing } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
@@ -41,23 +41,15 @@ export const ItemRow = memo(function ItemRow({
 }) {
   const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
+  // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
+  // a press-drag from selecting the row's text; the control-origin guard lives in the hook.
+  const dragProps = useItemDragSource(item);
   return (
     <div
       ref={ref}
-      draggable
-      onDragStart={(e) => {
-        // A drag begun on a control (± stepper, select box, action button) belongs to that
-        // control — suppress the row drag so its own gesture works.
-        if (isInteractiveDragOrigin(e.target)) {
-          e.preventDefault();
-          return;
-        }
-        e.dataTransfer.setData(ITEM_DND_MIME, item.id);
-        e.dataTransfer.setData('text/plain', item.name);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
+      {...dragProps}
       className={cn(
-        'flex cursor-grab items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
+        'flex cursor-grab select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
         !item.isActive && 'opacity-60',
         selected && 'border-primary/60 bg-primary/5',
         isHighlighted && 'animate-highlight',

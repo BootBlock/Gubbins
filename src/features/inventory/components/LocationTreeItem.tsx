@@ -1,9 +1,9 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
 import { locationFullness } from '../location-fullness';
-import { ITEM_DND_MIME, dragCarriesItem } from '../item-dnd';
+import { useItemDropTarget } from '../item-drag';
 import { LocationInlineRename } from './LocationInlineRename';
 import { LocationRowActions } from './LocationRowActions';
 
@@ -90,8 +90,10 @@ export function LocationTreeItem({
   ref,
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
-  // True while an inventory item is being dragged over this (drop-enabled) row.
-  const [dropActive, setDropActive] = useState(false);
+  // True while an inventory item is being dragged over this (drop-enabled) row. Registering the
+  // drop target and reading the highlight both flow through the pointer-drag provider; a row
+  // without `onDropItem` (the "All items" row, an archived location) never registers.
+  const dropActive = useItemDropTarget(id, onDropItem);
   return (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- APG tree: the container's onKeyDown (resolveTreeKey) handles Enter/Space activation for the focused row, so this row's onClick has full keyboard parity; a row-level key handler would double-fire.
     <div
@@ -105,37 +107,6 @@ export function LocationTreeItem({
       data-tree-id={id}
       onFocus={onFocus}
       onClick={onSelect}
-      onDragOver={
-        onDropItem
-          ? (e) => {
-              // Only react to one of our item drags; let anything else pass through.
-              if (!dragCarriesItem(e.dataTransfer)) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
-              if (!dropActive) setDropActive(true);
-            }
-          : undefined
-      }
-      onDragLeave={
-        onDropItem
-          ? (e) => {
-              // Ignore leaves onto descendants — only clear when the pointer truly exits the row.
-              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-              setDropActive(false);
-            }
-          : undefined
-      }
-      onDrop={
-        onDropItem
-          ? (e) => {
-              const itemId = e.dataTransfer.getData(ITEM_DND_MIME);
-              setDropActive(false);
-              if (!itemId) return;
-              e.preventDefault();
-              onDropItem(itemId);
-            }
-          : undefined
-      }
       className={cn(
         'group flex cursor-pointer items-center gap-1 rounded-lg pr-1 outline-none transition-colors',
         'focus-visible:ring-2 focus-visible:ring-primary/60',
