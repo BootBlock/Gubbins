@@ -102,6 +102,10 @@ export function LocationSidebar({
     const dragged = flat.find((l) => l.id === draggedId);
     const target = flat.find((l) => l.id === targetId);
     if (!dragged || !target) return;
+    // Announce the move as it starts (not just on success): the re-parent takes a moment and the
+    // dropped row also shows a spinner (see `nestingId`), so pointer and AT users both get
+    // immediate feedback that something is happening.
+    setMoveAnnouncement(`Moving ${dragged.name} into ${target.name}…`);
     updateLocation.mutate(
       { id: draggedId, input: { parentId: targetId } },
       {
@@ -112,6 +116,10 @@ export function LocationSidebar({
       },
     );
   };
+
+  // The location whose drag-to-nest re-parent is currently in flight (or null). The row it
+  // points at shows a spinner until the tree reshapes, so the multi-second wait isn't silent.
+  const nestingId = updateLocation.isPending ? (updateLocation.variables?.id ?? null) : null;
 
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-2 large-format:w-72">
@@ -304,6 +312,7 @@ export function LocationSidebar({
               : (draggedId) => nestLocation(draggedId, node.id)
           }
           acceptsLocation={(draggedId) => canNest(draggedId, node.id)}
+          nesting={nestingId === node.id}
         />,
       );
       if (hasChildren && isExpanded) out.push(...renderNodes(node.children, level + 1));

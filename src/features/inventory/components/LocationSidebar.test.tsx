@@ -13,10 +13,19 @@ const spies = vi.hoisted(() => ({
   archive: vi.fn(),
   move: vi.fn(),
 }));
+// Mutable so a test can simulate an in-flight drag-to-nest re-parent (isPending + variables).
+const updateState = vi.hoisted(() => ({
+  isPending: false,
+  variables: undefined as { id: string; input: unknown } | undefined,
+}));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateLocation: () => ({ mutate: spies.update, isPending: false }),
+  useUpdateLocation: () => ({
+    mutate: spies.update,
+    isPending: updateState.isPending,
+    variables: updateState.variables,
+  }),
   useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
   useMoveItem: () => ({ mutate: spies.move, isPending: false }),
 }));
@@ -25,6 +34,8 @@ afterEach(cleanup);
 beforeEach(() => {
   spies.update.mockClear();
   spies.del.mockClear();
+  updateState.isPending = false;
+  updateState.variables = undefined;
 });
 
 function node(
@@ -335,5 +346,19 @@ describe('LocationSidebar — drag-to-nest', () => {
     firePointer(window, 'pointerup', { x: 40, y: 40 });
 
     expect(spies.update).not.toHaveBeenCalled();
+  });
+
+  it('shows a busy spinner on the location whose re-parent is in flight', () => {
+    // Simulate the drag-to-nest mutation being in flight for Cabinet.
+    updateState.isPending = true;
+    updateState.variables = { id: 'cabinet', input: { parentId: 'workshop' } };
+    renderWithDrag();
+
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    expect(cabinet.getAttribute('aria-busy')).toBe('true');
+    // The moving row surfaces a labelled progress spinner in place of its item count…
+    expect(screen.getByRole('status', { name: 'Moving Cabinet' })).toBeTruthy();
+    // …while an unaffected sibling row stays idle.
+    expect(screen.getByRole('treeitem', { name: 'Workshop' }).getAttribute('aria-busy')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Spinner, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
 import { locationFullness } from '../location-fullness';
 import { useLocationDragSource, useLocationRowDrop } from '../item-drag';
@@ -67,6 +67,13 @@ export interface TreeItemProps {
    * row's parent — §7.5.3). The row then never lights up and never accepts that drop.
    */
   readonly acceptsLocation?: (draggedLocationId: string) => boolean;
+  /**
+   * True while this location's drag-to-nest re-parent is in flight. The re-parent reshapes the
+   * whole tree through invalidation, which can take a moment; the row shows a spinner (in place
+   * of its item count) and is marked `aria-busy` so the wait has visible + AT feedback rather
+   * than an unexplained pause after the drop.
+   */
+  readonly nesting?: boolean;
   readonly ref: (el: HTMLDivElement | null) => void;
 }
 
@@ -108,6 +115,7 @@ export function LocationTreeItem({
   draggable,
   onDropLocation,
   acceptsLocation,
+  nesting,
   ref,
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
@@ -128,6 +136,7 @@ export function LocationTreeItem({
       aria-selected={selected}
       aria-expanded={expanded}
       aria-label={label}
+      aria-busy={nesting || undefined}
       tabIndex={focused ? 0 : -1}
       data-tree-id={id}
       onFocus={onFocus}
@@ -139,7 +148,7 @@ export function LocationTreeItem({
         // A draggable row grabs on press; `select-none` stops a press-drag selecting its text.
         draggable && 'cursor-grab select-none active:cursor-grabbing',
         selected ? 'bg-primary/15' : 'hover:bg-secondary/60',
-        archived && 'opacity-60',
+        (archived || nesting) && 'opacity-60',
         dropActive && 'bg-primary/20 ring-2 ring-primary ring-inset',
       )}
       style={{ paddingLeft: `${(level - 1) * 12}px` }}
@@ -192,18 +201,24 @@ export function LocationTreeItem({
             {isDefault ? (
               <PreferredIcon className="ml-1 size-3.5 shrink-0 text-warning" aria-label="Default location" />
             ) : null}
-            <span
-              className={cn(
-                'ml-auto pl-1 text-xs tabular-nums',
-                fullness?.over
-                  ? 'text-glyph-danger'
-                  : fullness?.full
-                    ? 'text-warning'
-                    : 'text-muted-foreground',
-              )}
-            >
-              {capacity != null ? `${count}/${capacity}` : count}
-            </span>
+            {nesting ? (
+              // The re-parent is in flight — a spinner takes the count's place so the row visibly
+              // reports "moving…" until the tree reshapes (the count would be stale anyway).
+              <Spinner className="ml-auto size-3.5 shrink-0" label={`Moving ${label}`} />
+            ) : (
+              <span
+                className={cn(
+                  'ml-auto pl-1 text-xs tabular-nums',
+                  fullness?.over
+                    ? 'text-glyph-danger'
+                    : fullness?.full
+                      ? 'text-warning'
+                      : 'text-muted-foreground',
+                )}
+              >
+                {capacity != null ? `${count}/${capacity}` : count}
+              </span>
+            )}
           </>
         )}
       </span>
