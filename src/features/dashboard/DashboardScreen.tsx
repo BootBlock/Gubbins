@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
@@ -7,6 +8,7 @@ import { ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
+import { useDashboardCustomise } from './useDashboardCustomise';
 import { DashboardGrid } from './DashboardGrid';
 import { DashboardNav } from './DashboardNav';
 import { DashboardActions } from './DashboardActions';
@@ -31,6 +33,10 @@ export function DashboardScreen() {
   // is on (feature-detected, graceful). The matching touch/selection containment is
   // applied to the content landmark below.
   useWakeLock(kioskMode);
+
+  // "Customise" is a momentary rearranging mode, not a preference: leave it behind when the
+  // user navigates away from the dashboard, so returning lands on the normal (view) hub.
+  useEffect(() => () => useDashboardCustomise.getState().setEditing(false), []);
 
   // Announce the number of items needing attention (low stock, expiring, overdue, …) so a
   // change while the dashboard is open isn't a silent, visual-only badge update (WCAG

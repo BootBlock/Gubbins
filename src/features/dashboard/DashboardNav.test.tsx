@@ -27,17 +27,21 @@ vi.mock('./useNavCounts', async (importOriginal) => ({
 import { DashboardNav } from './DashboardNav';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useDashboardCustomise } from './useDashboardCustomise';
 
 beforeEach(() => {
   alertsMock.mockReturnValue({ alerts: [], allAlerts: [], isLoading: false, isError: false });
   navCountsMock.mockReturnValue({});
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ navTileOrder: [] });
+  // The Customise toggle is now the shared hub edit mode — reset it so each test starts in view.
+  useDashboardCustomise.setState({ editing: false });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ navTileOrder: [] });
+  useDashboardCustomise.setState({ editing: false });
 });
 
 /** Ids of the persisted nav order restricted to one group (empty until the user customises). */
@@ -237,5 +241,16 @@ describe('DashboardNav — reorder & pin (backlog B1)', () => {
     fireEvent.keyDown(screen.getByTestId('nav-tile-/projects'), { key: 'ArrowUp' });
     // The announce-only twin carries a spoken description of where the tile landed.
     expect(screen.getByText(/Projects moved to position 1 of/i)).toBeTruthy();
+  });
+
+  it('the single Customise button drives the shared hub edit mode (both boards)', () => {
+    render(<DashboardNav />);
+    // The button writes the shared store that the widget board (DashboardGrid) also reads, so
+    // one toggle puts both boards into (and out of) edit mode.
+    expect(useDashboardCustomise.getState().editing).toBe(false);
+    fireEvent.click(screen.getByTestId('customise-nav'));
+    expect(useDashboardCustomise.getState().editing).toBe(true);
+    fireEvent.click(screen.getByTestId('customise-nav'));
+    expect(useDashboardCustomise.getState().editing).toBe(false);
   });
 });

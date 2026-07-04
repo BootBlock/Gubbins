@@ -35,6 +35,8 @@ import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import type { NavCountTone } from '@/features/settings/settings';
 import { useNavCounts } from './useNavCounts';
 import { useNavOrder, type NavMoveResult } from './useNavOrder';
+import { useDashboardCustomise } from './useDashboardCustomise';
+import { useReorderFlip } from './useReorderFlip';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -168,12 +170,21 @@ export function DashboardNav() {
   // they still get the static dashed target indicator.
   const reduced = useReducedMotion();
 
-  // "Customise" edit mode + its screen-reader announcement of the last move. Drag state
-  // tracks the tile being dragged and the drop target currently under the pointer.
-  const [editing, setEditing] = useState(false);
+  // The hub's single, shared "Customise" edit mode — this button is the only toggle, and it
+  // drives both this tile grid *and* the widget board below (DashboardGrid reads the same store).
+  const editing = useDashboardCustomise((s) => s.editing);
+  const toggleEditing = useDashboardCustomise((s) => s.toggle);
   const [announcement, setAnnouncement] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
+
+  // Glide a tile to its new place when it's dragged/arrow-keyed/pinned (FLIP), on the signature
+  // easing. Keyed on the resolved per-group order (with pin markers) so any rearrangement plays;
+  // gated on edit mode and reduced-motion (reduced-motion users get the instant jump).
+  const orderKey = groups
+    .map((g) => `${g.group}:${g.tiles.map((t) => (t.pinned ? '*' : '') + t.dest.to).join(',')}`)
+    .join('|');
+  const registerTile = useReorderFlip(orderKey, editing && !reduced);
 
   const endDrag = () => {
     setDraggingId(null);
@@ -219,11 +230,12 @@ export function DashboardNav() {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Customise toolbar — mirrors the widget board's edit affordance (DashboardGrid). */}
+      {/* The dashboard's single Customise toolbar: this one button toggles edit mode for both
+          the navigation tiles here and the widget board below (they share one edit mode). */}
       <div className="flex items-center gap-3">
         {editing ? (
           <Tooltip
-            content="Restore the default tile order — every tile back in its original group and position."
+            content="Restore the default tile order — every tile back in its original group and position. (The widget board has its own Reset.)"
             triggerTabIndex={-1}
             className="ml-auto"
           >
@@ -237,18 +249,18 @@ export function DashboardNav() {
               className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             >
               <ResetIcon />
-              Reset
+              Reset tiles
             </button>
           </Tooltip>
         ) : null}
         <Tooltip
-          content="Rearrange the tiles: drag or arrow-key them to reorder within a group or move between groups, and pin the ones you use most to the top. Your layout is saved on this device."
+          content="Rearrange your dashboard: drag or arrow-key the navigation tiles and the widget cards below to reorder them, pin the tiles you use most to the top, and show/hide widgets. Your layout is saved on this device."
           triggerTabIndex={-1}
           className={cn(!editing && 'ml-auto')}
         >
           <button
             type="button"
-            onClick={() => setEditing((v) => !v)}
+            onClick={() => toggleEditing()}
             data-testid="customise-nav"
             aria-pressed={editing}
             className={cn(buttonVariants({ variant: editing ? 'primary' : 'outline', size: 'sm' }))}
@@ -330,7 +342,7 @@ export function DashboardNav() {
                 if (editing) {
                   const isOver = overKey === dest.to;
                   return (
-                    <li key={dest.to}>
+                    <li key={dest.to} ref={registerTile(dest.to)}>
                       <Surface
                         data-testid={`nav-tile-${dest.to}`}
                         draggable
@@ -400,7 +412,7 @@ export function DashboardNav() {
                   </Surface>
                 );
                 return (
-                  <li key={dest.to}>
+                  <li key={dest.to} ref={registerTile(dest.to)}>
                     <Tooltip
                       content={NAV_TOOLTIPS[dest.to as keyof typeof NAV_TOOLTIPS]}
                       triggerTabIndex={-1}
