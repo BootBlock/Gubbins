@@ -154,11 +154,14 @@ export function RailModal({
           </div>
 
           <div
+            // Keyed on the active tab so switching sections replays the fade-through
+            // entrance (`animate-swap-in`); the reduced-motion catch-all neutralises it.
+            key={active.id}
             role="tabpanel"
             id={`${idPrefix}-panel-${active.id}`}
             aria-labelledby={`${idPrefix}-tab-${active.id}`}
             tabIndex={0}
-            className="min-w-0 flex-1 space-y-4 overflow-y-auto dialog-scroll focus-visible:outline-none"
+            className="min-w-0 flex-1 animate-swap-in space-y-4 overflow-y-auto dialog-scroll focus-visible:outline-none"
           >
             {active.content}
           </div>

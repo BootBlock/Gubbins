@@ -749,6 +749,102 @@
 }
 
 /*
+ * Count-up "landing pop" (spec §3 "Micro-interactions & Delight"). The Foundry
+ * `AnimatedNumber` ticker rolls a figure up to its new value, then plays this brief
+ * scale bounce as it settles so the eye reads "this just updated" without a jarring
+ * jump. Compositor-only (transform), and the reduced-motion catch-all neutralises it —
+ * those users get the final figure with no roll and no pop.
+ */
+@keyframes gubbins-count-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.09);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility animate-count-pop {
+  animation: gubbins-count-pop 0.4s var(--ease-emphasized);
+}
+
+/*
+ * Specular "sheen" sweep for a primary call-to-action (spec §1.1 glassmorphism /
+ * §2.4.1 premium aesthetic). A soft diagonal band of the `--glass-sheen` specular
+ * highlight glides across the button on hover, so a solid primary/destructive CTA
+ * catches the light like the frosted-glass surfaces elsewhere rather than sitting
+ * flat. Applied via `.gubbins-cta-sheen` on the Foundry Button's solid variants; the
+ * band is a `::after` overlay clipped to the button's rounded box. Transform only (no
+ * layout/paint thrash), and the reduced-motion catch-all freezes the transition so
+ * those users see the button unchanged. Purely decorative — never the sole signal of
+ * interactivity (the button's own hover bg/shadow still shift).
+ */
+.gubbins-cta-sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.gubbins-cta-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    var(--glass-sheen) 44%,
+    var(--glass-sheen) 56%,
+    transparent 68%
+  );
+  /* Parked well off the left edge; a hover slides it clear across to the right. The
+     wide travel (−140% → 140%) keeps the band fully outside the button at rest. */
+  transform: translateX(-140%);
+  transition: transform 0.7s var(--ease-emphasized);
+}
+.gubbins-cta-sheen:hover::after {
+  transform: translateX(140%);
+}
+/* Keep the button's own label/icon above the sheen overlay. */
+.gubbins-cta-sheen > * {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
+ * placeholder with a light band travelling across the muted bar, so a loading widget
+ * reads as actively fetching rather than merely dimmed. The base is the `--muted`
+ * surface with a soft `--foreground`-derived highlight riding over it. Only
+ * `background-position` animates (compositor-friendly, no layout). The reduced-motion
+ * catch-all halts the sweep — the static muted bar remains a valid "loading" cue.
+ */
+@keyframes gubbins-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@utility shimmer {
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklab, var(--foreground) 9%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: gubbins-shimmer 1.4s ease-in-out infinite;
+}
+
+/*
  * About-screen starfield (decorative; spec §3 "Micro-interactions & Delight").
  * A lightweight, dependency-free, compositor-only effect: every star animates
  * opacity/transform alone (no layout or paint thrash); the layer is `contain`ed

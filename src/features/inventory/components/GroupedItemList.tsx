@@ -136,7 +136,13 @@ function LocationSection({
       </button>
 
       {expanded ? (
-        <div id={panelId} style={{ paddingLeft: `${(depth - 1) * 1.25 + 0.5}rem` }}>
+        <div
+          id={panelId}
+          // A section mounts its content lazily on expand, so the entrance plays once as it
+          // opens (fade-through-up); the reduced-motion catch-all neutralises it.
+          className="animate-swap-in"
+          style={{ paddingLeft: `${(depth - 1) * 1.25 + 0.5}rem` }}
+        >
           <SectionItems locationId={node.id} isLeaf={!hasChildren} scrollRef={scrollRef} {...shared} />
           {hasChildren
             ? node.children.map((child) => (
