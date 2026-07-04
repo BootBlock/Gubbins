@@ -6,23 +6,27 @@
  * The grouping is the same {@link NAV_DESTINATIONS} source of truth the global
  * {@link AppNav} menu reads, so the hub and the menu can never drift. Inventory is the
  * primary call-to-action; the Alerts tile carries the live badge. Each card has a rich
- * Markdown {@link Tooltip} explaining what that destination contains. Replaces the old
- * right-aligned wrapping button row, which packed everything into a ragged strip.
+ * Markdown {@link Tooltip} explaining what that destination contains.
+ *
+ * **Customise (backlog B1).** A "Customise" toggle turns the hub into an edit surface where
+ * the user can **drag** a tile (native HTML5 drag-and-drop — no dependency), **arrow-key** it
+ * to reorder within a group or move it to an adjacent group, and **pin** a tile so it floats
+ * to the top of its group. The arrangement is a per-device layout concern persisted in
+ * `useLayoutStore`; all the ordering maths is the pure `dashboard-nav-order.ts` seam, resolved
+ * (with Modular UI gating and stale-order reconcile) by {@link useNavOrder}, so this component
+ * stays presentation. A hidden tile never appears and can't be ordered.
  */
+import { useState, type DragEvent, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { NAV_OPEN_DELAY_MS, Surface, Tooltip } from '@/components/foundry';
-import {
-  NAV_DESTINATIONS,
-  NAV_GROUP_ORDER,
-  type AppRoutePath,
-  type NavGroup,
-} from '@/components/nav/nav-destinations';
+import { buttonVariants, LiveRegion, NAV_OPEN_DELAY_MS, Surface, Tooltip } from '@/components/foundry';
+import { CheckIcon, CustomiseIcon, DragHandleIcon, PinIcon, ResetIcon } from '@/components/icons';
+import { type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
-import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useNavCounts } from './useNavCounts';
+import { useNavOrder, type NavMoveResult } from './useNavOrder';
 
 /** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
 const GROUP_LABELS: Record<NavGroup, string> = {
@@ -71,6 +75,14 @@ const GROUP_COUNT_BADGE: Record<NavGroup, string> = {
   system: 'bg-loc-rose/15 text-loc-rose',
 };
 
+/** Arrow key → nav move direction (up/down reorder within a group, left/right across groups). */
+const ARROW_DIRECTIONS: Record<string, 'up' | 'down' | 'left' | 'right'> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+};
+
 /**
  * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
  * card. Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard
@@ -110,24 +122,106 @@ export function DashboardNav() {
   // Alert badge: count of undismissed alerts for the Alerts tile.
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
-  const enabledFeatures = useEnabledFeatures();
   const openSettings = useSettingsDialog((s) => s.openSettings);
   // Per-destination "how many are in there" counts for the collection tiles (Inventory,
   // Projects, …). A route absent from the map — or sitting at 0 — shows no pill.
   const navCounts = useNavCounts();
+  // The user's persisted tile arrangement, resolved against feature-gating + stale orders.
+  const { groups, move, moveTo, togglePin, reset } = useNavOrder();
+
+  // "Customise" edit mode + its screen-reader announcement of the last move. Drag state
+  // tracks the tile being dragged and the drop target currently under the pointer.
+  const [editing, setEditing] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
+
+  const endDrag = () => {
+    setDraggingId(null);
+    setOverKey(null);
+  };
+
+  // Announce the outcome of a move/pin (WCAG 4.1.3). A `null` result is a no-op (a clamped
+  // arrow-key nudge at an edge, or a redundant pin) — nothing changed, so nothing is said.
+  const announceMove = (result: NavMoveResult | null) => {
+    if (!result) return;
+    setAnnouncement(
+      `${result.label} moved to position ${result.index + 1} of ${result.count} in ${GROUP_LABELS[result.group]}${
+        result.pinned ? ' (pinned)' : ''
+      }`,
+    );
+  };
+  const announcePin = (result: NavMoveResult | null) => {
+    if (!result) return;
+    setAnnouncement(
+      `${result.label} ${result.pinned ? 'pinned to the top of' : 'unpinned from'} ${GROUP_LABELS[result.group]}`,
+    );
+  };
+
+  const handleTileKeyDown = (id: string) => (e: KeyboardEvent) => {
+    const dir = ARROW_DIRECTIONS[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    announceMove(move(id, dir));
+  };
+
+  const handleDrop = (group: NavGroup, index: number) => (e: DragEvent) => {
+    e.preventDefault();
+    const id = draggingId ?? e.dataTransfer.getData('text/plain');
+    endDrag();
+    if (id) announceMove(moveTo(id, group, index));
+  };
+
+  // Guarded dragover so a continuous stream on the same target doesn't churn state.
+  const markOver = (key: string) => (e: DragEvent) => {
+    e.preventDefault();
+    setOverKey((prev) => (prev === key ? prev : key));
+  };
 
   return (
-    <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
-      {NAV_GROUP_ORDER.map((group) => {
-        // The dashboard itself is the current screen, so it never appears as a tile; a tile
-        // whose feature is switched off is dropped too. An empty group collapses (returns
-        // null), so no bare heading is left behind.
-        const destinations = NAV_DESTINATIONS.filter(
-          (dest) => dest.group === group && dest.to !== '/' && enabledFeatures.has(dest.feature),
-        );
-        if (destinations.length === 0) return null;
+    <div className="flex flex-col gap-3">
+      {/* Customise toolbar — mirrors the widget board's edit affordance (DashboardGrid). */}
+      <div className="flex items-center gap-3">
+        {editing ? (
+          <Tooltip
+            content="Restore the default tile order — every tile back in its original group and position."
+            triggerTabIndex={-1}
+            className="ml-auto"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                reset();
+                setAnnouncement('Navigation tiles reset to their default order.');
+              }}
+              data-testid="reset-nav"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+            >
+              <ResetIcon />
+              Reset
+            </button>
+          </Tooltip>
+        ) : null}
+        <Tooltip
+          content="Rearrange the tiles: drag or arrow-key them to reorder within a group or move between groups, and pin the ones you use most to the top. Your layout is saved on this device."
+          triggerTabIndex={-1}
+          className={cn(!editing && 'ml-auto')}
+        >
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            data-testid="customise-nav"
+            aria-pressed={editing}
+            className={cn(buttonVariants({ variant: editing ? 'primary' : 'outline', size: 'sm' }))}
+          >
+            {editing ? <CheckIcon /> : <CustomiseIcon />}
+            {editing ? 'Done' : 'Customise'}
+          </button>
+        </Tooltip>
+      </div>
 
-        return (
+      <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
+        {groups.map(({ group, tiles }) => (
           <section
             key={group}
             aria-label={GROUP_LABELS[group]}
@@ -135,7 +229,7 @@ export function DashboardNav() {
           >
             <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{GROUP_LABELS[group]}</h2>
             <ul className="grid grid-cols-2 gap-3">
-              {destinations.map((dest) => {
+              {tiles.map(({ dest, pinned }, index) => {
                 const isInventory = dest.to === '/inventory';
                 const isAlerts = dest.to === '/alerts';
                 // Settings is a dialog, not a screen: its tile opens the dialog over the
@@ -143,8 +237,6 @@ export function DashboardNav() {
                 // hover). See `useSettingsDialog` / `SettingsDialogHost`.
                 const isSettings = dest.to === '/settings';
                 // Collection count for this tile (Inventory/Projects/…); undefined or 0 ⇒ no pill.
-                // The entry carries the spoken nouns for the tile's *current* metric, which the
-                // user may have re-pointed (e.g. "all projects" instead of "active projects").
                 const navCount = navCounts[dest.to];
                 const count = navCount?.count;
                 const showCount = typeof count === 'number' && count > 0;
@@ -158,15 +250,9 @@ export function DashboardNav() {
                         navCount.nounPlural,
                       )}`
                     : undefined;
-                const surface = (
-                  <Surface
-                    className={cn(
-                      'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
-                      isInventory
-                        ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
-                        : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
-                    )}
-                  >
+
+                const body = (
+                  <>
                     <dest.Icon aria-hidden />
                     <span className="min-w-0 text-sm font-medium leading-tight">
                       {isInventory ? 'Open inventory' : dest.label}
@@ -197,10 +283,74 @@ export function DashboardNav() {
                         {count > 999 ? '999+' : count}
                       </span>
                     )}
-                  </Surface>
+                  </>
                 );
+
+                // Edit mode: the tile is a draggable, arrow-key-movable card with a pin
+                // toggle — it never navigates. Mirrors DashboardGrid's WidgetTile edit shell.
+                if (editing) {
+                  const isOver = overKey === dest.to;
+                  return (
+                    <li key={dest.to}>
+                      <Surface
+                        data-testid={`nav-tile-${dest.to}`}
+                        draggable
+                        tabIndex={0}
+                        role="group"
+                        aria-label={`${dest.label}${pinned ? ', pinned' : ''}. Use the arrow keys to move it, or Pin to float it to the top.`}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', dest.to);
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDraggingId(dest.to);
+                        }}
+                        onDragEnd={endDrag}
+                        onDragOver={markOver(dest.to)}
+                        onDrop={handleDrop(group, index)}
+                        onKeyDown={handleTileKeyDown(dest.to)}
+                        className={cn(
+                          'flex h-full cursor-grab flex-col gap-2 p-3 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
+                          isOver ? 'ring-2 ring-primary/70' : 'ring-2 ring-primary/40',
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5 text-muted-foreground [&_svg]:size-4">
+                          <DragHandleIcon aria-hidden />
+                          <button
+                            type="button"
+                            onClick={() => announcePin(togglePin(dest.to))}
+                            data-testid={`nav-pin-${dest.to}`}
+                            aria-pressed={pinned}
+                            aria-label={pinned ? `Unpin ${dest.label}` : `Pin ${dest.label} to the top`}
+                            className={cn(
+                              'ml-auto rounded-md p-1 hover:bg-muted hover:text-foreground',
+                              pinned && 'text-primary',
+                            )}
+                          >
+                            <PinIcon className={cn(pinned && 'fill-current')} />
+                          </button>
+                        </div>
+                        {/* Icon + label + decorative count, inert while arranging. */}
+                        <div className="pointer-events-none flex items-center gap-2.5 [&_svg]:size-5 [&_svg]:shrink-0">
+                          {body}
+                        </div>
+                      </Surface>
+                    </li>
+                  );
+                }
+
                 const tileClassName =
                   'block h-full w-full rounded-2xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+                const surface = (
+                  <Surface
+                    className={cn(
+                      'relative flex h-full items-center gap-2.5 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 [&_svg]:size-5 [&_svg]:shrink-0',
+                      isInventory
+                        ? 'border-transparent bg-primary text-primary-foreground shadow-primary/20 hover:shadow-primary/30'
+                        : cn('hover:shadow-primary/10', GROUP_CARD_TINTS[group]),
+                    )}
+                  >
+                    {body}
+                  </Surface>
+                );
                 return (
                   <li key={dest.to}>
                     <Tooltip
@@ -236,10 +386,30 @@ export function DashboardNav() {
                   </li>
                 );
               })}
+
+              {/* Edit-mode trailing drop zone: drop a tile here to append it to the end of
+                  this group (the path for moving a tile into a different group). */}
+              {editing ? (
+                <li className="col-span-2">
+                  <div
+                    onDragOver={markOver(`end:${group}`)}
+                    onDrop={handleDrop(group, tiles.length)}
+                    data-testid={`nav-drop-end-${group}`}
+                    aria-hidden
+                    className={cn(
+                      'min-h-10 rounded-xl border-2 border-dashed transition-colors',
+                      overKey === `end:${group}` ? 'border-primary/60 bg-primary/5' : 'border-border/60',
+                    )}
+                  />
+                </li>
+              ) : null}
             </ul>
           </section>
-        );
-      })}
-    </nav>
+        ))}
+      </nav>
+
+      {/* Announce-only twin of the visual reorder, so a keyboard/pointer move isn't silent. */}
+      <LiveRegion visuallyHidden>{announcement ? <p>{announcement}</p> : null}</LiveRegion>
+    </div>
   );
 }
