@@ -172,7 +172,8 @@ describe('ItemRow — content branches', () => {
 });
 
 describe('ItemRow — click-to-act (cardClickAction)', () => {
-  it('does nothing and shows no pointer cursor when the action is "none" (default)', () => {
+  it('does nothing and shows no pointer cursor when the action is "none" (opt-out)', () => {
+    usePreferencesStore.setState({ cardClickAction: 'none' });
     const { container } = renderRow(makeItem());
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).not.toContain('cursor-pointer');

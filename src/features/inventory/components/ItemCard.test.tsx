@@ -173,7 +173,8 @@ describe('ItemCard — content branches', () => {
 });
 
 describe('ItemCard — click-to-act (cardClickAction)', () => {
-  it('does nothing and shows no pointer cursor when the action is "none" (default)', () => {
+  it('does nothing and shows no pointer cursor when the action is "none" (opt-out)', () => {
+    usePreferencesStore.setState({ cardClickAction: 'none' });
     const { container } = renderCard(makeItem());
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).not.toContain('cursor-pointer');
@@ -181,7 +182,8 @@ describe('ItemCard — click-to-act (cardClickAction)', () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
-  it('opens the chosen dialog on a body click and shows a pointer cursor when an action is set', () => {
+  it('opens item details on a body click by default (and shows a pointer cursor)', () => {
+    // 'details' is the default (asserted in settings.test.ts); set explicitly for isolation.
     usePreferencesStore.setState({ cardClickAction: 'details' });
     const { container } = renderCard(makeItem());
     const root = container.firstElementChild as HTMLElement;
