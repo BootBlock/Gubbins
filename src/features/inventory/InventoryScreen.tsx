@@ -36,6 +36,7 @@ import {
   useLocationTree,
   type ItemQueryFilters,
 } from './queries';
+import { requestHighlight } from '@/lib/highlight';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
 import { LayoutToggle } from './components/LayoutToggle';
@@ -590,6 +591,13 @@ function InventoryWorkspace() {
           setScannerOpen(false);
           setScanBarcode(gtin);
           setAddOpen(true);
+        }}
+        onViewItem={(item) => {
+          // Jump-to-item, mirroring the command palette / alert deep-links: seed the search so
+          // the item is in view even if a filter would hide it, then flash its card.
+          setScannerOpen(false);
+          useInventoryEntry.getState().requestSearch(item.name);
+          requestHighlight(item.id);
         }}
       />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
