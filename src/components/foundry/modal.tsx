@@ -119,9 +119,18 @@ export function Modal({
         onClick={onClose}
       />
       <Surface
-        className={cn('relative z-10 w-full max-w-lg p-6', !reducedMotion && 'animate-zoom-in', className)}
+        className={cn(
+          // Cap the panel to the viewport (minus the outer p-4 = 1rem top+bottom) and lay it
+          // out as a flex column so the header stays pinned while the body scrolls — a tall
+          // dialog (e.g. Edit location) no longer overflows the screen and strands its footer.
+          // `dvh` tracks mobile browser chrome; caller `max-w-*` / `max-h-*` overrides still win
+          // via tailwind-merge (see `cn`).
+          'relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col p-6',
+          !reducedMotion && 'animate-zoom-in',
+          className,
+        )}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
@@ -130,7 +139,9 @@ export function Modal({
             <CloseIcon className="text-glyph-neutral" />
           </Button>
         </div>
-        <div className="mt-5">{children}</div>
+        {/* The scroll region: `min-h-0` lets this flex child shrink below its content height so
+            `overflow-y-auto` actually engages (without it the panel just grows past the cap). */}
+        <div className="mt-5 min-h-0 overflow-y-auto">{children}</div>
       </Surface>
     </div>,
     document.body,

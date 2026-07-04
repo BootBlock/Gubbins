@@ -732,19 +732,14 @@ try {
       await editDialog.waitFor({ state: 'visible', timeout: 5000 });
 
       // The Edit dialog is tall (every location field plus its read-only metadata), so its
-      // footer Delete button falls below the default headless fold — the centred modal has no
-      // internal scroll. Grow the viewport for the interaction so the button is on-screen and
-      // actionable, then restore the original size.
-      const viewport = page.viewportSize();
-      await page.setViewportSize({ width: viewport?.width ?? 1280, height: 1200 });
-      try {
-        // The location is empty, so deleting it re-parents nothing and needs no confirm — the
-        // row simply disappears from the tree.
-        await editDialog.getByTestId('edit-location-delete').click();
-        await row.waitFor({ state: 'detached', timeout: 5000 });
-      } finally {
-        if (viewport) await page.setViewportSize(viewport);
-      }
+      // footer Delete button can fall below the default fold — but the Modal now caps its height
+      // and scrolls its body internally, so the button is reachable at the default viewport.
+      // Scroll it into view, then click; the location is empty, so deleting it re-parents nothing
+      // and needs no confirm — the row simply disappears from the tree.
+      const deleteButton = editDialog.getByTestId('edit-location-delete');
+      await deleteButton.scrollIntoViewIfNeeded();
+      await deleteButton.click();
+      await row.waitFor({ state: 'detached', timeout: 5000 });
     });
 
     // --- Phase 3 flows ------------------------------------------------------------
