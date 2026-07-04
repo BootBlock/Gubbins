@@ -59,10 +59,22 @@ uses **Modular UI** intent.
 
 ## B. Layout & appearance
 
-- **B1 — Reorder & pin tiles within a group.** Drag-and-drop + keyboard reorder of the nav
-  tiles (and optionally "pin to top"), persisted per device via `useLayoutStore` — mirroring the
-  existing widget-board affordance, ideally reusing its DnD/keyboard hooks. Respect Modular UI
-  (hidden features never appear). *Likely the single biggest "make it mine" ask; infra exists.*
+- **B1 — Reorder & pin tiles within a group. ✅ Done (shipped reorder + cross-group move +
+  pin).** A "Customise" edit mode on the hub (mirrors the widget board's affordance): drag
+  (native HTML5 DnD, no dep) or arrow-key a tile to reorder within a group **or move it to an
+  adjacent group** (scope widened from within-group per the developer), plus a per-tile **pin**
+  that floats it to the top of its group. Ordering maths is the pure `dashboard-nav-order.ts`
+  seam (reconcile / moveTile / nudgeTile / setTilePinned; invariant = stored order == display
+  order, pinned-first per group); `useNavOrder` resolves the persisted `useLayoutStore.navTileOrder`
+  intent against Modular UI gating + stale saved orders (unknown ids dropped, stale group reverts,
+  new tiles append to their default group) and hands `DashboardNav` ready ordered groups + edit
+  callbacks (mirrors `useNavCounts`). A hidden tile's placement is kept verbatim and merged back
+  on write, so re-enabling its module restores it. Keyboard reorder, roles/aria, a live-region
+  move announcement and reduced-motion are all wired.
+  - **Deferred:** an always-present placeholder for a fully-emptied group. Today moving *every*
+    tile out of a group removes its drop zone; it stays reachable by keyboard (arrow-left/right
+    cycle all three groups) and by Reset, so recovery exists — a drop-zone-for-empty-group can
+    land with **D1** (favourites/custom groups), which reworks the grouping surface anyway.
 - **B2 — Density & columns control.** Compact vs comfortable tile density and a columns choice
   (2 / 3 / auto), as a Tier-2 preference. Coordinate with the large-format layout seam
   (`useLargeFormat`) so tablet/foldable widths still behave.

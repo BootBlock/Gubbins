@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 // Router: DashboardNav only needs Link, rendered as a plain anchor for querying.
 vi.mock('@tanstack/react-router', () => ({
@@ -26,16 +26,32 @@ vi.mock('./useNavCounts', async (importOriginal) => ({
 
 import { DashboardNav } from './DashboardNav';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useLayoutStore } from '@/state/stores/useLayoutStore';
 
 beforeEach(() => {
   alertsMock.mockReturnValue({ alerts: [], allAlerts: [], isLoading: false, isError: false });
   navCountsMock.mockReturnValue({});
   useModulesStore.setState({ intent: {} });
+  useLayoutStore.setState({ navTileOrder: [] });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
+  useLayoutStore.setState({ navTileOrder: [] });
 });
+
+/** Ids of the persisted nav order restricted to one group (empty until the user customises). */
+function persistedGroup(group: string): string[] {
+  return useLayoutStore
+    .getState()
+    .navTileOrder.filter((p) => p.group === group)
+    .map((p) => p.id);
+}
+
+/** Enter the hub's Customise (edit) mode. */
+function customise(): void {
+  fireEvent.click(screen.getByTestId('customise-nav'));
+}
 
 /** The tile for a route, found via its anchor `href` (labels differ, e.g. "Open inventory"). */
 function tile(to: string): HTMLElement | null {
@@ -128,5 +144,73 @@ describe('DashboardNav — collection count pills', () => {
     expect(screen.getByTestId('nav-count-/inventory')).toHaveTextContent('999+');
     // The exact figure still rides on the accessible name.
     expect(tile('/inventory')).toHaveAttribute('aria-label', 'Open inventory — 100000 items');
+  });
+});
+
+describe('DashboardNav — reorder & pin (backlog B1)', () => {
+  it('persists a keyboard reorder within a group', () => {
+    render(<DashboardNav />);
+    customise();
+    // Default primary order starts Inventory, Projects, … — arrow-up on Projects floats it
+    // above Inventory, and the new arrangement is saved to the layout store.
+    fireEvent.keyDown(screen.getByTestId('nav-tile-/projects'), { key: 'ArrowUp' });
+    expect(persistedGroup('primary').slice(0, 2)).toEqual(['/projects', '/inventory']);
+  });
+
+  it('pins a tile to the top of its group', () => {
+    render(<DashboardNav />);
+    customise();
+    // Reports is last in the primary group; pinning it floats it to the very top.
+    fireEvent.click(screen.getByTestId('nav-pin-/reports'));
+    expect(persistedGroup('primary')[0]).toBe('/reports');
+    expect(useLayoutStore.getState().navTileOrder.find((p) => p.id === '/reports')?.pinned).toBe(true);
+  });
+
+  it('moves a tile into another group by dropping it on the group’s drop zone', () => {
+    render(<DashboardNav />);
+    customise();
+    const dataTransfer = { setData: vi.fn(), getData: () => '/reports', effectAllowed: '' };
+    fireEvent.dragStart(screen.getByTestId('nav-tile-/reports'), { dataTransfer });
+    fireEvent.drop(screen.getByTestId('nav-drop-end-manage'), { dataTransfer });
+    expect(persistedGroup('manage')).toContain('/reports');
+    expect(persistedGroup('primary')).not.toContain('/reports');
+  });
+
+  it('never offers a hidden (feature-gated) tile for ordering', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardNav />);
+    customise();
+    // The gated tile is absent from the edit surface — it can't be dragged, keyed or pinned.
+    expect(screen.queryByTestId('nav-tile-/projects')).toBeNull();
+    expect(screen.queryByTestId('nav-pin-/projects')).toBeNull();
+    // A sibling that is still enabled remains orderable.
+    expect(screen.getByTestId('nav-tile-/inventory')).toBeTruthy();
+  });
+
+  it('resolves a stale saved order safely (drops unknown ids, keeps every real tile)', () => {
+    // A saved order referencing a removed route plus only a couple of real tiles — must not
+    // crash, must ignore the unknown id, and must still surface every current destination.
+    useLayoutStore.setState({
+      navTileOrder: [
+        { id: '/ghost-route', group: 'primary', pinned: true },
+        { id: '/reports', group: 'primary', pinned: false },
+        { id: '/inventory', group: 'primary', pinned: false },
+      ],
+    });
+    render(<DashboardNav />);
+    // The unknown id renders nothing; the known tiles (and the ones that were missing from the
+    // stored order, appended by reconcile) are all present.
+    expect(tile('/reports')).not.toBeNull();
+    expect(tile('/inventory')).not.toBeNull();
+    expect(tile('/contacts')).not.toBeNull(); // was absent from the stored order → appended
+    expect(document.querySelector('a[href="/ghost-route"]')).toBeNull();
+  });
+
+  it('announces a move for screen readers via a live region', () => {
+    render(<DashboardNav />);
+    customise();
+    fireEvent.keyDown(screen.getByTestId('nav-tile-/projects'), { key: 'ArrowUp' });
+    // The announce-only twin carries a spoken description of where the tile landed.
+    expect(screen.getByText(/Projects moved to position 1 of/i)).toBeTruthy();
   });
 });

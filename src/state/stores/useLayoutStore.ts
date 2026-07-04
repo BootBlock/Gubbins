@@ -12,6 +12,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
+import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
 
 /**
  * - `data` — dense, tabular layouts (the "Data-Heavy" view).
@@ -40,11 +41,19 @@ interface LayoutStore {
    * registry changing across releases.
    */
   readonly dashboardLayout: DashboardLayout;
+  /**
+   * Persisted dashboard **nav-tile** arrangement (backlog B1) — reorder, cross-group move
+   * and pin, kept alongside `dashboardLayout` as a sibling per-device layout concern. Empty
+   * until the user customises; {@link DashboardNav} reconciles it against the live nav
+   * destinations (and Modular UI gating) on render, so it survives the tile set changing.
+   */
+  readonly navTileOrder: NavOrder;
   setDensity: (density: LayoutDensity) => void;
   toggleDensity: () => void;
   setGrouping: (grouping: GroupingMode) => void;
   toggleSidebar: () => void;
   setDashboardLayout: (layout: DashboardLayout) => void;
+  setNavTileOrder: (order: NavOrder) => void;
 }
 
 export const useLayoutStore = create<LayoutStore>()(
@@ -54,11 +63,13 @@ export const useLayoutStore = create<LayoutStore>()(
       grouping: 'none',
       sidebarCollapsed: false,
       dashboardLayout: [],
+      navTileOrder: [],
       setDensity: (density) => set({ density }),
       toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
       setGrouping: (grouping) => set({ grouping }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setDashboardLayout: (dashboardLayout) => set({ dashboardLayout }),
+      setNavTileOrder: (navTileOrder) => set({ navTileOrder }),
     }),
     { name: 'gubbins:layout' },
   ),
