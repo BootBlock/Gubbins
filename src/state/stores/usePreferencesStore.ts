@@ -40,6 +40,7 @@ import {
   normaliseLabelTemplate,
   type LabelTemplate,
 } from '@/features/inventory/labels/label-template';
+import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
 
 /**
  * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme`
@@ -105,6 +106,16 @@ interface PreferencesStore {
    * body inert). See {@link CardClickAction}.
    */
   readonly cardClickAction: CardClickAction;
+  /**
+   * Which attributes each inventory item card/row shows, and in what order (backlog E1).
+   * A device-local ordered list of `{ id, visible }` — built-in fields (`location`,
+   * `category`, `condition`, `value`, `quantity`, `updated`) and any category custom field
+   * (`custom:<fieldId>`). Persisted as the user's *intent*; the read side reconciles it
+   * against the live custom-field catalog via `normaliseCardFields` (resolve-on-read), so a
+   * renamed/removed field or a newly-added built-in never corrupts the card. Shared across
+   * the Visual card and Data row (per-view density is E2). See {@link CardFieldsConfig}.
+   */
+  readonly cardFields: CardFieldsConfig;
   /**
    * Blanket reorder point: a DISCRETE item is flagged on the §3 "Low Stock" widget at/below
    * this on-hand quantity. **0 = off** — low-stock alerts are opt-in, so at 0 nothing is
@@ -175,6 +186,10 @@ interface PreferencesStore {
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
   setCardClickAction: (action: CardClickAction) => void;
+  /** Replace the item-card field configuration (order + visibility). */
+  setCardFields: (fields: CardFieldsConfig) => void;
+  /** Restore the shipped default card-field configuration. */
+  resetCardFields: () => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -208,6 +223,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
       cardClickAction: DEFAULT_CARD_CLICK_ACTION,
+      cardFields: DEFAULT_CARD_FIELDS,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -240,6 +256,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
       // Normalise so a stale/unknown persisted value can never reach the card's click handler.
       setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
+      // Persisted verbatim as the user's *intent*; the read layer reconciles it against the
+      // live custom-field catalog (`normaliseCardFields`), so no store-side normalisation.
+      setCardFields: (cardFields) => set({ cardFields }),
+      resetCardFields: () => set({ cardFields: DEFAULT_CARD_FIELDS }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
