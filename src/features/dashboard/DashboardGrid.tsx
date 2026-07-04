@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { buttonVariants, Surface, Tooltip, useReducedMotion } from '@/components/foundry';
 import { CustomiseIcon, DragHandleIcon, HideIcon, ShowIcon, CheckIcon, ResetIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import {
@@ -317,6 +318,7 @@ function WidgetTile({
   onHide: () => void;
 }) {
   const Body = def.Component;
+  const openSettings = useSettingsDialog((s) => s.openSettings);
   // Cascade the entrance: each tile rises in a beat after the previous one. Capped so a
   // busy board never feels sluggish; zeroed for reduced-motion users by the index.css
   // catch-all (animation-delay: 0). `both` fill keeps the tile hidden during its wait.
@@ -389,9 +391,26 @@ function WidgetTile({
   // quick-link target makes the whole tile navigable (§3 "quick-links"), unless the
   // target route's module is hidden — then the tile renders as a plain, non-clickable
   // card so it never navigates into a hidden module (modular-ui-plan §4).
+  //
+  // Settings is a dialog, not a routed screen: its tile opens the dialog directly rather
+  // than rendering a `<Link>` — a link would prefetch-open it on hover (`defaultPreload:
+  // 'intent'` runs the `/settings` `beforeLoad`, which raises the dialog). This mirrors the
+  // same special-case in DashboardNav / AppNav / CommandPalette. See `useSettingsDialog`.
+  if (def.to === '/settings' && linkActive) {
+    return (
+      <button
+        type="button"
+        onClick={openSettings}
+        style={cellStyle(x, y)}
+        className={cn(PLACEMENT, 'block w-full text-left')}
+      >
+        {card}
+      </button>
+    );
+  }
   if (def.to && linkActive) {
     return (
-      <Link to={def.to} hash={def.hash} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
+      <Link to={def.to} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
         {card}
       </Link>
     );

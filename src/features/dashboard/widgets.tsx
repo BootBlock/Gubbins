@@ -55,8 +55,6 @@ export interface WidgetDefinition {
   readonly icon: ReactNode;
   /** Optional quick-link target — the whole tile navigates here in view mode. */
   readonly to?: string;
-  /** Optional `#anchor` (used with `to`) to deep-link a specific section of the target. */
-  readonly hash?: string;
   /**
    * The Modular UI feature this widget belongs to (modular-ui-plan §4). When the feature
    * is not in the effective-enabled set the grid drops the widget from the board *and* the
@@ -611,7 +609,6 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'Storage',
     icon: <StorageIcon />,
     to: '/settings',
-    hash: 'danger-zone',
     Component: StorageWidget,
   },
   { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },

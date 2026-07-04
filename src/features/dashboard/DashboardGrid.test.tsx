@@ -30,6 +30,9 @@ vi.mock('./widgets', () => {
     // Ungated widget whose link targets `/reports` — survives when Reports is off, but its
     // link must drop (the dead-link case).
     { id: 'gamma', title: 'Gamma', icon: null, to: '/reports', Component: () => <p>Gamma body</p> },
+    // A tile targeting `/settings` — Settings is a dialog, so this must render as a button
+    // that opens the dialog, never a `<Link>` (a link prefetch-opens it on hover).
+    { id: 'sigma', title: 'Sigma', icon: null, to: '/settings', Component: () => <p>Sigma body</p> },
   ];
   return {
     DASHBOARD_WIDGETS: defs,
@@ -41,6 +44,7 @@ vi.mock('./widgets', () => {
 import { DashboardGrid } from './DashboardGrid';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
@@ -50,6 +54,7 @@ afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ dashboardLayout: [] });
+  useSettingsDialog.setState({ open: false });
 });
 
 /** The `<a>` wrapping a tile, or `null` when the tile isn't a live link. */
@@ -95,6 +100,21 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
     expect(tileLink('gamma')).toBeNull();
     // A widget whose link targets a still-enabled (core) route keeps its link.
     expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
+  });
+
+  it('renders a `/settings` tile as a dialog-opening button, never a Link (no hover prefetch)', () => {
+    render(<DashboardGrid />);
+    const tile = screen.getByTestId('widget-sigma');
+    // Crucially not wrapped in an `<a>` — a Link would prefetch-open the dialog on hover
+    // (the `/settings` route's `beforeLoad` raises it under `defaultPreload: 'intent'`).
+    expect(tileLink('sigma')).toBeNull();
+    const button = tile.closest('button');
+    expect(button).not.toBeNull();
+
+    // The dialog is only raised on an actual click, not merely by rendering/hovering.
+    expect(useSettingsDialog.getState().open).toBe(false);
+    fireEvent.click(button as HTMLButtonElement);
+    expect(useSettingsDialog.getState().open).toBe(true);
   });
 });
 
