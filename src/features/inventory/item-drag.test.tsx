@@ -156,6 +156,56 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(onDrop).toHaveBeenCalledWith({ id: 'item-1', locationId: 'loc-workshop' });
   });
 
+  it('rejects a move onto the location the item is already in, showing the forbidden cursor', () => {
+    const onDrop = vi.fn();
+    // An item whose current location IS the drop target — moving it there is a no-op.
+    function SameLocationSource() {
+      const drag = useItemDragSource({ id: 'item-1', name: 'NE555 timer', locationId: LOCATION_ID });
+      return (
+        <div {...drag} data-testid="source">
+          NE555 timer
+        </div>
+      );
+    }
+    render(
+      <ItemDragProvider>
+        <SameLocationSource />
+        <Target onDrop={onDrop} />
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    // The row rejects it: no highlight, and <body> carries the forbidden-cursor class.
+    expect(target.getAttribute('data-active')).toBe('false');
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(true);
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    expect(onDrop).not.toHaveBeenCalled();
+    // Both classes are cleared once the gesture ends.
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(false);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(false);
+  });
+
+  it('shows the grabbing cursor (not the forbidden one) over a valid target', () => {
+    render(<Harness onDrop={vi.fn()} />);
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    expect(target.getAttribute('data-active')).toBe('true');
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(false);
+  });
+
   it('treats a touch that moves before the long press as a scroll, not a drag', () => {
     vi.useFakeTimers();
     const onDrop = vi.fn();
