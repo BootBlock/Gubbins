@@ -16,9 +16,13 @@ const { openSpy } = vi.hoisted(() => ({ openSpy: vi.fn() }));
  */
 
 // Forward the ref (the card opens a dialog through it) and expose an inner button so the
-// interactive-origin guard on the body click can be exercised.
+// interactive-origin guard on the body click can be exercised. It also renders a *portaled*
+// element (as the card's real dialogs do via the Modal's createPortal) carrying a
+// `role="combobox"` — a click on it bubbles here through the React tree but is not inside the
+// card's DOM, mirroring the Move dialog's Location combobox.
 vi.mock('./ItemActions', async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
+  const { createPortal } = await import('react-dom');
   return {
     ItemActions: forwardRef((_props: unknown, ref: React.Ref<{ open: (kind: string) => void }>) => {
       useImperativeHandle(ref, () => ({ open: openSpy }), []);
@@ -27,6 +31,12 @@ vi.mock('./ItemActions', async () => {
           <button type="button" aria-label="inner-action">
             act
           </button>
+          {createPortal(
+            <div role="combobox" data-testid="portaled-dialog-combobox">
+              Location
+            </div>,
+            document.body,
+          )}
         </div>
       );
     }),
@@ -205,6 +215,17 @@ describe('ItemCard — click-to-act (cardClickAction)', () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).not.toContain('cursor-pointer');
     fireEvent.click(root);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a click that bubbled from a portaled dialog (e.g. the Move dialog combobox)', () => {
+    // Regression: a card dialog (Move/details/label) renders in a portal, so a click on its
+    // Location combobox bubbles to the card through the React tree. It must NOT re-fire the card
+    // action (which would pop the details dialog on top). The combobox is a role="combobox", which
+    // the interactive-origin guard deliberately doesn't match — only the DOM-containment check saves it.
+    usePreferencesStore.setState({ cardClickAction: 'details' });
+    renderCard(makeItem());
+    fireEvent.click(screen.getByTestId('portaled-dialog-combobox'));
     expect(openSpy).not.toHaveBeenCalled();
   });
 });

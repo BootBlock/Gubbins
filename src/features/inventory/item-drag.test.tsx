@@ -92,6 +92,33 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(onDrop).toHaveBeenCalledWith({ id: 'item-1', locationId: 'loc-workshop' });
   });
 
+  it('passes the dropped item id and name to onDropItem (so the mover can name it in feedback)', () => {
+    const onDropItem = vi.fn();
+    function NamedTarget() {
+      const active = useLocationRowDrop(LOCATION_ID, { onDropItem });
+      return (
+        <div data-tree-id={LOCATION_ID} data-testid="target" data-active={active ? 'true' : 'false'}>
+          Workshop
+        </div>
+      );
+    }
+    render(
+      <ItemDragProvider>
+        <Source />
+        <NamedTarget />
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(onDropItem).toHaveBeenCalledWith('item-1', 'NE555 timer');
+  });
+
   it('highlights the row under the pointer and mounts a floating preview mid-drag', () => {
     render(<Harness onDrop={vi.fn()} />);
     const source = screen.getByTestId('source');

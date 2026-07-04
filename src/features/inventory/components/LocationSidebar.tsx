@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { plural } from '@/lib/plural';
-import { Button, LiveRegion, Modal, Spinner, Tooltip } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Spinner, Tooltip, useToast } from '@/components/foundry';
 import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { locationColorTextClass } from '../location-color';
@@ -46,6 +46,7 @@ export function LocationSidebar({
   const archive = useArchiveLocation();
   const moveItem = useMoveItem();
   const updateLocation = useUpdateLocation();
+  const toast = useToast();
   // Announce a drag-and-drop move (WCAG 4.1.3) — the pointer-only drop has no other feedback
   // for assistive tech, and the moved item/location may leave the current view.
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
@@ -139,6 +140,28 @@ export function LocationSidebar({
   // The location whose drag-to-nest re-parent is currently in flight (or null). The row it
   // points at shows a spinner until the tree reshapes, so the multi-second wait isn't silent.
   const nestingId = updateLocation.isPending ? (updateLocation.variables?.id ?? null) : null;
+
+  // Move a dragged item into `targetId`. The move itself settles fast, but the sidebar counts
+  // only refresh after an invalidation round-trip — so on its own the drop looks like nothing
+  // happened. Give layered, immediate feedback instead: an AT cue that the move started + a
+  // spinner on the receiving row while it's in flight (see `movingItemToId`), then a toast
+  // confirming the result. The toast viewport is itself `aria-live`, so it announces the result
+  // for assistive tech — the live region only carries the "Moving…" start, never a second
+  // "moved" message that would double-announce.
+  const moveItemToLocation = (itemId: string, itemName: string, targetId: string, targetName: string) => {
+    setMoveAnnouncement(`Moving ${itemName} to ${targetName}…`);
+    moveItem.mutate(
+      { id: itemId, locationId: targetId },
+      {
+        onSuccess: () => toast.show({ tone: 'success', message: `Moved ${itemName} to ${targetName}.` }),
+        onError: () => toast.show({ tone: 'danger', message: `Couldn’t move ${itemName} to ${targetName}.` }),
+      },
+    );
+  };
+
+  // The location currently receiving a dragged item (its move in flight), or null — the row it
+  // points at shows a spinner so the drop isn't silent until the counts refresh.
+  const movingItemToId = moveItem.isPending ? (moveItem.variables?.locationId ?? null) : null;
 
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-2 large-format:w-72">
@@ -315,12 +338,9 @@ export function LocationSidebar({
           onDropItem={
             node.archivedAt != null
               ? undefined
-              : (itemId) =>
-                  moveItem.mutate(
-                    { id: itemId, locationId: node.id },
-                    { onSuccess: () => setMoveAnnouncement(`Item moved to ${node.name}.`) },
-                  )
+              : (itemId, itemName) => moveItemToLocation(itemId, itemName, node.id, node.name)
           }
+          receivingItem={movingItemToId === node.id}
           // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto
           // another such location to nest beneath it. System/archived rows are neither a valid
           // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter). While a
