@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactNode, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type ReactNode, type RefObject, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Modal } from './modal';
 import { resolveTabKey } from './tab-keyboard';
@@ -36,8 +36,29 @@ export interface RailModalProps {
   readonly tabs: readonly RailTab[];
   /** Optional footer pinned below the panel — e.g. a Close button, bottom-right. */
   readonly footer?: ReactNode;
-  /** Which tab is selected first. Defaults to the first tab. */
+  /** Which tab is selected first. Defaults to the first tab. Ignored when controlled. */
   readonly initialTabId?: string;
+  /**
+   * Controlled selection: the id of the currently-active tab. When provided (paired with
+   * {@link onActiveTabChange}) the caller owns which tab is shown — e.g. a form dialog that
+   * jumps to the tab holding the first validation error on submit. Omit both for the default
+   * uncontrolled behaviour, where the rail tracks its own selection.
+   */
+  readonly activeTabId?: string;
+  /** Called with the id of a newly-selected tab (rail click or arrow-key). Required for control. */
+  readonly onActiveTabChange?: (id: string) => void;
+  /**
+   * When set, the rail frame (panel + footer) is wrapped in a `<form>` that fires this on
+   * submit, so a single form spans fields spread across panels and a footer submit button —
+   * the model behind the tabbed Add-item dialog. The rail's own tab buttons are `type="button"`,
+   * so navigating tabs never submits. Omit for a read-only / per-facet-autosaving rail dialog.
+   */
+  readonly onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+  /**
+   * Forwarded to the underlying {@link Modal}: move initial focus to this control on open
+   * (e.g. the Name field of a form dialog). The target must live in the first-shown tab.
+   */
+  readonly initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -64,8 +85,14 @@ export function RailModal({
   tabs,
   footer,
   initialTabId,
+  activeTabId,
+  onActiveTabChange,
+  onSubmit,
+  initialFocusRef,
 }: RailModalProps) {
-  const [activeId, setActiveId] = useState(initialTabId ?? tabs[0]!.id);
+  // Uncontrolled fallback selection — used only when the caller does not pass `activeTabId`.
+  const [internalId, setInternalId] = useState(initialTabId ?? tabs[0]!.id);
+  const activeId = activeTabId ?? internalId;
   // Roving-tabindex refs for the rail buttons, so arrow-key navigation can move DOM
   // focus to the newly-selected tab (the APG automatic-activation model).
   const tabRefs = useRef(new Map<string, HTMLButtonElement | null>());
@@ -74,7 +101,10 @@ export function RailModal({
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0]!;
 
   const select = (id: string) => {
-    setActiveId(id);
+    // Uncontrolled: track selection here. Controlled: leave it to the caller's state, which
+    // flows back in via `activeTabId`. Either way notify the caller and move focus to the tab.
+    if (activeTabId === undefined) setInternalId(id);
+    onActiveTabChange?.(id);
     tabRefs.current.get(id)?.focus();
   };
 
@@ -89,6 +119,92 @@ export function RailModal({
     select(next);
   };
 
+  // Fixed-height frame: the dialog stays the same size as you switch tabs, so the rail never
+  // shifts and the panel scrolls within rather than resizing (and re-centring) the whole modal.
+  // A trailing footer stays pinned below it. When `onSubmit` is given the frame is wrapped in a
+  // <form> so fields spread across panels and the footer submit button share one form.
+  const frame = (
+    <div className="flex h-[74vh] flex-col">
+      <div className="flex min-h-0 flex-1 gap-4 sm:gap-5">
+        <div
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label={railAriaLabel}
+          className="flex shrink-0 flex-col gap-1"
+        >
+          {tabs.map((tab) => {
+            const selected = tab.id === active.id;
+            const danger = tab.tone === 'danger';
+            return (
+              <button
+                key={tab.id}
+                ref={(el) => {
+                  tabRefs.current.set(tab.id, el);
+                }}
+                type="button"
+                role="tab"
+                id={`${idPrefix}-tab-${tab.id}`}
+                aria-label={tab.label}
+                aria-selected={selected}
+                aria-controls={`${idPrefix}-panel-${tab.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => select(tab.id)}
+                onKeyDown={onKeyDown}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium',
+                  'transition-colors ease-emphasized',
+                  'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  selected
+                    ? danger
+                      ? 'bg-destructive/10 text-destructive'
+                      : 'bg-primary/10 text-primary'
+                    : danger
+                      ? 'text-destructive/80 hover:bg-destructive/10 hover:text-destructive'
+                      : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground',
+                )}
+              >
+                <span
+                  className={cn(
+                    'grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4',
+                    selected
+                      ? danger
+                        ? 'bg-destructive/15 text-destructive'
+                        : 'bg-primary/15 text-primary'
+                      : danger
+                        ? 'bg-destructive/10 text-destructive/80'
+                        : 'bg-secondary/50 text-muted-foreground',
+                  )}
+                >
+                  {tab.icon}
+                </span>
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          // Keyed on the active tab so switching sections replays the fade-through
+          // entrance (`animate-swap-in`); the reduced-motion catch-all neutralises it.
+          key={active.id}
+          role="tabpanel"
+          id={`${idPrefix}-panel-${active.id}`}
+          aria-labelledby={`${idPrefix}-tab-${active.id}`}
+          tabIndex={0}
+          className="min-w-0 flex-1 animate-swap-in space-y-4 dialog-scroll focus-visible:outline-none"
+        >
+          {active.content}
+        </div>
+      </div>
+
+      {footer ? (
+        <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-border pt-4">
+          {footer}
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <Modal
       open={open}
@@ -97,89 +213,9 @@ export function RailModal({
       description={description}
       className={className}
       scrollBody={false}
+      initialFocusRef={initialFocusRef}
     >
-      {/* Fixed-height frame: the dialog stays the same size as you switch tabs, so the
-          rail never shifts and the panel scrolls within rather than resizing (and
-          re-centring) the whole modal. A trailing footer stays pinned below it. */}
-      <div className="flex h-[74vh] flex-col">
-        <div className="flex min-h-0 flex-1 gap-4 sm:gap-5">
-          <div
-            role="tablist"
-            aria-orientation="vertical"
-            aria-label={railAriaLabel}
-            className="flex shrink-0 flex-col gap-1"
-          >
-            {tabs.map((tab) => {
-              const selected = tab.id === active.id;
-              const danger = tab.tone === 'danger';
-              return (
-                <button
-                  key={tab.id}
-                  ref={(el) => {
-                    tabRefs.current.set(tab.id, el);
-                  }}
-                  type="button"
-                  role="tab"
-                  id={`${idPrefix}-tab-${tab.id}`}
-                  aria-label={tab.label}
-                  aria-selected={selected}
-                  aria-controls={`${idPrefix}-panel-${tab.id}`}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => select(tab.id)}
-                  onKeyDown={onKeyDown}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium',
-                    'transition-colors ease-emphasized',
-                    'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                    selected
-                      ? danger
-                        ? 'bg-destructive/10 text-destructive'
-                        : 'bg-primary/10 text-primary'
-                      : danger
-                        ? 'text-destructive/80 hover:bg-destructive/10 hover:text-destructive'
-                        : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'grid size-7 shrink-0 place-items-center rounded-lg [&_svg]:size-4',
-                      selected
-                        ? danger
-                          ? 'bg-destructive/15 text-destructive'
-                          : 'bg-primary/15 text-primary'
-                        : danger
-                          ? 'bg-destructive/10 text-destructive/80'
-                          : 'bg-secondary/50 text-muted-foreground',
-                    )}
-                  >
-                    {tab.icon}
-                  </span>
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div
-            // Keyed on the active tab so switching sections replays the fade-through
-            // entrance (`animate-swap-in`); the reduced-motion catch-all neutralises it.
-            key={active.id}
-            role="tabpanel"
-            id={`${idPrefix}-panel-${active.id}`}
-            aria-labelledby={`${idPrefix}-tab-${active.id}`}
-            tabIndex={0}
-            className="min-w-0 flex-1 animate-swap-in space-y-4 dialog-scroll focus-visible:outline-none"
-          >
-            {active.content}
-          </div>
-        </div>
-
-        {footer ? (
-          <div className="mt-4 flex shrink-0 items-center justify-end gap-2 border-t border-border pt-4">
-            {footer}
-          </div>
-        ) : null}
-      </div>
+      {onSubmit ? <form onSubmit={onSubmit}>{frame}</form> : frame}
     </Modal>
   );
 }
