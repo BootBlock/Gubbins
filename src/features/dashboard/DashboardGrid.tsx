@@ -342,7 +342,7 @@ function WidgetTile({
         onKeyDown={onKeyDown}
         className={cn(
           PLACEMENT,
-          'cursor-grab p-4 transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing',
+          'cursor-grab p-4 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
           // The static drag ring, dropped while this tile is the drop target so the
           // dashed ghost overlay isn't doubled with a solid outline.
           !isDropTarget && 'ring-2 ring-primary/40',

@@ -692,18 +692,18 @@
 }
 
 @utility animate-zoom-in {
-  animation: gubbins-zoom-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: gubbins-zoom-in 0.2s var(--ease-emphasized) both;
 }
 
 @utility animate-rise {
   /* Page-navigation entrance for every screen's <main> (and the cards within,
      e.g. the Inventory item grid). Duration eased 20% from 0.25s → 0.30s so the
      controls settle in a touch more gently as you move between pages. */
-  animation: gubbins-rise 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: gubbins-rise 0.3s var(--ease-emphasized) both;
 }
 
 @utility animate-swap-in {
-  animation: gubbins-swap-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: gubbins-swap-in 0.2s var(--ease-emphasized) both;
 }
 
 @utility animate-slide-in-right {
@@ -715,7 +715,7 @@
 }
 
 @utility animate-toast-out {
-  animation: gubbins-toast-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: gubbins-toast-out 0.2s var(--ease-emphasized) both;
 }
 
 @utility animate-pulse-success {

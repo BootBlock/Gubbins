@@ -51,7 +51,7 @@ export function LocationInlineRename({
           onCancel();
         }
       }}
-      className="min-w-0 flex-1 rounded border border-primary/40 bg-background px-1.5 py-0.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+      className="min-w-0 flex-1 rounded border border-primary/40 bg-background px-1.5 py-0.5 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
     />
   );
 }

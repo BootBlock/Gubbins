@@ -449,7 +449,7 @@ function ScannerOverlayInner({
             channel for the scanner: a blind user types a code and would otherwise get
             nothing back. Always-mounted polite region so the message is announced. */}
         <LiveRegion data-testid="scanner-notice">
-          {notice ? <p className="text-center text-xs text-amber-300">{notice}</p> : null}
+          {notice ? <p className="text-center text-xs text-warning">{notice}</p> : null}
         </LiveRegion>
         <div className="mx-auto flex max-w-md gap-2">
           <Input

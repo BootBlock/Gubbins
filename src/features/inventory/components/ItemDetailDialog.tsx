@@ -125,7 +125,7 @@ export function ItemDetailDialog({
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium',
                   'transition-colors ease-emphasized',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                   selected
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground',

@@ -58,7 +58,7 @@ export function LocationKindPicker({
             onKeyDown={(e) => onKeyDown(e, index)}
             className={cn(
               'grid size-8 place-items-center rounded-lg border outline-none transition-transform [&_svg]:size-4',
-              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
               checked
                 ? 'border-primary bg-primary/15 text-primary scale-110'
                 : 'border-border text-muted-foreground hover:bg-secondary/60',

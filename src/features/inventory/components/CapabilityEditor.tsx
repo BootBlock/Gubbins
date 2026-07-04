@@ -43,7 +43,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
               content={`**${cap.key}** = ${display(cap)}\n\nWeight: ${cap.weight}`}
               openDelayMs={INFO_OPEN_DELAY_MS}
             >
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-medium text-warning">
                 <CapabilityIcon className="size-3" />
                 <span className="font-semibold">{cap.key}</span>
                 <span className="opacity-70">= {display(cap)}</span>
@@ -52,7 +52,7 @@ export function CapabilityEditor({ itemId }: { itemId: string }) {
                   type="button"
                   aria-label={`Remove capability ${cap.key}`}
                   onClick={() => removeCapability.mutate(cap.key)}
-                  className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-amber-500/25 [&_svg]:size-3"
+                  className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-warning/25 [&_svg]:size-3"
                 >
                   <CloseIcon />
                 </button>

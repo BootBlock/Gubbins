@@ -46,7 +46,7 @@ export function DashboardVersion() {
         onClick={() => void check()}
         aria-label="Check for app updates"
         data-testid="dashboard-version"
-        className="cursor-pointer rounded text-right text-xs leading-tight text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
+        className="cursor-pointer rounded text-right text-xs leading-tight text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <span className="block font-medium tabular-nums text-foreground">v{APP_VERSION}</span>
         <span className="block tabular-nums" aria-live="polite">
