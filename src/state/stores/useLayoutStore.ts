@@ -19,8 +19,19 @@ import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
  */
 export type LayoutDensity = 'data' | 'visual';
 
+/**
+ * How the inventory grid *arranges* items — an axis orthogonal to {@link LayoutDensity}
+ * (which governs how each item is *drawn*). Designed to grow: today `none` (a flat list)
+ * and `location` (collapsible sections mirroring the location hierarchy); future modes
+ * (by category, by tag, …) slot in here and into the `GROUP_MODES` descriptor SSOT
+ * (`features/inventory/grouping.ts`) without touching the render fork.
+ */
+export type GroupingMode = 'none' | 'location';
+
 interface LayoutStore {
   readonly density: LayoutDensity;
+  /** How the inventory grid arranges items (grouping axis). Persisted like `density`. */
+  readonly grouping: GroupingMode;
   readonly sidebarCollapsed: boolean;
   /**
    * Persisted dashboard widget placements (spec §3, §2.1). Empty until the user
@@ -31,6 +42,7 @@ interface LayoutStore {
   readonly dashboardLayout: DashboardLayout;
   setDensity: (density: LayoutDensity) => void;
   toggleDensity: () => void;
+  setGrouping: (grouping: GroupingMode) => void;
   toggleSidebar: () => void;
   setDashboardLayout: (layout: DashboardLayout) => void;
 }
@@ -39,10 +51,12 @@ export const useLayoutStore = create<LayoutStore>()(
   persist(
     (set) => ({
       density: 'visual',
+      grouping: 'none',
       sidebarCollapsed: false,
       dashboardLayout: [],
       setDensity: (density) => set({ density }),
       toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
+      setGrouping: (grouping) => set({ grouping }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setDashboardLayout: (dashboardLayout) => set({ dashboardLayout }),
     }),

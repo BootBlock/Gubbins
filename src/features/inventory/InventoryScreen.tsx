@@ -39,8 +39,10 @@ import {
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
 import { LayoutToggle } from './components/LayoutToggle';
+import { GroupByControl } from './components/GroupByControl';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
+import { GroupedItemList } from './components/GroupedItemList';
 import { locationColorTextClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
@@ -68,6 +70,7 @@ export function InventoryScreen() {
 
 function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
+  const grouping = useLayoutStore((s) => s.grouping);
   // Live camera scanning is the `scanner` capability (modular-ui-plan §4, Phase 6): with it
   // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
   // stay regardless — and manually reachable flows are untouched.
@@ -103,6 +106,11 @@ function InventoryWorkspace() {
   // The Visual Builder supersedes the quick search/location filters when it is open
   // and holds at least one valid condition (spec §5.1).
   const astActive = builderOpen && conditionCount > 0 && astError(ast) === null;
+  // "By location" grouping arranges the standard filtered list into collapsible sections
+  // (spec §3 grouping axis). The Visual Builder produces a flat AST result set that isn't
+  // organised by location, so while it's active we fall back to the flat list regardless
+  // of the chosen grouping — the two supersede in that order.
+  const grouped = grouping === 'location' && !astActive;
 
   // Debounce the quick-search box so each keystroke doesn't hit the worker.
   useEffect(() => {
@@ -183,7 +191,11 @@ function InventoryWorkspace() {
       ? 'animate-slide-in-right'
       : 'animate-slide-in-left'
     : 'animate-swap-in';
-  const listKey = `view-${density}-${selectedLocationId ?? 'all'}`;
+  // Re-key (and so replay the entrance) when the *arrangement* changes: switching between
+  // flat and grouped swaps the whole region. Grouped mode keeps a density-stable key so a
+  // Data↔Visual restyle doesn't remount and lose the sections' expanded state, and it
+  // ignores the sidebar selection (every location is shown as its own section).
+  const listKey = grouped ? 'group-location' : `view-${density}-${selectedLocationId ?? 'all'}`;
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   // Keep `onToggle`'s only external read (the location-name lookup) behind a ref so the
@@ -298,6 +310,8 @@ function InventoryWorkspace() {
 
             <LayoutToggle />
 
+            <GroupByControl />
+
             {scannerEnabled ? (
               <Button variant="outline" onClick={() => setScannerOpen(true)}>
                 <ScanIcon />
@@ -398,9 +412,11 @@ function InventoryWorkspace() {
           >
             <div className="flex items-center justify-between pb-3">
               <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-                {active.isSuccess
-                  ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
-                  : 'Loading…'}
+                {grouped
+                  ? 'Grouped by location'
+                  : active.isSuccess
+                    ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
+                    : 'Loading…'}
               </p>
               <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                 <input
@@ -489,7 +505,25 @@ function InventoryWorkspace() {
               (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
               list.) Reduced-motion is handled by the global catch-all. */}
             <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
-              {active.isLoading ? (
+              {grouped ? (
+                tree.data ? (
+                  <GroupedItemList
+                    tree={tree.data}
+                    density={density}
+                    search={search}
+                    includeInactive={includeInactive}
+                    locations={flatLocations}
+                    locationName={locationName}
+                    locationColorClass={locationColorClass}
+                    selection={selection}
+                    selectedIds={selectedIds}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner />
+                  </div>
+                )
+              ) : active.isLoading ? (
                 <div className="flex flex-1 items-center justify-center">
                   <Spinner />
                 </div>
