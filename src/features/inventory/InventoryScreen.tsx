@@ -206,9 +206,12 @@ function InventoryWorkspace() {
       return next;
     });
   }, []);
+  // `selectedIds` is threaded to `ItemList` separately (below) rather than folded into
+  // `selection`, so this object's identity survives a toggle — only its stable `onToggle`
+  // member remains, keeping the `memo` on every visible ItemRow/ItemCard effective.
   const selection: ItemSelection | undefined = useMemo(
-    () => (selecting ? { selectedIds, onToggle: onToggleSelect } : undefined),
-    [selecting, selectedIds, onToggleSelect],
+    () => (selecting ? { onToggle: onToggleSelect } : undefined),
+    [selecting, onToggleSelect],
   );
   const selectedLabels = useMemo(() => Array.from(selected.values()), [selected]);
   const selectedItemIds = useMemo(() => Array.from(selected.keys()), [selected]);
@@ -496,6 +499,7 @@ function InventoryWorkspace() {
                 isFetchingPreviousPage={active.isFetchingPreviousPage}
                 fetchPreviousPage={() => void active.fetchPreviousPage()}
                 selection={selection}
+                selectedIds={selectedIds}
               />
             )}
           </div>
