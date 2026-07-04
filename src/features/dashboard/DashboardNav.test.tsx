@@ -47,7 +47,9 @@ describe('DashboardNav — feature gating (Phase 2)', () => {
     render(<DashboardNav />);
     expect(tile('/projects')).toBeNull();
     expect(tile('/inventory')).not.toBeNull();
-    expect(tile('/settings')).not.toBeNull();
+    // Settings is a dialog, not a screen: its tile is a button that opens the dialog, so it
+    // has no `/settings` anchor — it is always present (core, never feature-gated).
+    expect(screen.getByTestId('nav-settings')).toBeTruthy();
   });
 
   it('cascades: turning contacts off hides its dependents (purchase orders, bookings)', () => {

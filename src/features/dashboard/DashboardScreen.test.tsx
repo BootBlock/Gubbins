@@ -44,9 +44,11 @@ describe('DashboardScreen — quick-nav grid (spec §2.4.2)', () => {
   it('maps every destination except the dashboard itself into a nav tile', () => {
     render(<DashboardScreen />);
     const nav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    const links = within(nav).getAllByRole('link');
-    // One tile per destination, minus the current (Dashboard/home) screen.
-    expect(links).toHaveLength(NAV_DESTINATIONS.length - 1);
+    // One tile per destination, minus the current (Dashboard/home) screen. Most tiles are
+    // links; Settings is a button (it opens the Settings dialog rather than navigating), so
+    // count both roles.
+    const tiles = [...within(nav).getAllByRole('link'), ...within(nav).getAllByRole('button')];
+    expect(tiles).toHaveLength(NAV_DESTINATIONS.length - 1);
     expect(within(nav).queryByText('Dashboard')).toBeNull();
   });
 

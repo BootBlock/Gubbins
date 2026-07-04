@@ -44,9 +44,25 @@ describe('ItemRepository.listLowStock — §3 Low Stock Alerts (Phase 45)', () =
     const gone = await items.create({ name: 'GoneLow', trackingMode: 'DISCRETE', quantity: 1 });
     await items.softDelete(gone.id);
 
-    const page = await items.listLowStock();
+    // A blanket threshold (5 units / 15%) is passed explicitly — low-stock is opt-in and
+    // the blanket default is off (0), so nothing flags without a positive threshold.
+    const page = await items.listLowStock({ qtyThreshold: 5, gaugePercent: 15 });
     // Empty (0/5), LowResin (10%), LowQty (2/5) — Plenty/Full/Printer/Gone excluded.
     expect(page.rows.map((r) => r.name)).toEqual(['Empty', 'LowResin', 'LowQty']);
+  });
+
+  it('flags nothing under the default (off) blanket until an item opts in', async () => {
+    // Both would be "low" against a 5-unit blanket, but the default threshold is off (0).
+    await items.create({ name: 'BareLow', trackingMode: 'DISCRETE', quantity: 1 });
+    const optedIn = await items.create({ name: 'Watched', trackingMode: 'DISCRETE', quantity: 1 });
+
+    const off = await items.listLowStock(); // default thresholds = 0 = off
+    expect(off.rows).toHaveLength(0);
+
+    // Giving one item its own positive reorder point opts just that item in.
+    await items.update(optedIn.id, { reorderPoint: 3 });
+    const after = await items.listLowStock();
+    expect(after.rows.map((r) => r.name)).toEqual(['Watched']);
   });
 
   it('honours custom thresholds', async () => {
@@ -57,7 +73,7 @@ describe('ItemRepository.listLowStock — §3 Low Stock Alerts (Phase 45)', () =
       gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 450 }, // 45%
     });
 
-    const tight = await items.listLowStock();
+    const tight = await items.listLowStock({ qtyThreshold: 5, gaugePercent: 15 });
     expect(tight.rows.map((r) => r.name)).toEqual([]); // 8 > 5 and 45% > 15%
 
     const loose = await items.listLowStock({ qtyThreshold: 10, gaugePercent: 50 });
@@ -68,7 +84,7 @@ describe('ItemRepository.listLowStock — §3 Low Stock Alerts (Phase 45)', () =
     const parent = await items.create({ name: 'Resistor 0805' }); // qty 0, abstract once it has a child
     await items.createVariant(parent.id, { name: '10k', quantity: 1 });
 
-    const page = await items.listLowStock();
+    const page = await items.listLowStock({ qtyThreshold: 5, gaugePercent: 15 });
     expect(page.rows.map((r) => r.name)).toEqual(['10k']);
   });
 });

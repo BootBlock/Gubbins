@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import { Button, Tooltip } from '@/components/foundry';
 import {
   CheckoutIcon,
@@ -18,21 +18,36 @@ import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
 import { QrCodeDialog } from './QrCodeDialog';
 
+/** Which of the item's dialogs to open — the shared vocabulary between a button and a card click. */
+export type ItemDialogKind = 'move' | 'gauge' | 'details' | 'qr' | 'checkout';
+
+/**
+ * Imperative handle {@link ItemActions} exposes so the containing card/row can open one of the
+ * very same dialogs from a click on its body (the `cardClickAction` shortcut), reusing the one
+ * dialog instance the buttons already drive — no second copy in the tree.
+ */
+export interface ItemActionsHandle {
+  open(kind: ItemDialogKind): void;
+}
+
 /**
  * Shared item action controls (move, update gauge, soft-delete/restore) plus the
  * dialogs they open. Used by both the Visual and Data presentations so behaviour
  * stays identical across the density toggle.
+ *
+ * Forwards a {@link ItemActionsHandle} ref so the parent card can open a dialog on a body
+ * click without a second set of dialog state.
  */
-export function ItemActions({
-  item,
-  locations,
-  compact = false,
-}: {
-  item: Item;
-  locations: readonly LocationWithCount[];
-  compact?: boolean;
-}) {
-  const [dialog, setDialog] = useState<'move' | 'gauge' | 'details' | 'qr' | 'checkout' | null>(null);
+export const ItemActions = forwardRef<
+  ItemActionsHandle,
+  {
+    item: Item;
+    locations: readonly LocationWithCount[];
+    compact?: boolean;
+  }
+>(function ItemActions({ item, locations, compact = false }, ref) {
+  const [dialog, setDialog] = useState<ItemDialogKind | null>(null);
+  useImperativeHandle(ref, () => ({ open: setDialog }), []);
   const softDelete = useSoftDeleteItem();
   const restore = useRestoreItem();
   // Checking out loans an item to a contact, so the entry point belongs to the Contacts
@@ -183,4 +198,4 @@ export function ItemActions({
       <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
     </div>
   );
-}
+});

@@ -185,7 +185,17 @@ describe('ReportRepository', () => {
         trackingMode: 'CONSUMABLE_GAUGE',
         gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 100 }, // 10%
       });
-      expect(await reports.lowStockCount()).toBe(2);
+      // Low-stock is opt-in: pass a positive blanket threshold (the default is off = 0).
+      expect(await reports.lowStockCount({ qtyThreshold: 5, gaugePercent: 15 })).toBe(2);
+    });
+
+    it('counts nothing under the default (off) blanket until an item opts in', async () => {
+      await items.create({ name: 'BareLow', quantity: 1 });
+      const watched = await items.create({ name: 'Watched', quantity: 1 });
+      expect(await reports.lowStockCount()).toBe(0); // default thresholds = 0 = off
+
+      await items.update(watched.id, { reorderPoint: 3 });
+      expect(await reports.lowStockCount()).toBe(1);
     });
   });
 

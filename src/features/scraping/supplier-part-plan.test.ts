@@ -32,6 +32,21 @@ describe('supplierNameFromUrl', () => {
     expect(supplierNameFromUrl('https://uk.rs-online.com/x')).toBe('Rs-online');
   });
 
+  it('skips a second-level public suffix on a two-part ccTLD (never "Co")', () => {
+    // Regression: `amazon.co.uk` must yield "Amazon", not the registry label "Co".
+    expect(supplierNameFromUrl('https://www.amazon.co.uk/dp/B0FQHTK8SR')).toBe('Amazon');
+    expect(supplierNameFromUrl('https://www.amazon.com.au/dp/B0FQHTK8SR')).toBe('Amazon');
+    expect(supplierNameFromUrl('https://www.amazon.co.jp/dp/B0FQHTK8SR')).toBe('Amazon');
+    // A regional subdomain in front of a two-part suffix is still ignored.
+    expect(supplierNameFromUrl('https://uk.rs-online.com/x')).toBe('Rs-online');
+  });
+
+  it('keeps the label directly before a single-label TLD', () => {
+    expect(supplierNameFromUrl('https://www.mouser.com/p/1')).toBe('Mouser');
+    // A bare two-part ccTLD with no registrable label left is a degenerate case, not a crash.
+    expect(supplierNameFromUrl('https://co.uk/')).toBe('Co');
+  });
+
   it('falls back gracefully for an unparseable url', () => {
     expect(supplierNameFromUrl('not a url')).toBe('Supplier');
   });

@@ -113,6 +113,42 @@ describe('reorder-policy — isLow', () => {
   });
 });
 
+describe('reorder-policy — opt-in (a floor of 0 = off)', () => {
+  // The friction-free default: the global blanket is off, so an item is not watched.
+  const OFF: ReorderDefaults = { qtyThreshold: 0, gaugePercent: 0 };
+
+  it('never flags a DISCRETE item under the off (0) blanket, even at empty', () => {
+    expect(isLow(discrete(0), OFF)).toBe(false);
+    expect(isLow(discrete(1), OFF)).toBe(false);
+    expect(isLow(discrete(100), OFF)).toBe(false);
+  });
+
+  it('never flags a CONSUMABLE_GAUGE item under the off (0) blanket', () => {
+    expect(isLow(gauge(0), OFF)).toBe(false);
+    expect(isLow(gauge(50), OFF)).toBe(false);
+  });
+
+  it('opts a single item in via its own positive reorder point while the blanket stays off', () => {
+    expect(isLow(discrete(2, { reorderPoint: 3 }), OFF)).toBe(true);
+    expect(isLow(discrete(4, { reorderPoint: 3 }), OFF)).toBe(false);
+    expect(isLow(gauge(30, { reorderGaugePercent: 40 }), OFF)).toBe(true);
+  });
+
+  it('opts a single item out via its own 0 reorder point even when the blanket is on', () => {
+    // DEFAULTS blanket is 5 units / 15%, but a 0 floor turns the item off.
+    expect(isLow(discrete(0, { reorderPoint: 0 }), DEFAULTS)).toBe(false);
+    expect(isLow(discrete(1, { reorderPoint: 0 }), DEFAULTS)).toBe(false);
+    expect(isLow(gauge(0, { reorderGaugePercent: 0 }), DEFAULTS)).toBe(false);
+  });
+
+  it('keeps discreteStockLevel/shortfall consistent with the off blanket', () => {
+    // "out" is still factual at 0 on hand, but nothing is "low", and there is no shortfall.
+    expect(discreteStockLevel(discrete(0), OFF)).toBe('out');
+    expect(discreteStockLevel(discrete(3), OFF)).toBe('healthy');
+    expect(shortfall(discrete(1), OFF)).toBe(0);
+  });
+});
+
 describe('reorder-policy — discreteStockLevel', () => {
   it('reports "out" only at zero on hand', () => {
     expect(discreteStockLevel(discrete(0), DEFAULTS)).toBe('out');

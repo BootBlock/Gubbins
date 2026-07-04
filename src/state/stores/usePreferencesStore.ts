@@ -20,11 +20,14 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  DEFAULT_CARD_CLICK_ACTION,
   DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
+  normaliseCardClickAction,
   normaliseVisualCardMetric,
   normaliseWindowMonths,
+  type CardClickAction,
   type VisualCardMetric,
 } from '@/features/settings/settings';
 import {
@@ -95,9 +98,23 @@ interface PreferencesStore {
    * defaults to the actionable stock-health status. See {@link VisualCardMetric}.
    */
   readonly visualCardMetric: VisualCardMetric;
-  /** A DISCRETE item is flagged on the §3 "Low Stock" widget at/below this on-hand quantity. */
+  /**
+   * What a plain click on an item card/row body (outside its buttons) does (spec §3) — open
+   * details, move, show the label, or nothing. A pointer-only shortcut that mirrors one of the
+   * card's own action buttons; defaults to opening the item's details (or `none` to keep the
+   * body inert). See {@link CardClickAction}.
+   */
+  readonly cardClickAction: CardClickAction;
+  /**
+   * Blanket reorder point: a DISCRETE item is flagged on the §3 "Low Stock" widget at/below
+   * this on-hand quantity. **0 = off** — low-stock alerts are opt-in, so at 0 nothing is
+   * flagged until an item is given its own reorder point (the friction-free default).
+   */
   readonly lowStockQtyThreshold: number;
-  /** A CONSUMABLE_GAUGE item is flagged on the §3 "Low Stock" widget at/below this % remaining. */
+  /**
+   * Blanket gauge floor: a CONSUMABLE_GAUGE item is flagged on the §3 "Low Stock" widget
+   * at/below this % remaining. **0 = off** (opt-in, as with {@link lowStockQtyThreshold}).
+   */
   readonly lowStockGaugePercent: number;
   /** A project's budget indicator turns to a warning tone at/above this % of budget spent (§4). */
   readonly budgetWarnPercent: number;
@@ -157,6 +174,7 @@ interface PreferencesStore {
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
+  setCardClickAction: (action: CardClickAction) => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -189,6 +207,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerBeep: true,
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
+      cardClickAction: DEFAULT_CARD_CLICK_ACTION,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -219,6 +238,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Normalise so a stale/unknown persisted value can never reach the card renderer.
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
+      // Normalise so a stale/unknown persisted value can never reach the card's click handler.
+      setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
@@ -236,6 +257,23 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
     }),
-    { name: 'gubbins:preferences' },
+    {
+      name: 'gubbins:preferences',
+      // v1: low-stock alerts became opt-in (a threshold of 0 = off). An install that
+      // still holds the *old* auto-nag defaults (5 units / 15%) — i.e. never deliberately
+      // tuned — is reset to off so freshly-added items stop nagging on the dashboard. A
+      // value the user actually chose (anything other than the old hard-coded default) is
+      // preserved untouched.
+      version: 1,
+      migrate: (persistedState, fromVersion) => {
+        // Copy into a mutable record — the store fields are declared `readonly`.
+        const state = { ...(persistedState as Partial<PreferencesStore>) } as Record<string, unknown>;
+        if (fromVersion < 1) {
+          if (state.lowStockQtyThreshold === 5) state.lowStockQtyThreshold = LOW_STOCK_QTY_THRESHOLD;
+          if (state.lowStockGaugePercent === 15) state.lowStockGaugePercent = LOW_STOCK_GAUGE_PERCENT;
+        }
+        return state as unknown as PreferencesStore;
+      },
+    },
   ),
 );

@@ -78,7 +78,7 @@ describe('CreateItemDialog', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Name'));
   });
 
-  it('submits description, notes and the per-item low-stock override', async () => {
+  it('submits description, notes and a custom per-item low-stock override', async () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'M3 screws' } });
     fireEvent.change(screen.getByLabelText('Description (optional)'), {
@@ -87,9 +87,10 @@ describe('CreateItemDialog', () => {
     fireEvent.change(screen.getByLabelText('Notes (optional)'), {
       target: { value: 'Bought at the swap meet' },
     });
-    fireEvent.change(screen.getByLabelText('Low-stock alert at (optional)'), {
-      target: { value: '3' },
-    });
+    // The trigger fields are hidden until the "Custom" policy is chosen.
+    expect(screen.queryByTestId('item-reorder-point')).toBeNull();
+    fireEvent.click(screen.getByTestId('low-stock-policy-custom'));
+    fireEvent.change(screen.getByLabelText('Low-stock alert at'), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText('Reorder quantity (optional)'), {
       target: { value: '100' },
     });
@@ -104,6 +105,42 @@ describe('CreateItemDialog', () => {
       reorderPoint: 3,
       reorderQty: 100,
     });
+  });
+
+  it('defaults to the global policy — no reorder point submitted', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unwatched' } });
+    // Leave the policy on its default (follow the global blanket).
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    const input = spies.createItem.mock.calls[0][0];
+    expect(input.reorderPoint).toBeUndefined();
+    expect(input.reorderQty).toBeUndefined();
+  });
+
+  it('submits a hard exemption (reorderPoint 0) for the "Never" policy', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Silent' } });
+    fireEvent.click(screen.getByTestId('low-stock-policy-never'));
+    // "Never" has no trigger field to fill.
+    expect(screen.queryByTestId('item-reorder-point')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0].reorderPoint).toBe(0);
+  });
+
+  it('seeds a suggested reorder point the moment "Custom" is chosen', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Watched' } });
+    fireEvent.click(screen.getByTestId('low-stock-policy-custom'));
+    // The revealed field is pre-filled with the suggested trigger (5), not left blank.
+    expect(screen.getByLabelText('Low-stock alert at')).toHaveValue(5);
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0].reorderPoint).toBe(5);
   });
 
   it('pre-fills a shared draft from initialValues and submits them (plan EI-4)', async () => {
@@ -192,7 +229,8 @@ describe('CreateItemDialog', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Untracked' }));
 
     expect(screen.queryByLabelText('Initial quantity')).toBeNull();
-    expect(screen.queryByLabelText('Low-stock alert at (optional)')).toBeNull();
+    // The low-stock policy picker only exists for stock-bearing modes.
+    expect(screen.queryByTestId('low-stock-policy-custom')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bench vice' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
@@ -234,6 +272,8 @@ describe('CreateItemDialog', () => {
 
   it('rejects an invalid ASIN with an accessible error', () => {
     renderDialog();
+    // The ASIN capture lives on the "Supplier & ops" rail tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
     fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
       target: { value: 'not-an-asin' },
     });
@@ -267,16 +307,19 @@ describe('CreateItemDialog', () => {
 
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'USB-C Cable' } });
+    // ASIN capture lives on the "Supplier & ops" rail tab; fill it there.
+    fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
     fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
       target: { value: 'https://www.amazon.co.uk/dp/B0TEST0001?ref=example' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
 
-    // A valid ASIN confirms inline and seeds the notes provenance.
+    // A valid ASIN confirms inline. The ASIN and listing URL are captured structurally on the
+    // supplier part (order code + link), so Notes (on the Details tab) is left untouched — no
+    // redundant provenance.
     expect(screen.getByTestId('item-asin-applied')).toHaveTextContent('B0TEST0001');
-    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
-      'Amazon ASIN: B0TEST0001',
-    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toBe('');
 
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
     await waitFor(() => expect(spies.createSupplierPart).toHaveBeenCalledTimes(1));
@@ -323,5 +366,34 @@ describe('CreateItemDialog', () => {
       name: 'Calipers',
       locationId: 'loc-9',
     });
+  });
+
+  it('keeps fields typed on one rail tab when another tab is visited (single form spans tabs)', async () => {
+    renderDialog();
+    // Type identity fields on Details, then a batch/lot on the Lifecycle tab, then come back.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Epoxy resin' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.change(screen.getByLabelText('Batch no. (optional)'), { target: { value: 'B-42' } });
+    // Returning to Details, the earlier name is still present (RHF retains an unmounted tab).
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Epoxy resin');
+
+    // A single Create submits fields from across every tab at once.
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0]).toMatchObject({ name: 'Epoxy resin', batchNumber: 'B-42' });
+  });
+
+  it('jumps the rail to the tab holding the first error when a submit is rejected', async () => {
+    renderDialog();
+    // Leave Name empty and submit from a different tab — the error would otherwise sit on the
+    // unmounted Details panel with the user staring at a Create that "did nothing".
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    // The rail jumps back to Details and surfaces the required-name error there.
+    expect(await screen.findByText('Please enter a name.')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(spies.createItem).not.toHaveBeenCalled();
   });
 });

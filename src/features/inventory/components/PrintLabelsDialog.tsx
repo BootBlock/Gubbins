@@ -172,7 +172,7 @@ export function PrintLabelsDialog({
         ) : (
           <div
             data-testid="label-sheet-preview"
-            className="grid max-h-[45vh] grid-cols-2 gap-3 overflow-auto sm:grid-cols-3"
+            className="grid max-h-[45vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3"
           >
             {cells.map((cell, i) => (
               <LabelCellPreview

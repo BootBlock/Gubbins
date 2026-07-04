@@ -41,7 +41,7 @@ import {
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { resolveTabKey } from '@/features/inventory/tab-keyboard';
+import { resolveTabKey } from '@/components/foundry';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { hardResetLocalData } from '@/app/error/safe-mode-actions';
 import {
@@ -247,6 +247,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       title="Erase data"
       description="Choose exactly what to remove from this device. This can't be undone."
       className="max-w-3xl"
+      scrollBody={false}
     >
       <div className="flex h-[68vh] flex-col gap-4">
         {/* Backup nudge */}
@@ -306,7 +307,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
             id={`erase-panel-${activeTab}`}
             aria-labelledby={`erase-tab-${activeTab}`}
             tabIndex={0}
-            className="min-w-0 flex-1 overflow-y-auto dialog-scroll focus-visible:outline-none"
+            className="min-w-0 flex-1 dialog-scroll focus-visible:outline-none"
           >
             {activeSection ? (
               <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">

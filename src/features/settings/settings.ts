@@ -162,13 +162,16 @@ export function clampExpiryWindowDays(value: number): number {
 /**
  * Inclusive bounds for the user-set low-stock thresholds (§3 "Low Stock Alerts",
  * §4). They lift the fixed {@link LOW_STOCK_QTY_THRESHOLD} /
- * {@link LOW_STOCK_GAUGE_PERCENT} constants (Phase 45) into configurable
- * preferences while keeping them sane: a DISCRETE quantity floor of at least 1
- * (a "low when ≤ 1" alert), and a gauge percentage strictly between 1 and 99 (0
- * would never fire; 100 would flag every gauge).
+ * {@link LOW_STOCK_GAUGE_PERCENT} constants (Phase 45) into configurable preferences
+ * while keeping them sane.
+ *
+ * **The floor is 0 = off.** Low-stock alerts are opt-in: at 0 the blanket default
+ * flags nothing, so items only alert once given their own reorder point (or the user
+ * raises the blanket above 0). The quantity ceiling is a generous 1000; the gauge
+ * percentage tops out at 99 (100 would flag every gauge).
  */
-export const LOW_STOCK_QTY_BOUNDS = { min: 1, max: 1000 } as const;
-export const LOW_STOCK_GAUGE_BOUNDS = { min: 1, max: 99 } as const;
+export const LOW_STOCK_QTY_BOUNDS = { min: 0, max: 1000 } as const;
+export const LOW_STOCK_GAUGE_BOUNDS = { min: 0, max: 99 } as const;
 
 /**
  * Clamp a low-stock DISCRETE quantity threshold to {@link LOW_STOCK_QTY_BOUNDS}.
@@ -244,6 +247,46 @@ export function normaliseVisualCardMetric(value: string): VisualCardMetric {
   return (VISUAL_CARD_METRIC_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as VisualCardMetric)
     : DEFAULT_VISUAL_CARD_METRIC;
+}
+
+/**
+ * What tapping the empty space of an item card/row does (spec §3, §4). The card is a
+ * drag source and hosts its own action buttons (details / move / label / …); this lets a
+ * plain click on the card body — anywhere outside those controls — act as a shortcut to the
+ * most-used of them:
+ * - `details` — open the full item record (the same dialog as the card's pencil button). The
+ *   default: clicking a card to open it is the least-surprising behaviour.
+ * - `move` — open "Move item" to relocate it to another location.
+ * - `qr` — open the printable label (QR + barcode) dialog.
+ * - `none` — a click does nothing (the buttons remain the only way in), for users who'd rather
+ *   the card body stay inert.
+ *
+ * Only ever mirrors an action already reachable by a labelled button on the card, so it stays
+ * a pointer-only convenience: keyboard/assistive-tech users use those buttons, and the shortcut
+ * is suppressed while the batch-selection checkbox is active (a click there is a selection).
+ */
+export type CardClickAction = 'none' | 'details' | 'move' | 'qr';
+
+/** The default card-click action — open the item's full details (the expected click-to-open). */
+export const DEFAULT_CARD_CLICK_ACTION: CardClickAction = 'details';
+
+/** Choices for the Settings "Item card click" control (default listed first). */
+export const CARD_CLICK_ACTION_OPTIONS = [
+  { value: 'details', label: 'Open details' },
+  { value: 'move', label: 'Move to location' },
+  { value: 'qr', label: 'Show label' },
+  { value: 'none', label: 'Do nothing' },
+] as const satisfies readonly { value: CardClickAction; label: string }[];
+
+/**
+ * Coerce an arbitrary persisted value to a valid {@link CardClickAction} (default `details`).
+ * Kept total so a stale localStorage value from an older/newer build can never drive the
+ * card's click handler into an unknown dialog.
+ */
+export function normaliseCardClickAction(value: string): CardClickAction {
+  return (CARD_CLICK_ACTION_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
+    ? (value as CardClickAction)
+    : DEFAULT_CARD_CLICK_ACTION;
 }
 
 /**

@@ -56,20 +56,20 @@ describe('ItemRepository — per-item reorder points (Phase 59)', () => {
   });
 
   it('flags a DISCRETE item by its own higher reorder point (global would not flag)', async () => {
-    // Global default is 5; 15 on-hand is healthy globally, but this part wants 20.
+    // Blanket default 5; 15 on-hand is healthy against it, but this part wants 20.
     await items.create({ name: 'Bespoke', trackingMode: 'DISCRETE', quantity: 15, reorderPoint: 20 });
     await items.create({ name: 'Common', trackingMode: 'DISCRETE', quantity: 15 });
 
-    const page = await items.listLowStock();
+    const page = await items.listLowStock({ qtyThreshold: 5 });
     expect(page.rows.map((r) => r.name)).toEqual(['Bespoke']);
   });
 
   it('does NOT flag a DISCRETE item whose own reorder point sits below on-hand', async () => {
-    // Global default 5 would flag qty 3, but this part only re-orders at/below 2.
+    // Blanket default 5 would flag qty 3, but this part only re-orders at/below 2.
     await items.create({ name: 'Relaxed', trackingMode: 'DISCRETE', quantity: 3, reorderPoint: 2 });
     await items.create({ name: 'Default', trackingMode: 'DISCRETE', quantity: 3 });
 
-    const page = await items.listLowStock();
+    const page = await items.listLowStock({ qtyThreshold: 5 });
     expect(page.rows.map((r) => r.name)).toEqual(['Default']);
   });
 
@@ -87,7 +87,7 @@ describe('ItemRepository — per-item reorder points (Phase 59)', () => {
       gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 300 }, // 30%
     });
 
-    const page = await items.listLowStock();
+    const page = await items.listLowStock({ gaugePercent: 15 });
     expect(page.rows.map((r) => r.name)).toEqual(['PickyResin']);
   });
 
@@ -98,17 +98,20 @@ describe('ItemRepository — per-item reorder points (Phase 59)', () => {
     await items.create({ name: 'GlobalOne', trackingMode: 'DISCRETE', quantity: 1 });
     await items.create({ name: 'Healthy', trackingMode: 'DISCRETE', quantity: 100 });
 
-    const page = await items.listLowStock();
+    const page = await items.listLowStock({ qtyThreshold: 5 });
     // GlobalOne (0.20) is most urgent; the two 0.40 rows tie and fall back to name order.
     expect(page.rows.map((r) => r.name)).toEqual(['GlobalOne', 'Bespoke20', 'GlobalTwo']);
   });
 
-  it('treats a reorder point of 0 as "only flag when empty" without dividing by zero', async () => {
-    await items.create({ name: 'OnlyWhenEmpty', trackingMode: 'DISCRETE', quantity: 0, reorderPoint: 0 });
-    await items.create({ name: 'StillHasOne', trackingMode: 'DISCRETE', quantity: 1, reorderPoint: 0 });
+  it('treats a reorder point of 0 as "off" — the per-item opt-out, even when the blanket is on', async () => {
+    // Low-stock is opt-in: a 0 floor never flags, so both are excluded even at empty and
+    // even though the blanket default (5) would otherwise flag them.
+    await items.create({ name: 'OptedOutEmpty', trackingMode: 'DISCRETE', quantity: 0, reorderPoint: 0 });
+    await items.create({ name: 'OptedOutOne', trackingMode: 'DISCRETE', quantity: 1, reorderPoint: 0 });
+    await items.create({ name: 'StillWatched', trackingMode: 'DISCRETE', quantity: 1 });
 
-    const page = await items.listLowStock();
-    expect(page.rows.map((r) => r.name)).toEqual(['OnlyWhenEmpty']);
+    const page = await items.listLowStock({ qtyThreshold: 5 });
+    expect(page.rows.map((r) => r.name)).toEqual(['StillWatched']);
   });
 
   it('rejects a negative reorder point', async () => {

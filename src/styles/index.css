@@ -456,6 +456,24 @@
   }
 
   /*
+   * Pointer drag-to-move cursors (features/inventory/item-drag.tsx). While a drag is live the
+   * provider sets `.gubbins-dragging` on <body>; a second `.gubbins-drag-invalid` is added while
+   * the pointer is over a drop target that rejects the drop (an item over its own location, an
+   * illegal location nest). These force the cursor across every element (`!important` + universal
+   * `*`) so it doesn't flicker to each element's own cursor as the pointer crosses the UI —
+   * `grabbing` normally, `not-allowed` over a forbidden target. The invalid rule follows the
+   * dragging rule so it wins when both classes are set. Cursor keywords have no design token.
+   */
+  body.gubbins-dragging,
+  body.gubbins-dragging * {
+    cursor: grabbing !important;
+  }
+  body.gubbins-drag-invalid,
+  body.gubbins-drag-invalid * {
+    cursor: not-allowed !important;
+  }
+
+  /*
    * Refined, unobtrusive scrollbars in keeping with the premium aesthetic.
    *
    * Blink/WebKit get an explicitly-styled `::-webkit-scrollbar`. This is deliberate:
@@ -464,7 +482,8 @@
    * renders a fixed-width (10px), non-expanding bar instead, which sits comfortably inside
    * the 1rem gutter that `dialog-scroll` bleeds open. The 2px transparent, padding-box-
    * clipped border keeps the visible thumb slim within that tidy 10px track. (The overlap
-   * fix itself is `dialog-scroll`'s bleed — engine-agnostic; this is the matching cosmetic.)
+   * fix itself is `dialog-scroll`'s bleed — engine-agnostic, and correct for the overlay
+   * bars this doesn't reach; this is the matching cosmetic for the classic bar it forces.)
    */
   ::-webkit-scrollbar {
     width: 10px;
@@ -670,18 +689,30 @@
 }
 
 /*
- * Standard scrollable region for dialogs (spec §2.4.1). Keeping a scrollbar from
- * painting over content is browser-hostile: `scrollbar-gutter: stable` reserves nothing
- * for *overlay* scrollbars (Firefox, and Windows when "auto-hide scrollbars" is on), so
- * the bar still floats across the content. The reliable, engine-agnostic fix is to bleed
- * the scroll viewport outward into the dialog's own padding by exactly as much as we then
- * pad the content back: the negative margin and equal padding cancel, so the content (and
- * its cards) stay aligned with the header, while the scrollbar — overlay OR classic —
- * lives in the bled gutter instead of over the content. 1rem comfortably clears a thin or
- * classic bar and still leaves part of the dialog's 1.5rem padding outside it. Centralised
- * so every dialog scroll area shares the behaviour and it tunes in one place.
+ * Standard scrollable region for dialogs (spec §2.4.1). The scrollbar must never paint over
+ * the content — on a classic (space-taking) bar OR a floating *overlay* bar — and a
+ * horizontal bar must never appear at all; this is a *vertical* scroll region only.
+ *
+ * The reliable, engine-agnostic fix is to bleed the scroll viewport outward into the dialog's
+ * own padding by exactly as much as we then pad the content back: the negative `margin-right`
+ * and equal `padding-right` cancel, so the content stays aligned with the header, while the
+ * scrollbar — overlay OR classic — lives in the bled 1rem gutter instead of over the content.
+ * `scrollbar-gutter: stable` was tried and reverted: it reserves *nothing* for overlay bars
+ * (Windows/Edge with auto-hiding scrollbars), so the floating bar still paints over content
+ * there; the bleed handles both because it moves the content, not just the track.
+ *
+ * The bleed only stays put when the scroll element's path out to the padded Surface is
+ * `overflow: visible` — otherwise the 1rem overhang leaks a spurious horizontal bar into an
+ * intermediate scroll container (which then paints over the last row of content, and parks the
+ * vertical bar off-screen). `Modal` guarantees that path: its body region carries this bleed
+ * directly (a direct child of the padded Surface), and a dialog with its own inner scroller
+ * passes `scrollBody={false}` so the body stays `overflow: visible`. So there is exactly one
+ * bleed-scroller per dialog — never one nested inside another. `overflow-x: hidden` on the
+ * element itself stops a stray-wide child from adding a horizontal bar. Centralised so every
+ * dialog scroll area shares the behaviour and it tunes in one place.
  */
 @utility dialog-scroll {
+  overflow-x: hidden;
   overflow-y: auto;
   margin-right: -1rem;
   padding-right: 1rem;
@@ -728,6 +759,102 @@
 
 @utility animate-ghost {
   animation: gubbins-ghost 1.2s ease-in-out infinite;
+}
+
+/*
+ * Count-up "landing pop" (spec §3 "Micro-interactions & Delight"). The Foundry
+ * `AnimatedNumber` ticker rolls a figure up to its new value, then plays this brief
+ * scale bounce as it settles so the eye reads "this just updated" without a jarring
+ * jump. Compositor-only (transform), and the reduced-motion catch-all neutralises it —
+ * those users get the final figure with no roll and no pop.
+ */
+@keyframes gubbins-count-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.09);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@utility animate-count-pop {
+  animation: gubbins-count-pop 0.4s var(--ease-emphasized);
+}
+
+/*
+ * Specular "sheen" sweep for a primary call-to-action (spec §1.1 glassmorphism /
+ * §2.4.1 premium aesthetic). A soft diagonal band of the `--glass-sheen` specular
+ * highlight glides across the button on hover, so a solid primary/destructive CTA
+ * catches the light like the frosted-glass surfaces elsewhere rather than sitting
+ * flat. Applied via `.gubbins-cta-sheen` on the Foundry Button's solid variants; the
+ * band is a `::after` overlay clipped to the button's rounded box. Transform only (no
+ * layout/paint thrash), and the reduced-motion catch-all freezes the transition so
+ * those users see the button unchanged. Purely decorative — never the sole signal of
+ * interactivity (the button's own hover bg/shadow still shift).
+ */
+.gubbins-cta-sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.gubbins-cta-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    var(--glass-sheen) 44%,
+    var(--glass-sheen) 56%,
+    transparent 68%
+  );
+  /* Parked well off the left edge; a hover slides it clear across to the right. The
+     wide travel (−140% → 140%) keeps the band fully outside the button at rest. */
+  transform: translateX(-140%);
+  transition: transform 0.7s var(--ease-emphasized);
+}
+.gubbins-cta-sheen:hover::after {
+  transform: translateX(140%);
+}
+/* Keep the button's own label/icon above the sheen overlay. */
+.gubbins-cta-sheen > * {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
+ * placeholder with a light band travelling across the muted bar, so a loading widget
+ * reads as actively fetching rather than merely dimmed. The base is the `--muted`
+ * surface with a soft `--foreground`-derived highlight riding over it. Only
+ * `background-position` animates (compositor-friendly, no layout). The reduced-motion
+ * catch-all halts the sweep — the static muted bar remains a valid "loading" cue.
+ */
+@keyframes gubbins-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@utility shimmer {
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklab, var(--foreground) 9%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: gubbins-shimmer 1.4s ease-in-out infinite;
 }
 
 /*

@@ -1,33 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button, InfoHint, Input } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
+import { LOW_STOCK_GAUGE_SUGGESTED, LOW_STOCK_QTY_SUGGESTED } from '@/db/repositories/constants';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { policyFromValue, valueForPolicy, type LowStockPolicy } from '../low-stock-policy';
 import { useUpdateItem } from '../mutations';
+import { LowStockPolicyPicker } from './LowStockPolicyPicker';
 
 /**
- * Per-item reorder-point editor (spec §4 low-stock alerts; Phase 59). Lets a single
- * DISCRETE / CONSUMABLE_GAUGE item carry its **own** low-stock trigger, overriding the
- * global default set in Settings. Left blank, the item simply uses the global default —
- * so an item with no override behaves exactly as it did before (never a regression).
+ * Per-item low-stock editor (spec §4 low-stock alerts; Phase 59). Lets a single
+ * DISCRETE / CONSUMABLE_GAUGE item choose its low-stock alert policy, mirroring the
+ * Add-item dialog exactly (a shared {@link LowStockPolicyPicker}):
  *
- * Which control is shown follows the item's tracking mode: a DISCRETE item edits a
- * quantity floor (plus an optional suggested top-up); a CONSUMABLE_GAUGE item edits a
- * percentage-remaining floor. SERIALISED single assets aren't bulk stock, so they show
- * nothing. Edits are saved wholesale via {@link useUpdateItem}; an empty field clears the
- * override back to the global default.
+ * - **Default** — follow the global blanket in Settings (off unless the user raised it).
+ * - **Custom** — the item's own positive trigger (a quantity floor + optional top-up for
+ *   DISCRETE, a percentage floor for CONSUMABLE_GAUGE), seeded with a suggestion.
+ * - **Never** — a hard exemption; the item is never flagged, even with a global blanket on.
+ *
+ * SERIALISED single assets and UNTRACKED items aren't bulk stock, so they show nothing.
  */
 export function ReorderPointEditor({ item }: { item: Item }) {
   if (item.trackingMode === 'SERIALISED') {
     return (
       <p className="text-xs text-muted-foreground">
-        Reorder points apply to bulk stock — serialised single assets don’t track a low-stock level.
+        Low-stock alerts apply to bulk stock — serialised single assets don’t track a low-stock level.
       </p>
     );
   }
   if (item.trackingMode === 'UNTRACKED') {
     return (
       <p className="text-xs text-muted-foreground">
-        Reorder points apply to bulk stock — untracked items carry no quantity to run low.
+        Low-stock alerts apply to bulk stock — untracked items carry no quantity to run low.
       </p>
     );
   }
@@ -38,7 +41,7 @@ export function ReorderPointEditor({ item }: { item: Item }) {
   );
 }
 
-/** Coerce a numeric input string to a value: blank → null (use default), else a number. */
+/** Coerce a numeric input string to a value: blank → null, else a finite number. */
 function toValue(raw: string): number | null {
   const trimmed = raw.trim();
   if (trimmed === '') return null;
@@ -46,83 +49,130 @@ function toValue(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** The "custom" level is only savable when it's a genuine positive floor. */
+function customInvalid(policy: LowStockPolicy, customValue: number | null): boolean {
+  return policy === 'custom' && !(customValue != null && customValue > 0);
+}
+
+/** Copy shown below the picker for the non-custom policies. */
+function PolicyNote({ policy, defaultLabel }: { policy: LowStockPolicy; defaultLabel: string }) {
+  if (policy === 'never') {
+    return (
+      <p className="text-xs text-muted-foreground">
+        This item is never flagged as low stock, even if a global default is switched on.
+      </p>
+    );
+  }
+  return <p className="text-xs text-muted-foreground">{defaultLabel}</p>;
+}
+
+function SaveButton({ dirty, pending, onClick }: { dirty: boolean; pending: boolean; onClick: () => void }) {
+  return (
+    <div className="flex justify-end">
+      <Button size="sm" onClick={onClick} disabled={!dirty || pending} data-testid="reorder-point-save">
+        {dirty ? 'Save' : 'Saved'}
+      </Button>
+    </div>
+  );
+}
+
+const DISCRETE_HINT =
+  'How this item is watched on the **Low Stock** dashboard widget.\n\n' +
+  '- **Default** — follow the global default in **Settings → Inventory** (watched at that ' +
+  'level if it’s on, silent if it’s off).\n' +
+  '- **Custom** — flag it at or below your own on-hand quantity. The optional **reorder ' +
+  'quantity** is a suggested top-up for the shopping list.\n' +
+  '- **Never** — a hard exemption: this item is never flagged, even if a global default is set.';
+
+const GAUGE_HINT =
+  'How this consumable is watched on the **Low Stock** dashboard widget.\n\n' +
+  '- **Default** — follow the global default in **Settings → Inventory** (watched at that ' +
+  'level if it’s on, silent if it’s off).\n' +
+  '- **Custom** — flag it at or below your own percentage remaining.\n' +
+  '- **Never** — a hard exemption: this item is never flagged, even if a global default is set.';
+
 function DiscreteReorderEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const globalDefault = usePreferencesStore((s) => s.lowStockQtyThreshold);
+  const labelId = useId();
 
-  const [point, setPoint] = useState(item.reorderPoint?.toString() ?? '');
+  const [policy, setPolicy] = useState<LowStockPolicy>(policyFromValue(item.reorderPoint));
+  const [point, setPoint] = useState(
+    item.reorderPoint && item.reorderPoint > 0 ? String(item.reorderPoint) : '',
+  );
   const [topUp, setTopUp] = useState(item.reorderQty?.toString() ?? '');
 
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
-    setPoint(item.reorderPoint?.toString() ?? '');
+    setPolicy(policyFromValue(item.reorderPoint));
+    setPoint(item.reorderPoint && item.reorderPoint > 0 ? String(item.reorderPoint) : '');
     setTopUp(item.reorderQty?.toString() ?? '');
   }, [item.reorderPoint, item.reorderQty]);
 
-  const nextPoint = toValue(point);
-  const nextTopUp = toValue(topUp);
-  const dirty =
-    (nextPoint ?? null) !== (item.reorderPoint ?? null) || (nextTopUp ?? null) !== (item.reorderQty ?? null);
+  // Choosing "Custom" seeds a friendly suggestion so the revealed field is never blank.
+  const changePolicy = (next: LowStockPolicy) => {
+    setPolicy(next);
+    if (next === 'custom' && !point.trim()) setPoint(String(LOW_STOCK_QTY_SUGGESTED));
+  };
+
+  const customPoint = toValue(point);
+  const targetPoint = valueForPolicy(policy, customPoint);
+  const targetTopUp = policy === 'custom' ? toValue(topUp) : null;
+  const dirty = targetPoint !== (item.reorderPoint ?? null) || targetTopUp !== (item.reorderQty ?? null);
+  const invalid = customInvalid(policy, customPoint);
 
   const save = () =>
-    update.mutate({ id: item.id, input: { reorderPoint: nextPoint, reorderQty: nextTopUp } });
+    update.mutate({ id: item.id, input: { reorderPoint: targetPoint, reorderQty: targetTopUp } });
+
+  const defaultLabel =
+    globalDefault > 0
+      ? `This item follows the global default — ${globalDefault} units — set in Settings.`
+      : 'This item follows the global default, which is currently off (nothing is flagged).';
 
   return (
     <div className="space-y-3">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        Flag this item as low stock at or below its own quantity, rather than the global default.
-        <InfoHint
-          content={
-            'The on-hand quantity at or below which this item is flagged on the **Low Stock** ' +
-            'dashboard widget.\n\n' +
-            `Leave it blank to use the global default (currently **${globalDefault}** ` +
-            'units), set in **Settings → Inventory**. A common screw and a rare connector ' +
-            'can each carry their own minimum.\n\n' +
-            'The optional **reorder quantity** is a suggested top-up — how many to buy when ' +
-            're-ordering. Left blank, the shortfall back up to the reorder point is used.'
-          }
-        />
-      </p>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-muted-foreground">
-          <span className="mb-field-gap-compact block">Reorder point</span>
-          <Input
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={point}
-            onChange={(e) => setPoint(e.target.value)}
-            placeholder={`Default (${globalDefault})`}
-            aria-label="Reorder point"
-            data-testid="reorder-point-input"
-          />
-        </label>
-        <label className="block text-xs font-medium text-muted-foreground">
-          <span className="mb-field-gap-compact block">Reorder quantity (optional)</span>
-          <Input
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={topUp}
-            onChange={(e) => setTopUp(e.target.value)}
-            placeholder="Suggested top-up"
-            aria-label="Reorder quantity"
-            data-testid="reorder-qty-input"
-          />
-        </label>
+      <div className="space-y-field-gap-compact">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <span id={labelId}>Low-stock alerts</span>
+          <InfoHint content={DISCRETE_HINT} />
+        </div>
+        <LowStockPolicyPicker value={policy} onChange={changePolicy} labelledBy={labelId} />
       </div>
 
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={!dirty || update.isPending}
-          data-testid="reorder-point-save"
-        >
-          {dirty ? 'Save reorder point' : 'Saved'}
-        </Button>
-      </div>
+      {policy === 'custom' ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs font-medium text-muted-foreground">
+            <span className="mb-field-gap-compact block">Reorder point</span>
+            <Input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={point}
+              onChange={(e) => setPoint(e.target.value)}
+              placeholder={`e.g. ${LOW_STOCK_QTY_SUGGESTED}`}
+              aria-label="Reorder point"
+              data-testid="reorder-point-input"
+            />
+          </label>
+          <label className="block text-xs font-medium text-muted-foreground">
+            <span className="mb-field-gap-compact block">Reorder quantity (optional)</span>
+            <Input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={topUp}
+              onChange={(e) => setTopUp(e.target.value)}
+              placeholder="Suggested top-up"
+              aria-label="Reorder quantity"
+              data-testid="reorder-qty-input"
+            />
+          </label>
+        </div>
+      ) : (
+        <PolicyNote policy={policy} defaultLabel={defaultLabel} />
+      )}
+
+      <SaveButton dirty={dirty && !invalid} pending={update.isPending} onClick={save} />
     </div>
   );
 }
@@ -130,57 +180,67 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
 function GaugeReorderEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const globalDefault = usePreferencesStore((s) => s.lowStockGaugePercent);
+  const labelId = useId();
 
-  const [percent, setPercent] = useState(item.reorderGaugePercent?.toString() ?? '');
+  const [policy, setPolicy] = useState<LowStockPolicy>(policyFromValue(item.reorderGaugePercent));
+  const [percent, setPercent] = useState(
+    item.reorderGaugePercent && item.reorderGaugePercent > 0 ? String(item.reorderGaugePercent) : '',
+  );
 
   useEffect(() => {
-    setPercent(item.reorderGaugePercent?.toString() ?? '');
+    setPolicy(policyFromValue(item.reorderGaugePercent));
+    setPercent(
+      item.reorderGaugePercent && item.reorderGaugePercent > 0 ? String(item.reorderGaugePercent) : '',
+    );
   }, [item.reorderGaugePercent]);
 
-  const nextPercent = toValue(percent);
-  const dirty = (nextPercent ?? null) !== (item.reorderGaugePercent ?? null);
+  const changePolicy = (next: LowStockPolicy) => {
+    setPolicy(next);
+    if (next === 'custom' && !percent.trim()) setPercent(String(LOW_STOCK_GAUGE_SUGGESTED));
+  };
 
-  const save = () => update.mutate({ id: item.id, input: { reorderGaugePercent: nextPercent } });
+  const customPercent = toValue(percent);
+  const targetPercent = valueForPolicy(policy, customPercent);
+  const dirty = targetPercent !== (item.reorderGaugePercent ?? null);
+  const invalid = customInvalid(policy, customPercent);
+
+  const save = () => update.mutate({ id: item.id, input: { reorderGaugePercent: targetPercent } });
+
+  const defaultLabel =
+    globalDefault > 0
+      ? `This item follows the global default — ${globalDefault}% — set in Settings.`
+      : 'This item follows the global default, which is currently off (nothing is flagged).';
 
   return (
     <div className="space-y-3">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        Flag this consumable as low when its remaining percentage drops to its own level.
-        <InfoHint
-          content={
-            'The percentage remaining at or below which this consumable is flagged on the ' +
-            '**Low Stock** dashboard widget.\n\n' +
-            `Leave it blank to use the global default (currently **${globalDefault}%**), set ` +
-            'in **Settings → Inventory**.'
-          }
-        />
-      </p>
-
-      <label className="block max-w-[14rem] text-xs font-medium text-muted-foreground">
-        <span className="mb-field-gap-compact block">Reorder at (% remaining)</span>
-        <Input
-          type="number"
-          min={0}
-          max={100}
-          inputMode="numeric"
-          value={percent}
-          onChange={(e) => setPercent(e.target.value)}
-          placeholder={`Default (${globalDefault}%)`}
-          aria-label="Reorder gauge percentage"
-          data-testid="reorder-gauge-input"
-        />
-      </label>
-
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          onClick={save}
-          disabled={!dirty || update.isPending}
-          data-testid="reorder-point-save"
-        >
-          {dirty ? 'Save reorder point' : 'Saved'}
-        </Button>
+      <div className="space-y-field-gap-compact">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <span id={labelId}>Low-stock alerts</span>
+          <InfoHint content={GAUGE_HINT} />
+        </div>
+        <LowStockPolicyPicker value={policy} onChange={changePolicy} labelledBy={labelId} />
       </div>
+
+      {policy === 'custom' ? (
+        <label className="block max-w-[14rem] text-xs font-medium text-muted-foreground">
+          <span className="mb-field-gap-compact block">Reorder at (% remaining)</span>
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            inputMode="numeric"
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+            placeholder={`e.g. ${LOW_STOCK_GAUGE_SUGGESTED}`}
+            aria-label="Reorder gauge percentage"
+            data-testid="reorder-gauge-input"
+          />
+        </label>
+      ) : (
+        <PolicyNote policy={policy} defaultLabel={defaultLabel} />
+      )}
+
+      <SaveButton dirty={dirty && !invalid} pending={update.isPending} onClick={save} />
     </div>
   );
 }

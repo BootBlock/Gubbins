@@ -1,11 +1,12 @@
 /**
- * Pure keyboard maths for the accessible ItemDetailDialog tab rail (spec §3
- * "modern accessible UI components" / §2.4.1 — the WAI-ARIA APG `tabs` pattern,
- * vertical orientation with automatic activation). Kept DOM-free so the
- * navigation logic is unit-tested directly (Protocol Beta), mirroring the
- * `tree-keyboard.ts` / `focus-trap.ts` / `list-window.ts` "extract the logic out
- * of the glue" seam. The DOM glue (roving tabindex, ref focus, selected panel)
- * lives in `ItemDetailDialog.tsx`.
+ * Pure keyboard maths for the accessible vertical tab rail shared by the Foundry
+ * {@link RailModal} (spec §3 "modern accessible UI components" / §2.4.1 — the
+ * WAI-ARIA APG `tabs` pattern, vertical orientation with automatic activation).
+ * Kept DOM-free so the navigation logic is unit-tested directly (Protocol Beta),
+ * mirroring the `tree-keyboard.ts` / `focus-trap.ts` / `list-window.ts` "extract the
+ * logic out of the glue" seam. The DOM glue (roving tabindex, ref focus, selected
+ * panel) lives in `rail-modal.tsx`, which drives both the ItemDetailDialog and the
+ * Settings dialog.
  */
 
 /**

@@ -64,6 +64,19 @@ const AUTOSCROLL_MAX_SPEED = 14;
 /** Offset (px) of the floating preview from the pointer so it clears the fingertip. */
 const PREVIEW_OFFSET = 14;
 
+/**
+ * Body class applied while a pointer drag is live. A global CSS rule (src/styles/index.css)
+ * forces the `grabbing` cursor across every element while it's set, so the cursor stays the
+ * drag cursor instead of flickering to each element's own as the pointer crosses the UI.
+ */
+const DRAGGING_CLASS = 'gubbins-dragging';
+/**
+ * Body class applied *additionally* while the pointer is over a drop target that rejects the
+ * in-flight drag (an item over its own location, an illegal location nest). Its CSS rule swaps
+ * the cursor to `not-allowed`, giving immediate "can't drop here" feedback.
+ */
+const DRAG_INVALID_CLASS = 'gubbins-drag-invalid';
+
 /** What is being dragged: an inventory item to move, or a location to re-nest. */
 export type DragKind = 'item' | 'location';
 
@@ -72,6 +85,12 @@ export interface DragPayload {
   readonly kind: DragKind;
   readonly id: string;
   readonly name: string;
+  /**
+   * For an `item` drag: the item's current location id, so a location row can reject a no-op
+   * move onto the location the item is already in (the drop shows the forbidden cursor). Unset
+   * for `location` drags (their illegal-nest veto is `acceptsLocation`).
+   */
+  readonly sourceLocationId?: string;
 }
 
 /**
@@ -82,6 +101,18 @@ export interface DragPayload {
 interface DropTarget {
   onDrop(payload: DragPayload): void;
   accepts(payload: DragPayload): boolean;
+}
+
+/**
+ * Where the pointer sits relative to the tree during a live drag. `overRow` is true whenever the
+ * pointer is over a tree row (`[data-tree-id]`) — droppable or not — which is what drives the
+ * forbidden cursor: shown over a row that can't take the drop, but never over empty space.
+ * `acceptedId` is the row id only when it is a registered target that accepts this drag, and
+ * drives both the highlight and the drop.
+ */
+interface DragHit {
+  readonly overRow: boolean;
+  readonly acceptedId: string | null;
 }
 
 /** Stable actions a source/target uses to drive the drag. Its identity never changes. */
@@ -126,7 +157,7 @@ interface DragState {
  */
 function useDragSource(
   kind: DragKind,
-  item: { id: string; name: string },
+  item: { id: string; name: string; sourceLocationId?: string },
 ): {
   onPointerDown: (event: ReactPointerEvent) => void;
   onDragStart: (event: ReactDragEvent) => void;
@@ -134,6 +165,7 @@ function useDragSource(
   const { beginDrag } = useContext(ItemDragActionsContext);
   const id = item.id;
   const name = item.name;
+  const sourceLocationId = item.sourceLocationId;
   const onPointerDown = useCallback(
     (event: ReactPointerEvent) => {
       // Only the primary mouse button drags; secondary/middle keep their own behaviour.
@@ -141,9 +173,9 @@ function useDragSource(
       // A press begun on a control (± stepper, select box, action button) belongs to that
       // control — leave the drag unarmed so its own gesture works.
       if (isInteractiveDragOrigin(event.target)) return;
-      beginDrag({ kind, id, name }, event);
+      beginDrag({ kind, id, name, sourceLocationId }, event);
     },
-    [beginDrag, kind, id, name],
+    [beginDrag, kind, id, name, sourceLocationId],
   );
   // Cancel any native HTML drag a descendant (e.g. an <img> thumbnail, selected text) would
   // otherwise start — the pointer path is the only drag system now.
@@ -153,10 +185,11 @@ function useDragSource(
 
 /**
  * Props a draggable inventory item (card/row) spreads onto its root element, making it a drag
- * source that moves the item to whichever location row it is released over.
+ * source that moves the item to whichever location row it is released over. The item's current
+ * `locationId` rides along so a drop onto that same location is rejected (a no-op move).
  */
-export function useItemDragSource(item: { id: string; name: string }) {
-  return useDragSource('item', item);
+export function useItemDragSource(item: { id: string; name: string; locationId?: string }) {
+  return useDragSource('item', { id: item.id, name: item.name, sourceLocationId: item.locationId });
 }
 
 /**
@@ -188,14 +221,16 @@ export function useDropTarget(id: string, target: DropTarget | null): boolean {
 
 /**
  * A location row's drop behaviour: it can receive a dragged **item** (move it here) and/or a
- * dragged **location** (nest it here). `acceptsLocation` vetoes an illegal nest (a location
- * onto itself or one of its own descendants — §7.5.3) so the row never highlights for it.
- * Returns whether the row is the active, accepting target under the pointer.
+ * dragged **location** (nest it here). It vetoes a no-op / illegal drop so the row neither
+ * highlights nor accepts it (and the drag shows the forbidden cursor): an **item** already in
+ * this location, or a **location** onto itself or one of its own descendants (§7.5.3, via
+ * `acceptsLocation`). Returns whether the row is the active, accepting target under the pointer.
  */
 export function useLocationRowDrop(
   id: string,
   handlers: {
-    onDropItem?: (itemId: string) => void;
+    /** Called with the dropped item's id and name (the name lets the caller name it in feedback). */
+    onDropItem?: (itemId: string, itemName: string) => void;
     onDropLocation?: (locationId: string) => void;
     acceptsLocation?: (draggedLocationId: string) => boolean;
   },
@@ -206,10 +241,10 @@ export function useLocationRowDrop(
     return {
       accepts: (payload) =>
         payload.kind === 'item'
-          ? onDropItem != null
+          ? onDropItem != null && payload.sourceLocationId !== id
           : onDropLocation != null && payload.id !== id && (acceptsLocation?.(payload.id) ?? true),
       onDrop: (payload) => {
-        if (payload.kind === 'item') onDropItem?.(payload.id);
+        if (payload.kind === 'item') onDropItem?.(payload.id, payload.name);
         else onDropLocation?.(payload.id);
       },
     };
@@ -232,19 +267,30 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
   const [previewItem, setPreviewItem] = useState<DragPayload | null>(null);
   const [activeDropId, setActiveDropId] = useState<string | null>(null);
 
-  // Resolve the pointer position to a valid drop-target location id (or null). Pure — used
-  // both while dragging (to highlight) and on release (to route the drop), so the release path
-  // reads live geometry instead of stale state. Consults the target's `accepts` for the
-  // in-flight payload, so an illegal nest resolves to null (no highlight, no drop).
-  const hitTest = useCallback((x: number, y: number): string | null => {
+  // Resolve where the pointer sits relative to the tree during a drag. Pure and read from live
+  // geometry, so highlight, forbidden-cursor and release routing all agree.
+  //  - not over any tree row → empty space (item list, page): a normal drag, never forbidden.
+  //  - over a tree row that is a registered target accepting this payload → `acceptedId` = its id
+  //    (highlight + drop).
+  //  - over any other tree row → `overRow` true but `acceptedId` null: a row that can't take this
+  //    drop, whether it vetoes the payload (the item's own location, an illegal nest) or isn't a
+  //    drop target at all (the synthetic "All items" filter, an archived location). Either way:
+  //    no highlight, no drop, forbidden cursor.
+  const resolveTarget = useCallback((x: number, y: number): DragHit => {
     const el = document.elementFromPoint(x, y);
     const row = el instanceof Element ? el.closest<HTMLElement>('[data-tree-id]') : null;
     const id = row?.getAttribute('data-tree-id') ?? null;
-    if (id == null) return null;
+    if (id == null) return { overRow: false, acceptedId: null };
     const target = dropTargets.current.get(id);
     const payload = stateRef.current?.payload;
-    if (!target || !payload || !target.accepts(payload)) return null;
-    return id;
+    const accepted = target != null && payload != null && target.accepts(payload);
+    return { overRow: true, acceptedId: accepted ? id : null };
+  }, []);
+
+  // Toggle the forbidden-cursor body class: set while over a tree row that can't take this drop,
+  // cleared over an accepting row or empty space.
+  const syncCursor = useCallback((hit: DragHit) => {
+    document.body.classList.toggle(DRAG_INVALID_CLASS, hit.overRow && hit.acceptedId == null);
   }, []);
 
   const positionPreview = useCallback((x: number, y: number) => {
@@ -277,7 +323,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     s.listeners.abort(); // removes pointermove/up/cancel + touchmove in one shot
     if (s.active) {
       document.body.style.userSelect = '';
-      document.body.style.cursor = '';
+      document.body.classList.remove(DRAGGING_CLASS, DRAG_INVALID_CLASS);
       // A drag that ends over a treeitem would otherwise fire a click and *select* that
       // location. Swallow the one click the release generates (capture phase, before the
       // treeitem sees it); clean the guard up shortly after in case no click follows.
@@ -301,7 +347,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
       s.longPressTimer = null;
     }
     document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'grabbing';
+    document.body.classList.add(DRAGGING_CLASS);
     if (s.pointerType === 'touch') {
       window.addEventListener('touchmove', (e) => e.preventDefault(), {
         passive: false,
@@ -309,9 +355,11 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
       });
     }
     setPreviewItem(s.payload);
-    setActiveDropId(hitTest(s.lastX, s.lastY));
+    const hit = resolveTarget(s.lastX, s.lastY);
+    setActiveDropId(hit.acceptedId);
+    syncCursor(hit);
     if (typeof requestAnimationFrame === 'function') s.raf = requestAnimationFrame(autoScrollStep);
-  }, [autoScrollStep, hitTest]);
+  }, [autoScrollStep, resolveTarget, syncCursor]);
 
   const onPointerMove = useCallback(
     (event: PointerEvent) => {
@@ -331,22 +379,24 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
         return;
       }
       positionPreview(event.clientX, event.clientY);
-      const next = hitTest(event.clientX, event.clientY);
+      const hit = resolveTarget(event.clientX, event.clientY);
+      const next = hit.acceptedId;
       setActiveDropId((prev) => (prev === next ? prev : next));
+      syncCursor(hit);
     },
-    [activateDrag, endGesture, hitTest, positionPreview],
+    [activateDrag, endGesture, resolveTarget, syncCursor, positionPreview],
   );
 
   const onPointerUp = useCallback(
     (event: PointerEvent) => {
       const s = stateRef.current;
       if (!s || event.pointerId !== s.pointerId) return;
-      const dropId = s.active ? hitTest(event.clientX, event.clientY) : null;
+      const dropId = s.active ? resolveTarget(event.clientX, event.clientY).acceptedId : null;
       const payload = s.payload;
       endGesture();
       if (dropId) dropTargets.current.get(dropId)?.onDrop(payload);
     },
-    [endGesture, hitTest],
+    [endGesture, resolveTarget],
   );
 
   const onPointerCancel = useCallback(
@@ -406,6 +456,16 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     const s = stateRef.current;
     if (previewItem && s) positionPreview(s.lastX, s.lastY);
   }, [previewItem, positionPreview]);
+
+  // Defensive: if the provider unmounts mid-drag, `endGesture` never runs — don't leave the
+  // global drag-cursor classes or the selection lock stuck on <body>.
+  useLayoutEffect(
+    () => () => {
+      document.body.classList.remove(DRAGGING_CLASS, DRAG_INVALID_CLASS);
+      document.body.style.userSelect = '';
+    },
+    [],
+  );
 
   return (
     <ItemDragActionsContext.Provider value={actions}>

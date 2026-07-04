@@ -92,6 +92,33 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(onDrop).toHaveBeenCalledWith({ id: 'item-1', locationId: 'loc-workshop' });
   });
 
+  it('passes the dropped item id and name to onDropItem (so the mover can name it in feedback)', () => {
+    const onDropItem = vi.fn();
+    function NamedTarget() {
+      const active = useLocationRowDrop(LOCATION_ID, { onDropItem });
+      return (
+        <div data-tree-id={LOCATION_ID} data-testid="target" data-active={active ? 'true' : 'false'}>
+          Workshop
+        </div>
+      );
+    }
+    render(
+      <ItemDragProvider>
+        <Source />
+        <NamedTarget />
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+
+    expect(onDropItem).toHaveBeenCalledWith('item-1', 'NE555 timer');
+  });
+
   it('highlights the row under the pointer and mounts a floating preview mid-drag', () => {
     render(<Harness onDrop={vi.fn()} />);
     const source = screen.getByTestId('source');
@@ -154,6 +181,83 @@ describe('item-drag — unified pointer drag-to-move', () => {
     firePointer(window, 'pointerup', { x: 40, y: 40, pointerType: 'touch' });
 
     expect(onDrop).toHaveBeenCalledWith({ id: 'item-1', locationId: 'loc-workshop' });
+  });
+
+  it('rejects a move onto the location the item is already in, showing the forbidden cursor', () => {
+    const onDrop = vi.fn();
+    // An item whose current location IS the drop target — moving it there is a no-op.
+    function SameLocationSource() {
+      const drag = useItemDragSource({ id: 'item-1', name: 'NE555 timer', locationId: LOCATION_ID });
+      return (
+        <div {...drag} data-testid="source">
+          NE555 timer
+        </div>
+      );
+    }
+    render(
+      <ItemDragProvider>
+        <SameLocationSource />
+        <Target onDrop={onDrop} />
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    // The row rejects it: no highlight, and <body> carries the forbidden-cursor class.
+    expect(target.getAttribute('data-active')).toBe('false');
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(true);
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    expect(onDrop).not.toHaveBeenCalled();
+    // Both classes are cleared once the gesture ends.
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(false);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(false);
+  });
+
+  it('shows the grabbing cursor (not the forbidden one) over a valid target', () => {
+    render(<Harness onDrop={vi.fn()} />);
+    const source = screen.getByTestId('source');
+    const target = screen.getByTestId('target');
+    pointHitTestAt(target);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    expect(target.getAttribute('data-active')).toBe('true');
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(false);
+  });
+
+  it('shows the forbidden cursor over a tree row that is not a drop target (e.g. "All items")', () => {
+    const onDrop = vi.fn();
+    render(
+      <ItemDragProvider>
+        <Source />
+        {/* A tree row carrying a data-tree-id but never wired as a drop target — exactly like the
+            synthetic "All items" filter row, which an item can't be moved *to*. */}
+        <div data-tree-id="all-items" data-testid="all-items">
+          All items
+        </div>
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const allItems = screen.getByTestId('all-items');
+    pointHitTestAt(allItems);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    // Over a non-droppable tree row the cursor is forbidden (not the plain grabbing of empty space).
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(true);
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    expect(onDrop).not.toHaveBeenCalled();
   });
 
   it('treats a touch that moves before the long press as a scroll, not a drag', () => {

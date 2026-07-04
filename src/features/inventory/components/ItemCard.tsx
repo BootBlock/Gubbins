@@ -12,6 +12,7 @@ import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
+import { useCardClickAction } from './useCardClickAction';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -46,12 +47,25 @@ export const ItemCard = memo(function ItemCard({
   // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
   // a press-drag from selecting the card's text; the control-origin guard lives in the hook.
   const dragProps = useItemDragSource(item);
+  // Click-to-act (spec §3): a plain click on the card body runs the user's `cardClickAction`.
+  // Suppressed during batch selection, where a body click means "toggle this card". Like the
+  // row, this is a pointer-only shortcut that only ever mirrors one of the card's own focusable,
+  // labelled action buttons (details/move/label), so keyboard/AT users keep full parity without
+  // the card itself becoming a redundant, nested-interactive tab stop — hence no role/tabindex.
+  const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);
   return (
     <Surface
       ref={ref}
+      interactive
       {...dragProps}
+      onClick={onClick}
       className={cn(
-        'flex cursor-grab select-none flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 active:cursor-grabbing',
+        // Surface's `interactive` supplies the transition + hover shadow; the card takes a
+        // slightly bigger lift (`-translate-y-1`, twMerge keeps the last), and no hover
+        // grab-hand: the grabbing cursor appears only while actively pressing to drag
+        // (`:active`); hover shows a pointer when the card body is click-actionable, else default.
+        'flex select-none flex-col gap-4 p-5 hover:-translate-y-1 active:cursor-grabbing',
+        clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',
         isHighlighted && 'animate-highlight',
@@ -132,7 +146,7 @@ export const ItemCard = memo(function ItemCard({
         ) : (
           <span />
         )}
-        <ItemActions item={item} locations={locations} compact />
+        <ItemActions ref={actionsRef} item={item} locations={locations} compact />
       </div>
     </Surface>
   );

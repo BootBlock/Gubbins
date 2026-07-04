@@ -918,7 +918,7 @@ export function ImportDataDialog({
       onClose={handleClose}
       title="Import items"
       description="Bring items in from pasted text or a file."
-      className="w-full max-w-4xl max-h-[85vh] overflow-y-auto"
+      className="w-full max-w-4xl"
     >
       <div className="flex flex-col gap-5 sm:flex-row">
         <div
