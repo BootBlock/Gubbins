@@ -41,6 +41,7 @@ import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
   BUDGET_WARN_BOUNDS,
+  CARD_CLICK_ACTION_OPTIONS,
   CURRENCY_OPTIONS,
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
@@ -335,6 +336,19 @@ export function SettingsScreen() {
               value={prefs.visualCardMetric}
               onChange={(value) => prefs.setVisualCardMetric(value as typeof prefs.visualCardMetric)}
               options={VISUAL_CARD_METRIC_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Item card click"
+            description="What a click on the body of an item card or row does (outside its buttons). Open details, Move to location and Show label each mirror one of the card’s own buttons as a quick shortcut; Do nothing leaves the buttons as the only way in."
+          >
+            <Select
+              aria-label="Item card click"
+              data-testid="setting-card-click-action"
+              className="h-9 w-40"
+              value={prefs.cardClickAction}
+              onChange={(value) => prefs.setCardClickAction(value as typeof prefs.cardClickAction)}
+              options={CARD_CLICK_ACTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
             />
           </SettingRow>
           {perishablesOn ? (

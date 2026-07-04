@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, render, screen, cleanup } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ItemDragProvider } from '../item-drag';
+
+// Capture the imperative `open` the row drives on a body click (the cardClickAction shortcut).
+const { openSpy } = vi.hoisted(() => ({ openSpy: vi.fn() }));
 
 /**
  * Light render tests for the Data-Heavy {@link ItemRow}. As with ItemCard, the heavy
@@ -10,7 +14,23 @@ import { ItemDragProvider } from '../item-drag';
  * pointer-drag machinery itself is covered end-to-end by item-drag.test.tsx.
  */
 
-vi.mock('./ItemActions', () => ({ ItemActions: () => <div data-testid="item-actions" /> }));
+// Forward the ref (the row opens a dialog through it) and expose an inner button so the
+// interactive-origin guard on the body click can be exercised.
+vi.mock('./ItemActions', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react');
+  return {
+    ItemActions: forwardRef((_props: unknown, ref: React.Ref<{ open: (kind: string) => void }>) => {
+      useImperativeHandle(ref, () => ({ open: openSpy }), []);
+      return (
+        <div data-testid="item-actions">
+          <button type="button" aria-label="inner-action">
+            act
+          </button>
+        </div>
+      );
+    }),
+  };
+});
 vi.mock('./QuantityStepper', () => ({
   QuantityStepper: ({ quantity }: { quantity: number }) => (
     <div data-testid="quantity-stepper">{quantity}</div>
@@ -85,6 +105,8 @@ function firePointer(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  openSpy.mockClear();
+  usePreferencesStore.setState({ cardClickAction: 'none' });
 });
 
 describe('ItemRow — content branches', () => {
@@ -93,9 +115,12 @@ describe('ItemRow — content branches', () => {
     expect(screen.getByText('NE555 timer')).not.toBeNull();
     expect(screen.getByText('Workshop')).not.toBeNull();
     expect(screen.getByTestId('quantity-stepper')).not.toBeNull();
+    // Drag source (select-none), but no hover grab-hand: grabbing is press-only (`:active`).
+    // Exact class tokens via `classList` (`cursor-grab` is a substring of `cursor-grabbing`).
     const root = container.firstElementChild!;
-    expect(root.className).toContain('cursor-grab');
-    expect(root.className).toContain('select-none');
+    expect(root.classList.contains('cursor-grab')).toBe(false);
+    expect(root.classList.contains('select-none')).toBe(true);
+    expect(root.classList.contains('active:cursor-grabbing')).toBe(true);
   });
 
   it('shows a static quantity (no stepper) for an archived item', () => {
@@ -146,6 +171,41 @@ describe('ItemRow — content branches', () => {
   });
 });
 
+describe('ItemRow — click-to-act (cardClickAction)', () => {
+  it('does nothing and shows no pointer cursor when the action is "none" (default)', () => {
+    const { container } = renderRow(makeItem());
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).not.toContain('cursor-pointer');
+    fireEvent.click(root);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('opens the chosen dialog on a body click and shows a pointer cursor when an action is set', () => {
+    usePreferencesStore.setState({ cardClickAction: 'qr' });
+    const { container } = renderRow(makeItem());
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain('cursor-pointer');
+    fireEvent.click(root);
+    expect(openSpy).toHaveBeenCalledWith('qr');
+  });
+
+  it('ignores a click that originates on an interactive control', () => {
+    usePreferencesStore.setState({ cardClickAction: 'details' });
+    renderRow(makeItem());
+    fireEvent.click(screen.getByLabelText('inner-action'));
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('suppresses the click action during batch selection', () => {
+    usePreferencesStore.setState({ cardClickAction: 'details' });
+    const { container } = renderRow(makeItem(), { selection: { onToggle: vi.fn() } });
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).not.toContain('cursor-pointer');
+    fireEvent.click(root);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('ItemRow — drag-source wiring', () => {
   it('begins a pointer drag from the row root, mounting the floating preview', () => {
     const { container } = render(
@@ -153,7 +213,7 @@ describe('ItemRow — drag-source wiring', () => {
         <ItemRow item={makeItem()} locations={[]} locationName="Workshop" />
       </ItemDragProvider>,
     );
-    const root = container.querySelector('.cursor-grab')!;
+    const root = container.querySelector('.select-none')!;
 
     firePointer(root, 'pointerdown', { x: 10, y: 10 });
     firePointer(window, 'pointermove', { x: 40, y: 40 });

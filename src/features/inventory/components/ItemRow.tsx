@@ -9,6 +9,7 @@ import { GaugeRing } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
+import { useCardClickAction } from './useCardClickAction';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -44,12 +45,20 @@ export const ItemRow = memo(function ItemRow({
   // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
   // a press-drag from selecting the row's text; the control-origin guard lives in the hook.
   const dragProps = useItemDragSource(item);
+  // Click-to-act (spec §3): a plain click on the row body runs the user's `cardClickAction`.
+  // Suppressed during batch selection, where a body click means "toggle this row".
+  const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);
   return (
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the body click is a pointer-only shortcut that only ever mirrors one of the row's own focusable, labelled action buttons (details/move/label), so keyboard/AT users already have full parity; giving the row itself a role + tabindex would wrap those buttons in a redundant, confusing nested tab stop.
     <div
       ref={ref}
       {...dragProps}
+      onClick={onClick}
       className={cn(
-        'flex cursor-grab select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
+        // No hover grab-hand: the grabbing cursor appears only while actively pressing to drag
+        // (`:active`); hover shows a pointer when the row body is click-actionable, else default.
+        'flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
+        clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'border-primary/60 bg-primary/5',
         isHighlighted && 'animate-highlight',
@@ -103,7 +112,7 @@ export const ItemRow = memo(function ItemRow({
         )}
       </div>
 
-      <ItemActions item={item} locations={locations} compact />
+      <ItemActions ref={actionsRef} item={item} locations={locations} compact />
     </div>
   );
 });
