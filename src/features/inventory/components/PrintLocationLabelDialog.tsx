@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button, Modal, Select, type SelectProps } from '@/components/foundry';
+import { Button, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
@@ -21,16 +21,64 @@ import { LabelSizeControls } from './LabelSizeControls';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
+/** Rich-Markdown help for the **Code** (symbology) picker. */
+const CODE_HINT = [
+  'The machine-readable code printed on the label, encoding a **deep-link to this',
+  'location** so scanning it jumps straight to the bin/shelf in Gubbins.',
+  '',
+  '- **QR** — a 2-D square; the fastest to scan with a **phone camera** and the most',
+  '  forgiving of small print sizes. The usual choice.',
+  '- **Barcode (Code 128)** — a 1-D barcode for a **laser/linear barcode scanner**; needs',
+  '  more width but suits existing warehouse-style hardware.',
+  '- **QR + barcode** prints both, for a location read by either kind of scanner.',
+].join('\n');
+
+/** Rich-Markdown help for the **Copies** picker. */
+const COPIES_HINT = [
+  'How many **identical copies** of this one location label to print.',
+  '',
+  'Raise it to run off a strip of duplicates for the same bin — one per shelf face,',
+  'or a few spares to replace labels that wear off.',
+].join('\n');
+
+/** Rich-Markdown help for the **Columns per sheet** picker. */
+const COLUMNS_HINT = [
+  'How many labels sit **across a row** when tiling onto an **A4 sheet** of ordinary',
+  'paper. This sets the printed label size: **more columns → smaller labels**, fewer',
+  'columns → larger ones.',
+  '',
+  'Match it to your sticker sheet, or pick a count that gives a comfortable size for',
+  'the QR/barcode to scan reliably. (Hidden for die-cut / thermal label sizes, which',
+  'print one label per page.)',
+].join('\n');
+
+/** Rich-Markdown help for the **Show full path** toggle. */
+const SHOW_PATH_HINT = [
+  'Print the **ancestor path** above the location name — e.g. *Garage ▸ Shelf B* — not',
+  'just the location itself.',
+  '',
+  'Keep it on to tell **same-named bins apart** at a glance; turn it off for a cleaner,',
+  'larger name when the label is small or the location is unambiguous.',
+].join('\n');
+
 /**
  * A compact stacked label + {@link Select} combobox for this dialog's print settings.
  * The combobox (a `role="combobox"`, not a labelable control) is named via a sibling
- * label span so the small muted caption above it still associates.
+ * label span so the small muted caption above it still associates. An optional
+ * {@link InfoHint} badge sits beside the caption to explain the setting.
  */
-function CompactSelect({ label, ...props }: { label: string } & Omit<SelectProps, 'aria-labelledby'>) {
+function CompactSelect({
+  label,
+  hint,
+  ...props
+}: { label: string; hint?: string } & Omit<SelectProps, 'aria-labelledby'>) {
   const labelId = useId();
   return (
     <div className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-      <span id={labelId}>{label}</span>
+      <span className="flex items-center gap-1">
+        <span id={labelId}>{label}</span>
+        {hint ? <InfoHint content={hint} /> : null}
+      </span>
       <Select aria-labelledby={labelId} {...props} />
     </div>
   );
@@ -136,6 +184,7 @@ export function PrintLocationLabelDialog({
 
           <CompactSelect
             label="Code"
+            hint={CODE_HINT}
             value={symbology}
             onChange={(value) => setSymbology(value as LabelSymbology)}
             data-testid="loc-label-symbology"
@@ -147,6 +196,7 @@ export function PrintLocationLabelDialog({
 
           <CompactSelect
             label="Copies"
+            hint={COPIES_HINT}
             value={String(copies)}
             onChange={(value) => setCopies(Number(value))}
             data-testid="loc-label-copies"
@@ -156,6 +206,7 @@ export function PrintLocationLabelDialog({
           {sizeMode === 'sheet' ? (
             <CompactSelect
               label="Columns per sheet"
+              hint={COLUMNS_HINT}
               value={String(columns)}
               onChange={(value) => setColumns(Number(value))}
               options={Array.from(
@@ -166,15 +217,18 @@ export function PrintLocationLabelDialog({
           ) : null}
 
           {location.path && location.path.trim().length > 0 ? (
-            <label className="flex cursor-pointer items-center gap-2 self-end text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={showPath}
-                onChange={(e) => setShowPath(e.target.checked)}
-                className="size-3.5 accent-primary"
-              />
-              Show full path
-            </label>
+            <div className="flex items-center gap-1 self-end">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={showPath}
+                  onChange={(e) => setShowPath(e.target.checked)}
+                  className="size-3.5 accent-primary"
+                />
+                Show full path
+              </label>
+              <InfoHint content={SHOW_PATH_HINT} />
+            </div>
           ) : null}
         </div>
 
