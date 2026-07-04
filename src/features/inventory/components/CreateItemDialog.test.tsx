@@ -274,7 +274,7 @@ describe('CreateItemDialog', () => {
     renderDialog();
     // The ASIN capture lives on the "Supplier & ops" rail tab.
     fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
-    fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
+    fireEvent.change(screen.getByLabelText('Record as an Amazon supplier part (optional)'), {
       target: { value: 'not-an-asin' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
@@ -309,7 +309,7 @@ describe('CreateItemDialog', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'USB-C Cable' } });
     // ASIN capture lives on the "Supplier & ops" rail tab; fill it there.
     fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
-    fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
+    fireEvent.change(screen.getByLabelText('Record as an Amazon supplier part (optional)'), {
       target: { value: 'https://www.amazon.co.uk/dp/B0TEST0001?ref=example' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));

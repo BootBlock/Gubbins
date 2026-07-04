@@ -1016,17 +1016,27 @@ export function CreateItemDialog({
 
       {/* Add by ASIN / Amazon URL — the extension-free, network-free single-item path: paste a
             bare ASIN or a listing link and record an Amazon supplier part on create. Always
-            available (unlike the extension-gated scrape panel above). */}
+            available (unlike the extension-gated scrape panel above). It records the supplier
+            part *only* — it can't read the listing (a web app is blocked from fetching Amazon by
+            the browser's cross-origin rules), so the item's own name/brand/price aren't filled;
+            the hint steers the user to Share-to-Gubbins or the extension for that. */}
       <div className="space-y-field-gap-compact rounded-xl border border-border bg-secondary/20 p-3">
         <FormField
-          label="Add by Amazon ASIN or link (optional)"
+          label="Record as an Amazon supplier part (optional)"
           error={asinError}
           hintSize="lg"
           hint={
             'Paste an **ASIN** (`B0F3XF5ZKF`) or an Amazon **listing link** ' +
-            '(`amazon.co.uk/dp/…`) to record this item as an **Amazon supplier part** — the ' +
-            'ASIN as its order code and a canonical listing link — with no extension and no ' +
-            'network.\n\n> The item’s own fields are still yours to fill; nothing is overwritten.'
+            '(`amazon.co.uk/dp/…`) to record this item as an **Amazon supplier part** — the ASIN ' +
+            'as its order code plus a canonical listing link.\n\n' +
+            '**This does not read the listing**, so the item’s name, brand and price aren’t ' +
+            'filled in — a web app is blocked from fetching Amazon’s pages directly. To pull ' +
+            'those in from the listing:\n\n' +
+            '- **Share it to Gubbins** — open the listing in your browser and choose *Share → ' +
+            'Gubbins*. The name comes across, no extension needed.\n' +
+            '- Install the **companion browser extension** to auto-fill the name, brand and ' +
+            'price from the Amazon tab you have open.\n\n' +
+            '> Either way nothing you’ve typed is overwritten.'
           }
         >
           <Input
@@ -1052,7 +1062,8 @@ export function CreateItemDialog({
           </Button>
           {asinPart ? (
             <span role="status" className="text-xs text-muted-foreground" data-testid="item-asin-applied">
-              Amazon supplier part ready: order code {asinPart.mpn}.
+              Supplier part ready — order code {asinPart.mpn}. The name and price are still yours to fill (or
+              share the listing to Gubbins to auto-fill the name).
             </span>
           ) : null}
         </div>
