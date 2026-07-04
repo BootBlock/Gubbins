@@ -20,7 +20,7 @@ import {
   SelectIcon,
 } from '@/components/icons';
 import { Menu, MenuAction, MenuSeparator, PageContainer, PageHeader, Tooltip } from '@/components/foundry';
-import { CycleCountDialog } from '@/features/lifecycle';
+import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { type Item } from '@/db/repositories';
@@ -91,6 +91,10 @@ function InventoryWorkspace() {
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [cycleCountOpen, setCycleCountOpen] = useState(false);
+  // Guided multi-location stock-take / audit day (spec §4.4). Unlike the single-location
+  // Cycle count above, this walks a chosen scope of locations in turn and is resumable, so
+  // it needs no pre-selected location — the dialog owns its own scope picker and progress.
+  const [auditDayOpen, setAuditDayOpen] = useState(false);
   // Multi-select for batch label printing (spec §6, Phase 49; templated Phase 73). The
   // selection captures each item's label fields (name/MPN/location/quantity) at toggle
   // time so it survives the bounded virtualised-list window (a selected item whose page
@@ -340,6 +344,13 @@ function InventoryWorkspace() {
               >
                 {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
               </MenuAction>
+              <MenuAction
+                icon={<CycleCountIcon />}
+                onSelect={() => setAuditDayOpen(true)}
+                data-testid="open-audit-day"
+              >
+                Stock-take (audit day)…
+              </MenuAction>
               <MenuSeparator />
               <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
                 Export
@@ -580,6 +591,7 @@ function InventoryWorkspace() {
           location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
         />
       ) : null}
+      <AuditDayDialog open={auditDayOpen} onClose={() => setAuditDayOpen(false)} />
       <ScannerOverlay
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
