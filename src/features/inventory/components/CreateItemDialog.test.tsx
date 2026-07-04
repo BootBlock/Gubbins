@@ -272,6 +272,8 @@ describe('CreateItemDialog', () => {
 
   it('rejects an invalid ASIN with an accessible error', () => {
     renderDialog();
+    // The ASIN capture lives on the "Supplier & ops" rail tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
     fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
       target: { value: 'not-an-asin' },
     });
@@ -305,13 +307,17 @@ describe('CreateItemDialog', () => {
 
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'USB-C Cable' } });
+    // ASIN capture lives on the "Supplier & ops" rail tab; fill it there.
+    fireEvent.click(screen.getByRole('tab', { name: 'Supplier & ops' }));
     fireEvent.change(screen.getByLabelText('Add by Amazon ASIN or link (optional)'), {
       target: { value: 'https://www.amazon.co.uk/dp/B0TEST0001?ref=example' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Record Amazon part' }));
 
-    // A valid ASIN confirms inline and seeds the notes provenance.
+    // A valid ASIN confirms inline and seeds the notes provenance (Notes is on the Details tab —
+    // seeded across tabs and preserved when we switch back).
     expect(screen.getByTestId('item-asin-applied')).toHaveTextContent('B0TEST0001');
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
     expect((screen.getByLabelText('Notes (optional)') as HTMLTextAreaElement).value).toContain(
       'Amazon ASIN: B0TEST0001',
     );
@@ -361,5 +367,34 @@ describe('CreateItemDialog', () => {
       name: 'Calipers',
       locationId: 'loc-9',
     });
+  });
+
+  it('keeps fields typed on one rail tab when another tab is visited (single form spans tabs)', async () => {
+    renderDialog();
+    // Type identity fields on Details, then a batch/lot on the Lifecycle tab, then come back.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Epoxy resin' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.change(screen.getByLabelText('Batch no. (optional)'), { target: { value: 'B-42' } });
+    // Returning to Details, the earlier name is still present (RHF retains an unmounted tab).
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Epoxy resin');
+
+    // A single Create submits fields from across every tab at once.
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0]).toMatchObject({ name: 'Epoxy resin', batchNumber: 'B-42' });
+  });
+
+  it('jumps the rail to the tab holding the first error when a submit is rejected', async () => {
+    renderDialog();
+    // Leave Name empty and submit from a different tab — the error would otherwise sit on the
+    // unmounted Details panel with the user staring at a Create that "did nothing".
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+
+    // The rail jumps back to Details and surfaces the required-name error there.
+    expect(await screen.findByText('Please enter a name.')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(spies.createItem).not.toHaveBeenCalled();
   });
 });
