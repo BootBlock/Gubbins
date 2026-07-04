@@ -361,7 +361,7 @@ export function SettingsScreen() {
           ) : null}
           <SettingRow
             label="Default low-stock quantity threshold"
-            description={`The default reorder point for discrete items — those at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
+            description={`A blanket reorder point for discrete items — those at or below this on-hand quantity are flagged on the dashboard (${LOW_STOCK_QTY_BOUNDS.min}–${LOW_STOCK_QTY_BOUNDS.max}). Low-stock alerts are opt-in: leave it at 0 (off) and no item nags until you give it its own reorder point on its detail page, or raise it here to watch every item at once.`}
           >
             <div className="flex items-center gap-2">
               <Input
@@ -374,12 +374,14 @@ export function SettingsScreen() {
                 value={prefs.lowStockQtyThreshold}
                 onChange={(e) => prefs.setLowStockQtyThreshold(clampLowStockQty(Number(e.target.value)))}
               />
-              <span className="text-sm text-muted-foreground">units</span>
+              <span className="text-sm text-muted-foreground">
+                {prefs.lowStockQtyThreshold === 0 ? 'units · off' : 'units'}
+              </span>
             </div>
           </SettingRow>
           <SettingRow
             label="Default low-stock gauge threshold"
-            description={`The default reorder level for consumable-gauge items — those at or below this percentage remaining are flagged on the dashboard (${LOW_STOCK_GAUGE_BOUNDS.min}–${LOW_STOCK_GAUGE_BOUNDS.max}). Any item can override this with its own reorder point on its detail page.`}
+            description={`A blanket reorder level for consumable-gauge items — those at or below this percentage remaining are flagged on the dashboard (${LOW_STOCK_GAUGE_BOUNDS.min}–${LOW_STOCK_GAUGE_BOUNDS.max}). Like the quantity threshold, 0 is off — an item alerts only once it has its own reorder point, or when you raise this above 0.`}
           >
             <div className="flex items-center gap-2">
               <Input
@@ -394,7 +396,9 @@ export function SettingsScreen() {
                   prefs.setLowStockGaugePercent(clampLowStockGaugePercent(Number(e.target.value)))
                 }
               />
-              <span className="text-sm text-muted-foreground">%</span>
+              <span className="text-sm text-muted-foreground">
+                {prefs.lowStockGaugePercent === 0 ? '% · off' : '%'}
+              </span>
             </div>
           </SettingRow>
           {projectsOn ? (

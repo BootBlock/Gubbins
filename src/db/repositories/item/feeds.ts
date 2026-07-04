@@ -69,24 +69,36 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * SERIALISED single assets are excluded (a qty-1 asset isn't "low bulk stock"), as
      * are **abstract variant parents** (an item that has children holds no stock of its
      * own — its variants do), **unlimited-supply items** (an infinite source never runs
-     * low, Phase 82 — matching the pure `isLow` guard) and inactive items. Thresholds
-     * default to {@link LOW_STOCK_QTY_THRESHOLD} / {@link LOW_STOCK_GAUGE_PERCENT}.
+     * low, Phase 82 — matching the pure `isLow` guard) and inactive items.
+     *
+     * **Low-stock is opt-in — an effective floor of 0 is "off".** Each row's effective
+     * floor is its own `reorder_point` / `reorder_gauge_percent` when set, else the
+     * passed-in global threshold. A row is only considered when that floor is *strictly
+     * positive* (`COALESCE(...) > 0`), so with the global default off (0) nothing is
+     * flagged until the item is opted in with its own positive reorder point — and an
+     * explicit per-item 0 opts a single item back out even when the blanket is on. This
+     * matches the pure {@link isLow} guard. Thresholds default to
+     * {@link LOW_STOCK_QTY_THRESHOLD} / {@link LOW_STOCK_GAUGE_PERCENT} (both 0 = off).
      */
     async listLowStock(thresholds: LowStockThresholds = {}, params: PageParams = {}): Promise<Page<Item>> {
       const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
       const pct = thresholds.gaugePercent ?? LOW_STOCK_GAUGE_PERCENT;
       const { limit, offset } = this.resolvePage(params);
       const rows = await this.driver.query<ItemRow>(
-        // `COALESCE(reorder_point, :qty)` resolves each row's effective floor. The qty
-        // ordering divides by `MAX(effectiveFloor, 1)` to avoid a divide-by-zero when an
-        // item's own reorder point is 0 (a valid "only flag when truly empty" setting).
+        // `COALESCE(reorder_point, :qty)` resolves each row's effective floor; the
+        // `> 0` guard makes a 0 floor mean "off" (opt-in). The qty ordering divides by
+        // `MAX(effectiveFloor, 1)` to avoid a divide-by-zero (belt-and-braces — a 0-floor
+        // row is already excluded by the guard, so ordering never sees it).
         `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
          WHERE is_active = 1
            AND is_unlimited = 0
            AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
            AND (
-             (tracking_mode = 'DISCRETE' AND quantity <= COALESCE(reorder_point, ?))
+             (tracking_mode = 'DISCRETE'
+                AND COALESCE(reorder_point, ?) > 0
+                AND quantity <= COALESCE(reorder_point, ?))
              OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0
+                 AND COALESCE(reorder_gauge_percent, ?) > 0
                  AND current_net_value <= gross_capacity * COALESCE(reorder_gauge_percent, ?) / 100.0)
            )
          ORDER BY
@@ -94,7 +106,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
                 ELSE CAST(quantity AS REAL) / MAX(COALESCE(reorder_point, ?), 1) END ASC,
            name COLLATE NOCASE ASC
          LIMIT ? OFFSET ?;`,
-        [qty, pct, qty, limit, offset],
+        [qty, qty, pct, pct, qty, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
     }

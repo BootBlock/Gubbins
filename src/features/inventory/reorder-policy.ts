@@ -13,6 +13,13 @@
  * global default" — so an item with no override behaves exactly as it did before Phase 59
  * (never a regression). `reorderQty` is an optional explicit top-up suggestion; when
  * absent the shortfall to the effective floor is used instead.
+ *
+ * **Low-stock is opt-in — an effective floor of 0 (or less) means "off".** We can't guess
+ * a sensible "low" level for an arbitrary item, so with the global default off (0) a
+ * brand-new item never nags on the dashboard until the user gives it its own positive
+ * `reorderPoint`. Setting an item's own `reorderPoint` to 0 while the global blanket is on
+ * is the per-item opt-*out*. This mirrors the `listLowStock` SQL, which excludes any row
+ * whose effective floor is not strictly positive.
  */
 import type { Item } from '@/db/repositories';
 
@@ -49,6 +56,8 @@ export function effectiveGaugePercent(item: ReorderItem, defaults: ReorderDefaul
 /**
  * Whether an item is below its reorder point and should be flagged as low stock.
  *
+ * - Opt-in — an effective floor of 0 (or less) means "off"; the item is never flagged
+ *   (the friction-free default, until the user sets a positive reorder point).
  * - DISCRETE — low when on-hand `quantity` is at/below the effective quantity floor.
  * - CONSUMABLE_GAUGE — low when the gauge's percentage remaining is at/below the
  *   effective gauge floor (a gauge with no usable capacity is never "low").
@@ -62,10 +71,14 @@ export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
   if (item.isUnlimited) return false;
   if (item.trackingMode === 'CONSUMABLE_GAUGE') {
     if (!item.gauge || item.gauge.grossCapacity <= 0) return false;
-    return item.gauge.percentageRemaining <= effectiveGaugePercent(item, defaults);
+    const floor = effectiveGaugePercent(item, defaults);
+    if (floor <= 0) return false; // opt-in: an off (0) gauge floor never flags
+    return item.gauge.percentageRemaining <= floor;
   }
   if (item.trackingMode === 'SERIALISED' || item.trackingMode === 'UNTRACKED') return false;
-  return item.quantity <= effectiveQtyThreshold(item, defaults);
+  const floor = effectiveQtyThreshold(item, defaults);
+  if (floor <= 0) return false; // opt-in: an off (0) quantity floor never flags
+  return item.quantity <= floor;
 }
 
 /**

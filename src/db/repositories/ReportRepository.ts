@@ -223,9 +223,12 @@ export class ReportRepository extends BaseRepository {
 
   /**
    * The number of active items running low (§3) — the same predicate as
-   * `ItemRepository.listLowStock`, surfaced as a headline count. DISCRETE items at/below the
-   * quantity threshold and CONSUMABLE_GAUGE items at/below the percentage threshold;
-   * SERIALISED singles and abstract variant parents are excluded.
+   * `ItemRepository.listLowStock`, surfaced as a headline count. Each row is judged against
+   * its own `reorder_point` / `reorder_gauge_percent` when set, else the global threshold,
+   * and only when that effective floor is *strictly positive* (low-stock is opt-in — an
+   * effective floor of 0 is "off"). DISCRETE items at/below the effective quantity floor and
+   * CONSUMABLE_GAUGE items at/below the effective percentage floor; SERIALISED singles and
+   * abstract variant parents are excluded.
    */
   async lowStockCount(thresholds: LowStockThresholds = {}): Promise<number> {
     const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
@@ -236,11 +239,14 @@ export class ReportRepository extends BaseRepository {
           AND is_unlimited = 0
           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
           AND (
-            (tracking_mode = 'DISCRETE' AND quantity <= ?)
+            (tracking_mode = 'DISCRETE'
+               AND COALESCE(reorder_point, ?) > 0
+               AND quantity <= COALESCE(reorder_point, ?))
             OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0
-                AND current_net_value <= gross_capacity * ? / 100.0)
+                AND COALESCE(reorder_gauge_percent, ?) > 0
+                AND current_net_value <= gross_capacity * COALESCE(reorder_gauge_percent, ?) / 100.0)
           );`,
-      [qty, pct],
+      [qty, qty, pct, pct],
     );
     return row?.n ?? 0;
   }
@@ -289,9 +295,10 @@ export class ReportRepository extends BaseRepository {
    * Low-stock shortfall rows joined to each item's preferred supplier-part (Phase 65).
    *
    * Mirrors the `listLowStock` SQL predicate (same `COALESCE(reorder_point, ?)` floor,
-   * same DISCRETE-only restriction — CONSUMABLE_GAUGE items have no countable order unit)
-   * and joins the single preferred `supplier_parts` row for each item so the caller can
-   * immediately feed the result into {@link buildReorderPlan} without a second round-trip.
+   * same strictly-positive-floor opt-in guard, same DISCRETE-only restriction —
+   * CONSUMABLE_GAUGE items have no countable order unit) and joins the single preferred
+   * `supplier_parts` row for each item so the caller can immediately feed the result into
+   * {@link buildReorderPlan} without a second round-trip.
    *
    * The shortfall is `COALESCE(reorder_qty, COALESCE(reorder_point, ?) - quantity)` —
    * i.e. the per-item explicit top-up amount when set, else the distance from on-hand to
@@ -330,11 +337,12 @@ export class ReportRepository extends BaseRepository {
         WHERE i.is_active = 1
           AND i.tracking_mode = 'DISCRETE'
           AND i.is_unlimited = 0
+          AND COALESCE(i.reorder_point, ?) > 0
           AND i.quantity <= COALESCE(i.reorder_point, ?)
           AND i.id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
         ORDER BY (CAST(i.quantity AS REAL) / MAX(COALESCE(i.reorder_point, ?), 1)) ASC,
                  i.name COLLATE NOCASE ASC;`,
-      [qty, qty, qty],
+      [qty, qty, qty, qty],
     );
 
     return rows.map((r) => ({

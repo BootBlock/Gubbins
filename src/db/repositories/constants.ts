@@ -159,14 +159,22 @@ export const EXPIRY_SOON_WINDOW_DAYS = 30;
 
 /**
  * Default "low stock" thresholds for the §3 dashboard "Low Stock Alerts" widget.
- * A DISCRETE/SERIALISED item is low when its on-hand `quantity` is at or below
- * {@link LOW_STOCK_QTY_THRESHOLD}; a CONSUMABLE_GAUGE item is low when its
- * `percentage_remaining` is at or below {@link LOW_STOCK_GAUGE_PERCENT} (§4 "low-stock
- * alerts based on percentage or remaining weight rather than integer counts" — this
- * matches the §4.1.3 crimson gauge zone). Both are overridable per call.
+ *
+ * **Off by default — low-stock alerts are opt-in.** A threshold of `0` means "off":
+ * the item is never flagged. We can't guess a sensible "low" level for an arbitrary
+ * item (one screw low is fine; one rare connector low is a crisis), so a freshly-added
+ * item never nags on the dashboard. A user opts an item in by giving it its own
+ * `reorder_point` / `reorder_gauge_percent`, or opts *everything* in at once by raising
+ * the global blanket default in Settings above 0.
+ *
+ * When the effective threshold is positive, a DISCRETE/SERIALISED item is low when its
+ * on-hand `quantity` is at or below {@link LOW_STOCK_QTY_THRESHOLD}; a CONSUMABLE_GAUGE
+ * item is low when its `percentage_remaining` is at or below {@link LOW_STOCK_GAUGE_PERCENT}
+ * (§4 "low-stock alerts based on percentage or remaining weight rather than integer
+ * counts" — the §4.1.3 crimson gauge zone). Both are overridable per call.
  */
-export const LOW_STOCK_QTY_THRESHOLD = 5;
-export const LOW_STOCK_GAUGE_PERCENT = 15;
+export const LOW_STOCK_QTY_THRESHOLD = 0;
+export const LOW_STOCK_GAUGE_PERCENT = 0;
 
 /**
  * Default warning threshold for the §4 project budget feature: a project's budget
