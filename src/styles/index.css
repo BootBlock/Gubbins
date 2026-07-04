@@ -456,6 +456,24 @@
   }
 
   /*
+   * Pointer drag-to-move cursors (features/inventory/item-drag.tsx). While a drag is live the
+   * provider sets `.gubbins-dragging` on <body>; a second `.gubbins-drag-invalid` is added while
+   * the pointer is over a drop target that rejects the drop (an item over its own location, an
+   * illegal location nest). These force the cursor across every element (`!important` + universal
+   * `*`) so it doesn't flicker to each element's own cursor as the pointer crosses the UI —
+   * `grabbing` normally, `not-allowed` over a forbidden target. The invalid rule follows the
+   * dragging rule so it wins when both classes are set. Cursor keywords have no design token.
+   */
+  body.gubbins-dragging,
+  body.gubbins-dragging * {
+    cursor: grabbing !important;
+  }
+  body.gubbins-drag-invalid,
+  body.gubbins-drag-invalid * {
+    cursor: not-allowed !important;
+  }
+
+  /*
    * Refined, unobtrusive scrollbars in keeping with the premium aesthetic.
    *
    * Blink/WebKit get an explicitly-styled `::-webkit-scrollbar`. This is deliberate:

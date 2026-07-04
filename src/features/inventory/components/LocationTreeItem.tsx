@@ -145,8 +145,10 @@ export function LocationTreeItem({
       className={cn(
         'group flex cursor-pointer items-center gap-1 rounded-lg pr-1 outline-none transition-colors',
         'focus-visible:ring-2 focus-visible:ring-primary/60',
-        // A draggable row grabs on press; `select-none` stops a press-drag selecting its text.
-        draggable && 'cursor-grab select-none active:cursor-grabbing',
+        // A draggable row keeps the standard pointer on hover (it's selectable) and only shows the
+        // grabbing cursor while actively pressed to drag (`:active`, plus the global drag-cursor
+        // class once a drag arms); `select-none` stops a press-drag selecting its text.
+        draggable && 'select-none active:cursor-grabbing',
         selected ? 'bg-primary/15' : 'hover:bg-secondary/60',
         (archived || nesting) && 'opacity-60',
         dropActive && 'bg-primary/20 ring-2 ring-primary ring-inset',
