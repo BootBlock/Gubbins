@@ -206,6 +206,35 @@ export function clampBudgetWarnPercent(value: number): number {
 }
 
 /**
+ * Which metric the Visual-mode item card shows in its hero slot for a plain DISCRETE
+ * item (spec §3). The card's ± stepper already shows the on-hand quantity, so a big
+ * repeated number there is redundant — this lets the user pick a genuinely useful
+ * signal instead:
+ * - `stockHealth` — a colour-coded reorder status (In stock / Low stock / Out of
+ *   stock), derived from the item's reorder point. The actionable default.
+ * - `value` — the item's total stock value (`unitCost × quantity`), via the Money control.
+ *
+ * Gauge / serialised / untracked / unlimited cards are unaffected — their hero already
+ * shows meaningful, non-duplicated content — so this preference only swaps the plain
+ * discrete card's hero.
+ */
+export type VisualCardMetric = 'stockHealth' | 'value';
+
+/** The default Visual-card hero metric — the actionable stock-health status. */
+export const DEFAULT_VISUAL_CARD_METRIC: VisualCardMetric = 'stockHealth';
+
+/** Choices for the Settings "Visual card details" control (default listed first). */
+export const VISUAL_CARD_METRIC_OPTIONS = [
+  { value: 'stockHealth', label: 'Stock health' },
+  { value: 'value', label: 'Total value' },
+] as const satisfies readonly { value: VisualCardMetric; label: string }[];
+
+/** Coerce an arbitrary persisted value to a valid {@link VisualCardMetric} (default stock health). */
+export function normaliseVisualCardMetric(value: string): VisualCardMetric {
+  return value === 'value' ? 'value' : DEFAULT_VISUAL_CARD_METRIC;
+}
+
+/**
  * Calendar-month windows offered by the prune/downgrade controls (§7.6.3). Shared
  * by the Settings screen and the Storage Triage dialog so both stay in lock-step.
  */

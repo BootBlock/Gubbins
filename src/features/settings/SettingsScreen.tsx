@@ -46,6 +46,7 @@ import {
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
   THEME_OPTIONS,
+  VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
   clampBudgetWarnPercent,
   clampExpiryWindowDays,
@@ -323,6 +324,19 @@ export function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection icon={<ExpiryIcon />} title="Inventory &amp; lifecycle">
+          <SettingRow
+            label="Visual card details"
+            description="What each item card highlights in Visual mode. Stock health shows a colour-coded reorder status; Total value shows the item’s stock value (unit cost × quantity). Either way the ± stepper still shows the quantity."
+          >
+            <Select
+              aria-label="Visual card details"
+              data-testid="setting-visual-card-metric"
+              className="h-9 w-40"
+              value={prefs.visualCardMetric}
+              onChange={(value) => prefs.setVisualCardMetric(value as typeof prefs.visualCardMetric)}
+              options={VISUAL_CARD_METRIC_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+          </SettingRow>
           {perishablesOn ? (
             <SettingRow
               label="“Expiring soon” window"

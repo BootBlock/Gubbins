@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, InfoHint, Input, Modal, Textarea } from '@/components/foundry';
-import { PackageIcon, MoveIcon } from '@/components/icons';
+import { DeleteIcon, PackageIcon, MoveIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useUpdateLocation } from '../mutations';
@@ -34,6 +34,7 @@ export function EditLocationDialog({
   onClose,
   location,
   locations,
+  onDelete,
 }: {
   open: boolean;
   onClose: () => void;
@@ -41,6 +42,13 @@ export function EditLocationDialog({
   location: LocationWithCount;
   /** All locations (flat) — for the parent picker and the breadcrumb path. */
   locations: readonly LocationWithCount[];
+  /**
+   * Delete this location. Rendered as a left-aligned destructive action in the footer —
+   * deletion is a considered, spacious decision, not a cramped hover-row afterthought.
+   * The caller owns the confirm-or-delete flow (a non-empty location prompts first, since
+   * deleting it re-parents its items to Unassigned). Omit to hide the control.
+   */
+  onDelete?: () => void;
 }) {
   const update = useUpdateLocation();
   const fmt = useFormatters();
@@ -259,16 +267,31 @@ export function EditLocationDialog({
           </p>
         ) : null}
 
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            disabled={update.isPending || trimmed.length === 0 || !dirty || !capacityValid}
-          >
-            Save changes
-          </Button>
+        <div className="flex items-center justify-between gap-2">
+          {onDelete ? (
+            <Button
+              variant="destructive"
+              onClick={onDelete}
+              disabled={update.isPending}
+              data-testid="edit-location-delete"
+            >
+              <DeleteIcon />
+              Delete location
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submit}
+              disabled={update.isPending || trimmed.length === 0 || !dirty || !capacityValid}
+            >
+              Save changes
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

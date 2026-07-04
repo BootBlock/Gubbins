@@ -6,7 +6,7 @@
  * (LIMIT/OFFSET ≤ 100) so pages feed incrementally into the virtualised list,
  * keeping the worker bridge and the DOM light with 100,000+ records.
  */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_LIST_PAGES,
@@ -138,6 +138,12 @@ export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEF
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,
+    // Keep the previous filter's results on screen while the new filter loads, so toggling
+    // a filter (e.g. "Show removed") or changing the search never clears the list to a
+    // spinner and back. React reconciles the old→new rows by item id, so only genuinely
+    // added/removed items animate in/out — no full-list flash. First load (no prior data)
+    // still shows the spinner.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -146,6 +152,9 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
   return useQuery({
     queryKey: [...inventoryKeys.itemList(filters), 'count'],
     queryFn: () => getItemRepository().count(filters),
+    // Hold the previous count while a new filter loads (mirrors the list above) so the
+    // header/sidebar total doesn't blink to "Loading…" on a filter toggle.
+    placeholderData: keepPreviousData,
   });
 }
 

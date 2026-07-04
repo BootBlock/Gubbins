@@ -20,9 +20,12 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
+  normaliseVisualCardMetric,
   normaliseWindowMonths,
+  type VisualCardMetric,
 } from '@/features/settings/settings';
 import {
   DEFAULT_SCANNER_SYMBOLOGY,
@@ -85,6 +88,13 @@ interface PreferencesStore {
   readonly scannerHaptics: boolean;
   /** Days before `expiry_date` an item is surfaced as "expiring soon" (§3, §4). */
   readonly expirySoonWindowDays: number;
+  /**
+   * Which metric a Visual-mode item card shows in its hero slot for a plain DISCRETE item
+   * (spec §3) — its reorder-derived stock health, or its total stock value. Only affects
+   * the plain discrete card (gauge/serialised/untracked/unlimited heroes are unchanged);
+   * defaults to the actionable stock-health status. See {@link VisualCardMetric}.
+   */
+  readonly visualCardMetric: VisualCardMetric;
   /** A DISCRETE item is flagged on the §3 "Low Stock" widget at/below this on-hand quantity. */
   readonly lowStockQtyThreshold: number;
   /** A CONSUMABLE_GAUGE item is flagged on the §3 "Low Stock" widget at/below this % remaining. */
@@ -146,6 +156,7 @@ interface PreferencesStore {
   setLabelBaseUrl: (url: string) => void;
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
+  setVisualCardMetric: (metric: VisualCardMetric) => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -177,6 +188,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       labelBaseUrl: '',
       scannerBeep: true,
       scannerHaptics: true,
+      visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -205,6 +217,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setLabelBaseUrl: (labelBaseUrl) => set({ labelBaseUrl: labelBaseUrl.trim() }),
       setScannerBeep: (scannerBeep) => set({ scannerBeep }),
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
+      // Normalise so a stale/unknown persisted value can never reach the card renderer.
+      setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),

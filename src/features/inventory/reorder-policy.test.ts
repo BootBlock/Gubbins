@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  discreteStockLevel,
   effectiveGaugePercent,
   effectiveQtyThreshold,
   isLow,
@@ -109,6 +110,27 @@ describe('reorder-policy — isLow', () => {
     // An infinite source never runs low, even at 0 on-hand or with an aggressive reorder point.
     expect(isLow(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe(false);
     expect(isLow(discrete(0, { isUnlimited: true, reorderPoint: 20 }), DEFAULTS)).toBe(false);
+  });
+});
+
+describe('reorder-policy — discreteStockLevel', () => {
+  it('reports "out" only at zero on hand', () => {
+    expect(discreteStockLevel(discrete(0), DEFAULTS)).toBe('out');
+    expect(discreteStockLevel(discrete(1), DEFAULTS)).toBe('low'); // 1 <= global 5, but has stock
+  });
+
+  it('reports "low" when on hand but at/below the effective reorder point', () => {
+    expect(discreteStockLevel(discrete(5), DEFAULTS)).toBe('low'); // at threshold
+    expect(discreteStockLevel(discrete(3, { reorderPoint: 10 }), DEFAULTS)).toBe('low');
+  });
+
+  it('reports "healthy" when comfortably in stock', () => {
+    expect(discreteStockLevel(discrete(6), DEFAULTS)).toBe('healthy');
+    expect(discreteStockLevel(discrete(3, { reorderPoint: 2 }), DEFAULTS)).toBe('healthy');
+  });
+
+  it('reports "healthy" for an unlimited-supply item even at zero on hand', () => {
+    expect(discreteStockLevel(discrete(0, { isUnlimited: true }), DEFAULTS)).toBe('healthy');
   });
 });
 

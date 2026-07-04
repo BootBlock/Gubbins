@@ -69,6 +69,23 @@ export function isLow(item: ReorderItem, defaults: ReorderDefaults): boolean {
 }
 
 /**
+ * Coarse stock-health band for a plain DISCRETE item, for the Visual card's hero (spec §3):
+ * - `out` — nothing on hand (`quantity <= 0`).
+ * - `low` — on hand but at/below the effective reorder point ({@link isLow}).
+ * - `healthy` — comfortably in stock.
+ *
+ * Unlimited-supply items are always `healthy` (an infinite source never runs low). Only
+ * meaningful for DISCRETE items — the card only consults it on that branch.
+ */
+export type StockLevel = 'out' | 'low' | 'healthy';
+
+export function discreteStockLevel(item: ReorderItem, defaults: ReorderDefaults): StockLevel {
+  if (item.isUnlimited) return 'healthy';
+  if (item.quantity <= 0) return 'out';
+  return isLow(item, defaults) ? 'low' : 'healthy';
+}
+
+/**
  * How many units to re-order to bring a low DISCRETE item back to (at least) its reorder
  * point — the shopping-list suggestion. Returns 0 when the item is not low (nothing to
  * buy). A per-item `reorderQty` (an explicit top-up amount) takes precedence when set;

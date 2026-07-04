@@ -5,7 +5,7 @@
  * `ItemRepository.getHistoryFeed`, bounded by `MAX_LIST_PAGES` and absolute-indexed
  * through the Phase-37 `list-window.ts` seam so a deep scroll never retains every page.
  */
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository, type HistoryAction } from '@/db/repositories';
 
 export const activityKeys = {
@@ -33,5 +33,8 @@ export function useActivityFeed(actions: readonly HistoryAction[] | undefined) {
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,
+    // Keep the current feed on screen while a changed kind-filter re-queries, so toggling a
+    // filter chip reconciles rows in place instead of clearing the list to a spinner.
+    placeholderData: keepPreviousData,
   });
 }
