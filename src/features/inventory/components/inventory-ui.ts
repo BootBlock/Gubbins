@@ -19,12 +19,17 @@ import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
 
 /**
  * Multi-select model for the inventory list (spec §6 batch QR labels, Phase 49).
- * When present on a row/card, a selection checkbox is shown; selection lives as
+ * When present on a row/card, a selection checkbox is shown; its *presence* means
+ * select mode is active and `undefined` means it is off. Selection lives as
  * ephemeral Tier-3 screen state and survives the bounded virtualised-list window
  * because it is keyed by id, independent of which page is currently resident.
+ *
+ * Deliberately holds only the stable `onToggle` callback — the per-row checked
+ * state is passed to each memoised row as a plain `selected` boolean instead, so a
+ * toggle re-renders only the one row whose state changed rather than every visible
+ * row (which a fresh `selectedIds` Set on this object would otherwise force).
  */
 export interface ItemSelection {
-  readonly selectedIds: ReadonlySet<string>;
   readonly onToggle: (item: Item) => void;
 }
 

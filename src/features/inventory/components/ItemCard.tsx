@@ -22,6 +22,8 @@ import type { ItemSelection } from './inventory-ui';
  *
  * Wrapped in {@link memo}: like {@link ItemRow} it renders inside the virtualised list,
  * so a card whose props are referentially unchanged skips re-rendering as siblings scroll.
+ * `selection` stays stable and `selected` is a plain boolean, so toggling one card
+ * re-renders just that card.
  */
 export const ItemCard = memo(function ItemCard({
   item,
@@ -29,6 +31,7 @@ export const ItemCard = memo(function ItemCard({
   locationName,
   locationColorClass,
   selection,
+  selected = false,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -36,6 +39,8 @@ export const ItemCard = memo(function ItemCard({
   /** Tailwind text-colour class for the location's swatch tint, if any. */
   locationColorClass?: string;
   selection?: ItemSelection;
+  /** Whether this card is currently selected (only meaningful when `selection` is set). */
+  selected?: boolean;
 }) {
   const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
@@ -45,7 +50,7 @@ export const ItemCard = memo(function ItemCard({
       className={cn(
         'flex flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10',
         !item.isActive && 'opacity-60',
-        selection?.selectedIds.has(item.id) && 'ring-2 ring-primary/60',
+        selected && 'ring-2 ring-primary/60',
         isHighlighted && 'animate-highlight',
       )}
     >
@@ -54,7 +59,7 @@ export const ItemCard = memo(function ItemCard({
           {selection ? (
             <input
               type="checkbox"
-              checked={selection.selectedIds.has(item.id)}
+              checked={selected}
               onChange={() => selection.onToggle(item)}
               aria-label={`Select ${item.name}`}
               data-testid="item-select"

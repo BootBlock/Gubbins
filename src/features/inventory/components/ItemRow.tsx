@@ -17,9 +17,9 @@ import type { ItemSelection } from './inventory-ui';
  *
  * Wrapped in {@link memo}: this renders inside the virtualised list, so as the user
  * scrolls (or the parent re-renders for unrelated reasons) a row whose `item`,
- * `locations`, name/colour and `selection` are all referentially unchanged skips its
- * subtree entirely. The list keeps `item`/`locations`/`selection` stable, so only rows
- * that genuinely changed re-render.
+ * `locations`, name/colour, `selection` and `selected` are all referentially unchanged
+ * skips its subtree entirely. `selection` stays stable (only its `onToggle` member), and
+ * `selected` is a plain boolean, so toggling one row re-renders just that row.
  */
 export const ItemRow = memo(function ItemRow({
   item,
@@ -27,6 +27,7 @@ export const ItemRow = memo(function ItemRow({
   locationName,
   locationColorClass,
   selection,
+  selected = false,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -34,6 +35,8 @@ export const ItemRow = memo(function ItemRow({
   /** Tailwind text-colour class for the location's swatch tint, if any. */
   locationColorClass?: string;
   selection?: ItemSelection;
+  /** Whether this row is currently selected (only meaningful when `selection` is set). */
+  selected?: boolean;
 }) {
   const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
@@ -43,14 +46,14 @@ export const ItemRow = memo(function ItemRow({
       className={cn(
         'flex items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80',
         !item.isActive && 'opacity-60',
-        selection?.selectedIds.has(item.id) && 'border-primary/60 bg-primary/5',
+        selected && 'border-primary/60 bg-primary/5',
         isHighlighted && 'animate-highlight',
       )}
     >
       {selection ? (
         <input
           type="checkbox"
-          checked={selection.selectedIds.has(item.id)}
+          checked={selected}
           onChange={() => selection.onToggle(item)}
           aria-label={`Select ${item.name}`}
           data-testid="item-select"

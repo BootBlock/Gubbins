@@ -35,6 +35,7 @@ export function ItemList({
   isFetchingPreviousPage,
   fetchPreviousPage,
   selection,
+  selectedIds,
 }: {
   items: readonly Item[];
   /** Absolute index of the first resident item — non-zero once front pages are trimmed. */
@@ -51,6 +52,13 @@ export function ItemList({
   isFetchingPreviousPage: boolean;
   fetchPreviousPage: () => void;
   selection?: ItemSelection;
+  /**
+   * Ids of the currently-selected items. Held here rather than inside `selection` so
+   * `selection` stays referentially stable across toggles: this list is not memoised, so
+   * it re-renders on each toggle and derives a plain `selected` boolean per row — only the
+   * one row whose boolean flipped then re-renders through its `memo`.
+   */
+  selectedIds?: ReadonlySet<string>;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columns = useColumns(parentRef, density);
@@ -123,8 +131,9 @@ export function ItemList({
                       : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
                   }
                 >
-                  {rowItems.map((item) =>
-                    density === 'data' ? (
+                  {rowItems.map((item) => {
+                    const selected = selectedIds?.has(item.id) ?? false;
+                    return density === 'data' ? (
                       <ItemRow
                         key={item.id}
                         item={item}
@@ -132,6 +141,7 @@ export function ItemList({
                         locationName={locationName(item.locationId)}
                         locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
+                        selected={selected}
                       />
                     ) : (
                       <ItemCard
@@ -141,9 +151,10 @@ export function ItemList({
                         locationName={locationName(item.locationId)}
                         locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
+                        selected={selected}
                       />
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               ) : (
                 // A row whose page was trimmed off the front and is being refilled.
