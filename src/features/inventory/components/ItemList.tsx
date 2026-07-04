@@ -9,6 +9,7 @@ import { listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
 import { SubLocationNav } from './SubLocationNav';
+import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
 
 const VISUAL_CARD_MIN_WIDTH = 280;
@@ -41,6 +42,7 @@ export function ItemList({
   onSelectLocation,
   selection,
   selectedIds,
+  cardFields,
 }: {
   items: readonly Item[];
   /** Absolute index of the first resident item — non-zero once front pages are trimmed. */
@@ -75,6 +77,8 @@ export function ItemList({
    * one row whose boolean flipped then re-renders through its `memo`.
    */
   selectedIds?: ReadonlySet<string>;
+  /** Configurable card fields (order + catalog + on-screen custom values), backlog E1. */
+  cardFields: CardFieldsListContext;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columns = useColumns(parentRef, density);
@@ -171,6 +175,7 @@ export function ItemList({
                         locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
                         selected={selected}
+                        {...cardFieldProps(cardFields, item)}
                       />
                     ) : (
                       <ItemCard
@@ -181,6 +186,7 @@ export function ItemList({
                         locationColorClass={locationColorClass?.(item.locationId)}
                         selection={selection}
                         selected={selected}
+                        {...cardFieldProps(cardFields, item)}
                       />
                     );
                   })}

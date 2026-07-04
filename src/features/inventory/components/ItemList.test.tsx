@@ -40,6 +40,12 @@ const BASE_PROPS = {
   hasPreviousPage: false,
   isFetchingPreviousPage: false,
   fetchPreviousPage: () => {},
+  cardFields: {
+    order: [] as string[],
+    customFields: new Map(),
+    categoryName: () => null,
+    values: undefined,
+  },
 };
 
 afterEach(cleanup);

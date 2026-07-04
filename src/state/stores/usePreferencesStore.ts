@@ -43,6 +43,7 @@ import {
   normaliseLabelTemplate,
   type LabelTemplate,
 } from '@/features/inventory/labels/label-template';
+import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
 
 /**
  * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme`
@@ -108,6 +109,16 @@ interface PreferencesStore {
    * body inert). See {@link CardClickAction}.
    */
   readonly cardClickAction: CardClickAction;
+  /**
+   * Which attributes each inventory item card/row shows, and in what order (backlog E1).
+   * A device-local ordered list of `{ id, visible }` — built-in fields (`location`,
+   * `category`, `condition`, `value`, `quantity`, `updated`) and any category custom field
+   * (`custom:<fieldId>`). Persisted as the user's *intent*; the read side reconciles it
+   * against the live custom-field catalog via `normaliseCardFields` (resolve-on-read), so a
+   * renamed/removed field or a newly-added built-in never corrupts the card. Shared across
+   * the Visual card and Data row (per-view density is E2). See {@link CardFieldsConfig}.
+   */
+  readonly cardFields: CardFieldsConfig;
   /**
    * Which metric each configurable Dashboard nav tile counts (backlog A1/A2). A device-local
    * map of tile route → chosen metric id (e.g. `'/projects' → 'active'`); tiles absent from
@@ -187,6 +198,10 @@ interface PreferencesStore {
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
   setCardClickAction: (action: CardClickAction) => void;
+  /** Replace the item-card field configuration (order + visibility). */
+  setCardFields: (fields: CardFieldsConfig) => void;
+  /** Restore the shipped default card-field configuration. */
+  resetCardFields: () => void;
   /** Point a configurable Dashboard nav tile at a different count metric. */
   setNavCountMetric: (route: NavCountRoute, metric: string) => void;
   setExpirySoonWindowDays: (days: number) => void;
@@ -222,6 +237,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
       cardClickAction: DEFAULT_CARD_CLICK_ACTION,
+      cardFields: DEFAULT_CARD_FIELDS,
       navCountMetrics: DEFAULT_NAV_COUNT_METRICS,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
@@ -255,6 +271,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
       // Normalise so a stale/unknown persisted value can never reach the card's click handler.
       setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
+      // Persisted verbatim as the user's *intent*; the read layer reconciles it against the
+      // live custom-field catalog (`normaliseCardFields`), so no store-side normalisation.
+      setCardFields: (cardFields) => set({ cardFields }),
+      resetCardFields: () => set({ cardFields: DEFAULT_CARD_FIELDS }),
       // Merge one tile's choice (normalised) over the map, leaving the other tiles untouched.
       setNavCountMetric: (route, metric) =>
         set((state) => ({

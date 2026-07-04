@@ -1,0 +1,72 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { ReorderList, type ReorderListItem } from './reorder-list';
+
+afterEach(cleanup);
+
+const ITEMS: ReorderListItem[] = [
+  { id: 'location', label: 'Location', name: 'Location', visible: true },
+  { id: 'category', label: 'Category', name: 'Category', visible: true },
+  { id: 'condition', label: 'Condition', name: 'Condition', visible: false },
+];
+
+function renderList(overrides: Partial<React.ComponentProps<typeof ReorderList>> = {}) {
+  const onMove = vi.fn();
+  const onToggleVisible = vi.fn();
+  render(
+    <ReorderList
+      items={ITEMS}
+      onMove={onMove}
+      onToggleVisible={onToggleVisible}
+      aria-label="Card fields"
+      {...overrides}
+    />,
+  );
+  return { onMove, onToggleVisible };
+}
+
+describe('ReorderList', () => {
+  it('names the list and renders each row', () => {
+    renderList();
+    expect(screen.getByRole('list', { name: 'Card fields' })).not.toBeNull();
+    expect(screen.getByTestId('reorder-row-location')).not.toBeNull();
+    expect(screen.getByTestId('reorder-row-category')).not.toBeNull();
+  });
+
+  it('disables move-up on the first row and move-down on the last', () => {
+    renderList();
+    expect((screen.getByTestId('reorder-up-location') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('reorder-down-location') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('reorder-down-condition') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('calls onMove with the direction', () => {
+    const { onMove } = renderList();
+    fireEvent.click(screen.getByTestId('reorder-down-location'));
+    expect(onMove).toHaveBeenCalledWith('location', 'down');
+    fireEvent.click(screen.getByTestId('reorder-up-category'));
+    expect(onMove).toHaveBeenCalledWith('category', 'up');
+  });
+
+  it('labels and fires the visibility toggle with the flipped value', () => {
+    const { onToggleVisible } = renderList();
+    // A visible row offers "Hide"; a hidden row offers "Show".
+    expect(screen.getByRole('button', { name: 'Hide Location' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Show Condition' })).not.toBeNull();
+    fireEvent.click(screen.getByTestId('reorder-toggle-location'));
+    expect(onToggleVisible).toHaveBeenCalledWith('location', false);
+    fireEvent.click(screen.getByTestId('reorder-toggle-condition'));
+    expect(onToggleVisible).toHaveBeenCalledWith('condition', true);
+  });
+
+  it('renders no visibility toggle when items carry no `visible` flag', () => {
+    render(
+      <ReorderList
+        items={[{ id: 'a', label: 'A', name: 'A' }]}
+        onMove={vi.fn()}
+        aria-label="Plain reorder"
+      />,
+    );
+    expect(screen.queryByTestId('reorder-toggle-a')).toBeNull();
+  });
+});

@@ -180,6 +180,38 @@ describe('ItemCard — content branches', () => {
     const checkbox = screen.getByRole('checkbox', { name: 'Select NE555 timer' }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
   });
+
+  it('renders the configured card fields (E1): condition, total value and a custom field', () => {
+    const customFields = new Map([
+      ['f1', { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null }],
+    ]);
+    renderCard(makeItem({ categoryId: 'cat', condition: 'GOOD', unitCost: 2, quantity: 3 }), {
+      fieldOrder: ['condition', 'value', 'custom:f1'],
+      categoryName: 'Resistors',
+      customFields,
+      customValues: new Map([['f1', '5V']]),
+    });
+    // Field labels (dt) and their resolved values (dd).
+    expect(screen.getByText('Condition')).toBeInTheDocument();
+    expect(screen.getByText('Good')).toBeInTheDocument();
+    expect(screen.getByText('Total value')).toBeInTheDocument();
+    expect(screen.getByText('Voltage')).toBeInTheDocument();
+    expect(screen.getByText('5V')).toBeInTheDocument();
+  });
+
+  it('renders an em-dash for an inapplicable custom field so every card keeps one row per field', () => {
+    const customFields = new Map([
+      ['f1', { id: 'f1', categoryId: 'cat', name: 'Voltage', fieldType: 'TEXT', defaultValue: null }],
+    ]);
+    // The item is in a *different* category, so its Voltage field is not applicable.
+    renderCard(makeItem({ categoryId: 'other' }), {
+      fieldOrder: ['custom:f1'],
+      customFields,
+      customValues: undefined,
+    });
+    expect(screen.getByText('Voltage')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
 });
 
 describe('ItemCard — click-to-act (cardClickAction)', () => {

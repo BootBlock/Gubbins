@@ -127,10 +127,20 @@ uses **Modular UI** intent.
 The same customisation theme applied to the item list/grid cards (a different component from the
 nav tiles).
 
-- **E1 — Configurable card fields + order.** Let users choose which attributes each item card
-  shows (quantity, location, category, condition, cost, selected custom fields) and their order.
-  Tier-2 preference; a pure "visible fields" model rendered by the card. *The classic
-  configurable-card feature.*
+- **E1 — Configurable card fields + order. ✅ Done.** Users choose which attributes each item
+  card/row shows and in what order via a **Settings → Inventory → "Card fields"** picker. The
+  offered set is the built-ins **Location, Category, Condition, Total value, Quantity, Last
+  updated** plus every category **custom field**; the shipped default shows Location + Category.
+  The model is the pure `card-fields.ts` seam (built-in SSOT, `CardFieldsConfig` = ordered
+  `{id,visible}[]`, resolve-on-read `normaliseCardFields`, reorder/visibility ops, and
+  `resolveCardFields` → one label/value descriptor **per visible field** so a card's height is
+  config-driven, never item-driven). The Tier-2 `cardFields` pref stores intent; the config is
+  **shared** across the Visual card and Data row (per-view density stays **E2**). Custom-field
+  *values* on cards use a bulk read (`CategoryRepository.listAllFields` + `getItemFieldValues`
+  via `useItemFieldValues`) fetched only for the on-screen items and **only when a custom field
+  is shown** (zero cost otherwise). The reorder/show-hide control is a new reusable Foundry
+  primitive, **`ReorderList`** (keyboard-operable move/hide — the accessible 1-D counterpart to
+  the widget board's drag affordance; **B1 should reuse it**).
 - **E2 — Card ↔ compact-list ↔ table density + thumbnail size.** A view-density switch and a
   thumbnail-size control, persisted per device. Must not regress the virtualised list (fixed row
   heights per density; never entrance-animate the virtualised list).

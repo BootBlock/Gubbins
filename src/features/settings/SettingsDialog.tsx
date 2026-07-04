@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
+import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
 import { DatabaseMaintenance } from '@/features/maintenance';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
@@ -372,6 +373,17 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 options={CARD_CLICK_ACTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               />
             </SettingRow>
+          </SettingsSection>
+
+          <SettingsSection icon={<CustomiseIcon />} title="Card fields">
+            <div className="space-y-3 py-1">
+              <p className="text-xs text-muted-foreground">
+                Choose which attributes each item card and row shows, and in what order. Use the arrows to
+                reorder and the eye to show or hide a field. Applies to both the Visual cards and the dense
+                list, and is saved on this device.
+              </p>
+              <CardFieldsSetting />
+            </div>
           </SettingsSection>
 
           <SettingsSection icon={<LowStockIcon />} title="Stock alerts &amp; lifecycle">

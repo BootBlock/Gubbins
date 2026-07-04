@@ -38,7 +38,12 @@ export const inventoryKeys = {
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
   categoryFields: (categoryId: string) => [...inventoryKeys.categories(), 'fields', categoryId] as const,
+  /** Every custom-field definition across all categories (the item-card field catalog, E1). */
+  allCategoryFields: () => [...inventoryKeys.categories(), 'fields', 'all'] as const,
   itemFields: (itemId: string) => [...inventoryKeys.item(itemId), 'fields'] as const,
+  /** Stored custom-field values for a set of on-screen items (item cards, E1). */
+  itemFieldValues: (itemIds: readonly string[]) =>
+    [...inventoryKeys.items(), 'fieldValues', itemIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   tagList: () => [...inventoryKeys.tags(), 'list'] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,

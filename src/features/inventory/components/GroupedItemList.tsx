@@ -5,10 +5,13 @@ import { ChevronRightIcon, PackageIcon } from '@/components/icons';
 import type { Item, LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import type { LayoutDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
+import { useItemFieldValues } from '../categories';
 import { useLocationSectionItems } from '../queries';
 import { LocationKindIcon } from './LocationKindIcon';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
+import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
+import type { CardFieldsConfigBundle } from './useCardFieldsConfig';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -28,6 +31,8 @@ interface SharedSectionProps {
   readonly locationColorClass?: (id: string) => string | undefined;
   readonly selection?: ItemSelection;
   readonly selectedIds?: ReadonlySet<string>;
+  /** Configurable card-field config (backlog E1); each section fetches its own custom values. */
+  readonly cardFieldsConfig: CardFieldsConfigBundle;
 }
 
 /**
@@ -181,6 +186,7 @@ function SectionItems({
   locationColorClass,
   selection,
   selectedIds,
+  cardFieldsConfig,
 }: SharedSectionProps & {
   readonly locationId: string;
   /** A leaf (childless) empty section shows a muted note; a parent just shows its children. */
@@ -193,6 +199,13 @@ function SectionItems({
   );
   const query = useLocationSectionItems(filters);
   const items = useMemo<readonly Item[]>(() => query.data?.pages.flatMap((p) => p.rows) ?? [], [query.data]);
+
+  // Custom-field values for just this section's loaded items (backlog E1). Skipped entirely
+  // unless a custom field is actually shown, so a section costs no extra query in the default
+  // configuration. The context bundles the shared config with these per-section values.
+  const itemIds = useMemo(() => items.map((i) => i.id), [items]);
+  const fieldValues = useItemFieldValues(itemIds, cardFieldsConfig.hasCustomFields);
+  const cardFields: CardFieldsListContext = { ...cardFieldsConfig, values: fieldValues.data };
 
   // Auto-load the next page when the sentinel scrolls into view, using the grouped list's
   // own scroll box as the observer root; the button remains a keyboard/explicit fallback.
@@ -250,6 +263,7 @@ function SectionItems({
               locationColorClass={locationColorClass?.(item.locationId)}
               selection={selection}
               selected={selectedIds?.has(item.id) ?? false}
+              {...cardFieldProps(cardFields, item)}
             />
           ) : (
             <ItemCard
@@ -260,6 +274,7 @@ function SectionItems({
               locationColorClass={locationColorClass?.(item.locationId)}
               selection={selection}
               selected={selectedIds?.has(item.id) ?? false}
+              {...cardFieldProps(cardFields, item)}
             />
           ),
         )}

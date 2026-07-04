@@ -113,6 +113,46 @@ export class CategoryRepository extends BaseRepository {
     return rows.map(rowToCategoryField);
   }
 
+  /**
+   * Every custom-field definition across all categories, ordered by category then declared
+   * position (backlog E1 — the item-card field picker offers each custom field as a
+   * selectable card field). Bounded by the category × field count (not the 100k+ item set),
+   * so it reads the whole set like {@link listFields} — no pagination.
+   */
+  async listAllFields(): Promise<CategoryField[]> {
+    const rows = await this.driver.query<CategoryFieldRow>(
+      `SELECT * FROM category_fields
+       ORDER BY category_id ASC, position ASC, name COLLATE NOCASE ASC;`,
+    );
+    return rows.map(rowToCategoryField);
+  }
+
+  /**
+   * The stored custom-field values for a set of items (backlog E1 — item cards render
+   * chosen custom fields). One indexed `IN (…)` read over `item_field_values` for just the
+   * items currently on screen, returning only *stored* rows (`fieldId → value` per item);
+   * lenient defaulting is applied at render from the field catalog, so an item with no row
+   * for a field simply falls back to that field's default. Empty ids ⇒ empty map (no query).
+   */
+  async getItemFieldValues(itemIds: readonly string[]): Promise<Map<string, Map<string, string>>> {
+    const out = new Map<string, Map<string, string>>();
+    if (itemIds.length === 0) return out;
+    const placeholders = itemIds.map(() => '?').join(', ');
+    const rows = await this.driver.query<{ item_id: string; field_id: string; value: string }>(
+      `SELECT item_id, field_id, value FROM item_field_values WHERE item_id IN (${placeholders});`,
+      itemIds as SqlValue[],
+    );
+    for (const row of rows) {
+      let byField = out.get(row.item_id);
+      if (byField === undefined) {
+        byField = new Map<string, string>();
+        out.set(row.item_id, byField);
+      }
+      byField.set(row.field_id, row.value);
+    }
+    return out;
+  }
+
   async addField(categoryId: string, input: CreateCategoryFieldInput): Promise<CategoryField> {
     this.assertWritable();
     await this.requireCategory(categoryId);

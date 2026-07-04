@@ -50,6 +50,7 @@ export {
   Search as SearchIcon,
   ChevronRight as ChevronRightIcon,
   ChevronDown as ChevronDownIcon,
+  ChevronUp as ChevronUpIcon,
   Menu as MenuIcon,
   MoreHorizontal as MoreIcon,
   House as HomeIcon,

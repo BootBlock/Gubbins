@@ -39,6 +39,34 @@ export function useItemFields(itemId: string | undefined) {
   });
 }
 
+/**
+ * Every custom-field definition across all categories — the catalog the item-card field
+ * picker offers and the card renderer resolves chosen custom fields against (backlog E1).
+ * A bounded whole-set read, like {@link useCategories}.
+ */
+export function useAllCategoryFields() {
+  return useQuery({
+    queryKey: inventoryKeys.allCategoryFields(),
+    queryFn: () => getCategoryRepository().listAllFields(),
+  });
+}
+
+/**
+ * Stored custom-field values for a set of on-screen items, so the item cards can render
+ * chosen custom fields without an async fetch per card (backlog E1). One indexed `IN (…)`
+ * read; `keepPreviousData` holds the last values in place while the resident window shifts
+ * as the virtualised list scrolls, so a card never flickers. Pass `enabled: false` (no
+ * custom field is shown) to skip the query entirely — zero cost for the common case.
+ */
+export function useItemFieldValues(itemIds: readonly string[], enabled = true) {
+  return useQuery({
+    queryKey: inventoryKeys.itemFieldValues(itemIds),
+    queryFn: () => getCategoryRepository().getItemFieldValues(itemIds),
+    enabled: enabled && itemIds.length > 0,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useCreateCategory() {
   const client = useQueryClient();
   return useMutation({
@@ -100,6 +128,11 @@ export function useSetItemFieldValues(itemId: string) {
   return useMutation({
     mutationFn: (values: Record<string, string | null>) =>
       getCategoryRepository().setItemFieldValues(itemId, values),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemFields(itemId) });
+      // Refresh the on-card custom-field values (E1) — their key is `[...items(),
+      // 'fieldValues', ids]`, so the prefix matches every resident-window query.
+      void client.invalidateQueries({ queryKey: [...inventoryKeys.items(), 'fieldValues'] });
+    },
   });
 }

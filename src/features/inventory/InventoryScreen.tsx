@@ -44,6 +44,9 @@ import { GroupByControl } from './components/GroupByControl';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { GroupedItemList } from './components/GroupedItemList';
+import { useCardFieldsConfig } from './components/useCardFieldsConfig';
+import type { CardFieldsListContext } from './components/card-fields-render';
+import { useItemFieldValues } from './categories';
 import { locationColorTextClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { CreateItemDialog } from './components/CreateItemDialog';
@@ -180,6 +183,14 @@ function InventoryWorkspace() {
   // off the leading page(s), so the virtualised list can index in absolute space.
   const firstItemIndex = active.data?.pages[0]?.offset ?? 0;
   const flatLocations = flat.data?.rows ?? [];
+
+  // Configurable item-card fields (backlog E1): the shared order/catalog/category resolver,
+  // plus — only when a custom field is actually shown — the stored custom-field values for the
+  // resident window (so the virtualised cards render them without a per-card fetch).
+  const cardFieldsConfig = useCardFieldsConfig();
+  const residentItemIds = useMemo(() => flatItems.map((i) => i.id), [flatItems]);
+  const cardFieldValues = useItemFieldValues(residentItemIds, cardFieldsConfig.hasCustomFields);
+  const cardFields: CardFieldsListContext = { ...cardFieldsConfig, values: cardFieldValues.data };
 
   // Child locations of the selected location, so a location that holds no items of its own
   // but nests others can offer them as a "drill down" grid instead of a dead-end empty state.
@@ -538,6 +549,7 @@ function InventoryWorkspace() {
                     locationColorClass={locationColorClass}
                     selection={selection}
                     selectedIds={selectedIds}
+                    cardFieldsConfig={cardFieldsConfig}
                   />
                 ) : (
                   <div className="flex flex-1 items-center justify-center">
@@ -567,6 +579,7 @@ function InventoryWorkspace() {
                   onSelectLocation={setSelectedLocationId}
                   selection={selection}
                   selectedIds={selectedIds}
+                  cardFields={cardFields}
                 />
               )}
             </div>

@@ -1,11 +1,11 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Surface } from '@/components/foundry';
-import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
 import { useItemDragSource } from '../item-drag';
+import { DEFAULT_VISIBLE_CARD_FIELD_IDS, type CardCustomField } from '../card-fields';
 import { DiscreteCardMetric } from './DiscreteCardMetric';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
@@ -13,6 +13,8 @@ import { Thumbnail } from './Thumbnail';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
+import { CardFieldList } from './ItemCardFields';
+import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -33,6 +35,10 @@ export const ItemCard = memo(function ItemCard({
   locationColorClass,
   selection,
   selected = false,
+  fieldOrder = DEFAULT_VISIBLE_CARD_FIELD_IDS,
+  categoryName = null,
+  customFields = EMPTY_CUSTOM_FIELDS,
+  customValues,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -42,8 +48,23 @@ export const ItemCard = memo(function ItemCard({
   selection?: ItemSelection;
   /** Whether this card is currently selected (only meaningful when `selection` is set). */
   selected?: boolean;
+  /** Visible card-field ids in order (backlog E1); defaults to the shipped Location + Category. */
+  fieldOrder?: readonly string[];
+  /** This item's resolved category name, or null when it has no category. */
+  categoryName?: string | null;
+  /** The live custom-field catalog, keyed by field id (stable across the list). */
+  customFields?: ReadonlyMap<string, CardCustomField>;
+  /** This item's stored custom-field values (fieldId → raw value), if loaded. */
+  customValues?: ReadonlyMap<string, string>;
 }) {
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
+  const fields = useResolvedCardFields(item, {
+    order: fieldOrder,
+    locationName,
+    categoryName,
+    customFields,
+    customValues,
+  });
   // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
   // a press-drag from selecting the card's text; the control-origin guard lives in the hook.
   const dragProps = useItemDragSource(item);
@@ -97,15 +118,6 @@ export const ItemCard = memo(function ItemCard({
                 <span className="ml-1 text-muted-foreground">#{item.serialNo}</span>
               ) : null}
             </h3>
-            <p
-              className={cn(
-                'mt-1 inline-flex items-center gap-1.5 text-xs [&_svg]:size-3.5',
-                locationColorClass ?? 'text-muted-foreground',
-              )}
-            >
-              <FolderIcon />
-              {locationName}
-            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -113,6 +125,12 @@ export const ItemCard = memo(function ItemCard({
           {isUnlimited(item) ? <UnlimitedBadge /> : null}
         </div>
       </div>
+
+      {/* The user-configured attribute list (backlog E1) — location, category and any other
+          chosen built-in / custom fields. Every visible field renders a row (empty ⇒ em-dash),
+          so a card's height depends only on the configuration, never the item, keeping the
+          virtualised list's per-card measurement stable. */}
+      <CardFieldList fields={fields} locationColorClass={locationColorClass} />
 
       <div className="flex-1">
         {isUnlimited(item) ? (
