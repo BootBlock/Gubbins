@@ -1,8 +1,9 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { ChevronDownIcon, ChevronRightIcon, PreferredIcon } from '@/components/icons';
 import { locationFullness } from '../location-fullness';
+import { ITEM_DND_MIME, dragCarriesItem } from '../item-dnd';
 import { LocationInlineRename } from './LocationInlineRename';
 import { LocationRowActions } from './LocationRowActions';
 
@@ -35,14 +36,19 @@ export interface TreeItemProps {
   readonly onRenameCancel?: () => void;
   readonly onEdit?: () => void;
   readonly editLabel?: string;
-  readonly onDelete?: () => void;
-  readonly deleteLabel?: string;
   readonly onArchive?: () => void;
   readonly archiveLabel?: string;
   readonly onRestore?: () => void;
   readonly restoreLabel?: string;
   readonly onPrintLabel?: () => void;
   readonly printLabelLabel?: string;
+  /**
+   * Accept an inventory item dragged onto this row and move it here (spec §4 drag-to-move).
+   * When set, the row becomes a drop target that highlights while an item hovers over it and
+   * calls this with the dropped item's id. Omit for rows that can't receive items (e.g. the
+   * synthetic "All items" row, or an archived location).
+   */
+  readonly onDropItem?: (itemId: string) => void;
   readonly ref: (el: HTMLDivElement | null) => void;
 }
 
@@ -74,17 +80,18 @@ export function LocationTreeItem({
   onRenameCancel,
   onEdit,
   editLabel,
-  onDelete,
-  deleteLabel,
   onArchive,
   archiveLabel,
   onRestore,
   restoreLabel,
   onPrintLabel,
   printLabelLabel,
+  onDropItem,
   ref,
 }: TreeItemProps) {
   const fullness = locationFullness(count, capacity);
+  // True while an inventory item is being dragged over this (drop-enabled) row.
+  const [dropActive, setDropActive] = useState(false);
   return (
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- APG tree: the container's onKeyDown (resolveTreeKey) handles Enter/Space activation for the focused row, so this row's onClick has full keyboard parity; a row-level key handler would double-fire.
     <div
@@ -98,11 +105,43 @@ export function LocationTreeItem({
       data-tree-id={id}
       onFocus={onFocus}
       onClick={onSelect}
+      onDragOver={
+        onDropItem
+          ? (e) => {
+              // Only react to one of our item drags; let anything else pass through.
+              if (!dragCarriesItem(e.dataTransfer)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              if (!dropActive) setDropActive(true);
+            }
+          : undefined
+      }
+      onDragLeave={
+        onDropItem
+          ? (e) => {
+              // Ignore leaves onto descendants — only clear when the pointer truly exits the row.
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              setDropActive(false);
+            }
+          : undefined
+      }
+      onDrop={
+        onDropItem
+          ? (e) => {
+              const itemId = e.dataTransfer.getData(ITEM_DND_MIME);
+              setDropActive(false);
+              if (!itemId) return;
+              e.preventDefault();
+              onDropItem(itemId);
+            }
+          : undefined
+      }
       className={cn(
         'group flex cursor-pointer items-center gap-1 rounded-lg pr-1 outline-none transition-colors',
         'focus-visible:ring-2 focus-visible:ring-primary/60',
         selected ? 'bg-primary/15' : 'hover:bg-secondary/60',
         archived && 'opacity-60',
+        dropActive && 'bg-primary/20 ring-2 ring-primary ring-inset',
       )}
       style={{ paddingLeft: `${(level - 1) * 12}px` }}
     >
@@ -169,7 +208,7 @@ export function LocationTreeItem({
           </>
         )}
       </span>
-      {!editing && (onEdit || onDelete || onPrintLabel || onArchive || onRestore) ? (
+      {!editing && (onEdit || onPrintLabel || onArchive || onRestore) ? (
         <LocationRowActions
           onPrintLabel={onPrintLabel}
           printLabelLabel={printLabelLabel}
@@ -179,8 +218,6 @@ export function LocationTreeItem({
           archiveLabel={archiveLabel}
           onRestore={onRestore}
           restoreLabel={restoreLabel}
-          onDelete={onDelete}
-          deleteLabel={deleteLabel}
         />
       ) : null}
     </div>

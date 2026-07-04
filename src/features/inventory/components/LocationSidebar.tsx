@@ -1,14 +1,14 @@
 import { type ReactNode, useMemo, useState } from 'react';
 
 import { plural } from '@/lib/plural';
-import { Button, Modal, Spinner, Tooltip } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Spinner, Tooltip } from '@/components/foundry';
 import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import { pruneArchivedTree } from '../location-tree';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
-import { useArchiveLocation } from '../mutations';
+import { useArchiveLocation, useMoveItem } from '../mutations';
 import { LocationTreeItem } from './LocationTreeItem';
 import { LocationKindIcon } from './LocationKindIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
@@ -43,6 +43,10 @@ export function LocationSidebar({
   totalCount: number;
 }) {
   const archive = useArchiveLocation();
+  const moveItem = useMoveItem();
+  // Announce a drag-and-drop move (WCAG 4.1.3) — the pointer-only drop has no other feedback
+  // for assistive tech, and the moved item may leave the current filter.
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = useMemo(() => flat.filter((l) => l.archivedAt).length, [flat]);
   // Hide archived branches (and their subtrees) unless the user opts in; navigation,
@@ -157,6 +161,14 @@ export function LocationSidebar({
           onClose={() => setEditLocation(null)}
           location={editLocation}
           locations={flat}
+          onDelete={() => {
+            // Deletion moved out of the cramped hover row into this considered context. Close
+            // the dialog, then route through the same confirm-or-delete flow as the keyboard
+            // `Delete` key (a non-empty location still prompts before re-parenting its items).
+            const loc = editLocation;
+            setEditLocation(null);
+            requestDelete(loc.id, loc.name, loc.itemCount);
+          }}
         />
       ) : null}
       {printLabelNode ? (
@@ -196,6 +208,11 @@ export function LocationSidebar({
           </Button>
         </div>
       </Modal>
+
+      {/* Announce drag-and-drop moves (pointer-only, so no other status reaches AT). */}
+      <LiveRegion visuallyHidden data-testid="location-move-live-region">
+        {moveAnnouncement ? <p>{moveAnnouncement}</p> : null}
+      </LiveRegion>
     </aside>
   );
 
@@ -239,10 +256,17 @@ export function LocationSidebar({
             node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
           }
           restoreLabel={`Restore ${node.name}`}
-          onDelete={node.isSystem ? undefined : () => requestDelete(node.id, node.name, node.itemCount)}
-          deleteLabel={`Delete ${node.name}`}
           onPrintLabel={() => setPrintLabelNode(node)}
           printLabelLabel={`Print label for ${node.name}`}
+          onDropItem={
+            node.archivedAt != null
+              ? undefined
+              : (itemId) =>
+                  moveItem.mutate(
+                    { id: itemId, locationId: node.id },
+                    { onSuccess: () => setMoveAnnouncement(`Item moved to ${node.name}.`) },
+                  )
+          }
         />,
       );
       if (hasChildren && isExpanded) out.push(...renderNodes(node.children, level + 1));

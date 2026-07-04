@@ -7,7 +7,7 @@
  * and {@link astError} returns null — so an in-progress, invalid edit never reaches
  * the worker (and never logs an error that would fail the §8.5.5 smoke).
  */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository } from '@/db/repositories';
 import type { SearchAST } from '@/db/search/ast';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
@@ -38,6 +38,9 @@ export function useAstSearch(ast: SearchAST, enabled: boolean, pageSize = DEFAUL
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,
+    // Keep prior results on screen while a refined AST re-runs, so tweaking the visual
+    // builder reconciles rows in place rather than flashing the list to a spinner.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -46,5 +49,6 @@ export function useAstSearchCount(ast: SearchAST, enabled: boolean) {
     queryKey: [...inventoryKeys.search(), 'ast-count', ast] as const,
     enabled,
     queryFn: () => getItemRepository().countByAst(ast),
+    placeholderData: keepPreviousData,
   });
 }

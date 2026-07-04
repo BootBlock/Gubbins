@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 import { Surface } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
-import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
-import { ChangeFlash } from './ChangeFlash';
+import { ITEM_DND_MIME, isInteractiveDragOrigin } from '../item-dnd';
+import { DiscreteCardMetric } from './DiscreteCardMetric';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
@@ -42,13 +42,24 @@ export const ItemCard = memo(function ItemCard({
   /** Whether this card is currently selected (only meaningful when `selection` is set). */
   selected?: boolean;
 }) {
-  const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   return (
     <Surface
       ref={ref}
+      draggable
+      onDragStart={(e) => {
+        // A drag begun on a control (± stepper, select box, action button) belongs to that
+        // control — suppress the card drag so its own gesture works.
+        if (isInteractiveDragOrigin(e.target)) {
+          e.preventDefault();
+          return;
+        }
+        e.dataTransfer.setData(ITEM_DND_MIME, item.id);
+        e.dataTransfer.setData('text/plain', item.name);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       className={cn(
-        'flex flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10',
+        'flex cursor-grab flex-col gap-4 p-5 transition-all duration-200 ease-emphasized hover:-translate-y-1 hover:shadow-primary/10 active:cursor-grabbing',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',
         isHighlighted && 'animate-highlight',
@@ -116,12 +127,10 @@ export const ItemCard = memo(function ItemCard({
         ) : item.trackingMode === 'UNTRACKED' ? (
           <p className="text-sm text-muted-foreground">Presence only — not counted</p>
         ) : (
-          <div className="flex items-center justify-between">
-            <ChangeFlash flashKey={item.quantity} className="text-2xl font-bold tabular-nums">
-              {fmt.quantity(item.quantity)}
-            </ChangeFlash>
-            <span className="text-xs text-muted-foreground">in stock</span>
-          </div>
+          // The ± stepper below already shows the on-hand quantity, so this hero shows a
+          // different, user-chosen signal (stock health or total value) instead of a
+          // duplicated number (spec §3; the `visualCardMetric` preference).
+          <DiscreteCardMetric item={item} />
         )}
       </div>
 

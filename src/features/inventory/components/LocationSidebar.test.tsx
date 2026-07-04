@@ -10,12 +10,14 @@ const spies = vi.hoisted(() => ({
   update: vi.fn(),
   del: vi.fn(),
   archive: vi.fn(),
+  move: vi.fn(),
 }));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateLocation: () => ({ mutate: spies.update, isPending: false }),
   useArchiveLocation: () => ({ mutate: spies.archive, isPending: false }),
+  useMoveItem: () => ({ mutate: spies.move, isPending: false }),
 }));
 
 afterEach(cleanup);
@@ -216,18 +218,21 @@ describe('LocationSidebar — accessible APG tree', () => {
 
   it('deletes an empty location immediately, with no confirmation prompt', () => {
     renderSidebar();
-    // Reveal the empty Drawer (itemCount 0) and delete it via its button.
+    // Reveal the empty Drawer (itemCount 0), open its Edit dialog, and delete from there.
     const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
     cabinet.focus();
     fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Drawer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
     expect(spies.del).toHaveBeenCalledWith('drawer');
     expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();
   });
 
   it('asks for confirmation before deleting a location that still holds items', () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Workshop' }));
+    // Deletion lives in the Edit dialog now — open it, then click Delete location.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
     // Nothing deleted yet — the confirmation dialog stands in the way.
     expect(spies.del).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
@@ -238,7 +243,8 @@ describe('LocationSidebar — accessible APG tree', () => {
 
   it('cancelling the confirmation leaves the location untouched', () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Workshop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(spies.del).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();

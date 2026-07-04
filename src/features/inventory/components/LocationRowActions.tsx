@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
-import { ArchiveIcon, ArchiveRestoreIcon, DeleteIcon, EditIcon, QrCodeIcon } from '@/components/icons';
+import { Tooltip } from '@/components/foundry';
+import { ArchiveIcon, ArchiveRestoreIcon, EditIcon, QrCodeIcon } from '@/components/icons';
 
 interface LocationRowActionsProps {
   readonly onPrintLabel?: () => void;
@@ -10,18 +11,21 @@ interface LocationRowActionsProps {
   readonly archiveLabel?: string;
   readonly onRestore?: () => void;
   readonly restoreLabel?: string;
-  readonly onDelete?: () => void;
-  readonly deleteLabel?: string;
 }
 
 /**
- * The per-row Edit / Delete affordances of a {@link LocationTreeItem}. They reserve
- * *no* layout space until the row is hovered or holds keyboard focus — so a long
- * location name is never truncated by buttons that aren't even visible. On reveal,
- * the container eases its width (and fades) open with the house cubic-bezier; the
- * reduced-motion catch-all in index.css neutralises this transition for users who
- * ask for minimal motion. Both buttons are `tabindex={-1}` (mouse / keyboard-key
- * driven) so the treeitem itself stays the only tab stop.
+ * The per-row Print / Edit / Archive affordances of a {@link LocationTreeItem}. They reserve
+ * *no* layout space until the row is hovered or holds keyboard focus — so a long location name
+ * is never truncated by buttons that aren't even visible. On reveal, the container eases its
+ * width (and fades) open with the house cubic-bezier; the reduced-motion catch-all in index.css
+ * neutralises this transition for users who ask for minimal motion. Every button is
+ * `tabindex={-1}` (mouse / keyboard-key driven) so the treeitem itself stays the only tab stop,
+ * and each carries a Foundry {@link Tooltip} so the icon-only control's purpose is discoverable
+ * on hover (its `aria-label` already names it for assistive tech).
+ *
+ * Deletion is deliberately **not** here: it is a destructive action, out of place in a cramped
+ * hover row, so it lives in the Edit-location dialog's footer (a considered, spacious context)
+ * and on the keyboard `Delete` key. See {@link EditLocationDialog}.
  */
 export function LocationRowActions({
   onPrintLabel,
@@ -32,8 +36,6 @@ export function LocationRowActions({
   archiveLabel,
   onRestore,
   restoreLabel,
-  onDelete,
-  deleteLabel,
 }: LocationRowActionsProps) {
   return (
     <div
@@ -45,74 +47,71 @@ export function LocationRowActions({
       )}
     >
       {onPrintLabel ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={printLabelLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onPrintLabel();
-          }}
-          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
-        >
-          <QrCodeIcon className="text-glyph-scan" />
-        </button>
+        <Tooltip content="Print a label for this location" triggerTabIndex={-1}>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={printLabelLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPrintLabel();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+          >
+            <QrCodeIcon className="text-glyph-scan" />
+          </button>
+        </Tooltip>
       ) : null}
       {onEdit ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={editLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+        <Tooltip
+          content="Edit this location — rename it, move it, change its type, colour or capacity"
+          triggerTabIndex={-1}
         >
-          <EditIcon className="text-glyph-edit" />
-        </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={editLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+          >
+            <EditIcon className="text-glyph-edit" />
+          </button>
+        </Tooltip>
       ) : null}
       {onRestore ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={restoreLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRestore();
-          }}
-          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
-        >
-          <ArchiveRestoreIcon className="text-glyph-success" />
-        </button>
+        <Tooltip content="Restore this archived location" triggerTabIndex={-1}>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={restoreLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestore();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+          >
+            <ArchiveRestoreIcon className="text-glyph-success" />
+          </button>
+        </Tooltip>
       ) : null}
       {onArchive ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={archiveLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onArchive();
-          }}
-          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
-        >
-          <ArchiveIcon className="text-glyph-neutral" />
-        </button>
-      ) : null}
-      {onDelete ? (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={deleteLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
-        >
-          <DeleteIcon className="text-glyph-danger" />
-        </button>
+        <Tooltip content="Archive this location — hides it without deleting" triggerTabIndex={-1}>
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={archiveLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+            className="grid size-6 shrink-0 place-items-center rounded transition-colors hover:bg-secondary [&_svg]:size-3.5"
+          >
+            <ArchiveIcon className="text-glyph-neutral" />
+          </button>
+        </Tooltip>
       ) : null}
     </div>
   );
