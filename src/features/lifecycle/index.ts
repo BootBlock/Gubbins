@@ -19,6 +19,8 @@ export { CycleCountProvider, useCycleCount } from './CycleCountContext';
 export { LifecycleEditor } from './components/LifecycleEditor';
 export { MaintenanceEditor } from './components/MaintenanceEditor';
 export { CycleCountDialog } from './components/CycleCountDialog';
+export { AuditDayDialog } from './components/AuditDayDialog';
+export { useAuditSessionStore } from './useAuditSessionStore';
 export {
   useItemVariants,
   useCreateVariant,
