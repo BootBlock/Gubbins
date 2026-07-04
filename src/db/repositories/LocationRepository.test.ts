@@ -75,6 +75,32 @@ describe('LocationRepository', () => {
     expect(moved.parentId).toBe(a.id);
   });
 
+  it('cannot commit a cycle across two interleaved re-parents (§7.5.3)', async () => {
+    const a = await locations.create({ name: 'A' });
+    const b = await locations.create({ name: 'B' });
+    // Fire A→B and B→A together WITHOUT awaiting in between, so their check-then-write steps
+    // interleave (the memory driver wraps synchronous SQLite in async methods, so each `await`
+    // yields). Before the guard lived in the write, both moves passed the separate pre-check
+    // against pre-move state and both committed, forming A→B→A and orphaning the pair from the
+    // tree. Now at most one may win; the loser must be refused and no loop may ever land.
+    const results = await Promise.allSettled([
+      locations.update(a.id, { parentId: b.id }),
+      locations.update(b.id, { parentId: a.id }),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(DbError);
+
+    // Exactly one is now nested under the other; the winner stays a root — never a mutual loop.
+    const freshA = await locations.getById(a.id);
+    const freshB = await locations.getById(b.id);
+    const oneWayNesting =
+      (freshA?.parentId === b.id && freshB?.parentId === null) ||
+      (freshB?.parentId === a.id && freshA?.parentId === null);
+    expect(oneWayNesting).toBe(true);
+  });
+
   it('re-parents orphaned items to Unassigned on delete and logs it (§4)', async () => {
     const shelf = await locations.create({ name: 'Shelf' });
     const widget = await items.create({ name: 'Widget', locationId: shelf.id });
@@ -158,6 +184,23 @@ describe('LocationRepository', () => {
     expect((await locations.getById(a.id))?.isDefault).toBe(false);
     expect((await locations.getById(b.id))?.isDefault).toBe(true);
     // Exactly one default row remains.
+    const list = await locations.list();
+    expect(list.rows.filter((l) => l.isDefault)).toHaveLength(1);
+  });
+
+  it('promotes a new default and re-parents in one update (guarded demotion still fires)', async () => {
+    // A combined edit that both re-nests a location AND makes it the default: the parent move is
+    // cycle-guarded, and the same guard now rides the default-demotion — so a legitimate move
+    // still demotes the old default and sets the new one together.
+    const old = await locations.create({ name: 'Old default', isDefault: true });
+    const parent = await locations.create({ name: 'Parent' });
+    const child = await locations.create({ name: 'Child' });
+
+    const updated = await locations.update(child.id, { parentId: parent.id, isDefault: true });
+    expect(updated.parentId).toBe(parent.id);
+    expect(updated.isDefault).toBe(true);
+
+    expect((await locations.getById(old.id))?.isDefault).toBe(false);
     const list = await locations.list();
     expect(list.rows.filter((l) => l.isDefault)).toHaveLength(1);
   });
