@@ -103,6 +103,18 @@ interface DropTarget {
   accepts(payload: DragPayload): boolean;
 }
 
+/**
+ * Where the pointer sits relative to the tree during a live drag. `overRow` is true whenever the
+ * pointer is over a tree row (`[data-tree-id]`) — droppable or not — which is what drives the
+ * forbidden cursor: shown over a row that can't take the drop, but never over empty space.
+ * `acceptedId` is the row id only when it is a registered target that accepts this drag, and
+ * drives both the highlight and the drop.
+ */
+interface DragHit {
+  readonly overRow: boolean;
+  readonly acceptedId: string | null;
+}
+
 /** Stable actions a source/target uses to drive the drag. Its identity never changes. */
 interface ItemDragActions {
   beginDrag(payload: DragPayload, event: ReactPointerEvent): void;
@@ -254,26 +266,30 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
   const [previewItem, setPreviewItem] = useState<DragPayload | null>(null);
   const [activeDropId, setActiveDropId] = useState<string | null>(null);
 
-  // Resolve the pointer position to the drop target under it — its id and whether that target
-  // `accepts` the in-flight payload — or null when no registered target sits under the pointer
-  // (empty space). Pure and read from live geometry, so highlight, forbidden-cursor and release
-  // routing all agree. A rejecting target (`accepted: false`) is a registered row that vetoes
-  // this drop (an item's own location, an illegal nest): no highlight, no drop, forbidden cursor.
-  const resolveTarget = useCallback((x: number, y: number): { id: string; accepted: boolean } | null => {
+  // Resolve where the pointer sits relative to the tree during a drag. Pure and read from live
+  // geometry, so highlight, forbidden-cursor and release routing all agree.
+  //  - not over any tree row → empty space (item list, page): a normal drag, never forbidden.
+  //  - over a tree row that is a registered target accepting this payload → `acceptedId` = its id
+  //    (highlight + drop).
+  //  - over any other tree row → `overRow` true but `acceptedId` null: a row that can't take this
+  //    drop, whether it vetoes the payload (the item's own location, an illegal nest) or isn't a
+  //    drop target at all (the synthetic "All items" filter, an archived location). Either way:
+  //    no highlight, no drop, forbidden cursor.
+  const resolveTarget = useCallback((x: number, y: number): DragHit => {
     const el = document.elementFromPoint(x, y);
     const row = el instanceof Element ? el.closest<HTMLElement>('[data-tree-id]') : null;
     const id = row?.getAttribute('data-tree-id') ?? null;
-    if (id == null) return null;
+    if (id == null) return { overRow: false, acceptedId: null };
     const target = dropTargets.current.get(id);
     const payload = stateRef.current?.payload;
-    if (!target || !payload) return null;
-    return { id, accepted: target.accepts(payload) };
+    const accepted = target != null && payload != null && target.accepts(payload);
+    return { overRow: true, acceptedId: accepted ? id : null };
   }, []);
 
-  // Toggle the forbidden-cursor body class from the resolved target: set while the pointer is
-  // over a rejecting row, cleared over an accepting one or empty space.
-  const syncCursor = useCallback((hit: { accepted: boolean } | null) => {
-    document.body.classList.toggle(DRAG_INVALID_CLASS, hit != null && !hit.accepted);
+  // Toggle the forbidden-cursor body class: set while over a tree row that can't take this drop,
+  // cleared over an accepting row or empty space.
+  const syncCursor = useCallback((hit: DragHit) => {
+    document.body.classList.toggle(DRAG_INVALID_CLASS, hit.overRow && hit.acceptedId == null);
   }, []);
 
   const positionPreview = useCallback((x: number, y: number) => {
@@ -339,7 +355,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     }
     setPreviewItem(s.payload);
     const hit = resolveTarget(s.lastX, s.lastY);
-    setActiveDropId(hit?.accepted ? hit.id : null);
+    setActiveDropId(hit.acceptedId);
     syncCursor(hit);
     if (typeof requestAnimationFrame === 'function') s.raf = requestAnimationFrame(autoScrollStep);
   }, [autoScrollStep, resolveTarget, syncCursor]);
@@ -363,7 +379,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
       }
       positionPreview(event.clientX, event.clientY);
       const hit = resolveTarget(event.clientX, event.clientY);
-      const next = hit?.accepted ? hit.id : null;
+      const next = hit.acceptedId;
       setActiveDropId((prev) => (prev === next ? prev : next));
       syncCursor(hit);
     },
@@ -374,8 +390,7 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     (event: PointerEvent) => {
       const s = stateRef.current;
       if (!s || event.pointerId !== s.pointerId) return;
-      const hit = s.active ? resolveTarget(event.clientX, event.clientY) : null;
-      const dropId = hit?.accepted ? hit.id : null;
+      const dropId = s.active ? resolveTarget(event.clientX, event.clientY).acceptedId : null;
       const payload = s.payload;
       endGesture();
       if (dropId) dropTargets.current.get(dropId)?.onDrop(payload);

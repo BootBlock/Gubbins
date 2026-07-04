@@ -206,6 +206,33 @@ describe('item-drag — unified pointer drag-to-move', () => {
     expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(false);
   });
 
+  it('shows the forbidden cursor over a tree row that is not a drop target (e.g. "All items")', () => {
+    const onDrop = vi.fn();
+    render(
+      <ItemDragProvider>
+        <Source />
+        {/* A tree row carrying a data-tree-id but never wired as a drop target — exactly like the
+            synthetic "All items" filter row, which an item can't be moved *to*. */}
+        <div data-tree-id="all-items" data-testid="all-items">
+          All items
+        </div>
+      </ItemDragProvider>,
+    );
+    const source = screen.getByTestId('source');
+    const allItems = screen.getByTestId('all-items');
+    pointHitTestAt(allItems);
+
+    firePointer(source, 'pointerdown', { x: 10, y: 10 });
+    firePointer(window, 'pointermove', { x: 40, y: 40 });
+
+    // Over a non-droppable tree row the cursor is forbidden (not the plain grabbing of empty space).
+    expect(document.body.classList.contains('gubbins-dragging')).toBe(true);
+    expect(document.body.classList.contains('gubbins-drag-invalid')).toBe(true);
+
+    firePointer(window, 'pointerup', { x: 40, y: 40 });
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
   it('treats a touch that moves before the long press as a scroll, not a drag', () => {
     vi.useFakeTimers();
     const onDrop = vi.fn();
