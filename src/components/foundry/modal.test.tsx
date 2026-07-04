@@ -133,6 +133,48 @@ describe('Modal — accessible focus management', () => {
     expect(document.body.style.overflow).toBe('hidden');
   });
 
+  it('caps the panel height and scrolls the body internally so a tall footer stays reachable', () => {
+    render(
+      <Modal open onClose={() => {}} title="Edit location">
+        <div>
+          <p>Field</p>
+          <button>Delete</button>
+        </div>
+      </Modal>,
+    );
+    // The panel (Surface) is a flex column with a viewport-relative max height, so an
+    // over-tall dialog can never overflow the screen and strand its footer.
+    const panel = screen.getByRole('heading', { name: 'Edit location' }).closest('div')
+      ?.parentElement?.parentElement;
+    expect(panel?.className).toContain('flex');
+    expect(panel?.className).toContain('flex-col');
+    expect(panel?.className).toContain('max-h-[calc(100dvh-2rem)]');
+
+    // The header (title + Close) is a non-shrinking sibling of the scroll region — it stays
+    // pinned while the body scrolls, rather than being wrapped by the scroller.
+    const header = screen.getByRole('heading', { name: 'Edit location' }).closest('div')?.parentElement;
+    expect(header?.className).toContain('shrink-0');
+
+    // The children live in a distinct overflow-y-auto region whose min-h-0 lets it shrink
+    // below content height so scrolling actually engages.
+    const body = screen.getByText('Field').closest('div')?.parentElement;
+    expect(body?.className).toContain('overflow-y-auto');
+    expect(body?.className).toContain('min-h-0');
+    // …and that scroll region is a sibling of the header, not its ancestor.
+    expect(body?.previousElementSibling).toBe(header);
+  });
+
+  it('lets a caller className override the default max-width (tailwind-merge)', () => {
+    render(
+      <Modal open onClose={() => {}} title="Wide" className="max-w-xl">
+        <button>OK</button>
+      </Modal>,
+    );
+    const panel = screen.getByRole('heading', { name: 'Wide' }).closest('div')?.parentElement?.parentElement;
+    expect(panel?.className).toContain('max-w-xl');
+    expect(panel?.className).not.toContain('max-w-lg');
+  });
+
   it('restores focus to the opener when the dialog closes', async () => {
     function Harness() {
       const [open, setOpen] = useState(false);
