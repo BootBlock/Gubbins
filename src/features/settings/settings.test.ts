@@ -8,16 +8,19 @@ import {
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   BUDGET_WARN_BOUNDS,
+  CARD_CLICK_ACTION_OPTIONS,
   clampBudgetWarnPercent,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
   CURRENCY_OPTIONS,
+  DEFAULT_CARD_CLICK_ACTION,
   DEFAULT_WINDOW_MONTHS,
   EXPIRY_WINDOW_BOUNDS,
   guessBaseCurrency,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
+  normaliseCardClickAction,
   normaliseVisualCardMetric,
   normaliseWindowMonths,
   DEFAULT_VISUAL_CARD_METRIC,
@@ -151,6 +154,23 @@ describe('normaliseVisualCardMetric', () => {
   it('coerces an unknown/stale persisted value to the default', () => {
     expect(normaliseVisualCardMetric('turnover')).toBe(DEFAULT_VISUAL_CARD_METRIC);
     expect(normaliseVisualCardMetric('')).toBe(DEFAULT_VISUAL_CARD_METRIC);
+  });
+});
+
+describe('normaliseCardClickAction', () => {
+  it('passes every offered action through unchanged', () => {
+    for (const { value } of CARD_CLICK_ACTION_OPTIONS) {
+      expect(normaliseCardClickAction(value)).toBe(value);
+    }
+  });
+
+  it('defaults to doing nothing until the user opts in', () => {
+    expect(DEFAULT_CARD_CLICK_ACTION).toBe('none');
+  });
+
+  it('coerces an unknown/stale persisted value to the default', () => {
+    expect(normaliseCardClickAction('checkout')).toBe(DEFAULT_CARD_CLICK_ACTION);
+    expect(normaliseCardClickAction('')).toBe(DEFAULT_CARD_CLICK_ACTION);
   });
 });
 

@@ -20,11 +20,14 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  DEFAULT_CARD_CLICK_ACTION,
   DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
+  normaliseCardClickAction,
   normaliseVisualCardMetric,
   normaliseWindowMonths,
+  type CardClickAction,
   type VisualCardMetric,
 } from '@/features/settings/settings';
 import {
@@ -96,6 +99,13 @@ interface PreferencesStore {
    */
   readonly visualCardMetric: VisualCardMetric;
   /**
+   * What a plain click on an item card/row body (outside its buttons) does (spec §3) — open
+   * details, move, show the label, or nothing. A pointer-only shortcut that mirrors one of the
+   * card's own action buttons; defaults to `none` so the card stays inert until opted in. See
+   * {@link CardClickAction}.
+   */
+  readonly cardClickAction: CardClickAction;
+  /**
    * Blanket reorder point: a DISCRETE item is flagged on the §3 "Low Stock" widget at/below
    * this on-hand quantity. **0 = off** — low-stock alerts are opt-in, so at 0 nothing is
    * flagged until an item is given its own reorder point (the friction-free default).
@@ -164,6 +174,7 @@ interface PreferencesStore {
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
+  setCardClickAction: (action: CardClickAction) => void;
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
@@ -196,6 +207,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerBeep: true,
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
+      cardClickAction: DEFAULT_CARD_CLICK_ACTION,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
@@ -226,6 +238,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Normalise so a stale/unknown persisted value can never reach the card renderer.
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
+      // Normalise so a stale/unknown persisted value can never reach the card's click handler.
+      setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
       // Defensive clamping/normalisation so a stale persisted or out-of-range value
       // can never reach the read layer (the controls offer only valid choices).
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
