@@ -118,6 +118,48 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(out).toMatch(/2026/);
     expect(out).toMatch(/Jun/);
   });
+
+  describe('relativeTime (now injected for determinism)', () => {
+    // A fixed reference instant so the chosen unit and phrasing never depend on the clock.
+    const NOW = Date.UTC(2026, 5, 28, 12);
+    const ago = (ms: number) => NOW - ms;
+    const hence = (ms: number) => NOW + ms;
+    const SEC = 1000;
+    const MIN = 60 * SEC;
+    const HOUR = 60 * MIN;
+    const DAY = 24 * HOUR;
+
+    it('reads "now" for the current instant', () => {
+      expect(gb.relativeTime(NOW, NOW)).toBe('now');
+    });
+
+    it('reduces a past instant to the coarsest unit, phrased "… ago"', () => {
+      expect(gb.relativeTime(ago(45 * SEC), NOW)).toBe('45 seconds ago');
+      expect(gb.relativeTime(ago(5 * MIN), NOW)).toBe('5 minutes ago');
+      expect(gb.relativeTime(ago(3 * HOUR), NOW)).toBe('3 hours ago');
+      expect(gb.relativeTime(ago(3 * DAY), NOW)).toBe('3 days ago');
+    });
+
+    it('phrases a future instant as "in …"', () => {
+      expect(gb.relativeTime(hence(2 * HOUR), NOW)).toBe('in 2 hours');
+      expect(gb.relativeTime(hence(3 * DAY), NOW)).toBe('in 3 days');
+    });
+
+    it('uses idiomatic phrasing where the locale has it (numeric: auto)', () => {
+      expect(gb.relativeTime(ago(1 * DAY), NOW)).toBe('yesterday');
+      expect(gb.relativeTime(hence(1 * DAY), NOW)).toBe('tomorrow');
+    });
+
+    it('escalates to weeks/months/years for larger gaps', () => {
+      expect(gb.relativeTime(ago(14 * DAY), NOW)).toBe('2 weeks ago');
+      expect(gb.relativeTime(ago(60 * DAY), NOW)).toBe('2 months ago');
+      expect(gb.relativeTime(ago(400 * DAY), NOW)).toBe('last year');
+    });
+
+    it('returns a dash for a non-finite instant', () => {
+      expect(gb.relativeTime(Number.NaN, NOW)).toBe('—');
+    });
+  });
 });
 
 describe('makeFormatters — locale & currency propagation (§3)', () => {

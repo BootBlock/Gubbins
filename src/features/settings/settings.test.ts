@@ -18,8 +18,11 @@ import {
   guessBaseCurrency,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
+  normaliseVisualCardMetric,
   normaliseWindowMonths,
+  DEFAULT_VISUAL_CARD_METRIC,
   THEME_OPTIONS,
+  VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
 } from './settings';
 import { applyTheme, DARK_CLASS, resolveTheme } from './theme';
@@ -130,6 +133,24 @@ describe('guessBaseCurrency', () => {
   it('falls back to GBP for an unknown/empty locale set', () => {
     expect(guessBaseCurrency([])).toBe('GBP');
     expect(guessBaseCurrency(['xx-zz-not-a-locale'])).toBe('GBP');
+  });
+});
+
+describe('normaliseVisualCardMetric', () => {
+  it('passes every offered metric through unchanged', () => {
+    for (const { value } of VISUAL_CARD_METRIC_OPTIONS) {
+      expect(normaliseVisualCardMetric(value)).toBe(value);
+    }
+  });
+
+  it('accepts the metrics added in this phase', () => {
+    expect(normaliseVisualCardMetric('lastUpdated')).toBe('lastUpdated');
+    expect(normaliseVisualCardMetric('condition')).toBe('condition');
+  });
+
+  it('coerces an unknown/stale persisted value to the default', () => {
+    expect(normaliseVisualCardMetric('turnover')).toBe(DEFAULT_VISUAL_CARD_METRIC);
+    expect(normaliseVisualCardMetric('')).toBe(DEFAULT_VISUAL_CARD_METRIC);
   });
 });
 

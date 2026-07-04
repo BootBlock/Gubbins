@@ -326,7 +326,7 @@ export function SettingsScreen() {
         <SettingsSection icon={<ExpiryIcon />} title="Inventory &amp; lifecycle">
           <SettingRow
             label="Visual card details"
-            description="What each item card highlights in Visual mode. Stock health shows a colour-coded reorder status; Total value shows the item’s stock value (unit cost × quantity). Either way the ± stepper still shows the quantity."
+            description="What each item card highlights in Visual mode. Stock health shows a colour-coded reorder status; Total value shows the item’s stock value (unit cost × quantity); Last updated shows how long ago it changed; Condition shows its tracked state. Either way the ± stepper still shows the quantity."
           >
             <Select
               aria-label="Visual card details"

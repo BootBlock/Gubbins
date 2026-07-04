@@ -73,7 +73,31 @@ export interface Formatters {
   date(ms: number): string;
   /** A UNIX-ms instant as a date *and* time (e.g. `28 Jun 2026, 14:30`). */
   dateTime(ms: number): string;
+  /**
+   * A UNIX-ms instant as a locale-aware *relative* time versus now (e.g. `3 days ago`,
+   * `in 2 hours`, `yesterday`, `now`). The coarsest sensible unit is chosen automatically
+   * (seconds → minutes → … → years); a past instant reads "… ago", a future one "in …".
+   * `—` for a non-finite `ms`. `now` is injectable (defaults to `Date.now()`) so the choice
+   * of unit is deterministic in tests.
+   */
+  relativeTime(ms: number, now?: number): string;
 }
+
+/**
+ * Descending unit cascade for {@link Formatters.relativeTime}: each step's `amount` is how
+ * many of the *current* unit make up the *next* one, so a signed second-count can be reduced
+ * to the coarsest unit whose magnitude is below its own ceiling. `week`'s 4.34524 is the mean
+ * weeks-per-month; the terminal `year` has an infinite ceiling so the loop always resolves.
+ */
+const RELATIVE_DIVISIONS: readonly { amount: number; unit: Intl.RelativeTimeFormatUnit }[] = [
+  { amount: 60, unit: 'second' },
+  { amount: 60, unit: 'minute' },
+  { amount: 24, unit: 'hour' },
+  { amount: 7, unit: 'day' },
+  { amount: 4.34524, unit: 'week' },
+  { amount: 12, unit: 'month' },
+  { amount: Number.POSITIVE_INFINITY, unit: 'year' },
+];
 
 /**
  * Build a {@link Formatters} bundle bound to `locale` and base `currency`. Pure and
@@ -128,6 +152,9 @@ export function makeFormatters(
     dateStyle: 'medium',
     timeStyle: 'short',
   });
+  // `numeric: 'auto'` prefers idiomatic phrasing where the locale has one ("yesterday",
+  // "last week") over the plain "1 … ago", and yields "now" for a zero offset.
+  const relativeTimeFormat = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   // `percent` and `bytes` vary only by `maximumFractionDigits`, so memoise the
   // (heavyweight) `Intl.NumberFormat` per digit-count rather than rebuilding one on
   // every call — these run in list rows (dashboard widgets, ABC breakdown, storage).
@@ -178,6 +205,18 @@ export function makeFormatters(
     },
     dateTime(ms) {
       return dateTimeFormat.format(new Date(ms));
+    },
+    relativeTime(ms, now = Date.now()) {
+      if (!Number.isFinite(ms)) return '—';
+      // Signed seconds from now; reduce through the cascade to the coarsest unit whose
+      // magnitude is still below its ceiling, then let `Intl` phrase it (sign → ago/in).
+      let duration = (ms - now) / 1000;
+      for (const { amount, unit } of RELATIVE_DIVISIONS) {
+        if (Math.abs(duration) < amount) return relativeTimeFormat.format(Math.round(duration), unit);
+        duration /= amount;
+      }
+      // Unreachable — the terminal division's ceiling is Infinity — but keep total.
+      return relativeTimeFormat.format(Math.round(duration), 'year');
     },
   };
 }

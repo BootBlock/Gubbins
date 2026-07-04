@@ -213,12 +213,16 @@ export function clampBudgetWarnPercent(value: number): number {
  * - `stockHealth` — a colour-coded reorder status (In stock / Low stock / Out of
  *   stock), derived from the item's reorder point. The actionable default.
  * - `value` — the item's total stock value (`unitCost × quantity`), via the Money control.
+ * - `lastUpdated` — how long ago the item last changed, as a relative time (e.g. "3 days
+ *   ago"), for spotting stale or freshly-touched stock at a glance.
+ * - `condition` — the item's tracked condition (Mint / Good / …), tinted with its
+ *   condition token, or "Untracked" when the item has no condition set.
  *
  * Gauge / serialised / untracked / unlimited cards are unaffected — their hero already
  * shows meaningful, non-duplicated content — so this preference only swaps the plain
  * discrete card's hero.
  */
-export type VisualCardMetric = 'stockHealth' | 'value';
+export type VisualCardMetric = 'stockHealth' | 'value' | 'lastUpdated' | 'condition';
 
 /** The default Visual-card hero metric — the actionable stock-health status. */
 export const DEFAULT_VISUAL_CARD_METRIC: VisualCardMetric = 'stockHealth';
@@ -227,11 +231,19 @@ export const DEFAULT_VISUAL_CARD_METRIC: VisualCardMetric = 'stockHealth';
 export const VISUAL_CARD_METRIC_OPTIONS = [
   { value: 'stockHealth', label: 'Stock health' },
   { value: 'value', label: 'Total value' },
+  { value: 'lastUpdated', label: 'Last updated' },
+  { value: 'condition', label: 'Condition' },
 ] as const satisfies readonly { value: VisualCardMetric; label: string }[];
 
-/** Coerce an arbitrary persisted value to a valid {@link VisualCardMetric} (default stock health). */
+/**
+ * Coerce an arbitrary persisted value to a valid {@link VisualCardMetric} (default stock
+ * health). Kept total so a stale localStorage value from an older/newer build can never
+ * reach the card's render switch.
+ */
 export function normaliseVisualCardMetric(value: string): VisualCardMetric {
-  return value === 'value' ? 'value' : DEFAULT_VISUAL_CARD_METRIC;
+  return (VISUAL_CARD_METRIC_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
+    ? (value as VisualCardMetric)
+    : DEFAULT_VISUAL_CARD_METRIC;
 }
 
 /**
