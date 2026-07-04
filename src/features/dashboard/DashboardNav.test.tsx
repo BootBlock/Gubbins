@@ -190,6 +190,10 @@ describe('DashboardNav — reorder & pin (backlog B1)', () => {
   it('moves a tile into another group by dropping it on the group’s drop zone', () => {
     render(<DashboardNav />);
     customise();
+    // The drop zone names its group so it's clear what dropping there does.
+    expect(screen.getByTestId('nav-drop-end-manage')).toHaveTextContent(
+      'Drop a tile here to add it to Manage',
+    );
     const dataTransfer = { setData: vi.fn(), getData: () => '/reports', effectAllowed: '' };
     fireEvent.dragStart(screen.getByTestId('nav-tile-/reports'), { dataTransfer });
     fireEvent.drop(screen.getByTestId('nav-drop-end-manage'), { dataTransfer });

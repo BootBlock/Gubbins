@@ -445,10 +445,14 @@ export function DashboardNav() {
                     data-testid={`nav-drop-end-${group}`}
                     aria-hidden
                     className={cn(
-                      'min-h-10 rounded-xl border-2 border-dashed transition-colors',
-                      overKey === `end:${group}` ? 'border-primary/60 bg-primary/5' : 'border-border/60',
+                      'flex min-h-10 items-center justify-center rounded-xl border-2 border-dashed px-3 text-center text-xs font-medium transition-colors',
+                      overKey === `end:${group}`
+                        ? 'border-primary/60 bg-primary/5 text-primary'
+                        : 'border-border/60 text-muted-foreground/60',
                     )}
-                  />
+                  >
+                    Drop a tile here to add it to {GROUP_LABELS[group]}
+                  </div>
                 </li>
               ) : null}
             </ul>
