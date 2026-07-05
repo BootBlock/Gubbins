@@ -32,12 +32,19 @@ describe('InventoryFilterBar', () => {
     return { onToggle, onClear };
   }
 
-  it('shows all four attention chips when every capability is enabled', () => {
+  it('shows every attention chip when all capabilities are enabled', () => {
     renderBar();
-    expect(screen.getByTestId('inventory-filter-low-stock')).toBeInTheDocument();
-    expect(screen.getByTestId('inventory-filter-expiring')).toBeInTheDocument();
-    expect(screen.getByTestId('inventory-filter-overdue')).toBeInTheDocument();
-    expect(screen.getByTestId('inventory-filter-maintenance-due')).toBeInTheDocument();
+    for (const status of [
+      'low-stock',
+      'out-of-stock',
+      'expiring',
+      'warranty',
+      'on-loan',
+      'overdue',
+      'maintenance-due',
+    ]) {
+      expect(screen.getByTestId(`inventory-filter-${status}`)).toBeInTheDocument();
+    }
   });
 
   it('toggles a status when its chip is clicked', () => {
@@ -60,18 +67,26 @@ describe('InventoryFilterBar', () => {
     expect(screen.queryByTestId('inventory-filter-clear')).not.toBeInTheDocument();
   });
 
-  it('drops the Overdue chip when Contacts (the loan facet) is off', () => {
+  it('drops the loan chips (On loan, Overdue) when Contacts is off', () => {
     useModulesStore.getState().setFeatureIntent('contacts', false);
     renderBar();
     expect(screen.queryByTestId('inventory-filter-overdue')).not.toBeInTheDocument();
-    // Low stock is core inventory and stays regardless.
+    expect(screen.queryByTestId('inventory-filter-on-loan')).not.toBeInTheDocument();
+    // Core stock chips stay regardless.
     expect(screen.getByTestId('inventory-filter-low-stock')).toBeInTheDocument();
+    expect(screen.getByTestId('inventory-filter-out-of-stock')).toBeInTheDocument();
   });
 
   it('drops the Maintenance-due chip when Maintenance is off', () => {
     useModulesStore.getState().setFeatureIntent('maintenance', false);
     renderBar();
     expect(screen.queryByTestId('inventory-filter-maintenance-due')).not.toBeInTheDocument();
+  });
+
+  it('drops the Warranty chip when Warranty is off', () => {
+    useModulesStore.getState().setFeatureIntent('warranty', false);
+    renderBar();
+    expect(screen.queryByTestId('inventory-filter-warranty')).not.toBeInTheDocument();
   });
 
   it('disables every chip while the Visual Builder supersedes the quick filters', () => {

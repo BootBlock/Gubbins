@@ -51,6 +51,7 @@ import { useItemFieldValues } from './categories';
 import { locationColorTextClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { InventoryFilterBar } from './components/InventoryFilterBar';
+import { InventoryFacetBar } from './components/InventoryFacetBar';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -91,6 +92,10 @@ function InventoryWorkspace() {
   const [statusFilters, setStatusFilters] = useState<ReadonlySet<ItemStatusFilter>>(
     () => new Set<ItemStatusFilter>(),
   );
+  // Attribute facets (spec §3 filter axis): a single category plus a set of tags. Facets AND
+  // with the status filters, the location scope and search. Session-local like the sidebar.
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [tagIds, setTagIds] = useState<readonly string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   // A retail barcode scanned for an item that doesn't exist yet — seeds the add-item form
   // (recommendation point 1). Cleared when the dialog closes.
@@ -176,16 +181,24 @@ function InventoryWorkspace() {
   }, []);
   const clearStatusFilters = useCallback(() => setStatusFilters(new Set<ItemStatusFilter>()), []);
 
+  const toggleTag = useCallback((tagId: string) => {
+    setTagIds((prev) => (prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]));
+  }, []);
+
   // Emit the selected statuses in the canonical order so the query key is stable regardless
   // of the order chips were toggled (mirrors the server-side ordering in buildStatusFilter).
   const statusList = useMemo(
     () => ITEM_STATUS_FILTERS.filter((status) => statusFilters.has(status)),
     [statusFilters],
   );
+  // Sort the tag ids too so the query key is stable regardless of the order chips were added.
+  const tagIdList = useMemo(() => [...tagIds].sort(), [tagIds]);
 
   const filters: ItemQueryFilters = useMemo(
     () => ({
       ...(selectedLocationId ? { locationId: selectedLocationId } : {}),
+      ...(categoryId ? { categoryId } : {}),
+      ...(tagIdList.length > 0 ? { tagIds: tagIdList } : {}),
       ...(search ? { search } : {}),
       includeInactive,
       ...(statusList.length > 0
@@ -201,6 +214,8 @@ function InventoryWorkspace() {
     }),
     [
       selectedLocationId,
+      categoryId,
+      tagIdList,
       search,
       includeInactive,
       statusList,
@@ -504,6 +519,14 @@ function InventoryWorkspace() {
               disabled={astActive}
             />
 
+            <InventoryFacetBar
+              categoryId={categoryId}
+              onCategoryChange={setCategoryId}
+              tagIds={tagIds}
+              onToggleTag={toggleTag}
+              disabled={astActive}
+            />
+
             <div className="flex items-center justify-between pb-3">
               <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
                 {grouped
@@ -606,6 +629,8 @@ function InventoryWorkspace() {
                     density={density}
                     search={search}
                     includeInactive={includeInactive}
+                    categoryId={filters.categoryId}
+                    tagIds={filters.tagIds}
                     status={filters.status}
                     lowStockThresholds={filters.lowStockThresholds}
                     expirySoonWindowDays={filters.expirySoonWindowDays}

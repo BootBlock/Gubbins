@@ -16,7 +16,7 @@ import type {
   PageParams,
 } from '../types';
 import { THUMBNAIL_SUBQUERY } from './sql';
-import { expiringPredicateSql, lowStockPredicateSql } from './attention-sql';
+import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSql } from './attention-sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -127,11 +127,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // as those expiring within the window (warranty_expires_at <= cutoff date).
       const cutoff = new Date(now + withinDays * MS_PER_DAY).toISOString().slice(0, 10);
       const rows = await this.driver.query<ItemRow>(
+        // The warranty predicate is shared with the inventory list's status filter — see
+        // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
         `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
-         WHERE is_active = 1
-           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
-           AND warranty_expires_at IS NOT NULL
-           AND warranty_expires_at <= ?
+         WHERE is_active = 1 AND ${warrantyExpiringPredicateSql()}
          ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
          LIMIT ? OFFSET ?;`,
         [cutoff, limit, offset],

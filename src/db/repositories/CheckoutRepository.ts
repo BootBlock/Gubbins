@@ -56,6 +56,21 @@ export function overdueCheckoutExistsSql(): string {
   )`;
 }
 
+/**
+ * A correlated `EXISTS` predicate that is true for an item with at least one **open**
+ * checkout — i.e. currently on loan (out with a contact), whether or not it is overdue. The
+ * OPEN status is derived from a null `returned_at`, exactly as {@link CheckoutStatus} is. It
+ * correlates against the outer `items` table by `items.id`, so embed it in a `WHERE` over
+ * `FROM items`. Takes no bound parameters.
+ */
+export function onLoanCheckoutExistsSql(): string {
+  return `EXISTS (
+    SELECT 1 FROM checkouts k
+    WHERE k.item_id = items.id
+      AND k.returned_at IS NULL
+  )`;
+}
+
 export class CheckoutRepository extends BaseRepository {
   private readonly contacts: ContactRepository;
 

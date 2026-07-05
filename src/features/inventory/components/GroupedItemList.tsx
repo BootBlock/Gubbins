@@ -32,6 +32,9 @@ interface SharedSectionProps {
   /** Free-text search applied within each section (empty = no text filter). */
   readonly search: string;
   readonly includeInactive: boolean;
+  /** Attribute facets applied within each section (undefined = none). */
+  readonly categoryId?: string;
+  readonly tagIds?: readonly string[];
   /** Derived-status "attention" filters applied within each section (undefined = none). */
   readonly status?: readonly ItemStatusFilter[];
   readonly lowStockThresholds?: LowStockThresholds;
@@ -191,6 +194,8 @@ function SectionItems({
   density,
   search,
   includeInactive,
+  categoryId,
+  tagIds,
   status,
   lowStockThresholds,
   expirySoonWindowDays,
@@ -210,10 +215,21 @@ function SectionItems({
     () => ({
       locationId,
       includeInactive,
+      ...(categoryId ? { categoryId } : {}),
+      ...(tagIds && tagIds.length > 0 ? { tagIds } : {}),
       ...(search ? { search } : {}),
       ...(status && status.length > 0 ? { status, lowStockThresholds, expirySoonWindowDays } : {}),
     }),
-    [locationId, includeInactive, search, status, lowStockThresholds, expirySoonWindowDays],
+    [
+      locationId,
+      includeInactive,
+      categoryId,
+      tagIds,
+      search,
+      status,
+      lowStockThresholds,
+      expirySoonWindowDays,
+    ],
   );
   const query = useLocationSectionItems(filters);
   const items = useMemo<readonly Item[]>(() => query.data?.pages.flatMap((p) => p.rows) ?? [], [query.data]);

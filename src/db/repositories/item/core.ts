@@ -47,6 +47,11 @@ const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at A
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
   readonly categoryId?: string;
+  /**
+   * Restrict to items carrying **any** of these tag ids (a multi-select facet; OR within the
+   * facet, AND with the other filters). Omitted or empty applies no tag filter.
+   */
+  readonly tagIds?: readonly string[];
   /** Free-text match across name/description/notes/mpn/manufacturer via FTS5 (spec §5). */
   readonly search?: string;
   /** Include soft-deleted items. Defaults to false (active inventory only). */
@@ -443,6 +448,14 @@ function buildListFilter(
   if (filters.categoryId) {
     where.push('category_id = ?');
     params.push(filters.categoryId);
+  }
+  if (filters.tagIds && filters.tagIds.length > 0) {
+    // Tag facet: keep items carrying any of the selected tags (OR within the facet). A
+    // subquery over the `item_tags` edge keeps the row test set-based and index-friendly.
+    where.push(
+      `items.id IN (SELECT item_id FROM item_tags WHERE tag_id IN (${filters.tagIds.map(() => '?').join(', ')}))`,
+    );
+    params.push(...filters.tagIds);
   }
   if (filters.search && filters.search.trim().length > 0) {
     // FTS5 full-text match over the indexed item columns (spec §5, §2.2.1a) —

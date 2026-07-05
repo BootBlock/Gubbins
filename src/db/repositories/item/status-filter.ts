@@ -19,19 +19,29 @@ import {
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
   MS_PER_DAY,
+  WARRANTY_SOON_WINDOW_DAYS,
 } from '../constants';
 import type { LowStockThresholds } from '../types';
-import { overdueCheckoutExistsSql } from '../CheckoutRepository';
+import { onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from '../CheckoutRepository';
 import { maintenanceDueExistsSql } from '../MaintenanceRepository';
-import { expiringPredicateSql, lowStockPredicateSql } from './attention-sql';
+import {
+  expiringPredicateSql,
+  lowStockPredicateSql,
+  outOfStockPredicateSql,
+  warrantyExpiringPredicateSql,
+} from './attention-sql';
 
-/** The four common attention filters, in canonical (stable) order. */
-export type ItemStatusFilter = 'low-stock' | 'expiring' | 'overdue' | 'maintenance-due';
+/** The common attention filters, in canonical (stable) order. */
+export type ItemStatusFilter =
+  'low-stock' | 'out-of-stock' | 'expiring' | 'warranty' | 'on-loan' | 'overdue' | 'maintenance-due';
 
 /** Every status filter, in the order they are OR-combined and displayed. */
 export const ITEM_STATUS_FILTERS: readonly ItemStatusFilter[] = [
   'low-stock',
+  'out-of-stock',
   'expiring',
+  'warranty',
+  'on-loan',
   'overdue',
   'maintenance-due',
 ];
@@ -61,10 +71,19 @@ function predicateFor(status: ItemStatusFilter, ctx: StatusFilterContext): [sql:
       const pct = ctx.lowStockThresholds?.gaugePercent ?? LOW_STOCK_GAUGE_PERCENT;
       return [lowStockPredicateSql(), [qty, qty, pct, pct]];
     }
+    case 'out-of-stock':
+      return [outOfStockPredicateSql(), []];
     case 'expiring': {
       const windowDays = ctx.expirySoonWindowDays ?? EXPIRY_SOON_WINDOW_DAYS;
       return [expiringPredicateSql(), [ctx.now + windowDays * MS_PER_DAY]];
     }
+    case 'warranty': {
+      // `warranty_expires_at` is a TEXT YYYY-MM-DD date, so bind an ISO date-string cutoff.
+      const cutoff = new Date(ctx.now + WARRANTY_SOON_WINDOW_DAYS * MS_PER_DAY).toISOString().slice(0, 10);
+      return [warrantyExpiringPredicateSql(), [cutoff]];
+    }
+    case 'on-loan':
+      return [onLoanCheckoutExistsSql(), []];
     case 'overdue':
       return [overdueCheckoutExistsSql(), [ctx.now]];
     case 'maintenance-due':

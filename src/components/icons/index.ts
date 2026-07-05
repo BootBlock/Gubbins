@@ -131,6 +131,7 @@ export {
   EyeOff as HideIcon,
   Pin as PinIcon,
   TrendingDown as LowStockIcon,
+  PackageX as OutOfStockIcon,
 
   // Capabilities & Visual Search (Phase 5, §4 Weighted Capabilities, §5.1)
   Zap as CapabilityIcon,

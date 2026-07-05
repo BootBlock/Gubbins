@@ -1,6 +1,15 @@
 import type { ComponentType } from 'react';
 import { Button } from '@/components/foundry';
-import { DueDateIcon, ExpiryIcon, FilterIcon, LowStockIcon, MaintenanceIcon } from '@/components/icons';
+import {
+  CheckoutIcon,
+  DueDateIcon,
+  ExpiryIcon,
+  FilterIcon,
+  LowStockIcon,
+  MaintenanceIcon,
+  OutOfStockIcon,
+  WarrantyIcon,
+} from '@/components/icons';
 import { ITEM_STATUS_FILTERS, type ItemStatusFilter } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import type { FeatureId } from '@/features/modules/feature-registry';
@@ -12,10 +21,11 @@ import type { FeatureId } from '@/features/modules/feature-registry';
  * via {@link buildStatusFilter}); the chips are additive to the location scope and search.
  *
  * A chip is only shown when its underlying capability is enabled (Modular UI, §4): Expiring
- * needs `perishables`, Overdue needs `contacts` (the borrow/loan facet), Maintenance due
- * needs `maintenance`. Low stock is core inventory and always available. Each chip is a
- * toggle button (`aria-pressed`) styled with the Foundry {@link Button} variants — the same
- * pattern the header's "Visual search" toggle uses — so it stays on the design tokens.
+ * needs `perishables`, Warranty needs `warranty`, On loan / Overdue need `contacts` (the
+ * borrow/loan facet), Maintenance due needs `maintenance`. Low stock and Out of stock are
+ * core inventory and always available. Each chip is a toggle button (`aria-pressed`) styled
+ * with the Foundry {@link Button} variants — the same pattern the header's "Visual search"
+ * toggle uses — so it stays on the design tokens.
  */
 interface StatusMeta {
   readonly label: string;
@@ -32,11 +42,28 @@ const STATUS_META: Record<ItemStatusFilter, StatusMeta> = {
     icon: LowStockIcon,
     hint: 'Items at or below their reorder point.',
   },
+  'out-of-stock': {
+    label: 'Out of stock',
+    icon: OutOfStockIcon,
+    hint: 'Items that have run down to zero on hand.',
+  },
   expiring: {
     label: 'Expiring',
     icon: ExpiryIcon,
     feature: 'perishables',
     hint: 'Perishables past or nearing their expiry date.',
+  },
+  warranty: {
+    label: 'Warranty',
+    icon: WarrantyIcon,
+    feature: 'warranty',
+    hint: 'Assets whose warranty has expired or expires soon.',
+  },
+  'on-loan': {
+    label: 'On loan',
+    icon: CheckoutIcon,
+    feature: 'contacts',
+    hint: 'Items currently checked out to a contact.',
   },
   overdue: {
     label: 'Overdue',

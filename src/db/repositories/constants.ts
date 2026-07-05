@@ -158,6 +158,14 @@ export type MaintenanceBasis = (typeof MAINTENANCE_BASES)[number];
 export const EXPIRY_SOON_WINDOW_DAYS = 30;
 
 /**
+ * Default window (days) before a `warranty_expires_at` date within which an asset's
+ * warranty is surfaced as "expiring soon" (spec §3 alert centre, §4 asset facet). The
+ * feature-layer `WARRANTY_EXPIRING_SOON_DAYS` re-exports this so the alert centre and the
+ * inventory "Warranty" status filter judge warranty-soon-ness against one shared window.
+ */
+export const WARRANTY_SOON_WINDOW_DAYS = 30;
+
+/**
  * Default "low stock" thresholds for the §3 dashboard "Low Stock Alerts" widget.
  *
  * **Off by default — low-stock alerts are opt-in.** A threshold of `0` means "off":

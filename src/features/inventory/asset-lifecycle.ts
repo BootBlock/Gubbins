@@ -9,8 +9,14 @@
  * `reorder-policy.ts`, `cycle-count.ts`).
  */
 
-/** Days before warranty expiry at which status changes from `active` to `expiring-soon`. */
-export const WARRANTY_EXPIRING_SOON_DAYS = 30;
+import { WARRANTY_SOON_WINDOW_DAYS } from '@/db/repositories/constants';
+
+/**
+ * Days before warranty expiry at which status changes from `active` to `expiring-soon`.
+ * Aliases the db-layer {@link WARRANTY_SOON_WINDOW_DAYS} so the alert centre, the
+ * `listWarrantyExpiring` feed and the inventory "Warranty" status filter share one window.
+ */
+export const WARRANTY_EXPIRING_SOON_DAYS = WARRANTY_SOON_WINDOW_DAYS;
 
 /** Warranty status values from narrowest to widest concern. */
 export type WarrantyStatus = 'active' | 'expiring-soon' | 'expired' | 'none';

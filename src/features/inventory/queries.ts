@@ -30,6 +30,7 @@ export type ItemQueryFilters = Pick<
   ItemListFilters,
   | 'locationId'
   | 'categoryId'
+  | 'tagIds'
   | 'search'
   | 'includeInactive'
   | 'status'
