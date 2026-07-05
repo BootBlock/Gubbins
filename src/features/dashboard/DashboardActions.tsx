@@ -8,12 +8,15 @@
  * The Add/Scan buttons are `Link`s with an onClick that records a one-shot intent
  * ({@link useInventoryEntry}); the Inventory screen consumes it and opens the matching
  * dialog. Using `Link` (not an imperative navigate) keeps this renderable without a
- * router-navigate dependency.
+ * router-navigate dependency. Add item is a **split button**: its primary half adds an
+ * item, and the attached chevron opens a menu whose `Import…` row navigates to Inventory
+ * with the `import` intent (opening the Import dialog on arrival) — reusing the very same
+ * Link+intent pattern via {@link MenuLink}'s `onSelect`.
  */
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { buttonVariants } from '@/components/foundry';
-import { AddIcon, ScanIcon } from '@/components/icons';
+import { buttonVariants, Menu, MenuLink } from '@/components/foundry';
+import { AddIcon, ScanIcon, ChevronDownIcon, ImportIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useFeature } from '@/features/modules/useFeature';
@@ -35,15 +38,37 @@ export function DashboardActions() {
 
       {showQuickActions ? (
         <>
-          <Link
-            to="/inventory"
-            onClick={() => useInventoryEntry.getState().requestIntent('add')}
-            className={cn(buttonVariants({ variant: 'primary' }))}
-            data-testid="dashboard-add-item"
-          >
-            <AddIcon />
-            Add item
-          </Link>
+          {/* Split button: the primary half adds an item; the attached chevron opens a
+              menu of related create actions (currently Import…). Both halves share one
+              rounded pill — the primary rounds only its left edge, the trigger only its
+              right, joined by a subtle divider in the primary's own foreground token. */}
+          <div className="inline-flex items-stretch">
+            <Link
+              to="/inventory"
+              onClick={() => useInventoryEntry.getState().requestIntent('add')}
+              className={cn(buttonVariants({ variant: 'primary' }), 'rounded-r-none')}
+              data-testid="dashboard-add-item"
+            >
+              <AddIcon />
+              Add item
+            </Link>
+            <Menu
+              label="More add-item actions"
+              triggerVariant="primary"
+              triggerClassName="rounded-l-none border-l border-primary-foreground/25 px-2 shadow-lg shadow-primary/20"
+              trigger={<ChevronDownIcon />}
+              triggerProps={{ 'data-testid': 'dashboard-add-menu' }}
+            >
+              <MenuLink
+                to="/inventory"
+                icon={<ImportIcon />}
+                onSelect={() => useInventoryEntry.getState().requestIntent('import')}
+                data-testid="dashboard-import"
+              >
+                Import…
+              </MenuLink>
+            </Menu>
+          </div>
           {scannerEnabled ? (
             <Link
               to="/inventory"

@@ -244,11 +244,17 @@ export interface MenuLinkProps {
   readonly current?: boolean;
   /** Optional trailing adornment (e.g. a count badge). */
   readonly trailing?: ReactNode;
+  /**
+   * Optional side-effect fired on activation, before the menu closes — for a
+   * navigation row that must also record intent (e.g. seeding a one-shot request the
+   * destination screen consumes on arrival). Navigation still happens via the `Link`.
+   */
+  readonly onSelect?: () => void;
   readonly 'data-testid'?: string;
 }
 
 /** A router-link menu row. Closes the menu on activation. */
-export function MenuLink({ to, icon, children, current, trailing, ...rest }: MenuLinkProps) {
+export function MenuLink({ to, icon, children, current, trailing, onSelect, ...rest }: MenuLinkProps) {
   const ctx = useContext(MenuContext);
   return (
     <Link
@@ -257,7 +263,10 @@ export function MenuLink({ to, icon, children, current, trailing, ...rest }: Men
       tabIndex={-1}
       aria-current={current ? 'page' : undefined}
       className={MENU_ITEM_CLASS}
-      onClick={() => ctx?.close()}
+      onClick={() => {
+        onSelect?.();
+        ctx?.close();
+      }}
       {...rest}
     >
       {icon}
