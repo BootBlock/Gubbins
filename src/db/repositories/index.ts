@@ -59,11 +59,13 @@ export {
 export type { Tombstone, SyncTable } from './tombstone';
 export type {
   ItemListFilters,
+  ItemStatusFilter,
   SearchByAstParams,
   LocationStockLine,
   ItemBatchPlacement,
   LocationBatchLine,
 } from './ItemRepository';
+export { ITEM_STATUS_FILTERS, isItemStatusFilter } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
 export type { RepositoryOptions } from './base';

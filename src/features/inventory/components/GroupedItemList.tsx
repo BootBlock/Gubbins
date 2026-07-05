@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/foundry';
 import { ChevronRightIcon, PackageIcon } from '@/components/icons';
-import type { Item, LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import type {
+  Item,
+  ItemStatusFilter,
+  LocationTreeNode,
+  LocationWithCount,
+  LowStockThresholds,
+} from '@/db/repositories';
 import type { LayoutDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
 import { useItemFieldValues } from '../categories';
@@ -26,6 +32,10 @@ interface SharedSectionProps {
   /** Free-text search applied within each section (empty = no text filter). */
   readonly search: string;
   readonly includeInactive: boolean;
+  /** Derived-status "attention" filters applied within each section (undefined = none). */
+  readonly status?: readonly ItemStatusFilter[];
+  readonly lowStockThresholds?: LowStockThresholds;
+  readonly expirySoonWindowDays?: number;
   readonly locations: readonly LocationWithCount[];
   readonly locationName: (id: string) => string;
   readonly locationColorClass?: (id: string) => string | undefined;
@@ -181,6 +191,9 @@ function SectionItems({
   density,
   search,
   includeInactive,
+  status,
+  lowStockThresholds,
+  expirySoonWindowDays,
   locations,
   locationName,
   locationColorClass,
@@ -194,8 +207,13 @@ function SectionItems({
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const filters = useMemo(
-    () => ({ locationId, includeInactive, ...(search ? { search } : {}) }),
-    [locationId, includeInactive, search],
+    () => ({
+      locationId,
+      includeInactive,
+      ...(search ? { search } : {}),
+      ...(status && status.length > 0 ? { status, lowStockThresholds, expirySoonWindowDays } : {}),
+    }),
+    [locationId, includeInactive, search, status, lowStockThresholds, expirySoonWindowDays],
   );
   const query = useLocationSectionItems(filters);
   const items = useMemo<readonly Item[]>(() => query.data?.pages.flatMap((p) => p.rows) ?? [], [query.data]);

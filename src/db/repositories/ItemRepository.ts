@@ -24,6 +24,12 @@ import { withDashboardFeeds } from './item/feeds';
 import { withCycleCount } from './item/cycle-count';
 
 export type { ItemListFilters } from './item/core';
+export {
+  ITEM_STATUS_FILTERS,
+  isItemStatusFilter,
+  buildStatusFilter,
+  type ItemStatusFilter,
+} from './item/status-filter';
 export type { SearchByAstParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
 

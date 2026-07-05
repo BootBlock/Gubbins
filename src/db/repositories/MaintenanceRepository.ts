@@ -61,6 +61,27 @@ const AUTO_USAGE_HOURS = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN (
  */
 const EFFECTIVE_USAGE = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN ${AUTO_USAGE_HOURS} ELSE ms.usage_since_service END)`;
 
+/**
+ * A correlated `EXISTS` predicate that is true for an item with at least one currently
+ * due/overdue maintenance schedule — the same "due-ness" {@link MaintenanceRepository.listDue}
+ * computes, reused so the inventory list's "Maintenance due" status filter can never drift
+ * from the dashboard feed. It correlates against the outer `items` table by `items.id`, so
+ * embed it in a `WHERE` over `FROM items`.
+ *
+ * Binds `now` (UNIX-ms) **twice**, in order: first the TIME cutoff, then the USAGE-accrual
+ * window inside {@link AUTO_USAGE_HOURS}.
+ */
+export function maintenanceDueExistsSql(): string {
+  return `EXISTS (
+    SELECT 1 FROM maintenance_schedules ms
+    WHERE ms.item_id = items.id
+      AND (
+        (ms.basis = 'TIME'  AND ${TIME_DUE_AT} <= ?)
+        OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage)
+      )
+  )`;
+}
+
 export class MaintenanceRepository extends BaseRepository {
   /** All schedules for an item, oldest first (stable display order). */
   async listForItem(itemId: string, now: number = Date.now()): Promise<MaintenanceSchedule[]> {

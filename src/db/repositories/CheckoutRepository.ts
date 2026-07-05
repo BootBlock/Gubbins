@@ -37,6 +37,25 @@ interface CheckoutJoinRow extends CheckoutRow {
   readonly contact_name: string;
 }
 
+/**
+ * A correlated `EXISTS` predicate that is true for an item with at least one **open**
+ * checkout whose due date has passed — the SQL counterpart of the derived `isOverdue` flag
+ * on {@link CheckoutWithNames} (`OPEN && dueDate !== null && dueDate < now`). Shared so the
+ * inventory list's "Overdue" status filter reuses the same definition. It correlates against
+ * the outer `items` table by `items.id`, so embed it in a `WHERE` over `FROM items`.
+ *
+ * Binds `now` (UNIX-ms) **once**.
+ */
+export function overdueCheckoutExistsSql(): string {
+  return `EXISTS (
+    SELECT 1 FROM checkouts k
+    WHERE k.item_id = items.id
+      AND k.returned_at IS NULL
+      AND k.due_date IS NOT NULL
+      AND k.due_date < ?
+  )`;
+}
+
 export class CheckoutRepository extends BaseRepository {
   private readonly contacts: ContactRepository;
 

@@ -23,8 +23,9 @@ import { Menu, MenuAction, MenuSeparator, PageContainer, PageHeader, Tooltip } f
 import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
-import { type Item } from '@/db/repositories';
+import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
@@ -49,6 +50,7 @@ import type { CardFieldsListContext } from './components/card-fields-render';
 import { useItemFieldValues } from './categories';
 import { locationColorTextClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
+import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -84,6 +86,11 @@ function InventoryWorkspace() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
+  // The active §3/§4 "attention" status filters (low stock / expiring / overdue / maintenance
+  // due). Additive to the location scope + search; OR-combined server-side. Session-local.
+  const [statusFilters, setStatusFilters] = useState<ReadonlySet<ItemStatusFilter>>(
+    () => new Set<ItemStatusFilter>(),
+  );
   const [addOpen, setAddOpen] = useState(false);
   // A retail barcode scanned for an item that doesn't exist yet — seeds the add-item form
   // (recommendation point 1). Cleared when the dialog closes.
@@ -132,6 +139,7 @@ function InventoryWorkspace() {
   // mounting fresh from the navigation or is already on screen.
   const pendingSearch = useInventoryEntry((s) => s.pendingSearch);
   const pendingIntent = useInventoryEntry((s) => s.pendingIntent);
+  const pendingLocationId = useInventoryEntry((s) => s.pendingLocationId);
   useEffect(() => {
     if (pendingSearch === null) return;
     setSearchInput(pendingSearch);
@@ -145,14 +153,61 @@ function InventoryWorkspace() {
     else if (pendingIntent === 'import') setImportOpen(true);
     useInventoryEntry.getState().clearIntent();
   }, [pendingIntent]);
+  useEffect(() => {
+    if (pendingLocationId === null) return;
+    setSelectedLocationId(pendingLocationId);
+    useInventoryEntry.getState().clearLocation();
+  }, [pendingLocationId]);
+
+  // The low-stock / expiring thresholds the status filters judge against are the same
+  // user-tuned preferences the dashboard widgets and alert centre use (Phase 46), so the
+  // "Low stock"/"Expiring" chips flag exactly what those surfaces do.
+  const lowStockQtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
+  const lowStockGaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
+  const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
+
+  const toggleStatusFilter = useCallback((status: ItemStatusFilter) => {
+    setStatusFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  }, []);
+  const clearStatusFilters = useCallback(() => setStatusFilters(new Set<ItemStatusFilter>()), []);
+
+  // Emit the selected statuses in the canonical order so the query key is stable regardless
+  // of the order chips were toggled (mirrors the server-side ordering in buildStatusFilter).
+  const statusList = useMemo(
+    () => ITEM_STATUS_FILTERS.filter((status) => statusFilters.has(status)),
+    [statusFilters],
+  );
 
   const filters: ItemQueryFilters = useMemo(
     () => ({
       ...(selectedLocationId ? { locationId: selectedLocationId } : {}),
       ...(search ? { search } : {}),
       includeInactive,
+      ...(statusList.length > 0
+        ? {
+            status: statusList,
+            lowStockThresholds: {
+              qtyThreshold: lowStockQtyThreshold,
+              gaugePercent: lowStockGaugePercent,
+            },
+            expirySoonWindowDays,
+          }
+        : {}),
     }),
-    [selectedLocationId, search, includeInactive],
+    [
+      selectedLocationId,
+      search,
+      includeInactive,
+      statusList,
+      lowStockQtyThreshold,
+      lowStockGaugePercent,
+      expirySoonWindowDays,
+    ],
   );
 
   const tree = useLocationTree();
@@ -442,6 +497,13 @@ function InventoryWorkspace() {
             tabIndex={-1}
             className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
           >
+            <InventoryFilterBar
+              value={statusFilters}
+              onToggle={toggleStatusFilter}
+              onClear={clearStatusFilters}
+              disabled={astActive}
+            />
+
             <div className="flex items-center justify-between pb-3">
               <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
                 {grouped
@@ -544,6 +606,9 @@ function InventoryWorkspace() {
                     density={density}
                     search={search}
                     includeInactive={includeInactive}
+                    status={filters.status}
+                    lowStockThresholds={filters.lowStockThresholds}
+                    expirySoonWindowDays={filters.expirySoonWindowDays}
                     locations={flatLocations}
                     locationName={locationName}
                     locationColorClass={locationColorClass}

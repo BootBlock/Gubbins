@@ -38,6 +38,8 @@ import {
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
 import { itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
+import { buildStatusFilter, type ItemStatusFilter } from './status-filter';
+import type { LowStockThresholds } from '../types';
 
 /** The default ordering for a list read when the caller requests no explicit sort. */
 const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at ASC';
@@ -51,6 +53,22 @@ export interface ItemListFilters extends PageParams {
   readonly includeInactive?: boolean;
   /** Explicit sort (whitelisted fields); omit to keep the default name/serial/created order. */
   readonly sort?: readonly ItemSort[];
+  /**
+   * Derived-status "attention" filters — low stock / expiring / overdue / maintenance due
+   * (spec §3, §4). Multiple statuses are OR-combined (any concern matches). Omitted or empty
+   * applies no status filtering. See {@link buildStatusFilter}.
+   */
+  readonly status?: readonly ItemStatusFilter[];
+  /** Global low-stock fallback floors for the `'low-stock'` status; defaults to off (0). */
+  readonly lowStockThresholds?: LowStockThresholds;
+  /** Window (days) for the `'expiring'` status; defaults to the built-in soon-window. */
+  readonly expirySoonWindowDays?: number;
+  /**
+   * Injected clock (UNIX-ms) for the time-based statuses (expiring / overdue / maintenance).
+   * Omit outside tests — `list`/`count` stamp `Date.now()` at query time so the cutoff is
+   * evaluated when the read runs, keeping `now` out of the query cache key.
+   */
+  readonly now?: number;
 }
 
 export class ItemCoreRepository extends BaseRepository {
@@ -85,7 +103,9 @@ export class ItemCoreRepository extends BaseRepository {
   /** A paginated, filtered list of items (spec §2.1). */
   async list(filters: ItemListFilters = {}): Promise<Page<Item>> {
     const { limit, offset } = this.resolvePage(filters);
-    const [clause, params] = buildListFilter(filters);
+    // Stamp the clock at query time so the time-based status filters (expiring / overdue /
+    // maintenance) evaluate against "now" when the read runs, keeping `now` out of the key.
+    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? Date.now() });
     params.push(limit, offset);
     const order = itemOrderByClause(filters.sort) ?? DEFAULT_ITEM_ORDER;
     const rows = await this.driver.query<ItemRow>(
@@ -99,7 +119,7 @@ export class ItemCoreRepository extends BaseRepository {
 
   /** Count items matching a filter (for pagination headers / dashboard widgets). */
   async count(filters: Omit<ItemListFilters, 'limit' | 'offset'> = {}): Promise<number> {
-    const [clause, params] = buildListFilter(filters);
+    const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? Date.now() });
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT COUNT(*) AS n FROM items ${clause};`,
       params,
@@ -431,6 +451,20 @@ function buildListFilter(
     if (match !== null) {
       where.push('items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)');
       params.push(match);
+    }
+  }
+  if (filters.status && filters.status.length > 0) {
+    // Derived-status "attention" filters (low stock / expiring / overdue / maintenance due):
+    // an OR-combined group AND-ed alongside the other filters. `now` is stamped by the
+    // caller (`list`/`count`); the predicate SQL is each concept's SSOT (see status-filter.ts).
+    const [statusClause, statusParams] = buildStatusFilter(filters.status, {
+      now: filters.now ?? Date.now(),
+      lowStockThresholds: filters.lowStockThresholds,
+      expirySoonWindowDays: filters.expirySoonWindowDays,
+    });
+    if (statusClause) {
+      where.push(statusClause);
+      params.push(...statusParams);
     }
   }
 

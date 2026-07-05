@@ -16,6 +16,7 @@ import type {
   PageParams,
 } from '../types';
 import { THUMBNAIL_SUBQUERY } from './sql';
+import { expiringPredicateSql, lowStockPredicateSql } from './attention-sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -39,8 +40,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     async listExpiring(before: number, params: PageParams = {}): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
       const rows = await this.driver.query<ItemRow>(
+        // The expiry predicate is shared with the inventory list's status filter — see
+        // `attention-sql.ts` — so the widget feed and the filter can never diverge.
         `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
-         WHERE is_active = 1 AND expiry_date IS NOT NULL AND expiry_date <= ?
+         WHERE is_active = 1 AND ${expiringPredicateSql()}
          ORDER BY expiry_date ASC LIMIT ? OFFSET ?;`,
         [before, limit, offset],
       );
@@ -85,22 +88,13 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const pct = thresholds.gaugePercent ?? LOW_STOCK_GAUGE_PERCENT;
       const { limit, offset } = this.resolvePage(params);
       const rows = await this.driver.query<ItemRow>(
-        // `COALESCE(reorder_point, :qty)` resolves each row's effective floor; the
-        // `> 0` guard makes a 0 floor mean "off" (opt-in). The qty ordering divides by
-        // `MAX(effectiveFloor, 1)` to avoid a divide-by-zero (belt-and-braces — a 0-floor
-        // row is already excluded by the guard, so ordering never sees it).
+        // The low-stock predicate is shared with the inventory list's status filter — see
+        // `attention-sql.ts` (`COALESCE(reorder_point, :qty)` resolves each row's effective
+        // floor; the `> 0` guard makes a 0 floor mean "off"/opt-in). The qty ordering below
+        // divides by `MAX(effectiveFloor, 1)` to avoid a divide-by-zero (belt-and-braces —
+        // a 0-floor row is already excluded by the predicate, so ordering never sees it).
         `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items
-         WHERE is_active = 1
-           AND is_unlimited = 0
-           AND id NOT IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)
-           AND (
-             (tracking_mode = 'DISCRETE'
-                AND COALESCE(reorder_point, ?) > 0
-                AND quantity <= COALESCE(reorder_point, ?))
-             OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0
-                 AND COALESCE(reorder_gauge_percent, ?) > 0
-                 AND current_net_value <= gross_capacity * COALESCE(reorder_gauge_percent, ?) / 100.0)
-           )
+         WHERE is_active = 1 AND ${lowStockPredicateSql()}
          ORDER BY
            CASE WHEN tracking_mode = 'CONSUMABLE_GAUGE' THEN current_net_value / gross_capacity
                 ELSE CAST(quantity AS REAL) / MAX(COALESCE(reorder_point, ?), 1) END ASC,

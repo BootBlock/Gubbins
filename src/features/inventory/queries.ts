@@ -19,10 +19,22 @@ import {
 } from '@/db/repositories';
 import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
 
-/** Stable filter slice used both as a query-key segment and the repository arg. */
+/**
+ * Stable filter slice used both as a query-key segment and the repository arg.
+ *
+ * The status-filter tuning fields (`status` / `lowStockThresholds` / `expirySoonWindowDays`)
+ * are stable plain data, so they key the cache correctly; the live `now` is deliberately
+ * *not* part of this slice — the repository stamps it at query time (see `list`/`count`).
+ */
 export type ItemQueryFilters = Pick<
   ItemListFilters,
-  'locationId' | 'categoryId' | 'search' | 'includeInactive'
+  | 'locationId'
+  | 'categoryId'
+  | 'search'
+  | 'includeInactive'
+  | 'status'
+  | 'lowStockThresholds'
+  | 'expirySoonWindowDays'
 >;
 
 export const inventoryKeys = {
