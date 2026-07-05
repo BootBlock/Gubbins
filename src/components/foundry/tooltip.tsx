@@ -20,11 +20,16 @@ import { useReducedMotion } from './useReducedMotion';
  * attribute everywhere in the app. Feature code imports this from the Foundry, not
  * a third-party tooltip library.
  *
- * Behaviour: opens on hover after a short delay (so it never flashes up the instant
- * the pointer crosses a trigger), and immediately on keyboard focus or touch tap;
- * stays open while the pointer is over the bubble (so Markdown links are reachable);
- * closes on Escape, blur, or pointer-leave. It is portaled to <body> and positioned
- * with viewport clamping so it is never clipped by an overflow container.
+ * Behaviour: opens on **mouse** hover after a short delay (so it never flashes up the
+ * instant the pointer crosses a trigger) and immediately on keyboard focus; stays open
+ * while the pointer is over the bubble (so Markdown links are reachable); closes on
+ * Escape, blur, or pointer-leave. It is portaled to <body> and positioned with viewport
+ * clamping so it is never clipped by an overflow container.
+ *
+ * Touch has no hover, so hover-open is suppressed for touch/pen (a synthesised
+ * `mouseenter` after a tap must never pop a bubble over the control the finger just
+ * pressed). A tap opens the tooltip only on a *passive* trigger whose sole purpose is
+ * the help — see {@link TooltipProps.openOnTap}.
  */
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -72,6 +77,19 @@ export interface TooltipProps {
    * the control and the user expects the help almost immediately.
    */
   readonly openDelayMs?: number;
+  /**
+   * Whether a **touch tap** on the trigger opens the tooltip. Touch has no hover, so a tap
+   * is the only gesture available — but on a trigger that *wraps its own interactive control*
+   * (a button, toggle, link…), popping the bubble on tap covers that control and swallows the
+   * tap, so the control never fires. That is the wrong behaviour for the common case.
+   *
+   * Left undefined (the default), this is **auto-detected**: a trigger that contains an
+   * interactive descendant is treated as a control wrapper (tap flows through to the control,
+   * tooltip stays shut on touch), while a *passive* trigger — an `i` badge or a status pill
+   * whose sole purpose is the tooltip — toggles open on tap so its help is reachable on touch.
+   * Pass an explicit `true`/`false` only to override that detection for an unusual trigger.
+   */
+  readonly openOnTap?: boolean;
 }
 
 const GAP = 8;
@@ -95,6 +113,14 @@ export const INFO_OPEN_DELAY_MS = 300;
  */
 export const NAV_OPEN_DELAY_MS = 1500;
 const CLOSE_DELAY_MS = 120;
+/**
+ * Elements that count as the trigger "wrapping its own interactive control" for touch-tap
+ * auto-detection (see {@link TooltipProps.openOnTap}). When a trigger contains one of these,
+ * a tap belongs to that control, so the tooltip must not toggle open and cover it. A passive
+ * trigger — an `i` badge or a status pill with none of these — toggles open on tap instead.
+ */
+const INTERACTIVE_TRIGGER_SELECTOR =
+  'a[href], button, input, select, textarea, [role="button"], [role="radio"], [role="checkbox"], [role="switch"], [role="menuitem"], [role="tab"], [contenteditable="true"]';
 /**
  * Height (px) of the soft fade drawn at a *scrollable* edge of the content region, so it is
  * visually obvious there is more to scroll. On a translucent glass panel a shadow overlay
@@ -128,6 +154,7 @@ export function Tooltip({
   size = 'sm',
   triggerTabIndex = 0,
   openDelayMs = DEFAULT_OPEN_DELAY_MS,
+  openOnTap,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
@@ -280,19 +307,48 @@ export function Tooltip({
     };
   }, [open]);
 
-  // Touch/pen: there is no hover, so tapping the trigger toggles the tooltip.
-  // Mouse taps are ignored here — hover already governs them. Either way, flag that
-  // the focus about to fire was pointer-initiated so `onFocus` doesn't also open.
-  const onPointerDown = useCallback((e: ReactPointerEvent) => {
-    pointerInitiatedFocus.current = true;
-    // The focus event fires synchronously right after this; clear the flag once it
-    // (and any same-tick re-focus) has passed, so a later keyboard focus still opens.
-    setTimeout(() => {
-      pointerInitiatedFocus.current = false;
-    }, 0);
-    if (e.pointerType === 'mouse') return;
-    setOpen((prev) => !prev);
-  }, []);
+  // Mouse hover governs open/close for a pointer that can hover. Touch and pen are
+  // deliberately excluded: they have no true hover, and the browser synthesises a
+  // `pointerenter`/`mouseenter` on a tap — acting on that would pop the bubble over the
+  // control the finger just pressed (the reported touch bug). Tap handling lives in
+  // `onPointerDown` instead.
+  const onPointerEnter = useCallback(
+    (e: ReactPointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      openWithDelay();
+    },
+    [openWithDelay],
+  );
+  const onPointerLeave = useCallback(
+    (e: ReactPointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      scheduleClose();
+    },
+    [scheduleClose],
+  );
+
+  // Touch/pen: there is no hover, so a tap is the only way to reach the help. But a tap on a
+  // trigger that wraps its own interactive control belongs to that control — opening the
+  // bubble would cover it and swallow the tap — so only a *passive* trigger (an `i` badge, a
+  // status pill) toggles on tap. `openOnTap` overrides this per-trigger; when unset it is
+  // auto-detected from whether the trigger contains an interactive descendant. Mouse taps are
+  // ignored here (hover governs them). Either way, flag that the focus about to fire was
+  // pointer-initiated so `onFocus` doesn't also open.
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent) => {
+      pointerInitiatedFocus.current = true;
+      // The focus event fires synchronously right after this; clear the flag once it
+      // (and any same-tick re-focus) has passed, so a later keyboard focus still opens.
+      setTimeout(() => {
+        pointerInitiatedFocus.current = false;
+      }, 0);
+      if (e.pointerType === 'mouse') return;
+      const tapOpens = openOnTap ?? triggerRef.current?.querySelector(INTERACTIVE_TRIGGER_SELECTOR) == null;
+      if (!tapOpens) return;
+      setOpen((prev) => !prev);
+    },
+    [openOnTap],
+  );
 
   // Open on focus **only when it came from the keyboard**. A focus triggered by a
   // pointer press is skipped: hover (mouse) or the tap-toggle (touch) already governs
@@ -309,8 +365,8 @@ export function Tooltip({
         ref={triggerRef}
         tabIndex={triggerTabIndex}
         aria-describedby={open ? id : undefined}
-        onMouseEnter={openWithDelay}
-        onMouseLeave={scheduleClose}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
         onFocus={onFocus}
         onBlur={scheduleClose}
         onPointerDown={onPointerDown}
@@ -325,8 +381,12 @@ export function Tooltip({
               ref={tooltipRef}
               role="tooltip"
               id={id}
-              onMouseEnter={show}
-              onMouseLeave={scheduleClose}
+              onPointerEnter={(e) => {
+                if (e.pointerType === 'mouse') show();
+              }}
+              onPointerLeave={(e) => {
+                if (e.pointerType === 'mouse') scheduleClose();
+              }}
               style={{
                 position: 'fixed',
                 top: coords?.top ?? 0,

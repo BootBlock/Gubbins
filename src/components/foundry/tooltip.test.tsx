@@ -4,6 +4,14 @@ import { Tooltip } from './tooltip';
 
 afterEach(cleanup);
 
+/** A mouse hover enter — the only pointer type that opens the tooltip on dwell. */
+function mouseEnter(el: Element) {
+  fireEvent.pointerEnter(el, { pointerType: 'mouse' });
+}
+function mouseLeave(el: Element) {
+  fireEvent.pointerLeave(el, { pointerType: 'mouse' });
+}
+
 describe('Tooltip', () => {
   it('is hidden until hovered, then shows rendered markdown after the open delay', async () => {
     render(
@@ -13,7 +21,7 @@ describe('Tooltip', () => {
     );
     expect(screen.queryByRole('tooltip')).toBeNull();
 
-    fireEvent.mouseEnter(screen.getByText('info'));
+    mouseEnter(screen.getByText('info'));
     // Hover open is delayed, so it must not appear synchronously on enter.
     expect(screen.queryByRole('tooltip')).toBeNull();
 
@@ -29,8 +37,8 @@ describe('Tooltip', () => {
       </Tooltip>,
     );
     const trigger = screen.getByText('info');
-    fireEvent.mouseEnter(trigger);
-    fireEvent.mouseLeave(trigger);
+    mouseEnter(trigger);
+    mouseLeave(trigger);
 
     // Wait past the open delay; the cancelled timer must not have opened it.
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -129,9 +137,62 @@ describe('Tooltip', () => {
         <span>x</span>
       </Tooltip>,
     );
-    fireEvent.mouseEnter(screen.getByText('x'));
+    mouseEnter(screen.getByText('x'));
     await screen.findByRole('tooltip', {}, { timeout: 2000 });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+
+  it('does not open on a synthesised touch pointer-enter (no sticky-hover bubble)', async () => {
+    render(
+      <Tooltip content="Should never appear on touch hover.">
+        <span>info</span>
+      </Tooltip>,
+    );
+    // A tap on touch synthesises pointerenter; it must not schedule the hover open, else
+    // the bubble pops up over the control the finger just pressed.
+    fireEvent.pointerEnter(screen.getByText('info'), { pointerType: 'touch' });
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('lets a touch tap flow through a control-wrapping trigger without opening the bubble', () => {
+    let clicks = 0;
+    render(
+      <Tooltip content="Supplementary help for a real control.">
+        <button type="button" onClick={() => (clicks += 1)}>
+          Toggle
+        </button>
+      </Tooltip>,
+    );
+    const button = screen.getByRole('button', { name: 'Toggle' });
+    // A tap on a trigger that wraps its own <button> belongs to the button: the tooltip must
+    // stay shut so it can't cover the control and swallow the tap.
+    fireEvent.pointerDown(button, { pointerType: 'touch' });
+    fireEvent.click(button);
+    expect(clicks).toBe(1);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('opens on a touch tap of a passive help badge (its only route to the help)', async () => {
+    render(
+      <Tooltip content="What this pill means.">
+        <span>badge</span>
+      </Tooltip>,
+    );
+    // A passive trigger with no interactive descendant is a help affordance; tapping it is
+    // the only way to reach its tooltip on a touch device, so it toggles open.
+    fireEvent.pointerDown(screen.getByText('badge'), { pointerType: 'touch' });
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument();
+  });
+
+  it('honours an explicit openOnTap=false even on a passive trigger', () => {
+    render(
+      <Tooltip content="Never on tap." openOnTap={false}>
+        <span>badge</span>
+      </Tooltip>,
+    );
+    fireEvent.pointerDown(screen.getByText('badge'), { pointerType: 'touch' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });
