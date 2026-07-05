@@ -8,6 +8,7 @@ import {
   CategoryIcon,
   CloseIcon,
   CycleCountIcon,
+  DataDensityIcon,
   DuplicateTabIcon,
   EditIcon,
   ExportIcon,
@@ -19,6 +20,7 @@ import {
   ScanIcon,
   SearchIcon,
   SelectIcon,
+  VisualDensityIcon,
 } from '@/components/icons';
 import {
   Menu,
@@ -33,7 +35,7 @@ import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
-import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
@@ -50,8 +52,7 @@ import {
 import { requestHighlight } from '@/lib/highlight';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
-import { LayoutToggle } from './components/LayoutToggle';
-import { GroupByControl } from './components/GroupByControl';
+import { GROUP_MODES } from './grouping';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { GroupedItemList } from './components/GroupedItemList';
@@ -73,6 +74,18 @@ import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
 /**
+ * The "View" rows in the inventory "More" menu — the Data-Heavy ↔ Visual-Heavy
+ * density axis (how each item is *drawn*; orthogonal to {@link GROUP_MODES}, which
+ * governs how items are *arranged*). Only two fixed values, so unlike `GROUP_MODES`
+ * this isn't designed to grow — kept as a plain local array rather than a shared SSOT.
+ */
+const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof VisualDensityIcon }> =
+  [
+    { value: 'visual', label: 'Visual', icon: VisualDensityIcon },
+    { value: 'data', label: 'Data', icon: DataDensityIcon },
+  ];
+
+/**
  * The inventory workspace (spec §5): location sidebar, a search/filter header with
  * the Data-Heavy ↔ Visual-Heavy toggle, the Phase 5 **Visual Builder** panel for
  * complex graphical queries, and the virtualised item list. The ephemeral search
@@ -88,7 +101,9 @@ export function InventoryScreen() {
 
 function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
+  const setDensity = useLayoutStore((s) => s.setDensity);
   const grouping = useLayoutStore((s) => s.grouping);
+  const setGrouping = useLayoutStore((s) => s.setGrouping);
   // The opt-out compact per-location summary card (device-local view preference).
   const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
   const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
@@ -390,10 +405,10 @@ function InventoryWorkspace() {
             {/* `min-w`/`max-w` + `flex-1` (rather than a fixed `w-64`) let the box cooperate
                 with the row's flex-wrap: it shrinks under space pressure and grows to fill
                 slack, instead of forcing an early hard break — the same fix applied to the
-                dashboard hero's search box, and for the same reason. Capped at `max-w-xs`
-                (tighter than the dashboard's `max-w-sm`) because this row already has more
-                controls competing for space (view toggles, grouping, More) than the
-                dashboard's simpler Search/Add/Scan/Menu set. */}
+                dashboard hero's search box, and for the same reason. The row itself now holds
+                only Search/Add item/Scan/More, mirroring the dashboard hero's Search/Add/
+                Scan/Menu set — Visual search, the view density and the grouping mode all
+                moved into the "More" menu below so the row stays this simple. */}
             <div className="relative min-w-[10rem] max-w-xs flex-1">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -461,26 +476,6 @@ function InventoryWorkspace() {
               </Button>
             ) : null}
 
-            <Tooltip
-              content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active."
-              triggerTabIndex={-1}
-            >
-              <span>
-                <Button
-                  variant={builderOpen ? 'secondary' : 'outline'}
-                  onClick={() => setBuilderOpen((v) => !v)}
-                  aria-pressed={builderOpen}
-                >
-                  <BuilderIcon />
-                  Visual search
-                </Button>
-              </span>
-            </Tooltip>
-
-            <LayoutToggle />
-
-            <GroupByControl />
-
             <Menu
               label="More inventory actions"
               trigger={
@@ -490,6 +485,39 @@ function InventoryWorkspace() {
                 </>
               }
             >
+              {/* Build complex queries graphically — combine fields, capabilities and AND/OR
+                  groups. Supersedes the quick search while active. */}
+              <MenuAction
+                icon={<BuilderIcon />}
+                onSelect={() => setBuilderOpen((v) => !v)}
+                selected={builderOpen}
+              >
+                Visual search
+              </MenuAction>
+              <MenuSeparator />
+              {/* View (the Data-Heavy ↔ Visual-Heavy density axis — how each item is *drawn*)
+                  and Group by (how the list is *arranged*) sit together as the two arrangement
+                  axes, each rendered off its own SSOT so a future mode needs no menu rework. */}
+              {DENSITY_MODES.map((mode) => (
+                <MenuAction
+                  key={mode.value}
+                  icon={<mode.icon />}
+                  onSelect={() => setDensity(mode.value)}
+                  selected={density === mode.value}
+                >
+                  View: {mode.label}
+                </MenuAction>
+              ))}
+              {GROUP_MODES.map((mode) => (
+                <MenuAction
+                  key={mode.value}
+                  onSelect={() => setGrouping(mode.value)}
+                  selected={grouping === mode.value}
+                >
+                  Group by: {mode.label}
+                </MenuAction>
+              ))}
+              <MenuSeparator />
               <MenuAction
                 icon={<InfoIcon />}
                 onSelect={toggleLocationCard}
