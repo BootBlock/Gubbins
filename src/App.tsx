@@ -9,6 +9,7 @@ import { ToastProvider } from '@/components/foundry';
 import { ScrapeBridgeProvider } from '@/features/scraping';
 import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveTabScrapeListener';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
+import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 
 /**
  * Application composition root (spec §2.1, §2.2, §3).
@@ -16,6 +17,13 @@ import { useApplyTheme } from '@/features/settings/useApplyTheme';
  * Layering: a top-level error boundary (Safe Mode) wraps the Tier-1 Query client,
  * which wraps the boot gate. The router — and therefore any code that touches the
  * database — only mounts once the boot gate reports the database ready.
+ *
+ * {@link PwaUpdatePrompt} is a sibling of <BootGate>, not nested inside it: it owns the
+ * only service-worker registration in the app, and that worker is what supplies the
+ * COOP/COEP headers BootGate's cross-origin-isolation check requires on a static host
+ * (GitHub Pages — spec §2.2.6). Nesting it inside BootGate would deadlock a first-ever
+ * visit: BootGate never reaches `ready` without isolation, isolation never arrives
+ * without the worker registering, and the worker never registers without this mounting.
  */
 export function App() {
   const [queryClient] = useState(createQueryClient);
@@ -26,6 +34,7 @@ export function App() {
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <ScrapeBridgeProvider>
+            <PwaUpdatePrompt />
             <BootGate>
               <RouterProvider router={router} />
               {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable

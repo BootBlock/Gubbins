@@ -61,11 +61,20 @@ const INDEX_URL = 'index.html';
 const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy();
 
 sw.addEventListener('install', (event) => {
-  // Deliberately NOT skipWaiting() here. Under the `prompt` update flow a new worker
-  // installs but stays *waiting* until the user accepts the in-app "Reload now" prompt
-  // — so a deploy never activates mid-session and never discards unsaved work. The
-  // page asks this worker to take over by posting `SKIP_WAITING` (see below).
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS)));
+  // `registration.active` is only set once some worker has previously controlled this
+  // scope. A genuine *update* (one exists) stays waiting until the user accepts the
+  // in-app "Reload now" prompt — so a deploy never activates mid-session and never
+  // discards unsaved work; the page asks this worker to take over by posting
+  // `SKIP_WAITING` (see below). But the very first install ever for this origin has no
+  // session to protect, and the app's cross-origin-isolation bootstrap (coi-bootstrap.js)
+  // depends on THIS worker activating and reloading the page once before the app can even
+  // boot — so it must skip the prompt and activate immediately.
+  event.waitUntil(
+    (async () => {
+      await caches.open(CACHE).then((cache) => cache.addAll(PRECACHE_URLS));
+      if (!sw.registration.active) await sw.skipWaiting();
+    })(),
+  );
 });
 
 // The page (workbox-window's `messageSkipWaiting`, driven by usePwaUpdate's "Reload
