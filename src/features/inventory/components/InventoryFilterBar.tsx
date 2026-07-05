@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { Button } from '@/components/foundry';
+import { Button, Tooltip } from '@/components/foundry';
 import {
   CheckoutIcon,
   DueDateIcon,
@@ -23,9 +23,15 @@ import type { FeatureId } from '@/features/modules/feature-registry';
  * A chip is only shown when its underlying capability is enabled (Modular UI, §4): Expiring
  * needs `perishables`, Warranty needs `warranty`, On loan / Overdue need `contacts` (the
  * borrow/loan facet), Maintenance due needs `maintenance`. Low stock and Out of stock are
- * core inventory and always available. Each chip is a toggle button (`aria-pressed`) styled
- * with the Foundry {@link Button} variants — the same pattern the header's "Visual search"
- * toggle uses — so it stays on the design tokens.
+ * core inventory. On top of that a chip is hidden when it currently matches **nothing** (the
+ * `applicable` set), so the bar only offers filters that would actually do something — this
+ * keeps the row from wrapping and leaves room to add more filters. A chip that is *active*
+ * always stays (so it can be switched off), and until applicability is known every enabled
+ * chip shows.
+ *
+ * Each chip is a toggle button (`aria-pressed`) styled with the Foundry {@link Button}
+ * variants — the same pattern the header's "Visual search" toggle uses — and its help is a
+ * Foundry {@link Tooltip} (rich Markdown), never the browser's plain `title`.
  */
 interface StatusMeta {
   readonly label: string;
@@ -84,18 +90,33 @@ interface InventoryFilterBarProps {
   readonly value: ReadonlySet<ItemStatusFilter>;
   readonly onToggle: (status: ItemStatusFilter) => void;
   readonly onClear: () => void;
+  /**
+   * The statuses that currently match at least one item, so filters that would return nothing
+   * can be hidden. `undefined` while this is still being computed — every enabled chip shows
+   * until it is known, avoiding an empty flash.
+   */
+  readonly applicable?: ReadonlySet<ItemStatusFilter>;
   /** Disabled while the Visual Builder supersedes the quick filters (mirrors the search box). */
   readonly disabled?: boolean;
 }
 
-export function InventoryFilterBar({ value, onToggle, onClear, disabled }: InventoryFilterBarProps) {
+export function InventoryFilterBar({
+  value,
+  onToggle,
+  onClear,
+  applicable,
+  disabled,
+}: InventoryFilterBarProps) {
   const enabled = useEnabledFeatures();
   const available = ITEM_STATUS_FILTERS.filter((status) => {
     const feature = STATUS_META[status].feature;
-    return feature == null || enabled.has(feature);
+    if (feature != null && !enabled.has(feature)) return false;
+    // Declutter: drop a filter that matches nothing — but keep an active one (so it can be
+    // switched off) and show everything until applicability has been computed.
+    return value.has(status) || applicable == null || applicable.has(status);
   });
 
-  // No available chips (every optional facet off and low-stock somehow gated) → render nothing.
+  // Nothing to offer (every filter gated off or matching nothing) → render no row at all.
   if (available.length === 0) return null;
 
   const activeCount = available.filter((status) => value.has(status)).length;
@@ -116,20 +137,25 @@ export function InventoryFilterBar({ value, onToggle, onClear, disabled }: Inven
         const Icon = meta.icon;
         const active = value.has(status);
         return (
-          <Button
-            key={status}
-            type="button"
-            size="sm"
-            variant={active ? 'secondary' : 'outline'}
-            aria-pressed={active}
-            disabled={disabled}
-            onClick={() => onToggle(status)}
-            title={meta.hint}
-            data-testid={`inventory-filter-${status}`}
-          >
-            <Icon />
-            {meta.label}
-          </Button>
+          // `triggerTabIndex={-1}` avoids a duplicate tab stop (the Button is already
+          // focusable); the wrapping `span` gives the tooltip a hover target even when the
+          // Button is disabled. Mirrors the header's "Visual search" toggle.
+          <Tooltip key={status} content={meta.hint} triggerTabIndex={-1}>
+            <span>
+              <Button
+                type="button"
+                size="sm"
+                variant={active ? 'secondary' : 'outline'}
+                aria-pressed={active}
+                disabled={disabled}
+                onClick={() => onToggle(status)}
+                data-testid={`inventory-filter-${status}`}
+              >
+                <Icon />
+                {meta.label}
+              </Button>
+            </span>
+          </Tooltip>
         );
       })}
       {activeCount > 0 ? (

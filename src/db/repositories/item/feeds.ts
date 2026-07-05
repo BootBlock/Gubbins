@@ -5,6 +5,7 @@
  */
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD, MS_PER_DAY } from '../constants';
 import type { HistoryAction } from '../constants';
+import type { SqlValue } from '../../rpc/driver';
 import { rowToActivityFeedEntry, rowToItem } from '../mappers';
 import type {
   ActivityFeedEntry,
@@ -17,8 +18,17 @@ import type {
 } from '../types';
 import { THUMBNAIL_SUBQUERY } from './sql';
 import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSql } from './attention-sql';
+import { ITEM_STATUS_FILTERS, buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+
+/** Tuning for {@link ItemFeedRepository.applicableStatuses} (mirrors the list's status filter). */
+export interface ApplicableStatusParams {
+  /** Injected clock (UNIX-ms) for the time-based statuses; defaults to `Date.now()`. */
+  readonly now?: number;
+  readonly lowStockThresholds?: LowStockThresholds;
+  readonly expirySoonWindowDays?: number;
+}
 
 /** Filters for the cross-item global activity feed (Phase 80). */
 export interface ActivityFeedFilters extends PageParams {
@@ -32,6 +42,36 @@ export interface ActivityFeedFilters extends PageParams {
 
 export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemFeedRepository extends Base {
+    /**
+     * Which of the common status filters currently match **at least one** active item — the
+     * inventory filter bar hides the rest so it only offers filters that would do something
+     * (spec §3 filter axis). Computed in a single round-trip: one `SELECT` of a boolean
+     * `EXISTS(…)` per status, each reusing that status's SSOT predicate via
+     * {@link buildStatusFilter}, so applicability can never disagree with what the filter
+     * would actually return. `now` is injected for the time-based statuses (defaulting to
+     * query time). Every `EXISTS` short-circuits on its first match, so this stays cheap even
+     * on a large catalogue.
+     */
+    async applicableStatuses(params: ApplicableStatusParams = {}): Promise<ItemStatusFilter[]> {
+      const ctx = {
+        now: params.now ?? Date.now(),
+        lowStockThresholds: params.lowStockThresholds,
+        expirySoonWindowDays: params.expirySoonWindowDays,
+      };
+      const columns: string[] = [];
+      const sqlParams: SqlValue[] = [];
+      ITEM_STATUS_FILTERS.forEach((status, i) => {
+        const [clause, clauseParams] = buildStatusFilter([status], ctx);
+        columns.push(`EXISTS(SELECT 1 FROM items WHERE is_active = 1 AND ${clause}) AS s${i}`);
+        sqlParams.push(...clauseParams);
+      });
+      const row = await this.driver.queryOne<Record<string, number>>(
+        `SELECT ${columns.join(', ')};`,
+        sqlParams,
+      );
+      return ITEM_STATUS_FILTERS.filter((_, i) => Number(row?.[`s${i}`] ?? 0) === 1);
+    }
+
     /**
      * Active perishable items expiring on or before `before` (a UNIX-ms cutoff,
      * typically `now + N days`), soonest first — the §3 "Soon to Expire" widget feed.
