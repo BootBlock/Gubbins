@@ -13,6 +13,7 @@ import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { locationFullness } from '../location-fullness';
+import { LocationFullnessBar } from './LocationFullnessBar';
 import {
   HINT_CAPACITY,
   HINT_COLOUR,
@@ -227,16 +228,8 @@ export function EditLocationDialog({
           {fullness ? (
             <div className="col-span-2">
               <dt className="text-xs uppercase tracking-wide text-muted-foreground">Fullness</dt>
-              <dd className="mt-1 flex items-center gap-2">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className={
-                      fullness.over ? 'h-full rounded-full bg-destructive' : 'h-full rounded-full bg-primary'
-                    }
-                    style={{ width: `${fullness.percent}%` }}
-                  />
-                </div>
-                <span className="tabular-nums text-xs text-muted-foreground">{fullness.percent}%</span>
+              <dd className="mt-1">
+                <LocationFullnessBar fullness={fullness} />
               </dd>
             </div>
           ) : null}

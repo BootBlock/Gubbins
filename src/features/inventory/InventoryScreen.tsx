@@ -12,6 +12,7 @@ import {
   EditIcon,
   ExportIcon,
   ImportIcon,
+  InfoIcon,
   MoreIcon,
   PackageIcon,
   PrintIcon,
@@ -61,6 +62,7 @@ import { locationColorTextClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { InventoryFacetBar } from './components/InventoryFacetBar';
+import { LocationInfoCard } from './components/LocationInfoCard';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -87,6 +89,9 @@ export function InventoryScreen() {
 function InventoryWorkspace() {
   const density = useLayoutStore((s) => s.density);
   const grouping = useLayoutStore((s) => s.grouping);
+  // The opt-out compact per-location summary card (device-local view preference).
+  const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
+  const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
   // Live camera scanning is the `scanner` capability (modular-ui-plan §4, Phase 6): with it
   // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
   // stay regardless — and manually reachable flows are untouched.
@@ -273,6 +278,11 @@ function InventoryWorkspace() {
   // off the leading page(s), so the virtualised list can index in absolute space.
   const firstItemIndex = active.data?.pages[0]?.offset ?? 0;
   const flatLocations = flat.data?.rows ?? [];
+  // The selected location's live row (with its item count), for the compact summary card.
+  const selectedLocation = useMemo(
+    () => (selectedLocationId ? (flat.data?.rows.find((l) => l.id === selectedLocationId) ?? null) : null),
+    [flat.data, selectedLocationId],
+  );
 
   // Configurable item-card fields (backlog E1): the shared order/catalog/category resolver,
   // plus — only when a custom field is actually shown — the stored custom-field values for the
@@ -447,6 +457,15 @@ function InventoryWorkspace() {
                 </>
               }
             >
+              <MenuAction
+                icon={<InfoIcon />}
+                onSelect={toggleLocationCard}
+                selected={showLocationCard}
+                data-testid="toggle-location-info"
+              >
+                Location summary
+              </MenuAction>
+              <MenuSeparator />
               <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
                 Categories
               </MenuAction>
@@ -547,6 +566,16 @@ function InventoryWorkspace() {
             tabIndex={-1}
             className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
           >
+            {/* Compact summary of the selected location (fullness, path, last change, …).
+                Opt-out and device-local; hidden for the "All locations" view. */}
+            {showLocationCard && selectedLocation ? (
+              <LocationInfoCard
+                location={selectedLocation}
+                locations={flatLocations}
+                onHide={toggleLocationCard}
+              />
+            ) : null}
+
             <InventoryFilterBar
               value={statusFilters}
               onToggle={toggleStatusFilter}
