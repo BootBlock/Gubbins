@@ -23,7 +23,11 @@ vi.mock('./db-maintenance-actions', () => ({
 }));
 
 vi.mock('@/lib/useFormatters', () => ({
-  useFormatters: () => ({ bytes: (n: number) => `${n} B` }),
+  useFormatters: () => ({
+    bytes: (n: number) => `${n} B`,
+    percent: (ratio: number) => `${Math.round(ratio * 100)}%`,
+    quantity: (n: number) => String(n),
+  }),
 }));
 
 vi.mock('@/state/stores/useStorageStore', () => ({
@@ -56,16 +60,43 @@ describe('DatabaseMaintenanceDialog', () => {
     expect(screen.getByTestId('maintenance-sweep-run')).toBeTruthy();
   });
 
-  it('reports the space reclaimed by compaction', async () => {
-    mockCompact.mockResolvedValue({ beforeBytes: 1000, afterBytes: 600, reclaimedBytes: 400 });
+  it('reports the space reclaimed by compaction with its stats', async () => {
+    mockCompact.mockResolvedValue({
+      beforeBytes: 1000,
+      afterBytes: 600,
+      reclaimedBytes: 400,
+      reclaimedFraction: 0.4,
+      freePagesBefore: 3,
+    });
     renderDialog();
     await act(async () => {
       fireEvent.click(screen.getByTestId('maintenance-compact-run'));
     });
     await waitFor(() => {
-      expect(screen.getByTestId('maintenance-compact-result').textContent).toContain('400 B');
+      const text = screen.getByTestId('maintenance-compact-result').textContent ?? '';
+      expect(text).toContain('400 B'); // reclaimed
+      expect(text).toContain('40%'); // fraction of the file
+      expect(text).toContain('3 unused pages'); // the free pages behind it
+      expect(text).toContain('was 1000 B'); // before size
     });
     expect(mockCompact).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an already-compact database without inventing stats', async () => {
+    mockCompact.mockResolvedValue({
+      beforeBytes: 600,
+      afterBytes: 600,
+      reclaimedBytes: 0,
+      reclaimedFraction: 0,
+      freePagesBefore: 0,
+    });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-compact-run'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('maintenance-compact-result').textContent).toMatch(/already compact/i);
+    });
   });
 
   it('reports a clean bill of health', async () => {

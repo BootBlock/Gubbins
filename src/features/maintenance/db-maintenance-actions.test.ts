@@ -50,6 +50,11 @@ describe('Database Maintenance engine', () => {
       expect(result.afterBytes).toBeLessThanOrEqual(result.beforeBytes);
       expect(result.reclaimedBytes).toBe(Math.max(0, result.beforeBytes - result.afterBytes));
       expect(result.reclaimedBytes).toBeGreaterThan(0);
+      // The reported stats explain the reclaim: a fraction of the file matching the bytes,
+      // and the free pages the deletes left behind for VACUUM to return.
+      expect(result.reclaimedFraction).toBeCloseTo(result.reclaimedBytes / result.beforeBytes);
+      expect(result.reclaimedFraction).toBeGreaterThan(0);
+      expect(result.freePagesBefore).toBeGreaterThan(0);
 
       // FTS survived the optimize + VACUUM: the keeper is still discoverable.
       const hits = await driver.query<{ rowid: number }>(
