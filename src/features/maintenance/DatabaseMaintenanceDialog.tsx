@@ -22,6 +22,7 @@ import {
   SweepIcon,
   WarningIcon,
 } from '@/components/icons';
+import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import {
@@ -29,6 +30,7 @@ import {
   checkDatabaseHealth,
   compactDatabase,
   sweepOrphanImages,
+  type CompactResult,
   type MaintenancePorts,
 } from './db-maintenance-actions';
 
@@ -66,13 +68,7 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
       const result = await compactDatabase(ports);
       void useStorageStore.getState().refresh();
       const freed = fmt.bytes(result.reclaimedBytes);
-      setCompactResult({
-        tone: 'success',
-        node:
-          result.reclaimedBytes > 0
-            ? `Reclaimed ${freed} — database is now ${fmt.bytes(result.afterBytes)}.`
-            : `Already compact — database is ${fmt.bytes(result.afterBytes)}.`,
-      });
+      setCompactResult({ tone: 'success', node: compactSummary(result, fmt) });
       show({
         tone: 'success',
         icon: <OptimiseIcon />,
@@ -218,6 +214,31 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
       </div>
     </Modal>
   );
+}
+
+/**
+ * The inline status line for a finished compaction. Beyond "how much" (bytes reclaimed),
+ * it explains "how the file was optimised": the percentage of the file returned, the
+ * unused pages past deletes had left for VACUUM to reclaim, and the before/after size —
+ * or a tidy note when the file was already compact and there was nothing to return.
+ */
+function compactSummary(result: CompactResult, fmt: Formatters): string {
+  const after = fmt.bytes(result.afterBytes);
+  if (result.reclaimedBytes <= 0) {
+    return `Already compact — no unused space to reclaim; database is ${after}.`;
+  }
+  const freed = fmt.bytes(result.reclaimedBytes);
+  const before = fmt.bytes(result.beforeBytes);
+  // Only quote a percentage once it rounds to a non-zero figure, so a sliver of a reclaim
+  // never reads a misleading "(0%)".
+  const percent = result.reclaimedFraction >= 0.005 ? ` (${fmt.percent(result.reclaimedFraction)})` : '';
+  const pages =
+    result.freePagesBefore > 0
+      ? ` from ${fmt.quantity(result.freePagesBefore)} unused ${
+          result.freePagesBefore === 1 ? 'page' : 'pages'
+        }`
+      : '';
+  return `Reclaimed ${freed}${percent}${pages} — now ${after} (was ${before}).`;
 }
 
 /** One task card: icon + title + description, a Run button, and an inline result line. */

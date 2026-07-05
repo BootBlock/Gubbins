@@ -56,6 +56,17 @@ export interface CompactResult {
   readonly afterBytes: number;
   /** Space returned to the file system (`beforeBytes − afterBytes`, clamped ≥ 0). */
   readonly reclaimedBytes: number;
+  /**
+   * Fraction of the file reclaimed (`reclaimedBytes / beforeBytes`, 0–1); 0 when the
+   * file was empty or nothing was freed. Lets the UI quote a percentage without a
+   * divide-by-zero guard at the call site.
+   */
+  readonly reclaimedFraction: number;
+  /**
+   * Unused (free) pages sitting in the file before compaction — the space that past
+   * deletes left behind for VACUUM to reclaim. The "why" behind the reclaimed bytes.
+   */
+  readonly freePagesBefore: number;
 }
 
 /** Current database size in bytes: `page_count × page_size` (both cheap PRAGMAs). */
@@ -65,13 +76,23 @@ export async function databaseBytes(db: IDatabaseDriver): Promise<number> {
   return Number(pageCount?.page_count ?? 0) * Number(pageSize?.page_size ?? 0);
 }
 
+/** Number of unused (free) pages currently held in the file (`PRAGMA freelist_count`). */
+async function freePageCount(db: IDatabaseDriver): Promise<number> {
+  const row = await db.queryOne<{ freelist_count: number }>('PRAGMA freelist_count;');
+  return Number(row?.freelist_count ?? 0);
+}
+
 /**
  * Merge FTS segments, refresh planner statistics, then VACUUM. Returns the byte size
- * before and after so the UI can report the space reclaimed.
+ * before and after (plus the free-page count going in) so the UI can report both the
+ * space reclaimed and what there was to reclaim.
  */
 export async function compactDatabase(ports: Pick<MaintenancePorts, 'db'>): Promise<CompactResult> {
   const { db } = ports;
   const beforeBytes = await databaseBytes(db);
+  // Capture the free pages before any step touches the file, so the count reflects the
+  // deletes/erases that accumulated slack — the story behind the bytes VACUUM returns.
+  const freePagesBefore = await freePageCount(db);
 
   // Merge the FTS5 index b-tree segments accumulated by many small writes into fewer,
   // larger ones — shrinking the index and speeding future searches. Harmless if the
@@ -85,7 +106,14 @@ export async function compactDatabase(ports: Pick<MaintenancePorts, 'db'>): Prom
   await db.execute('VACUUM;');
 
   const afterBytes = await databaseBytes(db);
-  return { beforeBytes, afterBytes, reclaimedBytes: Math.max(0, beforeBytes - afterBytes) };
+  const reclaimedBytes = Math.max(0, beforeBytes - afterBytes);
+  return {
+    beforeBytes,
+    afterBytes,
+    reclaimedBytes,
+    reclaimedFraction: beforeBytes > 0 ? reclaimedBytes / beforeBytes : 0,
+    freePagesBefore,
+  };
 }
 
 // --- Check health ---------------------------------------------------------------
