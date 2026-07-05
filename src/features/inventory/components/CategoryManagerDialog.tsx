@@ -18,6 +18,29 @@ import { ATTACHMENT_MODE_LABELS, FIELD_TYPE_LABELS } from './inventory-ui';
  * custom fields, and configure the global datasheet-linking mode (Option A/B).
  */
 export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Categories & schemas"
+      description="Group items into categories, and give each one a custom schema of extra fields."
+      className="max-w-3xl"
+    >
+      <p className="mb-4 text-xs text-muted-foreground">
+        A category is a label you assign to items (e.g. "Cables", "Fasteners"). Its
+        <span className="font-medium text-foreground"> schema</span> is the set of custom fields you add below
+        — say, <span className="font-medium text-foreground">Voltage</span> or{' '}
+        <span className="font-medium text-foreground">Warranty expiry</span> — which then appear on every item
+        in that category, alongside the built-in fields every item already has. Nothing here is required:
+        items without a category just skip this step.
+      </p>
+      <CategoryManagerBody />
+      <DatasheetLinkingConfig />
+    </Modal>
+  );
+}
+
+function CategoryManagerBody() {
   const { data: categories } = useCategories();
   const createCategory = useCreateCategory();
   const deleteCategory = useDeleteCategory();
@@ -35,82 +58,67 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Categories & schemas"
-      description="Define categories, their custom fields, and datasheet linking."
-      className="max-w-3xl"
-    >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[14rem_1fr]">
-        {/* Category list */}
-        <div className="space-y-2">
-          <div className="flex gap-1.5">
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCategory())}
-              placeholder="New category…"
-              aria-label="New category name"
-            />
-            <Tooltip
-              content="Create the category, then define its custom fields on the right."
-              triggerTabIndex={-1}
-            >
-              <span>
-                <Button
-                  size="icon"
-                  aria-label="Add category"
-                  onClick={addCategory}
-                  disabled={!newName.trim()}
-                >
-                  <AddIcon />
-                </Button>
-              </span>
-            </Tooltip>
-          </div>
-          <ul className="max-h-64 space-y-1 overflow-y-auto">
-            {rows.length === 0 ? (
-              <li className="px-1 py-2 text-xs text-muted-foreground">No categories yet.</li>
-            ) : (
-              rows.map((cat) => (
-                <li key={cat.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(cat.id)}
-                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
-                      cat.id === selectedId ? 'bg-primary/15 text-primary' : 'hover:bg-secondary'
-                    }`}
-                  >
-                    <span className="truncate">{cat.name}</span>
-                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">{cat.fieldCount}</span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[14rem_1fr]">
+      {/* Category list */}
+      <div className="space-y-2">
+        <div className="flex gap-1.5">
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCategory())}
+            placeholder="New category…"
+            aria-label="New category name"
+          />
+          <Tooltip
+            content="Create the category, then define its custom fields on the right."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button size="icon" aria-label="Add category" onClick={addCategory} disabled={!newName.trim()}>
+                <AddIcon />
+              </Button>
+            </span>
+          </Tooltip>
         </div>
-
-        {/* Selected category detail */}
-        <div className="min-w-0">
-          {selected ? (
-            <CategoryDetail
-              category={selected}
-              onDeleted={() => {
-                deleteCategory.mutate(selected.id);
-                setSelectedId(null);
-              }}
-            />
+        <ul className="max-h-64 space-y-1 overflow-y-auto">
+          {rows.length === 0 ? (
+            <li className="px-1 py-2 text-xs text-muted-foreground">No categories yet.</li>
           ) : (
-            <p className="grid h-full place-items-center text-sm text-muted-foreground">
-              Select a category to edit its fields.
-            </p>
+            rows.map((cat) => (
+              <li key={cat.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(cat.id)}
+                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                    cat.id === selectedId ? 'bg-primary/15 text-primary' : 'hover:bg-secondary'
+                  }`}
+                >
+                  <span className="truncate">{cat.name}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">{cat.fieldCount}</span>
+                </button>
+              </li>
+            ))
           )}
-        </div>
+        </ul>
       </div>
 
-      <DatasheetLinkingConfig />
-    </Modal>
+      {/* Selected category detail */}
+      <div className="min-w-0">
+        {selected ? (
+          <CategoryDetail
+            category={selected}
+            onDeleted={() => {
+              deleteCategory.mutate(selected.id);
+              setSelectedId(null);
+            }}
+          />
+        ) : (
+          <p className="grid h-full place-items-center text-sm text-muted-foreground">
+            Select a category to edit its fields.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
