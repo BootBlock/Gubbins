@@ -1,5 +1,5 @@
 {
-  "userVersion": 2,
+  "userVersion": 3,
   "objects": [
     {
       "type": "index",
@@ -120,6 +120,12 @@
       "name": "idx_item_tags_tag_id",
       "tbl_name": "item_tags",
       "sql": "CREATE INDEX idx_item_tags_tag_id ON item_tags(tag_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_items_active_location",
+      "tbl_name": "items",
+      "sql": "CREATE INDEX idx_items_active_location ON items(location_id) WHERE is_active = 1"
     },
     {
       "type": "index",
@@ -2259,63 +2265,70 @@
       ],
       "indexes": [
         {
-          "seq": 3,
+          "seq": 0,
+          "name": "idx_items_active_location",
+          "unique": 0,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 4,
           "name": "idx_items_barcode",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 6,
+          "seq": 7,
           "name": "idx_items_category_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 2,
+          "seq": 3,
           "name": "idx_items_expiry",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 5,
+          "seq": 6,
           "name": "idx_items_is_active",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 7,
+          "seq": 8,
           "name": "idx_items_location_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 4,
+          "seq": 5,
           "name": "idx_items_mpn",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 2,
           "name": "idx_items_parent_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_items_warranty",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 8,
+          "seq": 9,
           "name": "sqlite_autoindex_items_1",
           "unique": 1,
           "origin": "pk",
