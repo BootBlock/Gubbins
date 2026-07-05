@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 import { CloseIcon } from '@/components/icons';
 import { Button } from './button';
+import { Tooltip } from './tooltip';
 
 /**
  * Foundry Banner — semantic, glassy notice strip used for the storage-persistence,
@@ -63,6 +64,12 @@ export interface BannerProps extends HTMLAttributes<HTMLDivElement>, VariantProp
   dismissLabel?: string;
   /** `data-testid` for the close button rendered by {@link onDismiss} (must be unique per screen). */
   dismissTestId?: string;
+  /**
+   * Optional rich-Markdown {@link Tooltip} content on the close button rendered by
+   * {@link onDismiss} — for a dismissal that isn't self-explanatory from `dismissLabel`
+   * alone (e.g. "hidden until storage fills further"). Ignored when `onDismiss` is omitted.
+   */
+  dismissTooltip?: string;
 }
 
 export const Banner = forwardRef<HTMLDivElement, BannerProps>(
@@ -76,33 +83,50 @@ export const Banner = forwardRef<HTMLDivElement, BannerProps>(
       onDismiss,
       dismissLabel = 'Dismiss',
       dismissTestId,
+      dismissTooltip,
       children,
       role = 'status',
       ...props
     },
     ref,
-  ) => (
-    <div ref={ref} role={role} className={cn(bannerVariants({ tone }), className)} {...props}>
-      {icon ? <span className="mt-0.5 shrink-0 [&_svg]:size-5">{icon}</span> : null}
-      <div className="min-w-0 flex-1">
-        {heading ? <p className="leading-tight font-semibold">{heading}</p> : null}
-        {children ? <div className={cn('text-muted-foreground', heading && 'mt-1')}>{children}</div> : null}
+  ) => {
+    const dismissButton = onDismiss ? (
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={onDismiss}
+        aria-label={dismissLabel}
+        data-testid={dismissTestId}
+        className={cn('-mr-1 -mt-1 shrink-0', BANNER_DISMISS_HOVER[tone ?? 'info'])}
+      >
+        <CloseIcon className="text-glyph-neutral" />
+      </Button>
+    ) : null;
+
+    return (
+      <div ref={ref} role={role} className={cn(bannerVariants({ tone }), className)} {...props}>
+        {icon ? <span className="mt-0.5 shrink-0 [&_svg]:size-5">{icon}</span> : null}
+        <div className="min-w-0 flex-1">
+          {heading ? <p className="leading-tight font-semibold">{heading}</p> : null}
+          {children ? <div className={cn('text-muted-foreground', heading && 'mt-1')}>{children}</div> : null}
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+        {dismissButton ? (
+          dismissTooltip ? (
+            // `triggerTabIndex={-1}`: the Button itself is already a tab stop, so the
+            // Tooltip's own wrapping trigger must not add a second one. `shrink-0` on the
+            // trigger span matches the icon/action slots either side of it, since Tooltip's
+            // own wrapper doesn't carry that by default.
+            <Tooltip content={dismissTooltip} triggerTabIndex={-1} className="shrink-0">
+              {dismissButton}
+            </Tooltip>
+          ) : (
+            dismissButton
+          )
+        ) : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
-      {onDismiss ? (
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={onDismiss}
-          aria-label={dismissLabel}
-          data-testid={dismissTestId}
-          className={cn('-mr-1 -mt-1 shrink-0', BANNER_DISMISS_HOVER[tone ?? 'info'])}
-        >
-          <CloseIcon className="text-glyph-neutral" />
-        </Button>
-      ) : null}
-    </div>
-  ),
+    );
+  },
 );
 Banner.displayName = 'Banner';
 
