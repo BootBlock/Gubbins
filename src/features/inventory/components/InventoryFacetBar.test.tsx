@@ -76,6 +76,14 @@ describe('InventoryFacetBar', () => {
     expect(onToggleTag).toHaveBeenCalledWith('tag-2');
   });
 
+  it('excludes an already-active tag from the adder options (memoized on tagIds)', () => {
+    renderBar({ tagIds: ['tag-1'] });
+    fireEvent.click(screen.getByTestId('inventory-facet-tag-add'));
+    // The active tag is filtered out of the "add a tag" list; the other stays selectable.
+    expect(screen.queryByRole('option', { name: 'fragile' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'electronics' })).toBeInTheDocument();
+  });
+
   it('renders a removable chip per active tag and removes on click', () => {
     const { onToggleTag } = renderBar({ tagIds: ['tag-1'] });
     const chip = screen.getByTestId('inventory-facet-tag-chip-tag-1');

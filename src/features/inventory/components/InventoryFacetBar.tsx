@@ -37,9 +37,26 @@ export function InventoryFacetBar({
   const categories = useCategories();
   const tagDictionary = useTagDictionary();
 
-  const categoryRows = categories.data?.rows ?? [];
+  const categoryRows = useMemo(() => categories.data?.rows ?? [], [categories.data]);
   const tagRows = useMemo(() => tagDictionary.data?.rows ?? [], [tagDictionary.data]);
   const tagName = useMemo(() => new Map(tagRows.map((t) => [t.id, t.name] as const)), [tagRows]);
+
+  const categoryOptions = useMemo(
+    () => [
+      { value: '', label: 'All categories' },
+      ...categoryRows.map((cat) => ({ value: cat.id, label: cat.name })),
+    ],
+    [categoryRows],
+  );
+  // The "add a tag" picker only lists tags that are not already active.
+  const selectable = useMemo(() => tagRows.filter((t) => !tagIds.includes(t.id)), [tagRows, tagIds]);
+  const tagOptions = useMemo(
+    () => [
+      { value: '', label: 'Filter by tag…' },
+      ...selectable.map((t) => ({ value: t.id, label: t.name })),
+    ],
+    [selectable],
+  );
 
   const showCategory = categoryRows.length > 0;
   // The Tags facet appears once the capability is on and at least one tag exists (or one is
@@ -48,17 +65,6 @@ export function InventoryFacetBar({
 
   // Nothing to offer → render no row at all rather than an empty toolbar.
   if (!showCategory && !showTags) return null;
-
-  const categoryOptions = [
-    { value: '', label: 'All categories' },
-    ...categoryRows.map((cat) => ({ value: cat.id, label: cat.name })),
-  ];
-  // The "add a tag" picker only lists tags that are not already active.
-  const selectable = tagRows.filter((t) => !tagIds.includes(t.id));
-  const tagOptions = [
-    { value: '', label: 'Filter by tag…' },
-    ...selectable.map((t) => ({ value: t.id, label: t.name })),
-  ];
 
   return (
     <div
