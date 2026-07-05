@@ -92,4 +92,18 @@ describe('ItemList empty state', () => {
     );
     expect(screen.getByText('No items here yet')).toBeInTheDocument();
   });
+
+  it('describes the search — not a missing first item — when a search has no matches', () => {
+    render(<ItemList {...BASE_PROPS} selectedLocationId={null} emptyContext={{ search: 'widget' }} />);
+    expect(screen.getByText('No matching items')).toBeInTheDocument();
+    expect(screen.getByText(/“widget”/)).toBeInTheDocument();
+    expect(screen.queryByText(/add your first item/i)).not.toBeInTheDocument();
+  });
+
+  it('points at the filters when a status filter yields no matches', () => {
+    render(<ItemList {...BASE_PROPS} selectedLocationId="loc-1" emptyContext={{ statusFilterCount: 1 }} />);
+    expect(screen.getByText('No matching items')).toBeInTheDocument();
+    expect(screen.getByText(/match the selected filters/i)).toBeInTheDocument();
+    expect(screen.queryByText(/add your first item/i)).not.toBeInTheDocument();
+  });
 });

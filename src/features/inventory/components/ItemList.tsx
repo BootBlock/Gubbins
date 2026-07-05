@@ -3,8 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Spinner } from '@/components/foundry';
 import { PackageIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
-import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { LayoutDensity } from '@/state/stores/useLayoutStore';
+import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-empty-state';
 import { listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
@@ -43,6 +43,7 @@ export function ItemList({
   selection,
   selectedIds,
   cardFields,
+  emptyContext,
 }: {
   items: readonly Item[];
   /** Absolute index of the first resident item — non-zero once front pages are trimmed. */
@@ -79,6 +80,15 @@ export function ItemList({
   selectedIds?: ReadonlySet<string>;
   /** Configurable card fields (order + catalog + on-screen custom values), backlog E1. */
   cardFields: CardFieldsListContext;
+  /**
+   * The active narrowing (search / status chips / facets) so the empty banner can describe
+   * *why* the list is empty from the user's point of view rather than always inviting a first
+   * item. The location scope is derived from `selectedLocationId` + `locationName`.
+   */
+  emptyContext?: Pick<
+    InventoryEmptyContext,
+    'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
+  >;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columns = useColumns(parentRef, density);
@@ -133,7 +143,13 @@ export function ItemList({
         />
       );
     }
-    return <EmptyState selectedLocationId={selectedLocationId} />;
+    return (
+      <EmptyState
+        selectedLocationId={selectedLocationId}
+        locationName={selectedLocationId ? locationName(selectedLocationId) : undefined}
+        emptyContext={emptyContext}
+      />
+    );
   }
 
   return (
@@ -233,27 +249,36 @@ function useColumns(ref: React.RefObject<HTMLDivElement | null>, density: Layout
 }
 
 /**
- * What the two system-locked locations *mean* — shown beneath the empty-state banner
- * when one of them is selected and holds nothing, since "add your first item here"
- * doesn't describe how stock actually arrives in these liminal places (spec §4).
+ * The empty-state banner. Its wording adapts to how the user is viewing the list — a narrowed
+ * "no matches" view names the search/filters rather than inviting a first item; an empty
+ * system location explains how stock arrives there; otherwise the plain first-item invitation.
+ * The copy decision lives in the pure {@link inventoryEmptyState} seam.
  */
-const SYSTEM_LOCATION_HINTS: Record<string, string> = {
-  [IN_TRANSIT_LOCATION_ID]:
-    'In Transit is where incoming stock waits before it arrives. Items appear here automatically when a bill-of-materials line is marked as ordered, then move to their real location once you receive them.',
-  [UNASSIGNED_LOCATION_ID]:
-    "Unassigned holds items that don't have a location yet. New or imported items without a location land here, along with any item whose location was later deleted — assign one to move it out.",
-};
-
-function EmptyState({ selectedLocationId }: { selectedLocationId?: string | null }) {
-  const hint = selectedLocationId ? SYSTEM_LOCATION_HINTS[selectedLocationId] : undefined;
+function EmptyState({
+  selectedLocationId,
+  locationName,
+  emptyContext,
+}: {
+  selectedLocationId?: string | null;
+  locationName?: string;
+  emptyContext?: Pick<
+    InventoryEmptyContext,
+    'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
+  >;
+}) {
+  const { title, body } = inventoryEmptyState({
+    ...emptyContext,
+    locationId: selectedLocationId,
+    locationName,
+  });
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
       <span className="grid size-14 place-items-center rounded-2xl bg-secondary/50 text-muted-foreground [&_svg]:size-7">
         <PackageIcon />
       </span>
       <div className="max-w-md">
-        <p className="font-medium">No items here yet</p>
-        <p className="text-sm text-muted-foreground">{hint ?? 'Add your first item to start tracking.'}</p>
+        <p className="font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground">{body}</p>
       </div>
     </div>
   );
