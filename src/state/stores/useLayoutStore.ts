@@ -35,6 +35,13 @@ interface LayoutStore {
   readonly grouping: GroupingMode;
   readonly sidebarCollapsed: boolean;
   /**
+   * Whether the compact per-location info card sits atop the inventory list when a location
+   * is selected (its fullness gauge, path, last-changed, …). A device-local view preference
+   * like {@link density}; defaults **on** so it's discoverable, and the user can dismiss it
+   * from the card itself or the inventory "More" menu.
+   */
+  readonly inventoryLocationCard: boolean;
+  /**
    * Persisted dashboard widget placements (spec §3, §2.1). Empty until the user
    * customises (or the board is first reconciled against the registry); the dashboard
    * reconciles this against the live widget registry on render so it survives the
@@ -52,6 +59,7 @@ interface LayoutStore {
   toggleDensity: () => void;
   setGrouping: (grouping: GroupingMode) => void;
   toggleSidebar: () => void;
+  toggleInventoryLocationCard: () => void;
   setDashboardLayout: (layout: DashboardLayout) => void;
   setNavTileOrder: (order: NavOrder) => void;
 }
@@ -62,12 +70,15 @@ export const useLayoutStore = create<LayoutStore>()(
       density: 'visual',
       grouping: 'none',
       sidebarCollapsed: false,
+      inventoryLocationCard: true,
       dashboardLayout: [],
       navTileOrder: [],
       setDensity: (density) => set({ density }),
       toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
       setGrouping: (grouping) => set({ grouping }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      toggleInventoryLocationCard: () =>
+        set((state) => ({ inventoryLocationCard: !state.inventoryLocationCard })),
       setDashboardLayout: (dashboardLayout) => set({ dashboardLayout }),
       setNavTileOrder: (navTileOrder) => set({ navTileOrder }),
     }),
