@@ -10,9 +10,8 @@ import {
   OutOfStockIcon,
   WarrantyIcon,
 } from '@/components/icons';
-import { ITEM_STATUS_FILTERS, type ItemStatusFilter } from '@/db/repositories';
+import { ITEM_STATUS_FILTERS, STATUS_FILTER_FEATURE, type ItemStatusFilter } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
-import type { FeatureId } from '@/features/modules/feature-registry';
 
 /**
  * The inventory **status filter** bar (spec §3 / §4): a row of toggle chips for the common
@@ -36,12 +35,13 @@ import type { FeatureId } from '@/features/modules/feature-registry';
 interface StatusMeta {
   readonly label: string;
   readonly icon: ComponentType<{ className?: string }>;
-  /** The capability that must be enabled for the chip to appear; omitted = always on. */
-  readonly feature?: FeatureId;
   /** Chip tooltip / accessible description. */
   readonly hint: string;
 }
 
+// The capability each chip needs to be enabled lives in the shared `STATUS_FILTER_FEATURE`
+// SSOT (alongside `ITEM_STATUS_FILTERS`) so the applicability query and this bar can never
+// disagree about which statuses a reduced module set offers.
 const STATUS_META: Record<ItemStatusFilter, StatusMeta> = {
   'low-stock': {
     label: 'Low stock',
@@ -56,31 +56,26 @@ const STATUS_META: Record<ItemStatusFilter, StatusMeta> = {
   expiring: {
     label: 'Expiring',
     icon: ExpiryIcon,
-    feature: 'perishables',
     hint: 'Perishables past or nearing their expiry date.',
   },
   warranty: {
     label: 'Warranty',
     icon: WarrantyIcon,
-    feature: 'warranty',
     hint: 'Assets whose warranty has expired or expires soon.',
   },
   'on-loan': {
     label: 'On loan',
     icon: CheckoutIcon,
-    feature: 'contacts',
     hint: 'Items currently checked out to a contact.',
   },
   overdue: {
     label: 'Overdue',
     icon: DueDateIcon,
-    feature: 'contacts',
     hint: 'Items checked out and past their due date.',
   },
   'maintenance-due': {
     label: 'Maintenance due',
     icon: MaintenanceIcon,
-    feature: 'maintenance',
     hint: 'Items with a service or calibration now due.',
   },
 };
@@ -109,7 +104,7 @@ export function InventoryFilterBar({
 }: InventoryFilterBarProps) {
   const enabled = useEnabledFeatures();
   const available = ITEM_STATUS_FILTERS.filter((status) => {
-    const feature = STATUS_META[status].feature;
+    const feature = STATUS_FILTER_FEATURE[status];
     if (feature != null && !enabled.has(feature)) return false;
     // Declutter: drop a filter that matches nothing — but keep an active one (so it can be
     // switched off) and show everything until applicability has been computed.

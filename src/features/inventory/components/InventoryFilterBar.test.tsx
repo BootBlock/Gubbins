@@ -90,6 +90,14 @@ describe('InventoryFilterBar', () => {
     expect(screen.queryByTestId('inventory-filter-warranty')).not.toBeInTheDocument();
   });
 
+  it('drops the Expiring chip when Expiry tracking is off', () => {
+    useModulesStore.getState().setFeatureIntent('perishables', false);
+    renderBar();
+    expect(screen.queryByTestId('inventory-filter-expiring')).not.toBeInTheDocument();
+    // Core stock chips are unaffected.
+    expect(screen.getByTestId('inventory-filter-low-stock')).toBeInTheDocument();
+  });
+
   it('disables every chip while the Visual Builder supersedes the quick filters', () => {
     const { onToggle } = renderBar({ disabled: true });
     const chip = screen.getByTestId('inventory-filter-low-stock');
