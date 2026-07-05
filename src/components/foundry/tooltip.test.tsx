@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import { Tooltip } from './tooltip';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { Tooltip, LONG_PRESS_MS } from './tooltip';
 
 afterEach(cleanup);
 
@@ -194,5 +194,109 @@ describe('Tooltip', () => {
     );
     fireEvent.pointerDown(screen.getByText('badge'), { pointerType: 'touch' });
     expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  describe('long-press-to-peek (touch/pen on a control-wrapping trigger)', () => {
+    /** A control-wrapping trigger, plus a spy for its activation. */
+    function renderControl(props?: { readonly openOnTap?: boolean }) {
+      const onClick = vi.fn();
+      render(
+        <Tooltip content="Supplementary help." openOnTap={props?.openOnTap}>
+          <button type="button" onClick={onClick}>
+            Toggle
+          </button>
+        </Tooltip>,
+      );
+      return { onClick, button: screen.getByRole('button', { name: 'Toggle' }) };
+    }
+
+    it('opens the tooltip on a long-press and swallows the control click', () => {
+      vi.useFakeTimers();
+      try {
+        const { onClick, button } = renderControl();
+        // Press and hold: the peek should arm on pointer-down and fire after the hold.
+        fireEvent.pointerDown(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+        expect(screen.getByRole('tooltip')).toBeInTheDocument();
+
+        // Releasing synthesises a click; it must be suppressed so the button never fires.
+        fireEvent.pointerUp(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        fireEvent.click(button);
+        expect(onClick).not.toHaveBeenCalled();
+        expect(screen.getByRole('tooltip')).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lets a quick tap activate the control without peeking', () => {
+      vi.useFakeTimers();
+      try {
+        const { onClick, button } = renderControl();
+        fireEvent.pointerDown(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        // Release before the hold elapses: no peek, the tap flows through to the control.
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS - 100));
+        fireEvent.pointerUp(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        fireEvent.click(button);
+        // Advance past the original deadline to prove the cancelled timer never fires.
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels the peek when the pointer moves past the threshold (a scroll/drag)', () => {
+      vi.useFakeTimers();
+      try {
+        const { onClick, button } = renderControl();
+        fireEvent.pointerDown(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        // A ~40px travel before the timer fires reads as a scroll, not a peek.
+        fireEvent.pointerMove(button, { pointerType: 'touch', clientX: 40, clientY: 0 });
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        // The control still activates on the tap.
+        fireEvent.pointerUp(button, { pointerType: 'touch', clientX: 40, clientY: 0 });
+        fireEvent.click(button);
+        expect(onClick).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never arms the long-press for a mouse pointer', () => {
+      vi.useFakeTimers();
+      try {
+        const { onClick, button } = renderControl();
+        // A mouse press must not enter the long-press path at all.
+        fireEvent.pointerDown(button, { pointerType: 'mouse', clientX: 0, clientY: 0 });
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS * 2));
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        // And a mouse click still activates the control (never suppressed).
+        fireEvent.pointerUp(button, { pointerType: 'mouse', clientX: 0, clientY: 0 });
+        fireEvent.click(button);
+        expect(onClick).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('opt-out: openOnTap={false} disables long-press-peek too', () => {
+      vi.useFakeTimers();
+      try {
+        const { onClick, button } = renderControl({ openOnTap: false });
+        fireEvent.pointerDown(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        act(() => vi.advanceTimersByTime(LONG_PRESS_MS * 2));
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        // The control keeps its normal tap activation.
+        fireEvent.pointerUp(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+        fireEvent.click(button);
+        expect(onClick).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });
