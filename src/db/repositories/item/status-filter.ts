@@ -13,6 +13,7 @@
  * *any* selected concern), then the whole group is AND-ed into the list's `WHERE` alongside
  * the location / search / active-only filters by {@link buildListFilter}.
  */
+import type { FeatureId } from '@/features/modules/feature-registry';
 import type { SqlValue } from '../../rpc/driver';
 import {
   EXPIRY_SOON_WINDOW_DAYS,
@@ -52,6 +53,24 @@ const STATUS_FILTER_SET = new Set<string>(ITEM_STATUS_FILTERS);
 export function isItemStatusFilter(value: string): value is ItemStatusFilter {
   return STATUS_FILTER_SET.has(value);
 }
+
+/**
+ * The Modular-UI capability each status filter needs to be enabled for that filter to be
+ * offered — the SSOT for both the filter-bar chip gating ({@link InventoryFilterBar}) and
+ * the applicability query's candidate set ({@link useApplicableStatuses}), so the two can
+ * never disagree about which statuses a reduced module set exposes. Statuses absent from
+ * the map (*low stock*, *out of stock*) are always-on core inventory — never gated. When a
+ * status's module is off the filter bar hides its chip **and** the applicability query skips
+ * its `EXISTS` probe (some are heavy — the maintenance correlated subquery, the unindexed
+ * warranty scan), so no work is spent computing a result the user can never see.
+ */
+export const STATUS_FILTER_FEATURE: Partial<Record<ItemStatusFilter, FeatureId>> = {
+  expiring: 'perishables',
+  warranty: 'warranty',
+  'on-loan': 'contacts',
+  overdue: 'contacts',
+  'maintenance-due': 'maintenance',
+};
 
 /** Contextual inputs the time/threshold-sensitive predicates need. */
 export interface StatusFilterContext {

@@ -277,6 +277,41 @@ describe('ItemRepository.list — derived-status filters', () => {
     expect(garageOnly).toContain('expiring');
     expect(garageOnly).not.toContain('low-stock');
   });
+
+  it('only probes the candidate statuses it is given (disabled modules skipped)', async () => {
+    await seed();
+    // The caller (the hook) passes only the modules-enabled statuses. With every "attention"
+    // module off, just the always-on core stock statuses are probed — so a matching
+    // maintenance-due / overdue / on-loan item is never reported even though it exists.
+    const coreOnly = await items.applicableStatuses({ now, candidates: ['low-stock', 'out-of-stock'] });
+    expect(coreOnly).toEqual(['low-stock', 'out-of-stock']);
+  });
+
+  it('returns candidate matches in canonical order regardless of the candidate order', async () => {
+    await seed();
+    // Pass the candidates jumbled; the result is still in ITEM_STATUS_FILTERS order.
+    const applicable = await items.applicableStatuses({
+      now,
+      candidates: ['maintenance-due', 'low-stock', 'overdue'],
+    });
+    expect(applicable).toEqual(['low-stock', 'overdue', 'maintenance-due']);
+  });
+
+  it('drops a matching status that is not among the candidates', async () => {
+    await seed();
+    // Maintenance is due in the seed, but with maintenance off it is not a candidate.
+    const withoutMaintenance = await items.applicableStatuses({
+      now,
+      candidates: ['low-stock', 'out-of-stock', 'expiring', 'on-loan', 'overdue'],
+    });
+    expect(withoutMaintenance).not.toContain('maintenance-due');
+    expect(withoutMaintenance).toContain('overdue');
+  });
+
+  it('returns nothing without a query when the candidate set is empty', async () => {
+    await seed();
+    expect(await items.applicableStatuses({ now, candidates: [] })).toEqual([]);
+  });
 });
 
 describe('buildStatusFilter — pure composer', () => {

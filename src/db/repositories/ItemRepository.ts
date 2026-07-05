@@ -26,6 +26,7 @@ import { withCycleCount } from './item/cycle-count';
 export type { ItemListFilters } from './item/core';
 export {
   ITEM_STATUS_FILTERS,
+  STATUS_FILTER_FEATURE,
   isItemStatusFilter,
   buildStatusFilter,
   type ItemStatusFilter,

@@ -34,6 +34,15 @@ export interface ApplicableStatusParams {
    * "All items" view (whole inventory).
    */
   readonly locationId?: string | null;
+  /**
+   * The candidate statuses to test — only these get an `EXISTS` column computed, so a status
+   * whose module is off never runs its (sometimes heavy) probe for a result the filter bar
+   * would never show. The caller passes the feature-enabled subset (always including the
+   * always-on core stock statuses) resolved via {@link STATUS_FILTER_FEATURE}. Omitted =
+   * test all {@link ITEM_STATUS_FILTERS}. An empty array short-circuits to an empty result
+   * without a query.
+   */
+  readonly candidates?: readonly ItemStatusFilter[];
 }
 
 /** Filters for the cross-item global activity feed (Phase 80). */
@@ -61,8 +70,18 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * When `locationId` is set the applicability is scoped to that location, so switching the
      * sidebar selection recomputes which filters are offered — a filter that matches nothing
      * *in the current location* is hidden even if it would match elsewhere.
+     *
+     * `candidates` narrows which statuses are probed at all: the caller passes only the
+     * feature-enabled subset (via {@link STATUS_FILTER_FEATURE}), so a status whose module is
+     * off never has its `EXISTS` computed — some of those probes are the heaviest (the
+     * maintenance correlated subquery, the unindexed warranty scan) and their result would be
+     * discarded anyway, as the filter bar hides that chip. Omitted = probe every status.
      */
     async applicableStatuses(params: ApplicableStatusParams = {}): Promise<ItemStatusFilter[]> {
+      const candidates = params.candidates ?? ITEM_STATUS_FILTERS;
+      // No candidates (every status's module off) → nothing to probe; skip the round-trip
+      // entirely rather than issue a degenerate `SELECT;`.
+      if (candidates.length === 0) return [];
       const ctx = {
         now: params.now ?? Date.now(),
         lowStockThresholds: params.lowStockThresholds,
@@ -73,7 +92,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const scope = params.locationId ? 'location_id = ? AND ' : '';
       const columns: string[] = [];
       const sqlParams: SqlValue[] = [];
-      ITEM_STATUS_FILTERS.forEach((status, i) => {
+      candidates.forEach((status, i) => {
         const [clause, clauseParams] = buildStatusFilter([status], ctx);
         columns.push(`EXISTS(SELECT 1 FROM items WHERE is_active = 1 AND ${scope}${clause}) AS s${i}`);
         if (params.locationId) sqlParams.push(params.locationId);
@@ -83,7 +102,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         `SELECT ${columns.join(', ')};`,
         sqlParams,
       );
-      return ITEM_STATUS_FILTERS.filter((_, i) => Number(row?.[`s${i}`] ?? 0) === 1);
+      // Collect the matches, then return them in canonical ITEM_STATUS_FILTERS order (not the
+      // caller's candidate order) so the resulting set is order-stable for the query cache.
+      const matched = new Set(candidates.filter((_, i) => Number(row?.[`s${i}`] ?? 0) === 1));
+      return ITEM_STATUS_FILTERS.filter((status) => matched.has(status));
     }
 
     /**

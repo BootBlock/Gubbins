@@ -6,10 +6,13 @@
  * (LIMIT/OFFSET ≤ 100) so pages feed incrementally into the virtualised list,
  * keeping the worker bridge and the DOM light with 100,000+ records.
  */
+import { useMemo } from 'react';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   DEFAULT_PAGE_SIZE,
+  ITEM_STATUS_FILTERS,
   MAX_LIST_PAGES,
+  STATUS_FILTER_FEATURE,
   getItemRepository,
   getLocationRepository,
   getSuggestionRepository,
@@ -19,6 +22,7 @@ import {
   type LowStockThresholds,
   type SuggestionField,
 } from '@/db/repositories';
+import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
 
@@ -28,6 +32,12 @@ type ApplicableStatusTuning = {
   readonly locationId: string | null;
   readonly lowStockThresholds: LowStockThresholds;
   readonly expirySoonWindowDays: number;
+  /**
+   * The feature-enabled statuses actually probed, so turning a module off (which drops its
+   * candidate) re-keys the query — the repo then skips that status's `EXISTS`. In canonical
+   * order, so the key is stable regardless of how the enabled set was derived.
+   */
+  readonly candidates: readonly ItemStatusFilter[];
 };
 
 /**
@@ -220,16 +230,34 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
  * changes (it keys the query) and on any item mutation (the key sits under `items()`); a
  * slightly stale chip set is only cosmetic.
  *
+ * Only statuses whose Modular-UI capability is enabled are probed (via
+ * {@link STATUS_FILTER_FEATURE}) — the filter bar hides a gated-off chip anyway, so its
+ * (sometimes heavy) `EXISTS` is never computed. The candidate set keys the query, so toggling
+ * a module recomputes it.
+ *
  * @param locationId - the selected location, or null/undefined for the "All items" view.
  */
 export function useApplicableStatuses(locationId?: string | null) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
+  // Only probe statuses whose module is on — the filter bar hides the rest, so computing
+  // their (sometimes heavy) EXISTS would be wasted work. Core stock statuses (no entry in
+  // STATUS_FILTER_FEATURE) are always in. Kept in canonical order so the query key is stable.
+  const enabled = useEnabledFeatures();
+  const candidates = useMemo(
+    () =>
+      ITEM_STATUS_FILTERS.filter((status) => {
+        const feature = STATUS_FILTER_FEATURE[status];
+        return feature == null || enabled.has(feature);
+      }),
+    [enabled],
+  );
   const tuning: ApplicableStatusTuning = {
     locationId: locationId ?? null,
     lowStockThresholds: { qtyThreshold, gaugePercent },
     expirySoonWindowDays,
+    candidates,
   };
   return useQuery({
     queryKey: inventoryKeys.applicableStatuses(tuning),
