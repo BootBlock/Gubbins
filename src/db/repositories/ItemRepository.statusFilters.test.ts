@@ -225,7 +225,7 @@ describe('ItemRepository.list — derived-status filters', () => {
     // Seed covers low-stock, expiring, overdue (also an open loan) and maintenance-due; the
     // expiring item is created with the default quantity 0, so it is out-of-stock too. No
     // warranty dates are set. Returned in canonical order.
-    expect(await items.applicableStatuses({ now })).toEqual([
+    expect((await items.applicableStatuses({ now })).map((s) => s.status)).toEqual([
       'low-stock',
       'out-of-stock',
       'expiring',
@@ -235,6 +235,14 @@ describe('ItemRepository.list — derived-status filters', () => {
     ]);
   });
 
+  it("carries each status's current match count, for the chip label", async () => {
+    await seed();
+    // Two items are out-of-stock (LowOnly is qty 1, not 0 — only ExpiringOnly is qty 0).
+    const applicable = await items.applicableStatuses({ now });
+    expect(applicable.find((s) => s.status === 'low-stock')?.count).toBe(1);
+    expect(applicable.find((s) => s.status === 'out-of-stock')?.count).toBe(1);
+  });
+
   it('reports no applicable statuses for an empty inventory', async () => {
     expect(await items.applicableStatuses({ now })).toEqual([]);
   });
@@ -242,7 +250,7 @@ describe('ItemRepository.list — derived-status filters', () => {
   it('surfaces out-of-stock and warranty once such items exist', async () => {
     await items.create({ name: 'Zero', trackingMode: 'DISCRETE', quantity: 0 });
     await items.create({ name: 'Warranted', warrantyExpiresAt: isoDate(base - MS_PER_DAY) });
-    const applicable = await items.applicableStatuses({ now });
+    const applicable = (await items.applicableStatuses({ now })).map((s) => s.status);
     expect(applicable).toContain('out-of-stock');
     expect(applicable).toContain('warranty');
     expect(applicable).not.toContain('on-loan');
@@ -263,17 +271,17 @@ describe('ItemRepository.list — derived-status filters', () => {
     await items.create({ name: 'GarageExp', expiryDate: base + 10 * MS_PER_DAY, locationId: garage.id });
 
     // Whole inventory: both concerns show.
-    const all = await items.applicableStatuses({ now });
+    const all = (await items.applicableStatuses({ now })).map((s) => s.status);
     expect(all).toContain('low-stock');
     expect(all).toContain('expiring');
 
     // Scoped to the Shed: only low-stock; the Garage's perishable is out of scope.
-    const shedOnly = await items.applicableStatuses({ now, locationId: shed.id });
+    const shedOnly = (await items.applicableStatuses({ now, locationId: shed.id })).map((s) => s.status);
     expect(shedOnly).toContain('low-stock');
     expect(shedOnly).not.toContain('expiring');
 
     // Scoped to the Garage: only expiring (its item is qty-0, so also out-of-stock).
-    const garageOnly = await items.applicableStatuses({ now, locationId: garage.id });
+    const garageOnly = (await items.applicableStatuses({ now, locationId: garage.id })).map((s) => s.status);
     expect(garageOnly).toContain('expiring');
     expect(garageOnly).not.toContain('low-stock');
   });
@@ -283,27 +291,33 @@ describe('ItemRepository.list — derived-status filters', () => {
     // The caller (the hook) passes only the modules-enabled statuses. With every "attention"
     // module off, just the always-on core stock statuses are probed — so a matching
     // maintenance-due / overdue / on-loan item is never reported even though it exists.
-    const coreOnly = await items.applicableStatuses({ now, candidates: ['low-stock', 'out-of-stock'] });
+    const coreOnly = (await items.applicableStatuses({ now, candidates: ['low-stock', 'out-of-stock'] })).map(
+      (s) => s.status,
+    );
     expect(coreOnly).toEqual(['low-stock', 'out-of-stock']);
   });
 
   it('returns candidate matches in canonical order regardless of the candidate order', async () => {
     await seed();
     // Pass the candidates jumbled; the result is still in ITEM_STATUS_FILTERS order.
-    const applicable = await items.applicableStatuses({
-      now,
-      candidates: ['maintenance-due', 'low-stock', 'overdue'],
-    });
+    const applicable = (
+      await items.applicableStatuses({
+        now,
+        candidates: ['maintenance-due', 'low-stock', 'overdue'],
+      })
+    ).map((s) => s.status);
     expect(applicable).toEqual(['low-stock', 'overdue', 'maintenance-due']);
   });
 
   it('drops a matching status that is not among the candidates', async () => {
     await seed();
     // Maintenance is due in the seed, but with maintenance off it is not a candidate.
-    const withoutMaintenance = await items.applicableStatuses({
-      now,
-      candidates: ['low-stock', 'out-of-stock', 'expiring', 'on-loan', 'overdue'],
-    });
+    const withoutMaintenance = (
+      await items.applicableStatuses({
+        now,
+        candidates: ['low-stock', 'out-of-stock', 'expiring', 'on-loan', 'overdue'],
+      })
+    ).map((s) => s.status);
     expect(withoutMaintenance).not.toContain('maintenance-due');
     expect(withoutMaintenance).toContain('overdue');
   });

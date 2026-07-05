@@ -261,15 +261,23 @@ function InventoryWorkspace() {
   const astItems = useAstSearch(ast, astActive);
   const active = astActive ? astItems : listItems;
 
-  // Which status filters currently match anything **in the selected location**, so the filter
-  // bar can hide the rest — recomputed on every location change (the id keys the query). Left
-  // undefined until known so every enabled chip shows until then (no empty flash). Gated off
-  // while the Visual Builder drives the results (astActive): the status chips are superseded and
-  // disabled then, so the applicability round-trip couldn't change anything the user can do.
+  // How many items match each status filter **in the selected location** — recomputed on every
+  // location change (the id keys the query). Drives both which chips the filter bar hides (the
+  // `applicableStatuses` set) and the match count shown in each chip's label. Left undefined
+  // until known so every enabled chip shows with no count until then (no empty flash). Gated
+  // off while the Visual Builder drives the results (astActive): the status chips are
+  // superseded and disabled then, so the round-trip couldn't change anything the user can do.
   const applicableStatusesQuery = useApplicableStatuses(selectedLocationId, !astActive);
-  const applicableStatuses = useMemo(
-    () => (applicableStatusesQuery.data ? new Set(applicableStatusesQuery.data) : undefined),
+  const statusCounts = useMemo(
+    () =>
+      applicableStatusesQuery.data
+        ? new Map(applicableStatusesQuery.data.map((s) => [s.status, s.count]))
+        : undefined,
     [applicableStatusesQuery.data],
+  );
+  const applicableStatuses = useMemo(
+    () => (statusCounts ? new Set(statusCounts.keys()) : undefined),
+    [statusCounts],
   );
 
   const locationNames = useMemo(() => {
@@ -619,6 +627,7 @@ function InventoryWorkspace() {
               onToggle={toggleStatusFilter}
               onClear={clearStatusFilters}
               applicable={applicableStatuses}
+              counts={statusCounts}
               disabled={astActive}
             />
 

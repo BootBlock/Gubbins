@@ -45,6 +45,12 @@ export interface ApplicableStatusParams {
   readonly candidates?: readonly ItemStatusFilter[];
 }
 
+/** One status filter's current match count (0 = not applicable — the chip has nothing to show). */
+export interface ItemStatusCount {
+  readonly status: ItemStatusFilter;
+  readonly count: number;
+}
+
 /** Filters for the cross-item global activity feed (Phase 80). */
 export interface ActivityFeedFilters extends PageParams {
   /**
@@ -58,26 +64,27 @@ export interface ActivityFeedFilters extends PageParams {
 export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemFeedRepository extends Base {
     /**
-     * Which of the common status filters currently match **at least one** active item — the
-     * inventory filter bar hides the rest so it only offers filters that would do something
-     * (spec §3 filter axis). Computed in a single round-trip: one `SELECT` of a boolean
-     * `EXISTS(…)` per status, each reusing that status's SSOT predicate via
-     * {@link buildStatusFilter}, so applicability can never disagree with what the filter
-     * would actually return. `now` is injected for the time-based statuses (defaulting to
-     * query time). Every `EXISTS` short-circuits on its first match, so this stays cheap even
-     * on a large catalogue.
+     * How many active items currently match each of the common status filters — the inventory
+     * filter bar uses this both to hide a chip that matches nothing (spec §3 filter axis) and
+     * to show the match count in its label (e.g. "Out of stock (8)"). Computed in a single
+     * round-trip: one `SELECT` of a `COUNT(*)` per status, each reusing that status's SSOT
+     * predicate via {@link buildStatusFilter}, so the count can never disagree with what the
+     * filter would actually return. `now` is injected for the time-based statuses (defaulting
+     * to query time).
      *
-     * When `locationId` is set the applicability is scoped to that location, so switching the
-     * sidebar selection recomputes which filters are offered — a filter that matches nothing
-     * *in the current location* is hidden even if it would match elsewhere.
+     * When `locationId` is set the counts are scoped to that location, so switching the
+     * sidebar selection recomputes them — a filter that matches nothing *in the current
+     * location* counts as zero even if it would match elsewhere.
      *
      * `candidates` narrows which statuses are probed at all: the caller passes only the
      * feature-enabled subset (via {@link STATUS_FILTER_FEATURE}), so a status whose module is
-     * off never has its `EXISTS` computed — some of those probes are the heaviest (the
+     * off never has its count computed — some of those probes are the heaviest (the
      * maintenance correlated subquery, the unindexed warranty scan) and their result would be
-     * discarded anyway, as the filter bar hides that chip. Omitted = probe every status.
+     * discarded anyway, as the filter bar hides that chip. Omitted = probe every status. Only
+     * statuses with a non-zero count are returned, in canonical {@link ITEM_STATUS_FILTERS}
+     * order (not the caller's candidate order) so the result is order-stable for the query cache.
      */
-    async applicableStatuses(params: ApplicableStatusParams = {}): Promise<ItemStatusFilter[]> {
+    async applicableStatuses(params: ApplicableStatusParams = {}): Promise<ItemStatusCount[]> {
       const candidates = params.candidates ?? ITEM_STATUS_FILTERS;
       // No candidates (every status's module off) → nothing to probe; skip the round-trip
       // entirely rather than issue a degenerate `SELECT;`.
@@ -87,14 +94,14 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         lowStockThresholds: params.lowStockThresholds,
         expirySoonWindowDays: params.expirySoonWindowDays,
       };
-      // The location scope is AND-ed into each per-status EXISTS ahead of the predicate, so its
+      // The location scope is AND-ed into each per-status count ahead of the predicate, so its
       // bound value is pushed before that status's own params.
       const scope = params.locationId ? 'location_id = ? AND ' : '';
       const columns: string[] = [];
       const sqlParams: SqlValue[] = [];
       candidates.forEach((status, i) => {
         const [clause, clauseParams] = buildStatusFilter([status], ctx);
-        columns.push(`EXISTS(SELECT 1 FROM items WHERE is_active = 1 AND ${scope}${clause}) AS s${i}`);
+        columns.push(`(SELECT COUNT(*) FROM items WHERE is_active = 1 AND ${scope}${clause}) AS s${i}`);
         if (params.locationId) sqlParams.push(params.locationId);
         sqlParams.push(...clauseParams);
       });
@@ -102,10 +109,13 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         `SELECT ${columns.join(', ')};`,
         sqlParams,
       );
-      // Collect the matches, then return them in canonical ITEM_STATUS_FILTERS order (not the
-      // caller's candidate order) so the resulting set is order-stable for the query cache.
-      const matched = new Set(candidates.filter((_, i) => Number(row?.[`s${i}`] ?? 0) === 1));
-      return ITEM_STATUS_FILTERS.filter((status) => matched.has(status));
+      // Collect the non-zero counts, then return them in canonical ITEM_STATUS_FILTERS order
+      // (not the caller's candidate order) so the result is order-stable for the query cache.
+      const countByStatus = new Map(candidates.map((status, i) => [status, Number(row?.[`s${i}`] ?? 0)]));
+      return ITEM_STATUS_FILTERS.filter((status) => (countByStatus.get(status) ?? 0) > 0).map((status) => ({
+        status,
+        count: countByStatus.get(status)!,
+      }));
     }
 
     /**

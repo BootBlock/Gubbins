@@ -64,6 +64,7 @@ export type {
   LocationStockLine,
   ItemBatchPlacement,
   LocationBatchLine,
+  ItemStatusCount,
 } from './ItemRepository';
 export { ITEM_STATUS_FILTERS, STATUS_FILTER_FEATURE, isItemStatusFilter } from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';

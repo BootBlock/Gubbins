@@ -27,6 +27,7 @@ describe('InventoryFilterBar', () => {
         onToggle={onToggle}
         onClear={onClear}
         applicable={overrides.applicable}
+        counts={overrides.counts}
         disabled={overrides.disabled}
       />,
     );
@@ -143,5 +144,16 @@ describe('InventoryFilterBar', () => {
     expect(chip).not.toHaveAttribute('title');
     // The Foundry Tooltip wraps the control in a describedby-capable trigger.
     expect(chip.closest('span')).toBeTruthy();
+  });
+
+  it('shows the match count in a chip label once known', () => {
+    renderBar({ counts: new Map<ItemStatusFilter, number>([['out-of-stock', 8]]) });
+    expect(screen.getByTestId('inventory-filter-out-of-stock')).toHaveTextContent('Out of stock (8)');
+  });
+
+  it('renders a chip label with no count while counts are still unknown', () => {
+    renderBar();
+    expect(screen.getByTestId('inventory-filter-low-stock')).toHaveTextContent('Low stock');
+    expect(screen.getByTestId('inventory-filter-low-stock')).not.toHaveTextContent('(');
   });
 });

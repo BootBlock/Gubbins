@@ -18,6 +18,7 @@ import {
   getSuggestionRepository,
   getSupplierPartRepository,
   type ItemListFilters,
+  type ItemStatusCount,
   type ItemStatusFilter,
   type LowStockThresholds,
   type SuggestionField,
@@ -223,23 +224,23 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
 }
 
 /**
- * Which status filters currently match at least one item **in the currently-viewed location**,
- * so the filter bar can hide the ones that would return nothing (spec §3 filter axis). Judged
- * against the same user-tuned low-stock / expiry thresholds the filters themselves use, so
- * applicability agrees with what a chip would actually do. Re-runs when the location selection
- * changes (it keys the query) and on any item mutation (the key sits under `items()`); a
- * slightly stale chip set is only cosmetic.
+ * How many items match each status filter **in the currently-viewed location** — the filter
+ * bar uses this both to hide a chip that would return nothing (spec §3 filter axis) and to
+ * show its match count in the label. Judged against the same user-tuned low-stock / expiry
+ * thresholds the filters themselves use, so the counts agree with what a chip would actually
+ * return. Re-runs when the location selection changes (it keys the query) and on any item
+ * mutation (the key sits under `items()`); a slightly stale count is only cosmetic.
  *
  * Only statuses whose Modular-UI capability is enabled are probed (via
  * {@link STATUS_FILTER_FEATURE}) — the filter bar hides a gated-off chip anyway, so its
- * (sometimes heavy) `EXISTS` is never computed. The candidate set keys the query, so toggling
+ * (sometimes heavy) count is never computed. The candidate set keys the query, so toggling
  * a module recomputes it.
  *
  * @param locationId - the selected location, or null/undefined for the "All items" view.
  * @param active - gate the query off (default `true`). When the Visual Builder is driving the
- *   results the status chips are superseded and disabled, so their per-location applicability
- *   `EXISTS` round-trip is wasted work; callers pass `!astActive` to skip it. `keepPreviousData`
- *   keeps the last-known set on screen while gated off (harmless — the chips are disabled).
+ *   results the status chips are superseded and disabled, so their per-location count
+ *   round-trip is wasted work; callers pass `!astActive` to skip it. `keepPreviousData`
+ *   keeps the last-known counts on screen while gated off (harmless — the chips are disabled).
  */
 export function useApplicableStatuses(locationId?: string | null, active = true) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
@@ -265,7 +266,7 @@ export function useApplicableStatuses(locationId?: string | null, active = true)
   };
   return useQuery({
     queryKey: inventoryKeys.applicableStatuses(tuning),
-    queryFn: (): Promise<ItemStatusFilter[]> => getItemRepository().applicableStatuses(tuning),
+    queryFn: (): Promise<ItemStatusCount[]> => getItemRepository().applicableStatuses(tuning),
     // Skip the round-trip entirely while the Visual Builder supersedes the (now disabled) chips.
     enabled: active,
     // Keep the previous set on screen while a refresh runs, so chips don't flicker out and back.

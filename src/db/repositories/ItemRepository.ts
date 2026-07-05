@@ -33,6 +33,7 @@ export {
 } from './item/status-filter';
 export type { SearchByAstParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
+export type { ItemStatusCount } from './item/feeds';
 
 /**
  * The complete item repository: the CRUD core with every concern mixin layered on.
