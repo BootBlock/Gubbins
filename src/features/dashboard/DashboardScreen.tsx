@@ -72,16 +72,14 @@ export function DashboardScreen() {
           </div>
         </a>
 
-        {/* Right-aligned group: the pre-1.0 work-in-progress banner sits immediately to
-            the left of the version + release date, with the global navigation menu pinned
-            to the far right — the same top-right slot AppNav occupies on every other screen
-            (which reach it via PageHeader; the dashboard hero is a PageHeader exception, so
-            it renders AppNav itself). The wrapper is sized to its content, so the version's
-            own `ml-auto` collapses and the group stays adjacent.
+        {/* Right-aligned group: the pre-1.0 work-in-progress banner sits immediately to the
+            left of the version + release date. The global navigation menu that used to pin
+            to the far right of this row now lives one row down, on the hero toolbar beside
+            the Search/Add/Scan actions (see below). The wrapper is sized to its content, so
+            the version's own `ml-auto` collapses and the group stays adjacent.
 
             `self-start` + `items-start` top-align this cluster to the header's top edge
-            rather than letting it centre in the taller brand hero — so the menu button lands
-            at the exact same Y as it does on every PageHeader screen, instead of ~22px lower. */}
+            rather than letting it centre in the taller brand hero. */}
         <div className="ml-auto flex items-start gap-3 self-start">
           {/* Pre-1.0 data-loss warning — gated behind SHOW_WIP_BANNER in DashboardBanner. */}
           <DashboardBanner />
@@ -89,17 +87,22 @@ export function DashboardScreen() {
           {/* Version + release date — landing-page only (the other screens use PageHeader,
               which has no version slot). Clicking it runs a manual update check. */}
           <DashboardVersion />
-
-          {/* The same global navigation menu every other screen shows top-right via
-              PageHeader. Rendered directly here so the dashboard is reachable-from and
-              reaches every destination without leaving the landing page. */}
-          <AppNav />
         </div>
       </header>
 
-      {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions,
-          each independently toggleable from Settings → Dashboard. */}
-      <DashboardActions />
+      {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions on the
+          left (each independently toggleable from Settings → Dashboard), with the global
+          navigation menu pinned to the right of the same row. AppNav is rendered here rather
+          than inside DashboardActions so the menu is always present — even when both hero
+          affordances are toggled off and DashboardActions renders nothing. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <DashboardActions />
+        {/* `ml-auto` pushes the menu to the far right of the toolbar row, mirroring the
+            top-right slot AppNav occupies via PageHeader on every other screen. */}
+        <div className="ml-auto">
+          <AppNav />
+        </div>
+      </div>
 
       {/* First-run guidance — self-hides once the inventory has any items. */}
       <DashboardGettingStarted />
