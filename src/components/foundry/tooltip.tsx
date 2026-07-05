@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -29,7 +30,9 @@ import { useReducedMotion } from './useReducedMotion';
  * Touch has no hover, so hover-open is suppressed for touch/pen (a synthesised
  * `mouseenter` after a tap must never pop a bubble over the control the finger just
  * pressed). A tap opens the tooltip only on a *passive* trigger whose sole purpose is
- * the help — see {@link TooltipProps.openOnTap}.
+ * the help — see {@link TooltipProps.openOnTap}. A trigger that wraps its own control
+ * instead surfaces its help on touch via a **long-press-to-peek** ({@link LONG_PRESS_MS})
+ * that opens the bubble without activating the control — the standard Material pattern.
  */
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
 
@@ -87,7 +90,15 @@ export interface TooltipProps {
    * interactive descendant is treated as a control wrapper (tap flows through to the control,
    * tooltip stays shut on touch), while a *passive* trigger — an `i` badge or a status pill
    * whose sole purpose is the tooltip — toggles open on tap so its help is reachable on touch.
-   * Pass an explicit `true`/`false` only to override that detection for an unusual trigger.
+   *
+   * On an auto-detected **control wrapper**, the help is instead reachable via a
+   * **long-press-to-peek** ({@link LONG_PRESS_MS}): a held touch/pen press opens the bubble
+   * without firing the control. This prop is also the escape hatch for that gesture —
+   * `openOnTap={false}` silences the trigger on touch entirely (**no** tap-open *and* no
+   * long-press-peek), which is what a control that grows its *own* long-press behaviour
+   * (e.g. long-press-to-multiselect) should pass. `openOnTap={true}` forces the plain
+   * tap-toggle (so long-press-peek is moot). Pass an explicit value only to override the
+   * auto-detection for an unusual trigger.
    */
   readonly openOnTap?: boolean;
 }
@@ -113,6 +124,20 @@ export const INFO_OPEN_DELAY_MS = 300;
  */
 export const NAV_OPEN_DELAY_MS = 1500;
 const CLOSE_DELAY_MS = 120;
+/**
+ * Hold duration (ms) before a touch/pen press on a *control-wrapping* trigger peeks its
+ * tooltip. 500ms matches the platform long-press timeouts (Android `getLongPressTimeout()`,
+ * iOS `minimumPressDuration`) so the gesture feels native, and sits comfortably above a
+ * normal — even a slow — tap, so releasing late never accidentally peeks. See the touch
+ * branch of `onPointerDown`.
+ */
+export const LONG_PRESS_MS = 500;
+/**
+ * Movement tolerance (px) for the long-press-peek: if the pointer travels past this before
+ * {@link LONG_PRESS_MS} elapses the press is cancelled — the gesture was a scroll or drag,
+ * not a deliberate peek. Compared as a squared distance to avoid a `Math.sqrt` per move.
+ */
+const MOVE_CANCEL_PX = 10;
 /**
  * Elements that count as the trigger "wrapping its own interactive control" for touch-tap
  * auto-detection (see {@link TooltipProps.openOnTap}). When a trigger contains one of these,
@@ -168,6 +193,13 @@ export function Tooltip({
   // True for the brief window after a pointer press, so the focus it triggers does
   // not force the bubble open. See `onFocus` below.
   const pointerInitiatedFocus = useRef(false);
+  // Long-press-to-peek state (touch/pen on a control-wrapping trigger). `pressTimer`
+  // is the pending peek; `pressStart` is the down point for the movement-cancel; and
+  // `longPressFired` is a one-shot guard read by `onClickCapture` to swallow the click
+  // synthesised on release, so the peek never also activates the underlying control.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
   const id = useId();
 
   const cancelClose = useCallback(() => {
@@ -182,6 +214,15 @@ export function Tooltip({
       clearTimeout(openTimer.current);
       openTimer.current = null;
     }
+  }, []);
+
+  /** Disarm a pending long-press-peek (early release, movement, cancel, or unmount). */
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current !== null) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressStart.current = null;
   }, []);
 
   /** Open immediately — for keyboard focus, touch tap, and re-entering the bubble. */
@@ -211,8 +252,9 @@ export function Tooltip({
     () => () => {
       cancelOpen();
       cancelClose();
+      cancelPress();
     },
-    [cancelOpen, cancelClose],
+    [cancelOpen, cancelClose, cancelPress],
   );
 
   // Position once open (and keep aligned on scroll/resize). Measured after the
@@ -330,10 +372,12 @@ export function Tooltip({
   // Touch/pen: there is no hover, so a tap is the only way to reach the help. But a tap on a
   // trigger that wraps its own interactive control belongs to that control — opening the
   // bubble would cover it and swallow the tap — so only a *passive* trigger (an `i` badge, a
-  // status pill) toggles on tap. `openOnTap` overrides this per-trigger; when unset it is
-  // auto-detected from whether the trigger contains an interactive descendant. Mouse taps are
-  // ignored here (hover governs them). Either way, flag that the focus about to fire was
-  // pointer-initiated so `onFocus` doesn't also open.
+  // status pill) toggles on tap. A control-wrapping trigger instead peeks its help on a
+  // **long-press** ({@link LONG_PRESS_MS}), which opens the bubble without firing the control.
+  // `openOnTap` overrides this per-trigger; when unset it is auto-detected from whether the
+  // trigger contains an interactive descendant. Mouse taps are ignored here (hover governs
+  // them). Either way, flag that the focus about to fire was pointer-initiated so `onFocus`
+  // doesn't also open.
   const onPointerDown = useCallback(
     (e: ReactPointerEvent) => {
       pointerInitiatedFocus.current = true;
@@ -342,13 +386,61 @@ export function Tooltip({
       setTimeout(() => {
         pointerInitiatedFocus.current = false;
       }, 0);
+      // Reset the one-shot click guard at the start of every gesture, so a stale peek that
+      // never got its synthesised click can't later swallow a genuine click.
+      longPressFired.current = false;
       if (e.pointerType === 'mouse') return;
-      const tapOpens = openOnTap ?? triggerRef.current?.querySelector(INTERACTIVE_TRIGGER_SELECTOR) == null;
-      if (!tapOpens) return;
-      setOpen((prev) => !prev);
+      const isControlWrapper = triggerRef.current?.querySelector(INTERACTIVE_TRIGGER_SELECTOR) != null;
+      const tapOpens = openOnTap ?? !isControlWrapper;
+      if (tapOpens) {
+        setOpen((prev) => !prev);
+        return;
+      }
+      // Not a tap-open trigger. An explicit `openOnTap={false}` silences it entirely (the
+      // escape hatch); otherwise it's an auto-detected control wrapper, so arm the peek.
+      if (openOnTap === false) return;
+      cancelPress();
+      pressStart.current = { x: e.clientX, y: e.clientY };
+      pressTimer.current = setTimeout(() => {
+        pressTimer.current = null;
+        // Mark the peek so the ensuing synthesised `click` is swallowed (onClickCapture),
+        // then open the bubble without activating the underlying control.
+        longPressFired.current = true;
+        show();
+      }, LONG_PRESS_MS);
     },
-    [openOnTap],
+    [openOnTap, cancelPress, show],
   );
+
+  // Movement cancels an armed peek: past a small threshold the gesture is a scroll/drag, not
+  // a deliberate hold, so let the control keep the touch. (pointer-up before the timer and
+  // pointer-cancel likewise disarm it — see the trigger wiring below.)
+  const onPointerMove = useCallback(
+    (e: ReactPointerEvent) => {
+      if (pressTimer.current === null || pressStart.current === null) return;
+      const dx = e.clientX - pressStart.current.x;
+      const dy = e.clientY - pressStart.current.y;
+      if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) cancelPress();
+    },
+    [cancelPress],
+  );
+
+  // One-shot capture guard: when a long-press has just peeked, swallow the `click` that the
+  // browser synthesises on release so the underlying control never fires. Capture-phase +
+  // stopPropagation halts it before it reaches the control's own handler.
+  const onClickCapture = useCallback((e: ReactMouseEvent) => {
+    if (!longPressFired.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    longPressFired.current = false;
+  }, []);
+
+  // Suppress the OS long-press context menu while a peek is pending/held, so the native
+  // callout doesn't fight the tooltip. Gated on `pressStart` so a mouse right-click (which
+  // never arms a press) keeps its context menu.
+  const onContextMenu = useCallback((e: ReactMouseEvent) => {
+    if (pressStart.current !== null) e.preventDefault();
+  }, []);
 
   // Open on focus **only when it came from the keyboard**. A focus triggered by a
   // pointer press is skipped: hover (mouse) or the tap-toggle (touch) already governs
@@ -370,7 +462,14 @@ export function Tooltip({
         onFocus={onFocus}
         onBlur={scheduleClose}
         onPointerDown={onPointerDown}
-        className={cn('inline-flex outline-none', className)}
+        onPointerMove={onPointerMove}
+        onPointerUp={cancelPress}
+        onPointerCancel={cancelPress}
+        onClickCapture={onClickCapture}
+        onContextMenu={onContextMenu}
+        // `select-none` + `-webkit-touch-callout:none` stop the OS text-selection and
+        // callout from hijacking a long-press-peek (see `onPointerDown`).
+        className={cn('inline-flex select-none outline-none [-webkit-touch-callout:none]', className)}
       >
         {children}
       </span>
