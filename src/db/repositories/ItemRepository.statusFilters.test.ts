@@ -9,6 +9,7 @@ import { CheckoutRepository } from './CheckoutRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { TagRepository } from './TagRepository';
+import { LocationRepository } from './LocationRepository';
 
 /** Format a UNIX-ms instant as the `YYYY-MM-DD` string the warranty column stores. */
 const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -245,6 +246,36 @@ describe('ItemRepository.list — derived-status filters', () => {
     expect(applicable).toContain('out-of-stock');
     expect(applicable).toContain('warranty');
     expect(applicable).not.toContain('on-loan');
+  });
+
+  it('scopes applicability to a location, recomputed per selection', async () => {
+    const locations = new LocationRepository(driver);
+    const shed = await locations.create({ name: 'Shed' });
+    const garage = await locations.create({ name: 'Garage' });
+    // A low-stock part lives in the Shed; a perishable lives in the Garage.
+    await items.create({
+      name: 'ShedLow',
+      trackingMode: 'DISCRETE',
+      quantity: 1,
+      reorderPoint: 5,
+      locationId: shed.id,
+    });
+    await items.create({ name: 'GarageExp', expiryDate: base + 10 * MS_PER_DAY, locationId: garage.id });
+
+    // Whole inventory: both concerns show.
+    const all = await items.applicableStatuses({ now });
+    expect(all).toContain('low-stock');
+    expect(all).toContain('expiring');
+
+    // Scoped to the Shed: only low-stock; the Garage's perishable is out of scope.
+    const shedOnly = await items.applicableStatuses({ now, locationId: shed.id });
+    expect(shedOnly).toContain('low-stock');
+    expect(shedOnly).not.toContain('expiring');
+
+    // Scoped to the Garage: only expiring (its item is qty-0, so also out-of-stock).
+    const garageOnly = await items.applicableStatuses({ now, locationId: garage.id });
+    expect(garageOnly).toContain('expiring');
+    expect(garageOnly).not.toContain('low-stock');
   });
 });
 

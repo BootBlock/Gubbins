@@ -28,6 +28,12 @@ export interface ApplicableStatusParams {
   readonly now?: number;
   readonly lowStockThresholds?: LowStockThresholds;
   readonly expirySoonWindowDays?: number;
+  /**
+   * Scope applicability to a single location (the sidebar selection), so the filter bar only
+   * offers filters that match **within the currently-viewed location**. Omit/null for the
+   * "All items" view (whole inventory).
+   */
+  readonly locationId?: string | null;
 }
 
 /** Filters for the cross-item global activity feed (Phase 80). */
@@ -51,6 +57,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * would actually return. `now` is injected for the time-based statuses (defaulting to
      * query time). Every `EXISTS` short-circuits on its first match, so this stays cheap even
      * on a large catalogue.
+     *
+     * When `locationId` is set the applicability is scoped to that location, so switching the
+     * sidebar selection recomputes which filters are offered — a filter that matches nothing
+     * *in the current location* is hidden even if it would match elsewhere.
      */
     async applicableStatuses(params: ApplicableStatusParams = {}): Promise<ItemStatusFilter[]> {
       const ctx = {
@@ -58,11 +68,15 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         lowStockThresholds: params.lowStockThresholds,
         expirySoonWindowDays: params.expirySoonWindowDays,
       };
+      // The location scope is AND-ed into each per-status EXISTS ahead of the predicate, so its
+      // bound value is pushed before that status's own params.
+      const scope = params.locationId ? 'location_id = ? AND ' : '';
       const columns: string[] = [];
       const sqlParams: SqlValue[] = [];
       ITEM_STATUS_FILTERS.forEach((status, i) => {
         const [clause, clauseParams] = buildStatusFilter([status], ctx);
-        columns.push(`EXISTS(SELECT 1 FROM items WHERE is_active = 1 AND ${clause}) AS s${i}`);
+        columns.push(`EXISTS(SELECT 1 FROM items WHERE is_active = 1 AND ${scope}${clause}) AS s${i}`);
+        if (params.locationId) sqlParams.push(params.locationId);
         sqlParams.push(...clauseParams);
       });
       const row = await this.driver.queryOne<Record<string, number>>(

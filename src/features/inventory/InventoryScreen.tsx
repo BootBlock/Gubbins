@@ -233,9 +233,10 @@ function InventoryWorkspace() {
   const astItems = useAstSearch(ast, astActive);
   const active = astActive ? astItems : listItems;
 
-  // Which status filters currently match anything, so the filter bar can hide the rest. Left
+  // Which status filters currently match anything **in the selected location**, so the filter
+  // bar can hide the rest — recomputed on every location change (the id keys the query). Left
   // undefined until known so every enabled chip shows until then (no empty flash).
-  const applicableStatusesQuery = useApplicableStatuses();
+  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId);
   const applicableStatuses = useMemo(
     () => (applicableStatusesQuery.data ? new Set(applicableStatusesQuery.data) : undefined),
     [applicableStatusesQuery.data],

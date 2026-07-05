@@ -24,6 +24,8 @@ import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
 
 /** Stable tuning slice keying the applicable-statuses query (see {@link useApplicableStatuses}). */
 type ApplicableStatusTuning = {
+  /** The currently-viewed location, so applicability recomputes when the selection changes. */
+  readonly locationId: string | null;
   readonly lowStockThresholds: LowStockThresholds;
   readonly expirySoonWindowDays: number;
 };
@@ -211,17 +213,21 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
 }
 
 /**
- * Which status filters currently match at least one item, so the filter bar can hide the
- * ones that would return nothing (spec §3 filter axis). Judged against the same user-tuned
- * low-stock / expiry thresholds the filters themselves use, so applicability agrees with what
- * a chip would actually do. Kept briefly fresh and refreshed by any item mutation (the key
- * sits under `items()`); a slightly stale chip set is only cosmetic.
+ * Which status filters currently match at least one item **in the currently-viewed location**,
+ * so the filter bar can hide the ones that would return nothing (spec §3 filter axis). Judged
+ * against the same user-tuned low-stock / expiry thresholds the filters themselves use, so
+ * applicability agrees with what a chip would actually do. Re-runs when the location selection
+ * changes (it keys the query) and on any item mutation (the key sits under `items()`); a
+ * slightly stale chip set is only cosmetic.
+ *
+ * @param locationId - the selected location, or null/undefined for the "All items" view.
  */
-export function useApplicableStatuses() {
+export function useApplicableStatuses(locationId?: string | null) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
   const tuning: ApplicableStatusTuning = {
+    locationId: locationId ?? null,
     lowStockThresholds: { qtyThreshold, gaugePercent },
     expirySoonWindowDays,
   };
