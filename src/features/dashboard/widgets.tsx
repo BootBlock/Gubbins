@@ -47,6 +47,8 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
+import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
+import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 import type { FeatureId } from '@/features/modules/feature-registry';
 
 export interface WidgetDefinition {
@@ -55,6 +57,13 @@ export interface WidgetDefinition {
   readonly icon: ReactNode;
   /** Optional quick-link target — the whole tile navigates here in view mode. */
   readonly to?: string;
+  /**
+   * Fires just before the quick-link navigates (mirrors the dashboard hero's Add/Scan
+   * quick-actions — see `DashboardActions`). Use this to hand a one-shot intent to the
+   * destination screen — e.g. `useInventoryEntry.getState().requestLocation(id)` so the
+   * In-Transit tile lands pre-scoped to that location rather than the plain list.
+   */
+  readonly onLinkClick?: () => void;
   /**
    * The Modular UI feature this widget belongs to (modular-ui-plan §4). When the feature
    * is not in the effective-enabled set the grid drops the widget from the board *and* the
@@ -570,6 +579,9 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     title: 'In transit',
     icon: <TruckIcon />,
     to: '/inventory',
+    // Land scoped to the system In-Transit location (spec §4 "liminal procurement") rather
+    // than the plain, unfiltered list — that's where incoming stock actually sits.
+    onLinkClick: () => useInventoryEntry.getState().requestLocation(IN_TRANSIT_LOCATION_ID),
     feature: 'purchase-orders',
     Component: InTransitWidget,
   },

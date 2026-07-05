@@ -11,6 +11,10 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
+// A spy the synthetic `delta` widget's `onLinkClick` calls, so the test below can assert
+// the grid actually wires it to the rendered Link's onClick.
+const mockDeltaLinkClick = vi.fn();
+
 // A controlled widget registry so this test exercises the grid's gating logic — not the
 // real widgets' data hooks. `featureForRoute` (from the real registry) still resolves the
 // `to` targets below, so the dead-link path is tested end to end against real route data.
@@ -18,6 +22,16 @@ vi.mock('./widgets', () => {
   const defs = [
     // Ungated widget with a core-route link — always on the board, link always live.
     { id: 'alpha', title: 'Alpha', icon: null, to: '/inventory', Component: () => <p>Alpha body</p> },
+    // Same shape as alpha, but carries an `onLinkClick` (mirrors the In-Transit widget
+    // handing a one-shot location intent to the Inventory screen before navigating).
+    {
+      id: 'delta',
+      title: 'Delta',
+      icon: null,
+      to: '/inventory',
+      onLinkClick: () => mockDeltaLinkClick(),
+      Component: () => <p>Delta body</p>,
+    },
     // Gated on `projects` — disappears entirely when Projects is off.
     {
       id: 'beta',
@@ -123,6 +137,13 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
     expect(useSettingsDialog.getState().open).toBe(false);
     fireEvent.click(button as HTMLButtonElement);
     expect(useSettingsDialog.getState().open).toBe(true);
+  });
+
+  it('fires a widget’s onLinkClick (e.g. a one-shot destination intent) just before it navigates', () => {
+    render(<DashboardGrid />);
+    expect(mockDeltaLinkClick).not.toHaveBeenCalled();
+    fireEvent.click(tileLink('delta') as HTMLAnchorElement);
+    expect(mockDeltaLinkClick).toHaveBeenCalledTimes(1);
   });
 });
 

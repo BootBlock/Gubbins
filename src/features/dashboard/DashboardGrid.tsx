@@ -405,7 +405,7 @@ function WidgetTile({
         type="button"
         onClick={openSettings}
         style={cellStyle(x, y)}
-        className={cn(PLACEMENT, 'block w-full text-left')}
+        className={cn(PLACEMENT, 'block w-full cursor-pointer text-left')}
       >
         {card}
       </button>
@@ -413,7 +413,13 @@ function WidgetTile({
   }
   if (def.to && linkActive) {
     return (
-      <Link ref={nodeRef} to={def.to} style={cellStyle(x, y)} className={cn(PLACEMENT, 'block')}>
+      <Link
+        ref={nodeRef}
+        to={def.to}
+        onClick={def.onLinkClick}
+        style={cellStyle(x, y)}
+        className={cn(PLACEMENT, 'block')}
+      >
         {card}
       </Link>
     );

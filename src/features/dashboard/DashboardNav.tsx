@@ -398,7 +398,7 @@ export function DashboardNav() {
                 }
 
                 const tileClassName =
-                  'block h-full w-full rounded-2xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+                  'block h-full w-full cursor-pointer rounded-2xl text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
                 const surface = (
                   <Surface
                     className={cn(
