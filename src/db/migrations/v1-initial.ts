@@ -949,5 +949,7 @@ export const v1Initial: Migration = {
       sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
     },
     { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
+    // --- Stock-take G1: durable "last counted" timestamp -------------------------
+    { sql: `ALTER TABLE locations ADD COLUMN last_counted_at INTEGER;` },
   ],
 };

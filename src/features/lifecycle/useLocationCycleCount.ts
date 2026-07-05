@@ -27,7 +27,7 @@ import {
   type CycleCountLine,
 } from './cycle-count';
 import { useCycleCount } from './CycleCountContext';
-import { useReconcile, useReconcileSerialised } from './hooks';
+import { useMarkLocationCounted, useReconcile, useReconcileSerialised } from './hooks';
 
 /** A count line's label: the item name, with the lot's batch/lot number appended if tracked. */
 function batchLineLabel(name: string, batchNumber: string | null, lotNumber: string | null): string {
@@ -98,6 +98,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   const { lines, counts, serialised, presence, begin, setCount, setPresence } = useCycleCount();
   const reconcile = useReconcile();
   const reconcileSerialised = useReconcileSerialised();
+  const markCounted = useMarkLocationCounted();
 
   // Load the items physically in this location (Phase 26 — per-location; Phase 28 — per-batch).
   // DISCRETE stock is read from the `stock_batches` ledger, so a drawer's lots are each
@@ -146,7 +147,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   const drift = useMemo(() => variances(countedLines), [countedLines]);
   const missing = useMemo(() => missingInstances(serialised, presence), [serialised, presence]);
   const totalToApply = drift.length + missing.length;
-  const pending = reconcile.isPending || reconcileSerialised.isPending;
+  const pending = reconcile.isPending || reconcileSerialised.isPending || markCounted.isPending;
   const isEmpty = !isLoading && lines.length === 0 && serialised.length === 0;
 
   const authorise = async (): Promise<AuthoriseResult> => {
@@ -179,6 +180,10 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     const updatedSerialised = serialisedAdjustments.length
       ? await reconcileSerialised.mutateAsync(serialisedAdjustments)
       : [];
+    // Stamp the location as counted regardless of whether any variance was found — a clean
+    // count is still a completed audit, and this durable timestamp is what lets the audit-day
+    // picker and LocationInfoCard show how long it's been since a location was verified.
+    await markCounted.mutateAsync(location.id);
     return {
       variancesFound: totalToApply,
       adjustmentsMade: updatedDiscrete.length + updatedSerialised.length,

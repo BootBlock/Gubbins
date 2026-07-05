@@ -77,6 +77,7 @@ export function rowToLocation(row: LocationRow): Location {
     capacity: row.capacity,
     isDefault: row.is_default === 1,
     archivedAt: row.archived_at,
+    lastCountedAt: row.last_counted_at,
     updatedAt: row.updated_at,
   };
 }

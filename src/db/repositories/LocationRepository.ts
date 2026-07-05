@@ -31,7 +31,7 @@ interface LocationCountRow extends LocationRow {
 
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
-         l.kind, l.capacity, l.is_default, l.archived_at, l.updated_at,
+         l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at, l.updated_at,
          COUNT(i.id) AS item_count
   FROM locations l
   LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1
@@ -230,6 +230,20 @@ export class LocationRepository extends BaseRepository {
   /** Soft-archive a location (hide it from the tree/pickers) or restore it. */
   async setArchived(id: string, archived: boolean): Promise<Location> {
     return this.update(id, { archivedAt: archived ? Date.now() : null });
+  }
+
+  /**
+   * Stamp a location as counted just now (spec §4.4 stock-take group G) — the durable
+   * "last counted" record written whenever a cycle-count/audit-day walk completes at this
+   * location, whether the count was clean or reconciled variances. Deliberately its own
+   * method rather than a field on {@link update}: it carries no other input, needs no
+   * cycle guard, and is called from the count engine rather than a location-edit form.
+   */
+  async markCounted(id: string, at: number = Date.now()): Promise<Location> {
+    this.assertWritable();
+    await this.assertMutable(id);
+    await this.driver.execute('UPDATE locations SET last_counted_at = ? WHERE id = ?;', [at, id]);
+    return (await this.getById(id))!;
   }
 
   /**

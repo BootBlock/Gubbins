@@ -40,10 +40,12 @@ vi.mock('@/db/repositories', () => ({
 // Reconcile hooks — spies resolved with [] by default; individual tests override.
 const reconcileSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const reconcileSerialisedSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const markCountedSpy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../hooks', () => ({
   useReconcile: () => ({ mutateAsync: reconcileSpy, isPending: false }),
   useReconcileSerialised: () => ({ mutateAsync: reconcileSerialisedSpy, isPending: false }),
+  useMarkLocationCounted: () => ({ mutateAsync: markCountedSpy, isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,7 @@ afterEach(() => {
   cleanup();
   reconcileSpy.mockResolvedValue([]);
   reconcileSerialisedSpy.mockResolvedValue([]);
+  markCountedSpy.mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
