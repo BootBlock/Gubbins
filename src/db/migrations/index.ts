@@ -11,15 +11,18 @@
  * index) that a forward `ALTER TABLE` cannot express. Future forward migrations are
  * appended here in ascending version order; the target schema version Gubbins expects is
  * simply the highest registered version. `v2-warranty-index` is the first such forward
- * step — a purely additive partial index on `items.warranty_expires_at`. A database left
- * ahead of the highest registered version (e.g. a pre-squash user_version 3–4) is refused
- * at boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the local-data reset.
+ * step — a purely additive partial index on `items.warranty_expires_at`; `v3-active-location-index`
+ * follows it with a partial index on `items(location_id) WHERE is_active = 1` for the hot
+ * per-location active-stock reads. A database left ahead of the highest registered version
+ * (e.g. a pre-squash user_version 3–4) is refused at boot with `SCHEMA_TOO_NEW`, whose
+ * rescue screen offers the local-data reset.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
 import { v2WarrantyIndex } from './v2-warranty-index';
+import { v3ActiveLocationIndex } from './v3-active-location-index';
 
-export const migrations: readonly Migration[] = [v1Initial, v2WarrantyIndex];
+export const migrations: readonly Migration[] = [v1Initial, v2WarrantyIndex, v3ActiveLocationIndex];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(
