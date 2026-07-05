@@ -1,5 +1,5 @@
 {
-  "userVersion": 1,
+  "userVersion": 2,
   "objects": [
     {
       "type": "index",
@@ -162,6 +162,12 @@
       "name": "idx_items_parent_id",
       "tbl_name": "items",
       "sql": "CREATE INDEX idx_items_parent_id ON items(parent_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_items_warranty",
+      "tbl_name": "items",
+      "sql": "CREATE INDEX idx_items_warranty ON items(warranty_expires_at) WHERE warranty_expires_at IS NOT NULL"
     },
     {
       "type": "index",
@@ -2253,56 +2259,63 @@
       ],
       "indexes": [
         {
-          "seq": 2,
+          "seq": 3,
           "name": "idx_items_barcode",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 5,
+          "seq": 6,
           "name": "idx_items_category_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 2,
           "name": "idx_items_expiry",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 4,
+          "seq": 5,
           "name": "idx_items_is_active",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 6,
+          "seq": 7,
           "name": "idx_items_location_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 3,
+          "seq": 4,
           "name": "idx_items_mpn",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_items_parent_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 7,
+          "seq": 0,
+          "name": "idx_items_warranty",
+          "unique": 0,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 8,
           "name": "sqlite_autoindex_items_1",
           "unique": 1,
           "origin": "pk",
