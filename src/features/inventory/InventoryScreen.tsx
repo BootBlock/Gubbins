@@ -387,7 +387,14 @@ function InventoryWorkspace() {
         title="Inventory"
         actions={
           <>
-            <div className="relative w-full sm:w-64">
+            {/* `min-w`/`max-w` + `flex-1` (rather than a fixed `w-64`) let the box cooperate
+                with the row's flex-wrap: it shrinks under space pressure and grows to fill
+                slack, instead of forcing an early hard break — the same fix applied to the
+                dashboard hero's search box, and for the same reason. Capped at `max-w-xs`
+                (tighter than the dashboard's `max-w-sm`) because this row already has more
+                controls competing for space (view toggles, grouping, More) than the
+                dashboard's simpler Search/Add/Scan/Menu set. */}
+            <div className="relative min-w-[10rem] max-w-xs flex-1">
               <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchRef}
@@ -421,6 +428,39 @@ function InventoryWorkspace() {
               ) : null}
             </div>
 
+            {/* Add item is a split button: the primary half opens the create dialog, and the
+                attached chevron offers Import… (the same entry point the dashboard hero uses).
+                Import lives here rather than in the "More" menu so there is one obvious place
+                to bring items in — beside the button that adds them. Placed right after search
+                (mirroring the dashboard hero's Search → Add item → Scan order) so the primary
+                actions stay grouped together at the front of the row; if the row must wrap at
+                a narrow width, it's the less-common view controls below that give way first. */}
+            <SplitButton
+              menuLabel="More add-item actions"
+              triggerProps={{ 'data-testid': 'inventory-add-menu' }}
+              primary={
+                <Button onClick={() => setAddOpen(true)} data-testid="inventory-add-item">
+                  <AddIcon />
+                  Add item
+                </Button>
+              }
+            >
+              <MenuAction
+                icon={<ImportIcon />}
+                onSelect={() => setImportOpen(true)}
+                data-testid="open-catalog-import"
+              >
+                Import…
+              </MenuAction>
+            </SplitButton>
+
+            {scannerEnabled ? (
+              <Button variant="outline" onClick={() => setScannerOpen(true)}>
+                <ScanIcon />
+                Scan
+              </Button>
+            ) : null}
+
             <Tooltip
               content="Build complex queries graphically — combine fields, capabilities and AND/OR groups. Supersedes the quick search while active."
               triggerTabIndex={-1}
@@ -440,13 +480,6 @@ function InventoryWorkspace() {
             <LayoutToggle />
 
             <GroupByControl />
-
-            {scannerEnabled ? (
-              <Button variant="outline" onClick={() => setScannerOpen(true)}>
-                <ScanIcon />
-                Scan
-              </Button>
-            ) : null}
 
             <Menu
               label="More inventory actions"
@@ -498,29 +531,6 @@ function InventoryWorkspace() {
                 Select items
               </MenuAction>
             </Menu>
-
-            {/* Add item is a split button: the primary half opens the create dialog, and the
-                attached chevron offers Import… (the same entry point the dashboard hero uses).
-                Import lives here rather than in the "More" menu so there is one obvious place
-                to bring items in — beside the button that adds them. */}
-            <SplitButton
-              menuLabel="More add-item actions"
-              triggerProps={{ 'data-testid': 'inventory-add-menu' }}
-              primary={
-                <Button onClick={() => setAddOpen(true)} data-testid="inventory-add-item">
-                  <AddIcon />
-                  Add item
-                </Button>
-              }
-            >
-              <MenuAction
-                icon={<ImportIcon />}
-                onSelect={() => setImportOpen(true)}
-                data-testid="open-catalog-import"
-              >
-                Import…
-              </MenuAction>
-            </SplitButton>
           </>
         }
       />
