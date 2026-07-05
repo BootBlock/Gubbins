@@ -14,12 +14,20 @@ import { DatabaseMaintenanceDialog } from './DatabaseMaintenanceDialog';
 const mockCompact = vi.hoisted(() => vi.fn());
 const mockHealth = vi.hoisted(() => vi.fn());
 const mockSweep = vi.hoisted(() => vi.fn());
+const mockStats = vi.hoisted(() => vi.fn());
+const mockSearch = vi.hoisted(() => vi.fn());
+const mockStock = vi.hoisted(() => vi.fn());
+const mockMissing = vi.hoisted(() => vi.fn());
 
 vi.mock('./db-maintenance-actions', () => ({
   browserMaintenancePorts: () => ({}),
   compactDatabase: (...args: unknown[]) => (mockCompact as Mock)(...args),
   checkDatabaseHealth: (...args: unknown[]) => (mockHealth as Mock)(...args),
   sweepOrphanImages: (...args: unknown[]) => (mockSweep as Mock)(...args),
+  gatherDatabaseStats: (...args: unknown[]) => (mockStats as Mock)(...args),
+  checkSearchIndex: (...args: unknown[]) => (mockSearch as Mock)(...args),
+  verifyStockTotals: (...args: unknown[]) => (mockStock as Mock)(...args),
+  findMissingImageFiles: (...args: unknown[]) => (mockMissing as Mock)(...args),
 }));
 
 vi.mock('@/lib/useFormatters', () => ({
@@ -49,15 +57,19 @@ beforeEach(() => {
   mockCompact.mockReset();
   mockHealth.mockReset();
   mockSweep.mockReset();
+  mockStats.mockReset();
+  mockSearch.mockReset();
+  mockStock.mockReset();
+  mockMissing.mockReset();
 });
 afterEach(cleanup);
 
 describe('DatabaseMaintenanceDialog', () => {
-  it('renders the three task cards', () => {
+  it('renders every task card', () => {
     renderDialog();
-    expect(screen.getByTestId('maintenance-compact-run')).toBeTruthy();
-    expect(screen.getByTestId('maintenance-health-run')).toBeTruthy();
-    expect(screen.getByTestId('maintenance-sweep-run')).toBeTruthy();
+    for (const id of ['stats', 'health', 'search', 'stock', 'missing', 'compact', 'sweep']) {
+      expect(screen.getByTestId(`maintenance-${id}-run`)).toBeTruthy();
+    }
   });
 
   it('reports the space reclaimed by compaction with its stats', async () => {
@@ -145,6 +157,116 @@ describe('DatabaseMaintenanceDialog', () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId('maintenance-sweep-result').textContent).toMatch(/could not be read/i);
+    });
+  });
+
+  it('renders the database statistics breakdown', async () => {
+    mockStats.mockResolvedValue({
+      fileBytes: 5000,
+      freePages: 2,
+      freeBytes: 400,
+      tables: [
+        { table: 'items', rows: 12 },
+        { table: 'item_history', rows: 30 },
+      ],
+      totalRows: 42,
+      imageCount: 3,
+      imageBytes: 9000,
+      imageBytesMeasured: true,
+      sqliteVersion: '3.45.0',
+      schemaVersion: 13,
+    });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-stats-run'));
+    });
+    await waitFor(() => {
+      const text = screen.getByTestId('maintenance-stats-result').textContent ?? '';
+      expect(text).toContain('5000 B'); // file size
+      expect(text).toContain('42 across 2 tables'); // rows
+      expect(text).toContain('SQLite 3.45.0'); // engine
+      expect(text).toContain('schema v13');
+      expect(text).toContain('items 12'); // per-table chip
+    });
+  });
+
+  it('confirms a healthy search index', async () => {
+    mockSearch.mockResolvedValue({ ok: true, repaired: false });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-search-run'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('maintenance-search-result').textContent).toMatch(/verified/i);
+    });
+  });
+
+  it('reports a rebuilt search index', async () => {
+    mockSearch.mockResolvedValue({ ok: true, repaired: true });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-search-run'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('maintenance-search-result').textContent).toMatch(/rebuilt/i);
+    });
+  });
+
+  it('confirms reconciled stock totals', async () => {
+    mockStock.mockResolvedValue({ ok: true, itemDrift: [], placementDrift: [] });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-stock-run'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('maintenance-stock-result').textContent).toMatch(/reconcile/i);
+    });
+  });
+
+  it('lists drifted stock totals', async () => {
+    mockStock.mockResolvedValue({
+      ok: false,
+      itemDrift: [{ subject: 'Nut', declared: 999, computed: 5 }],
+      placementDrift: [],
+    });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-stock-run'));
+    });
+    await waitFor(() => {
+      const text = screen.getByTestId('maintenance-stock-result').textContent ?? '';
+      expect(text).toContain('Nut');
+      expect(text).toContain('shows 999');
+      expect(text).toContain('ledger has 5');
+    });
+  });
+
+  it('reports missing photo files with a sample', async () => {
+    mockMissing.mockResolvedValue({
+      supported: true,
+      checked: 4,
+      missing: 2,
+      sampleNames: ['Scope', 'Camera'],
+    });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-missing-run'));
+    });
+    await waitFor(() => {
+      const text = screen.getByTestId('maintenance-missing-result').textContent ?? '';
+      expect(text).toContain('2 of 4');
+      expect(text).toContain('Scope, Camera');
+    });
+  });
+
+  it('confirms when all photo files are present', async () => {
+    mockMissing.mockResolvedValue({ supported: true, checked: 4, missing: 0, sampleNames: [] });
+    renderDialog();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('maintenance-missing-run'));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('maintenance-missing-result').textContent).toMatch(/present/i);
     });
   });
 });
