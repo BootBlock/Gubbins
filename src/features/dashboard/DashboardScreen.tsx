@@ -72,22 +72,13 @@ export function DashboardScreen() {
           </div>
         </a>
 
-        {/* Right-aligned group: the pre-1.0 work-in-progress banner sits immediately to the
-            left of the version + release date. The global navigation menu that used to pin
-            to the far right of this row now lives one row down, on the hero toolbar beside
-            the Search/Add/Scan actions (see below). The wrapper is sized to its content, so
-            the version's own `ml-auto` collapses and the group stays adjacent.
-
-            `self-start` + `items-start` top-align this cluster to the header's top edge
-            rather than letting it centre in the taller brand hero. */}
-        <div className="ml-auto flex items-start gap-3 self-start">
-          {/* Pre-1.0 data-loss warning — gated behind SHOW_WIP_BANNER in DashboardBanner. */}
-          <DashboardBanner />
-
-          {/* Version + release date — landing-page only (the other screens use PageHeader,
-              which has no version slot). Clicking it runs a manual update check. */}
-          <DashboardVersion />
-        </div>
+        {/* Version + release date — landing-page only (the other screens use PageHeader,
+            which has no version slot). Clicking it runs a manual update check. Pushed to the
+            far right with its own `ml-auto`; the header's `items-center` then vertically
+            centres it against the brand hero, so it lines up with the "Gubbins" title + its
+            sub-header rather than floating at the top edge. The pre-1.0 warning banner that
+            used to sit here has moved down beside the backup nudge (see below). */}
+        <DashboardVersion />
       </header>
 
       {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions on the
@@ -107,9 +98,19 @@ export function DashboardScreen() {
       {/* First-run guidance — self-hides once the inventory has any items. */}
       <DashboardGettingStarted />
 
-      {/* Data-safety nudge — the complement to the above: shows once there IS data but no
-          sync provider is connected, prompting a backup/sync. Dismissible and self-hiding. */}
-      <DashboardBackupNudge />
+      {/* Notices row — two side-by-side columns on wide screens, stacked on narrow ones:
+          the data-safety backup nudge (first column) and the pre-1.0 work-in-progress
+          warning (second column). Each self-gates (the nudge hides once there's a sync
+          provider / no data / dismissed; the WIP banner hides at 1.0 or once dismissed via
+          its close button), and `lg:flex-1` makes whichever remains grow to fill the row,
+          so a single surviving notice never sits at half width. `lg:items-start` lets the
+          two columns keep their own natural heights rather than stretching to match, and
+          `empty:hidden` collapses the whole row (no stray PageContainer gap) when both
+          notices have gated themselves off. */}
+      <div className="flex flex-col gap-4 empty:hidden lg:flex-row lg:items-start">
+        <DashboardBackupNudge className="lg:flex-1" />
+        <DashboardBanner className="lg:flex-1" />
+      </div>
 
       <LiveRegion visuallyHidden>
         {alertCount > 0 ? `${alertCount} ${plural(alertCount, 'item')} need attention` : ''}

@@ -173,6 +173,13 @@ interface PreferencesStore {
    */
   readonly backupNudgeDismissed: boolean;
   /**
+   * Whether the user has dismissed the pre-1.0 "work in progress" data-loss warning banner.
+   * Dismissing it hides the banner for good (persisted across sessions), but only after the
+   * user confirms they understand data loss is possible until Gubbins reaches its 1.0 release.
+   * The {@link SHOW_WIP_BANNER} master switch still removes the banner entirely at 1.0.
+   */
+  readonly wipBannerDismissed: boolean;
+  /**
    * "Push to bridge" target (Home Assistant query bridge). The base URL (e.g.
    * `http://127.0.0.1:8787`) of an optional companion bridge the user can push the dataset
    * to over HTTP, for those who don't use FS-Access folder sync. Empty until configured. The
@@ -217,6 +224,8 @@ interface PreferencesStore {
   setDashboardGettingStarted: (enabled: boolean) => void;
   /** Permanently dismiss the dashboard backup/sync nudge. */
   dismissBackupNudge: () => void;
+  /** Permanently dismiss the pre-1.0 work-in-progress warning banner (after confirmation). */
+  dismissWipBanner: () => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
 }
@@ -251,6 +260,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
       backupNudgeDismissed: false,
+      wipBannerDismissed: false,
       bridgeUrl: '',
       bridgeToken: '',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
@@ -294,6 +304,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),
       dismissBackupNudge: () => set({ backupNudgeDismissed: true }),
+      dismissWipBanner: () => set({ wipBannerDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
     }),
