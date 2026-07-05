@@ -26,6 +26,7 @@ describe('InventoryFilterBar', () => {
         value={overrides.value ?? new Set<ItemStatusFilter>()}
         onToggle={onToggle}
         onClear={onClear}
+        applicable={overrides.applicable}
         disabled={overrides.disabled}
       />,
     );
@@ -95,5 +96,44 @@ describe('InventoryFilterBar', () => {
     expect(chip).toBeDisabled();
     fireEvent.click(chip);
     expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('hides filters that currently match nothing (the applicable set)', () => {
+    renderBar({ applicable: new Set<ItemStatusFilter>(['low-stock', 'expiring']) });
+    expect(screen.getByTestId('inventory-filter-low-stock')).toBeInTheDocument();
+    expect(screen.getByTestId('inventory-filter-expiring')).toBeInTheDocument();
+    // Not in the applicable set and not active → hidden.
+    expect(screen.queryByTestId('inventory-filter-overdue')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inventory-filter-warranty')).not.toBeInTheDocument();
+  });
+
+  it('keeps an active filter visible even when it now matches nothing', () => {
+    renderBar({
+      value: new Set<ItemStatusFilter>(['overdue']),
+      applicable: new Set<ItemStatusFilter>(['low-stock']),
+    });
+    // Active but not applicable → still shown, so it can be switched off.
+    expect(screen.getByTestId('inventory-filter-overdue')).toBeInTheDocument();
+    expect(screen.getByTestId('inventory-filter-low-stock')).toBeInTheDocument();
+    expect(screen.queryByTestId('inventory-filter-expiring')).not.toBeInTheDocument();
+  });
+
+  it('shows every enabled chip while applicability is still unknown', () => {
+    renderBar({ applicable: undefined });
+    expect(screen.getByTestId('inventory-filter-overdue')).toBeInTheDocument();
+    expect(screen.getByTestId('inventory-filter-warranty')).toBeInTheDocument();
+  });
+
+  it('renders no bar when nothing is applicable and nothing is active', () => {
+    renderBar({ applicable: new Set<ItemStatusFilter>() });
+    expect(screen.queryByTestId('inventory-filter-bar')).not.toBeInTheDocument();
+  });
+
+  it('gives each chip a Foundry tooltip, not a plain title attribute', () => {
+    renderBar();
+    const chip = screen.getByTestId('inventory-filter-low-stock');
+    expect(chip).not.toHaveAttribute('title');
+    // The Foundry Tooltip wraps the control in a describedby-capable trigger.
+    expect(chip.closest('span')).toBeTruthy();
   });
 });

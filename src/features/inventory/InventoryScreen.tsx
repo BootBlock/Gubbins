@@ -31,6 +31,7 @@ import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/Searc
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
 import { astError, useAstSearch } from '@/features/search/queries';
 import {
+  useApplicableStatuses,
   useInventoryItems,
   useItemCount,
   useLocations,
@@ -231,6 +232,14 @@ function InventoryWorkspace() {
   const listItems = useInventoryItems(filters);
   const astItems = useAstSearch(ast, astActive);
   const active = astActive ? astItems : listItems;
+
+  // Which status filters currently match anything, so the filter bar can hide the rest. Left
+  // undefined until known so every enabled chip shows until then (no empty flash).
+  const applicableStatusesQuery = useApplicableStatuses();
+  const applicableStatuses = useMemo(
+    () => (applicableStatusesQuery.data ? new Set(applicableStatusesQuery.data) : undefined),
+    [applicableStatusesQuery.data],
+  );
 
   const locationNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -520,6 +529,7 @@ function InventoryWorkspace() {
               value={statusFilters}
               onToggle={toggleStatusFilter}
               onClear={clearStatusFilters}
+              applicable={applicableStatuses}
               disabled={astActive}
             />
 

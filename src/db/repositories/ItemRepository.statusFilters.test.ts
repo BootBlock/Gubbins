@@ -218,6 +218,34 @@ describe('ItemRepository.list — derived-status filters', () => {
     expect(await items.count({ status: ['low-stock'], now })).toBe(1);
     expect(await items.count({ status: ['low-stock', 'expiring'], now })).toBe(2);
   });
+
+  it('reports which statuses currently match anything (filter-bar decluttering)', async () => {
+    await seed();
+    // Seed covers low-stock, expiring, overdue (also an open loan) and maintenance-due; the
+    // expiring item is created with the default quantity 0, so it is out-of-stock too. No
+    // warranty dates are set. Returned in canonical order.
+    expect(await items.applicableStatuses({ now })).toEqual([
+      'low-stock',
+      'out-of-stock',
+      'expiring',
+      'on-loan',
+      'overdue',
+      'maintenance-due',
+    ]);
+  });
+
+  it('reports no applicable statuses for an empty inventory', async () => {
+    expect(await items.applicableStatuses({ now })).toEqual([]);
+  });
+
+  it('surfaces out-of-stock and warranty once such items exist', async () => {
+    await items.create({ name: 'Zero', trackingMode: 'DISCRETE', quantity: 0 });
+    await items.create({ name: 'Warranted', warrantyExpiresAt: isoDate(base - MS_PER_DAY) });
+    const applicable = await items.applicableStatuses({ now });
+    expect(applicable).toContain('out-of-stock');
+    expect(applicable).toContain('warranty');
+    expect(applicable).not.toContain('on-loan');
+  });
 });
 
 describe('buildStatusFilter — pure composer', () => {

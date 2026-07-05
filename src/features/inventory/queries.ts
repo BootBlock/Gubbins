@@ -15,9 +15,18 @@ import {
   getSuggestionRepository,
   getSupplierPartRepository,
   type ItemListFilters,
+  type ItemStatusFilter,
+  type LowStockThresholds,
   type SuggestionField,
 } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
+
+/** Stable tuning slice keying the applicable-statuses query (see {@link useApplicableStatuses}). */
+type ApplicableStatusTuning = {
+  readonly lowStockThresholds: LowStockThresholds;
+  readonly expirySoonWindowDays: number;
+};
 
 /**
  * Stable filter slice used both as a query-key segment and the repository arg.
@@ -42,6 +51,10 @@ export const inventoryKeys = {
   all: ['inventory'] as const,
   items: () => [...inventoryKeys.all, 'items'] as const,
   itemList: (filters: ItemQueryFilters) => [...inventoryKeys.items(), 'list', filters] as const,
+  /** Which status filters currently match anything (filter-bar decluttering). Under items()
+   *  so any item mutation invalidates it by prefix. */
+  applicableStatuses: (tuning: ApplicableStatusTuning) =>
+    [...inventoryKeys.items(), 'applicable-statuses', tuning] as const,
   item: (id: string) => [...inventoryKeys.items(), 'detail', id] as const,
   itemHistory: (id: string) => [...inventoryKeys.item(id), 'history'] as const,
   locations: () => [...inventoryKeys.all, 'locations'] as const,
@@ -194,6 +207,30 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
     // Hold the previous count while a new filter loads (mirrors the list above) so the
     // header/sidebar total doesn't blink to "Loading…" on a filter toggle.
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Which status filters currently match at least one item, so the filter bar can hide the
+ * ones that would return nothing (spec §3 filter axis). Judged against the same user-tuned
+ * low-stock / expiry thresholds the filters themselves use, so applicability agrees with what
+ * a chip would actually do. Kept briefly fresh and refreshed by any item mutation (the key
+ * sits under `items()`); a slightly stale chip set is only cosmetic.
+ */
+export function useApplicableStatuses() {
+  const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
+  const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
+  const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
+  const tuning: ApplicableStatusTuning = {
+    lowStockThresholds: { qtyThreshold, gaugePercent },
+    expirySoonWindowDays,
+  };
+  return useQuery({
+    queryKey: inventoryKeys.applicableStatuses(tuning),
+    queryFn: (): Promise<ItemStatusFilter[]> => getItemRepository().applicableStatuses(tuning),
+    // Keep the previous set on screen while a refresh runs, so chips don't flicker out and back.
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
 }
 
