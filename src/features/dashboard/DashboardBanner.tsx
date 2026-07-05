@@ -48,7 +48,11 @@ export function DashboardBanner({ className }: { readonly className?: string }) 
             onClick={() => setConfirmOpen(true)}
             aria-label="Dismiss the work-in-progress warning"
             data-testid="wip-banner-dismiss"
-            className="-mr-1 -mt-1 shrink-0"
+            // Ghost's default hover (`bg-secondary/60`) is a neutral grey-blue that reads as
+            // borrowing a different surface's colour on this warning-toned banner. Tint it to
+            // the banner's own tone instead (matching the `hover:bg-warning/25` convention used
+            // elsewhere for a warning-surface dismiss control, e.g. CapabilityEditor's tag chip).
+            className="-mr-1 -mt-1 shrink-0 hover:bg-warning/25"
           >
             <CloseIcon className="text-glyph-neutral" />
           </Button>
