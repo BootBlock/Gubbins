@@ -29,8 +29,8 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
  * chip shows.
  *
  * Each chip is a toggle button (`aria-pressed`) styled with the Foundry {@link Button}
- * variants — the same pattern the header's "Visual search" toggle uses — and its help is a
- * Foundry {@link Tooltip} (rich Markdown), never the browser's plain `title`.
+ * variants, and its help is a Foundry {@link Tooltip} (rich Markdown), never the browser's
+ * plain `title`.
  */
 interface StatusMeta {
   readonly label: string;
@@ -134,7 +134,7 @@ export function InventoryFilterBar({
         return (
           // `triggerTabIndex={-1}` avoids a duplicate tab stop (the Button is already
           // focusable); the wrapping `span` gives the tooltip a hover target even when the
-          // Button is disabled. Mirrors the header's "Visual search" toggle.
+          // Button is disabled (same pattern as the Inventory screen's "Duplicate item" action).
           <Tooltip key={status} content={meta.hint} triggerTabIndex={-1}>
             <span>
               <Button
