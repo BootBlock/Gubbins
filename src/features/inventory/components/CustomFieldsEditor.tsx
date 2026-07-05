@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Input, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Checkbox, Input, Select, Textarea, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon } from '@/components/icons';
 import type { ResolvedItemField } from '@/db/repositories';
@@ -143,21 +143,46 @@ function FieldInput({
           {...controlProps}
         />
       );
+    case 'RATING':
+      return (
+        <Input
+          type="number"
+          min={1}
+          max={5}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...controlProps}
+        />
+      );
+    case 'URL':
+      return (
+        <Input
+          type="url"
+          placeholder="https://…"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...controlProps}
+        />
+      );
+    case 'LONG_TEXT':
+      return <Textarea value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
     case 'DATE':
       return <Input type="date" value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
     case 'BOOLEAN':
+    case 'ON_OFF': {
+      const [onLabel, offLabel] = field.fieldType === 'ON_OFF' ? ['On', 'Off'] : ['Yes', 'No'];
       return (
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={value === 'true'}
             onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
-            className="size-4 accent-primary"
             {...controlProps}
           />
-          {value === 'true' ? 'Yes' : 'No'}
+          {value === 'true' ? onLabel : offLabel}
         </label>
       );
+    }
     case 'SELECT':
       return (
         <Select

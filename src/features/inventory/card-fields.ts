@@ -311,5 +311,6 @@ function quantityValue(item: Item, fmt: CardFieldFormatters): CardFieldValue {
 function customFieldValue(type: FieldType, raw: string | null): CardFieldValue {
   if (raw === null || raw.trim() === '') return EMPTY;
   if (type === 'BOOLEAN') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'Yes' : 'No' };
+  if (type === 'ON_OFF') return { kind: 'text', text: raw.toLowerCase() === 'true' ? 'On' : 'Off' };
   return { kind: 'text', text: raw };
 }

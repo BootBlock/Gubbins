@@ -291,6 +291,16 @@ describe('resolveCardFields — custom fields', () => {
     expect(resolved[0].value).toEqual({ kind: 'text', text: 'Yes' });
   });
 
+  it('formats an ON_OFF custom field as On/Off', () => {
+    const onOffField: CardCustomField = { ...field, fieldType: 'ON_OFF' };
+    const resolved = resolveCardFields(
+      [customCardFieldId('f1')],
+      makeItem({ categoryId: 'cat-1' }),
+      ctx({ customFields: new Map([['f1', onOffField]]), customValues: new Map([['f1', 'false']]) }),
+    );
+    expect(resolved[0].value).toEqual({ kind: 'text', text: 'Off' });
+  });
+
   it('skips a custom field id absent from the catalog (defensive)', () => {
     const resolved = resolveCardFields([customCardFieldId('gone')], makeItem(), ctx({ customFields }));
     expect(resolved).toEqual([]);

@@ -217,8 +217,20 @@ export const MS_PER_HOUR = 3_600_000;
  * Evolution"). All values persist as TEXT in `item_field_values` (a STRICT table);
  * the field type governs validation in the form layer and casting in the mapper.
  * - `SELECT` constrains values to a defined option list (`category_fields.options`).
+ * - `BOOLEAN` and `ON_OFF` are functionally identical (both store `'true'`/`'false'`)
+ *   — `ON_OFF` exists purely as an alternate wording for a toggle-style field.
  */
-export const FIELD_TYPES = ['TEXT', 'NUMBER', 'BOOLEAN', 'DATE', 'SELECT'] as const;
+export const FIELD_TYPES = [
+  'TEXT',
+  'LONG_TEXT',
+  'URL',
+  'NUMBER',
+  'RATING',
+  'BOOLEAN',
+  'ON_OFF',
+  'DATE',
+  'SELECT',
+] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
 /**

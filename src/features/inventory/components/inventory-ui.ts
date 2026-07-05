@@ -66,8 +66,12 @@ export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
 /** British-English labels for category custom-field types (spec §4). */
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   TEXT: 'Text',
+  LONG_TEXT: 'Long text',
+  URL: 'URL / Link',
   NUMBER: 'Number',
+  RATING: 'Rating (1–5)',
   BOOLEAN: 'Yes / No',
+  ON_OFF: 'On / Off',
   DATE: 'Date',
   SELECT: 'Choice',
 };

@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { Button, Input, Modal, Select, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import {
+  Button,
+  Checkbox,
+  FormField,
+  Input,
+  InfoHint,
+  Modal,
+  SelectField,
+  Tooltip,
+  INFO_OPEN_DELAY_MS,
+} from '@/components/foundry';
 import { AddIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
 import { FIELD_TYPES, type CategoryWithFieldCount, type FieldType } from '@/db/repositories';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
@@ -61,14 +71,16 @@ function CategoryManagerBody() {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-[14rem_1fr]">
       {/* Category list */}
       <div className="space-y-2">
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
           <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCategory())}
             placeholder="New category…"
             aria-label="New category name"
+            className="flex-1"
           />
+          <InfoHint content="A category is a label you assign to items — e.g. **Cables**, **Fasteners** — so you can give its members their own custom fields on the right." />
           <Tooltip
             content="Create the category, then define its custom fields on the right."
             triggerTabIndex={-1}
@@ -225,44 +237,66 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   return (
     <div className="space-y-2 rounded-lg border border-border bg-secondary/10 p-2.5">
       <div className="grid grid-cols-2 gap-2">
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Field name"
-          aria-label="Field name"
-        />
-        <Select
+        <FormField
+          label="Field name"
+          hint="The label for this field, shown on every item in this category — and as the column header if you export to CSV. Keep it short and specific, e.g. **Voltage**, **Warranty expiry**, **Colour**."
+        >
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Voltage"
+            aria-label="Field name"
+          />
+        </FormField>
+        <SelectField
+          label="Field type"
+          hint={`What kind of value this field holds — it controls the control shown on the item and the validation applied when saving:
+
+- **Text** – a single line of free text.
+- **Long text** – multi-line notes.
+- **URL / Link** – a validated web address (e.g. a datasheet page).
+- **Number** – any numeric value, decimals allowed.
+- **Rating (1–5)** – a whole number from 1 to 5.
+- **Yes / No** – a checkbox, shown as *Yes*/*No*.
+- **On / Off** – a checkbox, shown as *On*/*Off* — identical to Yes/No, just worded differently.
+- **Date** – a calendar date.
+- **Choice** – one of a fixed list you define below.`}
+          hintSize="md"
           value={fieldType}
           onChange={(value) => setFieldType(value as FieldType)}
-          aria-label="Field type"
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
         />
       </div>
       {fieldType === 'SELECT' ? (
-        <Input
-          value={options}
-          onChange={(e) => setOptions(e.target.value)}
-          placeholder="Choices, comma-separated"
-          aria-label="Choices"
-        />
+        <FormField
+          label="Choices"
+          hint="The options this field can be set to, separated by commas — e.g. `Red, Green, Blue`. Shown as a dropdown on each item."
+        >
+          <Input
+            value={options}
+            onChange={(e) => setOptions(e.target.value)}
+            placeholder="Red, Green, Blue"
+            aria-label="Choices"
+          />
+        </FormField>
       ) : null}
-      <div className="flex items-center gap-2">
+      <FormField
+        label="Default value"
+        hint="Shown for an item in this category that hasn't set this field yet (lenient defaulting) — it's never written to existing items, only displayed until they get their own value."
+      >
         <Input
           value={defaultValue}
           onChange={(e) => setDefaultValue(e.target.value)}
-          placeholder="Default (optional)"
+          placeholder="Optional"
           aria-label="Default value"
-          className="flex-1"
         />
-        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={isRequired}
-            onChange={(e) => setIsRequired(e.target.checked)}
-            className="size-3.5 accent-primary"
-          />
+      </FormField>
+      <div className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Checkbox checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
           Required
         </label>
+        <InfoHint content="When on, an item in this category must have a value for this field before its custom fields can be saved." />
       </div>
       {error ? (
         <p role="alert" className="text-xs text-destructive">
