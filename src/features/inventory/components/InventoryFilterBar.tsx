@@ -12,6 +12,7 @@ import {
 } from '@/components/icons';
 import { ITEM_STATUS_FILTERS, STATUS_FILTER_FEATURE, type ItemStatusFilter } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useFormatters } from '@/lib/useFormatters';
 
 /**
  * The inventory **status filter** bar (spec §3 / §4): a row of toggle chips for the common
@@ -26,7 +27,9 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
  * `applicable` set), so the bar only offers filters that would actually do something — this
  * keeps the row from wrapping and leaves room to add more filters. A chip that is *active*
  * always stays (so it can be switched off), and until applicability is known every enabled
- * chip shows.
+ * chip shows. Each chip's label also carries its current match count (e.g. "Out of stock
+ * (8)") via the `counts` map, so a chip communicates both what it filters and how many items
+ * that would return.
  *
  * Each chip is a toggle button (`aria-pressed`) styled with the Foundry {@link Button}
  * variants, and its help is a Foundry {@link Tooltip} (rich Markdown), never the browser's
@@ -91,6 +94,12 @@ interface InventoryFilterBarProps {
    * until it is known, avoiding an empty flash.
    */
   readonly applicable?: ReadonlySet<ItemStatusFilter>;
+  /**
+   * How many items currently match each status, shown in the chip label (e.g.
+   * "Out of stock (8)"). `undefined` (or a status missing from the map) renders the label
+   * with no count — while it's still being computed, or for a status not yet resolved.
+   */
+  readonly counts?: ReadonlyMap<ItemStatusFilter, number>;
   /** Disabled while the Visual Builder supersedes the quick filters (mirrors the search box). */
   readonly disabled?: boolean;
 }
@@ -100,9 +109,11 @@ export function InventoryFilterBar({
   onToggle,
   onClear,
   applicable,
+  counts,
   disabled,
 }: InventoryFilterBarProps) {
   const enabled = useEnabledFeatures();
+  const fmt = useFormatters();
   const available = ITEM_STATUS_FILTERS.filter((status) => {
     const feature = STATUS_FILTER_FEATURE[status];
     if (feature != null && !enabled.has(feature)) return false;
@@ -131,6 +142,7 @@ export function InventoryFilterBar({
         const meta = STATUS_META[status];
         const Icon = meta.icon;
         const active = value.has(status);
+        const count = counts?.get(status);
         return (
           // `triggerTabIndex={-1}` avoids a duplicate tab stop (the Button is already
           // focusable); the wrapping `span` gives the tooltip a hover target even when the
@@ -148,6 +160,7 @@ export function InventoryFilterBar({
               >
                 <Icon />
                 {meta.label}
+                {count != null ? ` (${fmt.quantity(count)})` : null}
               </Button>
             </span>
           </Tooltip>
