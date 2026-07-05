@@ -235,8 +235,10 @@ function InventoryWorkspace() {
 
   // Which status filters currently match anything **in the selected location**, so the filter
   // bar can hide the rest — recomputed on every location change (the id keys the query). Left
-  // undefined until known so every enabled chip shows until then (no empty flash).
-  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId);
+  // undefined until known so every enabled chip shows until then (no empty flash). Gated off
+  // while the Visual Builder drives the results (astActive): the status chips are superseded and
+  // disabled then, so the applicability round-trip couldn't change anything the user can do.
+  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId, !astActive);
   const applicableStatuses = useMemo(
     () => (applicableStatusesQuery.data ? new Set(applicableStatusesQuery.data) : undefined),
     [applicableStatusesQuery.data],
