@@ -236,8 +236,12 @@ export function useItemCount(filters: ItemQueryFilters = {}) {
  * a module recomputes it.
  *
  * @param locationId - the selected location, or null/undefined for the "All items" view.
+ * @param active - gate the query off (default `true`). When the Visual Builder is driving the
+ *   results the status chips are superseded and disabled, so their per-location applicability
+ *   `EXISTS` round-trip is wasted work; callers pass `!astActive` to skip it. `keepPreviousData`
+ *   keeps the last-known set on screen while gated off (harmless — the chips are disabled).
  */
-export function useApplicableStatuses(locationId?: string | null) {
+export function useApplicableStatuses(locationId?: string | null, active = true) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
@@ -262,6 +266,8 @@ export function useApplicableStatuses(locationId?: string | null) {
   return useQuery({
     queryKey: inventoryKeys.applicableStatuses(tuning),
     queryFn: (): Promise<ItemStatusFilter[]> => getItemRepository().applicableStatuses(tuning),
+    // Skip the round-trip entirely while the Visual Builder supersedes the (now disabled) chips.
+    enabled: active,
     // Keep the previous set on screen while a refresh runs, so chips don't flicker out and back.
     placeholderData: keepPreviousData,
     staleTime: 30_000,
