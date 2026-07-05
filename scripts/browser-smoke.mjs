@@ -301,6 +301,11 @@ async function openMoreMenu() {
   await page.getByRole('button', { name: 'More inventory actions' }).click();
 }
 
+/** Open the Add-item split-button dropdown (which hosts the "Import…" entry). */
+async function openAddMenu() {
+  await page.getByRole('button', { name: 'More add-item actions' }).click();
+}
+
 /** Open the shared Export wizard from the Inventory "More" menu. */
 async function openExportWizard() {
   await openMoreMenu();
@@ -3735,8 +3740,8 @@ try {
           `Smoke Thingamajig ${stamp},7,0.99`,
         ].join('\r\n');
 
-        // Open the import dialog (from the "More" menu) and switch to the "Import file" tab.
-        await openMoreMenu();
+        // Open the import dialog (from the Add-item split button) and switch to the "Import file" tab.
+        await openAddMenu();
         await page.getByTestId('open-catalog-import').click();
         await page.getByTestId('import-tab-file').click();
         await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
@@ -3789,7 +3794,7 @@ try {
       // CSV header includes the custom field's name; '47.0' must canonicalise to '47'.
       const csvContent = [`name,${fieldName}`, `${customItemName},47.0`].join('\r\n');
 
-      await openMoreMenu();
+      await openAddMenu();
       await page.getByTestId('open-catalog-import').click();
       await page.getByTestId('import-tab-file').click();
       await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });

@@ -7,6 +7,7 @@
  * any call site.
  */
 export { Button, buttonVariants, type ButtonProps } from './button';
+export { SplitButton, type SplitButtonProps } from './split-button';
 export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface, type SurfaceProps } from './surface';
 export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';

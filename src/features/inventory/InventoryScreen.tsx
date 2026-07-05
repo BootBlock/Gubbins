@@ -19,7 +19,15 @@ import {
   SearchIcon,
   SelectIcon,
 } from '@/components/icons';
-import { Menu, MenuAction, MenuSeparator, PageContainer, PageHeader, Tooltip } from '@/components/foundry';
+import {
+  Menu,
+  MenuAction,
+  MenuSeparator,
+  PageContainer,
+  PageHeader,
+  SplitButton,
+  Tooltip,
+} from '@/components/foundry';
 import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import { ExportWizard } from '@/features/export/ExportWizard';
@@ -461,13 +469,6 @@ function InventoryWorkspace() {
               <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
                 Export
               </MenuAction>
-              <MenuAction
-                icon={<ImportIcon />}
-                onSelect={() => setImportOpen(true)}
-                data-testid="open-catalog-import"
-              >
-                Import…
-              </MenuAction>
               <MenuSeparator />
               <MenuAction
                 icon={<SelectIcon />}
@@ -479,10 +480,28 @@ function InventoryWorkspace() {
               </MenuAction>
             </Menu>
 
-            <Button onClick={() => setAddOpen(true)}>
-              <AddIcon />
-              Add item
-            </Button>
+            {/* Add item is a split button: the primary half opens the create dialog, and the
+                attached chevron offers Import… (the same entry point the dashboard hero uses).
+                Import lives here rather than in the "More" menu so there is one obvious place
+                to bring items in — beside the button that adds them. */}
+            <SplitButton
+              menuLabel="More add-item actions"
+              triggerProps={{ 'data-testid': 'inventory-add-menu' }}
+              primary={
+                <Button onClick={() => setAddOpen(true)} data-testid="inventory-add-item">
+                  <AddIcon />
+                  Add item
+                </Button>
+              }
+            >
+              <MenuAction
+                icon={<ImportIcon />}
+                onSelect={() => setImportOpen(true)}
+                data-testid="open-catalog-import"
+              >
+                Import…
+              </MenuAction>
+            </SplitButton>
           </>
         }
       />
