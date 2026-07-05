@@ -262,14 +262,18 @@ function InventoryWorkspace() {
   const cardFieldValues = useItemFieldValues(residentItemIds, cardFieldsConfig.hasCustomFields);
   const cardFields: CardFieldsListContext = { ...cardFieldsConfig, values: cardFieldValues.data };
 
+  // Whether a status chip or a category/tag facet is currently narrowing the list. Used to
+  // suppress the child-location drill-down (below) and to shape the empty banner's copy.
+  const hasStatusOrFacetFilters = statusFilters.size > 0 || Boolean(categoryId) || tagIds.length > 0;
+
   // Child locations of the selected location, so a location that holds no items of its own
   // but nests others can offer them as a "drill down" grid instead of a dead-end empty state.
-  // Suppressed while a text or visual-builder query is narrowing the list — the child cards
-  // would read as query matches — and for the "All locations" view (no selection).
+  // Suppressed while any query is narrowing the list — a text/visual query, a status chip or a
+  // facet — so the child cards can't read as matches, and for the "All locations" view.
   const childLocations = useMemo(() => {
-    if (!selectedLocationId || search || astActive) return [];
+    if (!selectedLocationId || search || astActive || hasStatusOrFacetFilters) return [];
     return (flat.data?.rows ?? []).filter((loc) => loc.parentId === selectedLocationId && !loc.archivedAt);
-  }, [flat.data, selectedLocationId, search, astActive]);
+  }, [flat.data, selectedLocationId, search, astActive, hasStatusOrFacetFilters]);
 
   // Pick the list's entrance so it reflects whichever input changed. A view-mode switch
   // (Visual ↔ Data) slides the list in horizontally, tracking the segmented control: Data
@@ -670,6 +674,16 @@ function InventoryWorkspace() {
                   selection={selection}
                   selectedIds={selectedIds}
                   cardFields={cardFields}
+                  emptyContext={
+                    astActive
+                      ? { visualSearch: true }
+                      : {
+                          search,
+                          statusFilterCount: statusFilters.size,
+                          categoryFilter: Boolean(categoryId),
+                          tagFilterCount: tagIds.length,
+                        }
+                  }
                 />
               )}
             </div>
