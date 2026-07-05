@@ -10,7 +10,7 @@
  */
 import { useState } from 'react';
 import { Banner, Button, Modal } from '@/components/foundry';
-import { CloseIcon, WarningIcon } from '@/components/icons';
+import { WarningIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /**
@@ -41,22 +41,9 @@ export function DashboardBanner({ className }: { readonly className?: string }) 
         icon={<WarningIcon aria-hidden className="text-warning" />}
         heading="Work in progress"
         className={className}
-        action={
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setConfirmOpen(true)}
-            aria-label="Dismiss the work-in-progress warning"
-            data-testid="wip-banner-dismiss"
-            // Ghost's default hover (`bg-secondary/60`) is a neutral grey-blue that reads as
-            // borrowing a different surface's colour on this warning-toned banner. Tint it to
-            // the banner's own tone instead (matching the `hover:bg-warning/25` convention used
-            // elsewhere for a warning-surface dismiss control, e.g. CapabilityEditor's tag chip).
-            className="-mr-1 -mt-1 shrink-0 hover:bg-warning/25"
-          >
-            <CloseIcon className="text-glyph-neutral" />
-          </Button>
-        }
+        onDismiss={() => setConfirmOpen(true)}
+        dismissLabel="Dismiss the work-in-progress warning"
+        dismissTestId="wip-banner-dismiss"
       >
         Updates may not be backwards compatible, so data loss is expected. Backwards compatibility will be
         maintained once Gubbins reaches its 1.0 release.
