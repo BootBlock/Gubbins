@@ -46,6 +46,57 @@ describe('validateFieldValue — TEXT', () => {
   });
 });
 
+describe('validateFieldValue — LONG_TEXT', () => {
+  it('trims the value but keeps internal newlines', () => {
+    expect(validateFieldValue(def({ fieldType: 'LONG_TEXT' }), '  line one\nline two  ')).toEqual({
+      ok: true,
+      value: 'line one\nline two',
+    });
+  });
+});
+
+describe('validateFieldValue — URL', () => {
+  it('accepts an absolute http(s) URL', () => {
+    const d = def({ fieldType: 'URL' });
+    expect(validateFieldValue(d, 'https://example.com/datasheet.pdf')).toEqual({
+      ok: true,
+      value: 'https://example.com/datasheet.pdf',
+    });
+    expect(validateFieldValue(d, 'http://example.com')).toEqual({ ok: true, value: 'http://example.com' });
+  });
+
+  it('rejects a non-URL or a non-http(s) scheme, naming the field', () => {
+    const d = def({ fieldType: 'URL', name: 'Datasheet' });
+    expect(validateFieldValue(d, 'not a url')).toEqual({
+      ok: false,
+      error: 'Datasheet must be a valid URL.',
+    });
+    expect(validateFieldValue(d, 'ftp://example.com/file')).toEqual({
+      ok: false,
+      error: 'Datasheet must be a valid http(s) URL.',
+    });
+  });
+});
+
+describe('validateFieldValue — RATING', () => {
+  it('accepts a whole number from 1 to 5', () => {
+    const d = def({ fieldType: 'RATING' });
+    for (const n of ['1', '3', '5']) {
+      expect(validateFieldValue(d, n)).toEqual({ ok: true, value: n });
+    }
+  });
+
+  it('rejects out-of-range or non-integer values, naming the field', () => {
+    const d = def({ fieldType: 'RATING', name: 'Condition' });
+    for (const bad of ['0', '6', '2.5', 'abc']) {
+      expect(validateFieldValue(d, bad)).toEqual({
+        ok: false,
+        error: 'Condition must be a whole number from 1 to 5.',
+      });
+    }
+  });
+});
+
 describe('validateFieldValue — NUMBER', () => {
   it('re-serialises canonically', () => {
     const d = def({ fieldType: 'NUMBER' });
@@ -91,6 +142,22 @@ describe('validateFieldValue — BOOLEAN', () => {
         error: 'In stock must be true or false.',
       });
     }
+  });
+});
+
+describe('validateFieldValue — ON_OFF', () => {
+  it('normalises case-insensitively to true/false, identically to BOOLEAN', () => {
+    const d = def({ fieldType: 'ON_OFF' });
+    expect(validateFieldValue(d, 'true')).toEqual({ ok: true, value: 'true' });
+    expect(validateFieldValue(d, 'FALSE')).toEqual({ ok: true, value: 'false' });
+  });
+
+  it('rejects non-boolean text', () => {
+    const d = def({ fieldType: 'ON_OFF', name: 'Powered' });
+    expect(validateFieldValue(d, 'on')).toEqual({
+      ok: false,
+      error: 'Powered must be true or false.',
+    });
   });
 });
 

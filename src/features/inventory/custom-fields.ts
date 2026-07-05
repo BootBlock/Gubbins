@@ -38,12 +38,16 @@ function isBlank(raw: string | null | undefined): boolean {
  *
  * - **blank** (empty / whitespace-only) ⇒ if `isRequired` an error, else
  *   `{ ok: true, value: null }` (clears the stored row — never persists `''`).
- * - **TEXT** ⇒ the trimmed string.
+ * - **TEXT** / **LONG_TEXT** ⇒ the trimmed string (LONG_TEXT keeps internal newlines).
+ * - **URL** ⇒ must parse as an absolute `http:`/`https:` URL.
  * - **NUMBER** ⇒ must parse to a *finite* number and is re-serialised canonically
  *   via `String(n)` (so `'1.50'` → `'1.5'`, `'01'` → `'1'`); rejects `'1.2.3'`,
  *   `'abc'`, `'Infinity'`, `'NaN'`, blank-after-sign, etc.
- * - **BOOLEAN** ⇒ normalised to `'true'` / `'false'` (case-insensitive in, plus
- *   the checkbox's own `'true'`/`'false'` output); anything else is rejected.
+ * - **RATING** ⇒ a whole number from 1 to 5.
+ * - **BOOLEAN** / **ON_OFF** ⇒ normalised to `'true'` / `'false'` (case-insensitive
+ *   in, plus the checkbox's own `'true'`/`'false'` output); anything else is
+ *   rejected. The two types are identical here — `ON_OFF` is purely an alternate
+ *   wording (see {@link FIELD_TYPES}).
  * - **DATE** ⇒ canonical ISO `YYYY-MM-DD`, validated as a *real* calendar date
  *   (rejects `'2026-13-40'`, `'2026-02-30'`, `'not-a-date'`).
  * - **SELECT** ⇒ must be one of `def.options ?? []`.
@@ -63,7 +67,20 @@ export function validateFieldValue(
 
   switch (def.fieldType) {
     case 'TEXT':
+    case 'LONG_TEXT':
       return { ok: true, value: text };
+
+    case 'URL': {
+      try {
+        const parsed = new URL(text);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return { ok: false, error: `${def.name} must be a valid http(s) URL.` };
+        }
+        return { ok: true, value: text };
+      } catch {
+        return { ok: false, error: `${def.name} must be a valid URL.` };
+      }
+    }
 
     case 'NUMBER': {
       // `Number('')` is 0 and `Number(' ')` is 0; the blank guard above already
@@ -76,7 +93,16 @@ export function validateFieldValue(
       return { ok: true, value: String(n) };
     }
 
-    case 'BOOLEAN': {
+    case 'RATING': {
+      const n = Number(text);
+      if (!Number.isInteger(n) || n < 1 || n > 5) {
+        return { ok: false, error: `${def.name} must be a whole number from 1 to 5.` };
+      }
+      return { ok: true, value: String(n) };
+    }
+
+    case 'BOOLEAN':
+    case 'ON_OFF': {
       const lower = text.toLowerCase();
       if (lower === 'true') return { ok: true, value: 'true' };
       if (lower === 'false') return { ok: true, value: 'false' };
