@@ -56,11 +56,11 @@ describe('DashboardScreen — quick-nav grid (spec §2.4.2)', () => {
     expect(within(nav).queryByText('Dashboard')).toBeNull();
   });
 
-  it('renders the global navigation menu in the header (parity with every other screen)', () => {
+  it('renders the global navigation menu on the hero toolbar (parity with every other screen)', () => {
     render(<DashboardScreen />);
     // The dashboard hero is a PageHeader exception, so it mounts AppNav itself — the same
-    // top-right menu button PageHeader gives every other screen. Guards against regressing
-    // back to a menu-less landing page.
+    // menu button PageHeader gives every other screen, here pinned to the right of the
+    // Search/Add/Scan toolbar row. Guards against regressing back to a menu-less landing page.
     expect(screen.getByTestId('app-nav')).toBeInTheDocument();
   });
 
