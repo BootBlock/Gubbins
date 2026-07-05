@@ -81,11 +81,15 @@ export function DashboardScreen() {
         <DashboardVersion />
       </header>
 
-      {/* Hero toolbar: quick search (command palette) + Add item / Scan quick actions on the
-          left (each independently toggleable from Settings → Dashboard), with the global
-          navigation menu pinned to the right of the same row. AppNav is rendered here rather
-          than inside DashboardActions so the menu is always present — even when both hero
-          affordances are toggled off and DashboardActions renders nothing. */}
+      {/* Hero toolbar: one shared flex-wrap row holds quick search (command palette),
+          Add item / Scan quick actions (each independently toggleable from Settings →
+          Dashboard), and the global navigation menu — all as direct siblings, so the whole
+          set wraps together as a single cohesive row instead of Search and the actions
+          each deciding independently when to break onto a new line. DashboardActions
+          renders its controls as a Fragment (no nested flex container) for exactly this
+          reason. AppNav is rendered here rather than inside DashboardActions so the menu
+          is always present — even when both hero affordances are toggled off and
+          DashboardActions renders nothing. */}
       <div className="flex flex-wrap items-center gap-2">
         <DashboardActions />
         {/* `ml-auto` pushes the menu to the far right of the toolbar row, mirroring the

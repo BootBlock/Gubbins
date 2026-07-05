@@ -12,6 +12,11 @@
  * item, and the attached chevron opens a menu whose `Import…` row navigates to Inventory
  * with the `import` intent (opening the Import dialog on arrival) — reusing the very same
  * Link+intent pattern via {@link MenuLink}'s `onSelect`.
+ *
+ * Returns its controls as a Fragment (no wrapping element) rather than its own nested flex
+ * row: {@link DashboardScreen} renders this alongside the global nav menu in one shared
+ * `flex flex-wrap` row, so Search/Add/Scan/Menu wrap together as a single cohesive set
+ * instead of each half independently deciding when to break onto a new line.
  */
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
@@ -31,10 +36,17 @@ export function DashboardActions() {
   if (!showSearch && !showQuickActions) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <>
       {/* The same header-search launcher used on every other screen, kept compact on the
-          hero. `HeaderSearch` self-gates on the `dashboardCommandPalette` preference. */}
-      <HeaderSearch className="max-w-sm" />
+          hero. `HeaderSearch` self-gates on the `dashboardCommandPalette` preference.
+          `flex-1` (capped at `max-w-sm`, floored at a usable `min-w`) mirrors PageHeader's
+          own search sizing: HeaderSearch's base class is `w-full`, so without an explicit
+          flex-basis here it resolves its used flex-basis to that 100% width and claims the
+          entire row for itself before the max-width cap is even applied — forcing Add
+          item/Scan/Menu onto a new line regardless of how much space is actually free.
+          `flex-1` gives it a `0%` basis instead, so it *grows* to fill available space
+          alongside its siblings rather than forcing them off the line. */}
+      <HeaderSearch className="min-w-[10rem] max-w-sm flex-1" />
 
       {showQuickActions ? (
         <>
@@ -78,6 +90,6 @@ export function DashboardActions() {
           ) : null}
         </>
       ) : null}
-    </div>
+    </>
   );
 }
