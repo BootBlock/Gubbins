@@ -68,4 +68,30 @@ describe('Banner', () => {
     );
     expect(screen.getByTestId('untoned-dismiss').className).toContain('hover:bg-primary/25');
   });
+
+  it('does not wrap the close button in a tooltip when dismissTooltip is omitted', () => {
+    render(
+      <Banner onDismiss={() => {}} dismissTestId="plain-dismiss">
+        Notice.
+      </Banner>,
+    );
+    fireEvent.focus(screen.getByTestId('plain-dismiss'));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('shows dismissTooltip as rendered Markdown on the close button', () => {
+    render(
+      <Banner
+        onDismiss={() => {}}
+        dismissTestId="tooltipped-dismiss"
+        dismissTooltip="Hidden until storage **fills further**."
+      >
+        Notice.
+      </Banner>,
+    );
+    // Keyboard focus opens the Tooltip immediately (no hover delay) — see tooltip.test.tsx.
+    fireEvent.focus(screen.getByTestId('tooltipped-dismiss'));
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip.querySelector('strong')?.textContent).toBe('fills further');
+  });
 });

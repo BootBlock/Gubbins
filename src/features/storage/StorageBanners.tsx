@@ -177,6 +177,7 @@ export function StorageBanners() {
         onDismiss={dismissWarning}
         dismissLabel="Dismiss"
         dismissTestId="storage-warning-dismiss"
+        dismissTooltip="Hide this warning until storage fills further."
       >
         {percent} of your local storage is used ({usage} of {quota}).
       </Banner>,
