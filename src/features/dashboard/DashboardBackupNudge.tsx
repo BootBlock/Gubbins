@@ -20,7 +20,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useItemCount } from '@/features/inventory/queries';
 
-export function DashboardBackupNudge() {
+export function DashboardBackupNudge({ className }: { readonly className?: string }) {
   const dismissed = usePreferencesStore((s) => s.backupNudgeDismissed);
   const dismiss = usePreferencesStore((s) => s.dismissBackupNudge);
   const providerId = useAuthStore((s) => s.providerId);
@@ -33,7 +33,7 @@ export function DashboardBackupNudge() {
   if (dismissed || providerId !== null || count.isPending || (count.data ?? 0) === 0) return null;
 
   return (
-    <Surface className="flex flex-col gap-4 p-5" data-testid="dashboard-backup-nudge">
+    <Surface className={cn('flex flex-col gap-4 p-5', className)} data-testid="dashboard-backup-nudge">
       <div className="flex items-start gap-2.5">
         <span className="mt-0.5 text-primary [&_svg]:size-5">
           <SecureIcon aria-hidden />
