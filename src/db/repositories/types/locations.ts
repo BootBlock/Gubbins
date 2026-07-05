@@ -19,6 +19,8 @@ export interface LocationRow {
   readonly is_default: number;
   /** Epoch-ms the location was soft-archived; NULL = active/visible. */
   readonly archived_at: number | null;
+  /** Epoch-ms a stock-take last completed here; NULL = never counted. */
+  readonly last_counted_at: number | null;
   readonly updated_at: number;
 }
 
@@ -39,6 +41,8 @@ export interface Location {
   readonly isDefault: boolean;
   /** Epoch-ms the location was soft-archived; null = active/visible. */
   readonly archivedAt: number | null;
+  /** Epoch-ms a stock-take last completed here; null = never counted. */
+  readonly lastCountedAt: number | null;
   readonly updatedAt: number;
 }
 

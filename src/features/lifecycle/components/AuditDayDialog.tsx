@@ -25,6 +25,7 @@ import {
 import { CheckIcon, ChevronRightIcon, CycleCountIcon, SuccessIcon, WarningIcon } from '@/components/icons';
 import type { LocationTreeNode } from '@/db/repositories';
 import { useLocationTree } from '@/features/inventory/queries';
+import { useFormatters } from '@/lib/useFormatters';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
 import { CycleCountLines } from './CycleCountLines';
@@ -40,9 +41,11 @@ import {
 } from '../audit-session';
 import type { AuthoriseResult } from '../useLocationCycleCount';
 
-/** A walkable location plus its tree depth, for indented pickers. */
+/** A walkable location plus its tree depth and last-counted stamp, for indented pickers. */
 interface WalkableLocation extends AuditScopeLocation {
   readonly depth: number;
+  /** Epoch-ms this location was last counted; null = never (spec §4.4 stock-take G1). */
+  readonly lastCountedAt: number | null;
 }
 
 /** Flatten the tree to its walkable locations (pre-order) carrying depth, for the pickers. */
@@ -51,7 +54,9 @@ function walkableWithDepth(tree: readonly LocationTreeNode[]): WalkableLocation[
   const walk = (nodes: readonly LocationTreeNode[], depth: number) => {
     for (const node of nodes) {
       if (node.archivedAt) continue;
-      if (!node.isSystem) out.push({ id: node.id, name: node.name, depth });
+      if (!node.isSystem) {
+        out.push({ id: node.id, name: node.name, depth, lastCountedAt: node.lastCountedAt });
+      }
       walk(node.children, depth + 1);
     }
   };
@@ -111,6 +116,7 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
 function ScopePicker({ onClose }: { onClose: () => void }) {
   const tree = useLocationTree();
   const start = useAuditSessionStore((s) => s.start);
+  const fmt = useFormatters();
 
   const [mode, setMode] = useState<AuditScopeMode>('all');
   const [anchorId, setAnchorId] = useState<string>('');
@@ -200,7 +206,10 @@ function ScopePicker({ onClose }: { onClose: () => void }) {
                     onChange={() => toggleSelected(l.id)}
                     data-testid={`audit-pick-${l.id}`}
                   />
-                  {l.name}
+                  <span className="min-w-0 flex-1 truncate">{l.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {l.lastCountedAt != null ? fmt.relativeTime(l.lastCountedAt) : 'Never counted'}
+                  </span>
                 </label>
               ))
             )}
@@ -349,17 +358,18 @@ function AuditLocationPanel({
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, missing, totalToApply, pending } = count;
 
-  const authoriseAndContinue = async () => {
+  // Every "done with this location" path — an empty location, a clean count, or one with
+  // variances — funnels through `authorise()` so the durable `lastCountedAt` stamp (spec
+  // §4.4 stock-take G1) always lands; only Skip should leave it untouched. `authorise()`
+  // is a no-op reconciliation when there's nothing to apply, so this is safe to call
+  // unconditionally.
+  const finishLocation = async () => {
     const result: AuthoriseResult = await count.authorise();
-    onFinish(
-      'reconciled',
-      result,
-      `Reconciled ${result.adjustmentsMade} ${plural(result.adjustmentsMade, 'adjustment')} at ${location.name}. Moving on.`,
-    );
-  };
-
-  const markCountedAndContinue = () => {
-    onFinish('counted', { variancesFound: 0, adjustmentsMade: 0 }, `Counted ${location.name}. Moving on.`);
+    const message =
+      result.adjustmentsMade > 0
+        ? `Reconciled ${result.adjustmentsMade} ${plural(result.adjustmentsMade, 'adjustment')} at ${location.name}. Moving on.`
+        : `Counted ${location.name}. Moving on.`;
+    onFinish(result.adjustmentsMade > 0 ? 'reconciled' : 'counted', result, message);
   };
 
   if (isLoading) {
@@ -374,7 +384,7 @@ function AuditLocationPanel({
           <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
             Skip
           </Button>
-          <Button onClick={markCountedAndContinue} data-testid="audit-continue">
+          <Button onClick={() => void finishLocation()} disabled={pending} data-testid="audit-continue">
             <ChevronRightIcon />
             Continue
           </Button>
@@ -405,7 +415,7 @@ function AuditLocationPanel({
             >
               <span>
                 <Button
-                  onClick={() => void authoriseAndContinue()}
+                  onClick={() => void finishLocation()}
                   disabled={pending}
                   data-testid="audit-authorise-continue"
                 >
@@ -415,7 +425,7 @@ function AuditLocationPanel({
               </span>
             </Tooltip>
           ) : (
-            <Button onClick={markCountedAndContinue} data-testid="audit-continue">
+            <Button onClick={() => void finishLocation()} disabled={pending} data-testid="audit-continue">
               <ChevronRightIcon />
               Mark counted &amp; continue
             </Button>

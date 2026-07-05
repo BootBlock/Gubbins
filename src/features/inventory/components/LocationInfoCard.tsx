@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Button, Tooltip } from '@/components/foundry';
-import { HideIcon, HistoryIcon, MoveIcon, PackageIcon } from '@/components/icons';
+import { CycleCountIcon, HideIcon, HistoryIcon, MoveIcon, PackageIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { locationPath } from '../location-tree';
@@ -86,6 +86,15 @@ export function LocationInfoCard({
             label="Updated"
             value={fmt.relativeTime(location.updatedAt)}
             title={fmt.dateTime(location.updatedAt)}
+          />
+        </div>
+
+        <div className="hidden xl:block">
+          <Stat
+            icon={<CycleCountIcon aria-hidden />}
+            label="Last counted"
+            value={location.lastCountedAt != null ? fmt.relativeTime(location.lastCountedAt) : 'Never'}
+            title={location.lastCountedAt != null ? fmt.dateTime(location.lastCountedAt) : undefined}
           />
         </div>
 

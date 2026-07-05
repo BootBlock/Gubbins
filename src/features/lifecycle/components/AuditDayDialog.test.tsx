@@ -52,10 +52,12 @@ vi.mock('@/db/repositories', () => ({
 
 const reconcileSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const reconcileSerialisedSpy = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const markCountedSpy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../hooks', () => ({
   useReconcile: () => ({ mutateAsync: reconcileSpy, isPending: false }),
   useReconcileSerialised: () => ({ mutateAsync: reconcileSerialisedSpy, isPending: false }),
+  useMarkLocationCounted: () => ({ mutateAsync: markCountedSpy, isPending: false }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -86,6 +88,7 @@ afterEach(() => {
   localStorage.clear();
   reconcileSpy.mockResolvedValue([]);
   reconcileSerialisedSpy.mockResolvedValue([]);
+  markCountedSpy.mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------

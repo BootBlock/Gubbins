@@ -54,16 +54,21 @@ function CycleCountBody({
   const { isLoading, isEmpty, drift, missing, totalToApply, pending } = count;
   const [applied, setApplied] = useState<number | null>(null);
 
-  // The completion message — null until reconciliation succeeds. Kept as a derived string so a
+  // The completion message — null until the count is confirmed. Kept as a derived string so a
   // single always-mounted LiveRegion (below) receives it as mutating children (WCAG 4.1.3).
   // Using a string rather than JSX lets the region stay stable across view transitions: the
   // same DOM node watches for changes in the form view and then receives content once applied
-  // is set, guaranteeing assistive tech will announce the update.
+  // is set, guaranteeing assistive tech will announce the update. A clean count (nothing to
+  // apply) still confirms via `authorise()` so the location's durable "last counted" stamp
+  // lands — see {@link useLocationCycleCount.authorise}.
   const resultMessage =
-    applied !== null
-      ? `Reconciliation complete — ${applied} ${plural(applied, 'adjustment')} applied to the ledger.`
-      : null;
+    applied === null
+      ? null
+      : applied > 0
+        ? `Reconciliation complete — ${applied} ${plural(applied, 'adjustment')} applied to the ledger.`
+        : 'No variances found — recorded as counted.';
 
+  // Always callable, even with nothing to apply: a clean count is still a completed audit.
   const authorise = async () => {
     const result = await count.authorise();
     setApplied(result.adjustmentsMade);
@@ -96,9 +101,16 @@ function CycleCountBody({
       ) : isEmpty ? (
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>
               Close
+            </Button>
+            <Button
+              onClick={() => void authorise()}
+              disabled={pending}
+              data-testid="authorise-reconciliation"
+            >
+              Mark counted
             </Button>
           </div>
         </div>
@@ -117,16 +129,20 @@ function CycleCountBody({
                 Cancel
               </Button>
               <Tooltip
-                content="Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted."
+                content={
+                  totalToApply > 0
+                    ? 'Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted.'
+                    : 'Confirm this count. With nothing drifted, this just records the location as counted.'
+                }
                 triggerTabIndex={-1}
               >
                 <span>
                   <Button
                     onClick={() => void authorise()}
-                    disabled={pending || totalToApply === 0}
+                    disabled={pending}
                     data-testid="authorise-reconciliation"
                   >
-                    Authorise {totalToApply > 0 ? `(${totalToApply})` : ''}
+                    {totalToApply > 0 ? `Authorise (${totalToApply})` : 'Mark counted'}
                   </Button>
                 </span>
               </Tooltip>

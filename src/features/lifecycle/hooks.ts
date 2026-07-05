@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   EXPIRY_SOON_WINDOW_DAYS,
   getItemRepository,
+  getLocationRepository,
   getMaintenanceRepository,
   getProjectRepository,
   type CreateItemInput,
@@ -195,6 +196,19 @@ export function useReconcileSerialised() {
         (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );
     },
+  });
+}
+
+/**
+ * Stamp a location's durable "last counted" timestamp (stock-take backlog G1) — called
+ * once a per-location count completes, clean or reconciled, so `LocationInfoCard` and the
+ * audit-day scope picker can show how long it's been since a location was verified.
+ */
+export function useMarkLocationCounted() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (locationId: string) => getLocationRepository().markCounted(locationId),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
   });
 }
 
