@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import { Banner, Button, Tooltip, useInstallPrompt } from '@/components/foundry';
-import { WarningIcon, CriticalIcon, StorageIcon, CloseIcon, DownloadIcon } from '@/components/icons';
+import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon } from '@/components/icons';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -174,15 +174,9 @@ export function StorageBanners() {
         tone="warning"
         icon={<WarningIcon />}
         heading="Storage is filling up"
-        action={
-          <Tooltip content="Hide this warning until storage fills further." triggerTabIndex={-1}>
-            <span>
-              <Button size="icon" variant="ghost" aria-label="Dismiss" onClick={dismissWarning}>
-                <CloseIcon className="text-glyph-neutral" />
-              </Button>
-            </span>
-          </Tooltip>
-        }
+        onDismiss={dismissWarning}
+        dismissLabel="Dismiss"
+        dismissTestId="storage-warning-dismiss"
       >
         {percent} of your local storage is used ({usage} of {quota}).
       </Banner>,

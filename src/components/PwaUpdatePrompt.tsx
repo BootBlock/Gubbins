@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Banner, Button } from '@/components/foundry';
 import { usePwaUpdate, type PwaUpdateApi } from '@/components/foundry/usePwaUpdate';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
-import { CloseIcon, RefreshIcon } from '@/components/icons';
+import { RefreshIcon } from '@/components/icons';
 
 /**
  * "A new version is ready" prompt (spec §2 installable/offline-first PWA).
@@ -71,26 +71,18 @@ export function PwaUpdatePrompt({ api }: { api?: PwaUpdateApi }) {
         icon={<RefreshIcon aria-hidden="true" />}
         heading="A new version is ready"
         action={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              data-testid="pwa-reload-now"
-              onClick={() => void reloadNow()}
-              disabled={reloading}
-            >
-              {reloading ? 'Reloading…' : 'Reload now'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Dismiss update notice"
-              data-testid="pwa-dismiss"
-              onClick={() => snooze()}
-            >
-              <CloseIcon aria-hidden="true" />
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            data-testid="pwa-reload-now"
+            onClick={() => void reloadNow()}
+            disabled={reloading}
+          >
+            {reloading ? 'Reloading…' : 'Reload now'}
+          </Button>
         }
+        onDismiss={() => snooze()}
+        dismissLabel="Dismiss update notice"
+        dismissTestId="pwa-dismiss"
       >
         Reload to get the latest update. Your saved data stays intact — finish anything in progress first,
         then reload when you&apos;re ready.

@@ -11,11 +11,15 @@
  * It is deliberately quiet: it self-hides once any sync provider is connected, is dismissible
  * for good, and never shows on an empty database (there the first-run
  * {@link DashboardGettingStarted} panel owns the space, and there is nothing to lose yet).
+ *
+ * Built on the shared {@link Banner} control (tone `info`, matching its primary-tinted icon)
+ * rather than a hand-rolled card, so it pairs pixel-consistently with the "Work in progress"
+ * banner beside it — same close-button position, same tone-matched hover.
  */
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { Button, Surface, buttonVariants } from '@/components/foundry';
-import { CloudUploadIcon, SecureIcon, CloseIcon } from '@/components/icons';
+import { Banner, buttonVariants } from '@/components/foundry';
+import { CloudUploadIcon, SecureIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useItemCount } from '@/features/inventory/queries';
@@ -33,30 +37,21 @@ export function DashboardBackupNudge({ className }: { readonly className?: strin
   if (dismissed || providerId !== null || count.isPending || (count.data ?? 0) === 0) return null;
 
   return (
-    <Surface className={cn('flex flex-col gap-4 p-5', className)} data-testid="dashboard-backup-nudge">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 text-primary [&_svg]:size-5">
-          <SecureIcon aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">Keep your inventory safe</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gubbins stores everything privately in this browser. Set up Cloud Sync or take a backup so a
-            browser clear-out, a lost device, or a new browser can&apos;t lose your inventory.
-          </p>
-        </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={dismiss}
-          aria-label="Dismiss"
-          data-testid="backup-nudge-dismiss"
-          className="-mr-1 -mt-1 shrink-0"
-        >
-          <CloseIcon className="text-glyph-neutral" />
-        </Button>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <Banner
+      tone="info"
+      icon={<SecureIcon aria-hidden className="text-primary" />}
+      heading="Keep your inventory safe"
+      className={className}
+      data-testid="dashboard-backup-nudge"
+      onDismiss={dismiss}
+      dismissLabel="Dismiss"
+      dismissTestId="backup-nudge-dismiss"
+    >
+      <p>
+        Gubbins stores everything privately in this browser. Set up Cloud Sync or take a backup so a browser
+        clear-out, a lost device, or a new browser can&apos;t lose your inventory.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to="/sync"
           className={cn(buttonVariants({ variant: 'primary' }))}
@@ -66,6 +61,6 @@ export function DashboardBackupNudge({ className }: { readonly className?: strin
           Set up sync &amp; backup
         </Link>
       </div>
-    </Surface>
+    </Banner>
   );
 }
