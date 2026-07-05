@@ -131,12 +131,12 @@ function Stat({
   title?: string;
 }) {
   return (
-    <div className="flex items-baseline gap-1.5 whitespace-nowrap" title={title}>
-      <span className="flex items-center gap-1 text-xs text-muted-foreground [&_svg]:size-3.5">
+    <div className="flex items-center gap-1.5 whitespace-nowrap" title={title}>
+      <span className="flex items-center gap-1 text-xs leading-none text-muted-foreground [&_svg]:size-3.5">
         {icon}
         {label}
       </span>
-      <span className="font-medium tabular-nums">{value}</span>
+      <span className="text-sm font-medium tabular-nums leading-none">{value}</span>
     </div>
   );
 }
