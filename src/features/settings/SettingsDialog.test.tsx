@@ -33,7 +33,7 @@ import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useApplyTheme } from './useApplyTheme';
 
-/** Mounts the reactive theme-sync hook (as the app's composition root does) with no UI. */
+/** Mounts the reactive appearance-sync hook (as the app's composition root does) with no UI. */
 function ThemeHost() {
   useApplyTheme();
   return null;
@@ -98,34 +98,47 @@ describe('SettingsDialog — Projects off', () => {
   });
 });
 
-describe('SettingsDialog — theme picker applies to the document', () => {
+describe('SettingsDialog — appearance controls apply to the document', () => {
   afterEach(() => {
-    usePreferencesStore.setState({ theme: 'dark' });
-    document.documentElement.classList.remove('dark');
-    delete document.documentElement.dataset.theme;
+    usePreferencesStore.setState({ mode: 'dark', accent: 'violet', oledDark: false, highContrast: false });
+    const root = document.documentElement;
+    root.classList.remove('dark');
+    delete root.dataset.accent;
+    delete root.dataset.oled;
+    delete root.dataset.contrast;
   });
 
-  it('selecting a new full theme lands data-theme + .dark on <html>', () => {
-    // The composition root's theme-sync hook is mounted alongside the dialog, so a picker
-    // click flows store → hook → document exactly as it does in the running app.
+  it('mode, colour, OLED and high-contrast controls land on <html>', () => {
+    // The composition root's appearance-sync hook is mounted alongside the dialog, so a control
+    // flows store → hook → document exactly as it does in the running app.
     render(
       <>
         <ThemeHost />
         <SettingsDialog open onClose={() => {}} />
       </>,
     );
-    // Appearance is the default rail tab, so its panel (and the theme toggle) is mounted.
+    // Appearance is the default rail tab, so its panel (and the controls) is mounted.
     fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    const root = document.documentElement;
 
-    // A dark-base named theme sets its attribute AND keeps the .dark class.
-    fireEvent.click(screen.getByTestId('theme-midnight'));
-    expect(document.documentElement.dataset.theme).toBe('midnight');
-    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    // Mode: Light drops the .dark class; the two axes are independent.
+    fireEvent.click(screen.getByTestId('mode-light'));
+    expect(root.classList.contains('dark')).toBe(false);
+    fireEvent.click(screen.getByTestId('mode-dark'));
+    expect(root.classList.contains('dark')).toBe(true);
 
-    // A light-base named theme sets its attribute and drops the .dark class.
-    fireEvent.click(screen.getByTestId('theme-sepia'));
-    expect(document.documentElement.dataset.theme).toBe('sepia');
-    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    // Colour: sets data-accent, independent of the mode.
+    fireEvent.click(screen.getByTestId('accent-blue'));
+    expect(root.dataset.accent).toBe('blue');
+
+    // Pure-black (OLED) and High-contrast switches set their data attributes.
+    fireEvent.click(screen.getByTestId('setting-oled'));
+    fireEvent.click(screen.getByRole('option', { name: 'On' }));
+    expect(root.dataset.oled).toBe('');
+
+    fireEvent.click(screen.getByTestId('setting-high-contrast'));
+    fireEvent.click(screen.getByRole('option', { name: 'On' }));
+    expect(root.dataset.contrast).toBe('high');
   });
 });
 

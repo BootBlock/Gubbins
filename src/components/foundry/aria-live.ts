@@ -3,7 +3,7 @@
  * components" / WCAG 4.1.3 Status Messages).
  *
  * Separated from the {@link LiveRegion} component (the "extract the small
- * decision out of the DOM glue" seam, à la `resolveTheme` / `describeScrapeError`)
+ * decision out of the DOM glue" seam, à la `resolveMode` / `describeScrapeError`)
  * so the role ↔ politeness pairing is exhaustively unit-testable without a DOM.
  */
 

@@ -13,7 +13,7 @@
  * stored origin device (v18 `origin_device_id`, supplied by `lib/env/device-id`) with the
  * current device. A NULL origin is a legacy (pre-v18) pointer that cannot be attributed —
  * it is treated as `local` so a pre-existing pointer never spuriously degrades. Mirrors the
- * small-pure-mapping seams (`resolveTheme` / `liveRegionAttrs` / `describeHistoryEntry`).
+ * small-pure-mapping seams (`resolveMode` / `liveRegionAttrs` / `describeHistoryEntry`).
  */
 import type { AttachmentKind } from '@/db/repositories';
 

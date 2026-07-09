@@ -296,154 +296,157 @@
 }
 
 /*
- * Additional selectable full themes (spec §2.1). Each is keyed by the `data-theme` attribute
- * the apply seam (`features/settings/theme.ts`) sets on <html>; a dark-base theme *also*
- * carries the `.dark` class so `@custom-variant dark`, the `dark:` utilities and `color-scheme`
- * keep working. The `:root[data-theme='…']` selector outranks both `:root` and `.dark` (higher
- * specificity), so these overrides win over the base palette, and any token a theme does *not*
- * restate simply inherits its base (`:root` for a light base, `.dark` for a dark base) — so each
- * block lists only what differs. The theme registry (`theme-registry.ts`) is the SSOT of ids +
- * base; keep these blocks in lock-step with it.
+ * Appearance axis 1 — ACCENT COLOUR (spec §2.1). Orthogonal to light/dark: the apply seam
+ * (`features/settings/theme.ts`) sets `data-accent="<id>"` on <html>, and each accent recolours
+ * only the brand tokens (`--primary` / `--ring` / `--highlight`, and `--primary-foreground` so
+ * the label stays legible) — never the neutral surfaces — so every colour reads the same in both
+ * modes. Each accent is authored twice: a light variant `[data-accent='<id>']` and a dark
+ * variant `.dark[data-accent='<id>']`. The dark variant *also* matches a descendant
+ * (`.dark [data-accent='<id>']`) so the Settings swatches can self-preview their colour by
+ * carrying their own `data-accent`. `violet` mirrors the base `--primary` so the default look is
+ * unchanged. The registry (`theme-registry.ts`) is the SSOT of accent ids; keep these in step.
+ * Foreground: cyan/green/amber are luminous, so they take a dark label; violet/blue/rose keep
+ * white (matching the shipped baseline). Contrast audited AA / AA-large in both modes.
  */
-
-/*
- * Midnight — a dark theme shifted from the default's near-black *indigo* to a deep, cool
- * *navy blue*, with azure accents in place of violet. Status tones, glyphs and the location/
- * ABC/money/star families inherit the `.dark` base (they read cleanly on the navy surface).
- */
-:root[data-theme='midnight'] {
-  color-scheme: dark;
-
-  --background: oklch(0.15 0.03 255);
-  --foreground: oklch(0.95 0.012 245);
-
-  --card: oklch(0.2 0.035 255);
-  --card-foreground: oklch(0.95 0.012 245);
-
-  --card-elevated: oklch(0.31 0.045 255);
-  --card-elevated-foreground: oklch(0.95 0.012 245);
-
-  --popover: oklch(0.19 0.035 255);
-  --popover-foreground: oklch(0.95 0.012 245);
-
-  --primary: oklch(0.62 0.17 248);
+[data-accent='violet'] {
+  --primary: oklch(0.55 0.2 277);
   --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.2 277);
+  --highlight: oklch(0.62 0.19 277);
+}
+.dark[data-accent='violet'],
+.dark [data-accent='violet'] {
+  --primary: oklch(0.64 0.2 277);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.64 0.2 277);
+  --highlight: oklch(0.7 0.18 277);
+}
 
-  --secondary: oklch(0.27 0.035 255);
-  --secondary-foreground: oklch(0.95 0.012 245);
+[data-accent='blue'] {
+  --primary: oklch(0.52 0.19 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.52 0.19 258);
+  --highlight: oklch(0.6 0.18 258);
+}
+.dark[data-accent='blue'],
+.dark [data-accent='blue'] {
+  --primary: oklch(0.62 0.18 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.62 0.18 255);
+  --highlight: oklch(0.7 0.17 255);
+}
 
-  --muted: oklch(0.24 0.03 255);
-  --muted-foreground: oklch(0.73 0.025 248);
+[data-accent='cyan'] {
+  --primary: oklch(0.62 0.12 218);
+  --primary-foreground: oklch(0.2 0.03 218);
+  --ring: oklch(0.62 0.12 218);
+  --highlight: oklch(0.68 0.12 218);
+}
+.dark[data-accent='cyan'],
+.dark [data-accent='cyan'] {
+  --primary: oklch(0.72 0.12 215);
+  --primary-foreground: oklch(0.2 0.03 218);
+  --ring: oklch(0.72 0.12 215);
+  --highlight: oklch(0.78 0.12 215);
+}
 
-  --accent: oklch(0.72 0.14 208);
-  --accent-foreground: oklch(0.15 0.03 255);
+[data-accent='green'] {
+  --primary: oklch(0.6 0.15 150);
+  --primary-foreground: oklch(0.2 0.04 150);
+  --ring: oklch(0.6 0.15 150);
+  --highlight: oklch(0.66 0.15 150);
+}
+.dark[data-accent='green'],
+.dark [data-accent='green'] {
+  --primary: oklch(0.7 0.16 150);
+  --primary-foreground: oklch(0.2 0.04 150);
+  --ring: oklch(0.7 0.16 150);
+  --highlight: oklch(0.76 0.16 150);
+}
 
-  --highlight: oklch(0.7 0.17 248);
+[data-accent='amber'] {
+  --primary: oklch(0.72 0.15 75);
+  --primary-foreground: oklch(0.2 0.04 75);
+  --ring: oklch(0.72 0.15 75);
+  --highlight: oklch(0.75 0.15 75);
+}
+.dark[data-accent='amber'],
+.dark [data-accent='amber'] {
+  --primary: oklch(0.8 0.15 80);
+  --primary-foreground: oklch(0.2 0.04 75);
+  --ring: oklch(0.8 0.15 80);
+  --highlight: oklch(0.83 0.15 80);
+}
 
-  --border: oklch(1 0 0 / 11%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.62 0.17 248);
-
-  --glass-sheen: oklch(1 0 0 / 12%);
+[data-accent='rose'] {
+  --primary: oklch(0.55 0.2 15);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.2 15);
+  --highlight: oklch(0.62 0.19 15);
+}
+.dark[data-accent='rose'],
+.dark [data-accent='rose'] {
+  --primary: oklch(0.65 0.2 18);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.65 0.2 18);
+  --highlight: oklch(0.72 0.19 18);
 }
 
 /*
- * Sepia — a warm, paper-like *light* theme: a soft cream field with dark-brown ink and a muted
- * terracotta accent, easy on the eyes in a well-lit room. Status tones, glyphs and the location/
- * ABC/money families inherit the `:root` light base (they read on the warm cream surface).
+ * Pure-black (OLED) — a dark-mode switch (`data-oled` on <html>) that drops the surfaces to true
+ * black for OLED displays, where a `#000` pixel is fully off. Scoped to `.dark` so it is inert in
+ * light mode. Background is pure black; cards/popovers lift a hair for depth. Composes with any
+ * accent (it touches only neutral surfaces). Higher specificity than `.dark`, so it wins.
  */
-:root[data-theme='sepia'] {
-  color-scheme: light;
-
-  --background: oklch(0.95 0.026 84);
-  --foreground: oklch(0.31 0.038 58);
-
-  --card: oklch(0.97 0.02 84);
-  --card-foreground: oklch(0.31 0.038 58);
-
-  --card-elevated: oklch(0.99 0.014 84);
-  --card-elevated-foreground: oklch(0.31 0.038 58);
-
-  --popover: oklch(0.97 0.02 84);
-  --popover-foreground: oklch(0.31 0.038 58);
-
-  --primary: oklch(0.5 0.1 58);
-  --primary-foreground: oklch(0.98 0.02 84);
-
-  --secondary: oklch(0.9 0.032 84);
-  --secondary-foreground: oklch(0.33 0.038 58);
-
-  --muted: oklch(0.9 0.032 84);
-  --muted-foreground: oklch(0.48 0.04 62);
-
-  --accent: oklch(0.56 0.1 42);
-  --accent-foreground: oklch(0.98 0.02 84);
-
-  --highlight: oklch(0.55 0.12 58);
-
-  --border: oklch(0.31 0.038 58 / 16%);
-  --input: oklch(0.31 0.038 58 / 20%);
-  --ring: oklch(0.5 0.1 58);
-
-  /* Warm the decorative starfield to brown dots so it sits with the paper palette. */
-  --star: oklch(0.45 0.05 58);
-  --star-flare: oklch(0.55 0.12 58);
+.dark[data-oled] {
+  --background: oklch(0 0 0);
+  --card: oklch(0.14 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --card-elevated: oklch(0.24 0 0);
+  --popover: oklch(0.14 0 0);
+  --secondary: oklch(0.2 0 0);
+  --muted: oklch(0.17 0 0);
 }
 
 /*
- * High contrast — a maximum-legibility *dark* theme (WCAG 1.4.11 / low-vision aid): a pure-black
- * field with pure-white text, bold visible borders, bright saturated accents and status tones,
- * and a vivid focus ring. Secondary ("muted") text stays near-white rather than dimming, so no
- * text drops below a strong contrast ratio. Inherits the `.dark` base for the glyph/location/ABC/
- * money/star families.
+ * Appearance axis 2 — HIGH CONTRAST (WCAG 1.4.11 / low-vision aid). A `data-contrast="high"`
+ * switch on <html> that boosts contrast and borders over whichever mode/accent is active: near
+ * pure black/white surfaces, bold visible chrome, and secondary text that stays strong rather
+ * than dimming. Authored for both modes; listed after the accent/OLED blocks so it wins the
+ * neutral tokens where they overlap (the accent still owns `--primary`). It leaves the accent
+ * colour alone — every accent's `--primary` is already AA against its foreground.
  */
-:root[data-theme='high-contrast'] {
-  color-scheme: dark;
-
-  --background: oklch(0.08 0 0);
+[data-contrast='high'] {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.12 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.12 0 0);
+  --card-elevated: oklch(1 0 0);
+  --card-elevated-foreground: oklch(0.12 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.9 0 0);
+  --secondary-foreground: oklch(0.12 0 0);
+  --muted: oklch(0.92 0 0);
+  --muted-foreground: oklch(0.25 0 0);
+  --border: oklch(0 0 0 / 55%);
+  --input: oklch(0 0 0 / 60%);
+}
+.dark[data-contrast='high'] {
+  --background: oklch(0.06 0 0);
   --foreground: oklch(1 0 0);
-
-  --card: oklch(0.13 0 0);
+  --card: oklch(0.1 0 0);
   --card-foreground: oklch(1 0 0);
-
-  --card-elevated: oklch(0.22 0 0);
+  --card-elevated: oklch(0.2 0 0);
   --card-elevated-foreground: oklch(1 0 0);
-
-  --popover: oklch(0.13 0 0);
+  --popover: oklch(0.1 0 0);
   --popover-foreground: oklch(1 0 0);
-
-  --primary: oklch(0.78 0.16 232);
-  --primary-foreground: oklch(0.08 0 0);
-
-  --secondary: oklch(0.24 0 0);
+  --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(1 0 0);
-
-  --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.9 0 0);
-
-  --accent: oklch(0.85 0.15 200);
-  --accent-foreground: oklch(0.08 0 0);
-
-  --destructive: oklch(0.66 0.25 27);
-  --destructive-foreground: oklch(1 0 0);
-
-  --destructive-emphasis: oklch(0.3 0.16 27);
-  --destructive-emphasis-foreground: oklch(1 0 0);
-
-  --success: oklch(0.82 0.2 150);
-  --success-foreground: oklch(0.08 0 0);
-
-  --warning: oklch(0.86 0.16 90);
-  --warning-foreground: oklch(0.1 0.03 60);
-
-  --highlight: oklch(0.85 0.16 232);
-
-  /* Bold, clearly-visible chrome — the defining move of a high-contrast theme. */
-  --border: oklch(1 0 0 / 50%);
-  --input: oklch(1 0 0 / 55%);
-  --ring: oklch(0.9 0.16 232);
-
-  --glass-sheen: oklch(1 0 0 / 18%);
+  --muted: oklch(0.18 0 0);
+  --muted-foreground: oklch(0.92 0 0);
+  --border: oklch(1 0 0 / 55%);
+  --input: oklch(1 0 0 / 60%);
 }
 
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so

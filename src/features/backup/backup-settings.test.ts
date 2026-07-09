@@ -22,7 +22,7 @@ function memoryStorage(seed: Record<string, string> = {}): Storage {
 }
 
 const prefsWithSecret = JSON.stringify({
-  state: { theme: 'dark', bridgeUrl: 'http://127.0.0.1:8787', bridgeToken: 'super-secret' },
+  state: { mode: 'dark', bridgeUrl: 'http://127.0.0.1:8787', bridgeToken: 'xxxx-placeholder' },
   version: 0,
 });
 
@@ -44,7 +44,7 @@ describe('sanitiseSettingsRecord', () => {
     const parsed = JSON.parse(out['gubbins:preferences']!);
     expect(parsed.state.bridgeToken).toBeUndefined();
     expect(parsed.state.bridgeUrl).toBe('http://127.0.0.1:8787');
-    expect(parsed.state.theme).toBe('dark');
+    expect(parsed.state.mode).toBe('dark');
   });
 
   it('drops an unparseable preferences blob rather than exporting it raw', () => {
