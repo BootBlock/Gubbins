@@ -23,8 +23,18 @@ export interface ReorderSupplierPart {
 export interface ReorderShortfallRow {
   readonly itemId: string;
   readonly itemName: string;
-  /** Units below the reorder point (already computed by `shortfall()`). */
+  /**
+   * Units still to order — the shortfall **already net of stock on order** (the repository
+   * subtracts open-PO quantities before this reaches the builder, so a row fully covered by
+   * incoming stock arrives with `shortfall <= 0` and is skipped).
+   */
   readonly shortfall: number;
+  /**
+   * Units already on order for this item (open ORDERED/PARTIAL POs). Carried onto the plan line
+   * purely so the UI can show *why* the suggested quantity was reduced — the netting itself is
+   * already reflected in `shortfall`. Defaults to 0 when the feed omits it.
+   */
+  readonly onOrder?: number;
   /** The preferred supplier-part row, or undefined/null when none is marked. */
   readonly preferredSupplier?: ReorderSupplierPart | null;
 }
@@ -41,6 +51,8 @@ export interface ReorderPlanLine {
   /** Computed order quantity: at least the shortfall, at least the MOQ, rounded up to a
    * whole pack (see {@link computeOrderQty}). */
   readonly orderQty: number;
+  /** Units already on order (display-only; the shortfall is already net of this). */
+  readonly onOrder: number;
   readonly unitCost: number | null;
 }
 
@@ -135,6 +147,7 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
       itemName: row.itemName,
       supplierPartId: sp?.supplierPartId ?? null,
       orderQty,
+      onOrder: row.onOrder ?? 0,
       unitCost: sp?.unitCost ?? null,
     });
   }

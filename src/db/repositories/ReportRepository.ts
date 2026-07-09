@@ -60,6 +60,7 @@ import {
   type ReorderPlanGroup,
   type ReorderShortfallRow,
 } from '@/features/purchasing/reorder-plan';
+import { onOrderQtyForItemSql } from './PurchaseOrderRepository';
 import type { LowStockThresholds } from './types';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
@@ -325,16 +326,23 @@ export class ReportRepository extends BaseRepository {
    * `supplier_parts` row for each item so the caller can immediately feed the result into
    * {@link buildReorderPlan} without a second round-trip.
    *
-   * The shortfall is `COALESCE(reorder_qty, COALESCE(reorder_point, ?) - quantity)` —
+   * The base shortfall is `COALESCE(reorder_qty, COALESCE(reorder_point, ?) - quantity)` —
    * i.e. the per-item explicit top-up amount when set, else the distance from on-hand to
-   * the effective floor (matching `shortfall()` in `reorder-policy.ts`).
+   * the effective floor (matching `shortfall()` in `reorder-policy.ts`). Stock already **on
+   * order** (open ORDERED/PARTIAL POs — see {@link onOrderQtyForItemSql}) is then netted off so
+   * the plan never re-suggests what is already arriving: the effective shortfall is
+   * `max(0, base − onOrder)`, and an item whose incoming stock fully covers its top-up drops
+   * out of the plan entirely (`buildReorderPlan` skips a zero shortfall). The low-stock *alert*
+   * deliberately stays on-hand-based — you are low now even if more is coming — so this netting
+   * lives only here, on the procurement action.
    */
   async listReorderShortfall(thresholds: LowStockThresholds = {}): Promise<ReorderShortfallRow[]> {
     const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
     const rows = await this.driver.query<{
       item_id: string;
       item_name: string;
-      shortfall: number;
+      base_shortfall: number;
+      on_order: number;
       supplier_part_id: string | null;
       supplier_name: string | null;
       unit_cost: number | null;
@@ -344,13 +352,15 @@ export class ReportRepository extends BaseRepository {
       // Only DISCRETE items with countable shortfall (CONSUMABLE_GAUGE has no countable
       // top-up unit); SERIALISED singles and abstract variant parents are excluded as in
       // listLowStock. The LEFT JOIN brings the preferred supplier-part row — NULL when
-      // none is marked preferred.
+      // none is marked preferred. `on_order` is the still-incoming quantity; the effective
+      // shortfall (base − on_order, floored at 0) is computed in JS below.
       `SELECT i.id AS item_id,
               i.name AS item_name,
               COALESCE(
                 i.reorder_qty,
                 MAX(0, COALESCE(i.reorder_point, ?) - i.quantity)
-              ) AS shortfall,
+              ) AS base_shortfall,
+              ${onOrderQtyForItemSql('i.id')} AS on_order,
               sp.id          AS supplier_part_id,
               sp.supplier_name,
               sp.unit_cost,
@@ -370,20 +380,25 @@ export class ReportRepository extends BaseRepository {
       [qty, qty, qty, qty],
     );
 
-    return rows.map((r) => ({
-      itemId: r.item_id,
-      itemName: r.item_name,
-      shortfall: Number(r.shortfall),
-      preferredSupplier: r.supplier_part_id
-        ? {
-            supplierPartId: r.supplier_part_id,
-            supplierName: r.supplier_name!,
-            unitCost: r.unit_cost,
-            packQty: r.pack_qty,
-            minOrderQty: r.min_order_qty,
-          }
-        : null,
-    }));
+    return rows.map((r) => {
+      const onOrder = Number(r.on_order);
+      return {
+        itemId: r.item_id,
+        itemName: r.item_name,
+        // Net already-incoming stock off the base shortfall so the plan doesn't double-order.
+        shortfall: Math.max(0, Number(r.base_shortfall) - onOrder),
+        onOrder,
+        preferredSupplier: r.supplier_part_id
+          ? {
+              supplierPartId: r.supplier_part_id,
+              supplierName: r.supplier_name!,
+              unitCost: r.unit_cost,
+              packQty: r.pack_qty,
+              minOrderQty: r.min_order_qty,
+            }
+          : null,
+      };
+    });
   }
 
   /**

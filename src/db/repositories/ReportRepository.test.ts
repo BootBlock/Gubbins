@@ -256,6 +256,25 @@ describe('ReportRepository', () => {
 
   // Phase 65 — reorder shortfall + plan ------------------------------------------
   describe('listReorderShortfall (Phase 65)', () => {
+    /** Insert a purchase order (default ORDERED) with a single line for `itemId`. */
+    async function addPoLine(
+      itemId: string,
+      orderedQty: number,
+      receivedQty = 0,
+      status = 'ORDERED',
+    ): Promise<void> {
+      const poId = crypto.randomUUID();
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES (?, 'Acme', ?, ?);",
+        [poId, status, Date.now()],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES (?, ?, ?, ?, ?, 1);`,
+        [crypto.randomUUID(), poId, itemId, orderedQty, receivedQty],
+      );
+    }
+
     it('returns an empty array when no items are below their reorder point', async () => {
       await items.create({ name: 'Plentiful', quantity: 100 });
       const rows = await reports.listReorderShortfall();
@@ -332,6 +351,47 @@ describe('ReportRepository', () => {
       expect(rows.every((r) => r.itemName !== 'Parent')).toBe(true);
       expect(rows.every((r) => r.itemName !== 'Removed')).toBe(true);
     });
+
+    it('nets stock already on order off the shortfall', async () => {
+      const item = await items.create({ name: 'PartlyCovered', quantity: 2 }); // base shortfall 3
+      await addPoLine(item.id, 2); // 2 already on an open PO
+      const row = (await reports.listReorderShortfall({ qtyThreshold: 5 })).find(
+        (r) => r.itemId === item.id,
+      )!;
+      expect(row.onOrder).toBe(2);
+      expect(row.shortfall).toBe(1); // max(0, 3 − 2)
+    });
+
+    it('drops the shortfall to zero when incoming stock fully covers it', async () => {
+      const item = await items.create({ name: 'FullyCovered', quantity: 2 }); // base shortfall 3
+      await addPoLine(item.id, 5);
+      const row = (await reports.listReorderShortfall({ qtyThreshold: 5 })).find(
+        (r) => r.itemId === item.id,
+      )!;
+      expect(row.onOrder).toBe(5);
+      expect(row.shortfall).toBe(0);
+    });
+
+    it('counts only the still-outstanding (unreceived) portion as on order', async () => {
+      const item = await items.create({ name: 'PartlyReceived', quantity: 2 }); // base shortfall 3
+      await addPoLine(item.id, 5, 4); // ordered 5, received 4 → 1 outstanding
+      const row = (await reports.listReorderShortfall({ qtyThreshold: 5 })).find(
+        (r) => r.itemId === item.id,
+      )!;
+      expect(row.onOrder).toBe(1);
+      expect(row.shortfall).toBe(2); // max(0, 3 − 1)
+    });
+
+    it('ignores DRAFT and CANCELLED purchase orders when netting', async () => {
+      const item = await items.create({ name: 'OnlyDraft', quantity: 2 }); // base shortfall 3
+      await addPoLine(item.id, 5, 0, 'DRAFT');
+      await addPoLine(item.id, 5, 0, 'CANCELLED');
+      const row = (await reports.listReorderShortfall({ qtyThreshold: 5 })).find(
+        (r) => r.itemId === item.id,
+      )!;
+      expect(row.onOrder).toBe(0);
+      expect(row.shortfall).toBe(3);
+    });
   });
 
   describe('reorderPlan (Phase 65)', () => {
@@ -348,6 +408,26 @@ describe('ReportRepository', () => {
       expect(ua).toBeDefined();
       // DigiKey sorts before Unassigned.
       expect(plan[0]!.supplierName).toBe('DigiKey');
+    });
+
+    it('omits an item whose shortfall is fully covered by stock on order', async () => {
+      const covered = await items.create({ name: 'AlreadyOnOrder', quantity: 0 }); // base shortfall 5
+      const stillLow = await items.create({ name: 'StillLow', quantity: 1 });
+      const poId = crypto.randomUUID();
+      await driver.execute(
+        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES (?, 'Acme', 'ORDERED', ?);",
+        [poId, Date.now()],
+      );
+      await driver.execute(
+        `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
+         VALUES (?, ?, ?, 10, 0, 1);`,
+        [crypto.randomUUID(), poId, covered.id],
+      );
+
+      const plan = await reports.reorderPlan({ qtyThreshold: 5 });
+      const lines = plan.flatMap((g) => g.lines);
+      expect(lines.some((l) => l.itemId === covered.id)).toBe(false);
+      expect(lines.some((l) => l.itemId === stillLow.id)).toBe(true);
     });
   });
 
