@@ -152,8 +152,17 @@ export function ItemList({
     );
   }
 
+  // The scroller clips its overflow on both axes (it must, to scroll vertically), so the
+  // horizontal padding doubles as the breathing room a card's hover lift-shadow
+  // (`Surface interactive` → `hover:shadow-primary/10`) and highlight-flash ring need before the
+  // clip — `px-1` (4px) cropped them into hard vertical edges at the sides. `px-4` + a matching
+  // `pb-4` give the soft accent glow room to fall off; `pt-2` already covers the top.
   return (
-    <div ref={parentRef} data-testid="item-list-scroll" className="min-h-0 flex-1 overflow-auto px-1 pt-2">
+    <div
+      ref={parentRef}
+      data-testid="item-list-scroll"
+      className="min-h-0 flex-1 overflow-auto px-4 pb-4 pt-2"
+    >
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {virtualRows.map((virtualRow) => {
           const { start, end, resident } = resolveListRow(
