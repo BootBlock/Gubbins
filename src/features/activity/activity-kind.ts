@@ -41,6 +41,8 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   CONSUMED: 'stock',
   RECEIVED: 'stock',
   PROCURED: 'stock',
+  // Breaking a kit back down returns its components to stock (Kits v2).
+  DISASSEMBLED: 'stock',
   // Physical / hierarchy relocation.
   MOVED: 'movement',
   RE_PARENTED: 'movement',

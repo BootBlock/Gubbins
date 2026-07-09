@@ -125,6 +125,9 @@ export const HISTORY_ACTIONS = [
   'CONDITION_CHANGED', // the item's Condition enum was changed (§4 Condition Tracking)
   'VARIANT_CREATED', // the item was created/attached as a child variant under a parent (§4 Variant/SKU)
   'TRACKING_CHANGED', // the item's tracking mode was switched in place (Discrete ↔ Untracked)
+  // Kits v2 — assemble/disassemble stock operations. ASSEMBLED (above, reused) logs the kit
+  // being built up from its components; DISASSEMBLED logs it being broken back down.
+  'DISASSEMBLED', // a kit broken down, its components returned to stock (inverse of ASSEMBLED)
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

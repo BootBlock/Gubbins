@@ -9,13 +9,20 @@
  * work): a kit is a reusable many-to-many item→component relationship.
  */
 import { useMemo, useState } from 'react';
-import { Button, InfoHint, Input, SelectField } from '@/components/foundry';
+import { Button, InfoHint, Input, SelectField, useToast } from '@/components/foundry';
 import { AddIcon, AssemblyIcon, DeleteIcon } from '@/components/icons';
 import type { Item, KitComponent } from '@/db/repositories';
 import { buildableCount } from '@/features/inventory/kit-availability';
 import { useInventoryItems } from '@/features/inventory/queries';
 import { plural } from '@/lib/plural';
-import { useAddKitComponent, useItemKit, useRemoveKitComponent, useUpdateKitComponentQty } from '../hooks';
+import {
+  useAddKitComponent,
+  useAssembleKit,
+  useDisassembleKit,
+  useItemKit,
+  useRemoveKitComponent,
+  useUpdateKitComponentQty,
+} from '../hooks';
 
 export function KitEditor({ item }: { item: Item }) {
   const { data: components } = useItemKit(item.id);
@@ -40,6 +47,34 @@ export function KitEditor({ item }: { item: Item }) {
 
   const rows = components ?? [];
   const { count, limiting } = buildableCount(rows);
+
+  // Assemble / disassemble (Kits v2): one count drives both actions, each bounded by its own
+  // ceiling — assembly by the buildable count, disassembly by the kit's on-hand quantity.
+  const assemble = useAssembleKit();
+  const disassemble = useDisassembleKit();
+  const toast = useToast();
+  const [buildQty, setBuildQty] = useState('1');
+  const buildN = Math.max(0, Math.floor(Number(buildQty) || 0));
+  const busy = assemble.isPending || disassemble.isPending;
+  const canAssemble = buildN >= 1 && buildN <= count && !busy;
+  const canDisassemble = buildN >= 1 && buildN <= item.quantity && !busy;
+
+  const runBuild = (
+    action: typeof assemble | typeof disassemble,
+    verb: 'Assembled' | 'Disassembled',
+    fallback: string,
+  ) => {
+    action.mutate(
+      { kitId: item.id, count: buildN },
+      {
+        onSuccess: () => {
+          toast.show({ tone: 'success', message: `${verb} ${buildN} ${plural(buildN, 'kit')}.` });
+          setBuildQty('1');
+        },
+        onError: (e) => toast.show({ tone: 'danger', message: e instanceof Error ? e.message : fallback }),
+      },
+    );
+  };
 
   const add = () => {
     if (componentId === '') return;
@@ -96,6 +131,57 @@ export function KitEditor({ item }: { item: Item }) {
             <KitComponentRow key={c.id} kitId={item.id} component={c} />
           ))}
         </ul>
+      ) : null}
+
+      {/* Assemble / disassemble the kit (Kits v2) — moves stock atomically through the ledger. */}
+      {rows.length > 0 ? (
+        <div className="rounded-xl border border-border p-3" data-testid="kit-assemble">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">
+            <AssemblyIcon />
+            Assemble / disassemble
+            <InfoHint
+              content={
+                'Build whole kits from stock (consuming each component) or break them back ' +
+                'down (returning components to stock). Assembly is capped by how many you can ' +
+                'build; disassembly by how many kits you have on hand.'
+              }
+            />
+          </p>
+          <div className="flex items-end gap-2">
+            <label className="w-24">
+              <span className="mb-field-gap-compact block text-xs text-muted-foreground">Number of kits</span>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={buildQty}
+                onChange={(e) => setBuildQty(e.target.value)}
+                data-testid="kit-build-qty"
+              />
+            </label>
+            <Button
+              size="sm"
+              onClick={() => runBuild(assemble, 'Assembled', 'Could not assemble the kit.')}
+              disabled={!canAssemble}
+              data-testid="assemble-kit"
+            >
+              <AssemblyIcon />
+              Assemble
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => runBuild(disassemble, 'Disassembled', 'Could not disassemble the kit.')}
+              disabled={!canDisassemble}
+              data-testid="disassemble-kit"
+            >
+              Disassemble
+            </Button>
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground" data-testid="kit-build-bounds">
+            Up to {count} buildable · {item.quantity} on hand
+          </p>
+        </div>
       ) : null}
 
       <div className="rounded-xl border border-border p-3">

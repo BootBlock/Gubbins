@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   RECEIVED: 'Received',
   CONSUMED: 'Consumed',
   ASSEMBLED: 'Assembled',
+  DISASSEMBLED: 'Disassembled',
   CHECKED_OUT: 'Checked out',
   CHECKED_IN: 'Checked in',
   SCRAPE_APPLIED: 'Supplier data applied',
