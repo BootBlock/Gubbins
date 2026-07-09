@@ -35,6 +35,9 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   CONDITION_CHANGED: 'Condition changed',
   VARIANT_CREATED: 'Variant created',
   TRACKING_CHANGED: 'Tracking changed',
+  SOLD: 'Sold',
+  WRITTEN_OFF: 'Written off',
+  RETURNED_TO_SUPPLIER: 'Returned to supplier',
 };
 
 /**

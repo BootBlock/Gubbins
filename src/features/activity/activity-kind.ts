@@ -56,8 +56,12 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   CONDITION_CHANGED: 'lifecycle',
   TRACKING_CHANGED: 'lifecycle',
   MAINTENANCE_LOGGED: 'lifecycle',
+  WRITTEN_OFF: 'lifecycle',
+  // Outbound / commercial stock movements.
+  SOLD: 'stock',
   // Supplier / external data.
   SCRAPE_APPLIED: 'supplier',
+  RETURNED_TO_SUPPLIER: 'supplier',
 };
 
 /** The activity kind a history action belongs to (unknown actions → `'lifecycle'`). */

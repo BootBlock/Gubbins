@@ -55,6 +55,7 @@ import {
   type ValuationTrendReport,
 } from '@/features/reports/valuation-trend';
 import { buildSpendReport, type SpendEvent, type SpendReport } from '@/features/reports/spend-analytics';
+import { buildSalesReport, type SalesEvent, type SalesReport } from '@/features/reports/sales-analytics';
 import {
   buildReorderPlan,
   type ReorderPlanGroup,
@@ -747,5 +748,75 @@ export class ReportRepository extends BaseRepository {
     }
 
     return buildSpendReport(events, windowStart, windowEnd, buckets);
+  }
+
+  /**
+   * Sales & disposal analytics (Sales & disposals capability): sale proceeds vs a cost snapshot
+   * (→ margin) plus written-off stock value over a trailing window. Reads the immutable
+   * `item_history` ledger's `SOLD` / `WRITTEN_OFF` rows — each of which recorded its proceeds
+   * (`net_value_delta`) and a per-line cost snapshot in `metadata` — and hands them to the pure
+   * {@link buildSalesReport}, which owns all window/bucket/margin maths. No schema change; the
+   * metadata JSON is parsed in JS (driver-agnostic) rather than via `json_extract`. `now` defaults
+   * to the wall clock.
+   */
+  async salesAnalytics(windowDays: number, buckets: number, now: number = Date.now()): Promise<SalesReport> {
+    const windowEnd = now;
+    const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
+
+    const rows = await this.driver.query<{
+      instant: number;
+      action: string;
+      quantity_delta: number | null;
+      net_value_delta: number | null;
+      metadata: string | null;
+      category_id: string | null;
+      category_name: string | null;
+    }>(
+      `SELECT h.created_at AS instant, h.action AS action, h.quantity_delta AS quantity_delta,
+              h.net_value_delta AS net_value_delta, h.metadata AS metadata,
+              i.category_id AS category_id, c.name AS category_name
+         FROM item_history h
+         JOIN items i ON i.id = h.item_id
+         LEFT JOIN categories c ON c.id = i.category_id
+        WHERE h.action IN ('SOLD', 'WRITTEN_OFF')
+          AND h.created_at >= ? AND h.created_at < ?;`,
+      [windowStart, windowEnd],
+    );
+
+    const events: SalesEvent[] = rows.map((r) => {
+      const meta = parseSalesMetadata(r.metadata);
+      // Prefer the metadata quantity; fall back to the ledger delta's magnitude.
+      const quantity = meta.quantity ?? Math.abs(Number(r.quantity_delta ?? 0));
+      const unitCost = meta.unitCostAtSale;
+      const cost = unitCost === null ? null : unitCost * quantity;
+      return {
+        instant: Number(r.instant),
+        kind: r.action === 'WRITTEN_OFF' ? 'WRITTEN_OFF' : 'SOLD',
+        quantity,
+        proceeds: Number(r.net_value_delta ?? 0),
+        cost,
+        categoryId: r.category_id,
+        categoryName: r.category_name,
+      };
+    });
+
+    return buildSalesReport(events, windowStart, windowEnd, buckets);
+  }
+}
+
+/** The sale/write-off metadata fields the report reads, tolerant of a malformed/absent blob. */
+function parseSalesMetadata(raw: string | null): { quantity: number | null; unitCostAtSale: number | null } {
+  if (!raw) return { quantity: null, unitCostAtSale: null };
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const quantity =
+      typeof parsed.quantity === 'number' && Number.isFinite(parsed.quantity) ? parsed.quantity : null;
+    const unitCostAtSale =
+      typeof parsed.unitCostAtSale === 'number' && Number.isFinite(parsed.unitCostAtSale)
+        ? parsed.unitCostAtSale
+        : null;
+    return { quantity, unitCostAtSale };
+  } catch {
+    return { quantity: null, unitCostAtSale: null };
   }
 }

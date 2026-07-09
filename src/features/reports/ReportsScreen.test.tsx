@@ -124,6 +124,7 @@ const queryState: Record<
   trend: { isLoading: true, isError: false },
   hygiene: { isLoading: true, isError: false },
   spend: { isLoading: true, isError: false },
+  sales: { isLoading: true, isError: false },
 };
 
 function makeAllLoaded() {
@@ -223,6 +224,7 @@ vi.mock('./queries', () => ({
   VALUATION_TREND_POINTS: 12,
   DATA_HYGIENE_STALE_DAYS: 180,
   SPEND_BUCKETS: 15,
+  SALES_BUCKETS: 15,
   useInventoryValue: () => ({ ...queryState.value }),
   useConsumptionRate: () => ({ ...queryState.consumption }),
   useMovement: () => ({ ...queryState.movement }),
@@ -237,6 +239,7 @@ vi.mock('./queries', () => ({
     spendEnabled = options?.enabled;
     return { ...queryState.spend };
   },
+  useSalesAnalytics: (_windowDays?: number, _options?: { enabled?: boolean }) => ({ ...queryState.sales }),
 }));
 
 // --------------------------------------------------------------------------

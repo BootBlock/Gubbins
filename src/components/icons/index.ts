@@ -107,6 +107,8 @@ export {
   Wrench as AssemblyIcon,
   PoundSterling as CostIcon,
   Coins as ValueIcon,
+  Receipt as SaleIcon,
+  PackageX as WriteOffIcon,
   BookmarkCheck as ReserveIcon,
   FileUp as ImportIcon,
   // Project budgeting (Phase 58, §4)

@@ -8,10 +8,14 @@ import {
   MoveIcon,
   QrCodeIcon,
   RestoreIcon,
+  SaleIcon,
+  WriteOffIcon,
 } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useFeature } from '@/features/modules/useFeature';
+import { SellDialog } from '@/features/sales/components/SellDialog';
+import { WriteOffDialog } from '@/features/sales/components/WriteOffDialog';
 import { useRestoreItem, useSoftDeleteItem } from '../mutations';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
@@ -19,7 +23,7 @@ import { MoveItemDialog } from './MoveItemDialog';
 import { QrCodeDialog } from './QrCodeDialog';
 
 /** Which of the item's dialogs to open — the shared vocabulary between a button and a card click. */
-export type ItemDialogKind = 'move' | 'gauge' | 'details' | 'qr' | 'checkout';
+export type ItemDialogKind = 'move' | 'gauge' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff';
 
 /**
  * Imperative handle {@link ItemActions} exposes so the containing card/row can open one of the
@@ -54,6 +58,11 @@ export const ItemActions = forwardRef<
   // module (modular-ui-plan §4, Phase 6). Hidden when Contacts is off — the checkout
   // mutation and any existing loans stay intact, only the way in disappears.
   const contactsEnabled = useFeature('contacts');
+  // Selling / writing off draws stock permanently out of inventory; gated behind the Sales &
+  // disposals module and offered only for finite DISCRETE stock (serialised assets are retired
+  // via "Remove from inventory"; gauges/untracked carry no countable units to sell).
+  const salesEnabled = useFeature('sales');
+  const canSell = salesEnabled && item.isActive && item.trackingMode === 'DISCRETE' && !item.isUnlimited;
   const size = compact ? 'size-8' : '';
 
   return (
@@ -145,6 +154,42 @@ export const ItemActions = forwardRef<
           </span>
         </Tooltip>
       ) : null}
+      {canSell ? (
+        <>
+          <Tooltip
+            content="Sell units of this item — records a sale price and feeds the sales & margin report."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button
+                variant="outline"
+                size="icon"
+                className={size}
+                aria-label="Sell"
+                onClick={() => setDialog('sell')}
+              >
+                <SaleIcon className="text-glyph-sale" />
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip
+            content="Write off units as lost, damaged or expired — removes the stock with no proceeds."
+            triggerTabIndex={-1}
+          >
+            <span>
+              <Button
+                variant="outline"
+                size="icon"
+                className={size}
+                aria-label="Write off"
+                onClick={() => setDialog('writeoff')}
+              >
+                <WriteOffIcon className="text-glyph-neutral" />
+              </Button>
+            </span>
+          </Tooltip>
+        </>
+      ) : null}
       {item.isActive ? (
         <Tooltip
           content="**Soft-delete** — hides the item but keeps its history. Tick *Show removed* to restore it later."
@@ -196,6 +241,12 @@ export const ItemActions = forwardRef<
         onClose={() => setDialog(null)}
       />
       <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
+      {canSell ? (
+        <>
+          <SellDialog item={item} open={dialog === 'sell'} onClose={() => setDialog(null)} />
+          <WriteOffDialog item={item} open={dialog === 'writeoff'} onClose={() => setDialog(null)} />
+        </>
+      ) : null}
     </div>
   );
 });

@@ -281,6 +281,47 @@ export interface UpdateItemInput {
 }
 
 /**
+ * Sell (permanently dispose for proceeds) `quantity` units of a DISCRETE item. Records a
+ * `SOLD` ledger entry carrying the realised sale price (→ the sales & margin report). Like a
+ * checkout, the units draw down a specific placement/lot; unlike a checkout they never come
+ * back. SERIALISED assets are retired via soft-delete instead (their quantity is pinned to 1).
+ */
+export interface SellItemInput {
+  readonly itemId: string;
+  /** Units sold; defaults to 1. Must be a positive whole number within the source's on-hand. */
+  readonly quantity?: number;
+  /** Per-unit sale price in the base currency; defaults to 0 (proceeds = quantity × this). */
+  readonly unitSalePrice?: number;
+  /** Free-text buyer/counterparty, recorded on the ledger entry; optional. */
+  readonly counterparty?: string;
+  /** Optional ledger note; a default is generated when omitted. */
+  readonly note?: string;
+  /** Source placement to sell from; defaults to the item's primary location. */
+  readonly fromLocationId?: string;
+  /** Source lot to sell from ('' = the untracked default batch); omit for the FEFO draw. */
+  readonly fromBatchKey?: string;
+}
+
+/**
+ * Write off (permanently remove without proceeds) `quantity` units of a DISCRETE item — lost,
+ * damaged, expired or binned. Records a `WRITTEN_OFF` ledger entry with an optional reason and a
+ * cost snapshot (→ the sales report's write-off total). Draws down a placement/lot like a sale.
+ */
+export interface WriteOffItemInput {
+  readonly itemId: string;
+  /** Units written off; defaults to 1. Must be a positive whole number within the on-hand. */
+  readonly quantity?: number;
+  /** Optional short reason (e.g. "Damaged in transit"), recorded on the ledger entry. */
+  readonly reason?: string;
+  /** Optional ledger note; a default is generated when omitted. */
+  readonly note?: string;
+  /** Source placement to write off from; defaults to the item's primary location. */
+  readonly fromLocationId?: string;
+  /** Source lot to write off from ('' = the untracked default batch); omit for the FEFO draw. */
+  readonly fromBatchKey?: string;
+}
+
+/**
  * Thresholds for the §3 dashboard "Low Stock Alerts" feed (Phase 45). Both are
  * optional and default to {@link LOW_STOCK_QTY_THRESHOLD} / {@link LOW_STOCK_GAUGE_PERCENT}.
  */

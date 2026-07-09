@@ -20,15 +20,15 @@
  */
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
-import { planPoReceipt } from '@/features/purchasing/po-receipt';
+import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
 import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
-import { addStockStatement } from './stock';
-import { addBatchStatement } from './stock-batches';
+import { addStockStatement, stockRowId } from './stock';
+import { addBatchStatement, placementDeltaStatements } from './stock-batches';
 import { tombstoneStatement } from './tombstone';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import type { Page, PageParams } from './types';
@@ -355,6 +355,83 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   /**
+   * Return (refund) a received PO line back to the supplier — the inverse of {@link receiveLine}.
+   * The amount (default: everything received so far) is clamped by {@link planPoReturn} and
+   * subtracted from the line's `received_qty`, so the PO status re-derives back towards PARTIAL /
+   * ORDERED. For a matched DISCRETE item the returned units are drawn out of the per-location
+   * ledger (FEFO at the target location) via the shared `placementDeltaStatements` builder and a
+   * `RETURNED_TO_SUPPLIER` history entry is logged — never a second stock-mutation path.
+   */
+  async returnLine(
+    lineId: string,
+    opts: { locationId?: string; quantity?: number } = {},
+  ): Promise<PurchaseOrderLine> {
+    this.assertWritable();
+    const line = await this.requireLine(lineId);
+
+    const plan = planPoReturn(line.receivedQty, opts.quantity);
+    if (plan.returnedDelta <= 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'There is nothing received on this line to return.');
+    }
+
+    const statements: SqlStatement[] = [
+      {
+        sql: 'UPDATE purchase_order_lines SET received_qty = ? WHERE id = ?;',
+        params: [plan.nextReceivedQty, lineId],
+      },
+    ];
+
+    if (line.itemId) {
+      const item = await this.driver.queryOne<{ tracking_mode: string; location_id: string }>(
+        'SELECT tracking_mode, location_id FROM items WHERE id = ?;',
+        [line.itemId],
+      );
+      if (item && item.tracking_mode === 'DISCRETE') {
+        const qty = plan.returnedDelta;
+        const targetLocation = opts.locationId ?? item.location_id;
+
+        // The units must still be on hand at the target location to send them back; guard for a
+        // clear error rather than letting the CHECK (quantity >= 0) abort the transaction.
+        const placement = await this.driver.queryOne<{ quantity: number }>(
+          'SELECT quantity FROM item_stock WHERE id = ?;',
+          [stockRowId(line.itemId, targetLocation)],
+        );
+        const available = Number(placement?.quantity ?? 0);
+        if (available < qty) {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `Not enough stock at the return location to send back: ${available} on hand, ${qty} to return.`,
+          );
+        }
+
+        const supplierName = await this.supplierNameFor(line.poId);
+        statements.push(...(await placementDeltaStatements(this.driver, line.itemId, targetLocation, -qty)));
+        statements.push(
+          historyStatement(line.itemId, 'RETURNED_TO_SUPPLIER', {
+            quantityDelta: -qty,
+            note: `Returned ${qty} to ${supplierName ?? 'the supplier'} (PO refund).`,
+            metadata: {
+              poId: line.poId,
+              lineId,
+              supplierName,
+              unitCost: line.unitCost,
+              quantity: qty,
+              fromLocationId: targetLocation,
+            },
+          }),
+        );
+      }
+    }
+
+    await this.driver.transaction(statements);
+
+    // Re-derive and persist the PO status snapshot from the (now reduced) line totals.
+    await this.refreshStatus(line.poId);
+
+    return (await this.getLine(lineId))!;
+  }
+
+  /**
    * The total quantity of one item still **on order** across every active PO (spec §4) — the
    * sum of the outstanding `(ordered_qty − received_qty)` over its lines whose PO's effective
    * status is ORDERED or PARTIAL (i.e. the PO is past DRAFT, not CANCELLED, and not fully
@@ -424,6 +501,15 @@ export class PurchaseOrderRepository extends BaseRepository {
       lines,
       effectiveStatus: derivePoStatus(po.status, lines),
     };
+  }
+
+  /** The supplier name on a PO header, for a return's ledger note; null if the PO is gone. */
+  private async supplierNameFor(poId: string): Promise<string | null> {
+    const row = await this.driver.queryOne<{ supplier_name: string }>(
+      'SELECT supplier_name FROM purchase_orders WHERE id = ?;',
+      [poId],
+    );
+    return row ? row.supplier_name : null;
   }
 
   /** Read just the (orderedQty, receivedQty) of a PO's lines for status derivation. */
