@@ -135,6 +135,44 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
     });
   });
 
+  describe('checkInAllForContact', () => {
+    it('returns every open checkout for a contact, restoring stock and history', async () => {
+      const drill = await makeItem('Drill', 3);
+      const saw = await makeItem('Saw', 2);
+      const bob = await contacts.resolveOrCreate('Bob');
+      const first = await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 1 });
+      const second = await checkouts.checkout({ itemId: saw, contactId: bob.id, quantity: 2 });
+
+      await checkouts.checkInAllForContact(bob.id);
+
+      expect((await checkouts.getById(first.id))?.returnedAt).not.toBeNull();
+      expect((await checkouts.getById(second.id))?.returnedAt).not.toBeNull();
+      expect((await items.getById(drill))?.quantity).toBe(3);
+      expect((await items.getById(saw))?.quantity).toBe(2);
+      const drillHistory = await items.getHistory(drill);
+      expect(drillHistory.rows.some((h) => h.action === 'CHECKED_IN')).toBe(true);
+    });
+
+    it('leaves already-returned checkouts and other contacts untouched', async () => {
+      const drill = await makeItem('Drill', 3);
+      const bob = await contacts.resolveOrCreate('Bob');
+      const carol = await contacts.resolveOrCreate('Carol');
+      const bobCheckout = await checkouts.checkout({ itemId: drill, contactId: bob.id, quantity: 1 });
+      await checkouts.checkIn(bobCheckout.id);
+      const carolCheckout = await checkouts.checkout({ itemId: drill, contactId: carol.id, quantity: 1 });
+
+      await checkouts.checkInAllForContact(bob.id);
+
+      expect((await checkouts.getById(carolCheckout.id))?.returnedAt).toBeNull();
+      expect((await items.getById(drill))?.quantity).toBe(2); // Carol's unit still out
+    });
+
+    it('does nothing for a contact with no open checkouts', async () => {
+      const bob = await contacts.resolveOrCreate('Bob');
+      await expect(checkouts.checkInAllForContact(bob.id)).resolves.toBeUndefined();
+    });
+  });
+
   describe('queries', () => {
     it('lists open checkouts with names and overdue flag', async () => {
       const itemId = await makeItem('Drill', 3);

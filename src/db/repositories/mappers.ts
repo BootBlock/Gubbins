@@ -332,6 +332,10 @@ export function rowToContact(row: ContactRow): Contact {
     id: row.id,
     name: row.name,
     note: row.note,
+    phoneMobile: row.phone_mobile,
+    phoneHome: row.phone_home,
+    email: row.email,
+    address: row.address,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

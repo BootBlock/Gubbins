@@ -69,11 +69,19 @@ export class ContactRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', 'A contact must have a name.');
     }
     const id = crypto.randomUUID();
-    await this.driver.execute('INSERT INTO contacts (id, name, note) VALUES (?, ?, ?);', [
-      id,
-      name,
-      input.note?.trim() || null,
-    ]);
+    await this.driver.execute(
+      `INSERT INTO contacts (id, name, note, phone_mobile, phone_home, email, address)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        id,
+        name,
+        input.note?.trim() || null,
+        input.phoneMobile?.trim() || null,
+        input.phoneHome?.trim() || null,
+        input.email?.trim() || null,
+        input.address?.trim() || null,
+      ],
+    );
     return (await this.getById(id))!;
   }
 
@@ -111,6 +119,22 @@ export class ContactRepository extends BaseRepository {
     if (input.note !== undefined) {
       sets.push('note = ?');
       params.push(input.note?.trim() || null);
+    }
+    if (input.phoneMobile !== undefined) {
+      sets.push('phone_mobile = ?');
+      params.push(input.phoneMobile?.trim() || null);
+    }
+    if (input.phoneHome !== undefined) {
+      sets.push('phone_home = ?');
+      params.push(input.phoneHome?.trim() || null);
+    }
+    if (input.email !== undefined) {
+      sets.push('email = ?');
+      params.push(input.email?.trim() || null);
+    }
+    if (input.address !== undefined) {
+      sets.push('address = ?');
+      params.push(input.address?.trim() || null);
     }
     if (sets.length > 0) {
       await this.driver.execute(`UPDATE contacts SET ${sets.join(', ')} WHERE id = ?;`, [...params, id]);

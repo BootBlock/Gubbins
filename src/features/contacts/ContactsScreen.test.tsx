@@ -64,6 +64,7 @@ vi.mock('./contacts', () => ({
   useContacts: () => contactsState,
   useCreateContact: () => ({ mutate: vi.fn(), isPending: false }),
   useCheckInItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ─── component under test ─────────────────────────────────────────────────────

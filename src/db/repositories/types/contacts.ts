@@ -7,6 +7,10 @@ export interface ContactRow {
   readonly id: string;
   readonly name: string;
   readonly note: string | null;
+  readonly phone_mobile: string | null;
+  readonly phone_home: string | null;
+  readonly email: string | null;
+  readonly address: string | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -15,6 +19,10 @@ export interface Contact {
   readonly id: string;
   readonly name: string;
   readonly note: string | null;
+  readonly phoneMobile: string | null;
+  readonly phoneHome: string | null;
+  readonly email: string | null;
+  readonly address: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -27,11 +35,19 @@ export interface ContactWithCount extends Contact {
 export interface CreateContactInput {
   readonly name: string;
   readonly note?: string | null;
+  readonly phoneMobile?: string | null;
+  readonly phoneHome?: string | null;
+  readonly email?: string | null;
+  readonly address?: string | null;
 }
 
 export interface UpdateContactInput {
   readonly name?: string;
   readonly note?: string | null;
+  readonly phoneMobile?: string | null;
+  readonly phoneHome?: string | null;
+  readonly email?: string | null;
+  readonly address?: string | null;
 }
 
 export interface CheckoutRow {
