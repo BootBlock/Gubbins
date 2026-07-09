@@ -150,7 +150,14 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
       label: 'Lifecycle',
       icon: <DueDateIcon />,
       sections: [
-        { title: 'Lifecycle & variants', icon: <DueDateIcon />, content: <LifecycleEditor item={item} /> },
+        {
+          // The variants sub-block is itself gated on the `variants` capability, so the
+          // heading drops "& variants" when that module is off (the editor still owns
+          // expiry/batch/condition — the "lifecycle" half — which is always present).
+          title: enabled.has('variants') ? 'Lifecycle & variants' : 'Lifecycle',
+          icon: <DueDateIcon />,
+          content: <LifecycleEditor item={item} />,
+        },
         {
           title: 'Asset details',
           icon: <CostIcon />,
