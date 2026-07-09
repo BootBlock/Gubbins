@@ -3,7 +3,8 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
-import { CheckoutRepository } from './CheckoutRepository';
+import { MS_PER_DAY } from './constants';
+import { CheckoutRepository, overdueCheckoutExistsSql } from './CheckoutRepository';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 
@@ -200,6 +201,55 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       await checkouts.checkout({ itemId, contactId: ada.id });
       const page = await checkouts.listForContact(ada.id);
       expect(page.rows).toHaveLength(1);
+    });
+  });
+
+  describe('overdue boundary (SSOT predicate)', () => {
+    /** Count items the shared `overdueCheckoutExistsSql` predicate flags at instant `now`. */
+    async function overdueItemCount(now: number): Promise<number> {
+      const rows = await driver.query<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM items WHERE ${overdueCheckoutExistsSql()};`,
+        [now],
+      );
+      return Number(rows[0]?.n ?? 0);
+    }
+
+    it('flags a loan due yesterday, but not one due later today (strict due_date < now)', async () => {
+      const now = Date.now();
+      const yesterdayId = await makeItem('Overdue drill', 3);
+      const todayId = await makeItem('Due-later saw', 3);
+      // Due yesterday → past its due date; due in an hour (still "today") → not yet due.
+      await checkouts.checkout({ itemId: yesterdayId, contactName: 'Bob', dueDate: now - MS_PER_DAY });
+      await checkouts.checkout({ itemId: todayId, contactName: 'Ada', dueDate: now + 60 * 60 * 1000 });
+
+      // Row-level derived flag and the item-level SSOT predicate must agree on the boundary.
+      const open = await checkouts.listOpen();
+      const byName = Object.fromEntries(open.rows.map((r) => [r.itemName, r.isOverdue]));
+      expect(byName['Overdue drill']).toBe(true);
+      expect(byName['Due-later saw']).toBe(false);
+      expect(await overdueItemCount(now)).toBe(1);
+    });
+
+    it('never flags an open-ended loan (no due date) as overdue', async () => {
+      const now = Date.now();
+      const itemId = await makeItem('Open-ended lend', 3);
+      await checkouts.checkout({ itemId, contactName: 'Bob' }); // no dueDate
+      const open = await checkouts.listOpen();
+      expect(open.rows[0].isOverdue).toBe(false);
+      expect(await overdueItemCount(now)).toBe(0);
+    });
+
+    it('stops flagging a loan once it is returned', async () => {
+      const now = Date.now();
+      const itemId = await makeItem('Returned late', 3);
+      const checkout = await checkouts.checkout({
+        itemId,
+        contactName: 'Bob',
+        dueDate: now - MS_PER_DAY,
+      });
+      expect(await overdueItemCount(now)).toBe(1);
+      await checkouts.checkIn(checkout.id);
+      expect(await overdueItemCount(now)).toBe(0);
     });
   });
 

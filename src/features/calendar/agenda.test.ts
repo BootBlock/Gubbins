@@ -149,6 +149,40 @@ describe('buildAgenda — lane builders', () => {
     );
     expect(events.map((e) => e.id)).toEqual(['checkout-due:k1']);
     expect(events[0].detail).toContain('Sam');
+    // A not-yet-due loan reads plainly, with no overdue affordance.
+    expect(events[0].detail).not.toContain('overdue');
+  });
+
+  it('spells out how overdue a late loan is in its detail (mirroring low stock)', () => {
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        checkouts: [
+          { id: 'k1', itemId: 'i1', itemName: 'Camera', contactName: 'Sam', dueDate: SOD - 3 * MS_PER_DAY },
+        ],
+      },
+      NOW,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe('checkout-due');
+    expect(events[0].detail).toContain('3 days overdue');
+    // Overdue events keep their real (past) due date so they sort to the top and bucket overdue.
+    expect(events[0].dueAt).toBe(SOD - 3 * MS_PER_DAY);
+    expect(bucketForDueAt(events[0].dueAt, NOW)).toBe('overdue');
+  });
+
+  it('sorts an overdue loan ahead of a soon-due one (overdue before upcoming)', () => {
+    const events = buildAgenda(
+      {
+        ...EMPTY,
+        checkouts: [
+          { id: 'soon', itemId: 'i1', itemName: 'Drill', contactName: 'Lee', dueDate: SOD + 2 * MS_PER_DAY },
+          { id: 'late', itemId: 'i2', itemName: 'Saw', contactName: 'Ada', dueDate: SOD - MS_PER_DAY },
+        ],
+      },
+      NOW,
+    );
+    expect(events.map((e) => e.id)).toEqual(['checkout-due:late', 'checkout-due:soon']);
   });
 
   it('emits reorder events anchored at now (date-less), pluralising the shortfall', () => {

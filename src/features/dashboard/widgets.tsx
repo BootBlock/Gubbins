@@ -40,6 +40,7 @@ import {
   useDueMaintenance,
 } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
+import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { useOnOrderQtys } from '@/features/purchasing/queries';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { projectBudgetHealth } from '@/features/projects/budget';
@@ -296,24 +297,65 @@ function ExpiringWidget() {
 
 function OverdueWidget() {
   const openCheckouts = useOpenCheckouts();
-  const overdue = (openCheckouts.data?.rows ?? []).filter((c) => c.isOverdue);
+  // One query returns every open loan (see `useOpenCheckouts`); the overdue set is derived from
+  // it in a single pass (no per-checkout round-trip), and the count of the remainder still on
+  // loan but not yet due drives the quiet "escalation" footer below.
+  const now = Date.now();
+  const open = openCheckouts.data?.rows ?? [];
+  const overdue = open.filter((c) => c.isOverdue);
+  const stillOnLoan = open.length - overdue.length;
   return (
     <WidgetShell
       icon={<DueDateIcon />}
       title="Overdue items"
       count={overdue.length}
+      // Danger tone (and the red count) fires only when something is actually late — a board of
+      // merely-open, not-yet-due loans stays quiet, so the escalation reads at a glance.
       tone={overdue.length > 0 ? 'danger' : 'quiet'}
       loading={openCheckouts.isPending}
       error={openCheckouts.isError}
     >
       {overdue.length === 0 ? (
-        <EmptyRow>Nothing overdue.</EmptyRow>
+        <EmptyRow>
+          {stillOnLoan > 0 ? `Nothing overdue — ${stillOnLoan} on loan.` : 'Nothing overdue.'}
+        </EmptyRow>
       ) : (
-        overdue
-          .slice(0, 3)
-          .map((c) => <WidgetRow key={c.id} label={c.itemName} meta={`with ${c.contactName}`} />)
+        <>
+          {overdue.slice(0, 3).map((c) => (
+            <WidgetRow
+              key={c.id}
+              label={c.itemName}
+              meta={
+                <span className="flex items-center gap-2">
+                  <span className="truncate">with {c.contactName}</span>
+                  <DaysOverdueTag days={daysOverdue(c.dueDate ?? now, now)} />
+                </span>
+              }
+            />
+          ))}
+          {stillOnLoan > 0 ? (
+            <p className="text-[11px] text-muted-foreground">{stillOnLoan} more on loan, not yet due.</p>
+          ) : null}
+        </>
       )}
     </WidgetShell>
+  );
+}
+
+/**
+ * Prominent "N days overdue" affordance — mirrors {@link OnOrderTag}, but in the destructive
+ * token so a late loan reads with the same urgency low stock reads its shortfall. Decorative
+ * icon is hidden from assistive tech; the label text carries the meaning.
+ */
+function DaysOverdueTag({ days }: { days: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 font-medium text-destructive [&_svg]:size-3"
+      data-testid="overdue-days"
+    >
+      <DueDateIcon aria-hidden />
+      {overdueLabel(days)}
+    </span>
   );
 }
 

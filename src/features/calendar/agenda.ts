@@ -17,6 +17,7 @@
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { plural } from '@/lib/plural';
+import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { maintenanceDueAtMs } from '@/features/alerts/alerts';
 
 // ---------------------------------------------------------------------------
@@ -213,15 +214,23 @@ function buildExpiryEvents(sources: readonly ExpiryAgendaSource[]): AgendaEvent[
   return events;
 }
 
-function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[]): AgendaEvent[] {
+function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[], now: number): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
     if (s.dueDate == null) continue;
+    // A late loan reads its shortfall the same way low stock does: the overdue span is spelled
+    // out ("N days overdue") ahead of the raw date, so the "Overdue" bucket carries the same
+    // at-a-glance urgency here as on the dashboard. Anchoring at the real `dueDate` keeps an
+    // already-passed loan sorting to the top of the chronological view.
+    const overdue = s.dueDate < now;
+    const detail = overdue
+      ? `On loan to ${s.contactName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${isoDate(s.dueDate)}).`
+      : `On loan to ${s.contactName} — due ${isoDate(s.dueDate)}.`;
     events.push({
       id: `checkout-due:${s.id}`,
       kind: 'checkout-due',
       title: `Loan due back — ${s.itemName}`,
-      detail: `On loan to ${s.contactName} — due ${isoDate(s.dueDate)}.`,
+      detail,
       dueAt: s.dueDate,
       hasDate: true,
       target: { route: '/inventory', itemId: s.itemId },
@@ -288,7 +297,7 @@ export function buildAgenda(sources: AgendaSources, now: number): AgendaEvent[] 
     ...buildMaintenanceEvents(sources.maintenance, now),
     ...buildWarrantyEvents(sources.warranty),
     ...buildExpiryEvents(sources.expiry),
-    ...buildCheckoutEvents(sources.checkouts),
+    ...buildCheckoutEvents(sources.checkouts, now),
     ...buildReorderEvents(sources.reorder, now),
     ...buildBookingEvents(sources.bookings, now),
   ];
