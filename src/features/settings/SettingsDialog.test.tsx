@@ -30,6 +30,14 @@ vi.mock('@/features/inventory/components/CardFieldsSetting', () => ({ CardFields
 
 import SettingsDialog from './SettingsDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useApplyTheme } from './useApplyTheme';
+
+/** Mounts the reactive theme-sync hook (as the app's composition root does) with no UI. */
+function ThemeHost() {
+  useApplyTheme();
+  return null;
+}
 
 /** Open the dialog fresh and click into the named rail tab. */
 function renderTab(tabName: string) {
@@ -87,6 +95,37 @@ describe('SettingsDialog — Projects off', () => {
     renderTab('Inventory');
     expect(screen.queryByTestId('setting-budget-warn')).toBeNull();
     expect(screen.queryByTestId('setting-low-stock-qty')).not.toBeNull();
+  });
+});
+
+describe('SettingsDialog — theme picker applies to the document', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ theme: 'dark' });
+    document.documentElement.classList.remove('dark');
+    delete document.documentElement.dataset.theme;
+  });
+
+  it('selecting a new full theme lands data-theme + .dark on <html>', () => {
+    // The composition root's theme-sync hook is mounted alongside the dialog, so a picker
+    // click flows store → hook → document exactly as it does in the running app.
+    render(
+      <>
+        <ThemeHost />
+        <SettingsDialog open onClose={() => {}} />
+      </>,
+    );
+    // Appearance is the default rail tab, so its panel (and the theme toggle) is mounted.
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    // A dark-base named theme sets its attribute AND keeps the .dark class.
+    fireEvent.click(screen.getByTestId('theme-midnight'));
+    expect(document.documentElement.dataset.theme).toBe('midnight');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    // A light-base named theme sets its attribute and drops the .dark class.
+    fireEvent.click(screen.getByTestId('theme-sepia'));
+    expect(document.documentElement.dataset.theme).toBe('sepia');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 });
 

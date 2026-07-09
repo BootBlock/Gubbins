@@ -7,6 +7,7 @@
  * themselves live in `usePreferencesStore` (Tier-2, localStorage-persisted).
  */
 import type { Theme } from '@/state/stores/usePreferencesStore';
+import { THEMES } from './theme-registry';
 import {
   BUDGET_WARN_PERCENT,
   EXPIRY_SOON_WINDOW_DAYS,
@@ -136,12 +137,16 @@ export function guessBaseCurrency(locales: readonly string[] = readNavigatorLoca
   return DEFAULT_CURRENCY;
 }
 
-/** Theme choices for the Settings control — Dark/Light/System (spec §2.1). */
-export const THEME_OPTIONS = [
-  { value: 'dark', label: 'Dark' },
-  { value: 'light', label: 'Light' },
+/**
+ * Theme choices for the Settings control (spec §2.1). Built from the {@link THEMES} registry
+ * (the SSOT for the selectable full palettes) in registry order, with the `'system'` meta-choice
+ * appended — so adding a theme to the registry surfaces it here automatically. Each entry is the
+ * `{ value, label }` shape the picker and tests consume.
+ */
+export const THEME_OPTIONS: readonly { readonly value: Theme; readonly label: string }[] = [
+  ...THEMES.map((t) => ({ value: t.id, label: t.label })),
   { value: 'system', label: 'System' },
-] as const satisfies readonly { value: Theme; label: string }[];
+];
 
 /**
  * Inclusive bounds (days) for the user-set "expiring soon" window (§3, §4

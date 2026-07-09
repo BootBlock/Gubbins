@@ -295,6 +295,157 @@
   --star-flare: oklch(0.82 0.12 215);
 }
 
+/*
+ * Additional selectable full themes (spec §2.1). Each is keyed by the `data-theme` attribute
+ * the apply seam (`features/settings/theme.ts`) sets on <html>; a dark-base theme *also*
+ * carries the `.dark` class so `@custom-variant dark`, the `dark:` utilities and `color-scheme`
+ * keep working. The `:root[data-theme='…']` selector outranks both `:root` and `.dark` (higher
+ * specificity), so these overrides win over the base palette, and any token a theme does *not*
+ * restate simply inherits its base (`:root` for a light base, `.dark` for a dark base) — so each
+ * block lists only what differs. The theme registry (`theme-registry.ts`) is the SSOT of ids +
+ * base; keep these blocks in lock-step with it.
+ */
+
+/*
+ * Midnight — a dark theme shifted from the default's near-black *indigo* to a deep, cool
+ * *navy blue*, with azure accents in place of violet. Status tones, glyphs and the location/
+ * ABC/money/star families inherit the `.dark` base (they read cleanly on the navy surface).
+ */
+:root[data-theme='midnight'] {
+  color-scheme: dark;
+
+  --background: oklch(0.15 0.03 255);
+  --foreground: oklch(0.95 0.012 245);
+
+  --card: oklch(0.2 0.035 255);
+  --card-foreground: oklch(0.95 0.012 245);
+
+  --card-elevated: oklch(0.31 0.045 255);
+  --card-elevated-foreground: oklch(0.95 0.012 245);
+
+  --popover: oklch(0.19 0.035 255);
+  --popover-foreground: oklch(0.95 0.012 245);
+
+  --primary: oklch(0.62 0.17 248);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.27 0.035 255);
+  --secondary-foreground: oklch(0.95 0.012 245);
+
+  --muted: oklch(0.24 0.03 255);
+  --muted-foreground: oklch(0.73 0.025 248);
+
+  --accent: oklch(0.72 0.14 208);
+  --accent-foreground: oklch(0.15 0.03 255);
+
+  --highlight: oklch(0.7 0.17 248);
+
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.62 0.17 248);
+
+  --glass-sheen: oklch(1 0 0 / 12%);
+}
+
+/*
+ * Sepia — a warm, paper-like *light* theme: a soft cream field with dark-brown ink and a muted
+ * terracotta accent, easy on the eyes in a well-lit room. Status tones, glyphs and the location/
+ * ABC/money families inherit the `:root` light base (they read on the warm cream surface).
+ */
+:root[data-theme='sepia'] {
+  color-scheme: light;
+
+  --background: oklch(0.95 0.026 84);
+  --foreground: oklch(0.31 0.038 58);
+
+  --card: oklch(0.97 0.02 84);
+  --card-foreground: oklch(0.31 0.038 58);
+
+  --card-elevated: oklch(0.99 0.014 84);
+  --card-elevated-foreground: oklch(0.31 0.038 58);
+
+  --popover: oklch(0.97 0.02 84);
+  --popover-foreground: oklch(0.31 0.038 58);
+
+  --primary: oklch(0.5 0.1 58);
+  --primary-foreground: oklch(0.98 0.02 84);
+
+  --secondary: oklch(0.9 0.032 84);
+  --secondary-foreground: oklch(0.33 0.038 58);
+
+  --muted: oklch(0.9 0.032 84);
+  --muted-foreground: oklch(0.48 0.04 62);
+
+  --accent: oklch(0.56 0.1 42);
+  --accent-foreground: oklch(0.98 0.02 84);
+
+  --highlight: oklch(0.55 0.12 58);
+
+  --border: oklch(0.31 0.038 58 / 16%);
+  --input: oklch(0.31 0.038 58 / 20%);
+  --ring: oklch(0.5 0.1 58);
+
+  /* Warm the decorative starfield to brown dots so it sits with the paper palette. */
+  --star: oklch(0.45 0.05 58);
+  --star-flare: oklch(0.55 0.12 58);
+}
+
+/*
+ * High contrast — a maximum-legibility *dark* theme (WCAG 1.4.11 / low-vision aid): a pure-black
+ * field with pure-white text, bold visible borders, bright saturated accents and status tones,
+ * and a vivid focus ring. Secondary ("muted") text stays near-white rather than dimming, so no
+ * text drops below a strong contrast ratio. Inherits the `.dark` base for the glyph/location/ABC/
+ * money/star families.
+ */
+:root[data-theme='high-contrast'] {
+  color-scheme: dark;
+
+  --background: oklch(0.08 0 0);
+  --foreground: oklch(1 0 0);
+
+  --card: oklch(0.13 0 0);
+  --card-foreground: oklch(1 0 0);
+
+  --card-elevated: oklch(0.22 0 0);
+  --card-elevated-foreground: oklch(1 0 0);
+
+  --popover: oklch(0.13 0 0);
+  --popover-foreground: oklch(1 0 0);
+
+  --primary: oklch(0.78 0.16 232);
+  --primary-foreground: oklch(0.08 0 0);
+
+  --secondary: oklch(0.24 0 0);
+  --secondary-foreground: oklch(1 0 0);
+
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.9 0 0);
+
+  --accent: oklch(0.85 0.15 200);
+  --accent-foreground: oklch(0.08 0 0);
+
+  --destructive: oklch(0.66 0.25 27);
+  --destructive-foreground: oklch(1 0 0);
+
+  --destructive-emphasis: oklch(0.3 0.16 27);
+  --destructive-emphasis-foreground: oklch(1 0 0);
+
+  --success: oklch(0.82 0.2 150);
+  --success-foreground: oklch(0.08 0 0);
+
+  --warning: oklch(0.86 0.16 90);
+  --warning-foreground: oklch(0.1 0.03 60);
+
+  --highlight: oklch(0.85 0.16 232);
+
+  /* Bold, clearly-visible chrome — the defining move of a high-contrast theme. */
+  --border: oklch(1 0 0 / 50%);
+  --input: oklch(1 0 0 / 55%);
+  --ring: oklch(0.9 0.16 232);
+
+  --glass-sheen: oklch(1 0 0 / 18%);
+}
+
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
  * `bg-background`, `text-muted-foreground`, `border-border`, `bg-warning`, etc.
  * all resolve and switch with the active theme. */

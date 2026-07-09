@@ -40,6 +40,7 @@ export function SettingRow({
   hintSize,
   stack,
   noWrap,
+  fill,
   children,
 }: {
   readonly label: string;
@@ -69,6 +70,14 @@ export function SettingRow({
    * `stack` (which relies on the wrap to place the control below) wins.
    */
   readonly noWrap?: boolean;
+  /**
+   * Let the control span the **full row width** (rather than sizing to its content on the
+   * right). Needed for a control that must lay out across the row and wrap its own children —
+   * e.g. the Appearance theme picker, a `flex-wrap` group of pills that would otherwise
+   * overflow. Pair with {@link stack} so the full-width control sits on its own line below the
+   * label. Without it the control is `shrink-0` (content-width, trailing right) as before.
+   */
+  readonly fill?: boolean;
   readonly children: ReactNode;
 }) {
   return (
@@ -85,7 +94,9 @@ export function SettingRow({
         </div>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      <div className="shrink-0">{children}</div>
+      {/* `basis-full` gives the control a definite full-row width so a `flex-wrap` child
+          can wrap; otherwise `shrink-0` keeps it content-sized and trailing right. */}
+      <div className={cn(fill ? 'min-w-0 basis-full' : 'shrink-0')}>{children}</div>
     </div>
   );
 }

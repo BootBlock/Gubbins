@@ -36,6 +36,7 @@ import {
   WINDOW_MONTH_OPTIONS,
 } from './settings';
 import { applyTheme, DARK_CLASS, resolveTheme } from './theme';
+import { THEME_IDS } from './theme-registry';
 
 describe('clampExpiryWindowDays', () => {
   it('passes valid in-range values through, rounding to a whole day', () => {
@@ -182,8 +183,19 @@ describe('normaliseCardClickAction', () => {
 });
 
 describe('THEME_OPTIONS', () => {
-  it('offers Dark, Light and System (spec §2.1)', () => {
-    expect(THEME_OPTIONS.map((o) => o.value)).toEqual(['dark', 'light', 'system']);
+  it('offers every registry theme plus the System meta-choice, each with a label (spec §2.1)', () => {
+    const values = THEME_OPTIONS.map((o) => o.value);
+    // Every concrete theme id from the registry is offered…
+    for (const id of THEME_IDS) expect(values).toContain(id);
+    // …including the originals and the new full themes, plus System.
+    for (const id of ['dark', 'light', 'midnight', 'sepia', 'high-contrast', 'system']) {
+      expect(values).toContain(id);
+    }
+    // The list is exactly the registry ids plus System (no strays, no dupes).
+    expect(values).toHaveLength(THEME_IDS.length + 1);
+    expect(new Set(values).size).toBe(values.length);
+    // Every option carries a non-empty label.
+    for (const o of THEME_OPTIONS) expect(o.label.length).toBeGreaterThan(0);
   });
 });
 
@@ -195,7 +207,14 @@ describe('resolveTheme', () => {
     expect(resolveTheme('light', false)).toBe('light');
   });
 
-  it('follows the OS preference for the system theme', () => {
+  it('resolves every concrete theme id to itself, whatever the OS preference', () => {
+    for (const id of THEME_IDS) {
+      expect(resolveTheme(id, true)).toBe(id);
+      expect(resolveTheme(id, false)).toBe(id);
+    }
+  });
+
+  it('follows the OS preference for the system theme (to the base id)', () => {
     expect(resolveTheme('system', true)).toBe('dark');
     expect(resolveTheme('system', false)).toBe('light');
   });
@@ -204,6 +223,7 @@ describe('resolveTheme', () => {
 describe('applyTheme', () => {
   afterEach(() => {
     document.documentElement.classList.remove(DARK_CLASS);
+    delete document.documentElement.dataset.theme;
   });
 
   it('adds .dark for the dark theme and removes it for light', () => {
@@ -212,6 +232,28 @@ describe('applyTheme', () => {
     expect(root.classList.contains(DARK_CLASS)).toBe(true);
     applyTheme('light', root);
     expect(root.classList.contains(DARK_CLASS)).toBe(false);
+  });
+
+  it('sets data-theme + .dark for a dark-base named theme', () => {
+    const root = document.createElement('div');
+    applyTheme('midnight', root);
+    expect(root.dataset.theme).toBe('midnight');
+    expect(root.classList.contains(DARK_CLASS)).toBe(true);
+  });
+
+  it('sets data-theme and clears .dark for a light-base named theme', () => {
+    const root = document.createElement('div');
+    applyTheme('sepia', root);
+    expect(root.dataset.theme).toBe('sepia');
+    expect(root.classList.contains(DARK_CLASS)).toBe(false);
+  });
+
+  it('clears data-theme for plain light (the canonical :root palette) but keeps it for dark', () => {
+    const root = document.createElement('div');
+    applyTheme('dark', root);
+    expect(root.dataset.theme).toBe('dark');
+    applyTheme('light', root);
+    expect(root.dataset.theme).toBeUndefined();
   });
 
   it('is idempotent', () => {

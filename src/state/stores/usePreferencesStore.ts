@@ -46,10 +46,13 @@ import {
 import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
 
 /**
- * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme`
- * (resolved to dark/light at apply time); `'dark'`/`'light'` pin the palette.
+ * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme` (resolved to
+ * the light/dark *base* at apply time); any concrete id pins that full palette. The type is
+ * derived from the theme registry (`theme-registry.ts`) — the SSOT for the selectable themes —
+ * and re-exported here so existing importers keep resolving `Theme` from the preferences store.
  */
-export type Theme = 'dark' | 'light' | 'system';
+import type { Theme } from '@/features/settings/theme-registry';
+export type { Theme };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
