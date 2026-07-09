@@ -442,6 +442,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             </SettingRow>
             {perishablesOn ? (
               <SettingRow
+                stack
                 label="“Expiring soon” window"
                 description={`How many days before an expiry date a perishable is flagged (${EXPIRY_WINDOW_BOUNDS.min}–${EXPIRY_WINDOW_BOUNDS.max}).`}
                 hint={
