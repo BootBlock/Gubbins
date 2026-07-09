@@ -8,19 +8,18 @@ import {
   Tooltip,
   buttonVariants,
   useInstallPrompt,
+  useRovingRadioGroup,
   type RailTab,
 } from '@/components/foundry';
 import {
   AppearanceIcon,
   CriticalIcon,
   CustomiseIcon,
-  DarkThemeIcon,
   DatasheetIcon,
   HomeIcon,
   InfoIcon,
   InstallIcon,
   KioskIcon,
-  LightThemeIcon,
   LowStockIcon,
   ModulesIcon,
   NotificationIcon,
@@ -61,6 +60,7 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
+import { THEMES } from './theme-registry';
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -161,12 +161,17 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
       content: (
         <SettingsSection icon={<AppearanceIcon />} title="Appearance">
           <SettingRow
+            stack
+            fill
             label="Theme"
-            description="Switch between the deep dark palette and a light one."
+            description="Pick a full colour palette for the whole app."
             hint={
               'Sets the colour palette for the whole app.\n\n' +
               '- **Dark** — the deep, low-glare default.\n' +
               '- **Light** — a bright palette for well-lit rooms.\n' +
+              '- **Midnight** — a deep navy-blue dark palette with cool azure accents.\n' +
+              '- **Sepia** — a warm, paper-like light palette that’s easy on the eyes.\n' +
+              '- **High contrast** — pure black with white text and bold borders, for maximum legibility.\n' +
               '- **System** — follow your device and switch automatically when it does (e.g. at sunset).\n\n' +
               'The choice applies instantly and everywhere.'
             }
@@ -860,19 +865,32 @@ function LabelBaseUrlControl() {
   );
 }
 
-const THEME_ICONS: Record<Theme, ReactNode> = {
-  dark: <DarkThemeIcon />,
-  light: <LightThemeIcon />,
+/**
+ * Icon per theme choice, built from the {@link THEMES} registry (its per-theme glyphs) plus the
+ * non-palette `'system'` meta-choice — so a new registry theme brings its own icon here.
+ */
+const THEME_ICONS = {
+  ...Object.fromEntries(THEMES.map((t) => [t.id, t.icon])),
   system: <SystemThemeIcon />,
-};
+} as Record<Theme, ReactNode>;
 
-/** What each theme choice actually does — surfaced on hover (the labels alone don't say). */
-const THEME_TOOLTIPS: Record<Theme, string> = {
-  dark: 'Always use the deep dark palette.',
-  light: 'Always use the light palette.',
+/**
+ * What each theme choice actually does — surfaced on hover (the labels alone don't say). The
+ * per-theme copy comes from the registry; `'system'` is the extra meta-choice.
+ */
+const THEME_TOOLTIPS = {
+  ...Object.fromEntries(THEMES.map((t) => [t.id, t.tooltip])),
   system: 'Follow your device setting and switch automatically when it does.',
-};
+} as Record<Theme, string>;
 
+/**
+ * The Appearance theme picker — a WAI-ARIA **radiogroup** of icon+label pills (spec §2.1). Now
+ * that several full themes are offered it `flex-wrap`s onto multiple rows rather than overflowing
+ * a single row. The group is one tab stop (roving `tabindex` via {@link useRovingRadioGroup}):
+ * once focused the arrow keys move *and* select, Home/End jump to the ends, and Space/Enter
+ * re-affirm — standard radiogroup semantics. Each option keeps its `data-testid={theme-<id>}`
+ * hook and `aria-checked` state.
+ */
 function ThemeToggle({
   theme,
   onChange,
@@ -880,24 +898,39 @@ function ThemeToggle({
   readonly theme: Theme;
   readonly onChange: (theme: Theme) => void;
 }) {
+  const selectedIndex = Math.max(
+    0,
+    THEME_OPTIONS.findIndex((o) => o.value === theme),
+  );
+  const { refs, selectAt, onKeyDown } = useRovingRadioGroup<HTMLButtonElement>({
+    count: THEME_OPTIONS.length,
+    onSelect: (index) => onChange(THEME_OPTIONS[index]!.value),
+  });
+
   return (
     <div
       role="radiogroup"
       aria-label="Theme"
-      className="inline-flex rounded-lg border border-border bg-input/40 p-1"
+      className="flex flex-wrap gap-1 rounded-lg border border-border bg-input/40 p-1"
     >
-      {THEME_OPTIONS.map((option) => {
-        const active = theme === option.value;
+      {THEME_OPTIONS.map((option, index) => {
+        const active = index === selectedIndex;
         return (
           <Tooltip key={option.value} content={THEME_TOOLTIPS[option.value]} triggerTabIndex={-1}>
             <button
+              ref={(el) => {
+                refs.current[index] = el;
+              }}
               type="button"
               role="radio"
               aria-checked={active}
+              tabIndex={active ? 0 : -1}
               data-testid={`theme-${option.value}`}
-              onClick={() => onChange(option.value)}
+              onClick={() => selectAt(index)}
+              onKeyDown={(e) => onKeyDown(e, index)}
               className={cn(
-                'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors [&_svg]:size-4',
+                'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium outline-none transition-colors [&_svg]:size-4',
+                'focus-visible:ring-[3px] focus-visible:ring-ring/40',
                 active
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',

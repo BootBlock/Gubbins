@@ -96,6 +96,12 @@ export {
   Moon as DarkThemeIcon,
   Sun as LightThemeIcon,
   Monitor as SystemThemeIcon,
+  // Extra selectable full themes (beyond Light/Dark) — moon+stars for the deep-navy
+  // Midnight, a coffee cup for the warm paper-like Sepia, a split circle for the
+  // maximum-legibility High-contrast palette.
+  MoonStar as MidnightThemeIcon,
+  Coffee as SepiaThemeIcon,
+  Contrast as ContrastThemeIcon,
   Tablet as KioskIcon,
   Bell as NotificationIcon,
   MonitorDown as InstallIcon,
