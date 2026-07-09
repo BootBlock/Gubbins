@@ -118,6 +118,7 @@ const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   GAUGE_UPDATE: 'stock.adjusted',
   RECONCILED: 'stock.adjusted',
   CONSUMED: 'stock.adjusted',
+  DISASSEMBLED: 'stock.adjusted',
   RECEIVED: 'stock.adjusted',
   PROCURED: 'stock.adjusted',
   MOVED: 'item.moved',

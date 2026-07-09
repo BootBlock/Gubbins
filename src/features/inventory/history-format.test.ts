@@ -35,6 +35,9 @@ describe('historyActionLabel — Activity Log action titles (spec §4 Activity L
     expect(historyActionLabel('RE_PARENTED')).toBe('Re-parented');
     expect(historyActionLabel('CHECKED_OUT')).toBe('Checked out');
     expect(historyActionLabel('RECONCILED')).toBe('Reconciled');
+    // Kits v2 assemble/disassemble.
+    expect(historyActionLabel('ASSEMBLED')).toBe('Assembled');
+    expect(historyActionLabel('DISASSEMBLED')).toBe('Disassembled');
   });
 
   it('humanises an unknown/forward-compat action rather than echoing the enum', () => {

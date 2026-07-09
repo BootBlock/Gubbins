@@ -100,6 +100,38 @@ export function useRemoveKitComponent() {
   });
 }
 
+/**
+ * Assemble `count` whole kits from their components (Kits v2) — atomically consuming each
+ * component's stock and producing the kit item. Invalidating `items()` refreshes the kit and
+ * every component by prefix (their list rows, detail, per-location stock, Activity Log and the
+ * kit's buildable count); the kit's own `itemHistory` is invalidated explicitly to mirror the
+ * `transferStock` precedent.
+ */
+export function useAssembleKit() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ kitId, count }: { kitId: string; count: number }) =>
+      getItemRepository().assemble(kitId, count),
+    onSettled: (_d, _e, { kitId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(kitId) });
+    },
+  });
+}
+
+/** Break `count` whole kits back down into their components (Kits v2) — the inverse of assemble. */
+export function useDisassembleKit() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ kitId, count }: { kitId: string; count: number }) =>
+      getItemRepository().disassemble(kitId, count),
+    onSettled: (_d, _e, { kitId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(kitId) });
+    },
+  });
+}
+
 // --- Perishables & In Transit (spec §4, §3 widgets) ----------------------------
 
 /**

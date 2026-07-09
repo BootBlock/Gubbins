@@ -32,6 +32,10 @@ describe('activity-kind (Phase 80)', () => {
     expect(activityKindForAction('CHECKED_OUT')).toBe('loan');
     expect(activityKindForAction('RENAMED')).toBe('lifecycle');
     expect(activityKindForAction('SCRAPE_APPLIED')).toBe('supplier');
+    // Kits v2: assembly is a "created" event (the kit comes into being); breaking a kit back
+    // down returns its components to stock, so it groups under "stock".
+    expect(activityKindForAction('ASSEMBLED')).toBe('created');
+    expect(activityKindForAction('DISASSEMBLED')).toBe('stock');
   });
 
   describe('actionsForKinds', () => {
