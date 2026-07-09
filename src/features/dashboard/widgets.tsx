@@ -40,6 +40,7 @@ import {
   useDueMaintenance,
 } from '@/features/lifecycle';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
+import { useOnOrderQtys } from '@/features/purchasing/queries';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { projectBudgetHealth } from '@/features/projects/budget';
 import { useItemCount, useLocations } from '@/features/inventory/queries';
@@ -145,9 +146,11 @@ function WidgetSkeleton() {
   );
 }
 
-function WidgetRow({ label, meta }: { label: string; meta?: ReactNode }) {
+function WidgetRow({ label, meta, dim = false }: { label: string; meta?: ReactNode; dim?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
+    // `dim` fades a row that's genuinely handled (e.g. a low item fully covered by incoming
+    // stock) so it stays listed but reads as less urgent than the rows still needing action.
+    <div className={cn('flex items-center justify-between gap-2 text-xs', dim && 'opacity-55')}>
       <span className="truncate font-medium">{label}</span>
       {meta ? <span className="shrink-0 text-muted-foreground">{meta}</span> : null}
     </div>
@@ -189,6 +192,12 @@ function LowStockWidget() {
   const lowStock = useLowStockItems({ qtyThreshold, gaugePercent });
   const rows = lowStock.data?.rows ?? [];
   const defaults = { qtyThreshold, gaugePercent };
+  // Batch the on-order lookups for the whole visible low-stock set in one round-trip (not
+  // N+1) — mirrors how the widget already batches its item reads. A covered shortage then
+  // reads as "handled" rather than "urgent". The low-stock *threshold* is untouched: an
+  // item stays flagged (and counted) on its on-hand quantity even when fully on order.
+  const onOrder = useOnOrderQtys(rows.map((item) => item.id));
+  const onOrderById = onOrder.data;
   return (
     <WidgetShell
       icon={<LowStockIcon />}
@@ -205,22 +214,52 @@ function LowStockWidget() {
           // For a low discrete item, surface the suggested top-up (its own reorder
           // quantity, else the shortfall back up to its effective reorder point).
           const toReorder = shortfall(item, defaults);
+          const onOrderQty = onOrderById?.get(item.id) ?? 0;
+          // "Fully covered" = enough already inbound to clear the top-up the shopping list
+          // would suggest (mirrors the reorder plan's netting). Such a row is de-emphasised.
+          const covered = toReorder > 0 && onOrderQty >= toReorder;
+          const stockMeta = item.gauge
+            ? `${Math.round(item.gauge.percentageRemaining)}%`
+            : toReorder > 0
+              ? `×${item.quantity} · reorder ${toReorder}`
+              : `×${item.quantity}`;
           return (
             <WidgetRow
               key={item.id}
               label={item.name}
+              dim={covered}
               meta={
-                item.gauge
-                  ? `${Math.round(item.gauge.percentageRemaining)}%`
-                  : toReorder > 0
-                    ? `×${item.quantity} · reorder ${toReorder}`
-                    : `×${item.quantity}`
+                onOrderQty > 0 ? (
+                  <span className="flex items-center gap-2">
+                    <span>{stockMeta}</span>
+                    <OnOrderTag qty={onOrderQty} />
+                  </span>
+                ) : (
+                  stockMeta
+                )
               }
             />
           );
         })
       )}
     </WidgetShell>
+  );
+}
+
+/**
+ * Unobtrusive "N on order" affordance — the TruckIcon + count used on the Reorder tab,
+ * reused here so a low item with incoming stock signals the shortage is already being
+ * handled. Decorative icon is hidden from assistive tech; the count text carries the meaning.
+ */
+function OnOrderTag({ qty }: { qty: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 text-primary [&_svg]:size-3"
+      data-testid="low-stock-on-order"
+    >
+      <TruckIcon aria-hidden />
+      {qty} on order
+    </span>
   );
 }
 

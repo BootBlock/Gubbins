@@ -4,10 +4,14 @@ import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ReorderPointEditor } from './ReorderPointEditor';
 
-const spies = vi.hoisted(() => ({ update: vi.fn() }));
+const spies = vi.hoisted(() => ({ update: vi.fn(), onOrder: vi.fn(() => 0) }));
 
 vi.mock('../mutations', () => ({
   useUpdateItem: () => ({ mutate: spies.update, isPending: false }),
+}));
+
+vi.mock('@/features/purchasing/queries', () => ({
+  useOnOrderQty: () => ({ data: spies.onOrder() }),
 }));
 
 const baseItem: Item = {
@@ -59,6 +63,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   spies.update.mockReset();
+  spies.onOrder.mockReset();
+  spies.onOrder.mockReturnValue(0);
 });
 
 describe('ReorderPointEditor — policy picker', () => {
@@ -149,5 +155,21 @@ describe('ReorderPointEditor — policy picker', () => {
     render(<ReorderPointEditor item={discrete({ trackingMode: 'SERIALISED' })} />);
     expect(screen.queryByTestId('low-stock-policy-custom')).toBeNull();
     expect(screen.getByText(/serialised single assets/i)).toBeInTheDocument();
+  });
+});
+
+describe('ReorderPointEditor — on-order visibility', () => {
+  it('surfaces the on-order quantity beside the reorder point when stock is inbound', () => {
+    spies.onOrder.mockReturnValue(12);
+    render(<ReorderPointEditor item={discrete({ reorderPoint: 20 })} />);
+    const onOrder = screen.getByTestId('reorder-on-order');
+    expect(onOrder).toBeInTheDocument();
+    expect(onOrder).toHaveTextContent('12 on order');
+  });
+
+  it('shows nothing when no stock is on order', () => {
+    spies.onOrder.mockReturnValue(0);
+    render(<ReorderPointEditor item={discrete({ reorderPoint: 20 })} />);
+    expect(screen.queryByTestId('reorder-on-order')).toBeNull();
   });
 });
