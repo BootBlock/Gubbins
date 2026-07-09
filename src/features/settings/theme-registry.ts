@@ -39,23 +39,27 @@ export function normaliseMode(value: string): Mode {
 }
 
 /**
- * Selectable accent colours, in picker order. Each id maps to a `[data-accent='<id>']` block in
- * `styles/index.css` (light + dark variants). `violet` is the app's signature default and must
- * mirror the base `--primary` so the shipped look is unchanged when it is selected.
+ * Selectable accent colours — 14 hues spanning the full spectrum in ~26° steps, listed in
+ * rainbow (hue) order so the swatch row reads as a spectrum. Each id maps to a
+ * `[data-accent='<id>']` block in `styles/index.css` (light + dark variants). `violet` is the
+ * app's signature default (anchored at hue 277°) and mirrors the base `--primary` so the shipped
+ * look is unchanged when it is selected; the other 13 are evenly distributed around it.
  */
 export const ACCENTS = [
-  { id: 'violet', label: 'Violet' },
-  { id: 'blue', label: 'Blue' },
-  { id: 'cyan', label: 'Cyan' },
-  { id: 'teal', label: 'Teal' },
-  { id: 'green', label: 'Green' },
-  { id: 'lime', label: 'Lime' },
-  { id: 'amber', label: 'Amber' },
-  { id: 'orange', label: 'Orange' },
   { id: 'rose', label: 'Rose' },
-  { id: 'pink', label: 'Pink' },
+  { id: 'orange', label: 'Orange' },
+  { id: 'amber', label: 'Amber' },
+  { id: 'yellow', label: 'Yellow' },
+  { id: 'lime', label: 'Lime' },
+  { id: 'green', label: 'Green' },
+  { id: 'emerald', label: 'Emerald' },
+  { id: 'teal', label: 'Teal' },
+  { id: 'cyan', label: 'Cyan' },
+  { id: 'blue', label: 'Blue' },
+  { id: 'violet', label: 'Violet' },
+  { id: 'purple', label: 'Purple' },
   { id: 'fuchsia', label: 'Fuchsia' },
-  { id: 'slate', label: 'Slate' },
+  { id: 'pink', label: 'Pink' },
 ] as const;
 
 /** An accent colour id. */
