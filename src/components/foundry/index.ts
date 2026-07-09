@@ -23,6 +23,7 @@ export {
 export { filterSuggestions } from './autocomplete-filter';
 export { Money, type MoneyProps } from './money';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
+export { useCountUp, type CountUpOptions } from './useCountUp';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

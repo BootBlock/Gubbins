@@ -2,6 +2,8 @@ import { Fragment } from 'react';
 import { cn } from '@/lib/utils';
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
+import { useCountUp } from './useCountUp';
+import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
 
 export interface MoneyProps {
   /** The monetary amount. A non-finite value renders the em-dash placeholder. */
@@ -19,6 +21,21 @@ export interface MoneyProps {
    * bundle rather than each `Money` reaching for the store. Omit it and the hook is used.
    */
   readonly formatters?: Formatters;
+  /**
+   * Roll the amount up (or down) to `value` like the {@link AnimatedNumber} ticker instead
+   * of snapping — the numeric digits animate while the tinted currency symbol stays put,
+   * settling with a brief `animate-count-pop`. Use it for **headline/settling totals** (a
+   * report or dashboard valuation), never for a price that changes every render (e.g. rows
+   * in the virtualised list) where it would be distracting. Default `false` — a plain
+   * `<Money>` stays zero-cost with no frame loop. Reduced motion snaps regardless.
+   */
+  readonly animate?: boolean;
+  /** With `animate`, also roll up from 0 on first mount (a "count-in"). Default false. */
+  readonly animateOnMount?: boolean;
+  /** Roll duration in milliseconds when animating. Default 650ms. */
+  readonly durationMs?: number;
+  /** Injectable reduced-motion provider (test seam), forwarded to {@link useReducedMotion}. */
+  readonly motionProvider?: MediaQueryProvider;
   /** Classes merged onto the wrapping `<span>`. */
   readonly className?: string;
   /** Extra classes merged onto the tinted currency-symbol `<span>`. */
@@ -39,11 +56,19 @@ export interface MoneyProps {
  *
  * The value is emitted as plain in-order text spans, so assistive tech and copy-paste read
  * it exactly as the equivalent string (`£4.25`) with no reordering.
+ *
+ * Pass `animate` to roll the figure up like the {@link AnimatedNumber} ticker (headline
+ * totals only) — the digits animate while the symbol stays put. The animated path runs a
+ * frame loop, so the default stays a cheap static render for the many prices app-wide.
  */
 export function Money({
   value,
   currency,
   formatters,
+  animate,
+  animateOnMount,
+  durationMs,
+  motionProvider,
   className,
   symbolClassName,
   'data-testid': testId,
@@ -52,8 +77,93 @@ export function Money({
   // takes precedence over it. Both resolve to the same store-bound bundle at runtime.
   const hookFormatters = useFormatters();
   const fmt = formatters ?? hookFormatters;
-  const parts = fmt.currencyParts(value, currency);
 
+  // Only the animated variant pulls in the reduced-motion listener + frame loop, so a plain
+  // `<Money>` (the overwhelming majority, incl. list rows) stays a zero-cost static render.
+  // `animate` is fixed per call site, so this branch never changes hook order across renders.
+  if (animate) {
+    return (
+      <AnimatedMoney
+        value={value}
+        currency={currency}
+        fmt={fmt}
+        animateOnMount={animateOnMount}
+        durationMs={durationMs}
+        motionProvider={motionProvider}
+        className={className}
+        symbolClassName={symbolClassName}
+        data-testid={testId}
+      />
+    );
+  }
+
+  return (
+    <MoneyParts
+      parts={fmt.currencyParts(value, currency)}
+      className={className}
+      symbolClassName={symbolClassName}
+      data-testid={testId}
+    />
+  );
+}
+
+/**
+ * The rolling variant of {@link Money}: the amount animates via the shared {@link useCountUp}
+ * engine (the same ticker behind {@link AnimatedNumber}), re-deriving the currency parts each
+ * frame so the symbol tint is preserved while the digits roll. `key={value}` replays the
+ * one-shot settle-pop per target change; reduced motion snaps with no roll and no pop.
+ */
+function AnimatedMoney({
+  value,
+  currency,
+  fmt,
+  animateOnMount,
+  durationMs,
+  motionProvider,
+  className,
+  symbolClassName,
+  'data-testid': testId,
+}: {
+  value: number;
+  currency?: string;
+  fmt: Formatters;
+  animateOnMount?: boolean;
+  durationMs?: number;
+  motionProvider?: MediaQueryProvider;
+  className?: string;
+  symbolClassName?: string;
+  'data-testid'?: string;
+}) {
+  const reduced = useReducedMotion(motionProvider);
+  const display = useCountUp(value, { durationMs, animateOnMount, reduced });
+
+  return (
+    <MoneyParts
+      key={value}
+      parts={fmt.currencyParts(display, currency)}
+      className={cn('inline-block', !reduced && 'animate-count-pop', className)}
+      symbolClassName={symbolClassName}
+      data-testid={testId}
+    />
+  );
+}
+
+/**
+ * Presentational renderer shared by the static and animated paths: emits the Intl parts
+ * in order, painting the currency symbol in the tinted `money-symbol` token, or the em-dash
+ * placeholder when `parts` is `null` (a non-finite amount).
+ */
+function MoneyParts({
+  parts,
+  className,
+  symbolClassName,
+  'data-testid': testId,
+}: {
+  parts: ReturnType<Formatters['currencyParts']>;
+  className?: string;
+  symbolClassName?: string;
+  'data-testid'?: string;
+}) {
   if (!parts) {
     return (
       <span className={cn('tabular-nums', className)} data-testid={testId}>
