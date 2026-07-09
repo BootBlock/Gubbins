@@ -1,8 +1,10 @@
 import { useEffect, useId, useState } from 'react';
-import { Button, InfoHint, Input } from '@/components/foundry';
+import { Button, InfoHint, Input, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { TruckIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { LOW_STOCK_GAUGE_SUGGESTED, LOW_STOCK_QTY_SUGGESTED } from '@/db/repositories/constants';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useOnOrderQty } from '@/features/purchasing/queries';
 import { policyFromValue, valueForPolicy, type LowStockPolicy } from '../low-stock-policy';
 import { useUpdateItem } from '../mutations';
 import { LowStockPolicyPicker } from './LowStockPolicyPicker';
@@ -91,6 +93,31 @@ const GAUGE_HINT =
   '- **Custom** — flag it at or below your own percentage remaining.\n' +
   '- **Never** — a hard exemption: this item is never flagged, even if a global default is set.';
 
+/**
+ * "N on order" line shown beside the reorder point (open ORDERED/PARTIAL POs). Surfacing it
+ * here makes the relationship legible in one place: you're below your reorder point, but this
+ * much is already inbound — the low-stock alert itself deliberately stays on-hand-based, so a
+ * covered item still shows as low here, just with the incoming stock in view.
+ */
+function OnOrderNote({ itemId }: { itemId: string }) {
+  const onOrderQty = useOnOrderQty(itemId).data ?? 0;
+  if (onOrderQty <= 0) return null;
+  return (
+    <Tooltip
+      content="Units already **on order** on an open purchase order — inbound but not yet received, so not counted in on-hand stock or the low-stock alert."
+      openDelayMs={INFO_OPEN_DELAY_MS}
+    >
+      <p
+        className="flex items-center gap-1.5 text-xs font-medium text-primary [&_svg]:size-3.5"
+        data-testid="reorder-on-order"
+      >
+        <TruckIcon aria-hidden />
+        <span>{onOrderQty} on order</span>
+      </p>
+    </Tooltip>
+  );
+}
+
 function DiscreteReorderEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const globalDefault = usePreferencesStore((s) => s.lowStockQtyThreshold);
@@ -171,6 +198,8 @@ function DiscreteReorderEditor({ item }: { item: Item }) {
       ) : (
         <PolicyNote policy={policy} defaultLabel={defaultLabel} />
       )}
+
+      <OnOrderNote itemId={item.id} />
 
       <SaveButton dirty={dirty && !invalid} pending={update.isPending} onClick={save} />
     </div>

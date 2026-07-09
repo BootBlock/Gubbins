@@ -46,6 +46,15 @@ import type {
 } from './types';
 
 /**
+ * The single definition of an "on order" line: an outstanding (partly- or un-received) line
+ * on a PO whose effective status is ORDERED or PARTIAL (past DRAFT, not CANCELLED). Both the
+ * scalar {@link onOrderQtyForItemSql} and the batch
+ * {@link PurchaseOrderRepository.onOrderQtyForItems} read build on this one predicate so the
+ * figure can never diverge between them.
+ */
+const ON_ORDER_LINE_PREDICATE = `l.ordered_qty > l.received_qty AND po.status NOT IN ('DRAFT', 'CANCELLED')`;
+
+/**
  * Correlated scalar subquery yielding the quantity of an item still **on order** — the sum of
  * outstanding `(ordered_qty − received_qty)` over its lines whose PO's effective status is
  * ORDERED or PARTIAL (past DRAFT, not CANCELLED, not fully received). This is the SQL form of
@@ -60,8 +69,7 @@ export function onOrderQtyForItemSql(itemIdExpr: string): string {
              FROM purchase_order_lines l
              JOIN purchase_orders po ON po.id = l.po_id
             WHERE l.item_id = ${itemIdExpr}
-              AND l.ordered_qty > l.received_qty
-              AND po.status NOT IN ('DRAFT', 'CANCELLED'))`;
+              AND ${ON_ORDER_LINE_PREDICATE})`;
 }
 
 /** Trim a string field; an all-whitespace value becomes null (a genuinely absent field). */
@@ -371,6 +379,34 @@ export class PurchaseOrderRepository extends BaseRepository {
       itemId,
     ]);
     return Number(row?.qty ?? 0);
+  }
+
+  /**
+   * The still-**on-order** quantity for a *set* of items, resolved in a single round-trip —
+   * the batch companion to {@link onOrderQtyForItem}, so a caller surfacing "N on order" across
+   * a whole low-stock list (the dashboard widget) reads it once rather than N+1 times. Shares
+   * the {@link ON_ORDER_LINE_PREDICATE} definition, so a batched figure always matches the
+   * scalar one.
+   *
+   * Returns a `Map` keyed by item id, containing an entry **only** for items that actually have
+   * stock on order (the `GROUP BY` drops items with no outstanding lines) — a caller reads a
+   * missing key as 0. An empty input set skips the query and returns an empty map.
+   */
+  async onOrderQtyForItems(itemIds: readonly string[]): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (itemIds.length === 0) return result;
+    const placeholders = itemIds.map(() => '?').join(', ');
+    const rows = await this.driver.query<{ item_id: string; qty: number }>(
+      `SELECT l.item_id AS item_id, COALESCE(SUM(l.ordered_qty - l.received_qty), 0) AS qty
+         FROM purchase_order_lines l
+         JOIN purchase_orders po ON po.id = l.po_id
+        WHERE l.item_id IN (${placeholders})
+          AND ${ON_ORDER_LINE_PREDICATE}
+        GROUP BY l.item_id;`,
+      [...itemIds],
+    );
+    for (const r of rows) result.set(r.item_id, Number(r.qty));
+    return result;
   }
 
   // --- reorder-plan bulk creation (Phase 65) -----------------------------------

@@ -141,6 +141,52 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(await pos.onOrderQtyForItem(item.id)).toBe(0);
   });
 
+  it('batch-reads on-order quantities for a set of items in one round-trip', async () => {
+    const a = await items.create({ name: 'Item A' });
+    const b = await items.create({ name: 'Item B' });
+    const c = await items.create({ name: 'Item C' }); // no PO line → absent from the map
+    const d = await items.create({ name: 'Item D' }); // only a DRAFT/CANCELLED line → 0
+
+    // Item A: two active POs, one partly received → 10 + (7 − 3) = 14 outstanding.
+    const poA1 = await pos.create({ supplierName: 'RS' });
+    await pos.addLine(poA1.id, { itemId: a.id, orderedQty: 10 });
+    await pos.setStatus(poA1.id, 'ORDERED');
+    const poA2 = await pos.create({ supplierName: 'Mouser' });
+    const lineA2 = await pos.addLine(poA2.id, { itemId: a.id, orderedQty: 7 });
+    await pos.setStatus(poA2.id, 'ORDERED');
+    await pos.receiveLine(lineA2.id, { quantity: 3 });
+
+    // Item B: one active PO → 5 outstanding.
+    const poB = await pos.create({ supplierName: 'Farnell' });
+    await pos.addLine(poB.id, { itemId: b.id, orderedQty: 5 });
+    await pos.setStatus(poB.id, 'ORDERED');
+
+    // Item D: a line left DRAFT and another CANCELLED → contributes nothing.
+    const poD1 = await pos.create({ supplierName: 'RS' });
+    await pos.addLine(poD1.id, { itemId: d.id, orderedQty: 9 }); // stays DRAFT
+    const poD2 = await pos.create({ supplierName: 'RS' });
+    await pos.addLine(poD2.id, { itemId: d.id, orderedQty: 4 });
+    await pos.setStatus(poD2.id, 'ORDERED');
+    await pos.setStatus(poD2.id, 'CANCELLED');
+
+    const map = await pos.onOrderQtyForItems([a.id, b.id, c.id, d.id]);
+    expect(map.get(a.id)).toBe(14);
+    expect(map.get(b.id)).toBe(5);
+    // Items with no outstanding lines are simply absent (a caller reads that as 0).
+    expect(map.has(c.id)).toBe(false);
+    expect(map.has(d.id)).toBe(false);
+
+    // The batch figure agrees with the scalar read for every item.
+    for (const item of [a, b, c, d]) {
+      expect(map.get(item.id) ?? 0).toBe(await pos.onOrderQtyForItem(item.id));
+    }
+  });
+
+  it('returns an empty map for an empty item set (no query)', async () => {
+    const map = await pos.onOrderQtyForItems([]);
+    expect(map.size).toBe(0);
+  });
+
   // --- FK SET NULL on the supplier-part link -------------------------------------
 
   it('NULLs a line supplier_part_id when the supplier part is deleted, keeping the line', async () => {
