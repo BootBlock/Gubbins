@@ -24,6 +24,19 @@ export { filterSuggestions } from './autocomplete-filter';
 export { Money, type MoneyProps } from './money';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
 export { useCountUp, type CountUpOptions } from './useCountUp';
+export { Reveal, type RevealProps } from './reveal';
+export {
+  useRevealOnScroll,
+  revealStaggerMs,
+  defaultObserverFactory,
+  DEFAULT_REVEAL_ROOT_MARGIN,
+  REVEAL_STAGGER_STEP_MS,
+  REVEAL_STAGGER_CAP,
+  type RevealOnScrollOptions,
+  type RevealState,
+  type ObserverLike,
+  type IntersectionObserverFactory,
+} from './useRevealOnScroll';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

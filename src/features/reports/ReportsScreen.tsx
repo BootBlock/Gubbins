@@ -6,6 +6,7 @@ import {
   Money,
   PageContainer,
   PageHeader,
+  Reveal,
   Spinner,
   Surface,
   MAIN_CONTENT_ID,
@@ -191,70 +192,82 @@ export function ReportsScreen() {
         tabIndex={-1}
         className="flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        {/* Headline value cards */}
+        {/* Headline value cards — each scroll-reveals with a gentle left-to-right stagger (F3). */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Inventory value"
-            testId="stat-total-value"
-            loading={value.isLoading}
-            value={
-              value.data ? <Money value={value.data.totalValue} formatters={f} animate animateOnMount /> : '—'
-            }
-            sub={value.data ? `${f.quantity(value.data.totalQuantity)} units` : undefined}
-          />
-          <StatCard
-            label={`Consumption (${REPORT_WINDOW_DAYS}d)`}
-            testId="stat-consumption"
-            loading={consumption.isLoading}
-            value={
-              consumption.data ? (
-                <AnimatedNumber
-                  value={Math.round(consumption.data.perDay * 10) / 10}
-                  format={(n) => `${f.quantity(Math.round(n * 10) / 10)}/day`}
-                  animateOnMount
-                />
-              ) : (
-                '—'
-              )
-            }
-            sub={consumption.data ? `${f.quantity(consumption.data.totalConsumed)} total` : undefined}
-          />
-          <StatCard
-            label="Low stock"
-            testId="stat-low-stock"
-            loading={lowStock.isLoading}
-            value={
-              lowStock.data != null ? (
-                <AnimatedNumber
-                  value={lowStock.data}
-                  format={(n) => f.quantity(Math.round(n))}
-                  animateOnMount
-                />
-              ) : (
-                '—'
-              )
-            }
-            sub="items at/below threshold"
-            tone={lowStock.data && lowStock.data > 0 ? 'warning' : undefined}
-            icon={<LowStockIcon />}
-          />
-          <StatCard
-            label={`Dead stock (${DEAD_STOCK_SINCE_DAYS}d)`}
-            testId="stat-dead-stock"
-            loading={deadStock.isLoading}
-            value={
-              deadStock.data ? (
-                <Money value={deadStock.data.totalValue} formatters={f} animate animateOnMount />
-              ) : (
-                '—'
-              )
-            }
-            sub={deadStock.data ? `${f.quantity(deadStock.data.lines.length)} idle items` : undefined}
-          />
+          <Reveal index={0} className="h-full">
+            <StatCard
+              label="Inventory value"
+              testId="stat-total-value"
+              loading={value.isLoading}
+              value={
+                value.data ? (
+                  <Money value={value.data.totalValue} formatters={f} animate animateOnMount />
+                ) : (
+                  '—'
+                )
+              }
+              sub={value.data ? `${f.quantity(value.data.totalQuantity)} units` : undefined}
+            />
+          </Reveal>
+          <Reveal index={1} className="h-full">
+            <StatCard
+              label={`Consumption (${REPORT_WINDOW_DAYS}d)`}
+              testId="stat-consumption"
+              loading={consumption.isLoading}
+              value={
+                consumption.data ? (
+                  <AnimatedNumber
+                    value={Math.round(consumption.data.perDay * 10) / 10}
+                    format={(n) => `${f.quantity(Math.round(n * 10) / 10)}/day`}
+                    animateOnMount
+                  />
+                ) : (
+                  '—'
+                )
+              }
+              sub={consumption.data ? `${f.quantity(consumption.data.totalConsumed)} total` : undefined}
+            />
+          </Reveal>
+          <Reveal index={2} className="h-full">
+            <StatCard
+              label="Low stock"
+              testId="stat-low-stock"
+              loading={lowStock.isLoading}
+              value={
+                lowStock.data != null ? (
+                  <AnimatedNumber
+                    value={lowStock.data}
+                    format={(n) => f.quantity(Math.round(n))}
+                    animateOnMount
+                  />
+                ) : (
+                  '—'
+                )
+              }
+              sub="items at/below threshold"
+              tone={lowStock.data && lowStock.data > 0 ? 'warning' : undefined}
+              icon={<LowStockIcon />}
+            />
+          </Reveal>
+          <Reveal index={3} className="h-full">
+            <StatCard
+              label={`Dead stock (${DEAD_STOCK_SINCE_DAYS}d)`}
+              testId="stat-dead-stock"
+              loading={deadStock.isLoading}
+              value={
+                deadStock.data ? (
+                  <Money value={deadStock.data.totalValue} formatters={f} animate animateOnMount />
+                ) : (
+                  '—'
+                )
+              }
+              sub={deadStock.data ? `${f.quantity(deadStock.data.lines.length)} idle items` : undefined}
+            />
+          </Reveal>
         </section>
 
         {/* Valuation breakdown */}
-        <section className="grid gap-6 lg:grid-cols-2">
+        <Reveal as="section" className="grid gap-6 lg:grid-cols-2">
           <Panel title="Value by category">
             {value.isLoading ? (
               <CentredSpinner />
@@ -277,43 +290,47 @@ export function ReportsScreen() {
               />
             )}
           </Panel>
-        </section>
+        </Reveal>
 
         {/* Stock movement */}
-        <Panel title={`Stock movement (last ${REPORT_WINDOW_DAYS} days)`}>
-          {movement.isLoading ? (
-            <CentredSpinner />
-          ) : movement.data ? (
-            <MovementChart report={movement.data} formatters={f} />
-          ) : null}
-        </Panel>
+        <Reveal>
+          <Panel title={`Stock movement (last ${REPORT_WINDOW_DAYS} days)`}>
+            {movement.isLoading ? (
+              <CentredSpinner />
+            ) : movement.data ? (
+              <MovementChart report={movement.data} formatters={f} />
+            ) : null}
+          </Panel>
+        </Reveal>
 
         {/* Dead stock */}
-        <Panel title={`Dead stock — no movement in ${DEAD_STOCK_SINCE_DAYS} days`}>
-          {deadStock.isLoading ? (
-            <CentredSpinner />
-          ) : deadStock.data && deadStock.data.lines.length > 0 ? (
-            <ul className="divide-y divide-border" data-testid="dead-stock-list">
-              {deadStock.data.lines.slice(0, 20).map((line) => (
-                <li key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="min-w-0 truncate font-medium">{line.name}</span>
-                  <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
-                    <span>{f.quantity(line.quantity)} units</span>
-                    <span>{line.idleDays}d idle</span>
-                    <Money value={line.value} formatters={f} className="font-medium text-foreground" />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Nothing idle — all stock has moved recently.
-            </p>
-          )}
-        </Panel>
+        <Reveal>
+          <Panel title={`Dead stock — no movement in ${DEAD_STOCK_SINCE_DAYS} days`}>
+            {deadStock.isLoading ? (
+              <CentredSpinner />
+            ) : deadStock.data && deadStock.data.lines.length > 0 ? (
+              <ul className="divide-y divide-border" data-testid="dead-stock-list">
+                {deadStock.data.lines.slice(0, 20).map((line) => (
+                  <li key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span className="min-w-0 truncate font-medium">{line.name}</span>
+                    <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
+                      <span>{f.quantity(line.quantity)} units</span>
+                      <span>{line.idleDays}d idle</span>
+                      <Money value={line.value} formatters={f} className="font-medium text-foreground" />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nothing idle — all stock has moved recently.
+              </p>
+            )}
+          </Panel>
+        </Reveal>
 
         {/* Advanced analytics (Phase 74) — ABC, turnover, stock aging & valuation over time. */}
-        <section className="flex flex-col gap-6" aria-labelledby="analytics-heading">
+        <Reveal as="section" className="flex flex-col gap-6" aria-labelledby="analytics-heading">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="analytics-heading" className="text-base font-semibold tracking-tight">
               Advanced analytics
@@ -354,10 +371,10 @@ export function ReportsScreen() {
               ) : null}
             </Panel>
           </div>
-        </section>
+        </Reveal>
 
         {/* Data hygiene (Phase 77) — a "tidy up" checklist of records needing attention. */}
-        <section className="flex flex-col gap-3" aria-labelledby="hygiene-heading">
+        <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="hygiene-heading">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 id="hygiene-heading" className="text-base font-semibold tracking-tight">
               Data hygiene
@@ -381,13 +398,13 @@ export function ReportsScreen() {
               </p>
             )}
           </Panel>
-        </section>
+        </Reveal>
 
         {/* Spend analytics (Phase 79) — money OUT over time, by source/supplier/category.
             Distinct from the valuation trend above (inventory value). Dropped when the
             Purchase-orders module is off (Modular UI Phase 7). */}
         {spendOn ? (
-          <section className="flex flex-col gap-3" aria-labelledby="spend-heading">
+          <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="spend-heading">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
                 Spend analytics
@@ -414,13 +431,13 @@ export function ReportsScreen() {
                 </p>
               )}
             </Panel>
-          </section>
+          </Reveal>
         ) : null}
 
         {/* Sales & disposals — proceeds vs a cost snapshot (→ margin), plus written-off value.
             Dropped when the Sales & disposals module is off. */}
         {salesOn ? (
-          <section className="flex flex-col gap-3" aria-labelledby="sales-heading">
+          <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="sales-heading">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 id="sales-heading" className="text-base font-semibold tracking-tight">
                 Sales &amp; disposals
@@ -447,7 +464,7 @@ export function ReportsScreen() {
                 </p>
               )}
             </Panel>
-          </section>
+          </Reveal>
         ) : null}
       </main>
 
@@ -568,7 +585,7 @@ function StatCard({
   testId?: string;
 }) {
   return (
-    <Surface className="flex flex-col gap-1 p-4">
+    <Surface className="flex h-full flex-col gap-1 p-4">
       <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">
         {icon}
         {label}
