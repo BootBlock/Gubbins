@@ -183,19 +183,44 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
         supplierName: 'DigiKey',
         supplierKey: 'digikey',
         lines: [
-          { itemId: res.id, itemName: 'Resistor', supplierPartId: null, orderQty: 8, unitCost: 0.05 },
-          { itemId: cap.id, itemName: 'Capacitor', supplierPartId: null, orderQty: 5, unitCost: 0.1 },
+          {
+            itemId: res.id,
+            itemName: 'Resistor',
+            supplierPartId: null,
+            orderQty: 8,
+            onOrder: 0,
+            unitCost: 0.05,
+          },
+          {
+            itemId: cap.id,
+            itemName: 'Capacitor',
+            supplierPartId: null,
+            orderQty: 5,
+            onOrder: 0,
+            unitCost: 0.1,
+          },
         ],
       },
       {
         supplierName: 'Mouser',
         supplierKey: 'mouser',
-        lines: [{ itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, unitCost: 0.2 }],
+        lines: [
+          { itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, onOrder: 0, unitCost: 0.2 },
+        ],
       },
       {
         supplierName: 'Unassigned',
         supplierKey: '~unassigned',
-        lines: [{ itemId: res.id, itemName: 'Another', supplierPartId: null, orderQty: 1, unitCost: null }],
+        lines: [
+          {
+            itemId: res.id,
+            itemName: 'Another',
+            supplierPartId: null,
+            orderQty: 1,
+            onOrder: 0,
+            unitCost: null,
+          },
+        ],
       },
     ] as const;
 
@@ -232,7 +257,16 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
       {
         supplierName: 'Farnell',
         supplierKey: 'farnell',
-        lines: [{ itemId: item.id, itemName: 'Relay', supplierPartId: null, orderQty: 3, unitCost: 1.25 }],
+        lines: [
+          {
+            itemId: item.id,
+            itemName: 'Relay',
+            supplierPartId: null,
+            orderQty: 3,
+            onOrder: 0,
+            unitCost: 1.25,
+          },
+        ],
       },
     ] as const;
     const [po] = await pos.createDraftFromReorderPlan(plan);

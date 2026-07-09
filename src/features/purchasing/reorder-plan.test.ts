@@ -210,6 +210,24 @@ describe('buildReorderPlan', () => {
     expect(line.itemName).toBe('LED');
   });
 
+  it('carries onOrder onto the line (display of already-incoming stock), defaulting to 0', () => {
+    const rows: ReorderShortfallRow[] = [
+      {
+        itemId: 'a',
+        itemName: 'Cap',
+        shortfall: 4,
+        onOrder: 6,
+        preferredSupplier: { supplierPartId: 'sp1', supplierName: 'DigiKey', unitCost: 0.2 },
+      },
+      { itemId: 'b', itemName: 'Resistor', shortfall: 3 }, // no onOrder → line defaults to 0
+    ];
+    const plan = buildReorderPlan(rows);
+    const digikey = plan.find((g) => g.supplierName === 'DigiKey')!;
+    expect(digikey.lines[0]!.onOrder).toBe(6);
+    const unassigned = plan.find((g) => g.supplierName === UNASSIGNED_SUPPLIER_NAME)!;
+    expect(unassigned.lines[0]!.onOrder).toBe(0);
+  });
+
   it('mixed: supplier and unassigned items in one pass', () => {
     const rows: ReorderShortfallRow[] = [
       {

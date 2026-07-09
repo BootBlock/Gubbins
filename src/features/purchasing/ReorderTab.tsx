@@ -238,9 +238,18 @@ function ReorderLine({
     <li className="flex flex-wrap items-center gap-3 py-2" data-testid="reorder-line">
       <div className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{line.itemName}</span>
-        {line.unitCost != null && (
-          <span className="text-xs text-muted-foreground">{currency(line.unitCost)} each</span>
-        )}
+        <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          {line.unitCost != null && <span>{currency(line.unitCost)} each</span>}
+          {line.onOrder > 0 && (
+            <span
+              className="inline-flex items-center gap-1 [&_svg]:size-3"
+              data-testid="reorder-line-on-order"
+            >
+              <TruckIcon aria-hidden />
+              {line.onOrder} on order
+            </span>
+          )}
+        </span>
       </div>
       <label className="flex items-center gap-1.5 text-sm">
         <span className="text-xs text-muted-foreground">Qty</span>

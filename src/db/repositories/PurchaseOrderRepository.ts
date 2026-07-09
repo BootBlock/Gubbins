@@ -45,6 +45,25 @@ import type {
   UpdatePurchaseOrderLineInput,
 } from './types';
 
+/**
+ * Correlated scalar subquery yielding the quantity of an item still **on order** — the sum of
+ * outstanding `(ordered_qty − received_qty)` over its lines whose PO's effective status is
+ * ORDERED or PARTIAL (past DRAFT, not CANCELLED, not fully received). This is the SQL form of
+ * {@link PurchaseOrderRepository.onOrderQtyForItem}, shared so the reorder-shortfall query can
+ * net already-incoming stock off what it suggests ordering without duplicating the definition.
+ *
+ * Pass a bound `'?'` (and bind the item id) for a standalone lookup, or an outer column
+ * expression like `'i.id'` to correlate against an enclosing `items` row.
+ */
+export function onOrderQtyForItemSql(itemIdExpr: string): string {
+  return `(SELECT COALESCE(SUM(l.ordered_qty - l.received_qty), 0)
+             FROM purchase_order_lines l
+             JOIN purchase_orders po ON po.id = l.po_id
+            WHERE l.item_id = ${itemIdExpr}
+              AND l.ordered_qty > l.received_qty
+              AND po.status NOT IN ('DRAFT', 'CANCELLED'))`;
+}
+
 /** Trim a string field; an all-whitespace value becomes null (a genuinely absent field). */
 function cleanText(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -348,15 +367,9 @@ export class PurchaseOrderRepository extends BaseRepository {
    * genuine still-incoming quantity (a fully-received PO contributes nothing).
    */
   async onOrderQtyForItem(itemId: string): Promise<number> {
-    const row = await this.driver.queryOne<{ qty: number }>(
-      `SELECT COALESCE(SUM(l.ordered_qty - l.received_qty), 0) AS qty
-         FROM purchase_order_lines l
-         JOIN purchase_orders po ON po.id = l.po_id
-        WHERE l.item_id = ?
-          AND l.ordered_qty > l.received_qty
-          AND po.status NOT IN ('DRAFT', 'CANCELLED');`,
-      [itemId],
-    );
+    const row = await this.driver.queryOne<{ qty: number }>(`SELECT ${onOrderQtyForItemSql('?')} AS qty;`, [
+      itemId,
+    ]);
     return Number(row?.qty ?? 0);
   }
 
