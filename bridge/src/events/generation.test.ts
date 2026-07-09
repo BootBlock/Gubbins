@@ -41,6 +41,7 @@ function snapshot(quantity: number, history: HistoryRow[]): string {
           category_id: null,
           tracking_mode: 'DISCRETE',
           quantity,
+          reorder_point: 5,
           mpn: null,
           manufacturer: null,
           is_active: 1,
