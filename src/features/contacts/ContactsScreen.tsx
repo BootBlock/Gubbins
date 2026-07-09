@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Button,
   Input,
+  Modal,
   PageContainer,
   PageHeader,
   Spinner,
@@ -10,11 +11,18 @@ import {
   INFO_OPEN_DELAY_MS,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddContactIcon, CheckInIcon, ContactsIcon, DueDateIcon } from '@/components/icons';
-import type { CheckoutWithNames } from '@/db/repositories';
+import { AddContactIcon, CheckInIcon, ContactsIcon, DeleteIcon, DueDateIcon } from '@/components/icons';
+import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
-import { useContacts, useCreateContact, useOpenCheckouts, useCheckInItem } from './contacts';
+import { EditContactDialog } from './components/EditContactDialog';
+import {
+  useContacts,
+  useCreateContact,
+  useDeleteContact,
+  useOpenCheckouts,
+  useCheckInItem,
+} from './contacts';
 
 /**
  * The borrowing hub (spec §4 Borrowing & Checking Out, Phase 6): everything still
@@ -25,7 +33,17 @@ export function ContactsScreen() {
   const contacts = useContacts();
   const checkIn = useCheckInItem();
   const createContact = useCreateContact();
+  const deleteContact = useDeleteContact();
   const [newName, setNewName] = useState('');
+  // The contact open in the full Edit dialog (click a card), and one pending a delete
+  // confirmation. A contact with no active loans deletes straight away; only one still
+  // borrowing/loaning something prompts first, since deleting it checks those loans back in.
+  const [editingContact, setEditingContact] = useState<ContactWithCount | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    id: string;
+    name: string;
+    openCount: number;
+  } | null>(null);
 
   const onLoan = open.data?.rows ?? [];
   const overdueCount = onLoan.filter((c) => c.isOverdue).length;
@@ -33,6 +51,25 @@ export function ContactsScreen() {
   const addContact = () => {
     if (newName.trim().length === 0) return;
     createContact.mutate({ name: newName.trim() }, { onSuccess: () => setNewName('') });
+  };
+
+  const requestDelete = (contact: ContactWithCount) => {
+    if (contact.openCount === 0) {
+      deleteContact.mutate(contact.id);
+      setEditingContact(null);
+      return;
+    }
+    setConfirmDelete({ id: contact.id, name: contact.name, openCount: contact.openCount });
+  };
+
+  const confirmDeleteNow = () => {
+    if (!confirmDelete) return;
+    deleteContact.mutate(confirmDelete.id, {
+      onSuccess: () => {
+        setConfirmDelete(null);
+        setEditingContact(null);
+      },
+    });
   };
 
   return (
@@ -119,16 +156,22 @@ export function ContactsScreen() {
               {contacts.data.rows.map((c) => (
                 <Surface
                   key={c.id}
-                  className="flex items-center justify-between p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
+                  className="transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
                 >
-                  <span className="font-medium">{c.name}</span>
-                  {c.openCount > 0 ? (
-                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">
-                      {c.openCount} out
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingContact(c)}
+                    className="flex w-full items-center justify-between gap-2 rounded-[inherit] p-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    {c.openCount > 0 ? (
+                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">
+                        {c.openCount} out
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </button>
                 </Surface>
               ))}
             </ul>
@@ -139,6 +182,41 @@ export function ContactsScreen() {
           )}
         </section>
       </main>
+
+      {editingContact ? (
+        <EditContactDialog
+          open
+          onClose={() => setEditingContact(null)}
+          contact={editingContact}
+          onDelete={() => requestDelete(editingContact)}
+        />
+      ) : null}
+
+      <Modal
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        title="Delete contact?"
+        description={
+          confirmDelete
+            ? `"${confirmDelete.name}" is currently borrowing/loaning ${confirmDelete.openCount} ${plural(confirmDelete.openCount, 'item')}. Deleting this contact will check ${confirmDelete.openCount === 1 ? 'it' : 'them'} back in as returned. Are you sure you want to delete this contact?`
+            : undefined
+        }
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteContact.isPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={confirmDeleteNow}
+            disabled={deleteContact.isPending}
+            data-testid="confirm-delete-contact"
+          >
+            {deleteContact.isPending ? <Spinner /> : <DeleteIcon />}
+            Delete contact
+          </Button>
+        </div>
+      </Modal>
     </PageContainer>
   );
 }

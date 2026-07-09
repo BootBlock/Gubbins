@@ -274,6 +274,22 @@ export class CheckoutRepository extends BaseRepository {
     return (await this.getById(checkoutId))!;
   }
 
+  /**
+   * Return every still-open checkout for a contact, exactly as an ordinary check-in
+   * would (restoring stock to its source placement/lot and logging `CHECKED_IN`) —
+   * used before a contact is deleted so their active loans never strand stock.
+   * Deliberately unbounded: every open loan must be returned, not just the first page.
+   */
+  async checkInAllForContact(contactId: string): Promise<void> {
+    const open = await this.driver.query<{ id: string }>(
+      'SELECT id FROM checkouts WHERE contact_id = ? AND returned_at IS NULL;',
+      [contactId],
+    );
+    for (const row of open) {
+      await this.checkIn(row.id);
+    }
+  }
+
   /** All open (still-out) checkouts, soonest due first, with item + contact names. */
   async listOpen(params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
     return this.listJoined('WHERE k.returned_at IS NULL', [], params, 'k.due_date IS NULL, k.due_date ASC');

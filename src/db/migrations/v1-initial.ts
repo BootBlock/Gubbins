@@ -476,11 +476,15 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TABLE contacts (
-          id         TEXT    PRIMARY KEY NOT NULL,
-          name       TEXT    NOT NULL,
-          note       TEXT,
-          created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          id           TEXT    PRIMARY KEY NOT NULL,
+          name         TEXT    NOT NULL,
+          note         TEXT,
+          phone_mobile TEXT,
+          phone_home   TEXT,
+          email        TEXT,
+          address      TEXT,
+          created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
     },
