@@ -78,6 +78,13 @@ describe('buildTabs — feature gating (Phase 6)', () => {
     expect(sectionTitles(tabs, 'lifecycle')).toEqual(['Lifecycle & variants', 'Asset details']);
   });
 
+  it('retitles the Lifecycle section to drop "& variants" when variants is off', () => {
+    // The section survives (it owns expiry/batch/condition), but the heading no longer
+    // promises variants, whose sub-block LifecycleEditor gates away.
+    const tabs = buildTabs(item, without('variants'));
+    expect(sectionTitles(tabs, 'lifecycle')).toEqual(['Lifecycle', 'Asset details', 'Maintenance']);
+  });
+
   it('drops Capabilities + Custom fields when custom-fields is off, keeping Tags', () => {
     const tabs = buildTabs(item, without('custom-fields'));
     expect(sectionTitles(tabs, 'classification')).toEqual(['Tags']);
