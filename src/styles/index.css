@@ -1106,15 +1106,23 @@
  * placeholder to read as ambient depth rather than decoration.
  *
  * Painted on a `::before` layer pinned to the element's box (`inset: 0`). Both radials are
- * fully *self-contained*: each peak sits well inside the box and its `%`-based size + early
- * `transparent` stop bring the tint to zero before it reaches any edge, so the box-clip always
- * lands in the transparent zone — no hard rectangle, whatever the host's size or aspect ratio
- * (the empty-state is a tall `flex-1` box, the hero a short wide one). This is why no negative
- * inset is needed (hence no overflow / no stray scrollbar). It sits behind the content via
- * `z-index: -1` inside the element's own isolated stacking context, so the host element must be
- * transparent for it to show. Purely static — no animation — so it is inherently
- * reduced-motion-safe (nothing for the global `prefers-reduced-motion` catch-all to neutralise).
- * Dropped entirely under high-contrast so that mode keeps its pristine, maximal contrast.
+ * fully *self-contained* so the box-clip always lands in the transparent zone — no hard
+ * rectangle and no seam against a neighbour (e.g. the inventory empty-state's left edge meets
+ * the Locations sidebar), whatever the host's size or aspect ratio (the empty-state is a tall
+ * `flex-1` pane, the hero a short wide box).
+ *
+ * The containment is arithmetic, so mind it when tuning: in `radial-gradient(Rx% Ry% at Cx% Cy%,
+ * col, transparent T%)` the `%` radii are fractions of the box's width/height (so `50%` is HALF
+ * the box, i.e. edge-to-edge), and the tint fades to zero at `(T/100)·R` from the centre. To
+ * clear an edge it must reach zero before it: `Cx > (T/100)·Rx` (left) and `100−Cx > (T/100)·Rx`
+ * (right), likewise vertically. The values below hold that with margin on all four sides — the
+ * earlier `70% 70% … transparent 70%` did NOT (its tint reached ~49% from centre, past the
+ * peak's own offset), which is what produced the clipped rectangle. This is why no negative inset
+ * is needed (hence no overflow / no stray scrollbar). It sits behind the content via `z-index:
+ * -1` inside the element's own isolated stacking context, so the host element must be transparent
+ * for it to show. Purely static — no animation — so it is inherently reduced-motion-safe (nothing
+ * for the global `prefers-reduced-motion` catch-all to neutralise). Dropped entirely under
+ * high-contrast so that mode keeps its pristine, maximal contrast.
  */
 .gubbins-accent-glow {
   position: relative;
@@ -1129,14 +1137,14 @@
   border-radius: inherit;
   background:
     radial-gradient(
-      70% 70% at 38% 40%,
-      color-mix(in oklab, var(--primary) 16%, transparent),
-      transparent 70%
+      52% 52% at 48% 42%,
+      color-mix(in oklab, var(--primary) 18%, transparent),
+      transparent 62%
     ),
     radial-gradient(
-      60% 60% at 66% 55%,
-      color-mix(in oklab, var(--highlight) 11%, transparent),
-      transparent 68%
+      44% 44% at 64% 56%,
+      color-mix(in oklab, var(--highlight) 12%, transparent),
+      transparent 60%
     );
 }
 
