@@ -10,6 +10,17 @@ export const HINT_NAME =
   'throughout Gubbins: the location tree, item lists, pickers and printed labels. The text is ' +
   'tinted with the colour you pick below.';
 
+/**
+ * Name-field help for the **Add** dialog only — extends {@link HINT_NAME} with the nested-path
+ * shortcut, which applies when creating (the Edit dialog just renames a single location).
+ */
+export const HINT_NAME_CREATE =
+  HINT_NAME +
+  '\n\nUse a **`/`** (or **`\\`**) to create several nested levels at once: typing ' +
+  '**`Workshop/Cabinet A/Drawer 3`** makes *Drawer 3* inside *Cabinet A* inside *Workshop*. ' +
+  'Any level that already exists is reused rather than duplicated, so only the missing ones are ' +
+  'added.';
+
 export const HINT_PARENT =
   'Nest this location inside another to build your storage hierarchy ' +
   '(Building → Room → Cabinet → Drawer). Leave as **Top level** for a root location. You can ' +
