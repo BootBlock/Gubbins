@@ -4,6 +4,7 @@ import { plural } from '@/lib/plural';
 import { Button, LiveRegion, Modal, Spinner, Tooltip, useToast } from '@/components/foundry';
 import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import { useFeature } from '@/features/modules/useFeature';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import { collectDescendantIds, pruneArchivedTree } from '../location-tree';
@@ -98,7 +99,9 @@ export function LocationSidebar({
     onKeyDown,
   } = useLocationSidebar({ tree: visibleTree, flat: visibleFlat, selectedId, onSelect });
 
-  // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above.
+  // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Gated on
+  // the Label printing module (Modular UI): with it off, the per-location action disappears.
+  const labelsEnabled = useFeature('labels');
   const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
 
   // Whether the dragged location may be nested under `targetId` (spec §4 drag-to-nest, §7.5.3):
@@ -333,7 +336,7 @@ export function LocationSidebar({
             node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
           }
           restoreLabel={`Restore ${node.name}`}
-          onPrintLabel={() => setPrintLabelNode(node)}
+          onPrintLabel={labelsEnabled ? () => setPrintLabelNode(node) : undefined}
           printLabelLabel={`Print label for ${node.name}`}
           onDropItem={
             node.archivedAt != null

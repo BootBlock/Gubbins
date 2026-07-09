@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Tooltip, useToast } from '@/components/foundry';
 import { PackageIcon, SearchIcon, WarningIcon } from '@/components/icons';
+import { useFeature } from '@/features/modules/useFeature';
 import { useScrapeBridge } from '../ScrapeBridgeContext';
 import { describeScrapeError } from '../scrape-errors';
 import type { ProductLookupResultPayload } from '../protocol';
@@ -30,6 +31,7 @@ export function ProductLookupPanel({
   className?: string;
 }) {
   const bridge = useScrapeBridge();
+  const scrapingEnabled = useFeature('scraping');
   const { show } = useToast();
   // Track only the lookup *this* panel started, by its requestId, so a concurrent lookup
   // elsewhere can never deliver its result here (multi-request correlation, mirroring §9).
@@ -57,8 +59,8 @@ export function ProductLookupPanel({
   }, [lookup, onResult, show, bridge]);
 
   const trimmed = barcode.trim();
-  // Feature-detect: no bridge, or nothing to look up, → no control at all.
-  if (!bridge.ready || trimmed.length === 0) return null;
+  // Feature-detect: module off, no bridge, or nothing to look up → no control at all.
+  if (!scrapingEnabled || !bridge.ready || trimmed.length === 0) return null;
 
   const isLooking = lookup?.status === 'LOOKING_UP';
 

@@ -234,6 +234,18 @@ describe('registry integrity', () => {
     expect(core).toEqual(['about', 'dashboard', 'inventory', 'settings']);
   });
 
+  it('registers the promoted cross-cutting capabilities (variants, labels, product lookup)', () => {
+    // These shipped as ungated features and were later promoted to toggleable capability
+    // modules; assert they stay registered as optional capabilities so the gate can't vanish.
+    for (const id of ['variants', 'labels', 'scraping'] as FeatureId[]) {
+      const def = getFeature(id);
+      expect(def, id).toBeDefined();
+      expect(def?.kind, id).toBe('capability');
+      expect(def?.group, id).toBe('capabilities');
+      expect(def?.alwaysOn ?? false, id).toBe(false);
+    }
+  });
+
   it('derives OPTIONAL_FEATURE_IDS as every non-core id', () => {
     expect([...OPTIONAL_FEATURE_IDS].sort()).toEqual(
       FEATURE_REGISTRY.filter((f) => !f.alwaysOn)

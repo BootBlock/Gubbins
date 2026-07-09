@@ -11,6 +11,7 @@ import { DueDateIcon, WarningIcon, AddIcon, PackageIcon, TruckIcon } from '@/com
 import type { Item } from '@/db/repositories';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
+import { useFeature } from '@/features/modules/useFeature';
 import { useUpdateItem } from '@/features/inventory/mutations';
 import { useFormatters } from '@/lib/useFormatters';
 import {
@@ -32,6 +33,7 @@ const EXPIRY_TONE: Record<ExpiryStatus, string> = {
 export function LifecycleEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const fmt = useFormatters();
+  const variantsEnabled = useFeature('variants');
   const [expiry, setExpiry] = useState(toDateInputValue(item.expiryDate));
   const [batch, setBatch] = useState(item.batchNumber ?? '');
   const [lot, setLot] = useState(item.lotNumber ?? '');
@@ -149,7 +151,7 @@ export function LifecycleEditor({ item }: { item: Item }) {
         </Button>
       </div>
 
-      <VariantsSection item={item} />
+      {variantsEnabled ? <VariantsSection item={item} /> : null}
     </div>
   );
 }

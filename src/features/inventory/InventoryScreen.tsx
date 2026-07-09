@@ -122,6 +122,9 @@ function InventoryWorkspace() {
   // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
   // stay regardless — and manually reachable flows are untouched.
   const scannerEnabled = useFeature('scanner');
+  // Label printing is its own module (Modular UI): with it off, the bulk "Print labels"
+  // action and the per-location label action disappear. The underlying data is untouched.
+  const labelsEnabled = useFeature('labels');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -746,15 +749,17 @@ function InventoryWorkspace() {
                       </Button>
                     </span>
                   </Tooltip>
-                  <Button
-                    size="sm"
-                    onClick={() => setPrintOpen(true)}
-                    disabled={selected.size === 0}
-                    data-testid="print-labels"
-                  >
-                    <PrintIcon />
-                    Print labels
-                  </Button>
+                  {labelsEnabled ? (
+                    <Button
+                      size="sm"
+                      onClick={() => setPrintOpen(true)}
+                      disabled={selected.size === 0}
+                      data-testid="print-labels"
+                    >
+                      <PrintIcon />
+                      Print labels
+                    </Button>
+                  ) : null}
                   <Tooltip content="Leave select mode and clear the current selection." triggerTabIndex={-1}>
                     <span>
                       <Button
