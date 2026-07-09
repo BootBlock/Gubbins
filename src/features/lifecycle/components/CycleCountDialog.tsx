@@ -91,6 +91,14 @@ function CycleCountBody({
         {resultMessage ? <p>{resultMessage}</p> : null}
       </LiveRegion>
 
+      {/*
+        Plain-language explanation of the workflow — shown in every "before you finish"
+        state (loading / empty / counting) and dropped once the count is applied so the
+        result view stays uncluttered. Cycle counting is unfamiliar to most users, so the
+        dialog says what it is and why it's worth doing rather than assuming the term.
+      */}
+      {applied === null ? <CycleCountIntro /> : null}
+
       {applied !== null ? (
         // Result view — shown after a successful reconciliation.
         <div className="space-y-4 py-2 text-center">
@@ -151,5 +159,27 @@ function CycleCountBody({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * A short, jargon-free primer on cycle counting shown at the top of the dialog.
+ * Most users won't know the term, so this explains what the workflow does and why
+ * it's worth doing before asking them to count anything.
+ */
+function CycleCountIntro() {
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+      <p>
+        <span className="font-medium text-foreground">Cycle counting</span> is a spot-check of a single
+        location: you physically count what&rsquo;s actually here, and Gubbins compares it against the
+        quantities it expects to find.
+      </p>
+      <p>
+        Doing this regularly — a location at a time — catches drift such as miscounts, breakages, or movements
+        that were never logged, and corrects it without ever shutting everything down for a full stock-take,
+        so your numbers stay trustworthy.
+      </p>
+    </div>
   );
 }
