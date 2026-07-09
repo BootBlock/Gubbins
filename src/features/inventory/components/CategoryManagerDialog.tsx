@@ -22,6 +22,7 @@ import {
   useDeleteCategoryField,
 } from '../categories';
 import { ATTACHMENT_MODE_LABELS, FIELD_TYPE_LABELS } from './inventory-ui';
+import { TypedFieldControl } from './TypedFieldControl';
 
 /**
  * Category & schema manager (spec §4). Create categories, define their dynamic
@@ -194,6 +195,14 @@ function CategoryDetail({
   );
 }
 
+/** Comma-separated Choices text → the trimmed, non-blank option list. */
+function parseChoices(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
 function AddFieldForm({ categoryId }: { categoryId: string }) {
   const addField = useAddCategoryField();
   const [name, setName] = useState('');
@@ -213,13 +222,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           fieldType,
           isRequired,
           defaultValue: defaultValue.trim() || null,
-          options:
-            fieldType === 'SELECT'
-              ? options
-                  .split(',')
-                  .map((o) => o.trim())
-                  .filter(Boolean)
-              : null,
+          options: fieldType === 'SELECT' ? parseChoices(options) : null,
         },
       },
       {
@@ -257,13 +260,18 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
 - **URL / Link** – a validated web address (e.g. a datasheet page).
 - **Number** – any numeric value, decimals allowed.
 - **Rating (1–5)** – a whole number from 1 to 5.
-- **Yes / No** – a checkbox, shown as *Yes*/*No*.
-- **On / Off** – a checkbox, shown as *On*/*Off* — identical to Yes/No, just worded differently.
+- **Yes / No** – a two-button toggle.
+- **On / Off** – a checkbox — identical to Yes/No, just worded (and shown) differently.
 - **Date** – a calendar date.
 - **Choice** – one of a fixed list you define below.`}
           hintSize="md"
           value={fieldType}
-          onChange={(value) => setFieldType(value as FieldType)}
+          onChange={(value) => {
+            // A default typed for the old field type rarely still makes sense for the
+            // new one (e.g. free text becoming a date) — start it fresh.
+            setFieldType(value as FieldType);
+            setDefaultValue('');
+          }}
           options={FIELD_TYPES.map((t) => ({ value: t, label: FIELD_TYPE_LABELS[t] }))}
         />
       </div>
@@ -282,13 +290,14 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
       ) : null}
       <FormField
         label="Default value"
-        hint="Shown for an item in this category that hasn't set this field yet (lenient defaulting) — it's never written to existing items, only displayed until they get their own value."
+        hint="Shown for an item in this category that hasn't set this field yet (lenient defaulting) — it's never written to existing items, only displayed until they get their own value. Matches the control shown on the item itself."
       >
-        <Input
+        <TypedFieldControl
+          fieldType={fieldType}
           value={defaultValue}
-          onChange={(e) => setDefaultValue(e.target.value)}
-          placeholder="Optional"
-          aria-label="Default value"
+          onChange={setDefaultValue}
+          options={fieldType === 'SELECT' ? parseChoices(options) : null}
+          ariaLabel="Default value"
         />
       </FormField>
       <div className="flex items-center gap-1.5">

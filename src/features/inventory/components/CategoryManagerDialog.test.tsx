@@ -206,6 +206,58 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
   });
 });
 
+describe('CategoryManagerDialog — the Default-value control matches the field type', () => {
+  beforeEach(() => {
+    renderDialog();
+    selectCategory(/Resistors/);
+  });
+
+  it('resets the default value when switching field types', () => {
+    fireEvent.change(screen.getByLabelText('Default value'), { target: { value: 'N/A' } });
+    expect(screen.getByLabelText('Default value')).toHaveValue('N/A');
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Field type' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Number' }));
+
+    expect((screen.getByLabelText('Default value') as HTMLInputElement).value).toBe('');
+  });
+
+  it('renders a Yes/No toggle for a Yes/No field, and submits the picked default', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'In stock' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Field type' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Yes / No' }));
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Yes' }));
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ fieldType: 'BOOLEAN', defaultValue: 'true' }),
+        }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('renders a checkbox for an On/Off field', () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Field type' }));
+    fireEvent.click(screen.getByRole('option', { name: 'On / Off' }));
+
+    expect(screen.getByRole('checkbox', { name: 'Default value' })).toBeInTheDocument();
+  });
+
+  it('offers the live Choices list in the Default dropdown for a Choice field', () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Field type' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Choice' }));
+    fireEvent.change(screen.getByLabelText('Choices'), { target: { value: 'Red, Green' } });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Default value' }));
+    expect(screen.getByRole('option', { name: 'Red' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Green' })).toBeInTheDocument();
+  });
+});
+
 describe('CategoryManagerDialog — datasheet linking config', () => {
   it('switches the global attachment mode via the radio group', () => {
     renderDialog();

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, Input, Select, Textarea, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon } from '@/components/icons';
-import type { ResolvedItemField } from '@/db/repositories';
 import { useItemFields, useSetItemFieldValues } from '../categories';
 import { validateFieldValue } from '../custom-fields';
+import { TypedFieldControl } from './TypedFieldControl';
 
 /**
  * Per-item custom-field editor (spec §4). Fields come from the item's category,
@@ -89,10 +89,11 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
                   </Tooltip>
                 ) : null}
               </span>
-              <FieldInput
-                field={field}
+              <TypedFieldControl
+                fieldType={field.fieldType}
                 value={draft[field.id] ?? ''}
                 onChange={(v) => set(field.id, v)}
+                options={field.options}
                 controlProps={controlProps}
                 labelId={`${field.id}-label`}
               />
@@ -113,91 +114,4 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
       </div>
     </div>
   );
-}
-
-/** ARIA props spread onto a control when its field is invalid (else empty). */
-type ControlAria = ReturnType<typeof fieldAria>['controlProps'];
-
-function FieldInput({
-  field,
-  value,
-  onChange,
-  controlProps,
-  labelId,
-}: {
-  field: ResolvedItemField;
-  value: string;
-  onChange: (value: string) => void;
-  controlProps: ControlAria;
-  /** Id of the field's visible label span — names the SELECT combobox (not a labelable control). */
-  labelId: string;
-}) {
-  switch (field.fieldType) {
-    case 'NUMBER':
-      return (
-        <Input
-          type="number"
-          step="any"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          {...controlProps}
-        />
-      );
-    case 'RATING':
-      return (
-        <Input
-          type="number"
-          min={1}
-          max={5}
-          step={1}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          {...controlProps}
-        />
-      );
-    case 'URL':
-      return (
-        <Input
-          type="url"
-          placeholder="https://…"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          {...controlProps}
-        />
-      );
-    case 'LONG_TEXT':
-      return <Textarea value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
-    case 'DATE':
-      return <Input type="date" value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
-    case 'BOOLEAN':
-    case 'ON_OFF': {
-      const [onLabel, offLabel] = field.fieldType === 'ON_OFF' ? ['On', 'Off'] : ['Yes', 'No'];
-      return (
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={value === 'true'}
-            onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
-            {...controlProps}
-          />
-          {value === 'true' ? onLabel : offLabel}
-        </label>
-      );
-    }
-    case 'SELECT':
-      return (
-        <Select
-          value={value}
-          onChange={onChange}
-          aria-labelledby={labelId}
-          aria-invalid={controlProps['aria-invalid']}
-          aria-describedby={controlProps['aria-describedby']}
-          options={[
-            { value: '', label: '—' },
-            ...(field.options ?? []).map((opt) => ({ value: opt, label: opt })),
-          ]}
-        />
-      );
-    default:
-      return <Input value={value} onChange={(e) => onChange(e.target.value)} {...controlProps} />;
-  }
 }
