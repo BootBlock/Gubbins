@@ -17,6 +17,7 @@ export {
 export { validateVariantLink, variantRejectionMessage, type VariantRejection } from './variants';
 export { CycleCountProvider, useCycleCount } from './CycleCountContext';
 export { LifecycleEditor } from './components/LifecycleEditor';
+export { KitEditor } from './components/KitEditor';
 export { MaintenanceEditor } from './components/MaintenanceEditor';
 export { CycleCountDialog } from './components/CycleCountDialog';
 export { AuditDayDialog } from './components/AuditDayDialog';
@@ -25,6 +26,10 @@ export {
   useItemVariants,
   useCreateVariant,
   useSetParent,
+  useItemKit,
+  useAddKitComponent,
+  useUpdateKitComponentQty,
+  useRemoveKitComponent,
   useExpiringItems,
   useLowStockItems,
   useInTransitLines,

@@ -955,5 +955,36 @@ export const v1Initial: Migration = {
     { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
     // --- Stock-take G1: durable "last counted" timestamp -------------------------
     { sql: `ALTER TABLE locations ADD COLUMN last_counted_at INTEGER;` },
+    // --- Kits / bundles (v1: definition + availability) ---------------------------
+    // A kit is a reusable many-to-many item→component definition: the `kit_item_id`
+    // item is *composed of* `quantity` units of each `component_item_id` item (e.g. a
+    // first-aid kit = 2 bandages + 1 scissors). Distinct from variants (child SKUs of
+    // one identity) and a project BOM (transient work). Both FKs cascade-delete from
+    // `items`, so deleting either the kit or a component prunes the edge. The
+    // self-reference CHECK blocks the trivial one-hop cycle; deeper transitive cycles
+    // are rejected by the repository's recursive-CTE validator (a DB CHECK cannot walk
+    // the graph). Not in SYNC_TABLES for v1 — kit definitions are device-local until the
+    // assemble/disassemble v2 work, which is when their propagation is designed.
+    {
+      sql: `
+        CREATE TABLE kit_components (
+          id                TEXT    PRIMARY KEY NOT NULL,
+          kit_item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          component_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          quantity          INTEGER NOT NULL DEFAULT 1,
+          sort              INTEGER NOT NULL DEFAULT 0,
+          created_at        INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at        INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (quantity > 0),
+          CHECK (kit_item_id <> component_item_id),
+          UNIQUE (kit_item_id, component_item_id)
+        ) STRICT;
+      `,
+    },
+    { sql: `CREATE INDEX idx_kit_components_kit_item_id ON kit_components(kit_item_id, sort);` },
+    {
+      sql: `CREATE INDEX idx_kit_components_component_item_id ON kit_components(component_item_id);`,
+    },
+    { sql: updatedAtTrigger('kit_components') },
   ],
 };

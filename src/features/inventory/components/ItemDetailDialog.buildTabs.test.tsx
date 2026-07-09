@@ -57,14 +57,31 @@ const sectionTitles = (tabs: ReturnType<typeof buildTabs>, tabId: string) =>
 describe('buildTabs — feature gating (Phase 6)', () => {
   it('shows every facet with the full feature set enabled', () => {
     const tabs = buildTabs(item, ALL);
-    expect(tabIds(tabs)).toEqual(['details', 'supplier', 'lifecycle', 'media', 'classification', 'activity']);
+    expect(tabIds(tabs)).toEqual([
+      'details',
+      'supplier',
+      'lifecycle',
+      'kit',
+      'media',
+      'classification',
+      'activity',
+    ]);
     expect(sectionTitles(tabs, 'lifecycle')).toEqual([
       'Lifecycle & variants',
       'Asset details',
       'Maintenance',
     ]);
+    expect(sectionTitles(tabs, 'kit')).toEqual(['Kit components']);
     expect(sectionTitles(tabs, 'classification')).toEqual(['Tags', 'Capabilities', 'Custom fields']);
     expect(sectionTitles(tabs, 'media')).toEqual(['Images', 'Datasheets']);
+  });
+
+  it('drops the Kit tab entirely when the kits capability is off', () => {
+    const tabs = buildTabs(item, without('kits'));
+    expect(tabIds(tabs)).not.toContain('kit');
+    // The surrounding tabs are unaffected.
+    expect(tabIds(tabs)).toContain('lifecycle');
+    expect(tabIds(tabs)).toContain('media');
   });
 
   it('drops the Asset details section when warranty is off, keeping the Lifecycle tab', () => {
