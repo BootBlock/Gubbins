@@ -76,7 +76,13 @@ export function SpendBreakdown({ report, formatters }: { report: SpendReport; fo
     <div className="flex flex-col gap-6" data-testid="spend-breakdown">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm text-muted-foreground">Total spend</span>
-        <Money value={report.total} formatters={formatters} className="text-lg font-semibold" />
+        <Money
+          value={report.total}
+          formatters={formatters}
+          animate
+          animateOnMount
+          className="text-lg font-semibold"
+        />
       </div>
 
       {/* Spend over time — one bar per bucket, scaled to the busiest bucket. */}

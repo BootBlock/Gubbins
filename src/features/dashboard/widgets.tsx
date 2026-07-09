@@ -503,7 +503,7 @@ function InventoryTotalsWidget() {
         <AnimatedNumber value={totalItems} animateOnMount />
       </StatusRow>
       <StatusRow label="Stock value">
-        <Money value={totalValue} formatters={fmt} />
+        <Money value={totalValue} formatters={fmt} animate animateOnMount />
       </StatusRow>
       <StatusRow label="Locations">
         <AnimatedNumber value={locationCount} animateOnMount />

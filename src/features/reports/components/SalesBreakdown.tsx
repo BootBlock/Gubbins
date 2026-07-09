@@ -1,4 +1,4 @@
-import { Money } from '@/components/foundry';
+import { AnimatedNumber, Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { SalesGroup, SalesReport } from '../sales-analytics';
 
@@ -74,6 +74,8 @@ function Stat({
       <Money
         value={value}
         formatters={formatters}
+        animate
+        animateOnMount
         className={emphasised ? 'text-lg font-semibold' : 'text-base font-medium'}
       />
     </div>
@@ -108,7 +110,13 @@ export function SalesBreakdown({ report, formatters }: { report: SalesReport; fo
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Gross margin</span>
           <span className="flex items-baseline gap-1.5">
-            <Money value={report.margin} formatters={formatters} className="text-lg font-semibold" />
+            <Money
+              value={report.margin}
+              formatters={formatters}
+              animate
+              animateOnMount
+              className="text-lg font-semibold"
+            />
             <span className="text-xs text-muted-foreground tabular-nums">
               {Math.round(report.marginPct * 100)}%
             </span>
@@ -116,7 +124,7 @@ export function SalesBreakdown({ report, formatters }: { report: SalesReport; fo
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Units sold</span>
-          <span className="text-lg font-semibold tabular-nums">{report.unitsSold}</span>
+          <AnimatedNumber value={report.unitsSold} className="text-lg font-semibold" animateOnMount />
         </div>
       </div>
 
@@ -179,7 +187,13 @@ export function SalesBreakdown({ report, formatters }: { report: SalesReport; fo
           <span className="text-sm text-muted-foreground">
             Written off ({report.writeOffUnits} {report.writeOffUnits === 1 ? 'unit' : 'units'})
           </span>
-          <Money value={report.writeOffValue} formatters={formatters} className="font-medium" />
+          <Money
+            value={report.writeOffValue}
+            formatters={formatters}
+            animate
+            animateOnMount
+            className="font-medium"
+          />
         </div>
       )}
     </div>

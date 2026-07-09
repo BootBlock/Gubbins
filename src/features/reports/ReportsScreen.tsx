@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  AnimatedNumber,
   Button,
   LiveRegion,
   Money,
@@ -196,7 +197,9 @@ export function ReportsScreen() {
             label="Inventory value"
             testId="stat-total-value"
             loading={value.isLoading}
-            value={value.data ? <Money value={value.data.totalValue} formatters={f} /> : '—'}
+            value={
+              value.data ? <Money value={value.data.totalValue} formatters={f} animate animateOnMount /> : '—'
+            }
             sub={value.data ? `${f.quantity(value.data.totalQuantity)} units` : undefined}
           />
           <StatCard
@@ -204,7 +207,15 @@ export function ReportsScreen() {
             testId="stat-consumption"
             loading={consumption.isLoading}
             value={
-              consumption.data ? `${f.quantity(Math.round(consumption.data.perDay * 10) / 10)}/day` : '—'
+              consumption.data ? (
+                <AnimatedNumber
+                  value={Math.round(consumption.data.perDay * 10) / 10}
+                  format={(n) => `${f.quantity(Math.round(n * 10) / 10)}/day`}
+                  animateOnMount
+                />
+              ) : (
+                '—'
+              )
             }
             sub={consumption.data ? `${f.quantity(consumption.data.totalConsumed)} total` : undefined}
           />
@@ -212,7 +223,17 @@ export function ReportsScreen() {
             label="Low stock"
             testId="stat-low-stock"
             loading={lowStock.isLoading}
-            value={lowStock.data != null ? f.quantity(lowStock.data) : '—'}
+            value={
+              lowStock.data != null ? (
+                <AnimatedNumber
+                  value={lowStock.data}
+                  format={(n) => f.quantity(Math.round(n))}
+                  animateOnMount
+                />
+              ) : (
+                '—'
+              )
+            }
             sub="items at/below threshold"
             tone={lowStock.data && lowStock.data > 0 ? 'warning' : undefined}
             icon={<LowStockIcon />}
@@ -221,7 +242,13 @@ export function ReportsScreen() {
             label={`Dead stock (${DEAD_STOCK_SINCE_DAYS}d)`}
             testId="stat-dead-stock"
             loading={deadStock.isLoading}
-            value={deadStock.data ? <Money value={deadStock.data.totalValue} formatters={f} /> : '—'}
+            value={
+              deadStock.data ? (
+                <Money value={deadStock.data.totalValue} formatters={f} animate animateOnMount />
+              ) : (
+                '—'
+              )
+            }
             sub={deadStock.data ? `${f.quantity(deadStock.data.lines.length)} idle items` : undefined}
           />
         </section>
