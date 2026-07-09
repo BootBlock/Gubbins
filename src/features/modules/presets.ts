@@ -10,10 +10,26 @@
 import type { FeatureId } from './feature-registry';
 import { OPTIONAL_FEATURE_IDS } from './feature-registry';
 import type { LucideIcon } from '@/components/icons';
-import { CustomiseIcon, PackageIcon, ProjectIcon, WarrantyIcon } from '@/components/icons';
+import {
+  CategoryIcon,
+  CustomiseIcon,
+  ExpiryIcon,
+  PackageIcon,
+  ProjectIcon,
+  ShoppingCartIcon,
+  WarrantyIcon,
+} from '@/components/icons';
 
 /** Stable preset keys. Referenced by the manager/first-run UI; treat like a public enum. */
-export type PresetId = 'everything' | 'minimal' | 'home-hobby' | 'maker-workshop' | 'asset-equipment';
+export type PresetId =
+  | 'everything'
+  | 'minimal'
+  | 'home-hobby'
+  | 'maker-workshop'
+  | 'asset-equipment'
+  | 'food-pantry'
+  | 'collection'
+  | 'retail';
 
 export interface Preset {
   readonly id: PresetId;
@@ -48,7 +64,7 @@ export const PRESETS: readonly Preset[] = [
     label: 'Home & hobby',
     description: 'A lean set for personal supplies and household stock.',
     Icon: PackageIcon,
-    featureIds: ['reports', 'scanner', 'perishables', 'tags-attachments', 'alerts', 'upcoming'],
+    featureIds: ['reports', 'scanner', 'perishables', 'tags-attachments', 'alerts', 'upcoming', 'labels'],
   },
   {
     id: 'maker-workshop',
@@ -65,6 +81,9 @@ export const PRESETS: readonly Preset[] = [
       'custom-fields',
       'alerts',
       'upcoming',
+      'variants',
+      'labels',
+      'scraping',
     ],
   },
   {
@@ -72,7 +91,49 @@ export const PRESETS: readonly Preset[] = [
     label: 'Asset & equipment',
     description: 'Lending, servicing and lifecycle for tools and equipment.',
     Icon: WarrantyIcon,
-    featureIds: ['contacts', 'bookings', 'maintenance', 'warranty', 'reports', 'alerts', 'upcoming'],
+    featureIds: [
+      'contacts',
+      'bookings',
+      'maintenance',
+      'warranty',
+      'reports',
+      'alerts',
+      'upcoming',
+      'labels',
+    ],
+  },
+  {
+    id: 'food-pantry',
+    label: 'Food & pantry',
+    description: 'Best-before dates, batches and low-stock alerts for kitchen and household food.',
+    Icon: ExpiryIcon,
+    featureIds: ['perishables', 'batches', 'alerts', 'upcoming', 'cycle-counts', 'scanner', 'labels'],
+  },
+  {
+    id: 'collection',
+    label: 'Collection',
+    description: 'Cataloguing for books, media or memorabilia — rich metadata over procurement.',
+    Icon: CategoryIcon,
+    featureIds: ['custom-fields', 'tags-attachments', 'reports', 'scanner', 'labels', 'variants'],
+  },
+  {
+    id: 'retail',
+    label: 'Retail & stockroom',
+    description: 'Purchasing, suppliers and stock accuracy for a small shop or stockroom.',
+    Icon: ShoppingCartIcon,
+    featureIds: [
+      'purchase-orders',
+      'contacts',
+      'reports',
+      'alerts',
+      'cycle-counts',
+      'batches',
+      'activity',
+      'upcoming',
+      'scanner',
+      'labels',
+      'scraping',
+    ],
   },
 ];
 

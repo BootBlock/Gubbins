@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from '@/components/foundry';
 import { WarningIcon } from '@/components/icons';
 import { describeScrapeError, useScrapeBridge, type ScrapeResultPayload } from '@/features/scraping';
+import { useFeature } from '@/features/modules/useFeature';
 import { useLocations } from '../queries';
 import { defaultLocationForNewItem, markedDefaultLocationId } from '../location-tree';
 import { CreateItemDialog, type CreateItemInitialValues } from './CreateItemDialog';
@@ -41,6 +42,7 @@ function draftFromScrape(payload: ScrapeResultPayload): CreateItemInitialValues 
 
 export function ActiveTabScrapeListener() {
   const bridge = useScrapeBridge();
+  const scrapingEnabled = useFeature('scraping');
   const { show } = useToast();
   const flat = useLocations();
   // The scrape currently being reviewed. One at a time — a second arrival waits until this
@@ -48,7 +50,8 @@ export function ActiveTabScrapeListener() {
   const [active, setActive] = useState<{ id: string; payload: ScrapeResultPayload } | null>(null);
 
   useEffect(() => {
-    if (active) return;
+    // With the Product & supplier lookup module off, ignore unsolicited extension pushes.
+    if (active || !scrapingEnabled) return;
     for (const entry of Object.values(bridge.incoming)) {
       if (entry.status === 'ERROR' && entry.error) {
         // A drift/block reading the tab — explain it and drop it (nothing to review).
@@ -66,7 +69,7 @@ export function ActiveTabScrapeListener() {
         return;
       }
     }
-  }, [bridge, active, show]);
+  }, [bridge, active, show, scrapingEnabled]);
 
   // Wait for the location tree before opening (the dialog needs a home list); the scrape
   // stays queued in `active` meanwhile.

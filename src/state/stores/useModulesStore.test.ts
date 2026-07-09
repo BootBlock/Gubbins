@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useModulesStore } from './useModulesStore';
 import { FEATURE_REGISTRY, OPTIONAL_FEATURE_IDS, type FeatureId } from '@/features/modules/feature-registry';
-import { getPreset } from '@/features/modules/presets';
+import { PRESETS, getPreset } from '@/features/modules/presets';
 import { resolveEnabled } from '@/features/modules/modules-graph';
 
 /** Read the store's current snapshot outside React. */
@@ -59,7 +59,7 @@ describe('applyPreset', () => {
     expect(Object.values(intent).every((v) => v === false)).toBe(true);
   });
 
-  it.each(['everything', 'minimal', 'home-hobby', 'maker-workshop', 'asset-equipment'] as const)(
+  it.each(PRESETS.map((p) => p.id))(
     'applying "%s" enables exactly its declared features (plus dependencies)',
     (presetId) => {
       state().applyPreset(presetId);

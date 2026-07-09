@@ -27,12 +27,15 @@ import {
   InfoIcon,
   MaintenanceIcon,
   PackageIcon,
+  PrintIcon,
   ProjectIcon,
   ReportIcon,
   ScanIcon,
+  ScrapeIcon,
   SettingsIcon,
   ShoppingCartIcon,
   TagsIcon,
+  VariantIcon,
   WarrantyIcon,
 } from '@/components/icons';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
@@ -85,7 +88,10 @@ export type FeatureId =
   | 'custom-fields'
   | 'perishables'
   | 'cycle-counts'
-  | 'tags-attachments';
+  | 'tags-attachments'
+  | 'variants'
+  | 'labels'
+  | 'scraping';
 
 export interface FeatureDef {
   /** Stable key, e.g. `'projects'`. Persisted — see {@link FeatureId}. */
@@ -301,6 +307,31 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     label: 'Tags & attachments',
     description: 'Tag items and link datasheets or other attachments.',
     Icon: TagsIcon,
+    group: 'capabilities',
+  },
+  variants: {
+    id: 'variants',
+    kind: 'capability',
+    label: 'Variants & SKUs',
+    description: 'Link parent items to child variants — sizes, colours or values of one part.',
+    Icon: VariantIcon,
+    group: 'capabilities',
+  },
+  labels: {
+    id: 'labels',
+    kind: 'capability',
+    label: 'Label printing',
+    description: 'Print QR/barcode labels for items and locations. Live camera scanning is separate.',
+    Icon: PrintIcon,
+    group: 'capabilities',
+  },
+  scraping: {
+    id: 'scraping',
+    kind: 'capability',
+    label: 'Product & supplier lookup',
+    description:
+      'Fill item and supplier details from a barcode or supplier page via the companion browser extension.',
+    Icon: ScrapeIcon,
     group: 'capabilities',
   },
 

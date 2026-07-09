@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Tooltip, useToast } from '@/components/foundry';
 import { ScrapeIcon, SupplierIcon, WarningIcon } from '@/components/icons';
+import { useFeature } from '@/features/modules/useFeature';
 import { useScrapeBridge } from '../ScrapeBridgeContext';
 import { describeScrapeError } from '../scrape-errors';
 import type { ScrapeResultPayload } from '../protocol';
@@ -27,6 +28,7 @@ export function ScrapeSupplierPanel({
   initialUrl?: string;
 }) {
   const bridge = useScrapeBridge();
+  const scrapingEnabled = useFeature('scraping');
   const { show } = useToast();
   const [url, setUrl] = useState(initialUrl ?? '');
   // Track only the scrape *this* panel started, by its requestId, so a concurrent
@@ -57,8 +59,9 @@ export function ScrapeSupplierPanel({
     }
   }, [request, onResult, show, bridge]);
 
-  // §9.3: the Scrape control only exists once the extension has announced itself.
-  if (!bridge.ready) return null;
+  // §9.3: the Scrape control only exists once the extension has announced itself — and only
+  // when the Product & supplier lookup module is switched on (Modular UI).
+  if (!bridge.ready || !scrapingEnabled) return null;
 
   const trimmed = url.trim();
   const isScraping = request?.status === 'SCRAPING';
