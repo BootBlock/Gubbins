@@ -23,6 +23,7 @@ import {
   VisualDensityIcon,
 } from '@/components/icons';
 import {
+  InfoHint,
   Menu,
   MenuAction,
   MenuSeparator,
@@ -84,6 +85,16 @@ const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: 
     { value: 'visual', label: 'Visual', icon: VisualDensityIcon },
     { value: 'data', label: 'Data', icon: DataDensityIcon },
   ];
+
+/**
+ * Help text for the "Show removed" toggle (rendered as rich Markdown in an {@link InfoHint}).
+ * Explains that removing an item is a reversible soft-delete — it leaves active inventory but
+ * keeps its history — and that the toggle brings those items back so they can be restored.
+ */
+const SHOW_REMOVED_HINT =
+  `Items you **remove** aren't deleted — they leave your active inventory but keep their full ` +
+  `history. Tick this to include those removed items in the list, so you can review or ` +
+  `**restore** one. Leave it off to see only your active stock.`;
 
 /**
  * The inventory workspace (spec §5): location sidebar, a search/filter header with
@@ -260,6 +271,31 @@ function InventoryWorkspace() {
   const listItems = useInventoryItems(filters);
   const astItems = useAstSearch(ast, astActive);
   const active = astActive ? astItems : listItems;
+
+  // "Show removed" reveals soft-deleted items (is_active = 0), so it only earns its place in the
+  // header when the current view actually has removed items to reveal. Probe that by scoping to
+  // what the list is showing — the selected location in the flat view, or everything in the
+  // grouped view (which ignores the sidebar selection) — and comparing an all-items count with an
+  // active-only one; their difference is the removed count, with no bespoke query needed.
+  // keepPreviousData (inside useItemCount) stops the counts flickering the toggle on a location
+  // change. In the no-location case these keys coincide with `totalCount` above and dedupe.
+  const removedProbeScope = useMemo(
+    () => (grouped || !selectedLocationId ? {} : { locationId: selectedLocationId }),
+    [grouped, selectedLocationId],
+  );
+  const activeScopeCount = useItemCount({ ...removedProbeScope, includeInactive: false });
+  const allScopeCount = useItemCount({ ...removedProbeScope, includeInactive: true });
+  // Require both counts before judging, so the toggle never flashes in on first load when the
+  // all-items count resolves a tick before the active-only one (keepPreviousData keeps them
+  // resolved together across later location changes, so there is no flash then either).
+  const hasRemovedInScope =
+    activeScopeCount.isSuccess &&
+    allScopeCount.isSuccess &&
+    (allScopeCount.data ?? 0) > (activeScopeCount.data ?? 0);
+  // Show the toggle when it can do something: removed items exist to reveal, or it's already on
+  // (so the user can turn it back off). Never during a Visual-Builder search — that path is
+  // always active-only, so the toggle would be inert.
+  const showRemovedToggle = !astActive && (includeInactive || hasRemovedInScope);
 
   // How many items match each status filter **in the selected location** — recomputed on every
   // location change (the id keys the query). Drives both which chips the filter bar hides (the
@@ -647,15 +683,23 @@ function InventoryWorkspace() {
                     ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
                     : 'Loading…'}
               </p>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={includeInactive}
-                  onChange={(e) => setIncludeInactive(e.target.checked)}
-                  className="size-3.5 accent-primary"
-                />
-                Show removed
-              </label>
+              {/* Only shown when it applies (removed items exist in view, or it's already on) —
+                  see `showRemovedToggle`. The help badge sits outside the label so a tap on the
+                  hint doesn't toggle the checkbox. */}
+              {showRemovedToggle ? (
+                <div className="flex items-center gap-1.5">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={includeInactive}
+                      onChange={(e) => setIncludeInactive(e.target.checked)}
+                      className="size-3.5 accent-primary"
+                    />
+                    Show removed
+                  </label>
+                  <InfoHint content={SHOW_REMOVED_HINT} />
+                </div>
+              ) : null}
             </div>
 
             {selecting ? (

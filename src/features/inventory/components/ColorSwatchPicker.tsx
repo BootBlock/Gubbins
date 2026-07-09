@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useRovingRadioGroup } from '@/components/foundry';
+import { Tooltip, useRovingRadioGroup } from '@/components/foundry';
 import {
   LOCATION_COLORS,
   locationColorLabel,
@@ -46,28 +46,32 @@ export function ColorSwatchPicker({
         const checked = index === selectedIndex;
         const label = choice === null ? 'No colour' : locationColorLabel(choice);
         return (
-          <button
-            key={choice ?? '__none__'}
-            ref={(el) => {
-              refs.current[index] = el;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            aria-label={label}
-            title={label}
-            tabIndex={checked ? 0 : -1}
-            onClick={() => selectAt(index)}
-            onKeyDown={(e) => onKeyDown(e, index)}
-            className={cn(
-              'size-7 rounded-full outline-none transition-transform',
-              'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              checked && 'ring-2 ring-foreground/70 ring-offset-2 ring-offset-background scale-110',
-              choice === null
-                ? 'border-2 border-dashed border-muted-foreground/60 bg-card'
-                : locationColorSwatchClass(choice),
-            )}
-          />
+          // The Foundry Tooltip is the app-wide, rich-Markdown replacement for the browser's
+          // plain `title`. `triggerTabIndex={-1}` keeps the swatch itself the only tab stop (the
+          // roving radiogroup owns focus); focus still bubbles up so the name shows on keyboard
+          // focus, and the label stays the swatch's accessible name via `aria-label`.
+          <Tooltip key={choice ?? '__none__'} content={label} triggerTabIndex={-1}>
+            <button
+              ref={(el) => {
+                refs.current[index] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-label={label}
+              tabIndex={checked ? 0 : -1}
+              onClick={() => selectAt(index)}
+              onKeyDown={(e) => onKeyDown(e, index)}
+              className={cn(
+                'size-7 rounded-full outline-none transition-transform',
+                'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                checked && 'ring-2 ring-foreground/70 ring-offset-2 ring-offset-background scale-110',
+                choice === null
+                  ? 'border-2 border-dashed border-muted-foreground/60 bg-card'
+                  : locationColorSwatchClass(choice),
+              )}
+            />
+          </Tooltip>
         );
       })}
     </div>
