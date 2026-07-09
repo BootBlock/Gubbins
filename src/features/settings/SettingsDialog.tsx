@@ -511,6 +511,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                   'Which barcode types the **live camera scanner** tries to decode.\n\n' +
                   'Restricting it to the single symbology you actually use (e.g. **EAN-13** for retail products, or **Code 128**) makes decoding faster and more reliable. Leave it on *all supported codes* if you scan a mix.'
                 }
+                stack
               >
                 <Select
                   aria-label="Barcode symbology"
@@ -527,6 +528,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 hint={
                   'Plays a short confirmation **tone** after each successful scan, so you know it registered without looking at the screen — handy for rapid stock-taking.'
                 }
+                stack
               >
                 <Select
                   aria-label="Beep on scan"
@@ -543,6 +545,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 hint={
                   'Gives a haptic **buzz** on each successful scan, on devices that support vibration (most phones; few desktops). A silent alternative to the beep.'
                 }
+                stack
               >
                 <Select
                   aria-label="Vibrate on scan"

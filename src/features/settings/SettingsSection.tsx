@@ -9,6 +9,7 @@
  */
 import { type ReactNode } from 'react';
 import { InfoHint, Surface, type TooltipSize } from '@/components/foundry';
+import { cn } from '@/lib/utils';
 
 export function SettingsSection({
   id,
@@ -37,6 +38,7 @@ export function SettingRow({
   description,
   hint,
   hintSize,
+  stack,
   children,
 }: {
   readonly label: string;
@@ -50,11 +52,18 @@ export function SettingRow({
   readonly hint?: string;
   /** Widen the hint bubble for richer help (tables, lists). Defaults to `sm`. */
   readonly hintSize?: TooltipSize;
+  /**
+   * Force the control onto its own line *below* the label/description instead of trailing
+   * to the right. The row already wraps the control below when a long description crowds it
+   * out; `stack` makes that layout deterministic so a set of related rows reads consistently
+   * regardless of how long each description happens to be.
+   */
+  readonly stack?: boolean;
   readonly children: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-      <div className="min-w-0">
+      <div className={cn('min-w-0', stack && 'basis-full')}>
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-medium">{label}</span>
           {hint ? <InfoHint content={hint} size={hintSize} /> : null}
