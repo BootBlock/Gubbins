@@ -314,14 +314,6 @@ npm run test       # Vitest
 
 > **Single tab:** OPFS enforces an exclusive write lock — Gubbins guards against multiple open tabs and shows a graceful overlay rather than crashing.
 
-## Deploying (maintainers)
-
-Hosted on **GitHub Pages**, published **manually** — pushing to `main` does *not* deploy.
-
-**One-time setup:** in the repo, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**. (Pages is free for public repositories.) The repo must be named **`Gubbins`** to match `base: '/Gubbins/'` in [vite.config.ts](vite.config.ts).
-
-**To publish a new version:** open the **Actions** tab → **Deploy to GitHub Pages** → **Run workflow** (pick `main`). The workflow runs `npm run build` and deploys `dist/` to Pages; the live site updates only when you trigger it.
-
 ## AI-assisted development
 
 AI tooling was used in the development of this software.
