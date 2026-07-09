@@ -31,6 +31,7 @@ import {
   PrintIcon,
   ProjectIcon,
   ReportIcon,
+  SaleIcon,
   ScanIcon,
   ScrapeIcon,
   SettingsIcon,
@@ -93,6 +94,7 @@ export type FeatureId =
   | 'variants'
   | 'kits'
   | 'labels'
+  | 'sales'
   | 'scraping';
 
 export interface FeatureDef {
@@ -333,6 +335,14 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     label: 'Label printing',
     description: 'Print QR/barcode labels for items and locations. Live camera scanning is separate.',
     Icon: PrintIcon,
+    group: 'capabilities',
+  },
+  sales: {
+    id: 'sales',
+    kind: 'capability',
+    label: 'Sales & disposals',
+    description: 'Record items sold or written off, with a sales & margin report.',
+    Icon: SaleIcon,
     group: 'capabilities',
   },
   scraping: {

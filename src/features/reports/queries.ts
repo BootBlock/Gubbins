@@ -33,6 +33,10 @@ export const DATA_HYGIENE_STALE_DAYS = 180;
 /** Number of time buckets in the spend-over-time strip (≈ one bar per couple of days at 90d). */
 export const SPEND_BUCKETS = 15;
 
+// Sales & disposals — proceeds vs cost margin ----------------------------------
+/** Number of time buckets in the sales-over-time strip (mirrors the spend strip). */
+export const SALES_BUCKETS = 15;
+
 export function useInventoryValue() {
   return useQuery({
     queryKey: ['reports', 'inventory-value'],
@@ -151,6 +155,26 @@ export function useSpendAnalytics(
     enabled: options?.enabled ?? true,
     // The spend window toggle re-keys this query; hold the previous breakdown on screen
     // while the new window loads instead of flashing the panel to a spinner.
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Sales & disposal analytics (proceeds vs a cost snapshot → margin, plus written-off value).
+ *
+ * `options.enabled` lets the Reports screen skip the fetch when the Sales & disposals module is
+ * off — the sales card is dropped rather than fetched-then-hidden. Defaults to enabled.
+ */
+export function useSalesAnalytics(
+  windowDays: number = DEFAULT_ANALYTICS_WINDOW,
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: ['reports', 'sales', windowDays, SALES_BUCKETS],
+    queryFn: () => getReportRepository().salesAnalytics(windowDays, SALES_BUCKETS),
+    enabled: options?.enabled ?? true,
+    // The window toggle re-keys this query; hold the previous breakdown on screen while the new
+    // window loads instead of flashing the panel to a spinner (mirrors useSpendAnalytics).
     placeholderData: keepPreviousData,
   });
 }

@@ -133,6 +133,11 @@ const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   TRACKING_CHANGED: 'item.tracking_changed',
   MAINTENANCE_LOGGED: 'item.maintenance_logged',
   SCRAPE_APPLIED: 'item.supplier_data_applied',
+  // Outbound disposals & refunds all reduce stock, so they group with stock.adjusted (they can
+  // additionally raise a low/out-of-stock event via isStockAction).
+  SOLD: 'stock.adjusted',
+  WRITTEN_OFF: 'stock.adjusted',
+  RETURNED_TO_SUPPLIER: 'stock.adjusted',
 };
 
 /** The dotted event type for a ledger action (unknown actions → `item.changed`). */

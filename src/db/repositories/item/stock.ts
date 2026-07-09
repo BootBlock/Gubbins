@@ -7,18 +7,32 @@
  * maintained by the recompute triggers — these methods never write it directly.
  */
 import { DbError } from '../../errors';
+import type { SqlStatement } from '../../rpc/driver';
 import { planTransfer } from '@/features/inventory/stock';
 import { isDefaultBatch, planBatchConsumption, planBatchSelection } from '@/features/inventory/batches';
+import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
+import { stockRowId } from '../stock';
 import {
   addBatchStatement,
   consumeBatchStatements,
   placementDeltaStatements,
   readPlacementBatches,
+  stockBatchRowId,
 } from '../stock-batches';
-import type { Item, ItemStockPlacement } from '../types';
+import type { Item, ItemStockPlacement, SellItemInput, WriteOffItemInput } from '../types';
 import { historyStatement } from './history';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+
+/** A resolved outbound draw: the validated source, decrement statements, and the cost snapshot. */
+interface OutboundDraw {
+  readonly quantity: number;
+  readonly fromLocationId: string;
+  readonly fromBatchKey: string | null;
+  readonly stockStatements: SqlStatement[];
+  /** The item's effective per-unit cost at the moment of the movement, or null if unpriced. */
+  readonly unitCostAtSale: number | null;
+}
 
 /** One DISCRETE placement at a location for the §4.4 per-location cycle count (Phase 26). */
 export interface LocationStockLine {
@@ -293,5 +307,188 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       ]);
       return (await this.getById(id))!;
     }
+
+    /**
+     * Sell `quantity` units of a DISCRETE item, drawing them permanently out of stock and
+     * logging a `SOLD` ledger entry that carries the realised sale price (`net_value_delta` =
+     * proceeds) plus a cost snapshot in metadata — the raw material for the sales & margin
+     * report. The units draw down the chosen placement/lot (or FEFO across the placement),
+     * exactly like a checkout, but never return. Write-gated.
+     */
+    async sell(input: SellItemInput): Promise<Item> {
+      this.assertWritable();
+      const draw = await this.resolveOutboundDraw(
+        input.itemId,
+        input.quantity,
+        input.fromLocationId,
+        input.fromBatchKey,
+      );
+
+      const unitSalePrice = input.unitSalePrice ?? 0;
+      if (!Number.isFinite(unitSalePrice) || unitSalePrice < 0) {
+        throw new DbError('SQLITE_CONSTRAINT', 'Sale price cannot be negative.');
+      }
+      const saleTotal = round2(unitSalePrice * draw.quantity);
+      const counterparty = input.counterparty?.trim() || null;
+      const note = input.note?.trim() || `Sold ${draw.quantity}${counterparty ? ` to ${counterparty}` : ''}.`;
+
+      await this.driver.transaction([
+        ...draw.stockStatements,
+        historyStatement(input.itemId, 'SOLD', {
+          quantityDelta: -draw.quantity,
+          netValueDelta: saleTotal,
+          note,
+          metadata: {
+            quantity: draw.quantity,
+            unitSalePrice,
+            saleTotal,
+            unitCostAtSale: draw.unitCostAtSale,
+            counterparty,
+            fromLocationId: draw.fromLocationId,
+            fromBatchKey: draw.fromBatchKey,
+          },
+        }),
+      ]);
+      return (await this.getById(input.itemId))!;
+    }
+
+    /**
+     * Write off `quantity` units of a DISCRETE item — lost, damaged, expired or binned — drawing
+     * them permanently out of stock with no proceeds. Logs a `WRITTEN_OFF` ledger entry with an
+     * optional reason and a cost snapshot (→ the sales report's write-off total). Write-gated.
+     */
+    async writeOff(input: WriteOffItemInput): Promise<Item> {
+      this.assertWritable();
+      const draw = await this.resolveOutboundDraw(
+        input.itemId,
+        input.quantity,
+        input.fromLocationId,
+        input.fromBatchKey,
+      );
+
+      const reason = input.reason?.trim() || null;
+      const note = input.note?.trim() || `Wrote off ${draw.quantity}${reason ? ` (${reason})` : ''}.`;
+
+      await this.driver.transaction([
+        ...draw.stockStatements,
+        historyStatement(input.itemId, 'WRITTEN_OFF', {
+          quantityDelta: -draw.quantity,
+          note,
+          metadata: {
+            quantity: draw.quantity,
+            unitCostAtSale: draw.unitCostAtSale,
+            reason,
+            fromLocationId: draw.fromLocationId,
+            fromBatchKey: draw.fromBatchKey,
+          },
+        }),
+      ]);
+      return (await this.getById(input.itemId))!;
+    }
+
+    /**
+     * Resolve and validate a permanent outbound draw (sale / write-off): confirm the item is a
+     * finite DISCRETE quantity, resolve the source placement/lot (defaulting to the primary
+     * location and the FEFO draw), validate on-hand availability, and build the decrement
+     * statements plus the effective-unit-cost snapshot. Shared by {@link sell}/{@link writeOff}
+     * so the guards and the FEFO/lot draw never drift between them.
+     */
+    private async resolveOutboundDraw(
+      itemId: string,
+      requestedQty: number | undefined,
+      fromLocationIdInput: string | undefined,
+      fromBatchKeyInput: string | undefined,
+    ): Promise<OutboundDraw> {
+      const item = await this.driver.queryOne<{
+        tracking_mode: string;
+        location_id: string;
+        is_unlimited: number;
+        unit_cost: number | null;
+        preferred_unit_cost: number | null;
+      }>(
+        `SELECT i.tracking_mode, i.location_id, i.is_unlimited, i.unit_cost,
+                (SELECT sp.unit_cost FROM supplier_parts sp
+                  WHERE sp.item_id = i.id AND sp.is_preferred = 1 LIMIT 1) AS preferred_unit_cost
+         FROM items i WHERE i.id = ?;`,
+        [itemId],
+      );
+      if (!item) {
+        throw new DbError('SQLITE_CONSTRAINT', `Item "${itemId}" does not exist.`);
+      }
+      if (item.tracking_mode !== 'DISCRETE') {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Only DISCRETE items can be sold or written off (this is ${item.tracking_mode}). ` +
+            'Retire a serialised asset by removing it from inventory instead.',
+        );
+      }
+      if (item.is_unlimited === 1) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          'Unlimited-supply items are an infinite source, not a countable stock to sell or write off.',
+        );
+      }
+
+      const quantity = requestedQty ?? 1;
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new DbError('SQLITE_CONSTRAINT', 'Quantity must be a positive whole number.');
+      }
+
+      const fromLocationId = fromLocationIdInput || item.location_id;
+      const fromBatchKey = fromBatchKeyInput !== undefined ? fromBatchKeyInput : null;
+
+      // Validate against — and later draw down — the chosen lot's own quantity, or the whole
+      // placement's on-hand for the FEFO draw (mirrors CheckoutRepository.checkout).
+      if (fromBatchKey !== null) {
+        const lot = await this.driver.queryOne<{ quantity: number }>(
+          'SELECT quantity FROM stock_batches WHERE id = ?;',
+          [stockBatchRowId(itemId, fromLocationId, fromBatchKey)],
+        );
+        const available = Number(lot?.quantity ?? 0);
+        if (available < quantity) {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `Not enough of the chosen lot: ${available} on hand, ${quantity} requested.`,
+          );
+        }
+      } else {
+        const placement = await this.driver.queryOne<{ quantity: number }>(
+          'SELECT quantity FROM item_stock WHERE id = ?;',
+          [stockRowId(itemId, fromLocationId)],
+        );
+        const available = Number(placement?.quantity ?? 0);
+        if (available < quantity) {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `Not enough stock at the chosen location: ${available} on hand, ${quantity} requested.`,
+          );
+        }
+      }
+
+      const stockStatements =
+        fromBatchKey !== null
+          ? consumeBatchStatements(
+              itemId,
+              fromLocationId,
+              planBatchSelection(
+                await readPlacementBatches(this.driver, itemId, fromLocationId),
+                fromBatchKey,
+                quantity,
+              ),
+            )
+          : await placementDeltaStatements(this.driver, itemId, fromLocationId, -quantity);
+
+      const unitCostAtSale = effectiveUnitCost(
+        { unitCost: item.unit_cost },
+        item.preferred_unit_cost === null ? [] : [{ unitCost: item.preferred_unit_cost, isPreferred: true }],
+      );
+
+      return { quantity, fromLocationId, fromBatchKey, stockStatements, unitCostAtSale };
+    }
   };
+}
+
+/** Round to 2 decimals, avoiding binary-float drift on a proceeds total (e.g. 3 × 0.1). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

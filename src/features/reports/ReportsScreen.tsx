@@ -23,6 +23,7 @@ import { StockAgingChart } from './components/StockAgingChart';
 import { ValuationSparkline } from './components/ValuationSparkline';
 import { HygieneChecklist } from './components/HygieneChecklist';
 import { SpendBreakdown } from './components/SpendBreakdown';
+import { SalesBreakdown } from './components/SalesBreakdown';
 import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
@@ -36,6 +37,7 @@ import {
   useInventoryValue,
   useLowStockCount,
   useMovement,
+  useSalesAnalytics,
   useSpendAnalytics,
   useStockAging,
   useTurnover,
@@ -79,6 +81,11 @@ export function ReportsScreen() {
   const spendOn = useEnabledFeatures().has('purchase-orders');
   const [spendWindow, setSpendWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
   const spend = useSpendAnalytics(spendWindow, { enabled: spendOn });
+
+  // Sales & disposals analytics — its own selectable window; dropped when the Sales module is off.
+  const salesOn = useEnabledFeatures().has('sales');
+  const [salesWindow, setSalesWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
+  const sales = useSalesAnalytics(salesWindow, { enabled: salesOn });
 
   // Derive aggregate loading / error state from all five queries.
   const isAnyLoading =
@@ -151,6 +158,19 @@ export function ReportsScreen() {
         : `Spend analytics ready — ${f.currency(spend.data?.total ?? 0)} in the window.`,
     );
   }, [spendOn, spend.isLoading, spend.isError, spend.data, f]);
+
+  // The sales-analytics block's own once-only completion announcement (WCAG 4.1.3).
+  const [salesAnnouncement, setSalesAnnouncement] = useState('');
+  const salesAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!salesOn || sales.isLoading || salesAnnouncedRef.current) return;
+    salesAnnouncedRef.current = true;
+    setSalesAnnouncement(
+      sales.isError
+        ? 'Sales analytics failed to load.'
+        : `Sales analytics ready — ${f.currency(sales.data?.proceeds ?? 0)} in proceeds.`,
+    );
+  }, [salesOn, sales.isLoading, sales.isError, sales.data, f]);
 
   return (
     <PageContainer>
@@ -369,6 +389,39 @@ export function ReportsScreen() {
             </Panel>
           </section>
         ) : null}
+
+        {/* Sales & disposals — proceeds vs a cost snapshot (→ margin), plus written-off value.
+            Dropped when the Sales & disposals module is off. */}
+        {salesOn ? (
+          <section className="flex flex-col gap-3" aria-labelledby="sales-heading">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 id="sales-heading" className="text-base font-semibold tracking-tight">
+                Sales &amp; disposals
+              </h2>
+              <WindowToggle
+                value={salesWindow}
+                onChange={setSalesWindow}
+                formatters={f}
+                label="Sales window"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Proceeds from items sold against the cost recorded when they left inventory, plus the value of
+              stock written off. Margin excludes any units sold without a recorded cost.
+            </p>
+            <Panel title={`Sales (last ${salesWindow} days)`}>
+              {sales.isLoading ? (
+                <CentredSpinner />
+              ) : sales.data ? (
+                <SalesBreakdown report={sales.data} formatters={f} />
+              ) : (
+                <p className="py-6 text-center text-sm text-destructive">
+                  The sales analytics report failed to load.
+                </p>
+              )}
+            </Panel>
+          </section>
+        ) : null}
       </main>
 
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -409,6 +462,19 @@ export function ReportsScreen() {
           </LiveRegion>
           <LiveRegion urgency="assertive" visuallyHidden data-testid="spend-error-live-region">
             {spend.isError && spendAnnouncement ? <p>{spendAnnouncement}</p> : null}
+          </LiveRegion>
+        </>
+      ) : null}
+
+      {/* The sales-analytics block's own once-only completion region; omitted with the section
+          when the Sales & disposals module is off. */}
+      {salesOn ? (
+        <>
+          <LiveRegion visuallyHidden data-testid="sales-live-region">
+            {!sales.isError && salesAnnouncement ? <p>{salesAnnouncement}</p> : null}
+          </LiveRegion>
+          <LiveRegion urgency="assertive" visuallyHidden data-testid="sales-error-live-region">
+            {sales.isError && salesAnnouncement ? <p>{salesAnnouncement}</p> : null}
           </LiveRegion>
         </>
       ) : null}

@@ -37,3 +37,26 @@ export function planPoReceipt(orderedQty: number, receivedQty: number, requested
     fullyReceived: plan.fullyReceived,
   };
 }
+
+export interface PoReturnPlan {
+  /** Units returned to the supplier by this instalment — clamped to what was received. */
+  readonly returnedDelta: number;
+  /** Cumulative received quantity after the return (never negative). */
+  readonly nextReceivedQty: number;
+}
+
+/**
+ * Plan a single **return-to-supplier** instalment for a PO line — the inverse of
+ * {@link planPoReceipt}. You can only return what has actually been received, so the amount is
+ * floored, never negative, and clamped to the current `received_qty`.
+ *
+ * - `requestedQty` omitted → return everything received so far ("return all").
+ * - The line's cumulative `received_qty` is reduced by the returned amount, flooring at zero, so
+ *   the PO status re-derives back towards PARTIAL / ORDERED.
+ */
+export function planPoReturn(receivedQty: number, requestedQty?: number): PoReturnPlan {
+  const received = Math.max(0, Math.floor(receivedQty));
+  const requested = requestedQty === undefined ? received : Math.max(0, Math.floor(requestedQty));
+  const returnedDelta = Math.min(requested, received);
+  return { returnedDelta, nextReceivedQty: received - returnedDelta };
+}

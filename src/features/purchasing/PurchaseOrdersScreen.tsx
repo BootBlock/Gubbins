@@ -26,12 +26,14 @@ import {
   usePurchaseOrder,
   usePurchaseOrders,
   useReceivePurchaseOrderLine,
+  useReturnPurchaseOrderLine,
   useRemovePurchaseOrderLine,
   useSetPurchaseOrderStatus,
 } from './queries';
 import { CreatePurchaseOrderDialog } from './components/CreatePurchaseOrderDialog';
 import { PurchaseOrderLineDialog, type LineItemOption } from './components/PurchaseOrderLineDialog';
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
+import { ReturnLineDialog } from './components/ReturnLineDialog';
 
 /** The two top-level tabs on the Purchase Orders screen. */
 type PoTab = 'orders' | 'reorder';
@@ -270,11 +272,13 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const addLine = useAddPurchaseOrderLine();
   const removeLine = useRemovePurchaseOrderLine();
   const receiveLine = useReceivePurchaseOrderLine();
+  const returnLine = useReturnPurchaseOrderLine();
   const setStatus = useSetPurchaseOrderStatus();
   const deletePo = useDeletePurchaseOrder();
 
   const [lineOpen, setLineOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrderLine | null>(null);
+  const [returning, setReturning] = useState<PurchaseOrderLine | null>(null);
 
   // WCAG 4.1.3 Status Messages — the badge transition and the receipt-progress
   // counter both change silently; announce each change via the always-mounted
@@ -473,6 +477,11 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                       Receive
                     </Button>
                   )}
+                  {isActive && line.receivedQty > 0 && (
+                    <Button variant="outline" onClick={() => setReturning(line)} data-testid="po-return-line">
+                      Return
+                    </Button>
+                  )}
                   <Button
                     variant="destructive"
                     onClick={() => removeLine.mutate({ poId: po.id, lineId: line.id })}
@@ -516,6 +525,27 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
                 batch: input.batch,
               },
               { onSuccess: () => setReceiving(null) },
+            );
+          }}
+        />
+      )}
+
+      {returning && (
+        <ReturnLineDialog
+          open={returning !== null}
+          line={returning}
+          locationOptions={locationOptions}
+          isSaving={returnLine.isPending}
+          onClose={() => setReturning(null)}
+          onSubmit={(input) => {
+            returnLine.mutate(
+              {
+                poId: po.id,
+                lineId: returning.id,
+                quantity: input.quantity,
+                locationId: input.locationId,
+              },
+              { onSuccess: () => setReturning(null) },
             );
           }}
         />

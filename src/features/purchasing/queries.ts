@@ -184,6 +184,32 @@ export function useReceivePurchaseOrderLine() {
   });
 }
 
+export interface ReturnLineVars {
+  readonly poId: string;
+  readonly lineId: string;
+  readonly locationId?: string;
+  readonly quantity?: number;
+}
+
+/**
+ * Return (refund) a received PO line back to the supplier — the inverse of a receipt. Decrements
+ * stock, reduces the line's received quantity and re-derives the PO status, so it invalidates the
+ * same PO + item caches a receipt does, plus the reports (a return moves stock).
+ */
+export function useReturnPurchaseOrderLine() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lineId, locationId, quantity }: ReturnLineVars) =>
+      getPurchaseOrderRepository().returnLine(lineId, { locationId, quantity }),
+    onSuccess: (_data, { poId }) => {
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
 // --- Phase 65: Reorder / Shopping-list ----------------------------------------
 
 export const reorderKeys = {

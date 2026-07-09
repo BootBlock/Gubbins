@@ -119,6 +119,65 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(history.rows.some((h) => h.action === 'RECEIVED')).toBe(true);
   });
 
+  // --- returns to supplier (inverse of receive) ----------------------------------
+
+  it('returns received stock to the supplier, dropping stock and re-deriving PARTIAL', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const po = await pos.create({ supplierName: 'Farnell' });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5, unitCost: 2 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.receiveLine(line.id, { locationId: shelf.id }); // receive all 5 → RECEIVED
+    expect((await pos.getWithLines(po.id))?.effectiveStatus).toBe('RECEIVED');
+
+    // Return 2 of the 5 from the shelf they landed on.
+    const afterReturn = await pos.returnLine(line.id, { locationId: shelf.id, quantity: 2 });
+    expect(afterReturn.receivedQty).toBe(3);
+    expect((await items.getById(item.id))?.quantity).toBe(3); // 5 − 2
+    const po2 = await pos.getWithLines(po.id);
+    expect(po2?.effectiveStatus).toBe('PARTIAL'); // received (3) < ordered (5)
+
+    const history = await items.getHistory(item.id);
+    const returned = history.rows.find((h) => h.action === 'RETURNED_TO_SUPPLIER');
+    expect(returned).toBeDefined();
+    expect(returned!.quantityDelta).toBe(-2);
+    expect(returned!.metadata).toMatchObject({ supplierName: 'Farnell', unitCost: 2 });
+  });
+
+  it('defaults to returning everything received and re-derives ORDERED', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const po = await pos.create({ supplierName: 'RS' });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.receiveLine(line.id, { locationId: shelf.id });
+
+    const afterReturn = await pos.returnLine(line.id, { locationId: shelf.id });
+    expect(afterReturn.receivedQty).toBe(0);
+    expect((await items.getById(item.id))?.quantity).toBe(0);
+    expect((await pos.getWithLines(po.id))?.effectiveStatus).toBe('ORDERED');
+  });
+
+  it('rejects returning a line with nothing received', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const po = await pos.create({ supplierName: 'RS' });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await expect(pos.returnLine(line.id)).rejects.toBeInstanceOf(DbError);
+  });
+
+  it('rejects returning more stock than is on hand at the location', async () => {
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const po = await pos.create({ supplierName: 'RS' });
+    const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5 });
+    await pos.setStatus(po.id, 'ORDERED');
+    await pos.receiveLine(line.id, { locationId: shelf.id }); // 5 on the shelf
+    // Sell/consume 4 away so only 1 remains, then try to return all 5.
+    await items.sell({ itemId: item.id, quantity: 4, unitSalePrice: 1, fromLocationId: shelf.id });
+    await expect(pos.returnLine(line.id, { locationId: shelf.id })).rejects.toBeInstanceOf(DbError);
+  });
+
   // --- on-order projection -------------------------------------------------------
 
   it('projects on-order quantity only for active (non-DRAFT/CANCELLED) orders', async () => {

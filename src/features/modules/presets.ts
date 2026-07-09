@@ -134,6 +134,7 @@ export const PRESETS: readonly Preset[] = [
       'scanner',
       'kits',
       'labels',
+      'sales',
       'scraping',
     ],
   },

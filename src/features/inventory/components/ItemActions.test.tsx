@@ -5,6 +5,8 @@ import type { Item } from '@/db/repositories';
 // The action row mounts every per-item dialog (closed); stub them to inert components so the
 // test exercises only the action buttons, not each dialog's own hooks.
 vi.mock('@/features/contacts/components/CheckoutDialog', () => ({ CheckoutDialog: () => null }));
+vi.mock('@/features/sales/components/SellDialog', () => ({ SellDialog: () => null }));
+vi.mock('@/features/sales/components/WriteOffDialog', () => ({ WriteOffDialog: () => null }));
 vi.mock('./GaugeAdjustDialog', () => ({ GaugeAdjustDialog: () => null }));
 vi.mock('./ItemDetailDialog', () => ({ ItemDetailDialog: () => null }));
 vi.mock('./MoveItemDialog', () => ({ MoveItemDialog: () => null }));
@@ -71,5 +73,25 @@ describe('ItemActions — checkout gating (Phase 6)', () => {
     expect(screen.queryByLabelText('Item details')).not.toBeNull();
     expect(screen.queryByLabelText('Move item')).not.toBeNull();
     expect(screen.queryByLabelText('Item label')).not.toBeNull();
+  });
+});
+
+describe('ItemActions — sell/write-off gating (Sales & disposals)', () => {
+  it('offers Sell and Write off on an active DISCRETE item when Sales is on', () => {
+    render(<ItemActions item={item} locations={[]} />);
+    expect(screen.queryByLabelText('Sell')).not.toBeNull();
+    expect(screen.queryByLabelText('Write off')).not.toBeNull();
+  });
+
+  it('hides Sell and Write off when the Sales module is off', () => {
+    useModulesStore.getState().setFeatureIntent('sales', false);
+    render(<ItemActions item={item} locations={[]} />);
+    expect(screen.queryByLabelText('Sell')).toBeNull();
+    expect(screen.queryByLabelText('Write off')).toBeNull();
+  });
+
+  it('does not offer Sell for a non-DISCRETE item', () => {
+    render(<ItemActions item={{ ...item, trackingMode: 'SERIALISED', quantity: 1 }} locations={[]} />);
+    expect(screen.queryByLabelText('Sell')).toBeNull();
   });
 });

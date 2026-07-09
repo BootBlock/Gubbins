@@ -124,6 +124,7 @@
   --glyph-checkout: oklch(0.6 0.15 55); /* check out / borrow */
   --glyph-gauge: oklch(0.55 0.11 190); /* gauge / measure */
   --glyph-neutral: oklch(0.5 0.03 255); /* decrement / dismiss */
+  --glyph-sale: oklch(0.55 0.13 165); /* sell / proceeds */
 
   /*
    * Location swatch palette (spec §4) — the optional pastel a user assigns to a
@@ -256,6 +257,7 @@
   --glyph-checkout: oklch(0.8 0.12 55);
   --glyph-gauge: oklch(0.8 0.1 185);
   --glyph-neutral: oklch(0.72 0.03 255);
+  --glyph-sale: oklch(0.8 0.12 165);
 
   /* Location swatch palette, dark-theme variant — lifted lighter & a touch softer so
    * each pastel reads on the near-black indigo surface (see :root for the rationale). */
@@ -353,6 +355,7 @@
   --color-glyph-checkout: var(--glyph-checkout);
   --color-glyph-gauge: var(--glyph-gauge);
   --color-glyph-neutral: var(--glyph-neutral);
+  --color-glyph-sale: var(--glyph-sale);
 
   /* Location swatch palette → `text-loc-*` / `bg-loc-*` utilities (e.g.
    * `text-loc-teal` tints a location name; `bg-loc-teal` fills a picker swatch). One

@@ -128,6 +128,10 @@ export const HISTORY_ACTIONS = [
   // Kits v2 — assemble/disassemble stock operations. ASSEMBLED (above, reused) logs the kit
   // being built up from its components; DISASSEMBLED logs it being broken back down.
   'DISASSEMBLED', // a kit broken down, its components returned to stock (inverse of ASSEMBLED)
+  // Outbound disposals & supplier refunds — stock leaving inventory for a commercial reason.
+  'SOLD', // stock sold to a buyer (records a sale price → the sales/margin report)
+  'WRITTEN_OFF', // stock written off as lost/damaged/expired (no proceeds, optional reason)
+  'RETURNED_TO_SUPPLIER', // received stock refunded back to a supplier (inverse of RECEIVED)
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 
