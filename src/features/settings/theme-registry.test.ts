@@ -33,7 +33,20 @@ describe('normaliseMode', () => {
 
 describe('ACCENTS', () => {
   it('seeds the accent colours in picker order, each with a label', () => {
-    expect(ACCENTS.map((a) => a.id)).toEqual(['violet', 'blue', 'cyan', 'green', 'amber', 'rose']);
+    expect(ACCENTS.map((a) => a.id)).toEqual([
+      'violet',
+      'blue',
+      'cyan',
+      'teal',
+      'green',
+      'lime',
+      'amber',
+      'orange',
+      'rose',
+      'pink',
+      'fuchsia',
+      'slate',
+    ]);
     for (const a of ACCENTS) expect(a.label.length).toBeGreaterThan(0);
   });
 

@@ -392,6 +392,92 @@
   --highlight: oklch(0.72 0.19 18);
 }
 
+[data-accent='teal'] {
+  --primary: oklch(0.6 0.1 190);
+  --primary-foreground: oklch(0.2 0.03 190);
+  --ring: oklch(0.6 0.1 190);
+  --highlight: oklch(0.66 0.1 190);
+}
+.dark[data-accent='teal'],
+.dark [data-accent='teal'] {
+  --primary: oklch(0.72 0.11 190);
+  --primary-foreground: oklch(0.2 0.03 190);
+  --ring: oklch(0.72 0.11 190);
+  --highlight: oklch(0.78 0.11 190);
+}
+
+[data-accent='lime'] {
+  --primary: oklch(0.72 0.17 125);
+  --primary-foreground: oklch(0.2 0.05 125);
+  --ring: oklch(0.72 0.17 125);
+  --highlight: oklch(0.77 0.17 125);
+}
+.dark[data-accent='lime'],
+.dark [data-accent='lime'] {
+  --primary: oklch(0.82 0.18 125);
+  --primary-foreground: oklch(0.2 0.05 125);
+  --ring: oklch(0.82 0.18 125);
+  --highlight: oklch(0.86 0.18 125);
+}
+
+[data-accent='orange'] {
+  --primary: oklch(0.65 0.16 50);
+  --primary-foreground: oklch(0.2 0.04 50);
+  --ring: oklch(0.65 0.16 50);
+  --highlight: oklch(0.7 0.16 50);
+}
+.dark[data-accent='orange'],
+.dark [data-accent='orange'] {
+  --primary: oklch(0.72 0.15 50);
+  --primary-foreground: oklch(0.2 0.04 50);
+  --ring: oklch(0.72 0.15 50);
+  --highlight: oklch(0.77 0.15 50);
+}
+
+[data-accent='pink'] {
+  --primary: oklch(0.62 0.2 350);
+  --primary-foreground: oklch(0.2 0.04 350);
+  --ring: oklch(0.62 0.2 350);
+  --highlight: oklch(0.68 0.2 350);
+}
+.dark[data-accent='pink'],
+.dark [data-accent='pink'] {
+  --primary: oklch(0.7 0.2 350);
+  --primary-foreground: oklch(0.2 0.04 350);
+  --ring: oklch(0.7 0.2 350);
+  --highlight: oklch(0.76 0.2 350);
+}
+
+[data-accent='fuchsia'] {
+  --primary: oklch(0.55 0.25 322);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.25 322);
+  --highlight: oklch(0.62 0.24 322);
+}
+.dark[data-accent='fuchsia'],
+.dark [data-accent='fuchsia'] {
+  --primary: oklch(0.64 0.25 322);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.64 0.25 322);
+  --highlight: oklch(0.72 0.24 322);
+}
+
+/* Slate is deliberately near-neutral (very low chroma) so it reads as a muted grey-blue,
+   distinct from the vivid hues by its lack of saturation rather than its position on the wheel. */
+[data-accent='slate'] {
+  --primary: oklch(0.48 0.025 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.48 0.025 255);
+  --highlight: oklch(0.55 0.03 255);
+}
+.dark[data-accent='slate'],
+.dark [data-accent='slate'] {
+  --primary: oklch(0.62 0.02 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.62 0.02 255);
+  --highlight: oklch(0.7 0.03 255);
+}
+
 /*
  * Pure-black (OLED) — a dark-mode switch (`data-oled` on <html>) that drops the surfaces to true
  * black for OLED displays, where a `#000` pixel is fully off. Scoped to `.dark` so it is inert in
