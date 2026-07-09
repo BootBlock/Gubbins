@@ -47,9 +47,15 @@ export const ACCENTS = [
   { id: 'violet', label: 'Violet' },
   { id: 'blue', label: 'Blue' },
   { id: 'cyan', label: 'Cyan' },
+  { id: 'teal', label: 'Teal' },
   { id: 'green', label: 'Green' },
+  { id: 'lime', label: 'Lime' },
   { id: 'amber', label: 'Amber' },
+  { id: 'orange', label: 'Orange' },
   { id: 'rose', label: 'Rose' },
+  { id: 'pink', label: 'Pink' },
+  { id: 'fuchsia', label: 'Fuchsia' },
+  { id: 'slate', label: 'Slate' },
 ] as const;
 
 /** An accent colour id. */
