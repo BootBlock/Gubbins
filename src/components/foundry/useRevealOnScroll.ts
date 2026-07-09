@@ -36,8 +36,13 @@ export const defaultObserverFactory: IntersectionObserverFactory | null =
     ? (callback, options) => new IntersectionObserver(callback, options)
     : null;
 
-/** Reveal a touch before the element is fully on-screen, so it settles as it centres. */
-export const DEFAULT_REVEAL_ROOT_MARGIN = '0px 0px -10% 0px';
+/**
+ * Reveal as soon as any part of the element enters the viewport. Deliberately *not* a negative
+ * bottom margin: shrinking the root would leave an element that renders pinned in the bottom
+ * slice of a short, unscrollable page (a small dashboard, a brief report) never intersecting —
+ * and so stuck invisible. `'0px'` guarantees anything on-screen reveals.
+ */
+export const DEFAULT_REVEAL_ROOT_MARGIN = '0px';
 
 /** Per-step stagger (ms) and the cap — shares the dashboard tile-cascade cadence. */
 export const REVEAL_STAGGER_STEP_MS = 45;
