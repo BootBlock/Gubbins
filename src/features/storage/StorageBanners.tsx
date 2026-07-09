@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
-import { Banner, Button, Tooltip, useInstallPrompt } from '@/components/foundry';
-import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon } from '@/components/icons';
+import { Banner, Button, Tooltip, useInstallPrompt, useToast } from '@/components/foundry';
+import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon, CheckIcon } from '@/components/icons';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -34,6 +34,36 @@ export function StorageBanners() {
   const [archiving, setArchiving] = useState(false);
   const fmt = useFormatters();
   const { canInstall, promptInstall } = useInstallPrompt();
+  const { show } = useToast();
+
+  /**
+   * Ask for persistent storage and always report the outcome. Chromium browsers
+   * (Chrome/Edge) decide persistence from heuristics — installed PWA, bookmark,
+   * notification permission, site-engagement score — and never show a permission
+   * prompt, so a declined request would otherwise look like the button did nothing.
+   * The toast makes the outcome explicit and points at the reliable route (install).
+   */
+  async function enablePersistence() {
+    const granted = await requestPersistence();
+    if (granted) {
+      show({
+        tone: 'success',
+        icon: <CheckIcon />,
+        heading: 'Storage set to persistent',
+        message: 'Your inventory is protected from automatic browser eviction.',
+      });
+      return;
+    }
+    show({
+      tone: 'warning',
+      icon: <StorageIcon />,
+      heading: 'Browser kept storage temporary',
+      message:
+        "Chrome and Edge grant persistent storage automatically — there's no prompt to accept. Installing Gubbins as an app is the reliable way; bookmarking it and continuing to use it also helps.",
+      duration: 0,
+      action: canInstall ? { label: 'Install Gubbins', onClick: () => void promptInstall() } : undefined,
+    });
+  }
 
   async function archiveNow() {
     setArchiving(true);
@@ -122,7 +152,7 @@ export function StorageBanners() {
               triggerTabIndex={-1}
             >
               <span>
-                <Button size="sm" variant="outline" onClick={() => void requestPersistence()}>
+                <Button size="sm" variant="outline" onClick={() => void enablePersistence()}>
                   Enable
                 </Button>
               </span>
