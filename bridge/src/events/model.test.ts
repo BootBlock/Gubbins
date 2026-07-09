@@ -135,14 +135,14 @@ describe('buildEvents', () => {
 
   it('adds a derived item.low_stock event when a stock movement leaves the item low', () => {
     const e = entry({ id: 'e2', createdAt: 2_000, action: 'QUANTITY_CHANGE', quantityDelta: -4 });
-    const events = buildEvents([resolved(e, discreteItem(3))]); // 3 <= default floor (5)
+    const events = buildEvents([resolved(e, discreteItem(3, 5))]); // 3 <= the item's reorder point (5)
     expect(events.map((ev) => ev.type)).toEqual(['stock.adjusted', 'item.low_stock']);
     expect(events[1]!.id).toBe('e2:low_stock');
   });
 
   it('emits item.out_of_stock (not low_stock) when the item is fully depleted', () => {
     const e = entry({ id: 'e3', createdAt: 3_000, action: 'QUANTITY_CHANGE', quantityDelta: -3 });
-    const events = buildEvents([resolved(e, discreteItem(0))]);
+    const events = buildEvents([resolved(e, discreteItem(0, 5))]); // depleted, with a reorder point set
     expect(events.map((ev) => ev.type)).toEqual(['stock.adjusted', 'item.out_of_stock']);
     expect(events[1]!.id).toBe('e3:out_of_stock');
   });
