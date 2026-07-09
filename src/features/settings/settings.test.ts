@@ -31,12 +31,14 @@ import {
   navCountTone,
   normaliseNavCountMetric,
   normaliseNavCountMetrics,
-  THEME_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
 } from './settings';
-import { applyTheme, DARK_CLASS, resolveTheme } from './theme';
-import { THEME_IDS } from './theme-registry';
+import { applyAppearance, DARK_CLASS, resolveMode } from './theme';
+import type { Appearance } from './theme';
+
+/** A base appearance for applyAppearance tests — override just the field under test. */
+const APPEARANCE: Appearance = { mode: 'dark', accent: 'violet', oledDark: false, highContrast: false };
 
 describe('clampExpiryWindowDays', () => {
   it('passes valid in-range values through, rounding to a whole day', () => {
@@ -182,89 +184,64 @@ describe('normaliseCardClickAction', () => {
   });
 });
 
-describe('THEME_OPTIONS', () => {
-  it('offers every registry theme plus the System meta-choice, each with a label (spec §2.1)', () => {
-    const values = THEME_OPTIONS.map((o) => o.value);
-    // Every concrete theme id from the registry is offered…
-    for (const id of THEME_IDS) expect(values).toContain(id);
-    // …including the originals and the new full themes, plus System.
-    for (const id of ['dark', 'light', 'midnight', 'sepia', 'high-contrast', 'system']) {
-      expect(values).toContain(id);
-    }
-    // The list is exactly the registry ids plus System (no strays, no dupes).
-    expect(values).toHaveLength(THEME_IDS.length + 1);
-    expect(new Set(values).size).toBe(values.length);
-    // Every option carries a non-empty label.
-    for (const o of THEME_OPTIONS) expect(o.label.length).toBeGreaterThan(0);
+describe('resolveMode', () => {
+  it('passes an explicit mode through, ignoring the OS preference', () => {
+    expect(resolveMode('dark', false)).toBe('dark');
+    expect(resolveMode('dark', true)).toBe('dark');
+    expect(resolveMode('light', true)).toBe('light');
+    expect(resolveMode('light', false)).toBe('light');
+  });
+
+  it('follows the OS preference for the system mode', () => {
+    expect(resolveMode('system', true)).toBe('dark');
+    expect(resolveMode('system', false)).toBe('light');
   });
 });
 
-describe('resolveTheme', () => {
-  it('passes an explicit theme through, ignoring the OS preference', () => {
-    expect(resolveTheme('dark', false)).toBe('dark');
-    expect(resolveTheme('dark', true)).toBe('dark');
-    expect(resolveTheme('light', true)).toBe('light');
-    expect(resolveTheme('light', false)).toBe('light');
-  });
-
-  it('resolves every concrete theme id to itself, whatever the OS preference', () => {
-    for (const id of THEME_IDS) {
-      expect(resolveTheme(id, true)).toBe(id);
-      expect(resolveTheme(id, false)).toBe(id);
-    }
-  });
-
-  it('follows the OS preference for the system theme (to the base id)', () => {
-    expect(resolveTheme('system', true)).toBe('dark');
-    expect(resolveTheme('system', false)).toBe('light');
-  });
-});
-
-describe('applyTheme', () => {
+describe('applyAppearance', () => {
   afterEach(() => {
-    document.documentElement.classList.remove(DARK_CLASS);
-    delete document.documentElement.dataset.theme;
+    const root = document.documentElement;
+    root.classList.remove(DARK_CLASS);
+    delete root.dataset.accent;
+    delete root.dataset.oled;
+    delete root.dataset.contrast;
   });
 
-  it('adds .dark for the dark theme and removes it for light', () => {
+  it('toggles .dark for the resolved mode and sets data-accent', () => {
     const root = document.createElement('div');
-    applyTheme('dark', root);
+    applyAppearance({ ...APPEARANCE, mode: 'dark', accent: 'blue' }, root);
     expect(root.classList.contains(DARK_CLASS)).toBe(true);
-    applyTheme('light', root);
+    expect(root.dataset.accent).toBe('blue');
+    applyAppearance({ ...APPEARANCE, mode: 'light', accent: 'green' }, root);
     expect(root.classList.contains(DARK_CLASS)).toBe(false);
+    expect(root.dataset.accent).toBe('green');
   });
 
-  it('sets data-theme + .dark for a dark-base named theme', () => {
+  it('sets and clears data-oled for the pure-black switch', () => {
     const root = document.createElement('div');
-    applyTheme('midnight', root);
-    expect(root.dataset.theme).toBe('midnight');
-    expect(root.classList.contains(DARK_CLASS)).toBe(true);
+    applyAppearance({ ...APPEARANCE, oledDark: true }, root);
+    expect(root.dataset.oled).toBe('');
+    applyAppearance({ ...APPEARANCE, oledDark: false }, root);
+    expect(root.dataset.oled).toBeUndefined();
   });
 
-  it('sets data-theme and clears .dark for a light-base named theme', () => {
+  it('sets and clears data-contrast for the high-contrast switch', () => {
     const root = document.createElement('div');
-    applyTheme('sepia', root);
-    expect(root.dataset.theme).toBe('sepia');
-    expect(root.classList.contains(DARK_CLASS)).toBe(false);
+    applyAppearance({ ...APPEARANCE, highContrast: true }, root);
+    expect(root.dataset.contrast).toBe('high');
+    applyAppearance({ ...APPEARANCE, highContrast: false }, root);
+    expect(root.dataset.contrast).toBeUndefined();
   });
 
-  it('clears data-theme for plain light (the canonical :root palette) but keeps it for dark', () => {
+  it('is idempotent on the .dark class', () => {
     const root = document.createElement('div');
-    applyTheme('dark', root);
-    expect(root.dataset.theme).toBe('dark');
-    applyTheme('light', root);
-    expect(root.dataset.theme).toBeUndefined();
-  });
-
-  it('is idempotent', () => {
-    const root = document.createElement('div');
-    applyTheme('dark', root);
-    applyTheme('dark', root);
+    applyAppearance({ ...APPEARANCE, mode: 'dark' }, root);
+    applyAppearance({ ...APPEARANCE, mode: 'dark' }, root);
     expect(root.className.split(/\s+/).filter((c) => c === DARK_CLASS)).toHaveLength(1);
   });
 
   it('defaults to the document root', () => {
-    applyTheme('dark');
+    applyAppearance({ ...APPEARANCE, mode: 'dark' });
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(true);
   });
 });
@@ -272,7 +249,7 @@ describe('applyTheme', () => {
 describe('usePreferencesStore — Phase 12 window preferences', () => {
   afterEach(() => {
     usePreferencesStore.setState({
-      theme: 'dark',
+      mode: 'dark',
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       pruneWindowMonths: DEFAULT_WINDOW_MONTHS,
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,

@@ -15,11 +15,13 @@ import {
   AppearanceIcon,
   CriticalIcon,
   CustomiseIcon,
+  DarkThemeIcon,
   DatasheetIcon,
   HomeIcon,
   InfoIcon,
   InstallIcon,
   KioskIcon,
+  LightThemeIcon,
   LowStockIcon,
   ModulesIcon,
   NotificationIcon,
@@ -33,7 +35,7 @@ import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
-import { usePreferencesStore, type Theme } from '@/state/stores/usePreferencesStore';
+import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
@@ -49,7 +51,6 @@ import {
   LOW_STOCK_QTY_BOUNDS,
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
-  THEME_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
   clampBudgetWarnPercent,
@@ -60,7 +61,7 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
-import { THEMES } from './theme-registry';
+import { ACCENTS, MODE_OPTIONS } from './theme-registry';
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -163,20 +164,68 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
           <SettingRow
             stack
             fill
-            label="Theme"
-            description="Pick a full colour palette for the whole app."
+            label="Mode"
+            description="Light, dark, or follow your device."
             hint={
-              'Sets the colour palette for the whole app.\n\n' +
-              '- **Dark** — the deep, low-glare default.\n' +
+              'The base light/dark palette for the whole app.\n\n' +
               '- **Light** — a bright palette for well-lit rooms.\n' +
-              '- **Midnight** — a deep navy-blue dark palette with cool azure accents.\n' +
-              '- **Sepia** — a warm, paper-like light palette that’s easy on the eyes.\n' +
-              '- **High contrast** — pure black with white text and bold borders, for maximum legibility.\n' +
+              '- **Dark** — the deep, low-glare default.\n' +
               '- **System** — follow your device and switch automatically when it does (e.g. at sunset).\n\n' +
-              'The choice applies instantly and everywhere.'
+              'Pick your **Colour** separately below — it applies in either mode.'
             }
           >
-            <ThemeToggle theme={prefs.theme} onChange={prefs.setTheme} />
+            <ModeToggle mode={prefs.mode} onChange={prefs.setMode} />
+          </SettingRow>
+          <SettingRow
+            stack
+            fill
+            label="Colour"
+            description="The accent colour for buttons, links and highlights."
+            hint={
+              'The brand **accent** colour — used for primary buttons, links, focus rings and the ' +
+              '“look here” highlight. It is independent of light/dark, so the colour you pick reads ' +
+              'the same in either mode (tuned for each). Surfaces stay neutral; only the accent changes.'
+            }
+          >
+            <AccentPicker accent={prefs.accent} onChange={prefs.setAccent} />
+          </SettingRow>
+          <SettingRow
+            label="Pure black (OLED)"
+            description="Use a true-black background in dark mode, ideal for OLED screens."
+            hint={
+              'Drops the **dark-mode** surfaces to true black (`#000`), where an OLED display turns ' +
+              'those pixels fully off — deeper contrast and a little less battery use.\n\n' +
+              'Only affects **dark mode**; it composes with any colour. No effect in light mode.'
+            }
+          >
+            <Select
+              aria-label="Pure black (OLED)"
+              data-testid="setting-oled"
+              className="h-9 w-40"
+              value={prefs.oledDark ? 'on' : 'off'}
+              onChange={(value) => prefs.setOledDark(value === 'on')}
+              options={OFF_ON_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
+            label="High contrast"
+            description="Boost contrast and borders for maximum legibility."
+            hint={
+              'An **accessibility** mode that raises contrast across the app: near pure black/white ' +
+              'surfaces, bolder visible borders, and secondary text that stays strong rather than ' +
+              'dimming.\n\n' +
+              'Works in both light and dark mode and overrides the neutral palette, while keeping ' +
+              'your chosen colour.'
+            }
+          >
+            <Select
+              aria-label="High contrast"
+              data-testid="setting-high-contrast"
+              className="h-9 w-40"
+              value={prefs.highContrast ? 'on' : 'off'}
+              onChange={(value) => prefs.setHighContrast(value === 'on')}
+              options={OFF_ON_OPTIONS}
+            />
           </SettingRow>
           <SettingRow
             label="Base currency"
@@ -865,58 +914,46 @@ function LabelBaseUrlControl() {
   );
 }
 
-/**
- * Icon per theme choice, built from the {@link THEMES} registry (its per-theme glyphs) plus the
- * non-palette `'system'` meta-choice — so a new registry theme brings its own icon here.
- */
-const THEME_ICONS = {
-  ...Object.fromEntries(THEMES.map((t) => [t.id, t.icon])),
+/** Icon per mode choice (spec §2.1). */
+const MODE_ICONS: Record<Mode, ReactNode> = {
+  light: <LightThemeIcon />,
+  dark: <DarkThemeIcon />,
   system: <SystemThemeIcon />,
-} as Record<Theme, ReactNode>;
+};
 
-/**
- * What each theme choice actually does — surfaced on hover (the labels alone don't say). The
- * per-theme copy comes from the registry; `'system'` is the extra meta-choice.
- */
-const THEME_TOOLTIPS = {
-  ...Object.fromEntries(THEMES.map((t) => [t.id, t.tooltip])),
+/** What each mode does — surfaced on hover (the labels alone don't say). */
+const MODE_TOOLTIPS: Record<Mode, string> = {
+  light: 'Always use the light palette.',
+  dark: 'Always use the deep dark palette.',
   system: 'Follow your device setting and switch automatically when it does.',
-} as Record<Theme, string>;
+};
 
 /**
- * The Appearance theme picker — a WAI-ARIA **radiogroup** of icon+label pills (spec §2.1). Now
- * that several full themes are offered it `flex-wrap`s onto multiple rows rather than overflowing
- * a single row. The group is one tab stop (roving `tabindex` via {@link useRovingRadioGroup}):
- * once focused the arrow keys move *and* select, Home/End jump to the ends, and Space/Enter
- * re-affirm — standard radiogroup semantics. Each option keeps its `data-testid={theme-<id>}`
- * hook and `aria-checked` state.
+ * The Mode picker — a WAI-ARIA **radiogroup** of icon+label pills for Light / Dark / System. One
+ * tab stop (roving `tabindex` via {@link useRovingRadioGroup}): arrow keys move *and* select,
+ * Home/End jump to the ends, Space/Enter re-affirm. Each option carries `aria-checked` and a
+ * `data-testid={mode-<id>}` hook. `flex-wrap` keeps it tidy on a narrow dialog.
  */
-function ThemeToggle({
-  theme,
-  onChange,
-}: {
-  readonly theme: Theme;
-  readonly onChange: (theme: Theme) => void;
-}) {
+function ModeToggle({ mode, onChange }: { readonly mode: Mode; readonly onChange: (mode: Mode) => void }) {
   const selectedIndex = Math.max(
     0,
-    THEME_OPTIONS.findIndex((o) => o.value === theme),
+    MODE_OPTIONS.findIndex((o) => o.value === mode),
   );
   const { refs, selectAt, onKeyDown } = useRovingRadioGroup<HTMLButtonElement>({
-    count: THEME_OPTIONS.length,
-    onSelect: (index) => onChange(THEME_OPTIONS[index]!.value),
+    count: MODE_OPTIONS.length,
+    onSelect: (index) => onChange(MODE_OPTIONS[index]!.value),
   });
 
   return (
     <div
       role="radiogroup"
-      aria-label="Theme"
+      aria-label="Mode"
       className="flex flex-wrap gap-1 rounded-lg border border-border bg-input/40 p-1"
     >
-      {THEME_OPTIONS.map((option, index) => {
+      {MODE_OPTIONS.map((option, index) => {
         const active = index === selectedIndex;
         return (
-          <Tooltip key={option.value} content={THEME_TOOLTIPS[option.value]} triggerTabIndex={-1}>
+          <Tooltip key={option.value} content={MODE_TOOLTIPS[option.value]} triggerTabIndex={-1}>
             <button
               ref={(el) => {
                 refs.current[index] = el;
@@ -925,7 +962,7 @@ function ThemeToggle({
               role="radio"
               aria-checked={active}
               tabIndex={active ? 0 : -1}
-              data-testid={`theme-${option.value}`}
+              data-testid={`mode-${option.value}`}
               onClick={() => selectAt(index)}
               onKeyDown={(e) => onKeyDown(e, index)}
               className={cn(
@@ -936,9 +973,65 @@ function ThemeToggle({
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {THEME_ICONS[option.value]}
+              {MODE_ICONS[option.value]}
               {option.label}
             </button>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The Colour (accent) picker — a WAI-ARIA **radiogroup** of colour swatches (mirrors the location
+ * `ColorSwatchPicker`). One tab stop (roving `tabindex`): arrow keys move *and* select, Home/End
+ * jump to the ends, Space/Enter re-affirm. Each swatch previews its own colour by carrying its
+ * `data-accent`, so the scoped CSS paints `bg-primary` in that accent (in the current mode). The
+ * accessible name is the colour label; each swatch keeps a `data-testid={accent-<id>}` hook.
+ */
+function AccentPicker({
+  accent,
+  onChange,
+}: {
+  readonly accent: Accent;
+  readonly onChange: (accent: Accent) => void;
+}) {
+  const selectedIndex = Math.max(
+    0,
+    ACCENTS.findIndex((a) => a.id === accent),
+  );
+  const { refs, selectAt, onKeyDown } = useRovingRadioGroup<HTMLButtonElement>({
+    count: ACCENTS.length,
+    onSelect: (index) => onChange(ACCENTS[index]!.id),
+  });
+
+  return (
+    <div role="radiogroup" aria-label="Colour" className="flex flex-wrap gap-2">
+      {ACCENTS.map((option, index) => {
+        const checked = index === selectedIndex;
+        return (
+          <Tooltip key={option.id} content={option.label} triggerTabIndex={-1}>
+            <button
+              ref={(el) => {
+                refs.current[index] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-label={option.label}
+              tabIndex={checked ? 0 : -1}
+              // Scope the accent tokens to this swatch so `bg-primary` previews its colour.
+              data-accent={option.id}
+              data-testid={`accent-${option.id}`}
+              onClick={() => selectAt(index)}
+              onKeyDown={(e) => onKeyDown(e, index)}
+              className={cn(
+                'size-7 rounded-full bg-primary outline-none transition-transform',
+                'focus-visible:ring-[3px] focus-visible:ring-foreground/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                checked && 'ring-2 ring-foreground/70 ring-offset-2 ring-offset-background scale-110',
+              )}
+            />
           </Tooltip>
         );
       })}

@@ -46,13 +46,15 @@ import {
 import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
 
 /**
- * Theme preference (spec §2.1). `'system'` follows the OS `prefers-color-scheme` (resolved to
- * the light/dark *base* at apply time); any concrete id pins that full palette. The type is
- * derived from the theme registry (`theme-registry.ts`) — the SSOT for the selectable themes —
- * and re-exported here so existing importers keep resolving `Theme` from the preferences store.
+ * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
+ * from the appearance registry (`theme-registry.ts`, the SSOT) and re-exported here:
+ * - `mode` — `light` / `dark` / `system` (`system` follows the OS `prefers-color-scheme`).
+ * - `accent` — the brand colour, applied in either mode.
+ * - `oledDark` — pure-black surfaces (effective in dark mode).
+ * - `highContrast` — accessibility high-contrast mode.
  */
-import type { Theme } from '@/features/settings/theme-registry';
-export type { Theme };
+import { normaliseAccent, normaliseMode, type Accent, type Mode } from '@/features/settings/theme-registry';
+export type { Accent, Mode };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -72,7 +74,14 @@ export type ScrapeNotificationMode = 'TOAST' | 'SILENT';
 interface PreferencesStore {
   readonly baseCurrency: string;
   readonly locale: string;
-  readonly theme: Theme;
+  /** Light / dark / system — the base neutral palette (spec §2.1). */
+  readonly mode: Mode;
+  /** Brand accent colour, applied in either mode (accent-only recolour). */
+  readonly accent: Accent;
+  /** Pure-black surfaces for OLED displays; takes visual effect in dark mode. */
+  readonly oledDark: boolean;
+  /** Accessibility high-contrast mode; boosts contrast + borders over the active mode/accent. */
+  readonly highContrast: boolean;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
@@ -197,8 +206,10 @@ interface PreferencesStore {
   readonly bridgeToken: string;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
+  setMode: (mode: Mode) => void;
+  setAccent: (accent: Accent) => void;
+  setOledDark: (enabled: boolean) => void;
+  setHighContrast: (enabled: boolean) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
@@ -239,7 +250,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // First-run guess from the browser locale; the persisted value (if any) wins.
       baseCurrency: guessBaseCurrency(),
       locale: 'en-GB',
-      theme: 'dark',
+      mode: 'dark',
+      accent: 'violet',
+      oledDark: false,
+      highContrast: false,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
@@ -268,8 +282,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       bridgeToken: '',
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
-      setTheme: (theme) => set({ theme }),
-      toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+      // Normalise so a stale/unknown persisted value can never reach the apply seam.
+      setMode: (mode) => set({ mode: normaliseMode(mode) }),
+      setAccent: (accent) => set({ accent: normaliseAccent(accent) }),
+      setOledDark: (oledDark) => set({ oledDark }),
+      setHighContrast: (highContrast) => set({ highContrast }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
