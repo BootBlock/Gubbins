@@ -86,7 +86,7 @@ jobs:
         run: npm ci
 
       - name: Type-check the bridge
-        run: npx tsc --noEmit -p bridge/tsconfig.json
+        run: npm run type-check:bridge
 
       - name: Run bridge tests
-        run: npx vitest run --config bridge/vitest.config.ts
+        run: npm run test:bridge
