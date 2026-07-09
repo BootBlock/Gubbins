@@ -441,6 +441,21 @@ export function useCreateLocation() {
   });
 }
 
+/**
+ * Create a location from a `/`- or `\`-separated path in one go (spec §4), creating any
+ * missing ancestor levels and reusing the ones that already exist. See
+ * {@link LocationRepository.createPath}. Resolves with the leaf location so the inline
+ * "New location…" flow can select it. A separator-free name behaves exactly like
+ * {@link useCreateLocation}, so this is the drop-in the create dialog uses.
+ */
+export function useCreateLocationPath() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateLocationInput) => getLocationRepository().createPath(input),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
+  });
+}
+
 export function useUpdateLocation() {
   const client = useQueryClient();
   return useMutation({

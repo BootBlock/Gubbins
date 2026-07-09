@@ -13,6 +13,7 @@ import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import { rowToLocation } from './mappers';
+import { splitLocationPath } from '@/features/inventory/location-path';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -131,6 +132,46 @@ export class LocationRepository extends BaseRepository {
     });
     await this.driver.transaction(statements);
     return (await this.getById(id))!;
+  }
+
+  /**
+   * Create a whole branch of the hierarchy from a `/`- or `\`-separated path (spec §4), e.g.
+   * `Workshop/Cabinet A/Drawer 3` yields Workshop → Cabinet A → Drawer 3. Each level is
+   * created under the running parent **only if a same-named child doesn't already exist**
+   * there — an existing ancestor is reused, never duplicated — so the same path can be typed
+   * repeatedly and only the genuinely-missing levels are added. The intermediate ancestors are
+   * created bare; the final (leaf) segment carries the full input (description, colour, kind,
+   * capacity, default), since that is the location the user was actually configuring. Returns
+   * the leaf. A single-segment path (no separator) is exactly equivalent to {@link create}.
+   *
+   * The chain is created level-by-level rather than in one transaction: the hierarchy is a
+   * small, low-frequency physical structure, and each {@link create} already carries the
+   * INSERT + single-default-demotion invariants we want to reuse verbatim.
+   */
+  async createPath(input: CreateLocationInput): Promise<Location> {
+    this.assertWritable();
+    const segments = splitLocationPath(input.name);
+    if (segments.length === 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'A location must have a name.');
+    }
+
+    let parentId = input.parentId ?? null;
+    if (parentId !== null) {
+      await this.requireExists(parentId);
+    }
+
+    // Every level but the last is a structural ancestor: reuse it if present, else create bare.
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      const existing = await this.findChildByName(parentId, segments[i]!);
+      parentId = existing ? existing.id : (await this.create({ name: segments[i]!, parentId })).id;
+    }
+
+    // The leaf carries the full metadata — but if it already exists we reuse it untouched
+    // (the point of the shortcut is to fill in missing levels, not to clobber a real location).
+    const leafName = segments[segments.length - 1]!;
+    const existingLeaf = await this.findChildByName(parentId, leafName);
+    if (existingLeaf) return existingLeaf;
+    return this.create({ ...input, name: leafName, parentId });
   }
 
   async update(id: string, input: UpdateLocationInput): Promise<Location> {
@@ -327,6 +368,23 @@ export class LocationRepository extends BaseRepository {
   }
 
   // --- internals -----------------------------------------------------------------
+
+  /**
+   * Find a direct child of `parentId` (or a root, when null) whose name matches `name`
+   * case-insensitively — the "does this level already exist?" lookup that lets
+   * {@link createPath} reuse an ancestor instead of duplicating it. The NOCASE match mirrors
+   * the tree's `name COLLATE NOCASE` ordering, so `workshop` and `Workshop` are one level.
+   */
+  private async findChildByName(parentId: string | null, name: string): Promise<Location | undefined> {
+    const trimmed = name.trim();
+    const row = await this.driver.queryOne<LocationRow>(
+      parentId === null
+        ? 'SELECT * FROM locations WHERE parent_id IS NULL AND name = ? COLLATE NOCASE LIMIT 1;'
+        : 'SELECT * FROM locations WHERE parent_id = ? AND name = ? COLLATE NOCASE LIMIT 1;',
+      parentId === null ? [trimmed] : [parentId, trimmed],
+    );
+    return row ? rowToLocation(row) : undefined;
+  }
 
   private async requireExists(id: string): Promise<void> {
     const exists = await this.driver.queryOne('SELECT 1 AS ok FROM locations WHERE id = ?;', [id]);

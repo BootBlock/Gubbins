@@ -5,7 +5,7 @@ import { CreateLocationDialog } from './CreateLocationDialog';
 
 const spies = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock('../mutations', () => ({
-  useCreateLocation: () => ({ mutate: spies.create, isPending: false }),
+  useCreateLocationPath: () => ({ mutate: spies.create, isPending: false }),
 }));
 
 afterEach(() => {
@@ -61,5 +61,40 @@ describe('CreateLocationDialog', () => {
       capacity: 20,
       isDefault: true,
     });
+  });
+
+  it('passes a slash-separated path through verbatim so the repo splits it', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Workshop/Cabinet A/Drawer 3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(spies.create).toHaveBeenCalledTimes(1);
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ name: 'Workshop/Cabinet A/Drawer 3' });
+  });
+
+  it('previews the nested levels a path will create', () => {
+    renderDialog();
+    // No preview for a plain single-level name.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Workshop' } });
+    expect(screen.queryByText(/Existing levels are reused/i)).toBeNull();
+
+    // A separator reveals the chain of levels.
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Workshop/Cabinet A/Drawer 3' },
+    });
+    const preview = screen.getByText(/Existing levels are reused/i);
+    expect(preview).toHaveTextContent('Workshop');
+    expect(preview).toHaveTextContent('Cabinet A');
+    expect(preview).toHaveTextContent('Drawer 3');
+  });
+
+  it('keeps Create disabled when the name is only separators or blank', () => {
+    renderDialog();
+    const createButton = screen.getByRole('button', { name: 'Create' });
+    expect(createButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' / \\ ' } });
+    expect(createButton).toBeDisabled();
   });
 });

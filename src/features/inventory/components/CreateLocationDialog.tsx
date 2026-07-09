@@ -2,10 +2,11 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { Button, FormField, Input, InfoHint, Modal, Textarea } from '@/components/foundry';
 import type { Location, LocationWithCount } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
-import { useCreateLocation } from '../mutations';
+import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
 import { locationColorTextClass, type LocationColor } from '../location-color';
 import type { LocationKind } from '../location-kind';
+import { splitLocationPath } from '../location-path';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationKindPicker } from './LocationKindPicker';
@@ -15,7 +16,7 @@ import {
   HINT_DEFAULT,
   HINT_DESCRIPTION,
   HINT_KIND,
-  HINT_NAME,
+  HINT_NAME_CREATE,
   HINT_PARENT,
 } from './location-field-help';
 
@@ -37,7 +38,7 @@ export function CreateLocationDialog({
    */
   onCreated?: (location: Location) => void;
 }) {
-  const create = useCreateLocation();
+  const create = useCreateLocationPath();
   const fmt = useFormatters();
   const parentLabelId = useId();
   const colorLabelId = useId();
@@ -55,11 +56,19 @@ export function CreateLocationDialog({
   // right-aligned item-count hint (system/archived locations are never valid parents).
   const parentOptions = useMemo(() => buildParentOptions(locations, fmt.quantity), [locations, fmt]);
 
+  // A `/` or `\` in the name creates a whole nested branch at once (the leaf carries the
+  // metadata below; missing ancestors are added, existing ones reused). Parse once for both
+  // the submit guard and the live "what this will create" preview.
+  const segments = useMemo(() => splitLocationPath(name), [name]);
+  const isPath = segments.length > 1;
+
   const submit = () => {
-    if (name.trim().length === 0) return;
+    if (segments.length === 0) return;
     const capacityNum = capacity.trim() === '' ? null : Number(capacity);
     create.mutate(
       {
+        // Pass the raw name through so the repository splits the path; a single segment
+        // behaves exactly like a plain create.
         name: name.trim(),
         parentId: parentId || null,
         description,
@@ -92,15 +101,27 @@ export function CreateLocationDialog({
       initialFocusRef={nameRef}
     >
       <div className="space-y-4">
-        <FormField label="Name" hint={HINT_NAME}>
+        <FormField label="Name" hint={HINT_NAME_CREATE}>
           <Input
             ref={nameRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="e.g. Workshop, Cabinet A, Drawer 3"
+            placeholder="e.g. Workshop, or Workshop/Cabinet A/Drawer 3"
             className={locationColorTextClass(color)}
           />
+          {isPath ? (
+            <p className="mt-field-gap-compact text-xs text-muted-foreground">
+              Creates{' '}
+              {segments.map((segment, i) => (
+                <span key={i}>
+                  {i > 0 ? <span aria-hidden="true"> › </span> : null}
+                  <span className="font-medium text-foreground">{segment}</span>
+                </span>
+              ))}
+              . Existing levels are reused, not duplicated.
+            </p>
+          ) : null}
         </FormField>
 
         <div className="relative">
@@ -173,7 +194,7 @@ export function CreateLocationDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={create.isPending || name.trim().length === 0}>
+          <Button onClick={submit} disabled={create.isPending || segments.length === 0}>
             Create
           </Button>
         </div>
