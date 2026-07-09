@@ -8,9 +8,11 @@ import {
   normaliseBatch,
   planBatchConsumption,
   planBatchSelection,
+  planItemConsumption,
   sortFefo,
   totalBatched,
   type BatchLine,
+  type LocatedBatchLine,
 } from './batches';
 
 const line = (
@@ -176,5 +178,57 @@ describe('totalBatched / activeBatches', () => {
 
   it('drops empty batches and orders FEFO', () => {
     expect(activeBatches(batches).map((b) => b.batchKey)).toEqual(['a', DEFAULT_BATCH_KEY]);
+  });
+});
+
+describe('planItemConsumption (cross-location FEFO)', () => {
+  const located = (
+    locationId: string,
+    batchKey: string,
+    quantity: number,
+    expiryDate: number | null = null,
+  ): LocatedBatchLine => ({ locationId, batchKey, quantity, expiryDate, batchNumber: null, lotNumber: null });
+
+  it('draws soonest-expiry first regardless of which location holds it', () => {
+    // The earliest lot (expiry 100) is in loc-B; it must be drawn before loc-A's later lot.
+    const batches = [
+      located('loc-A', 'x', 5, 300),
+      located('loc-B', 'y', 5, 100),
+      located('loc-A', 'z', 5, 200),
+    ];
+    const plan = planItemConsumption(batches, 8);
+    expect(plan.shortfall).toBe(0);
+    expect(plan.consumed).toEqual([
+      { locationId: 'loc-B', batchKey: 'y', amount: 5 }, // expiry 100 first
+      { locationId: 'loc-A', batchKey: 'z', amount: 3 }, // then expiry 200
+    ]);
+  });
+
+  it('spans every placement to meet the grand total', () => {
+    const batches = [located('loc-A', '', 4), located('loc-B', '', 3), located('loc-C', '', 2)];
+    const plan = planItemConsumption(batches, 9);
+    expect(plan.shortfall).toBe(0);
+    expect(plan.consumed.reduce((sum, c) => sum + c.amount, 0)).toBe(9);
+  });
+
+  it('reports a shortfall rather than overdrawing when the item runs dry everywhere', () => {
+    const batches = [located('loc-A', '', 2), located('loc-B', '', 1)];
+    const plan = planItemConsumption(batches, 5);
+    expect(plan.consumed.reduce((sum, c) => sum + c.amount, 0)).toBe(3);
+    expect(plan.shortfall).toBe(2);
+  });
+
+  it('breaks equal-expiry ties by location then batch key for a stable order', () => {
+    const batches = [
+      located('loc-B', 'b', 1, 100),
+      located('loc-A', 'b', 1, 100),
+      located('loc-A', 'a', 1, 100),
+    ];
+    const plan = planItemConsumption(batches, 3);
+    expect(plan.consumed.map((c) => `${c.locationId}/${c.batchKey}`)).toEqual([
+      'loc-A/a',
+      'loc-A/b',
+      'loc-B/b',
+    ]);
   });
 });

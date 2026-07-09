@@ -170,6 +170,57 @@ export function planBatchSelection(
   };
 }
 
+/**
+ * A batch line tagged with the location it sits in — one row of an item's *whole-ledger* batch
+ * composition (across every placement), for a cross-location draw.
+ */
+export interface LocatedBatchLine extends BatchLine {
+  readonly locationId: string;
+}
+
+/** One located slice of a cross-location consumption plan. */
+export interface LocatedConsumption extends BatchConsumption {
+  readonly locationId: string;
+}
+
+export interface ItemConsumptionPlan {
+  /** Per-`(location, batch)` withdrawals, in global FEFO order, omitting any zero-take slice. */
+  readonly consumed: readonly LocatedConsumption[];
+  /** Units that could not be satisfied because the item ran dry everywhere (0 when fully met). */
+  readonly shortfall: number;
+}
+
+/**
+ * Plan the withdrawal of `amount` units of an item **first-expiry-first-out across every location
+ * it sits in** (Kits v3) — the soonest-expiring lot is drawn first regardless of *where* it is,
+ * so a build consumes from the whole on-hand grand total rather than a single home placement. This
+ * closes the split-location gap the single-placement {@link planBatchConsumption} left: the
+ * buildable ceiling (grand-total stock) and the actual draw now always agree. Ties (equal expiry)
+ * break by location then batch key for a stable, device-independent order; any unmet remainder is
+ * reported as `shortfall` rather than overdrawing a location.
+ */
+export function planItemConsumption(
+  batches: readonly LocatedBatchLine[],
+  amount: number,
+): ItemConsumptionPlan {
+  let remaining = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
+  const ordered = batches.slice().sort((a, b) => {
+    const ax = a.expiryDate ?? Number.POSITIVE_INFINITY;
+    const bx = b.expiryDate ?? Number.POSITIVE_INFINITY;
+    return ax - bx || a.locationId.localeCompare(b.locationId) || a.batchKey.localeCompare(b.batchKey);
+  });
+  const consumed: LocatedConsumption[] = [];
+  for (const batch of ordered) {
+    if (remaining <= 0) break;
+    const take = Math.min(Math.max(0, batch.quantity), remaining);
+    if (take > 0) {
+      consumed.push({ locationId: batch.locationId, batchKey: batch.batchKey, amount: take });
+      remaining -= take;
+    }
+  }
+  return { consumed, shortfall: remaining };
+}
+
 /** Total units held across a placement's batches. */
 export function totalBatched(batches: readonly BatchLine[]): number {
   return batches.reduce((sum, b) => sum + Math.max(0, b.quantity), 0);

@@ -19,9 +19,11 @@ import type { IDatabaseDriver, SqlStatement } from '../rpc/driver';
 import {
   batchKeyOf,
   planBatchConsumption,
+  planItemConsumption,
   type BatchIdentity,
   type BatchLine,
   type ConsumptionPlan,
+  type LocatedBatchLine,
 } from '@/features/inventory/batches';
 
 /** Deterministic separator between the item, location and batch-key segments. */
@@ -170,4 +172,46 @@ export async function placementDeltaStatements(
   if (delta > 0) return [addBatchStatement(itemId, locationId, UNTRACKED_BATCH, delta)];
   const batches = await readPlacementBatches(driver, itemId, locationId);
   return consumeBatchStatements(itemId, locationId, planBatchConsumption(batches, -delta));
+}
+
+/**
+ * Read an item's *whole-ledger* batch composition — every `(location, batch)` row holding stock,
+ * across all its placements — as located batch lines for a cross-location FEFO draw (Kits v3).
+ */
+export async function readItemBatches(driver: IDatabaseDriver, itemId: string): Promise<LocatedBatchLine[]> {
+  const rows = await driver.query<{
+    location_id: string;
+    batch_key: string;
+    batch_number: string | null;
+    lot_number: string | null;
+    expiry_date: number | null;
+    quantity: number;
+  }>(
+    `SELECT location_id, batch_key, batch_number, lot_number, expiry_date, quantity
+     FROM stock_batches WHERE item_id = ? AND quantity > 0;`,
+    [itemId],
+  );
+  return rows.map((r) => ({ ...rowToBatchLine(r), locationId: r.location_id }));
+}
+
+/**
+ * Build the statements to consume `amount` units of an item **first-expiry-first-out across every
+ * location it sits in** (Kits v3) — so a kit assembly draws from the item's whole on-hand grand
+ * total, not just its home placement. The plan is built from the item's current batch rows via the
+ * pure {@link planItemConsumption}; any shortfall leaves the deficit unconsumed (the caller must
+ * validate availability first, with the `CHECK (quantity >= 0)` as the backstop). Consuming zero
+ * yields no statements.
+ */
+export async function itemConsumeStatements(
+  driver: IDatabaseDriver,
+  itemId: string,
+  amount: number,
+): Promise<SqlStatement[]> {
+  if (amount <= 0) return [];
+  const batches = await readItemBatches(driver, itemId);
+  const plan = planItemConsumption(batches, amount);
+  return plan.consumed.map((c) => ({
+    sql: `UPDATE stock_batches SET quantity = quantity - ? WHERE id = ?;`,
+    params: [c.amount, stockBatchRowId(itemId, c.locationId, c.batchKey)],
+  }));
 }
