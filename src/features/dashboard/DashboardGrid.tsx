@@ -14,7 +14,14 @@
 import { useMemo, useState, type CSSProperties, type DragEvent, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { buttonVariants, Surface, Tooltip, useReducedMotion } from '@/components/foundry';
+import {
+  buttonVariants,
+  revealStaggerMs,
+  Surface,
+  Tooltip,
+  useReducedMotion,
+  useRevealOnScroll,
+} from '@/components/foundry';
 import { DragHandleIcon, HideIcon, ShowIcon, ResetIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useDashboardCustomise } from './useDashboardCustomise';
@@ -320,10 +327,20 @@ function WidgetTile({
 }) {
   const Body = def.Component;
   const openSettings = useSettingsDialog((s) => s.openSettings);
-  // Cascade the entrance: each tile rises in a beat after the previous one. Capped so a
-  // busy board never feels sluggish; zeroed for reduced-motion users by the index.css
-  // catch-all (animation-delay: 0). `both` fill keeps the tile hidden during its wait.
-  const riseDelay = { animationDelay: `${Math.min(index, 8) * 45}ms` } as CSSProperties;
+  // Scroll-reveal (F3): rather than rising on mount, each tile holds invisible until it
+  // scrolls into view, then rises in once via the shared `animate-rise` entrance. The hook
+  // runs unconditionally (before the edit-mode branch) so it never violates the rules of
+  // hooks; the reveal classes are only applied to the non-editing card below (a tile being
+  // arranged must stay fully visible). Under reduced motion / no IntersectionObserver the
+  // hook reports `armed: false` and the card renders visible from first paint.
+  const reduced = useReducedMotion();
+  const { ref: revealRef, revealed, armed } = useRevealOnScroll({ reduced });
+  // Cascade the entrance: each tile rises in a beat after the previous one, capped so a busy
+  // board never feels sluggish. Only meaningful while the tile is rising.
+  const riseDelay =
+    armed && revealed && index > 0
+      ? ({ animationDelay: `${revealStaggerMs(index)}ms` } as CSSProperties)
+      : undefined;
 
   if (editing) {
     return (
@@ -381,9 +398,16 @@ function WidgetTile({
 
   const card = (
     <Surface
+      ref={revealRef}
       data-testid={`widget-${def.id}`}
       style={riseDelay}
-      className="block h-full animate-rise p-4 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
+      className={cn(
+        'block h-full p-4 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10',
+        // Held invisible until it scrolls into view, then rise in once (F3). Only applied
+        // while armed, so a reduced-motion / observer-less render stays visible throughout.
+        armed && !revealed && 'opacity-0',
+        armed && revealed && 'animate-rise',
+      )}
     >
       <Body />
     </Surface>
