@@ -1,25 +1,33 @@
 /**
- * Item-detail facet for Kits v1 (definition + availability). A kit is an item composed
- * of fixed per-kit quantities of *other* items (a first-aid kit = 2 bandages + 1 scissors
- * + 5 plasters). This editor defines that composition — list, add, re-quantify and remove
- * component lines — and surfaces how many whole kits the current component stock can build
- * (the pure `buildableCount`, limited by the scarcest component). The stock-moving
- * assemble/disassemble operation is a deliberately separate v2 piece; this is definition
- * only. Distinct from variants (child SKUs of one identity) and a project BOM (transient
- * work): a kit is a reusable many-to-many item→component relationship.
+ * Item-detail facet for Kits (v1 definition + availability, v2 assemble/disassemble, v3
+ * nested-kit roll-up / cascade / multi-location). A kit is an item composed of fixed per-kit
+ * quantities of *other* items (a first-aid kit = 2 bandages + 1 scissors + 5 plasters). This
+ * editor defines that composition — list, add, re-quantify and remove component lines — surfaces
+ * how many whole kits the current stock can build (the pure `buildableCount`, plus the nested
+ * **roll-up** where a component is itself a kit), and drives the stock-moving build:
+ *
+ *   - **Assemble / disassemble** move stock atomically through the ledger. Assembly is capped by
+ *     the buildable count (or, with "assemble sub-kits as needed" on, the roll-up count); the
+ *     produced kit lands at a chosen destination location (default: the kit's home).
+ *   - A component may itself be a kit; when so, an "includes N buildable sub-kits" line and the
+ *     opt-in cascade toggle appear.
+ *
+ * Distinct from variants (child SKUs of one identity) and a project BOM (transient work): a kit is
+ * a reusable many-to-many item→component relationship.
  */
 import { useMemo, useState } from 'react';
-import { Button, InfoHint, Input, SelectField, useToast } from '@/components/foundry';
+import { Button, Checkbox, InfoHint, Input, SelectField, useToast } from '@/components/foundry';
 import { AddIcon, AssemblyIcon, DeleteIcon } from '@/components/icons';
 import type { Item, KitComponent } from '@/db/repositories';
 import { buildableCount } from '@/features/inventory/kit-availability';
-import { useInventoryItems } from '@/features/inventory/queries';
+import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { plural } from '@/lib/plural';
 import {
   useAddKitComponent,
   useAssembleKit,
   useDisassembleKit,
   useItemKit,
+  useKitAvailability,
   useRemoveKitComponent,
   useUpdateKitComponentQty,
 } from '../hooks';
@@ -48,33 +56,36 @@ export function KitEditor({ item }: { item: Item }) {
   const rows = components ?? [];
   const { count, limiting } = buildableCount(rows);
 
-  // Assemble / disassemble (Kits v2): one count drives both actions, each bounded by its own
-  // ceiling — assembly by the buildable count, disassembly by the kit's on-hand quantity.
+  // Nested-kit roll-up (Kits v3): how many kits are buildable once sub-kits are assembled on
+  // demand, and the deepest limiting leaves. Only surfaced when the kit actually nests.
+  const { data: rollUp } = useKitAvailability(item.id);
+  const nests = (rollUp?.subKitCount ?? 0) > 0;
+
+  // Assemble / disassemble (Kits v2/v3): one count drives both actions. Assembly is bounded by the
+  // buildable count — or, with cascade on, the roll-up count; disassembly by the kit's on-hand
+  // quantity. The produced kit can land at a chosen destination location.
   const assemble = useAssembleKit();
   const disassemble = useDisassembleKit();
   const toast = useToast();
+  const { data: locationsPage } = useLocations();
+  const locations = locationsPage?.rows ?? [];
   const [buildQty, setBuildQty] = useState('1');
+  const [cascade, setCascade] = useState(false);
+  const [destinationId, setDestinationId] = useState('');
   const buildN = Math.max(0, Math.floor(Number(buildQty) || 0));
   const busy = assemble.isPending || disassemble.isPending;
-  const canAssemble = buildN >= 1 && buildN <= count && !busy;
+  const assembleCeiling = cascade && nests && rollUp ? rollUp.count : count;
+  const canAssemble = buildN >= 1 && buildN <= assembleCeiling && !busy;
   const canDisassemble = buildN >= 1 && buildN <= item.quantity && !busy;
 
-  const runBuild = (
-    action: typeof assemble | typeof disassemble,
-    verb: 'Assembled' | 'Disassembled',
-    fallback: string,
-  ) => {
-    action.mutate(
-      { kitId: item.id, count: buildN },
-      {
-        onSuccess: () => {
-          toast.show({ tone: 'success', message: `${verb} ${buildN} ${plural(buildN, 'kit')}.` });
-          setBuildQty('1');
-        },
-        onError: (e) => toast.show({ tone: 'danger', message: e instanceof Error ? e.message : fallback }),
-      },
-    );
-  };
+  const buildCallbacks = (verb: 'Assembled' | 'Disassembled', fallback: string) => ({
+    onSuccess: () => {
+      toast.show({ tone: 'success' as const, message: `${verb} ${buildN} ${plural(buildN, 'kit')}.` });
+      setBuildQty('1');
+    },
+    onError: (e: unknown) =>
+      toast.show({ tone: 'danger' as const, message: e instanceof Error ? e.message : fallback }),
+  });
 
   const add = () => {
     if (componentId === '') return;
@@ -120,6 +131,18 @@ export function KitEditor({ item }: { item: Item }) {
                   Limited by {limiting.map((c) => c.name).join(', ')}.
                 </p>
               ) : null}
+              {/* Roll-up: sub-kits built on demand can raise the ceiling beyond the on-hand count. */}
+              {nests && rollUp ? (
+                <p className="mt-0.5 text-xs text-muted-foreground" data-testid="kit-rollup">
+                  Up to <span className="font-medium text-foreground">{rollUp.count}</span> with sub-kits
+                  assembled on demand — includes {rollUp.subKitCount} buildable{' '}
+                  {plural(rollUp.subKitCount, 'sub-kit')}
+                  {rollUp.count > 0 && rollUp.limiting.length > 0
+                    ? ` (deepest constraint: ${rollUp.limiting.map((l) => l.name).join(', ')})`
+                    : ''}
+                  .
+                </p>
+              ) : null}
             </>
           )}
         </div>
@@ -133,7 +156,7 @@ export function KitEditor({ item }: { item: Item }) {
         </ul>
       ) : null}
 
-      {/* Assemble / disassemble the kit (Kits v2) — moves stock atomically through the ledger. */}
+      {/* Assemble / disassemble the kit (Kits v2/v3) — moves stock atomically through the ledger. */}
       {rows.length > 0 ? (
         <div className="rounded-xl border border-border p-3" data-testid="kit-assemble">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground [&_svg]:size-3.5">
@@ -143,11 +166,12 @@ export function KitEditor({ item }: { item: Item }) {
               content={
                 'Build whole kits from stock (consuming each component) or break them back ' +
                 'down (returning components to stock). Assembly is capped by how many you can ' +
-                'build; disassembly by how many kits you have on hand.'
+                'build; disassembly by how many kits you have on hand. Components are drawn from ' +
+                'every location they sit in, soonest-expiry first.'
               }
             />
           </p>
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <label className="w-24">
               <span className="mb-field-gap-compact block text-xs text-muted-foreground">Number of kits</span>
               <Input
@@ -159,9 +183,31 @@ export function KitEditor({ item }: { item: Item }) {
                 data-testid="kit-build-qty"
               />
             </label>
+            <div className="w-44">
+              <SelectField
+                label="Destination"
+                value={destinationId}
+                onChange={setDestinationId}
+                options={[
+                  { value: '', label: 'Kit’s home location' },
+                  ...locations.map((l) => ({ value: l.id, label: l.name })),
+                ]}
+                data-testid="kit-destination"
+              />
+            </div>
             <Button
               size="sm"
-              onClick={() => runBuild(assemble, 'Assembled', 'Could not assemble the kit.')}
+              onClick={() =>
+                assemble.mutate(
+                  {
+                    kitId: item.id,
+                    count: buildN,
+                    destinationLocationId: destinationId || undefined,
+                    cascade: cascade && nests ? true : undefined,
+                  },
+                  buildCallbacks('Assembled', 'Could not assemble the kit.'),
+                )
+              }
               disabled={!canAssemble}
               data-testid="assemble-kit"
             >
@@ -171,15 +217,35 @@ export function KitEditor({ item }: { item: Item }) {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => runBuild(disassemble, 'Disassembled', 'Could not disassemble the kit.')}
+              onClick={() =>
+                disassemble.mutate(
+                  { kitId: item.id, count: buildN },
+                  buildCallbacks('Disassembled', 'Could not disassemble the kit.'),
+                )
+              }
               disabled={!canDisassemble}
               data-testid="disassemble-kit"
             >
               Disassemble
             </Button>
           </div>
+          {nests ? (
+            <label
+              className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+              data-testid="kit-cascade-toggle"
+            >
+              <Checkbox checked={cascade} onChange={(e) => setCascade(e.target.checked)} />
+              Assemble sub-kits as needed
+              <InfoHint
+                content={
+                  'When on, assembling this kit also assembles any sub-kit you are short of — ' +
+                  'consuming their components down the chain, all in one transaction.'
+                }
+              />
+            </label>
+          ) : null}
           <p className="mt-1.5 text-xs text-muted-foreground" data-testid="kit-build-bounds">
-            Up to {count} buildable · {item.quantity} on hand
+            Up to {assembleCeiling} buildable · {item.quantity} on hand
           </p>
         </div>
       ) : null}
@@ -191,7 +257,8 @@ export function KitEditor({ item }: { item: Item }) {
           <InfoHint
             content={
               'Pick an item and set how many of it **one** kit needs. The buildable count above is ' +
-              'the minimum, across every component, of how many kits its on-hand stock can cover.\n\n' +
+              'the minimum, across every component, of how many kits its on-hand stock can cover. ' +
+              'A consumable-gauge component contributes a per-kit net-value draw.\n\n' +
               'A kit cannot contain itself (directly or transitively) — circular references are rejected.'
             }
           />
@@ -241,13 +308,14 @@ export function KitEditor({ item }: { item: Item }) {
 }
 
 /**
- * One component line: the component name, its on-hand stock, an inline per-kit quantity
- * (committed on blur when changed) and a remove button.
+ * One component line: the component name, its on-hand supply (a gauge shows its net value), an
+ * inline per-kit quantity (committed on blur when changed) and a remove button.
  */
 function KitComponentRow({ kitId, component }: { kitId: string; component: KitComponent }) {
   const updateQty = useUpdateKitComponentQty();
   const removeComponent = useRemoveKitComponent();
   const [qty, setQty] = useState(String(component.quantity));
+  const isGauge = component.trackingMode === 'CONSUMABLE_GAUGE';
 
   const commit = () => {
     const next = Math.max(1, Math.floor(Number(qty) || 1));
@@ -264,7 +332,9 @@ function KitComponentRow({ kitId, component }: { kitId: string; component: KitCo
       data-testid="kit-component"
     >
       <span className="flex-1 truncate font-medium">{component.name}</span>
-      <span className="text-xs text-muted-foreground">{component.stock} in stock</span>
+      <span className="text-xs text-muted-foreground">
+        {component.stock} {isGauge ? 'remaining' : 'in stock'}
+      </span>
       <label className="flex items-center gap-1">
         <span className="text-xs text-muted-foreground">×</span>
         <Input

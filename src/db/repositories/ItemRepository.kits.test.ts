@@ -5,6 +5,7 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { buildableCount } from '@/features/inventory/kit-availability';
 import { ItemRepository } from './ItemRepository';
+import { LocationRepository } from './LocationRepository';
 
 /**
  * Kits v1 — the `kit_components` edge repository: list (joined to each component's name and
@@ -278,5 +279,201 @@ describe('ItemRepository — Kits v2 (assemble / disassemble)', () => {
     // Nothing changed — the kit and components stay put.
     expect((await items.getById(kit.id))!.quantity).toBe(1);
     expect((await items.getById(bandage.id))!.quantity).toBe(8);
+  });
+});
+
+/**
+ * Kits v3 — nested-kit roll-up (cascade assembly), a true cross-location FEFO draw, a
+ * caller-chosen destination for the produced kit, and gauge (net-value) components. Assembly
+ * stays one atomic, all-or-nothing transaction; the plan nets shared leaves so a diamond is
+ * never over-drawn, and the buildable ceiling always matches the draw that realises it.
+ */
+describe('ItemRepository — Kits v3 (roll-up, cascade, cross-location, gauge)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+  let locations: LocationRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+    locations = new LocationRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  describe('cross-location FEFO draw', () => {
+    it('draws a component from its whole grand total, spanning locations', async () => {
+      const a = await locations.create({ name: 'Drawer A' });
+      const b = await locations.create({ name: 'Drawer B' });
+      const kit = await items.create({ name: 'Kit', locationId: a.id });
+      const widget = await items.create({ name: 'Widget', quantity: 10, locationId: a.id });
+      await items.transferStock(widget.id, a.id, b.id, 4); // 6 at A, 4 at B
+      await items.addKitComponent(kit.id, widget.id, 1);
+
+      // Assemble 8 — more than either single placement holds, so the draw must cross both.
+      await items.assemble(kit.id, 8);
+
+      expect((await items.getById(widget.id))!.quantity).toBe(2); // 10 − 8, netted across A+B
+      expect((await items.getById(kit.id))!.quantity).toBe(8);
+    });
+
+    it('places the produced kit at a chosen destination location', async () => {
+      const home = await locations.create({ name: 'Workshop' });
+      const shelf = await locations.create({ name: 'Finished goods' });
+      const kit = await items.create({ name: 'Kit', locationId: home.id });
+      const part = await items.create({ name: 'Part', quantity: 20, locationId: home.id });
+      await items.addKitComponent(kit.id, part.id, 2);
+
+      await items.assemble(kit.id, 3, { destinationLocationId: shelf.id });
+
+      const stock = await items.listStock(kit.id);
+      expect(stock).toEqual([{ locationId: shelf.id, locationName: 'Finished goods', quantity: 3 }]);
+    });
+
+    it('rejects an unknown destination location', async () => {
+      const kit = await items.create({ name: 'Kit' });
+      const part = await items.create({ name: 'Part', quantity: 5 });
+      await items.addKitComponent(kit.id, part.id, 1);
+      await expect(
+        items.assemble(kit.id, 1, { destinationLocationId: 'no-such-location' }),
+      ).rejects.toBeInstanceOf(DbError);
+    });
+  });
+
+  describe('cascade assembly of nested kits', () => {
+    /** A→B→C chain: A is built from B, B from C; only C is stocked. */
+    async function seedChain(cStock = 10) {
+      const a = await items.create({ name: 'A' });
+      const b = await items.create({ name: 'B' });
+      const c = await items.create({ name: 'C', quantity: cStock });
+      await items.addKitComponent(b.id, c.id, 1);
+      await items.addKitComponent(a.id, b.id, 1);
+      return { a, b, c };
+    }
+
+    it('transitively assembles missing sub-kits in one transaction', async () => {
+      const { a, b, c } = await seedChain(10);
+
+      await items.assemble(a.id, 5, { cascade: true });
+
+      expect((await items.getById(a.id))!.quantity).toBe(5); // produced
+      expect((await items.getById(b.id))!.quantity).toBe(0); // built 5, all consumed by A
+      expect((await items.getById(c.id))!.quantity).toBe(5); // 10 − 5
+
+      // The whole tree is logged: A assembled, B assembled (as a sub-kit) then consumed, C consumed.
+      expect((await items.getHistory(a.id)).rows.some((h) => h.action === 'ASSEMBLED')).toBe(true);
+      const bLog = (await items.getHistory(b.id)).rows;
+      expect(bLog.some((h) => h.action === 'ASSEMBLED')).toBe(true);
+      expect(bLog.some((h) => h.action === 'CONSUMED')).toBe(true);
+      expect((await items.getHistory(c.id)).rows.some((h) => h.action === 'CONSUMED')).toBe(true);
+    });
+
+    it('only builds the shortfall of an on-hand sub-kit', async () => {
+      const { a, b, c } = await seedChain(10);
+      // Pre-build 2 B on hand (consumes 2 C → 8 left).
+      await items.assemble(b.id, 2);
+      expect((await items.getById(b.id))!.quantity).toBe(2);
+      expect((await items.getById(c.id))!.quantity).toBe(8);
+
+      // Assemble 5 A: 2 B are on hand, only 3 more are built (consuming 3 C → 5 left).
+      await items.assemble(a.id, 5, { cascade: true });
+      expect((await items.getById(a.id))!.quantity).toBe(5);
+      expect((await items.getById(b.id))!.quantity).toBe(0);
+      expect((await items.getById(c.id))!.quantity).toBe(5);
+    });
+
+    it('is all-or-nothing: an infeasible cascade rolls the whole tree back', async () => {
+      const { a, b, c } = await seedChain(10);
+
+      // Each A needs 1 C via B; 20 A would need 20 C but only 10 are stocked.
+      await expect(items.assemble(a.id, 20, { cascade: true })).rejects.toBeInstanceOf(DbError);
+
+      expect((await items.getById(a.id))!.quantity).toBe(0);
+      expect((await items.getById(b.id))!.quantity).toBe(0);
+      expect((await items.getById(c.id))!.quantity).toBe(10);
+      expect((await items.getHistory(a.id)).rows.some((h) => h.action === 'ASSEMBLED')).toBe(false);
+      expect((await items.getHistory(c.id)).rows.some((h) => h.action === 'CONSUMED')).toBe(false);
+    });
+
+    it('refuses to build a missing sub-kit when cascade is off', async () => {
+      const { a } = await seedChain(10); // no B on hand
+      await expect(items.assemble(a.id, 1)).rejects.toBeInstanceOf(DbError);
+      await expect(items.assemble(a.id, 1, { cascade: false })).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('nets a shared leaf across a diamond rather than over-drawing it', async () => {
+      // A needs 1 B + 1 C; B needs 2 D, C needs 3 D — each A costs 5 D. D stocks 12 → 2 A.
+      const a = await items.create({ name: 'A' });
+      const b = await items.create({ name: 'B' });
+      const c = await items.create({ name: 'C' });
+      const d = await items.create({ name: 'D', quantity: 12 });
+      await items.addKitComponent(b.id, d.id, 2);
+      await items.addKitComponent(c.id, d.id, 3);
+      await items.addKitComponent(a.id, b.id, 1);
+      await items.addKitComponent(a.id, c.id, 1);
+
+      await items.assemble(a.id, 2, { cascade: true });
+      expect((await items.getById(a.id))!.quantity).toBe(2);
+      expect((await items.getById(d.id))!.quantity).toBe(2); // 12 − 10, not 12 − 2×5×2
+
+      // A third A would need 15 D — over the 12 stocked, so it is refused.
+      await expect(items.assemble(a.id, 3, { cascade: true })).rejects.toBeInstanceOf(DbError);
+    });
+  });
+
+  describe('gauge (net-value) components', () => {
+    async function seedGaugeKit(opts?: { net?: number; widgetStock?: number }) {
+      const kit = await items.create({ name: 'Glued kit' });
+      const adhesive = await items.create({
+        name: 'Adhesive',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'ml', grossCapacity: 1000, currentNetValue: opts?.net ?? 220 },
+      });
+      await items.addKitComponent(kit.id, adhesive.id, 50); // 50 ml per kit
+      let widget: { id: string } | undefined;
+      if (opts?.widgetStock !== undefined) {
+        widget = await items.create({ name: 'Widget', quantity: opts.widgetStock });
+        await items.addKitComponent(kit.id, widget.id, 1);
+      }
+      return { kit, adhesive, widget };
+    }
+
+    it('draws a per-kit net value from a gauge component, capped by its ratio', async () => {
+      const { kit, adhesive } = await seedGaugeKit({ net: 220 }); // floor(220/50) = 4 buildable
+
+      await items.assemble(kit.id, 4);
+      expect((await items.getById(kit.id))!.quantity).toBe(4);
+      expect((await items.getById(adhesive.id))!.gauge!.currentNetValue).toBe(220 - 200); // 20 ml left
+
+      // A fifth kit needs 250 ml but only 220 were ever there — refused from the start.
+      const fresh = await seedGaugeKit({ net: 220 });
+      await expect(items.assemble(fresh.kit.id, 5)).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('mixes a gauge draw with a discrete component, limited by the scarcer', async () => {
+      const { kit } = await seedGaugeKit({ net: 220, widgetStock: 3 }); // gauge → 4, widget → 3
+      await items.assemble(kit.id, 3);
+      expect((await items.getById(kit.id))!.quantity).toBe(3);
+      await expect(items.assemble(kit.id, 1)).rejects.toBeInstanceOf(DbError); // widget exhausted
+    });
+
+    it('logs a GAUGE_UPDATE (not CONSUMED) for the gauge draw', async () => {
+      const { kit, adhesive } = await seedGaugeKit({ net: 500 });
+      await items.assemble(kit.id, 2); // 100 ml
+      const gaugeLog = (await items.getHistory(adhesive.id)).rows.find((h) => h.action === 'GAUGE_UPDATE');
+      expect(gaugeLog).toBeDefined();
+      expect(gaugeLog!.netValueDelta).toBe(-100);
+    });
+
+    it('returns net value to a gauge component on disassembly, clamped to capacity', async () => {
+      const { kit, adhesive } = await seedGaugeKit({ net: 220 });
+      await items.assemble(kit.id, 4); // gauge 220 → 20
+      await items.disassemble(kit.id, 2); // returns 2 × 50 = 100 ml
+      expect((await items.getById(adhesive.id))!.gauge!.currentNetValue).toBe(120);
+      expect((await items.getById(kit.id))!.quantity).toBe(2);
+    });
   });
 });

@@ -64,6 +64,20 @@ export function useItemKit(kitId: string | undefined) {
   });
 }
 
+/**
+ * A kit's nested-kit **roll-up** availability (Kits v3) — how many whole kits are assemblable
+ * once sub-kits are built on demand, the deepest limiting leaves, and how many direct components
+ * are themselves sub-kits. Keyed under the same `itemKit` namespace so an assemble/disassemble (or
+ * a component edit) refreshes it by prefix. Cheap for a flat kit; only surfaced when it nests.
+ */
+export function useKitAvailability(kitId: string | undefined) {
+  return useQuery({
+    queryKey: [...inventoryKeys.itemKit(kitId ?? ''), 'rollup'],
+    queryFn: () => getItemRepository().rollUpAvailability(kitId!),
+    enabled: Boolean(kitId),
+  });
+}
+
 export function useAddKitComponent() {
   const client = useQueryClient();
   return useMutation({
@@ -110,8 +124,19 @@ export function useRemoveKitComponent() {
 export function useAssembleKit() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ kitId, count }: { kitId: string; count: number }) =>
-      getItemRepository().assemble(kitId, count),
+    mutationFn: ({
+      kitId,
+      count,
+      destinationLocationId,
+      cascade,
+    }: {
+      kitId: string;
+      count: number;
+      /** Where to place the produced kit; defaults to the kit's home location (Kits v3). */
+      destinationLocationId?: string;
+      /** Transitively assemble any missing sub-kit in the same transaction (Kits v3). */
+      cascade?: boolean;
+    }) => getItemRepository().assemble(kitId, count, { destinationLocationId, cascade }),
     onSettled: (_d, _e, { kitId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(kitId) });

@@ -5,17 +5,21 @@ import type { Item, KitComponent } from '@/db/repositories';
 
 /**
  * Behaviour tests for the {@link KitEditor} item-detail facet (Kits v1 — definition +
- * availability; Kits v2 — assemble / disassemble). The buildable maths lives in the pure
- * `buildableCount` seam (covered by kit-availability.test.ts) and runs here for real; this
- * pins the *editor's* logic — the headline "You can build N" line and its limiting note, the
- * add flow (item picker + qty → exact mutation payload), inline re-quantify on blur, remove,
- * and the v2 assemble/disassemble controls (ceiling-bounded buttons → exact mutation payload).
- * Per the component-test conventions every hook the component calls is mocked (`../hooks` +
- * the item-list query); `useToast` runs for real inside a `ToastProvider`.
+ * availability; v2 — assemble / disassemble; v3 — nested-kit roll-up, cascade and destination).
+ * The buildable maths lives in the pure `buildableCount` / `rollUpBuildable` seam (covered by
+ * kit-availability.test.ts) and runs here for real; this pins the *editor's* logic — the headline
+ * "You can build N" line and its limiting note, the roll-up line + cascade toggle when the kit
+ * nests, the destination picker, the add flow (item picker + qty → exact mutation payload), inline
+ * re-quantify on blur, remove, and the assemble/disassemble controls (ceiling-bounded buttons →
+ * exact mutation payload). Per the component-test conventions every hook the component calls is
+ * mocked (`../hooks` + the item-list/locations queries); `useToast` runs for real in a `ToastProvider`.
  */
 const h = vi.hoisted(() => ({
   components: [] as KitComponent[],
   candidates: [] as Item[],
+  locations: [] as { id: string; name: string }[],
+  rollUp: undefined as
+    { count: number; limiting: { itemId: string; name: string }[]; subKitCount: number } | undefined,
   add: vi.fn(),
   updateQty: vi.fn(),
   remove: vi.fn(),
@@ -25,6 +29,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('../hooks', () => ({
   useItemKit: () => ({ data: h.components }),
+  useKitAvailability: () => ({ data: h.rollUp }),
   useAddKitComponent: () => ({ mutate: h.add, isPending: false }),
   useUpdateKitComponentQty: () => ({ mutate: h.updateQty, isPending: false }),
   useRemoveKitComponent: () => ({ mutate: h.remove, isPending: false }),
@@ -34,6 +39,7 @@ vi.mock('../hooks', () => ({
 
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [{ rows: h.candidates }] } }),
+  useLocations: () => ({ data: { rows: h.locations } }),
 }));
 
 import { KitEditor } from './KitEditor';
@@ -55,6 +61,7 @@ const component = (o: Partial<KitComponent> = {}): KitComponent => ({
   name: 'Bandage',
   quantity: 2,
   stock: 10,
+  trackingMode: 'DISCRETE',
   sort: 0,
   ...o,
 });
@@ -70,6 +77,8 @@ function renderEditor(kit: Item = item()) {
 beforeEach(() => {
   h.components = [];
   h.candidates = [item({ id: 'part-1', name: 'Bandage' }), item({ id: 'part-2', name: 'Scissors' })];
+  h.locations = [{ id: 'loc-b', name: 'Finished goods' }];
+  h.rollUp = undefined;
   h.add.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
   h.updateQty.mockReset();
   h.remove.mockReset();
@@ -225,5 +234,74 @@ describe('KitEditor — assemble / disassemble (v2)', () => {
     expect(screen.getByTestId('disassemble-kit')).toBeDisabled();
     // …but assembling is available (there is component stock).
     expect(screen.getByTestId('assemble-kit')).not.toBeDisabled();
+  });
+
+  it('passes a chosen destination location to the assemble mutation', () => {
+    h.components = [component({ quantity: 1, stock: 10 })];
+    renderEditor(item({ quantity: 0 }));
+
+    fireEvent.change(screen.getByTestId('kit-build-qty'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Destination' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Finished goods' }));
+    fireEvent.click(screen.getByTestId('assemble-kit'));
+
+    expect(h.assemble).toHaveBeenCalledWith(
+      { kitId: 'kit-1', count: 2, destinationLocationId: 'loc-b', cascade: undefined },
+      expect.anything(),
+    );
+  });
+});
+
+describe('KitEditor — nested-kit roll-up & cascade (v3)', () => {
+  it('surfaces the roll-up line and buildable sub-kit count only when the kit nests', () => {
+    h.components = [component({ name: 'Trauma pack', quantity: 1, stock: 0 })];
+    // Flat kit: no roll-up line.
+    h.rollUp = { count: 0, limiting: [], subKitCount: 0 };
+    const { rerender } = renderEditor(item({ quantity: 0 }));
+    expect(screen.queryByTestId('kit-rollup')).toBeNull();
+    expect(screen.queryByTestId('kit-cascade-toggle')).toBeNull();
+
+    // Nested kit: the roll-up line names the count, sub-kit count and deepest constraint.
+    h.rollUp = { count: 12, limiting: [{ itemId: 'gauze', name: 'Gauze' }], subKitCount: 1 };
+    rerender(
+      <ToastProvider>
+        <KitEditor item={item({ quantity: 0 })} />
+      </ToastProvider>,
+    );
+    const line = screen.getByTestId('kit-rollup');
+    expect(line).toHaveTextContent('Up to 12');
+    expect(line).toHaveTextContent('1 buildable sub-kit');
+    expect(line).toHaveTextContent('Gauze');
+  });
+
+  it('raises the assemble ceiling and sends cascade:true when "assemble sub-kits" is on', () => {
+    h.components = [component({ name: 'Trauma pack', quantity: 1, stock: 3 })]; // direct: 3 buildable
+    h.rollUp = { count: 12, limiting: [{ itemId: 'gauze', name: 'Gauze' }], subKitCount: 1 };
+    renderEditor(item({ quantity: 0 }));
+
+    const qty = screen.getByTestId('kit-build-qty');
+    fireEvent.change(qty, { target: { value: '8' } });
+    // 8 exceeds the direct ceiling of 3, so Assemble is disabled until cascade is enabled.
+    expect(screen.getByTestId('assemble-kit')).toBeDisabled();
+    expect(screen.getByTestId('kit-build-bounds')).toHaveTextContent('Up to 3 buildable');
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    // Now bounded by the roll-up count of 12; the button enables and the bounds update.
+    expect(screen.getByTestId('kit-build-bounds')).toHaveTextContent('Up to 12 buildable');
+    expect(screen.getByTestId('assemble-kit')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('assemble-kit'));
+    expect(h.assemble).toHaveBeenCalledWith(
+      { kitId: 'kit-1', count: 8, destinationLocationId: undefined, cascade: true },
+      expect.anything(),
+    );
+  });
+
+  it('shows a gauge component’s net value as "remaining" rather than "in stock"', () => {
+    h.components = [
+      component({ name: 'Adhesive', trackingMode: 'CONSUMABLE_GAUGE', quantity: 50, stock: 220 }),
+    ];
+    renderEditor(item({ quantity: 0 }));
+    expect(screen.getByTestId('kit-component')).toHaveTextContent('220 remaining');
   });
 });

@@ -34,7 +34,7 @@ export {
 } from './item/status-filter';
 export type { SearchByAstParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
-export type { KitComponent } from './item/kits';
+export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
 
 /**
