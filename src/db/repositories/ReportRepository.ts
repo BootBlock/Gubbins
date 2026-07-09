@@ -57,6 +57,13 @@ import {
 import { buildSpendReport, type SpendEvent, type SpendReport } from '@/features/reports/spend-analytics';
 import { buildSalesReport, type SalesEvent, type SalesReport } from '@/features/reports/sales-analytics';
 import {
+  buildInsuranceSchedule,
+  type InsuranceSchedule,
+  type ScheduleItemInput,
+  type ScheduleLocationInput,
+} from '@/features/reports/insurance-schedule';
+import { THUMBNAIL_SUBQUERY } from './item/sql';
+import {
   buildReorderPlan,
   type ReorderPlanGroup,
   type ReorderShortfallRow,
@@ -174,6 +181,70 @@ export class ReportRepository extends BaseRepository {
       byCategory: groupValuation(categoryRows),
       byLocation: groupValuation(locationRows),
     };
+  }
+
+  /**
+   * Insurance / estate schedule (feature-gap G1): a room-by-room document of every
+   * catalogued asset with its replacement value, for an insurer / estate / claim. One row
+   * per active, non-parent, non-unlimited item (a parent variant holds no stock of its own;
+   * an unlimited source has no finite value), joined to its primary thumbnail. The pure
+   * {@link buildInsuranceSchedule} groups the items by their home location, orders the groups
+   * by the location hierarchy and rolls up per-location subtotals + a grand total. Cost flows
+   * through the same `effectiveUnitCost` seam as the valuation report (manual cost wins, else
+   * the preferred supplier cost, via {@link preferredSupplierCostSql}).
+   */
+  async insuranceSchedule(now: number = Date.now()): Promise<InsuranceSchedule> {
+    const itemRows = await this.driver.query<{
+      id: string;
+      name: string;
+      serial_no: number | null;
+      condition: string | null;
+      quantity: number;
+      unit_cost: number | null;
+      purchase_price: number | null;
+      acquired_at: string | null;
+      warranty_expires_at: string | null;
+      location_id: string;
+      preferred_supplier_cost: number | null;
+      thumbnail_blob: Uint8Array | null;
+    }>(
+      `SELECT items.id AS id, items.name AS name, items.serial_no AS serial_no, items.condition AS condition,
+              items.quantity AS quantity, items.unit_cost AS unit_cost, items.purchase_price AS purchase_price,
+              items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
+              items.location_id AS location_id,
+              ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
+              ${THUMBNAIL_SUBQUERY}
+         FROM items
+        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')} AND ${notUnlimited('items.is_unlimited')};`,
+    );
+
+    const locationRows = await this.driver.query<{
+      id: string;
+      name: string;
+      parent_id: string | null;
+    }>(`SELECT id, name, parent_id FROM locations;`);
+
+    const items: ScheduleItemInput[] = itemRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      serialNo: r.serial_no,
+      condition: (r.condition as ScheduleItemInput['condition']) ?? null,
+      quantity: r.quantity,
+      acquiredAt: r.acquired_at,
+      warrantyExpiresAt: r.warranty_expires_at,
+      purchasePrice: r.purchase_price,
+      unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
+      locationId: r.location_id,
+      thumbnail: r.thumbnail_blob ?? null,
+    }));
+    const locations: ScheduleLocationInput[] = locationRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      parentId: r.parent_id,
+    }));
+
+    return buildInsuranceSchedule(items, locations, now);
   }
 
   /**

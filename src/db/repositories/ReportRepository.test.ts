@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { MS_PER_DAY, UNASSIGNED_LOCATION_ID } from './constants';
 import { CategoryRepository } from './CategoryRepository';
+import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ReportRepository } from './ReportRepository';
@@ -715,6 +716,65 @@ describe('ReportRepository', () => {
       expect(report.eventCount).toBe(0);
       expect(report.bySupplier).toEqual([]);
       expect(report.bySource.every((s) => s.total === 0)).toBe(true);
+    });
+  });
+
+  describe('insuranceSchedule', () => {
+    it('groups active assets by home location in hierarchy order, joining the thumbnail', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
+
+      const drill = await items.create({ name: 'Drill', locationId: garage.id, quantity: 1, unitCost: 100 });
+      await items.create({ name: 'Saw', locationId: shelf.id, quantity: 2, unitCost: 25 });
+
+      // A primary thumbnail on the drill exercises the correlated THUMBNAIL_SUBQUERY join.
+      const images = new ImageRepository(driver);
+      await images.add({
+        itemId: drill.id,
+        thumbnailBlob: new Uint8Array([1, 2, 3]),
+        fullResOpfsPath: '/d.webp',
+      });
+
+      const schedule = await reports.insuranceSchedule();
+
+      // Depth-first order: Garage (root) then its child Shelf A.
+      expect(schedule.groups.map((g) => g.locationPath)).toEqual(['Garage', 'Garage › Shelf A']);
+      const garageGroup = schedule.groups.find((g) => g.locationId === garage.id)!;
+      const shelfGroup = schedule.groups.find((g) => g.locationId === shelf.id)!;
+      expect(garageGroup.subtotal).toBe(100);
+      expect(shelfGroup.subtotal).toBe(50); // 2 × £25
+      expect(schedule.grandTotal).toBe(150);
+      expect(schedule.itemCount).toBe(2);
+
+      const drillLine = garageGroup.lines.find((l) => l.id === drill.id)!;
+      expect(drillLine.thumbnail).toBeInstanceOf(Uint8Array);
+      expect(shelfGroup.lines[0].thumbnail).toBeNull();
+    });
+
+    it('excludes soft-deleted items, abstract variant parents and unlimited-supply items', async () => {
+      const parent = await items.create({ name: 'Kit', trackingMode: 'SERIALISED' });
+      await items.createVariant(parent.id, { name: 'Kit v2' }); // makes the parent abstract
+      const removed = await items.create({ name: 'Gone', quantity: 1, unitCost: 5 });
+      await items.softDelete(removed.id);
+      await items.create({ name: 'Mains water', quantity: 1, unitCost: 3, isUnlimited: true });
+      const keep = await items.create({ name: 'Camera', quantity: 1, unitCost: 400 });
+
+      const schedule = await reports.insuranceSchedule();
+      const names = schedule.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
+      // The child variant "Kit v2" is a real unit and stays; only the abstract parent,
+      // the soft-deleted item and the unlimited source drop out.
+      expect(names).toEqual(['Camera', 'Kit v2']);
+      expect(schedule.groups.flatMap((g) => g.lines).find((l) => l.id === keep.id)?.replacementValue).toBe(
+        400,
+      );
+    });
+
+    it('groups location-less items under the system Unassigned location', async () => {
+      await items.create({ name: 'Floating', quantity: 1, unitCost: 9 });
+      const schedule = await reports.insuranceSchedule();
+      const unassigned = schedule.groups.find((g) => g.locationId === UNASSIGNED_LOCATION_ID);
+      expect(unassigned?.lines.map((l) => l.name)).toEqual(['Floating']);
+      expect(schedule.grandTotal).toBe(9);
     });
   });
 });

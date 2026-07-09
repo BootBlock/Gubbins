@@ -178,3 +178,15 @@ export function useSalesAnalytics(
     placeholderData: keepPreviousData,
   });
 }
+
+/**
+ * Insurance / estate schedule (G1): the room-by-room document of every catalogued asset with
+ * its replacement value. Read-only aggregation over `items` + `locations`, fetched through
+ * `ReportRepository`; the print screen renders the returned DTO and offers `window.print()`.
+ */
+export function useInsuranceSchedule() {
+  return useQuery({
+    queryKey: ['reports', 'insurance-schedule'],
+    queryFn: () => getReportRepository().insuranceSchedule(),
+  });
+}

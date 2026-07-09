@@ -28,7 +28,7 @@ function RootLayout() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <SkipLink />
-      <div className="mx-auto w-full max-w-6xl px-4 pt-4 empty:hidden">
+      <div className="print-hide mx-auto w-full max-w-6xl px-4 pt-4 empty:hidden">
         <StorageBanners />
       </div>
       <Outlet />

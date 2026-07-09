@@ -16,17 +16,10 @@ import type { Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
 import { warrantyStatus, currentValue, type WarrantyStatus } from '../asset-lifecycle';
+import { WARRANTY_STATUS_COLOR_CLASS } from './inventory-ui';
 import { useUpdateItem } from '../mutations';
 
-/** Tailwind token class for each warranty state. */
-const WARRANTY_TONE: Record<WarrantyStatus, string> = {
-  none: 'text-muted-foreground',
-  active: 'text-success',
-  'expiring-soon': 'text-warning',
-  expired: 'text-destructive',
-};
-
-/** Human-readable label for each warranty state. */
+/** Verbose, sentence-style badge copy for each warranty state (this editor's own phrasing). */
 const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
   none: 'No warranty date set',
   active: 'Under warranty',
@@ -91,7 +84,7 @@ export function AssetEditor({ item }: { item: Item }) {
         <p
           className={cn(
             'flex items-center gap-1.5 text-sm font-medium [&_svg]:size-4',
-            WARRANTY_TONE[status],
+            WARRANTY_STATUS_COLOR_CLASS[status],
           )}
           aria-live="polite"
         >

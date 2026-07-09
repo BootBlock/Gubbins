@@ -16,6 +16,7 @@ import {
 } from '@/db/repositories';
 import type { SelectOption } from '@/components/foundry';
 import type { AttachmentMode } from '@/state/stores/usePreferencesStore';
+import type { WarrantyStatus } from '../asset-lifecycle';
 
 /**
  * Multi-select model for the inventory list (spec §6 batch QR labels, Phase 49).
@@ -109,6 +110,32 @@ export const CONDITION_COLOR_CLASS: Record<Condition, string> = {
   GOOD: 'text-cond-good',
   NEEDS_REPAIR: 'text-destructive',
   OUT_FOR_CALIBRATION: 'text-warning',
+};
+
+/**
+ * Concise British-English label for each warranty state — for a badge/table cell where the
+ * surrounding context ("Warranty") is already clear. The verbose AssetEditor badge keeps its
+ * own sentence-style copy; this is the reusable short form (insurance schedule, lists).
+ */
+export const WARRANTY_STATUS_LABEL: Record<WarrantyStatus, string> = {
+  none: '—',
+  active: 'Active',
+  'expiring-soon': 'Expiring soon',
+  expired: 'Expired',
+};
+
+/**
+ * Token text-colour class for each warranty state (mirrors {@link CONDITION_COLOR_CLASS}):
+ * green for active down to red for expired, muted for "no date set". Static token literals
+ * (never raw colours) so Tailwind emits the utilities and the tints stay themed / dark-mode
+ * correct. Colour is never the sole signal — {@link WARRANTY_STATUS_LABEL} always reads —
+ * keeping this within WCAG 1.4.1.
+ */
+export const WARRANTY_STATUS_COLOR_CLASS: Record<WarrantyStatus, string> = {
+  none: 'text-muted-foreground',
+  active: 'text-success',
+  'expiring-soon': 'text-warning',
+  expired: 'text-destructive',
 };
 
 /**
