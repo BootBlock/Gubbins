@@ -149,4 +149,41 @@ describe('GroupedItemList', () => {
     const section = screen.getByText('parent-a');
     expect(within(section.parentElement as HTMLElement).getAllByTestId('stub-row').length).toBeGreaterThan(0);
   });
+
+  it('wraps each top-level section in a scroll-reveal (armed pending entrance) without gating its content', () => {
+    // happy-dom exposes a (non-firing) IntersectionObserver and reports motion allowed, so the
+    // reveal arms: each top-level section wrapper holds `opacity-0` until it scrolls into view.
+    // Crucially the content is still fully in the DOM/accessible from first paint — the reveal
+    // only toggles a presentation class, it never gates rendering. Nested subsections are not
+    // wrapped (they animate on expand) and the virtualised flat list is never wrapped at all.
+    const { container } = render(<GroupedItemList tree={TREE} {...PROPS} />);
+    const box = container.querySelector('[data-testid="grouped-item-list"]') as HTMLElement;
+    const topLevelWrappers = Array.from(box.children) as HTMLElement[];
+    expect(topLevelWrappers).toHaveLength(TREE.length);
+    for (const w of topLevelWrappers) expect(w).toHaveClass('opacity-0');
+    // Content reads regardless of the pending reveal — the section header and its items are here.
+    expect(screen.getByTestId('location-section-header-parent')).toBeInTheDocument();
+    expect(screen.getByText('parent-a')).toBeInTheDocument();
+  });
+
+  it('under reduced motion renders sections fully visible — never held invisible by the reveal', () => {
+    // Force the reduced-motion branch: the reveal must not arm, so no section is left at
+    // opacity:0 waiting on an observer — the enhancement degrades to plain, visible content.
+    const realMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) =>
+      ({
+        matches: query.includes('reduced-motion'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList) as typeof window.matchMedia;
+    try {
+      const { container } = render(<GroupedItemList tree={TREE} {...PROPS} />);
+      expect(container.querySelector('.opacity-0')).toBeNull();
+      expect(screen.getByTestId('location-section-header-parent')).toBeInTheDocument();
+      expect(screen.getByText('parent-a')).toBeInTheDocument();
+    } finally {
+      window.matchMedia = realMatchMedia;
+    }
+  });
 });

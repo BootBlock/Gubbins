@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Button, Spinner } from '@/components/foundry';
+import { Button, Reveal, Spinner } from '@/components/foundry';
 import { ChevronRightIcon, PackageIcon } from '@/components/icons';
 import type {
   Item,
@@ -85,16 +85,24 @@ export function GroupedItemList({
       data-testid="grouped-item-list"
       className="min-h-0 flex-1 space-y-1 overflow-auto px-1 pt-2"
     >
-      {visibleTree.map((node) => (
-        <LocationSection
-          key={node.id}
-          node={node}
-          depth={1}
-          isExpanded={isExpanded}
-          onToggle={toggle}
-          scrollRef={scrollRef}
-          {...shared}
-        />
+      {/* Each top-level location section rises in on the shared `animate-rise` entrance the
+          first time it scrolls into this box (staggered by position). Only the top-level
+          sections are wrapped — nested subsections already play `animate-swap-in` on expand,
+          and the virtualised flat ItemList must never entrance-animate (its rows recycle on
+          scroll). The observer clips against this `overflow-auto` box's viewport slice, so a
+          below-the-fold section reveals as it's scrolled up; reduced-motion / no-observer
+          renders every section visible from first paint. */}
+      {visibleTree.map((node, i) => (
+        <Reveal key={node.id} index={i}>
+          <LocationSection
+            node={node}
+            depth={1}
+            isExpanded={isExpanded}
+            onToggle={toggle}
+            scrollRef={scrollRef}
+            {...shared}
+          />
+        </Reveal>
       ))}
     </div>
   );
