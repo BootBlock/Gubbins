@@ -1105,14 +1105,16 @@
  * here. Sits behind the transparent Dashboard hero and the shared empty-state
  * placeholder to read as ambient depth rather than decoration.
  *
- * Painted on a `::before` layer pinned to the element's box (`inset: 0`) but with each
- * radial peak nudged just outside the top edge, so only the soft falloff shows within —
- * a "light from above" bloom that needs no negative inset (hence no overflow / no stray
- * scrollbar). It sits behind the content via `z-index: -1` inside the element's own
- * isolated stacking context, so the host element must be transparent for it to show.
- * Purely static — no animation — so it is inherently reduced-motion-safe (nothing for
- * the global `prefers-reduced-motion` catch-all to neutralise). Dropped entirely under
- * high-contrast so that mode keeps its pristine, maximal contrast.
+ * Painted on a `::before` layer pinned to the element's box (`inset: 0`). Both radials are
+ * fully *self-contained*: each peak sits well inside the box and its `%`-based size + early
+ * `transparent` stop bring the tint to zero before it reaches any edge, so the box-clip always
+ * lands in the transparent zone — no hard rectangle, whatever the host's size or aspect ratio
+ * (the empty-state is a tall `flex-1` box, the hero a short wide one). This is why no negative
+ * inset is needed (hence no overflow / no stray scrollbar). It sits behind the content via
+ * `z-index: -1` inside the element's own isolated stacking context, so the host element must be
+ * transparent for it to show. Purely static — no animation — so it is inherently
+ * reduced-motion-safe (nothing for the global `prefers-reduced-motion` catch-all to neutralise).
+ * Dropped entirely under high-contrast so that mode keeps its pristine, maximal contrast.
  */
 .gubbins-accent-glow {
   position: relative;
@@ -1127,13 +1129,13 @@
   border-radius: inherit;
   background:
     radial-gradient(
-      65% 85% at 18% -10%,
-      color-mix(in oklab, var(--primary) 22%, transparent),
-      transparent 72%
+      70% 70% at 38% 40%,
+      color-mix(in oklab, var(--primary) 16%, transparent),
+      transparent 70%
     ),
     radial-gradient(
-      55% 75% at 95% 8%,
-      color-mix(in oklab, var(--highlight) 16%, transparent),
+      60% 60% at 66% 55%,
+      color-mix(in oklab, var(--highlight) 11%, transparent),
       transparent 68%
     );
 }
