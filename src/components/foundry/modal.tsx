@@ -159,8 +159,16 @@ export function Modal({
             never over the content, and content still aligns with the header. Because this region is
             a direct child of the padded Surface, that bleed has nowhere to leak. A dialog that owns
             its own inner scroller passes `scrollBody={false}`, leaving this region at `overflow:
-            visible` so the inner bleed can reach the Surface padding too. */}
-        <div className={cn('mt-5 min-h-0', scrollBody && 'dialog-scroll')}>{children}</div>
+            visible` so the inner bleed can reach the Surface padding too.
+
+            `-ml-2 pl-2` bleeds the *left* edge the same way, but for a different reason: because
+            `dialog-scroll` clips overflow (`overflow-x: hidden`), it would otherwise shave the
+            focus/selection ring off a control sitting flush against the left edge — e.g. the
+            leading "No colour"/"No type" swatch in the Add/Edit location dialog, whose selection
+            ring is always drawn. The negative margin is cancelled by the equal padding, so no
+            content shifts; it just gives an outward ring room to paint into the Surface's own
+            padding. Paired with `dialog-scroll` so it only applies to the scroll-owning body. */}
+        <div className={cn('mt-5 min-h-0', scrollBody && 'dialog-scroll -ml-2 pl-2')}>{children}</div>
       </Surface>
     </div>,
     document.body,

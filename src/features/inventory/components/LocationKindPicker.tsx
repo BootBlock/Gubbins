@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useRovingRadioGroup } from '@/components/foundry';
+import { Tooltip, useRovingRadioGroup } from '@/components/foundry';
 import { FolderIcon } from '@/components/icons';
 import { LOCATION_KINDS, locationKindLabel, type LocationKind } from '../location-kind';
 import { LocationKindIcon } from './LocationKindIcon';
@@ -43,29 +43,32 @@ export function LocationKindPicker({
         const checked = index === selectedIndex;
         const label = choice === null ? 'No type' : (locationKindLabel(choice) ?? choice);
         return (
-          <button
-            key={choice ?? '__none__'}
-            ref={(el) => {
-              refs.current[index] = el;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            aria-label={label}
-            title={label}
-            tabIndex={checked ? 0 : -1}
-            onClick={() => selectAt(index)}
-            onKeyDown={(e) => onKeyDown(e, index)}
-            className={cn(
-              'grid size-8 place-items-center rounded-lg border outline-none transition-transform [&_svg]:size-4',
-              'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              checked
-                ? 'border-primary bg-primary/15 text-primary scale-110'
-                : 'border-border text-muted-foreground hover:bg-secondary/60',
-            )}
-          >
-            {choice === null ? <FolderIcon aria-hidden /> : <LocationKindIcon kind={choice} />}
-          </button>
+          // Foundry Tooltip (rich Markdown) replaces the browser `title`; `triggerTabIndex={-1}`
+          // keeps the roving radiogroup as the single tab stop while focus still bubbles so the
+          // type name shows on keyboard focus. The accessible name stays on the button (aria-label).
+          <Tooltip key={choice ?? '__none__'} content={label} triggerTabIndex={-1}>
+            <button
+              ref={(el) => {
+                refs.current[index] = el;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-label={label}
+              tabIndex={checked ? 0 : -1}
+              onClick={() => selectAt(index)}
+              onKeyDown={(e) => onKeyDown(e, index)}
+              className={cn(
+                'grid size-8 place-items-center rounded-lg border outline-none transition-transform [&_svg]:size-4',
+                'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                checked
+                  ? 'border-primary bg-primary/15 text-primary scale-110'
+                  : 'border-border text-muted-foreground hover:bg-secondary/60',
+              )}
+            >
+              {choice === null ? <FolderIcon aria-hidden /> : <LocationKindIcon kind={choice} />}
+            </button>
+          </Tooltip>
         );
       })}
     </div>
