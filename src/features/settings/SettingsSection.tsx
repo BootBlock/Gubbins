@@ -39,6 +39,7 @@ export function SettingRow({
   hint,
   hintSize,
   stack,
+  noWrap,
   children,
 }: {
   readonly label: string;
@@ -59,10 +60,24 @@ export function SettingRow({
    * regardless of how long each description happens to be.
    */
   readonly stack?: boolean;
+  /**
+   * The opposite pull to {@link stack}: keep the control trailing to the right even when the
+   * description is long enough that the default wrap would otherwise drop it onto its own line
+   * below. The label/description column shrinks and wraps its own text instead, so a set of
+   * related action rows keeps their buttons aligned in a single right-hand column (e.g. the
+   * App tab's Manage modules / About buttons). Ignored when `stack` is set — they conflict, and
+   * `stack` (which relies on the wrap to place the control below) wins.
+   */
+  readonly noWrap?: boolean;
   readonly children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+    <div
+      className={cn(
+        'flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0',
+        noWrap && !stack ? 'flex-nowrap' : 'flex-wrap',
+      )}
+    >
       <div className={cn('min-w-0', stack && 'basis-full')}>
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-medium">{label}</span>
