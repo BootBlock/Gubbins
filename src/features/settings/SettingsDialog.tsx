@@ -57,6 +57,7 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  guessBaseCurrency,
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
@@ -180,14 +181,27 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               'Amounts are **not** converted when you change this — the stored numbers stay the same, only the symbol and formatting change. Pick the currency you actually buy and sell in.'
             }
           >
-            <Select
-              aria-label="Base currency"
-              data-testid="setting-currency"
-              className="h-9 w-56"
-              value={prefs.baseCurrency}
-              onChange={(value) => prefs.setBaseCurrency(value)}
-              options={CURRENCY_OPTIONS.map((c) => ({ value: c.value, label: `${c.value} — ${c.label}` }))}
-            />
+            <div className="flex items-center gap-2">
+              <Tooltip content="Detect the currency from your browser’s region.">
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="px-0"
+                  data-testid="detect-currency"
+                  onClick={() => prefs.setBaseCurrency(guessBaseCurrency())}
+                >
+                  Detect
+                </Button>
+              </Tooltip>
+              <Select
+                aria-label="Base currency"
+                data-testid="setting-currency"
+                className="h-9 w-56"
+                value={prefs.baseCurrency}
+                onChange={(value) => prefs.setBaseCurrency(value)}
+                options={CURRENCY_OPTIONS.map((c) => ({ value: c.value, label: `${c.value} — ${c.label}` }))}
+              />
+            </div>
           </SettingRow>
           <SettingRow
             label="Locale"
@@ -733,6 +747,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             )}
           </SettingRow>
           <SettingRow
+            noWrap
             label="Manage modules"
             description="Choose which pages and capabilities appear, from a preset or a granular list. Hidden features stay fully functional underneath."
             hint={
