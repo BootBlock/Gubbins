@@ -18,6 +18,7 @@ import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ModulesRouteImport } from './routes/modules'
 import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as InsuranceScheduleRouteImport } from './routes/insurance-schedule'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as HomeAssistantRouteImport } from './routes/home-assistant'
 import { Route as DeepLinkRouteImport } from './routes/deep-link'
@@ -71,6 +72,11 @@ const ModulesRoute = ModulesRouteImport.update({
 const InventoryRoute = InventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InsuranceScheduleRoute = InsuranceScheduleRouteImport.update({
+  id: '/insurance-schedule',
+  path: '/insurance-schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImportRoute = ImportRouteImport.update({
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
+  '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
@@ -149,6 +156,7 @@ export interface FileRoutesByTo {
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
+  '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
@@ -170,6 +178,7 @@ export interface FileRoutesById {
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
   '/import': typeof ImportRoute
+  '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
@@ -192,6 +201,7 @@ export interface FileRouteTypes {
     | '/deep-link'
     | '/home-assistant'
     | '/import'
+    | '/insurance-schedule'
     | '/inventory'
     | '/modules'
     | '/projects'
@@ -212,6 +222,7 @@ export interface FileRouteTypes {
     | '/deep-link'
     | '/home-assistant'
     | '/import'
+    | '/insurance-schedule'
     | '/inventory'
     | '/modules'
     | '/projects'
@@ -232,6 +243,7 @@ export interface FileRouteTypes {
     | '/deep-link'
     | '/home-assistant'
     | '/import'
+    | '/insurance-schedule'
     | '/inventory'
     | '/modules'
     | '/projects'
@@ -253,6 +265,7 @@ export interface RootRouteChildren {
   DeepLinkRoute: typeof DeepLinkRoute
   HomeAssistantRoute: typeof HomeAssistantRoute
   ImportRoute: typeof ImportRoute
+  InsuranceScheduleRoute: typeof InsuranceScheduleRoute
   InventoryRoute: typeof InventoryRoute
   ModulesRoute: typeof ModulesRoute
   ProjectsRoute: typeof ProjectsRoute
@@ -327,6 +340,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory'
       fullPath: '/inventory'
       preLoaderRoute: typeof InventoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/insurance-schedule': {
+      id: '/insurance-schedule'
+      path: '/insurance-schedule'
+      fullPath: '/insurance-schedule'
+      preLoaderRoute: typeof InsuranceScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/import': {
@@ -405,6 +425,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeepLinkRoute: DeepLinkRoute,
   HomeAssistantRoute: HomeAssistantRoute,
   ImportRoute: ImportRoute,
+  InsuranceScheduleRoute: InsuranceScheduleRoute,
   InventoryRoute: InventoryRoute,
   ModulesRoute: ModulesRoute,
   ProjectsRoute: ProjectsRoute,

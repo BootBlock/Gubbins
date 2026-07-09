@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   AnimatedNumber,
   Button,
+  buttonVariants,
   LiveRegion,
   Money,
   PageContainer,
@@ -11,7 +13,7 @@ import {
   Surface,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { ExportIcon, LowStockIcon, ReportIcon } from '@/components/icons';
+import { ExportIcon, InsuranceScheduleIcon, LowStockIcon, ReportIcon } from '@/components/icons';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
@@ -180,10 +182,20 @@ export function ReportsScreen() {
         icon={<ReportIcon />}
         title="Reports & valuation"
         actions={
-          <Button variant="outline" onClick={() => setExportOpen(true)} data-testid="open-report-export">
-            <ExportIcon />
-            Export CSV
-          </Button>
+          <>
+            <Link
+              to="/insurance-schedule"
+              className={buttonVariants({ variant: 'outline' })}
+              data-testid="open-insurance-schedule"
+            >
+              <InsuranceScheduleIcon />
+              Insurance schedule
+            </Link>
+            <Button variant="outline" onClick={() => setExportOpen(true)} data-testid="open-report-export">
+              <ExportIcon />
+              Export CSV
+            </Button>
+          </>
         }
       />
 

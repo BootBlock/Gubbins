@@ -1355,3 +1355,72 @@
     animation: gubbins-spin 0.8s linear infinite !important;
   }
 }
+
+/* ── Print: the insurance / estate schedule document (feature-gap G1) ────────────────
+ * The schedule screen renders with the usual design tokens on screen; when printed (or
+ * "Saved as PDF") the app chrome is dropped, the page is forced to a legible light,
+ * ink-friendly scheme regardless of the viewer's theme, and the per-room tables paginate
+ * cleanly with a repeating column header. The raw print geometry (mm) and fixed ink
+ * colours are intentional: print is a fixed, theme-less medium — the same rationale as the
+ * self-contained label-sheet document (`labels/label-sheet.ts`). Keyed off the `schedule-*`
+ * class hooks set by `InsuranceScheduleScreen`. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  /* A white canvas so the forced-black ink stays legible even if the viewer enables
+   * "background graphics" in the print dialog (browsers drop backgrounds by default,
+   * but not always). Covers the root layout's `bg-background` surface too, not just
+   * html/body, so no dark theme wrapper shows through behind the document. */
+  html,
+  body,
+  .bg-background {
+    background: #fff !important;
+  }
+
+  /* Only the document prints — drop this screen's header/action bar and the always-on
+   * global chrome (storage-warning banners, the offline pill) that would otherwise
+   * bleed onto the page. `.print-hide` is the reusable "never prints" hook. */
+  .schedule-chrome,
+  .print-hide,
+  [data-testid='offline-indicator'] {
+    display: none !important;
+  }
+
+  /* Force a legible black-on-white scheme independent of the on-screen (dark) theme.
+   * Colour is never the sole signal here (every warranty/condition label reads as text),
+   * so flattening the token tints to black stays within WCAG 1.4.1 while maximising
+   * print legibility. */
+  .schedule-doc,
+  .schedule-doc * {
+    color: #000 !important;
+    background: transparent !important;
+  }
+
+  .schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  /* Repeat the column headers at the top of every printed page of a long room. */
+  .schedule-table thead {
+    display: table-header-group;
+  }
+
+  /* Never split a single asset row, or orphan a room heading, across a page break. */
+  .schedule-table tr,
+  .schedule-group-heading {
+    break-inside: avoid;
+  }
+
+  .schedule-group-heading {
+    break-after: avoid;
+  }
+
+  .schedule-table th,
+  .schedule-table td,
+  .schedule-photo {
+    border-color: #ccc !important;
+  }
+}

@@ -125,6 +125,8 @@ export {
 
   // Reports & valuation (inventory-depth Phase 61, §3)
   ChartColumn as ReportIcon,
+  // Insurance / estate schedule (feature-gap G1) — the "institution / estate" glyph.
+  Landmark as InsuranceScheduleIcon,
 
   // Customisable dashboard widget board (Phase 45, §3)
   LayoutDashboard as CustomiseIcon,
