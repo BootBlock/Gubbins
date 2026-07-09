@@ -34,7 +34,8 @@ memory note.
 
 ## Actionable gaps (open) — ranked by value × fit
 
-- [ ] **G1 — Insurance / estate schedule export (print + PDF).** *High value; strong local-first
+- [x] **G1 — Insurance / estate schedule export (print + PDF).** ✅ **Shipped 2026-07-10.**
+  *High value; strong local-first
   fit.* The Reports suite emits CSV + on-screen only — there is **no formatted, printable
   document** for an insurer / estate / claim. Add a room-by-room (location-grouped) inventory
   *schedule*: photo thumbnail, name, serial, purchase price, acquired date, warranty, condition,
@@ -99,7 +100,14 @@ memory note.
 
 ## Shipped (tick + date as they land)
 
-*(none yet — the first item to ship moves here)*
+- **G1 — Insurance / estate schedule export (print + PDF)** — shipped 2026-07-10. New
+  `/insurance-schedule` route + `InsuranceScheduleScreen`: a room-by-room, print-styled
+  schedule (photo, name, serial, purchase price, acquired, warranty, condition, per-item
+  replacement value) with per-location subtotals + a grand total, printed natively via
+  `window.print()` ("Save as PDF") — no PDF dep. Pure `insurance-schedule.ts` aggregation
+  seam values each line through `effectiveUnitCost` with a clean `currentValuePerUnit` hook
+  for G9; reached from the Reports screen. `@media print` drops app chrome, forces a legible
+  white/black scheme, and paginates with a repeating table header.
 
 ## Deliberate non-goals (recorded so they are not re-proposed)
 
