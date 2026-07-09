@@ -102,6 +102,9 @@ export const inventoryKeys = {
     [...inventoryKeys.item(itemId), 'supplier-part-price-history', supplierPartId] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
+  /** One kit item's component definition (Kits v1); under item() so an `items()`
+   *  invalidation (a component's stock changing) refreshes its buildable count by prefix. */
+  itemKit: (kitId: string) => [...inventoryKeys.item(kitId), 'kit'] as const,
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
   /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45). */
   lowStock: () => [...inventoryKeys.all, 'low-stock'] as const,

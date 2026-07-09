@@ -53,6 +53,53 @@ export function useSetParent() {
   });
 }
 
+// --- Kits / bundles (Kits v1 — definition + availability) ----------------------
+
+/** One kit item's component definition, each joined to its name + current on-hand stock. */
+export function useItemKit(kitId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemKit(kitId ?? ''),
+    queryFn: () => getItemRepository().listKitComponents(kitId!),
+    enabled: Boolean(kitId),
+  });
+}
+
+export function useAddKitComponent() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      kitId,
+      componentItemId,
+      quantity,
+    }: {
+      kitId: string;
+      componentItemId: string;
+      quantity: number;
+    }) => getItemRepository().addKitComponent(kitId, componentItemId, quantity),
+    onSettled: (_d, _e, { kitId }) =>
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+  });
+}
+
+export function useUpdateKitComponentQty() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, quantity }: { id: string; kitId: string; quantity: number }) =>
+      getItemRepository().updateKitComponentQty(id, quantity),
+    onSettled: (_d, _e, { kitId }) =>
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+  });
+}
+
+export function useRemoveKitComponent() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; kitId: string }) => getItemRepository().removeKitComponent(id),
+    onSettled: (_d, _e, { kitId }) =>
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemKit(kitId) }),
+  });
+}
+
 // --- Perishables & In Transit (spec §4, §3 widgets) ----------------------------
 
 /**

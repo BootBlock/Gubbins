@@ -20,6 +20,7 @@ import { withAliases } from './item/aliases';
 import { withCapabilities } from './item/capabilities';
 import { withSearch } from './item/search';
 import { withVariants } from './item/variants';
+import { withKits } from './item/kits';
 import { withDashboardFeeds } from './item/feeds';
 import { withCycleCount } from './item/cycle-count';
 
@@ -33,6 +34,7 @@ export {
 } from './item/status-filter';
 export type { SearchByAstParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
+export type { KitComponent } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
 
 /**
@@ -43,7 +45,9 @@ export type { ItemStatusCount } from './item/feeds';
 export class ItemRepository extends withStock(
   withGauge(
     withAliases(
-      withCapabilities(withSearch(withVariants(withDashboardFeeds(withCycleCount(ItemCoreRepository))))),
+      withCapabilities(
+        withSearch(withVariants(withKits(withDashboardFeeds(withCycleCount(ItemCoreRepository))))),
+      ),
     ),
   ),
 ) {}

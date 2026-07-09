@@ -13,6 +13,7 @@
 import type { LucideIcon } from '@/components/icons';
 import {
   AlertIcon,
+  AssemblyIcon,
   BatchIcon,
   BookingIcon,
   CapabilityIcon,
@@ -90,6 +91,7 @@ export type FeatureId =
   | 'cycle-counts'
   | 'tags-attachments'
   | 'variants'
+  | 'kits'
   | 'labels'
   | 'scraping';
 
@@ -315,6 +317,14 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     label: 'Variants & SKUs',
     description: 'Link parent items to child variants — sizes, colours or values of one part.',
     Icon: VariantIcon,
+    group: 'capabilities',
+  },
+  kits: {
+    id: 'kits',
+    kind: 'capability',
+    label: 'Kits & bundles',
+    description: 'Define an item as a kit of other items and see how many you can build.',
+    Icon: AssemblyIcon,
     group: 'capabilities',
   },
   labels: {

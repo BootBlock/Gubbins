@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { RailModal, type RailTab } from '@/components/foundry';
 import {
+  AssemblyIcon,
   CapabilityIcon,
   CategoryIcon,
   CostIcon,
@@ -19,7 +20,7 @@ import {
 import type { Item } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import type { FeatureId } from '@/features/modules/feature-registry';
-import { LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
+import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
@@ -169,6 +170,22 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           icon: <SettingsIcon />,
           content: <MaintenanceEditor itemId={item.id} />,
           feature: 'maintenance',
+        },
+      ],
+    },
+    {
+      id: 'kit',
+      label: 'Kit',
+      icon: <AssemblyIcon />,
+      sections: [
+        {
+          // Kits define this item as a bundle of other items and show how many are
+          // buildable from component stock. Gated on the `kits` capability, so the whole
+          // tab disappears when the module is off (buildTabs drops a section-less tab).
+          title: 'Kit components',
+          icon: <AssemblyIcon />,
+          content: <KitEditor item={item} />,
+          feature: 'kits',
         },
       ],
     },
