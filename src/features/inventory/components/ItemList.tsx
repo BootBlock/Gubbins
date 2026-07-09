@@ -272,7 +272,7 @@ function EmptyState({
     locationName,
   });
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
+    <div className="gubbins-accent-glow flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
       <span className="grid size-14 place-items-center rounded-2xl bg-secondary/50 text-muted-foreground [&_svg]:size-7">
         <PackageIcon />
       </span>

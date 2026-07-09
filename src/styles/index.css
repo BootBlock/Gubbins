@@ -1097,6 +1097,53 @@
 }
 
 /*
+ * Accent-driven ambient hero glow (visual-flair F1). A soft two-tone radial bloom
+ * tinted entirely from the accent-tracking brand tokens — `--primary` and
+ * `--highlight` — so it recolours for free whenever the user changes their Colour: the
+ * Accent axis recolours exactly these tokens (see the appearance Mode × Accent model),
+ * while the fixed `--accent` surface token would not, so it is deliberately not used
+ * here. Sits behind the transparent Dashboard hero and the shared empty-state
+ * placeholder to read as ambient depth rather than decoration.
+ *
+ * Painted on a `::before` layer pinned to the element's box (`inset: 0`) but with each
+ * radial peak nudged just outside the top edge, so only the soft falloff shows within —
+ * a "light from above" bloom that needs no negative inset (hence no overflow / no stray
+ * scrollbar). It sits behind the content via `z-index: -1` inside the element's own
+ * isolated stacking context, so the host element must be transparent for it to show.
+ * Purely static — no animation — so it is inherently reduced-motion-safe (nothing for
+ * the global `prefers-reduced-motion` catch-all to neutralise). Dropped entirely under
+ * high-contrast so that mode keeps its pristine, maximal contrast.
+ */
+.gubbins-accent-glow {
+  position: relative;
+  isolation: isolate;
+}
+.gubbins-accent-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      65% 85% at 18% -10%,
+      color-mix(in oklab, var(--primary) 22%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      55% 75% at 95% 8%,
+      color-mix(in oklab, var(--highlight) 16%, transparent),
+      transparent 68%
+    );
+}
+
+/* High-contrast mode opts out of the ambient glow to keep contrast maximal. */
+[data-contrast='high'] .gubbins-accent-glow::before {
+  display: none;
+}
+
+/*
  * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
  * placeholder with a light band travelling across the muted bar, so a loading widget
  * reads as actively fetching rather than merely dimmed. The base is the `--muted`

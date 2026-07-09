@@ -46,7 +46,10 @@ export function DashboardScreen() {
 
   return (
     <PageContainer>
-      <header className="flex flex-wrap items-center gap-4">
+      {/* `gubbins-accent-glow` lays a soft, accent-tinted radial bloom behind the brand
+          hero (F1). The header is transparent, so the glow reads as ambient depth and
+          recolours for free with the user's Accent. */}
+      <header className="gubbins-accent-glow flex flex-wrap items-center gap-4">
         {/* On the landing page the brand hero doubles as a link to the public GitHub
             repository (opens in a new tab) — a deliberate exception to the other screens'
             home-link brand mark, which this screen doesn't have. */}
