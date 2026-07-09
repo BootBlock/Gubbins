@@ -176,7 +176,16 @@ function AboutSection({
   readonly children: ReactNode;
 }) {
   return (
-    <Surface className="bg-card/20 p-5">
+    // These cards float over the decorative starfield, so they use a far more
+    // translucent fill (`bg-card/20`) than Surface's default glass and disable the
+    // `backdrop-blur`. The blur is dropped deliberately: the enclosing `<main>` runs
+    // the `animate-rise` entrance (an opacity + transform animation), and while that
+    // group is compositing the children's `backdrop-filter` is suppressed by the
+    // browser, then snaps in the instant the animation ends — smearing the small stars
+    // into near-invisibility with a visible ~1s "pop". Without the filter the final
+    // look is present from the first paint, and the sharp stars stay visible through
+    // the tint, which is the point of the starfield.
+    <Surface className="bg-card/20 p-5 backdrop-blur-none">
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
