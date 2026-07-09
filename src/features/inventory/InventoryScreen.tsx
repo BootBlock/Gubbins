@@ -605,13 +605,30 @@ function InventoryWorkspace() {
             className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
           >
             {/* Compact summary of the selected location (fullness, path, last change, …).
-                Opt-out and device-local; hidden for the "All locations" view. */}
-            {showLocationCard && selectedLocation ? (
-              <LocationInfoCard
-                location={selectedLocation}
-                locations={flatLocations}
-                onHide={toggleLocationCard}
-              />
+                Opt-out and device-local; hidden for the "All locations" view. It stays
+                mounted while a location is selected and animates open/closed both ways by
+                transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity with the
+                signature emphasized ease — mirroring the visual-search reveal below. `inert`
+                when hidden keeps it out of the tab order and accessibility tree; reduced-motion
+                users skip the transition via the global catch-all and get the end state. */}
+            {selectedLocation ? (
+              <div
+                className="grid transition-[grid-template-rows,opacity] duration-300 ease-emphasized"
+                style={{
+                  gridTemplateRows: showLocationCard ? '1fr' : '0fr',
+                  opacity: showLocationCard ? 1 : 0,
+                }}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div inert={!showLocationCard}>
+                    <LocationInfoCard
+                      location={selectedLocation}
+                      locations={flatLocations}
+                      onHide={toggleLocationCard}
+                    />
+                  </div>
+                </div>
+              </div>
             ) : null}
 
             <InventoryFilterBar
