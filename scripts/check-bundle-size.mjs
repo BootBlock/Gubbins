@@ -19,6 +19,9 @@ const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 /** Extensions vite-plugin-pwa precaches (see `injectManifest.globPatterns` in vite.config.ts). */
 const PRECACHE_EXTENSIONS = new Set(['js', 'css', 'html', 'wasm', 'woff2', 'svg', 'ico']);
 
+/** Directories excluded from the precache (`injectManifest.globIgnores`) — not counted here. */
+const PRECACHE_IGNORED_DIRS = new Set(['ocr']);
+
 /** Recursively sum the size of precache-eligible files under a directory. */
 function sumPrecacheBytes(dir) {
   let total = 0;
@@ -26,6 +29,7 @@ function sumPrecacheBytes(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (PRECACHE_IGNORED_DIRS.has(entry.name)) continue;
       const nested = sumPrecacheBytes(full);
       total += nested.total;
       count += nested.count;

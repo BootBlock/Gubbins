@@ -22,6 +22,11 @@ dist-ssr
 # The TanStack Router route tree (src/routeTree.gen.ts) is intentionally committed
 # so `tsc -b` succeeds on a fresh clone; Vite regenerates it on dev/build.
 
+# On-device OCR assets (G2). Copied from node_modules + downloaded by
+# scripts/setup-ocr-assets.mjs; several MB of Tesseract WASM cores + language
+# models that must never enter the public repo (kept out of git, precache-excluded).
+/public/ocr/
+
 # Test / coverage
 coverage
 .nyc_output

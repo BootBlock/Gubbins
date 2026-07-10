@@ -15,6 +15,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/check-bundle-size.mjs",
     "build:extension": "node extension/build.mjs",
+    "ocr:assets": "node scripts/setup-ocr-assets.mjs",
     "check:bundle": "node scripts/check-bundle-size.mjs",
     "preview": "vite preview",
     "test": "vitest",
@@ -45,6 +46,8 @@
     "react-error-boundary": "^6.1.2",
     "react-hook-form": "^7.80.0",
     "tailwind-merge": "^3.6.0",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },

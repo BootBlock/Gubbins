@@ -33,6 +33,7 @@ import {
 } from '@/components/icons';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
+import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
@@ -626,6 +627,62 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                   options={ON_OFF_OPTIONS}
                 />
               </SettingRow>
+            </SettingsSection>
+          ) : null}
+
+          {/* G2: on-device receipt / label OCR prefill — opt-in, offline, keyless. Gated on
+              the platform capability (Worker + WASM); the model downloads only once enabled. */}
+          {hasOcr() ? (
+            <SettingsSection icon={<DatasheetIcon />} title="Receipt &amp; label scanning (OCR)">
+              <SettingRow
+                label="Scan receipts &amp; labels"
+                description="Add a button to the add-item form that reads a photographed receipt or product label and pre-fills a reviewable draft — fully on-device, no cloud."
+                hint={
+                  'Reads a **photo of a receipt or product label** entirely **on your device** ' +
+                  '(offline, no cloud, no account) and pre-fills a new item’s **price, acquired ' +
+                  'date, model/MPN and serial** for you to review — it never saves anything on ' +
+                  'its own.\n\n' +
+                  'Turning this on downloads a few MB of recognition engine + language model **the ' +
+                  'first time you use it**; that’s why it’s off by default. A "Scan a receipt or ' +
+                  'label" button then appears when you add an item.'
+                }
+                stack
+              >
+                <Select
+                  aria-label="Scan receipts and labels"
+                  data-testid="setting-ocr-enabled"
+                  className="h-9 w-40"
+                  value={prefs.ocrEnabled ? 'on' : 'off'}
+                  onChange={(value) => prefs.setOcrEnabled(value === 'on')}
+                  options={ON_OFF_OPTIONS}
+                />
+              </SettingRow>
+              {prefs.ocrEnabled ? (
+                <SettingRow
+                  label="Recognition accuracy"
+                  description="The language model the scanner uses. Fast is smaller and quicker; High accuracy is larger and slower but reads tricky scans better."
+                  hint={
+                    'Which **language model** the on-device scanner uses:\n\n' +
+                    '- **Fast** — a small, quick model (a few MB). Ample for most receipts and ' +
+                    'labels, and gentler on older devices. The default.\n' +
+                    '- **High accuracy** — a larger model that reads faint or unusual print better, ' +
+                    'at the cost of a bigger one-off download and slower scans.'
+                  }
+                  stack
+                >
+                  <Select
+                    aria-label="Recognition accuracy"
+                    data-testid="setting-ocr-model"
+                    className="h-9 w-56"
+                    value={prefs.ocrModel}
+                    onChange={(value) => prefs.setOcrModel(value as typeof prefs.ocrModel)}
+                    options={[
+                      { value: 'fast', label: 'Fast (smaller)' },
+                      { value: 'best', label: 'High accuracy (larger)' },
+                    ]}
+                  />
+                </SettingRow>
+              ) : null}
             </SettingsSection>
           ) : null}
 

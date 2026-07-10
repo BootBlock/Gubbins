@@ -15,8 +15,11 @@ import {
   useToast,
   type RailTab,
 } from '@/components/foundry';
-import { DueDateIcon, EditIcon, SupplierIcon } from '@/components/icons';
+import { DueDateIcon, EditIcon, ScanIcon, SupplierIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
+import { hasOcr } from '@/lib/env/feature-detection';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { OcrPrefillDialog, type OcrPrefill } from '@/features/inventory/ocr/OcrPrefillDialog';
 import {
   IN_TRANSIT_LOCATION_ID,
   TRACKING_MODES,
@@ -84,6 +87,7 @@ const schema = z
     manufacturer: z.string().optional(),
     barcode: z.string().optional(),
     unitCost: z.string().optional(),
+    acquiredAt: z.string().optional(),
     expiryDate: z.string().optional(),
     batchNumber: z.string().optional(),
     lotNumber: z.string().optional(),
@@ -153,6 +157,7 @@ const FIELD_TAB: Record<string, CreateTabId> = {
   reorderPoint: 'details',
   reorderQty: 'details',
   reorderGaugePercent: 'details',
+  acquiredAt: 'lifecycle',
   expiryDate: 'lifecycle',
   condition: 'lifecycle',
   batchNumber: 'lifecycle',
@@ -297,6 +302,11 @@ export function CreateItemDialog({
   // Which rail tab is shown. Controlled here so a rejected submit can jump to the tab holding
   // the first validation error (see `onInvalid`), rather than leaving it on an unmounted panel.
   const [activeTab, setActiveTab] = useState<CreateTabId>('details');
+  // On-device receipt/label OCR prefill (G2): opt-in + feature-detected. The scan dialog stacks
+  // on top of this form and hands back reviewed values that fill only the still-blank fields.
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const ocrEnabled = usePreferencesStore((s) => s.ocrEnabled);
+  const showOcr = ocrEnabled && hasOcr();
   const {
     control,
     register,
@@ -319,6 +329,7 @@ export function CreateItemDialog({
       manufacturer: initialValues?.manufacturer ?? '',
       barcode: initialValues?.barcode ?? '',
       unitCost: initialValues?.unitCost ?? '',
+      acquiredAt: '',
       expiryDate: '',
       batchNumber: '',
       lotNumber: '',
@@ -444,6 +455,39 @@ export function CreateItemDialog({
     );
   };
 
+  // §4 no-overwrite: a reviewed on-device OCR scan (G2) fills only the fields the user has left
+  // blank, exactly like the supplier scrape / barcode lookup above. The user has already vetted
+  // every value in the scan dialog, so nothing here is a surprise; the serial has no dedicated
+  // form field, so it's recorded in Notes (only when Notes is empty).
+  const onOcrApply = (prefill: OcrPrefill) => {
+    const v = getValues();
+    const filled: string[] = [];
+    if (prefill.unitCost && !v.unitCost?.trim()) {
+      setValue('unitCost', prefill.unitCost, { shouldDirty: true });
+      filled.push('unit cost');
+    }
+    if (prefill.acquiredAt && !v.acquiredAt?.trim()) {
+      setValue('acquiredAt', prefill.acquiredAt, { shouldDirty: true });
+      filled.push('acquired date');
+    }
+    if (prefill.mpn && !v.mpn?.trim()) {
+      setValue('mpn', prefill.mpn, { shouldDirty: true });
+      filled.push('MPN');
+    }
+    if (prefill.serial && !v.notes?.trim()) {
+      setValue('notes', `Serial: ${prefill.serial}`, { shouldDirty: true });
+      filled.push('serial (in notes)');
+    }
+    show({
+      tone: filled.length > 0 ? 'success' : 'info',
+      heading: filled.length > 0 ? 'Filled from your scan' : 'Nothing to fill',
+      message:
+        filled.length > 0
+          ? `Filled ${filled.join(', ')}. Review before creating.`
+          : 'Those fields already had values, so nothing was changed.',
+    });
+  };
+
   // "Add by ASIN / Amazon URL": parse the box (a bare ASIN or a `/dp/` listing link) via the
   // pure {@link parseAsin} seam. Invalid input surfaces an accessible error; a valid one
   // synthesises an Amazon supplier part — the ASIN as its order code, the canonical listing
@@ -512,6 +556,8 @@ export function CreateItemDialog({
       ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
       ...(values.barcode?.trim() ? { barcode: values.barcode.trim() } : {}),
       ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
+      // Acquisition date (§4, v24) — an ISO `YYYY-MM-DD` string; pre-fillable from a scanned receipt.
+      ...(values.acquiredAt?.trim() ? { acquiredAt: values.acquiredAt.trim() } : {}),
       // Phase 9 perishables & condition (§4) — all optional.
       ...(values.expiryDate?.trim() ? { expiryDate: fromDateInputValue(values.expiryDate) } : {}),
       ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
@@ -526,6 +572,7 @@ export function CreateItemDialog({
       setInlineCreate(null);
       resetAsin();
       setActiveTab('details');
+      setOcrOpen(false);
       onClose();
     };
     // After the item exists: map the scraped supplier MPN(s) onto it (§4 alias mapping), then
@@ -631,6 +678,26 @@ export function CreateItemDialog({
   // the item editor's Details tab.
   const detailsContent = (
     <>
+      {/* On-device receipt/label OCR prefill (G2) — opt-in + feature-detected. Reads a photo
+          entirely on the device and pre-fills a reviewable draft; it never auto-writes. */}
+      {showOcr ? (
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary/20 p-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setOcrOpen(true)}
+            data-testid="ocr-scan-trigger"
+          >
+            <ScanIcon aria-hidden />
+            Scan a receipt or label
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Pre-fill price, date, model and serial from a photo — on-device, then review.
+          </span>
+        </div>
+      ) : null}
+
       <FormField
         label="Name"
         error={errors.name?.message}
@@ -1075,6 +1142,15 @@ export function CreateItemDialog({
   const lifecycleContent = (
     <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-secondary/20 p-3">
       <FormField
+        label="Acquired date (optional)"
+        hint={
+          'When you **acquired** this item (bought, received or was given it). Feeds warranty, ' +
+          'depreciation and the insurance schedule.\n\nScanning a receipt can fill this for you.'
+        }
+      >
+        <Input type="date" data-testid="item-acquired" {...register('acquiredAt')} />
+      </FormField>
+      <FormField
         label="Expiry date (optional)"
         hint={
           'When this stock expires or is best used by. Items nearing expiry surface on the ' +
@@ -1180,6 +1256,10 @@ export function CreateItemDialog({
           onCreated={(category: Category) => setValue('categoryId', category.id, { shouldDirty: true })}
         />
       ) : null}
+
+      {/* On-device OCR scan (G2), stacked on top of this form. Mounted only while open so each
+          scan starts fresh; on Apply it fills only the blank fields via `onOcrApply`. */}
+      {ocrOpen ? <OcrPrefillDialog open onClose={() => setOcrOpen(false)} onApply={onOcrApply} /> : null}
     </>
   );
 }
