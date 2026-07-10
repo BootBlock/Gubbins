@@ -1721,7 +1721,7 @@
   }
   /* Modest, so the foil is an iridescent sheen over the card — never an opaque rainbow wash. */
   :root[data-holo-cards] .gubbins-tilt:hover::after {
-    opacity: 0.6;
+    opacity: 0.52;
   }
   /* Dark theme: multiplying into a dark surface would vanish, so the composite flips to
      `color-dodge`, turning the masked stack into *added light*: unlit regions leave the card
@@ -1736,7 +1736,7 @@
     filter: saturate(1.35) contrast(1.1) hue-rotate(var(--holo-hue));
   }
   :root.dark[data-holo-cards] .gubbins-tilt:hover::after {
-    opacity: 0.58;
+    opacity: 0.5;
   }
 }
 
