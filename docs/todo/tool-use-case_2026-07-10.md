@@ -80,14 +80,13 @@ approach doesn't. The template is additive and reversible; a new entity is neith
 Walking the checkout flow specifically for tools (a tool is the *canonical* thing you loan) turned
 up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. Ordered by value.
 
-- **B1 — Return note clobbers the loan note (data loss).** `checkIn` does
-  `note = COALESCE(?, note)` on the **same `checkouts` row** that stored the checkout note
-  ([CheckoutRepository.ts](../../src/db/repositories/CheckoutRepository.ts) ~L265). A single `note`
-  column is shared by both ends of the loan, so **providing a return note overwrites the original
-  checkout note** — e.g. a loan noted "for the Henderson job" becomes "returned with chipped blade",
-  losing *why* it went out. Fix: give the return its own column (`return_note`, folded into the v1
-  baseline) so both survive, and show both in the loan history. Small, and it's a correctness fix,
-  not a nicety — do it first.
+- **B1 — Return note clobbers the loan note (data loss). ✅ Shipped 2026-07-10.** `checkIn` used to
+  do `note = COALESCE(?, note)` on the **same `checkouts` row** that stored the checkout note, so a
+  return note overwrote the original loan note (e.g. "for the Henderson job" → "returned with chipped
+  blade"). Fixed by adding a `return_note` column (folded into the v1 baseline; golden snapshot
+  regenerated) and writing the return remark there; both ends of the loan now keep their own text,
+  exposed as `Checkout.returnNote`. **Still open:** surfacing `returnNote` in the loan history UI —
+  the column is populated but not yet displayed (a natural rider on B2's check-in dialog).
 
 - **B2 — No condition capture on return.** When a tool comes back it's frequently in a *different*
   condition (blunt, chipped, now due calibration), but `checkIn` only takes an optional note — it
@@ -121,4 +120,4 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-`B1` (bug) → `T1` → `T2` → `B2` → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → `T1` → `T2` → `B2` → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.
