@@ -6,13 +6,20 @@
  * preference and the RNG are injected, and timers are faked, so nothing depends on a real browser
  * or on rAF timing (happy-dom gives neither).
  */
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { BurstProvider, useBurst } from './success-burst';
 import { buildBurstParticles, BURST_PARTICLE_COUNT, BURST_DURATION_MS } from './success-burst-geometry';
 import type { MediaQueryProvider } from './useReducedMotion';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
-afterEach(cleanup);
+// The burst is a "flourish" (suppressed at the Balanced default and calmer), so these fire-path
+// tests set the everything-on `headache` level; the OS reduced-motion side is injected per test.
+beforeEach(() => usePreferencesStore.setState({ animationLevel: 'headache' }));
+afterEach(() => {
+  cleanup();
+  usePreferencesStore.setState({ animationLevel: 'balanced' });
+});
 
 /** A reduced-motion provider that always reports the given preference. */
 function motion(matches: boolean): MediaQueryProvider {

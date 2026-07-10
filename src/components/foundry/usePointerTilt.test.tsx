@@ -60,6 +60,9 @@ function fakeCard(): HTMLElement {
   return el;
 }
 
+// Tilt is a flourish, off at the Balanced default; default the store to the everything-on level so
+// the "enabled" cases don't depend on test order (individual tests override to prove the gate).
+beforeEach(() => usePreferencesStore.setState({ animationLevel: 'headache' }));
 afterEach(() => {
   cleanup();
   usePreferencesStore.setState({ animationLevel: 'headache' });

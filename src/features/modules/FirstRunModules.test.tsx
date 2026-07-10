@@ -37,12 +37,12 @@ function goToAnimationStep() {
 beforeEach(() => {
   mockPathname = '/';
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
-  usePreferencesStore.setState({ animationLevel: 'headache' });
+  usePreferencesStore.setState({ animationLevel: 'balanced' });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
-  usePreferencesStore.setState({ animationLevel: 'headache' });
+  usePreferencesStore.setState({ animationLevel: 'balanced' });
 });
 
 describe('FirstRunModules — visibility', () => {
@@ -147,8 +147,8 @@ describe('FirstRunModules — skipping', () => {
     expect(state.firstRunComplete).toBe(true);
     // Intent untouched — nothing hidden, today's default behaviour preserved.
     expect(state.intent).toEqual({});
-    // The animation level was never touched, so it stays at the "everything on" default.
-    expect(usePreferencesStore.getState().animationLevel).toBe('headache');
+    // The animation level was never touched, so it stays at the `balanced` fresh-install default.
+    expect(usePreferencesStore.getState().animationLevel).toBe('balanced');
   });
 
   it('dismissing via Escape also skips (completes, intent untouched)', () => {
