@@ -1305,6 +1305,94 @@
 }
 
 /*
+ * Pointer tilt / parallax / glare (visual-flair F7). On pointer-hover a Visual-density card
+ * leans a few degrees *toward* the cursor in 3D, its raised hero layer drifts the other way for
+ * a counter-parallax, and a soft accent-tinted specular glare tracks the pointer — then it all
+ * settles flat on pointer-leave. The angles/parallax come from the JS seam ({@link usePointerTilt}
+ * writes the `--tilt-*` custom properties per frame); this stylesheet only consumes them, so the
+ * maths lives in one place and the CSS stays declarative.
+ *
+ * The glare tint is drawn from the accent-tracking `--highlight` brand token via `color-mix`, so
+ * it recolours for free with the user's Colour — exactly like the F1 hero glow, the F4 burst and
+ * the F5 spotlight border.
+ *
+ * **Gated in ONE place.** Every *active* rule (the tilt transform, the parallax translate and the
+ * glare) lives inside `@media (pointer: fine) and (prefers-reduced-motion: no-preference)`, so:
+ *   - on a touch / coarse pointer the whole effect is absent (tilt is a hover affordance, and a
+ *     sticky `:hover` after a tap would strand a lit glare) — belt-and-braces with the hook, which
+ *     returns no pointer listeners there; and
+ *   - under reduced motion nothing tilts, parallaxes or glares at all (not merely "instant") —
+ *     defence-in-depth over both the hook's gate (no listeners) and the global reduced-motion
+ *     catch-all.
+ * Because the transform is applied only under `:hover`, exactly one card is ever promoted to a 3D
+ * layer at a time and an idle recycled card in the virtualised grid carries no transform — safe on
+ * the list, with no per-mount entrance to re-fire. It reverts to `transform: none` on `:hover`
+ * loss, and Surface's own `transition-all … ease-emphasized` animates that settle, so no bespoke
+ * easing is introduced (one motion language, [[ease-emphasized-motion-token]]).
+ *
+ * Decoration only: the real focus ring, the hover-lift, the `selected` ring and the F5 spotlight
+ * comet remain the actual focus/selection signals. The tilt (an individual `transform`) composes
+ * with the card's Tailwind `-translate-y-1` hover-lift (an individual `translate`) without either
+ * clobbering the other.
+ */
+.gubbins-tilt {
+  position: relative;
+  /* The glare `::after` and any parallax layers are positioned/painted within the card's own
+     stacking context, so the effect never bleeds over neighbouring cards. */
+  isolation: isolate;
+}
+
+/* The hero/parallax layer settles with the signature easing on its own translate. Kept outside
+   the media gate so the property exists; the translate itself is only set while hovered. */
+.gubbins-tilt-layer {
+  transition: translate 0.2s var(--ease-emphasized);
+}
+
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  /* Lean toward the cursor. `perspective()` is self-contained on the element so each card owns
+     its own vanishing point centred on itself; `will-change` is scoped to the hovered card so
+     only one layer is ever promoted. The `deg`/`px` values arrive via the JS-written vars. */
+  .gubbins-tilt:hover {
+    transform: perspective(900px) rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg));
+    will-change: transform;
+  }
+  .gubbins-tilt:hover .gubbins-tilt-layer {
+    translate: var(--tilt-px, 0px) var(--tilt-py, 0px);
+  }
+
+  /* Soft specular glare, centred under the pointer via the `--tilt-gx/gy` percentages. `soft-light`
+     keeps it a gentle sheen that lifts the surface without washing the card's text; it fades in on
+     hover and out on leave with the signature easing. `pointer-events: none` so it never blocks a
+     click on the card's controls. */
+  .gubbins-tilt::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
+      color-mix(in oklab, var(--highlight) 40%, transparent),
+      transparent 45%
+    );
+    mix-blend-mode: soft-light;
+    transition: opacity 0.4s var(--ease-emphasized);
+  }
+  .gubbins-tilt:hover::after {
+    opacity: 1;
+  }
+}
+
+/* High-contrast mode keeps the (harmless, contrast-neutral) tilt geometry but drops the glare
+   wash, which could otherwise soften text contrast — matching how the ambient glow / spotlight
+   opt out of their decorative layer in that mode. */
+[data-contrast='high'] .gubbins-tilt::after {
+  display: none;
+}
+
+/*
  * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
  * placeholder with a light band travelling across the muted bar, so a loading widget
  * reads as actively fetching rather than merely dimmed. The base is the `--muted`

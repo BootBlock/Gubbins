@@ -100,6 +100,16 @@ export {
   ROUTE_VIEW_TRANSITION_TYPE,
 } from './view-transition';
 export { useMediaQuery, useLargeFormat } from './useMediaQuery';
+export { usePointerTilt, type PointerTiltOptions, type PointerTiltHandlers } from './usePointerTilt';
+export {
+  computeTilt,
+  computeShouldTilt,
+  DEFAULT_TILT_CONFIG,
+  REST_TILT_VARS,
+  FINE_POINTER_QUERY,
+  type TiltConfig,
+  type TiltVars,
+} from './pointer-tilt';
 export { useRovingRadioGroup } from './useRovingRadioGroup';
 export {
   useInstallPrompt,
