@@ -52,6 +52,7 @@ import {
 import type { AlertKind } from '@/features/alerts/alerts';
 import { DEFAULT_OCR_MODEL, normaliseOcrModel, type OcrModel } from '@/features/inventory/ocr/ocr-engine';
 export type { OcrModel };
+import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -301,6 +302,30 @@ interface PreferencesStore {
    * UI (masked input). Empty until configured.
    */
   readonly bridgeToken: string;
+  /**
+   * Printed **parts-catalogue letterhead** (issue #22 follow-up). A device-local set of branding
+   * fields the Catalogue screen stamps onto the printed document, so a company can print an
+   * on-brand catalogue. Persisted (localStorage) so the letterhead is set once and reused on
+   * every print; never synced (a printing/branding concern). All optional — empty fields simply
+   * don't render.
+   */
+  /** Document title override; empty falls back to "Catalogue". */
+  readonly catalogueTitle: string;
+  /** Organisation / company name printed in the header. */
+  readonly catalogueOrgName: string;
+  /** Multi-line address / contact block printed under the name (line breaks preserved). */
+  readonly catalogueOrgDetails: string;
+  /** Footer line printed at the foot of the document (e.g. a confidentiality / © notice). */
+  readonly catalogueFooter: string;
+  /**
+   * Graphic header/logo as a compact resized `data:image/…` URL (or empty). Kept small by
+   * {@link import('@/features/reports/catalogue-branding').logoToDataUrl} so it stays well within
+   * the localStorage quota; guarded by {@link normaliseCatalogueLogo} so a corrupt persisted
+   * value can never reach the `<img>`.
+   */
+  readonly catalogueLogo: string;
+  /** Whether the "Generated <date>" prefix prints on the metadata line (counts always show). */
+  readonly catalogueShowGeneratedDate: boolean;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   setMode: (mode: Mode) => void;
@@ -357,6 +382,18 @@ interface PreferencesStore {
   dismissWipBanner: () => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
+  /** Set the catalogue document title override (empty → "Catalogue"). */
+  setCatalogueTitle: (title: string) => void;
+  /** Set the catalogue letterhead organisation name. */
+  setCatalogueOrgName: (name: string) => void;
+  /** Set the catalogue letterhead address / contact block. */
+  setCatalogueOrgDetails: (details: string) => void;
+  /** Set the catalogue footer line. */
+  setCatalogueFooter: (footer: string) => void;
+  /** Set (or clear, with `''`) the catalogue logo data URL; guarded to a `data:image/…` value. */
+  setCatalogueLogo: (logo: string) => void;
+  /** Toggle whether the printed catalogue shows the "Generated <date>" prefix. */
+  setCatalogueShowGeneratedDate: (show: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -405,6 +442,12 @@ export const usePreferencesStore = create<PreferencesStore>()(
       wipBannerDismissed: false,
       bridgeUrl: '',
       bridgeToken: '',
+      catalogueTitle: '',
+      catalogueOrgName: '',
+      catalogueOrgDetails: '',
+      catalogueFooter: '',
+      catalogueLogo: '',
+      catalogueShowGeneratedDate: true,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
@@ -469,6 +512,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dismissWipBanner: () => set({ wipBannerDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
+      // Letterhead text is stored trimmed; the logo is guarded to a `data:image/…` value so a
+      // corrupt persisted string can never reach the printed `<img>`.
+      setCatalogueTitle: (title) => set({ catalogueTitle: title.trim() }),
+      setCatalogueOrgName: (name) => set({ catalogueOrgName: name.trim() }),
+      setCatalogueOrgDetails: (details) => set({ catalogueOrgDetails: details.trim() }),
+      setCatalogueFooter: (footer) => set({ catalogueFooter: footer.trim() }),
+      setCatalogueLogo: (logo) => set({ catalogueLogo: normaliseCatalogueLogo(logo) }),
+      setCatalogueShowGeneratedDate: (show) => set({ catalogueShowGeneratedDate: show }),
     }),
     {
       name: 'gubbins:preferences',

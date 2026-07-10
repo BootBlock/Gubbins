@@ -2314,4 +2314,13 @@
   .catalogue-table td {
     border-color: #ccc !important;
   }
+
+  /* Cap the letterhead logo so a large upload can't dominate the printed page. Raw mm is
+   * intentional here — print is a fixed, theme-less medium (same rationale as the rest of
+   * this block). The `catalogue-doc *` reset only flattens colour/background, so an <img>
+   * still prints its pixels. */
+  .catalogue-logo {
+    max-height: 22mm;
+    width: auto;
+  }
 }
