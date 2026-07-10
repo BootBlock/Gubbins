@@ -141,6 +141,19 @@ describe('ItemCard — content branches', () => {
     expect(root.classList.contains('gubbins-spotlight-border')).toBe(true);
   });
 
+  it('paints the per-location edge tint (F10) on the root only when a tint class is given', () => {
+    const { container: tinted } = renderCard(makeItem(), {
+      locationTintClass: 'gubbins-loc-tint loc-tint-teal',
+    });
+    const tintedRoot = tinted.firstElementChild!;
+    expect(tintedRoot.classList.contains('gubbins-loc-tint')).toBe(true);
+    expect(tintedRoot.classList.contains('loc-tint-teal')).toBe(true);
+
+    // An uncoloured / unassigned location passes no class, so the card stays a neutral surface.
+    const { container: plain } = renderCard(makeItem());
+    expect(plain.firstElementChild!.classList.contains('gubbins-loc-tint')).toBe(false);
+  });
+
   it('appends the serial number to the heading when present', () => {
     renderCard(makeItem({ trackingMode: 'SERIALISED', serialNo: 7 }));
     expect(screen.getByRole('heading', { name: /NE555 timer #7/ })).not.toBeNull();

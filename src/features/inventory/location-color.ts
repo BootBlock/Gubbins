@@ -56,6 +56,29 @@ const BG_CLASS: Record<LocationColor, string> = {
   slate: 'bg-loc-slate',
 };
 
+/**
+ * The paired classes that paint an inventory card/row with its location's accent tint
+ * (visual-flair F10): the shared `gubbins-loc-tint` behaviour class plus a `.loc-tint-*`
+ * class that sets the `--loc-tint` custom property to this location's `--loc-*` swatch
+ * token. Both are hand-authored rules in `styles/index.css` (not Tailwind utilities), so
+ * — unlike the `text-loc-*` / `bg-loc-*` maps above — they need no static-literal scan and
+ * reuse the exact same swatch palette rather than forking a second location→colour scheme.
+ */
+const TINT_CLASS: Record<LocationColor, string> = {
+  rose: 'gubbins-loc-tint loc-tint-rose',
+  orange: 'gubbins-loc-tint loc-tint-orange',
+  amber: 'gubbins-loc-tint loc-tint-amber',
+  lime: 'gubbins-loc-tint loc-tint-lime',
+  green: 'gubbins-loc-tint loc-tint-green',
+  teal: 'gubbins-loc-tint loc-tint-teal',
+  cyan: 'gubbins-loc-tint loc-tint-cyan',
+  blue: 'gubbins-loc-tint loc-tint-blue',
+  violet: 'gubbins-loc-tint loc-tint-violet',
+  fuchsia: 'gubbins-loc-tint loc-tint-fuchsia',
+  pink: 'gubbins-loc-tint loc-tint-pink',
+  slate: 'gubbins-loc-tint loc-tint-slate',
+};
+
 const LABEL: Record<LocationColor, string> = {
   rose: 'Rose',
   orange: 'Orange',
@@ -82,6 +105,16 @@ export function isLocationColor(value: string | null | undefined): value is Loca
  */
 export function locationColorTextClass(value: string | null | undefined): string | undefined {
   return isLocationColor(value) ? TEXT_CLASS[value] : undefined;
+}
+
+/**
+ * The class string that gives a card/row a faint left-edge accent tint in this location's
+ * swatch (visual-flair F10), or `undefined` for none / an unrecognised key (so an unassigned
+ * or uncoloured location's items stay a neutral card). Purely decorative — the location name
+ * still renders in its {@link locationColorTextClass} tint, so colour is never the sole cue.
+ */
+export function locationColorTintClass(value: string | null | undefined): string | undefined {
+  return isLocationColor(value) ? TINT_CLASS[value] : undefined;
 }
 
 /** The background-fill utility for a swatch chip in the picker. */

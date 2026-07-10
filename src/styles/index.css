@@ -1480,6 +1480,77 @@
 }
 
 /*
+ * Per-location accent tint (visual-flair F10). Each inventory card/row carries a faint left-edge
+ * accent in ITS LOCATION's swatch — the very same `--loc-*` tokens the Locations sidebar and the
+ * location labels use (one shared palette, not a second colour scheme) — so a glance down the list
+ * reads location-clustered. The location's colour arrives via the `--loc-tint` custom property,
+ * set by the paired `.loc-tint-*` class from the stored swatch key; `.gubbins-loc-tint` alone (no
+ * setter) paints nothing, because `var(--loc-tint)` is then invalid and drops the whole layer.
+ *
+ * Painted as a `background-image` gradient — a crisp 3px spine fading into a ~5% wash — rather than
+ * a border or box-shadow, on purpose: it adds NO layout box (so a tinted and an untinted row keep
+ * their content perfectly aligned — no 2px jitter), does not clobber the card's drop-shadow, needs
+ * no `::before`/`::after` (both already taken by the F5 spotlight and F7 glare on the card), layers
+ * over `background-color` so it survives the row's `hover:bg-card` swap and the `selected` wash, and
+ * is clipped to the card's `border-radius` for free. The wash tops out at ~5% alpha and fades to
+ * zero well before any text column, so it never harms text contrast (AA). Purely decorative and
+ * redundant (the location name still shows in its swatch, so colour is never the sole cue) and
+ * fully static — no motion, no entrance — so it is safe on the virtualised list where rows recycle
+ * on scroll (nothing to re-fire) and needs no reduced-motion / F9 "reduce effects" gate.
+ */
+.gubbins-loc-tint {
+  background-image: linear-gradient(
+    to right,
+    var(--loc-tint) 0 3px,
+    color-mix(in oklab, var(--loc-tint) 5%, transparent) 3px,
+    transparent 45%
+  );
+}
+
+.loc-tint-rose {
+  --loc-tint: var(--loc-rose);
+}
+.loc-tint-orange {
+  --loc-tint: var(--loc-orange);
+}
+.loc-tint-amber {
+  --loc-tint: var(--loc-amber);
+}
+.loc-tint-lime {
+  --loc-tint: var(--loc-lime);
+}
+.loc-tint-green {
+  --loc-tint: var(--loc-green);
+}
+.loc-tint-teal {
+  --loc-tint: var(--loc-teal);
+}
+.loc-tint-cyan {
+  --loc-tint: var(--loc-cyan);
+}
+.loc-tint-blue {
+  --loc-tint: var(--loc-blue);
+}
+.loc-tint-violet {
+  --loc-tint: var(--loc-violet);
+}
+.loc-tint-fuchsia {
+  --loc-tint: var(--loc-fuchsia);
+}
+.loc-tint-pink {
+  --loc-tint: var(--loc-pink);
+}
+.loc-tint-slate {
+  --loc-tint: var(--loc-slate);
+}
+
+/* High-contrast mode drops the decorative tint entirely, matching how the ambient glow / spotlight
+   / glare opt out — that mode keeps surfaces at maximal, uniform contrast. */
+[data-contrast='high'] .gubbins-loc-tint {
+  background-image: none;
+}
+
+/*
  * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
  * placeholder with a light band travelling across the muted bar, so a loading widget
  * reads as actively fetching rather than merely dimmed. The base is the `--muted`

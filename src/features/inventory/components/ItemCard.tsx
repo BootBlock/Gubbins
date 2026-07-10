@@ -33,6 +33,7 @@ export const ItemCard = memo(function ItemCard({
   locations,
   locationName,
   locationColorClass,
+  locationTintClass,
   selection,
   selected = false,
   fieldOrder = DEFAULT_VISIBLE_CARD_FIELD_IDS,
@@ -45,6 +46,8 @@ export const ItemCard = memo(function ItemCard({
   locationName: string;
   /** Tailwind text-colour class for the location's swatch tint, if any. */
   locationColorClass?: string;
+  /** Edge-tint class painting the card in its location's swatch (visual-flair F10), if coloured. */
+  locationTintClass?: string;
   selection?: ItemSelection;
   /** Whether this card is currently selected (only meaningful when `selection` is set). */
   selected?: boolean;
@@ -103,6 +106,10 @@ export const ItemCard = memo(function ItemCard({
         // is inert (and no handlers are attached). Its `transform` composes with the `-translate-y-1`
         // hover-lift (a `translate`) without clobbering it.
         'gubbins-tilt',
+        // Per-location accent tint (F10): a faint left-edge accent in this card's location swatch
+        // so the grid reads location-clustered at a glance. A painted background layer (no border /
+        // no pseudo — both taken by F5/F7), static, and undefined for an uncoloured location.
+        locationTintClass,
         clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',

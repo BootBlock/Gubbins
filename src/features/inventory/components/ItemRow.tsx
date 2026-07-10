@@ -31,6 +31,7 @@ export const ItemRow = memo(function ItemRow({
   locations,
   locationName,
   locationColorClass,
+  locationTintClass,
   selection,
   selected = false,
   fieldOrder = DEFAULT_VISIBLE_CARD_FIELD_IDS,
@@ -43,6 +44,8 @@ export const ItemRow = memo(function ItemRow({
   locationName: string;
   /** Tailwind text-colour class for the location's swatch tint, if any. */
   locationColorClass?: string;
+  /** Edge-tint class painting the row in its location's swatch (visual-flair F10), if coloured. */
+  locationTintClass?: string;
   selection?: ItemSelection;
   /** Whether this row is currently selected (only meaningful when `selection` is set). */
   selected?: boolean;
@@ -80,6 +83,10 @@ export const ItemRow = memo(function ItemRow({
         // No hover grab-hand: the grabbing cursor appears only while actively pressing to drag
         // (`:active`); hover shows a pointer when the row body is click-actionable, else default.
         'flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5 transition-colors hover:bg-card/80 active:cursor-grabbing',
+        // Per-location accent tint (F10): a faint left-edge accent in this row's location swatch so
+        // a scan down the list reads location-clustered. A painted background layer (survives the
+        // hover:bg-card swap), static, and undefined for an uncoloured location.
+        locationTintClass,
         clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'border-primary/60 bg-primary/5',
