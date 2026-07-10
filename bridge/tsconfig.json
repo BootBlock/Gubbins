@@ -43,6 +43,9 @@
       "@/*": ["../src/*"]
     }
   },
-  "include": ["src/**/*.ts", "loader.mjs", "cli.mjs"],
+  // Include the app's Vite env declaration so shared app modules that read `import.meta.env`
+  // (e.g. the inventory OCR asset paths) type-check here too — the same reason the DOM/WebWorker
+  // libs above are pulled in. The bridge never runs these code paths; this only types them.
+  "include": ["src/**/*.ts", "../src/vite-env.d.ts", "loader.mjs", "cli.mjs"],
   "exclude": ["node_modules", "dist"]
 }
