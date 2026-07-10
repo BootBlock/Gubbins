@@ -455,7 +455,7 @@
       "type": "table",
       "name": "projects",
       "tbl_name": "projects",
-      "sql": "CREATE TABLE projects (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          name         TEXT    NOT NULL,\n          description  TEXT,\n          status       TEXT    NOT NULL DEFAULT 'PLANNING',\n          costing_mode TEXT    NOT NULL DEFAULT 'CURRENT_REPLACEMENT',\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), budget REAL,\n          CHECK (status IN ('PLANNING', 'ACTIVE', 'COMPLETED', 'ARCHIVED')),\n          CHECK (costing_mode IN ('CURRENT_REPLACEMENT', 'POINT_IN_TIME'))\n        ) STRICT"
+      "sql": "CREATE TABLE projects (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          name         TEXT    NOT NULL,\n          description  TEXT,\n          -- Optional icon: a canonical Lucide glyph name (PascalCase), or NULL for the default.\n          icon         TEXT,\n          status       TEXT    NOT NULL DEFAULT 'PLANNING',\n          costing_mode TEXT    NOT NULL DEFAULT 'CURRENT_REPLACEMENT',\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), budget REAL,\n          CHECK (status IN ('PLANNING', 'ACTIVE', 'COMPLETED', 'ARCHIVED')),\n          CHECK (costing_mode IN ('CURRENT_REPLACEMENT', 'POINT_IN_TIME'))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -3384,6 +3384,14 @@
         },
         {
           "cid": 3,
+          "name": "icon",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
           "name": "status",
           "type": "TEXT",
           "notnull": 1,
@@ -3391,7 +3399,7 @@
           "pk": 0
         },
         {
-          "cid": 4,
+          "cid": 5,
           "name": "costing_mode",
           "type": "TEXT",
           "notnull": 1,
@@ -3399,7 +3407,7 @@
           "pk": 0
         },
         {
-          "cid": 5,
+          "cid": 6,
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -3407,7 +3415,7 @@
           "pk": 0
         },
         {
-          "cid": 6,
+          "cid": 7,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -3415,7 +3423,7 @@
           "pk": 0
         },
         {
-          "cid": 7,
+          "cid": 8,
           "name": "budget",
           "type": "REAL",
           "notnull": 0,

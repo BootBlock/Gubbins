@@ -38,6 +38,16 @@ function normaliseBudget(value: number | null | undefined): number | null {
   return value;
 }
 
+/**
+ * Coerce an icon input to a stored value: a trimmed non-empty glyph name, or NULL to clear
+ * it. Whitespace-only is treated as "no icon" so a blank never persists as a stored value.
+ */
+function normaliseIcon(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export class ProjectCoreRepository extends BaseRepository {
   // --- projects ------------------------------------------------------------------
 
@@ -73,11 +83,12 @@ export class ProjectCoreRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     await this.driver.execute(
-      'INSERT INTO projects (id, name, description, costing_mode, budget) VALUES (?, ?, ?, ?, ?);',
+      'INSERT INTO projects (id, name, description, icon, costing_mode, budget) VALUES (?, ?, ?, ?, ?, ?);',
       [
         id,
         name,
         input.description ?? null,
+        normaliseIcon(input.icon),
         input.costingMode ?? 'CURRENT_REPLACEMENT',
         normaliseBudget(input.budget),
       ],
@@ -102,6 +113,10 @@ export class ProjectCoreRepository extends BaseRepository {
     if (input.description !== undefined) {
       sets.push('description = ?');
       params.push(input.description);
+    }
+    if (input.icon !== undefined) {
+      sets.push('icon = ?');
+      params.push(normaliseIcon(input.icon));
     }
     if (input.status !== undefined) {
       sets.push('status = ?');

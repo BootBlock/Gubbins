@@ -375,6 +375,8 @@ export const v1Initial: Migration = {
           id           TEXT    PRIMARY KEY NOT NULL,
           name         TEXT    NOT NULL,
           description  TEXT,
+          -- Optional icon: a canonical Lucide glyph name (PascalCase), or NULL for the default.
+          icon         TEXT,
           status       TEXT    NOT NULL DEFAULT 'PLANNING',
           costing_mode TEXT    NOT NULL DEFAULT 'CURRENT_REPLACEMENT',
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),

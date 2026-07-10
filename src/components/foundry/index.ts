@@ -40,6 +40,14 @@ export {
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
+// Glyph picker — the app-wide icon chooser. The full catalogue-bearing `GlyphPicker`
+// dialog is intentionally *not* re-exported here: it is reached only through the lazy
+// `GlyphPickerButton` (or a direct subpath import) so its icon set never lands in the
+// main bundle. `Glyph` displays a single chosen glyph; the name helpers are pure.
+export { Glyph, type GlyphProps } from './glyph-picker/Glyph';
+export { GlyphPickerButton, type GlyphPickerButtonProps } from './glyph-picker/GlyphPickerButton';
+export { type GlyphPickerProps } from './glyph-picker/GlyphPicker';
+export { humanizeGlyphName, glyphSearchText, filterGlyphNames } from './glyph-picker/glyph-name';
 export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
 export { resolveTabKey } from './tab-keyboard';
 export { Markdown } from './markdown';
