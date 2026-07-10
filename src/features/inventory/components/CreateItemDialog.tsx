@@ -799,16 +799,16 @@ export function CreateItemDialog({
                 'How this item’s stock is counted:\n\n' +
                 '| Mode | Counts | Example |\n' +
                 '| --- | --- | --- |\n' +
-                '| **Discrete** | a plain quantity | 100 screws |\n' +
+                '| **Bulk** | a plain quantity | 100 screws |\n' +
                 '| **Serialised** | each unit separately | a table saw you check out |\n' +
                 '| **Consumable** | how *full* it is | a filament spool |\n' +
                 '| **Untracked** | presence only | a reference manual |\n\n' +
                 '> **One-off tool or asset?** A single item like a table saw is best **Serialised** ' +
                 'with a count of **1** — that gives it its own condition, servicing schedule, ' +
-                'check-out history and bookings. Use **Discrete** with quantity 1 only for a plain ' +
+                'check-out history and bookings. Use **Bulk** with quantity 1 only for a plain ' +
                 'countable thing you don’t need to track individually.\n\n' +
                 '> **Note:** **Serialised** and **Consumable** are fixed once set, so choose them ' +
-                'with care; **Discrete** and **Untracked** can be swapped later from the item’s ' +
+                'with care; **Bulk** and **Untracked** can be swapped later from the item’s ' +
                 'Details tab.'
               }
               options={TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] }))}
