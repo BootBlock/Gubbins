@@ -1591,9 +1591,10 @@
 
 /*
  * Holographic foil item cards ("Holographic foil" Appearance flair; `data-holo-cards` on <html>).
- * Turns the plain single-hue hover glare into a shifting rainbow **trading-card foil**: a diagonal
- * iridescent sweep plus a bright specular bloom, both anchored to the pointer via the same
- * `--tilt-gx/gy` vars the tilt writes, so leaning the card slides the spectrum across its face —
+ * Turns the plain single-hue hover glare into a shifting rainbow **trading-card foil**: seamless
+ * diffraction banding plus a tight specular glint, both anchored to the pointer via the same
+ * `--tilt-gx/gy` vars the tilt writes and faded out by a pointer-centred alpha mask, so the
+ * spectrum only fires where the light strikes and sweeps across the face as the card leans —
  * exactly how light plays over a real foil card. The edge "sheen" (the F5 spotlight comet) is
  * recoloured to a prismatic arc to match.
  *
@@ -1606,57 +1607,113 @@
  * Purely decorative; it never touches the focus ring, hover-lift or selection ring.
  */
 @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  /* The base rule is the LIGHT treatment; `.dark` layers its variant on below, matching the
+     light-default / `.dark`-override split the rest of this file uses. */
   :root[data-holo-cards] .gubbins-tilt::after {
-    /* A single, NON-repeating diagonal spectrum (no `repeating-*` → no hard tiling seams) with a
-       soft pointer-tracked bloom on top. The spectrum is 1.6× the card and slid by the pointer, so
-       the visible hue drifts as the card tilts without ever wrapping. The stops are raw `oklch()`
-       on purpose — this is a full-spectrum physical *foil*, not a themeable brand colour, so it is
-       deliberately identical in light and dark and no design token could reasonably apply (the same
-       reasoning as the spotlight mask's raw `#000`). The card's own accent tokens still drive the
-       plain (non-foil) glare and the F5 comet. */
+    /* The two lean-dependent pieces both themes share, defined once so a retune cannot desync
+       them: the lean-keyed hue shift (the angle dependency of a real foil — tilting the card
+       recolours the whole spectrum, ±6° of lean ≈ ±160° of hue, not just its position) and the
+       pointer-centred falloff mask. */
+    --holo-hue: calc((var(--tilt-rx, 0deg) - var(--tilt-ry, 0deg)) * 13);
+    --holo-mask: radial-gradient(
+      farthest-corner circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
+      rgb(0 0 0) 5%,
+      rgb(0 0 0 / 0.45) 35%,
+      transparent 78%
+    );
+    /* Two layers, top → bottom (raw `rgb()`/`hsl()` literals on purpose — this is a full-spectrum
+       physical *foil*, not a themeable brand colour, so no design token could reasonably apply,
+       the same reasoning as the spotlight mask's raw `#000`; the card's own accent tokens still
+       drive the plain non-foil glare and the F5 comet. They are also deliberately sRGB-typed, not
+       `oklch()`: Chromium mis-composites blend modes against gradient layers carrying oklch stops,
+       which is exactly the bug that made earlier tunings of this effect read as a flat wash):
+       1. a tight specular glint pinned under the pointer — the old half-card white bloom read as
+          fog; a real foil throws a small hard hotspot;
+       2. seamless diffraction banding: a repeating spectrum whose last stop wraps to the hue of
+          its first (`hsl(360…)` = `hsl(0…)`), so the repeat has no seam — several distinct bands
+          are visible at once, like the diffraction pattern on a real foil, not one smeared wash. */
     background:
       radial-gradient(
         circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
-        color-mix(in oklab, white 30%, transparent),
-        transparent 55%
+        rgb(255 255 255 / 0.85),
+        rgb(230 230 230 / 0.3) 14%,
+        transparent 34%
       ),
-      linear-gradient(
-        110deg,
-        color-mix(in oklab, oklch(0.8 0.16 20) 40%, transparent),
-        color-mix(in oklab, oklch(0.8 0.16 90) 40%, transparent),
-        color-mix(in oklab, oklch(0.8 0.16 165) 40%, transparent),
-        color-mix(in oklab, oklch(0.8 0.16 240) 40%, transparent),
-        color-mix(in oklab, oklch(0.8 0.16 315) 40%, transparent)
+      repeating-linear-gradient(
+        115deg,
+        hsl(0 90% 65%) 0,
+        hsl(60 90% 65%) 26px,
+        hsl(120 90% 65%) 52px,
+        hsl(180 90% 65%) 78px,
+        hsl(240 90% 65%) 104px,
+        hsl(300 90% 65%) 130px,
+        hsl(360 90% 65%) 156px
       );
-    /* Bloom natural-size (its centre is the pointer via the gradient's `at`); the spectrum is
-       gently oversized and slid with the pointer for a soft, seam-free hue drift. */
+    /* The band layer is 3× the card and `no-repeat`, slid by the pointer: at 300% the raw 0–100%
+       pointer travel sweeps the banding two full card-widths across the face (the strong
+       positional shift of a leaning card). Seam-freedom needs both halves: the hue wrap makes the
+       gradient's own repeat seamless INSIDE the image, and `no-repeat` + the coverage guarantee
+       (for any 0–100% position a 300% image still spans the card) mean no image-copy boundary —
+       which is NOT hue-aligned at 115° — can ever slide into view. */
+    background-repeat: no-repeat;
     background-size:
       100% 100%,
-      160% 160%;
+      300% 300%;
     background-position:
       0 0,
       var(--tilt-gx, 50%) var(--tilt-gy, 50%);
-    /* `screen` *adds* the translucent spectrum as light over the dark-first card — clearly
-       iridescent but without the blown-out, garish cast `color-dodge` gave, and it keeps the text
-       legible. (On the near-white light surface `screen` is inherently subtler — an accepted
-       trade-off for the dark-first aesthetic.) */
-    mix-blend-mode: screen;
+    /* The light falloff is an alpha MASK centred on the pointer, not a blended luminance layer:
+       the whole stack (glint + bands) is fully present under the light and gone by the card's far
+       corner, so the rainbow only fires where the light strikes — a real foil never shows its
+       spectrum uniformly. (A mask, specifically, because `background-blend-mode` does not compose
+       with `mix-blend-mode` in Chromium — the falloff silently stops applying; the raw black here
+       is a mask *alpha* operator, same as the spotlight mask's `#000`.) */
+    -webkit-mask-image: var(--holo-mask);
+    mask-image: var(--holo-mask);
+    /* Light theme: `multiply` *tints* the pale card with the spectrum near the light, and the
+       mask fades it to nothing away from it (the white glint multiplies out neutral, which is
+       right for a pale card: under diffuse light its foil reads as colour, not an extra hotspot).
+       Slightly higher opacity + saturation than the dark variant below because multiply-tinting
+       white yields inherently gentler pastels. */
+    mix-blend-mode: multiply;
+    filter: saturate(1.6) hue-rotate(var(--holo-hue));
+    /* Widen the base fade (opacity-only) to the filter: on pointer-leave the tilt hook snaps
+       `--tilt-rx/ry` back to 0deg on the spot, and without this the spectrum visibly re-hues in a
+       single frame while the layer is still fading out over 0.4s. Easing the filter makes the hue
+       settle with the fade (and softly chase the pointer while hovering). */
+    transition:
+      opacity 0.4s var(--ease-emphasized),
+      filter 0.4s var(--ease-emphasized);
   }
-  /* Modest, so the foil is a soft iridescent sheen — not an opaque rainbow wash over the content. */
+  /* Modest, so the foil is an iridescent sheen over the card — never an opaque rainbow wash. */
   :root[data-holo-cards] .gubbins-tilt:hover::after {
-    opacity: 0.5;
+    opacity: 0.6;
+  }
+  /* Dark theme: multiplying into a dark surface would vanish, so the composite flips to
+     `color-dodge`, turning the masked stack into *added light*: unlit regions leave the card
+     untouched, the lit bands read as saturated iridescence, the glint blows to a true specular
+     hotspot — and light text under it dodges toward white, staying legible. */
+  :root.dark[data-holo-cards] .gubbins-tilt::after {
+    mix-blend-mode: color-dodge;
+    filter: saturate(1.35) hue-rotate(var(--holo-hue));
+  }
+  :root.dark[data-holo-cards] .gubbins-tilt:hover::after {
+    opacity: 0.58;
   }
 }
 
 /* Prismatic edge sheen: recolour the F5 spotlight comet to a rainbow arc under the foil. Inherits
-   the same `@property`-driven rotation + reduced-motion/high-contrast handling as the base comet. */
+   the same `@property`-driven rotation + reduced-motion/high-contrast handling as the base comet.
+   Softer than the face foil (lower chroma, translucent): the ring frames the card — at the old 85%
+   opaque saturated stops it dominated it. */
 :root[data-holo-cards] .gubbins-spotlight-border::before {
   background: conic-gradient(
     from var(--gubbins-spotlight-angle),
     transparent 30deg,
-    color-mix(in oklab, oklch(0.82 0.2 20) 85%, transparent) 70deg,
-    color-mix(in oklab, oklch(0.85 0.2 150) 85%, transparent) 120deg,
-    color-mix(in oklab, oklch(0.82 0.2 280) 85%, transparent) 175deg,
+    color-mix(in oklab, oklch(0.78 0.14 20) 55%, transparent) 70deg,
+    color-mix(in oklab, oklch(0.8 0.14 110) 60%, transparent) 105deg,
+    color-mix(in oklab, oklch(0.8 0.14 200) 60%, transparent) 140deg,
+    color-mix(in oklab, oklch(0.75 0.14 300) 55%, transparent) 175deg,
     transparent 220deg
   );
 }
