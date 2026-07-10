@@ -131,6 +131,8 @@ export {
   ChartColumn as ReportIcon,
   // Insurance / estate schedule (feature-gap G1) — the "institution / estate" glyph.
   Landmark as InsuranceScheduleIcon,
+  // Parts catalogue (issue #22) — a printable, columnar list of items.
+  ClipboardList as CatalogueIcon,
 
   // Customisable dashboard widget board (Phase 45, §3)
   LayoutDashboard as CustomiseIcon,

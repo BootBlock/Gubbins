@@ -23,6 +23,7 @@ import { Route as ImportRouteImport } from './routes/import'
 import { Route as HomeAssistantRouteImport } from './routes/home-assistant'
 import { Route as DeepLinkRouteImport } from './routes/deep-link'
 import { Route as ContactsRouteImport } from './routes/contacts'
+import { Route as CatalogueRouteImport } from './routes/catalogue'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as ActivityRouteImport } from './routes/activity'
@@ -99,6 +100,11 @@ const ContactsRoute = ContactsRouteImport.update({
   path: '/contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CatalogueRoute = CatalogueRouteImport.update({
+  id: '/catalogue',
+  path: '/catalogue',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BookingsRoute = BookingsRouteImport.update({
   id: '/bookings',
   path: '/bookings',
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
+  '/catalogue': typeof CatalogueRoute
   '/contacts': typeof ContactsRoute
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
+  '/catalogue': typeof CatalogueRoute
   '/contacts': typeof ContactsRoute
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/alerts': typeof AlertsRoute
   '/bookings': typeof BookingsRoute
+  '/catalogue': typeof CatalogueRoute
   '/contacts': typeof ContactsRoute
   '/deep-link': typeof DeepLinkRoute
   '/home-assistant': typeof HomeAssistantRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/alerts'
     | '/bookings'
+    | '/catalogue'
     | '/contacts'
     | '/deep-link'
     | '/home-assistant'
@@ -218,6 +228,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/alerts'
     | '/bookings'
+    | '/catalogue'
     | '/contacts'
     | '/deep-link'
     | '/home-assistant'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/alerts'
     | '/bookings'
+    | '/catalogue'
     | '/contacts'
     | '/deep-link'
     | '/home-assistant'
@@ -261,6 +273,7 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   AlertsRoute: typeof AlertsRoute
   BookingsRoute: typeof BookingsRoute
+  CatalogueRoute: typeof CatalogueRoute
   ContactsRoute: typeof ContactsRoute
   DeepLinkRoute: typeof DeepLinkRoute
   HomeAssistantRoute: typeof HomeAssistantRoute
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/catalogue': {
+      id: '/catalogue'
+      path: '/catalogue'
+      fullPath: '/catalogue'
+      preLoaderRoute: typeof CatalogueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bookings': {
       id: '/bookings'
       path: '/bookings'
@@ -421,6 +441,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   AlertsRoute: AlertsRoute,
   BookingsRoute: BookingsRoute,
+  CatalogueRoute: CatalogueRoute,
   ContactsRoute: ContactsRoute,
   DeepLinkRoute: DeepLinkRoute,
   HomeAssistantRoute: HomeAssistantRoute,

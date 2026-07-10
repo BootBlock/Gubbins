@@ -7,6 +7,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import type { CatalogueScope } from './parts-catalogue';
 
 /** Trailing-window length (days) shared by the consumption + movement reports. */
 export const REPORT_WINDOW_DAYS = 30;
@@ -188,5 +189,25 @@ export function useInsuranceSchedule() {
   return useQuery({
     queryKey: ['reports', 'insurance-schedule'],
     queryFn: () => getReportRepository().insuranceSchedule(),
+  });
+}
+
+/**
+ * Parts catalogue (issue #22): a printable list of items resolved from the chosen `scope`
+ * (all / a location subtree / a project / an ad-hoc selection). Read-only aggregation over
+ * `items` + `locations`, fetched through `ReportRepository`; the screen renders the returned
+ * DTO, shows only the columns the reader selected and offers `window.print()`.
+ *
+ * `scope` is `null` while the reader has not yet chosen a location/project — the query stays
+ * idle (disabled) until a concrete scope exists, so no rows are fetched for an incomplete pick.
+ */
+export function usePartsCatalogue(scope: CatalogueScope | null) {
+  return useQuery({
+    queryKey: ['reports', 'parts-catalogue', scope],
+    queryFn: () => getReportRepository().partsCatalogue(scope!),
+    enabled: scope !== null,
+    // Re-keyed as the reader changes scope; keep the previous document on screen while the new
+    // one loads instead of flashing to a spinner.
+    placeholderData: keepPreviousData,
   });
 }

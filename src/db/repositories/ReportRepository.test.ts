@@ -777,4 +777,80 @@ describe('ReportRepository', () => {
       expect(schedule.grandTotal).toBe(9);
     });
   });
+
+  describe('partsCatalogue', () => {
+    it('for the "all" scope groups every active item by location, excluding variant parents and removed items', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
+      await items.create({ name: 'Anvil', locationId: garage.id, quantity: 1, unitCost: 10 });
+      await items.create({ name: 'Widget', locationId: shelf.id, quantity: 3, unitCost: 2 });
+
+      const parent = await items.create({ name: 'Kit', trackingMode: 'SERIALISED' });
+      await items.createVariant(parent.id, { name: 'Kit v2' }); // makes the parent abstract
+      const removed = await items.create({ name: 'Gone', quantity: 1 });
+      await items.softDelete(removed.id);
+
+      const catalogue = await reports.partsCatalogue({ kind: 'all' });
+      const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
+      // The abstract parent and the soft-deleted item drop out; the real variant stays.
+      expect(names).toEqual(['Anvil', 'Kit v2', 'Widget']);
+      expect(catalogue.groups.find((g) => g.locationId === shelf.id)?.subtotal).toBe(6);
+      expect(catalogue.grandTotal).toBe(16);
+      expect(catalogue.hasValue).toBe(true);
+    });
+
+    it('for the "location" scope includes the whole subtree but nothing outside it', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
+      const kitchen = await locations.create({ name: 'Kitchen' });
+      await items.create({ name: 'Anvil', locationId: garage.id, quantity: 1 });
+      await items.create({ name: 'Widget', locationId: shelf.id, quantity: 1 });
+      await items.create({ name: 'Kettle', locationId: kitchen.id, quantity: 1 });
+
+      const catalogue = await reports.partsCatalogue({ kind: 'location', locationId: garage.id });
+      const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
+      expect(names).toEqual(['Anvil', 'Widget']); // Kettle is in a different root — excluded
+    });
+
+    it('for the "project" scope includes only the items referenced by the project BOM', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const inBom = await items.create({ name: 'Resistor', locationId: shelf.id, quantity: 100 });
+      await items.create({ name: 'Unrelated', locationId: shelf.id, quantity: 1 });
+
+      await driver.execute("INSERT INTO projects (id, name) VALUES ('proj-1', 'Amplifier');");
+      await driver.execute(
+        `INSERT INTO project_bom_lines (id, project_id, item_id, required_qty) VALUES ('bl-1', 'proj-1', ?, 5);`,
+        [inBom.id],
+      );
+
+      const catalogue = await reports.partsCatalogue({ kind: 'project', projectId: 'proj-1' });
+      const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name));
+      expect(names).toEqual(['Resistor']);
+    });
+
+    it('for the "items" scope includes exactly the listed items, and an empty list yields nothing', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const a = await items.create({ name: 'Alpha', locationId: shelf.id, quantity: 1 });
+      await items.create({ name: 'Beta', locationId: shelf.id, quantity: 1 });
+
+      const chosen = await reports.partsCatalogue({ kind: 'items', itemIds: [a.id] });
+      expect(chosen.groups.flatMap((g) => g.lines.map((l) => l.name))).toEqual(['Alpha']);
+
+      const none = await reports.partsCatalogue({ kind: 'items', itemIds: [] });
+      expect(none.itemCount).toBe(0);
+      expect(none.groups).toEqual([]);
+    });
+
+    it('resolves the preferred supplier name and cost onto the line (falling back to it when no manual cost)', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const item = await items.create({ name: 'Cap', locationId: shelf.id, quantity: 2, unitCost: null });
+      await supplierParts.create(item.id, { supplierName: 'Parts Co', unitCost: 4, isPreferred: true });
+
+      const catalogue = await reports.partsCatalogue({ kind: 'items', itemIds: [item.id] });
+      const line = catalogue.groups[0].lines[0];
+      expect(line.supplier).toBe('Parts Co');
+      expect(line.unitCost).toBe(4);
+      expect(line.lineValue).toBe(8);
+    });
+  });
 });
