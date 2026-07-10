@@ -534,11 +534,13 @@ export function useCreateLocation() {
 }
 
 /**
- * Create a location from a `/`- or `\`-separated path in one go (spec §4), creating any
- * missing ancestor levels and reusing the ones that already exist. See
- * {@link LocationRepository.createPath}. Resolves with the leaf location so the inline
- * "New location…" flow can select it. A separator-free name behaves exactly like
- * {@link useCreateLocation}, so this is the drop-in the create dialog uses.
+ * Create a whole branch of locations in one go from the nested-create shortcut (spec §4):
+ * `/` or `\` nests levels *down* the tree and a `,` at the leaf fans *across* into siblings,
+ * creating any missing ancestor levels and reusing the ones that already exist. See
+ * {@link LocationRepository.createPath}. Resolves with the created/resolved leaves (in order),
+ * so the inline "New location…" flow can select the first. A separator-free name is a single
+ * leaf and behaves exactly like {@link useCreateLocation}, so this is the drop-in the create
+ * dialog uses.
  */
 export function useCreateLocationPath() {
   const client = useQueryClient();

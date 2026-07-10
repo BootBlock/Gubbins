@@ -13,7 +13,7 @@ import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import { rowToLocation } from './mappers';
-import { splitLocationPath } from '@/features/inventory/location-path';
+import { parseLocationBranch } from '@/features/inventory/location-path';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -135,23 +135,31 @@ export class LocationRepository extends BaseRepository {
   }
 
   /**
-   * Create a whole branch of the hierarchy from a `/`- or `\`-separated path (spec §4), e.g.
-   * `Workshop/Cabinet A/Drawer 3` yields Workshop → Cabinet A → Drawer 3. Each level is
-   * created under the running parent **only if a same-named child doesn't already exist**
-   * there — an existing ancestor is reused, never duplicated — so the same path can be typed
-   * repeatedly and only the genuinely-missing levels are added. The intermediate ancestors are
-   * created bare; the final (leaf) segment carries the full input (description, colour, kind,
-   * capacity, default), since that is the location the user was actually configuring. Returns
-   * the leaf. A single-segment path (no separator) is exactly equivalent to {@link create}.
+   * Create a whole branch of the hierarchy from the nested-create shortcut (spec §4), which
+   * spans two axes at once (see {@link parseLocationBranch}):
    *
-   * The chain is created level-by-level rather than in one transaction: the hierarchy is a
+   * - a `/`- or `\`-separated **path** goes *down* the tree, e.g. `Workshop/Cabinet A/Drawer 3`
+   *   yields Workshop → Cabinet A → Drawer 3;
+   * - a `,`-separated **list** at the leaf level fans *across* into siblings, e.g.
+   *   `Garage/Box 1, Box 2, Box 3` yields three boxes under Garage.
+   *
+   * Each ancestor level is created under the running parent **only if a same-named child
+   * doesn't already exist** there — an existing ancestor is reused, never duplicated — so the
+   * same path can be typed repeatedly and only the genuinely-missing levels are added. The
+   * intermediate ancestors are created bare; every leaf carries the full input (description,
+   * colour, kind, capacity, default), since those are the locations the user was configuring;
+   * a leaf that already exists is reused untouched rather than clobbered. Returns each resolved
+   * leaf, in the order given. A single plain name (no separator) is exactly one leaf and behaves
+   * exactly like {@link create}.
+   *
+   * The branch is created level-by-level rather than in one transaction: the hierarchy is a
    * small, low-frequency physical structure, and each {@link create} already carries the
    * INSERT + single-default-demotion invariants we want to reuse verbatim.
    */
-  async createPath(input: CreateLocationInput): Promise<Location> {
+  async createPath(input: CreateLocationInput): Promise<Location[]> {
     this.assertWritable();
-    const segments = splitLocationPath(input.name);
-    if (segments.length === 0) {
+    const { ancestors, leaves } = parseLocationBranch(input.name);
+    if (leaves.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A location must have a name.');
     }
 
@@ -160,18 +168,20 @@ export class LocationRepository extends BaseRepository {
       await this.requireExists(parentId);
     }
 
-    // Every level but the last is a structural ancestor: reuse it if present, else create bare.
-    for (let i = 0; i < segments.length - 1; i += 1) {
-      const existing = await this.findChildByName(parentId, segments[i]!);
-      parentId = existing ? existing.id : (await this.create({ name: segments[i]!, parentId })).id;
+    // Walk the shared ancestor chain: reuse a level if present, else create it bare.
+    for (const level of ancestors) {
+      const existing = await this.findChildByName(parentId, level);
+      parentId = existing ? existing.id : (await this.create({ name: level, parentId })).id;
     }
 
-    // The leaf carries the full metadata — but if it already exists we reuse it untouched
-    // (the point of the shortcut is to fill in missing levels, not to clobber a real location).
-    const leafName = segments[segments.length - 1]!;
-    const existingLeaf = await this.findChildByName(parentId, leafName);
-    if (existingLeaf) return existingLeaf;
-    return this.create({ ...input, name: leafName, parentId });
+    // Create each leaf sibling under the resolved parent, reusing any that already exist so the
+    // shortcut only ever fills in what's missing.
+    const created: Location[] = [];
+    for (const leafName of leaves) {
+      const existingLeaf = await this.findChildByName(parentId, leafName);
+      created.push(existingLeaf ?? (await this.create({ ...input, name: leafName, parentId })));
+    }
+    return created;
   }
 
   async update(id: string, input: UpdateLocationInput): Promise<Location> {
