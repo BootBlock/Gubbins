@@ -1,19 +1,21 @@
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
+import { Button, FormField, GlyphPickerButton, Input, Modal, SelectField } from '@/components/foundry';
+import { ProjectIcon } from '@/components/icons';
 import { COSTING_MODES } from '@/db/repositories';
 import { useCreateProject } from '../projects';
 import { COSTING_MODE_LABELS } from './projects-ui';
 
 /**
  * Project creation form (spec §2.4.4, §4) — React Hook Form bound to Zod. Captures
- * the name, an optional description and the initial BOM costing mode (§4).
+ * the name, an optional description, an optional icon and the initial BOM costing mode (§4).
  */
 const schema = z.object({
   name: z.string().trim().min(1, 'Please enter a project name.'),
   description: z.string().optional(),
+  icon: z.string().nullable().optional(),
   costingMode: z.enum(COSTING_MODES),
 });
 
@@ -30,6 +32,7 @@ export function CreateProjectDialog({
 }) {
   const createProject = useCreateProject();
   const nameRef = useRef<HTMLInputElement>(null);
+  const iconFieldId = useId();
   const {
     control,
     register,
@@ -38,7 +41,7 @@ export function CreateProjectDialog({
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', description: '', costingMode: 'CURRENT_REPLACEMENT' },
+    defaultValues: { name: '', description: '', icon: null, costingMode: 'CURRENT_REPLACEMENT' },
   });
 
   const close = () => {
@@ -51,6 +54,7 @@ export function CreateProjectDialog({
       {
         name: values.name.trim(),
         description: values.description?.trim() ? values.description.trim() : null,
+        icon: values.icon ?? null,
         costingMode: values.costingMode,
       },
       {
@@ -90,6 +94,30 @@ export function CreateProjectDialog({
         <FormField label="Description (optional)">
           <Input placeholder="A short summary" {...register('description')} />
         </FormField>
+
+        {/* Explicit <label htmlFor> (a <button> is a labelable element) rather than
+            FormField's implicit-label wrap, which is meant for a single input — mirrors
+            AutocompleteField. */}
+        <div>
+          <label htmlFor={iconFieldId} className="mb-field-gap block text-sm font-medium">
+            Icon (optional)
+          </label>
+          <Controller
+            control={control}
+            name="icon"
+            render={({ field }) => (
+              <GlyphPickerButton
+                id={iconFieldId}
+                value={field.value ?? null}
+                onChange={field.onChange}
+                fallback={ProjectIcon}
+                placeholder="Choose an icon"
+                title="Choose a project icon"
+                clearable
+              />
+            )}
+          />
+        </div>
 
         <Controller
           control={control}

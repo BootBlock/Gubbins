@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Glyph,
   Modal,
   Money,
   Select,
@@ -16,6 +17,7 @@ import {
   CostIcon,
   DeleteIcon,
   ImportIcon,
+  ProjectIcon,
   ShoppingCartIcon,
 } from '@/components/icons';
 import { COSTING_MODES, type CostingMode } from '@/db/repositories';
@@ -102,6 +104,12 @@ export function ProjectDetail({
       <header className="flex flex-wrap items-center gap-3 pb-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
+            <Glyph
+              name={project.data.icon}
+              fallback={ProjectIcon}
+              className="size-6 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
             <h2 className="truncate text-xl font-semibold tracking-tight">{project.data.name}</h2>
             <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
               {PROJECT_STATUS_LABELS[project.data.status]}

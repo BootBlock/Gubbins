@@ -33,6 +33,23 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(project.name).toBe('Bench PSU');
     expect(project.status).toBe('PLANNING');
     expect(project.costingMode).toBe('CURRENT_REPLACEMENT');
+    expect(project.icon).toBeNull();
+  });
+
+  it('stores an optional icon and normalises a blank one to null', async () => {
+    const withIcon = await projects.create({ name: 'Rocket build', icon: 'Rocket' });
+    expect(withIcon.icon).toBe('Rocket');
+
+    const blank = await projects.create({ name: 'No icon', icon: '   ' });
+    expect(blank.icon).toBeNull();
+  });
+
+  it('sets and clears a project icon on update', async () => {
+    const p = await projects.create({ name: 'Icon test' });
+    expect((await projects.update(p.id, { icon: 'Wrench' })).icon).toBe('Wrench');
+    // An omitted icon is left untouched; an explicit null clears it.
+    expect((await projects.update(p.id, { name: 'Icon test 2' })).icon).toBe('Wrench');
+    expect((await projects.update(p.id, { icon: null })).icon).toBeNull();
   });
 
   it('rejects a blank project name', async () => {

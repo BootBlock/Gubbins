@@ -414,6 +414,7 @@ export function rowToProject(row: ProjectRow): Project {
     id: row.id,
     name: row.name,
     description: row.description,
+    icon: row.icon,
     status: row.status,
     costingMode: row.costing_mode,
     budget: row.budget,

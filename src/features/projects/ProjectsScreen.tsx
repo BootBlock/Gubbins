@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, PageContainer, PageHeader, Spinner, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import {
+  Button,
+  Glyph,
+  PageContainer,
+  PageHeader,
+  Spinner,
+  Surface,
+  MAIN_CONTENT_ID,
+} from '@/components/foundry';
 import { AddIcon, ProjectIcon } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
@@ -73,7 +81,7 @@ export function ProjectsScreen() {
                         : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
                     )}
                   >
-                    <ProjectIcon />
+                    <Glyph name={project.icon} fallback={ProjectIcon} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{project.name}</span>
                       <span className="block text-xs opacity-70">

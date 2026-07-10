@@ -16,6 +16,8 @@ export interface ProjectRow {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  /** Optional icon: a canonical Lucide glyph name (PascalCase), or NULL for the default. */
+  readonly icon: string | null;
   readonly status: ProjectStatus;
   readonly costing_mode: CostingMode;
   /** Optional overall budget (§4 budgeting); NULL = no budget set. */
@@ -28,6 +30,8 @@ export interface Project {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  /** Optional icon: a canonical Lucide glyph name (PascalCase), or null for the default. */
+  readonly icon: string | null;
   readonly status: ProjectStatus;
   readonly costingMode: CostingMode;
   /** Optional overall budget (§4 budgeting); null = no budget set. */
@@ -44,6 +48,8 @@ export interface ProjectWithCount extends Project {
 export interface CreateProjectInput {
   readonly name: string;
   readonly description?: string | null;
+  /** Optional icon: a canonical Lucide glyph name (PascalCase); null/omitted = default. */
+  readonly icon?: string | null;
   readonly costingMode?: CostingMode;
   /** Optional overall budget set at creation (§4 budgeting). */
   readonly budget?: number | null;
@@ -52,6 +58,8 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   readonly name?: string;
   readonly description?: string | null;
+  /** Set or clear (null) the project's icon (a canonical Lucide glyph name). */
+  readonly icon?: string | null;
   readonly status?: ProjectStatus;
   readonly costingMode?: CostingMode;
   /** Set or clear (null) the overall budget (§4 budgeting). */
