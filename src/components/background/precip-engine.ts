@@ -23,7 +23,8 @@
  * particle picks one at spawn, so the field isn't a wall of identical dots:
  *  - **Rain** streaks are a bright thin core under a soft wide halo with a rounded, brighter head
  *    (the glassy look of a real drop), in two thicknesses. They **rotate to follow their velocity
- *    and stretch with speed**, so a gust visibly rakes them sideways and long.
+ *    and elongate in the wind**, and fall in **depth layers** — distant drops are smaller, fainter
+ *    and markedly slower than the fast, close foreground, so the field reads with real parallax.
  *  - **Snow** is a mix of soft round grains (distant) and six-armed ice crystals — a plain star and
  *    a branched dendrite (nearer) — each crystal **slowly rotating** with a faint twinkle, so close
  *    flakes read as real snowflakes rather than blurry discs.
@@ -78,8 +79,14 @@ const TUNING = {
     density: 9500,
     min: 40,
     max: 240,
-    /** Vertical fall speed range (css px/s), lerped by depth (near = faster). */
-    speed: [520, 1080] as const,
+    /**
+     * Vertical fall speed range (css px/s), lerped by depth (far = slow, near = fast). The range is
+     * deliberately wide (near ≈ 3.7× the far speed) so the depth layers read as clearly different
+     * fall speeds — the parallax cue. Critically, streak *length* is NOT tied to this speed (see
+     * {@link stretch} below), so a fast near-drop isn't drawn proportionally longer, which would
+     * cancel the very speed difference we want to show.
+     */
+    speed: [320, 1180] as const,
     /** Baseline wind lean as a fraction of fall speed, before gusts. */
     baseLean: 0.1,
     /** Extra lean a full gust adds (fraction of fall speed); flurries amplify it. */
@@ -93,13 +100,18 @@ const TUNING = {
       { width: 1.2, len: 17 },
       { width: 1.7, len: 22 },
     ] as const,
-    /** Speed (css px/s) at which a streak draws at its natural length; faster ⇒ stretched. */
-    refSpeed: 780,
-    /** Streak length multiplier bounds vs {@link refSpeed}. */
-    stretch: [0.8, 2.2] as const,
-    /** Depth-driven draw scale and alpha ranges (far → near). */
-    scale: [0.55, 1.15] as const,
-    alpha: [0.2, 0.62] as const,
+    /**
+     * Wind-driven streak elongation. A streak's base length comes from its depth {@link scale}
+     * (near = longer), and the wind then stretches it by `1 + lean·gain` (clamped to `max`) as it
+     * slants — so gusts visibly rake drops out, but the stretch is the *same* factor at every depth
+     * and therefore never masks the depth→speed parallax. `lean` here is the horizontal fraction of
+     * the drop's velocity (|vx| / vy), which is depth-independent.
+     */
+    windStretchGain: 1.8,
+    windStretchMax: 2.2,
+    /** Depth-driven draw scale and alpha ranges (far → near); far is smaller + fainter to recede. */
+    scale: [0.5, 1.15] as const,
+    alpha: [0.16, 0.62] as const,
   },
   snow: {
     density: 15000,
@@ -413,9 +425,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       ];
     }
     spriteMaxHalfH = sprites.reduce((m, s) => Math.max(m, s.halfH), 0);
-    // Streaks stretch (up to stretch[1]) and every sprite scales up with depth, so the margin uses
-    // the largest drawn half-height to keep a particle fully off-screen before it wraps.
-    const maxStretch = kind === 'rain' ? TUNING.rain.stretch[1] : 1;
+    // Streaks stretch (up to windStretchMax) and every sprite scales up with depth, so the margin
+    // uses the largest drawn half-height to keep a particle fully off-screen before it wraps.
+    const maxStretch = kind === 'rain' ? TUNING.rain.windStretchMax : 1;
     edgeMargin = spriteMaxHalfH * 2 * TUNING[kind].scale[1] * maxStretch + 8;
   }
 
@@ -554,8 +566,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     if (!s) return;
     const t = TUNING.rain;
     const scale = lerp(t.scale[0], t.scale[1], p.z);
-    const speed = Math.hypot(p.vx, p.vy);
-    const stretch = speed <= 0 ? t.stretch[0] : clamp(speed / t.refSpeed, t.stretch[0], t.stretch[1]);
+    // Base length is depth-scaled (near = longer); the wind then elongates it by the drop's lean
+    // (|vx| / vy) — a depth-independent factor, so it never cancels the depth→speed parallax. p.vy
+    // is the pure fall speed for rain (no vertical turbulence is added), so it's the lean baseline.
+    const lean = p.vy > 0 ? Math.abs(p.vx) / p.vy : 0;
+    const stretch = clamp(1 + lean * t.windStretchGain, 1, t.windStretchMax);
     const w = s.halfW * 2 * scale;
     const h = s.halfH * 2 * scale * stretch;
     // Rotate the vertical sprite so its downward axis aligns with the drop's velocity.

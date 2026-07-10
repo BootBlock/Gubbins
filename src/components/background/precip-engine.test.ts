@@ -113,6 +113,31 @@ describe('startPrecip', () => {
     ctrl.stop();
   });
 
+  it('falls in depth layers — near drops fall faster than far ones (parallax)', () => {
+    // Pin depth so every drop shares one z, then measure how far particle 0 falls in one 16ms
+    // step. Rain's vertical velocity is the pure depth-scaled fall speed (no vertical turbulence),
+    // so a near layer must advance markedly more than a far one.
+    const fallOverOneStep = (z: number): number => {
+      vi.spyOn(Math, 'random').mockReturnValue(z);
+      rafQueue = [];
+      const rec = makeCtx();
+      const ctrl = startPrecip(makeCanvas(rec), { kind: 'rain', reduced: false });
+      pump(16); // dt = 0 (primes lastTime); draws the field at its start positions
+      pump(32); // dt = 16ms; the field falls one step
+      ctrl.stop();
+      vi.restoreAllMocks();
+      const perFrame = rec.translates.length / 2; // rain draws every particle via translate
+      const yStart = rec.translates[0][1];
+      const yAfterStep = rec.translates[perFrame][1];
+      return yAfterStep - yStart;
+    };
+    const near = fallOverOneStep(0.9);
+    const far = fallOverOneStep(0.1);
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBeGreaterThan(0);
+    expect(near).toBeGreaterThan(far * 1.8);
+  });
+
   it('rotates near snow crystals around their centre', () => {
     // Depth ≥ grainMaxZ → every flake spawns as a rotating crystal.
     vi.spyOn(Math, 'random').mockReturnValue(0.9);
