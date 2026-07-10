@@ -26,8 +26,13 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
+  // `isolate` makes this element the stacking context the fixed background-effects canvas belongs
+  // to, so its `-z-10` paints *above* this element's opaque `bg-background` (a stacking context
+  // paints negative-z-index children after its own background) yet still below all content. Without
+  // it the canvas escapes to the root context and the opaque background paints over it, hiding the
+  // effect entirely — the same reason the About starfield's container is `relative isolate`.
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div className="isolate min-h-dvh bg-background text-foreground">
       {/* Decorative animated weather layer, behind all content (opt-in; renders nothing when off). */}
       <BackgroundEffects />
       <SkipLink />
