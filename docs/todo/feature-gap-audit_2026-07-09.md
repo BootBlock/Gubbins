@@ -53,7 +53,8 @@ memory note.
   Grounding: Sortly cloud OCR + 2026 receipt-scanning cohort — but do it **on-device** to keep the
   secret-free/offline promise (the cloud-AI versions are a deliberate non-goal, below).
 
-- [ ] **G3 — Local reminder notifications.** *Medium; PWA-native.* The alert/agenda engine already
+- [x] **G3 — Local reminder notifications.** ✅ **Shipped 2026-07-10.** *Medium; PWA-native.* The
+  alert/agenda engine already
   computes overdue loans, expiring warranties, due maintenance, and low stock — but the only
   delivery surface is in-app. For an **installed** PWA, surface them via the Notification API +
   service worker (and Periodic Background Sync where present) as OS notifications. **No server**
@@ -100,6 +101,29 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G3 — Local reminder notifications** — shipped 2026-07-10. The alert centre's four lanes
+  (low stock, expiry, maintenance-due, warranty-due) now surface as **OS notifications** from an
+  installed PWA, via the Notification API + the service-worker registration, plus best-effort
+  Periodic Background Sync where present. **Local only — never Web Push** (backend-less PWA);
+  degrades silently where notifications are unsupported/denied (iOS Safari). New pure
+  `features/alerts/reminders.ts` seam (`planReminders`, `periodicSyncAction`,
+  `normaliseReminderKinds`) decides "what fires now" out of glue — quiet when
+  unsupported/denied/off, per-lane opt-in, dedupe via a device-local notified set reconciled to
+  the live feed (a resolved-then-recurring condition re-fires), and a single summary above a
+  small threshold so enabling never unleashes a storm — exhaustively unit-tested alongside a
+  `useReminderFiring` glue test. Injectable `reminder-api.ts` seam over `showNotification` +
+  periodic sync (the `useWakeLock`/`useInstallPrompt` `apiOverride` pattern), with
+  `hasNotifications` / `hasPeriodicSync` feature detection. `useReminderFiring` fires from the
+  live feed but is mounted **only while enabled**, so an off-by-default feature runs no queries;
+  `useReminderPeriodicSync` reconciles the background wake; `useNotifiedRemindersStore` persists
+  the set. App-wide `ReminderNotifications` (inside BootGate) deep-links a notification click
+  (SW `notificationclick` focuses/opens + posts the target; `periodicsync` re-checks live
+  clients) via an SW-safe shared `reminder-messages.ts` that keeps React/feature-detection out of
+  the worker. Opt-in Settings controls (master + per-lane) request permission through the Foundry
+  Select; new `remindersEnabled` / `reminderKinds` Tier-2 preferences. Verified in the built app
+  (vite preview): the SW is ready with `showNotification` + `periodicSync`, the app boots with
+  the mount present and no page errors, and the Settings control renders and gates on permission.
 
 - **G9 — Manual current-value / revaluation history (appreciating assets)** — shipped
   2026-07-10. New v4 migration adds `items.current_value` (nullable, non-negative) and a
