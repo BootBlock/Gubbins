@@ -352,7 +352,12 @@ export function rowToActivityFeedEntry(row: ActivityFeedRow): ActivityFeedEntry 
 }
 
 export function rowToCategory(row: CategoryRow): Category {
-  return { id: row.id, name: row.name, updatedAt: row.updated_at };
+  return {
+    id: row.id,
+    name: row.name,
+    defaultTrackingMode: row.default_tracking_mode,
+    updatedAt: row.updated_at,
+  };
 }
 
 function parseStringArray(value: string | null): string[] | null {

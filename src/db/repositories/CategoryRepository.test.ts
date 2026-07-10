@@ -43,6 +43,42 @@ describe('CategoryRepository', () => {
     expect(updated.name).toBe('Tools');
   });
 
+  it('round-trips a category default tracking mode, defaulting to null (backlog T1)', async () => {
+    // A category with no default reads back as null…
+    const plain = await categories.create({ name: 'Odds & ends' });
+    expect(plain.defaultTrackingMode).toBeNull();
+    expect((await categories.getById(plain.id))?.defaultTrackingMode).toBeNull();
+
+    // …and one created with a default carries it through create and read.
+    const tools = await categories.create({ name: 'Tools', defaultTrackingMode: 'SERIALISED' });
+    expect(tools.defaultTrackingMode).toBe('SERIALISED');
+    expect((await categories.getById(tools.id))?.defaultTrackingMode).toBe('SERIALISED');
+    // It also surfaces in the management list (CategoryWithFieldCount extends Category).
+    const listed = (await categories.list()).rows.find((c) => c.id === tools.id);
+    expect(listed?.defaultTrackingMode).toBe('SERIALISED');
+  });
+
+  it('updates and clears a category default tracking mode without touching the name (backlog T1)', async () => {
+    const cat = await categories.create({ name: 'Test gear', defaultTrackingMode: 'SERIALISED' });
+
+    // Update just the default — the name is left untouched (partial LWW update).
+    const set = await categories.update(cat.id, { defaultTrackingMode: 'UNTRACKED' });
+    expect(set.name).toBe('Test gear');
+    expect(set.defaultTrackingMode).toBe('UNTRACKED');
+
+    // Passing null clears it back to "no default".
+    const cleared = await categories.update(cat.id, { defaultTrackingMode: null });
+    expect(cleared.defaultTrackingMode).toBeNull();
+    expect(cleared.name).toBe('Test gear');
+  });
+
+  it('rejects a category default tracking mode outside the TRACKING_MODES SSOT (backlog T1)', async () => {
+    await expect(
+      // The DB CHECK mirrors items.tracking_mode, so a bogus mode is refused.
+      categories.create({ name: 'Bad', defaultTrackingMode: 'BOGUS' as never }),
+    ).rejects.toThrow(/CHECK constraint failed/i);
+  });
+
   it('deletes a category and nulls the category on its items (no item loss)', async () => {
     const cat = await categories.create({ name: 'Doomed' });
     const item = await items.create({ name: 'Widget', categoryId: cat.id });
