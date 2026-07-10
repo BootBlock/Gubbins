@@ -359,10 +359,14 @@ export function SyncScreen() {
                     </Button>
                   </span>
                 </Tooltip>
-                <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
-                  <ConnectIcon />
-                  In-memory (test)
-                </Button>
+                <Tooltip content="Try the sync flow without a real backend — the **remote** lives only in this browser session. **Nothing is saved**: it doesn't persist across a reload and won't sync between devices. For trying it out, not for backups.">
+                  <span>
+                    <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
+                      <ConnectIcon />
+                      In-memory (test)
+                    </Button>
+                  </span>
+                </Tooltip>
               </div>
             </Surface>
           )}
