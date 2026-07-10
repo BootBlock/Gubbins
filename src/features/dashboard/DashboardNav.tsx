@@ -33,16 +33,17 @@ import { type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinati
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import type { NavCountTone } from '@/features/settings/settings';
+import { useT, type MessageKey } from '@/features/i18n';
 import { useNavCounts } from './useNavCounts';
 import { useNavOrder, type NavMoveResult } from './useNavOrder';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useReorderFlip } from './useReorderFlip';
 
-/** Human-facing heading per nav group (the SSOT keys are terse identifiers). */
-const GROUP_LABELS: Record<NavGroup, string> = {
-  primary: 'Workspaces',
-  manage: 'Manage',
-  system: 'System',
+/** i18n key for each nav group heading (the SSOT keys are terse identifiers). */
+const GROUP_LABEL_KEYS: Record<NavGroup, MessageKey> = {
+  primary: 'dashboard.nav.group.primary',
+  manage: 'dashboard.nav.group.manage',
+  system: 'dashboard.nav.group.system',
 };
 
 /**
@@ -122,41 +123,32 @@ function countBadgeClass(tone: NavCountTone, group: NavGroup, isCta: boolean): s
 }
 
 /**
- * Rich-Markdown blurb for each destination's hover tooltip — what you'll find behind the
- * card. Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard
- * (`/`) is the current screen and never appears as a tile, and `/modules` is reached from
- * Settings/first-run rather than a nav tile — so neither has an entry.
+ * i18n key for each destination's rich-Markdown hover tooltip — what you'll find behind the card.
+ * Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard (`/`) is the
+ * current screen and never appears as a tile, and `/modules` is reached from Settings/first-run
+ * rather than a nav tile — so neither has an entry.
  */
-const NAV_TOOLTIPS: Record<Exclude<AppRoutePath, '/' | '/modules'>, string> = {
-  '/inventory':
-    '**Inventory** — your item catalogue.\n\nBrowse, search and filter every item, adjust stock by location, scan barcodes, and manage categories, locations, batches and cycle counts.',
-  '/projects':
-    '**Projects** — build & job workspaces.\n\nTrack each project’s bill of materials, reserve and consume stock, manage a **budget** with an expense ledger, and follow its status.',
-  '/purchase-orders':
-    '**Purchase orders** — procurement.\n\nRaise and receive POs against your suppliers, handle **partial / split receipts**, and watch in-transit stock land back in inventory.',
-  '/reports':
-    '**Reports** — analytics & insight.\n\nStock valuation, **ABC analysis**, turnover & aging, spend over time, supplier costs and a data-hygiene checklist — all exportable to CSV.',
-  '/contacts':
-    '**Contacts** — people & suppliers.\n\nYour address book of suppliers and contacts, with their linked **supplier parts**, pricing and price history.',
-  '/bookings':
-    '**Bookings** — reserve assets ahead.\n\nWhole-day reservations of bookable items shown on a calendar, with overlap checks and one-click **convert to checkout**.',
-  '/upcoming':
-    '**Upcoming** — your agenda.\n\nEvery date-driven event — due maintenance, expiring stock, bookings and PO deliveries — gathered into one timeline, **bucketed by when** it’s due.',
-  '/activity':
-    '**Activity** — the global timeline.\n\nA read-only feed of **every change across all items**, newest first, with filters by action type.',
-  '/alerts':
-    '**Alerts** — what needs attention.\n\nLow-stock, expiring, overdue and **budget** warnings gathered into one actionable list. The badge shows how many are active.',
-  '/sync':
-    '**Sync** — cloud backup & devices.\n\nBack up and restore your vault, and **sync changes between devices** so your inventory follows you.',
-  '/home-assistant':
-    '**Home Assistant** — voice control setup.\n\nAn interactive, step-by-step guide to ask **“where are my …?”** from Home Assistant — run the bridge, connect it, and generate an access token.',
-  '/settings':
-    '**Settings** — preferences.\n\nTheme, currency & locale, scanner options, low-stock thresholds, kiosk mode and the rest of the app’s behaviour.',
-  '/about':
-    '**About** — app & storage info.\n\nVersion, storage usage, platform capabilities and project information.',
+const NAV_TOOLTIP_KEYS: Record<Exclude<AppRoutePath, '/' | '/modules'>, MessageKey> = {
+  '/inventory': 'dashboard.nav.tooltip.inventory',
+  '/projects': 'dashboard.nav.tooltip.projects',
+  '/purchase-orders': 'dashboard.nav.tooltip.purchaseOrders',
+  '/reports': 'dashboard.nav.tooltip.reports',
+  '/contacts': 'dashboard.nav.tooltip.contacts',
+  '/bookings': 'dashboard.nav.tooltip.bookings',
+  '/upcoming': 'dashboard.nav.tooltip.upcoming',
+  '/activity': 'dashboard.nav.tooltip.activity',
+  '/alerts': 'dashboard.nav.tooltip.alerts',
+  '/sync': 'dashboard.nav.tooltip.sync',
+  '/home-assistant': 'dashboard.nav.tooltip.homeAssistant',
+  '/settings': 'dashboard.nav.tooltip.settings',
+  '/about': 'dashboard.nav.tooltip.about',
 };
 
 export function DashboardNav() {
+  const t = useT();
+  // The translated heading for a nav group — reused by the section aria-label/heading, the move/pin
+  // announcements and the drop-zone hint, so they can never disagree.
+  const groupLabel = (group: NavGroup) => t(GROUP_LABEL_KEYS[group]);
   // Alert badge: count of undismissed alerts for the Alerts tile.
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
@@ -182,7 +174,7 @@ export function DashboardNav() {
   // easing. Keyed on the resolved per-group order (with pin markers) so any rearrangement plays;
   // gated on edit mode and reduced-motion (reduced-motion users get the instant jump).
   const orderKey = groups
-    .map((g) => `${g.group}:${g.tiles.map((t) => (t.pinned ? '*' : '') + t.dest.to).join(',')}`)
+    .map((g) => `${g.group}:${g.tiles.map((tile) => (tile.pinned ? '*' : '') + tile.dest.to).join(',')}`)
     .join('|');
   const registerTile = useReorderFlip(orderKey, editing && !reduced);
 
@@ -196,15 +188,22 @@ export function DashboardNav() {
   const announceMove = (result: NavMoveResult | null) => {
     if (!result) return;
     setAnnouncement(
-      `${result.label} moved to position ${result.index + 1} of ${result.count} in ${GROUP_LABELS[result.group]}${
-        result.pinned ? ' (pinned)' : ''
-      }`,
+      t('dashboard.nav.moveAnnounce', {
+        vars: {
+          label: result.label,
+          position: result.index + 1,
+          total: result.count,
+          group: groupLabel(result.group),
+        },
+      }) + (result.pinned ? t('dashboard.nav.pinnedSuffix') : ''),
     );
   };
   const announcePin = (result: NavMoveResult | null) => {
     if (!result) return;
     setAnnouncement(
-      `${result.label} ${result.pinned ? 'pinned to the top of' : 'unpinned from'} ${GROUP_LABELS[result.group]}`,
+      t(result.pinned ? 'dashboard.nav.pinAnnounce.pinned' : 'dashboard.nav.pinAnnounce.unpinned', {
+        vars: { label: result.label, group: groupLabel(result.group) },
+      }),
     );
   };
 
@@ -234,27 +233,23 @@ export function DashboardNav() {
           the navigation tiles here and the widget board below (they share one edit mode). */}
       <div className="flex items-center gap-3">
         {editing ? (
-          <Tooltip
-            content="Restore the default tile order — every tile back in its original group and position. (The widget board has its own Reset.)"
-            triggerTabIndex={-1}
-            className="ml-auto"
-          >
+          <Tooltip content={t('dashboard.nav.resetTilesTooltip')} triggerTabIndex={-1} className="ml-auto">
             <button
               type="button"
               onClick={() => {
                 reset();
-                setAnnouncement('Navigation tiles reset to their default order.');
+                setAnnouncement(t('dashboard.nav.resetAnnounce'));
               }}
               data-testid="reset-nav"
               className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             >
               <ResetIcon />
-              Reset tiles
+              {t('dashboard.nav.resetTiles')}
             </button>
           </Tooltip>
         ) : null}
         <Tooltip
-          content="Rearrange your dashboard: drag or arrow-key the navigation tiles and the widget cards below to reorder them, pin the tiles you use most to the top, and show/hide widgets. Your layout is saved on this device."
+          content={t('dashboard.nav.customiseTooltip')}
           triggerTabIndex={-1}
           className={cn(!editing && 'ml-auto')}
         >
@@ -266,19 +261,22 @@ export function DashboardNav() {
             className={cn(buttonVariants({ variant: editing ? 'primary' : 'outline', size: 'sm' }))}
           >
             {editing ? <CheckIcon /> : <CustomiseIcon />}
-            {editing ? 'Done' : 'Customise'}
+            {editing ? t('dashboard.nav.done') : t('dashboard.nav.customise')}
           </button>
         </Tooltip>
       </div>
 
-      <nav aria-label="Primary navigation" className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3">
+      <nav
+        aria-label={t('dashboard.nav.ariaLabel')}
+        className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-3"
+      >
         {groups.map(({ group, tiles }) => (
           <section
             key={group}
-            aria-label={GROUP_LABELS[group]}
+            aria-label={groupLabel(group)}
             className={cn('rounded-2xl p-3', GROUP_TINTS[group])}
           >
-            <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{GROUP_LABELS[group]}</h2>
+            <h2 className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{groupLabel(group)}</h2>
             <ul className="grid grid-cols-2 gap-3">
               {tiles.map(({ dest, pinned }, index) => {
                 const isInventory = dest.to === '/inventory';
@@ -291,23 +289,21 @@ export function DashboardNav() {
                 const navCount = navCounts[dest.to];
                 const count = navCount?.count;
                 const showCount = typeof count === 'number' && count > 0;
+                // The tile's translated label (its route label, or "Open inventory" for the CTA).
+                const tileLabel = isInventory ? t('dashboard.nav.openInventory') : t(dest.messageKey);
                 // Spoken form of the count for the tile's accessible name — a bare "3" next to
-                // "Projects" is ambiguous, so name it ("Projects — 3 active projects").
+                // "Projects" is ambiguous, so name it ("Projects — 3 active projects"). The count
+                // *noun* comes from the nav-count metric config (a separate subsystem, not yet
+                // translated), so it stays English while the tile label is localized.
                 const countLabel =
                   showCount && navCount
-                    ? `${isInventory ? 'Open inventory' : dest.label} — ${count} ${plural(
-                        count,
-                        navCount.noun,
-                        navCount.nounPlural,
-                      )}`
+                    ? `${tileLabel} — ${count} ${plural(count, navCount.noun, navCount.nounPlural)}`
                     : undefined;
 
                 const body = (
                   <>
                     <dest.Icon aria-hidden />
-                    <span className="min-w-0 text-sm font-medium leading-tight">
-                      {isInventory ? 'Open inventory' : dest.label}
-                    </span>
+                    <span className="min-w-0 text-sm font-medium leading-tight">{tileLabel}</span>
                     {isAlerts && alertCount > 0 && (
                       // `key` on the count re-mounts the badge when the number changes so the
                       // one-shot `animate-badge-pop` replays — a small "this just arrived" pop
@@ -356,7 +352,12 @@ export function DashboardNav() {
                         draggable
                         tabIndex={0}
                         role="group"
-                        aria-label={`${dest.label}${pinned ? ', pinned' : ''}. Use the arrow keys to move it, or Pin to float it to the top.`}
+                        aria-label={t('dashboard.nav.tileEditAria', {
+                          vars: {
+                            name: t(dest.messageKey),
+                            pinned: pinned ? t('dashboard.nav.pinnedComma') : '',
+                          },
+                        })}
                         onDragStart={(e) => {
                           e.dataTransfer.setData('text/plain', dest.to);
                           e.dataTransfer.effectAllowed = 'move';
@@ -387,7 +388,12 @@ export function DashboardNav() {
                             onClick={() => announcePin(togglePin(dest.to))}
                             data-testid={`nav-pin-${dest.to}`}
                             aria-pressed={pinned}
-                            aria-label={pinned ? `Unpin ${dest.label}` : `Pin ${dest.label} to the top`}
+                            aria-label={t(
+                              pinned ? 'dashboard.nav.pinTileAria.unpin' : 'dashboard.nav.pinTileAria.pin',
+                              {
+                                vars: { name: t(dest.messageKey) },
+                              },
+                            )}
                             className={cn(
                               'ml-auto rounded-md p-1 hover:bg-muted hover:text-foreground',
                               pinned && 'text-primary',
@@ -422,7 +428,7 @@ export function DashboardNav() {
                 return (
                   <li key={dest.to} ref={registerTile(dest.to)}>
                     <Tooltip
-                      content={NAV_TOOLTIPS[dest.to as keyof typeof NAV_TOOLTIPS]}
+                      content={t(NAV_TOOLTIP_KEYS[dest.to as keyof typeof NAV_TOOLTIP_KEYS])}
                       triggerTabIndex={-1}
                       openDelayMs={NAV_OPEN_DELAY_MS}
                       className="block h-full"
@@ -442,7 +448,7 @@ export function DashboardNav() {
                           data-testid={isAlerts ? 'nav-alerts' : undefined}
                           aria-label={
                             isAlerts && alertCount > 0
-                              ? `Alerts — ${alertCount} active ${plural(alertCount, 'alert')}`
+                              ? t('dashboard.nav.alertsAria', { vars: { count: alertCount } })
                               : countLabel
                           }
                           className={tileClassName}
@@ -471,7 +477,7 @@ export function DashboardNav() {
                         : 'border-border/60 text-muted-foreground/60',
                     )}
                   >
-                    Drop a tile here to add it to {GROUP_LABELS[group]}
+                    {t('dashboard.nav.dropHere', { vars: { group: groupLabel(group) } })}
                   </div>
                 </li>
               ) : null}

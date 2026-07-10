@@ -25,9 +25,11 @@ import { AddIcon, ScanIcon, ImportIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useFeature } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 
 export function DashboardActions() {
+  const t = useT();
   const showSearch = usePreferencesStore((s) => s.dashboardCommandPalette);
   const showQuickActions = usePreferencesStore((s) => s.dashboardQuickActions);
   // The Scan quick action opens live camera scanning — the `scanner` capability
@@ -54,7 +56,7 @@ export function DashboardActions() {
               menu of related create actions (currently Import…). Both halves are `Link`s
               on the shared Foundry primitive, keeping the add/scan intent pattern. */}
           <SplitButton
-            menuLabel="More add-item actions"
+            menuLabel={t('dashboard.actions.moreAddItem')}
             triggerProps={{ 'data-testid': 'dashboard-add-menu' }}
             primary={
               <Link
@@ -64,7 +66,7 @@ export function DashboardActions() {
                 data-testid="dashboard-add-item"
               >
                 <AddIcon />
-                Add item
+                {t('dashboard.actions.addItem')}
               </Link>
             }
           >
@@ -74,7 +76,7 @@ export function DashboardActions() {
               onSelect={() => useInventoryEntry.getState().requestIntent('import')}
               data-testid="dashboard-import"
             >
-              Import…
+              {t('dashboard.actions.import')}
             </MenuLink>
           </SplitButton>
           {scannerEnabled ? (
@@ -85,7 +87,7 @@ export function DashboardActions() {
               data-testid="dashboard-scan"
             >
               <ScanIcon />
-              Scan
+              {t('dashboard.actions.scan')}
             </Link>
           ) : null}
         </>

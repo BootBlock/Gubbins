@@ -3,6 +3,7 @@ import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } f
 import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon, WikiIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
+import { useT } from '@/features/i18n';
 import { Starfield } from './Starfield';
 
 /**
@@ -30,32 +31,32 @@ const WEBSITE_URL = 'https://bootblock.co.uk';
  * section layout so it sits naturally in the app chrome.
  */
 export function AboutScreen() {
+  const t = useT();
   return (
     <PageContainer className="relative isolate">
       <Starfield />
-      <PageHeader icon={<InfoIcon />} title="About" />
+      <PageHeader icon={<InfoIcon />} title={t('about.title')} />
 
       <main
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
         className="flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        <AboutSection icon={<InfoIcon />} title="About Gubbins">
+        <AboutSection icon={<InfoIcon />} title={t('about.app.title')}>
           <p className="text-sm text-muted-foreground">
-            Gubbins is a local-first, offline-capable app for tracking{' '}
-            <span className="text-foreground">anything you own</span> — electronics, 3D-printing supplies,
-            tools, collections, and general inventory. Everything is stored privately on this device; nothing
-            is sent to a server.
+            {t('about.app.intro.pre')}{' '}
+            <span className="text-foreground">{t('about.app.intro.emphasis')}</span>{' '}
+            {t('about.app.intro.post')}
           </p>
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex items-center gap-2">
-              <dt className="text-muted-foreground">Version</dt>
+              <dt className="text-muted-foreground">{t('about.app.version')}</dt>
               <dd className="font-medium tabular-nums" data-testid="about-version">
                 {APP_VERSION}
               </dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-muted-foreground">Build date</dt>
+              <dt className="text-muted-foreground">{t('about.app.buildDate')}</dt>
               <dd className="font-medium tabular-nums" data-testid="about-build-date">
                 {BUILD_DATE_LABEL}
               </dd>
@@ -63,30 +64,27 @@ export function AboutScreen() {
           </dl>
         </AboutSection>
 
-        <AboutSection icon={<LinkIcon />} title="Project &amp; support">
-          <p className="text-sm text-muted-foreground">
-            The wiki has guides, tips and help. Source code, issue tracking and releases live on GitHub. Found
-            a bug or have an idea? Please open an issue.
-          </p>
+        <AboutSection icon={<LinkIcon />} title={t('about.project.title')}>
+          <p className="text-sm text-muted-foreground">{t('about.project.body')}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <ExternalLink href={WIKI_URL}>
               <WikiIcon />
-              Wiki &amp; help
+              {t('about.project.wiki')}
             </ExternalLink>
             <ExternalLink href={REPO_URL}>
               <LinkIcon />
-              GitHub repository
+              {t('about.project.repo')}
             </ExternalLink>
             <ExternalLink href={ISSUES_URL}>
               <AlertIcon />
-              Report an issue
+              {t('about.project.issue')}
             </ExternalLink>
           </div>
         </AboutSection>
 
-        <AboutSection icon={<ContactsIcon />} title="Author">
+        <AboutSection icon={<ContactsIcon />} title={t('about.author.title')}>
           <p className="text-sm text-muted-foreground">
-            Created by{' '}
+            {t('about.author.createdBy')}{' '}
             <ExternalLink href={AUTHOR_URL} inline>
               Joe Cox
             </ExternalLink>
@@ -95,41 +93,35 @@ export function AboutScreen() {
           <div className="mt-4 flex flex-wrap gap-2">
             <ExternalLink href={WEBSITE_URL}>
               <LinkIcon />
-              Personal website
+              {t('about.author.website')}
             </ExternalLink>
             <ExternalLink href={AUTHOR_URL}>
               <ContactsIcon />
-              GitHub profile
+              {t('about.author.profile')}
             </ExternalLink>
           </div>
         </AboutSection>
 
-        <AboutSection icon={<SecureIcon />} title="Privacy">
-          <p className="text-sm text-muted-foreground">
-            Local-first by design: all data is processed and stored entirely within your browser on this
-            device. There is no account and no server-side data collection. Use the same browser profile to
-            find your data again, and install the app or sync to a folder you control to keep a backup.
-          </p>
+        <AboutSection icon={<SecureIcon />} title={t('about.privacy.title')}>
+          <p className="text-sm text-muted-foreground">{t('about.privacy.body')}</p>
         </AboutSection>
 
-        <AboutSection icon={<InfoIcon />} title="AI-assisted development">
-          <p className="text-sm text-muted-foreground">
-            AI tooling was used in the development of this software.
-          </p>
+        <AboutSection icon={<InfoIcon />} title={t('about.ai.title')}>
+          <p className="text-sm text-muted-foreground">{t('about.ai.body')}</p>
         </AboutSection>
 
-        <AboutSection icon={<SecureIcon />} title="Licence &amp; disclaimer">
+        <AboutSection icon={<SecureIcon />} title={t('about.licence.title')}>
           <p className="text-sm text-muted-foreground">
-            Released under the{' '}
+            {t('about.licence.body.pre')}{' '}
             <ExternalLink href={LICENCE_URL} inline>
-              MIT Licence
+              {t('about.licence.body.link')}
             </ExternalLink>
             .
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            This software is provided “as is”, without warranty of any kind. You use it{' '}
-            <span className="text-foreground">entirely at your own risk</span>; the developers accept no
-            responsibility or liability for any loss, damage, data loss, or other issues arising from its use.
+            {t('about.licence.disclaimer.pre')}{' '}
+            <span className="text-foreground">{t('about.licence.disclaimer.emphasis')}</span>
+            {t('about.licence.disclaimer.post')}
           </p>
         </AboutSection>
       </main>

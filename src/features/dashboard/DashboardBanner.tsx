@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Banner, Button, Modal } from '@/components/foundry';
 import { WarningIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useT } from '@/features/i18n';
 
 /**
  * Master switch for the pre-1.0 work-in-progress banner. Set to `false` once Gubbins
@@ -20,6 +21,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 export const SHOW_WIP_BANNER = true;
 
 export function DashboardBanner({ className }: { readonly className?: string }) {
+  const t = useT();
   const dismissed = usePreferencesStore((s) => s.wipBannerDismissed);
   const dismiss = usePreferencesStore((s) => s.dismissWipBanner);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -36,35 +38,34 @@ export function DashboardBanner({ className }: { readonly className?: string }) 
       <Banner
         tone="warning"
         role="note"
-        aria-label="Pre-release warning"
+        aria-label={t('dashboard.wipBanner.ariaLabel')}
         data-testid="dashboard-wip-banner"
         icon={<WarningIcon aria-hidden className="text-warning" />}
-        heading="Work in progress"
+        heading={t('dashboard.wipBanner.heading')}
         className={className}
         onDismiss={() => setConfirmOpen(true)}
-        dismissLabel="Dismiss the work-in-progress warning"
+        dismissLabel={t('dashboard.wipBanner.dismissLabel')}
         dismissTestId="wip-banner-dismiss"
       >
-        Updates may not be backwards compatible, so data loss is expected. Backwards compatibility will be
-        maintained once Gubbins reaches its 1.0 release.
+        {t('dashboard.wipBanner.body')}
       </Banner>
 
       {confirmOpen ? (
-        <Modal open onClose={() => setConfirmOpen(false)} title="Dismiss the pre-release warning?">
+        <Modal open onClose={() => setConfirmOpen(false)} title={t('dashboard.wipBanner.confirmTitle')}>
           <p className="text-sm text-muted-foreground">
-            Gubbins is still pre-release. Until version 1.0 is officially released, an update may not be
-            backwards compatible and{' '}
-            <strong className="font-semibold text-foreground">you can lose your data</strong>.
+            {t('dashboard.wipBanner.confirmBody.pre')}{' '}
+            <strong className="font-semibold text-foreground">
+              {t('dashboard.wipBanner.confirmBody.emphasis')}
+            </strong>
+            .
           </p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Hiding this warning does not remove that risk — please keep your own backups until 1.0 lands.
-          </p>
+          <p className="mt-3 text-sm text-muted-foreground">{t('dashboard.wipBanner.confirmNote')}</p>
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Keep the warning
+              {t('dashboard.wipBanner.keep')}
             </Button>
             <Button onClick={confirmDismiss} data-testid="wip-banner-confirm-dismiss">
-              I understand — dismiss
+              {t('dashboard.wipBanner.confirm')}
             </Button>
           </div>
         </Modal>
