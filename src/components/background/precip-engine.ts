@@ -24,7 +24,8 @@
  *  - **Rain** streaks are a bright thin core under a soft wide halo with a rounded, brighter head
  *    (the glassy look of a real drop), in two thicknesses. They **rotate to follow their velocity
  *    and elongate in the wind**, and fall in **depth layers** — distant drops are smaller, fainter
- *    and markedly slower than the fast, close foreground, so the field reads with real parallax.
+ *    and markedly slower than the fast, close foreground, so the field reads with real parallax. Two
+ *    extra {@link TUNING.rain.deepLayers} sit further back still for a hazy, distant backdrop.
  *  - **Snow** is a mix of soft round grains (distant) and six-armed ice crystals — a plain star and
  *    a branched dendrite (nearer) — each crystal **slowly rotating** with a faint twinkle, so close
  *    flakes read as real snowflakes rather than blurry discs.
@@ -83,10 +84,11 @@ const TUNING = {
      * Vertical fall speed range (css px/s), lerped by depth (far = slow, near = fast). The range is
      * deliberately wide (near ≈ 3.7× the far speed) so the depth layers read as clearly different
      * fall speeds — the parallax cue. Critically, streak *length* is NOT tied to this speed (see
-     * {@link stretch} below), so a fast near-drop isn't drawn proportionally longer, which would
-     * cancel the very speed difference we want to show.
+     * {@link windStretchGain} below), so a fast near-drop isn't drawn proportionally longer, which would
+     * cancel the very speed difference we want to show. The two {@link deepLayers} sit *behind* this
+     * range (depth < 0) and so fall slower still.
      */
-    speed: [320, 1180] as const,
+    speed: [272, 1003] as const,
     /** Baseline wind lean as a fraction of fall speed, before gusts. */
     baseLean: 0.1,
     /** Extra lean a full gust adds (fraction of fall speed); flurries amplify it. */
@@ -112,6 +114,17 @@ const TUNING = {
     /** Depth-driven draw scale and alpha ranges (far → near); far is smaller + fainter to recede. */
     scale: [0.5, 1.15] as const,
     alpha: [0.16, 0.62] as const,
+    /**
+     * Two extra depth layers sitting *further back* than the main field. Their depth params are
+     * negative, so the shared speed/scale/alpha lerps extrapolate to slower, smaller and fainter
+     * drops — a hazy, distant backdrop behind the main rain. A slice of the field
+     * ({@link deepLayerFraction}) is placed in these layers, added *on top of* the main count so the
+     * foreground isn't thinned; {@link deepLayerJitter} spreads each layer's depth a touch so its
+     * drops don't fall in lockstep.
+     */
+    deepLayers: [-0.1, -0.2] as const,
+    deepLayerFraction: 0.18,
+    deepLayerJitter: 0.02,
   },
   snow: {
     density: 15000,
@@ -447,6 +460,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     } else {
       p.variant = Math.random() < 0.5 ? 0 : 1; // streak thickness
       p.spin = 0;
+      // A slice of the field belongs to the two deep-background layers (depth < 0): pick one and
+      // jitter its depth so its drops don't move in lockstep. The rest keep the main-field depth.
+      const rt = TUNING.rain;
+      if (Math.random() < rt.deepLayerFraction) {
+        const layer = rt.deepLayers[Math.random() < 0.5 ? 0 : 1];
+        p.z = layer + rand(-rt.deepLayerJitter, rt.deepLayerJitter);
+      }
     }
     p.x = rand(-edgeMargin, cssWidth + edgeMargin);
     // On (re)spawn a particle starts just above the top; on the very first fill it is scattered
@@ -476,7 +496,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
 
     const t = TUNING[kind];
     const area = Math.max(1, cssWidth * cssHeight);
-    const count = Math.round(clamp(area / t.density, t.min, t.max));
+    const base = Math.round(clamp(area / t.density, t.min, t.max));
+    // Rain adds the deep-background layers on top of the main count, so `deepLayerFraction` of the
+    // total lands in them (via spawn) without thinning the main field.
+    const frac = kind === 'rain' ? TUNING.rain.deepLayerFraction : 0;
+    const count = base + Math.round((base * frac) / (1 - frac));
     if (particles.length !== count) {
       particles = Array.from({ length: count }, () => ({
         x: 0,
