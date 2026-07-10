@@ -176,7 +176,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className={cn(
               toastVariants({ tone: t.tone }),
               'w-full max-w-sm',
-              t.exiting ? 'animate-toast-out' : 'animate-rise',
+              t.exiting ? 'animate-toast-out' : 'animate-toast-in',
             )}
           >
             {t.icon ? <span className="mt-0.5 shrink-0 [&_svg]:size-5">{t.icon}</span> : null}

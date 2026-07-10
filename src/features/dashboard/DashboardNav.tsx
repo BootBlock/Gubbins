@@ -309,10 +309,15 @@ export function DashboardNav() {
                       {isInventory ? 'Open inventory' : dest.label}
                     </span>
                     {isAlerts && alertCount > 0 && (
+                      // `key` on the count re-mounts the badge when the number changes so the
+                      // one-shot `animate-badge-pop` replays — a small "this just arrived" pop
+                      // (F8). Decorative (the count rides the tile's aria-label); reduced motion
+                      // neutralises the pop via the global catch-all.
                       <span
+                        key={alertCount}
                         aria-hidden
                         data-testid="alerts-badge"
-                        className="ml-auto flex size-5 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
+                        className="ml-auto flex size-5 animate-badge-pop items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground"
                       >
                         {alertCount > 99 ? '99+' : alertCount}
                       </span>
@@ -323,11 +328,14 @@ export function DashboardNav() {
                         The spoken count rides on the tile's aria-label below, so the pill itself
                         is decorative. */}
                     {showCount && count !== undefined && navCount && (
+                      // `key` re-mounts the pill on a count change so the one-shot
+                      // `animate-badge-pop` replays (F8) — see the alerts badge above.
                       <span
+                        key={count}
                         aria-hidden
                         data-testid={`nav-count-${dest.to}`}
                         className={cn(
-                          'ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums',
+                          'ml-auto inline-flex h-5 min-w-5 animate-badge-pop items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums',
                           countBadgeClass(navCount.tone, group, isInventory),
                         )}
                       >
