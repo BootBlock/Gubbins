@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, cleanup } from '@testing-library/react'
 import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ItemDragProvider } from '../item-drag';
+import { RARITY_IDS, itemRarity } from '../rarity';
 
 // Capture the imperative `open` the card drives on a body click (the cardClickAction shortcut).
 const { openSpy } = vi.hoisted(() => ({ openSpy: vi.fn() }));
@@ -95,6 +96,15 @@ const BASE: Item = {
 };
 const makeItem = (overrides: Partial<Item> = {}): Item => ({ ...BASE, ...overrides });
 
+/** Scan short synthetic names for the first that satisfies `pred` (both cases exist well within). */
+function firstName(pred: (name: string) => boolean): string {
+  for (let i = 0; i < 100000; i++) {
+    const name = `Probe ${i}`;
+    if (pred(name)) return name;
+  }
+  throw new Error('no matching name found');
+}
+
 function renderCard(item: Item, extra: Partial<React.ComponentProps<typeof ItemCard>> = {}) {
   return render(<ItemCard item={item} locations={[]} locationName="Workshop" {...extra} />);
 }
@@ -141,18 +151,26 @@ describe('ItemCard — content branches', () => {
     expect(root.classList.contains('gubbins-spotlight-border')).toBe(true);
   });
 
-  it('carries its collector-card rarity on the root and renders the rarity gem badge', () => {
-    // The frame/badge are painted only by CSS when the gamify toggle + maximal level are on; the
-    // DOM wiring (the `gubbins-rarity` class, the `data-rarity` tier and the badge) is always present.
-    const { container } = renderCard(makeItem({ unitCost: 3000, quantity: 1 }));
+  it('wires the collector-card rarity only on the ~5% of items that are collectors', () => {
+    // Collector status is a stable hash of the item name; pick one of each deterministically so the
+    // test never depends on a hand-computed hash. The frame/badge are painted only by CSS at the
+    // gamify+maximal tier, but the DOM wiring (class, `data-rarity`, badge) is what this asserts.
+    const collectorName = firstName((n) => itemRarity(makeItem({ name: n })) != null);
+    const ordinaryName = firstName((n) => itemRarity(makeItem({ name: n })) == null);
+
+    const { container } = renderCard(makeItem({ name: collectorName }));
     const root = container.firstElementChild as HTMLElement;
     expect(root.classList.contains('gubbins-rarity')).toBe(true);
-    expect(root.dataset.rarity).toBe('legendary');
-    expect(screen.getByTestId('rarity-badge')).toHaveTextContent('Legendary');
+    expect(RARITY_IDS).toContain(root.dataset.rarity);
+    expect(screen.getByTestId('rarity-badge')).toHaveTextContent(new RegExp(root.dataset.rarity!, 'i'));
 
-    // An unpriced item falls to the Common tier.
-    const { container: plain } = renderCard(makeItem());
-    expect((plain.firstElementChild as HTMLElement).dataset.rarity).toBe('common');
+    // A non-collector item carries no rarity wiring at all.
+    const { container: plain } = renderCard(makeItem({ name: ordinaryName }));
+    const plainRoot = plain.firstElementChild as HTMLElement;
+    expect(plainRoot.classList.contains('gubbins-rarity')).toBe(false);
+    expect(plainRoot.dataset.rarity).toBeUndefined();
+    // Scope to this card's container — the collector card rendered above is still in document.body.
+    expect(plain.querySelector('[data-testid="rarity-badge"]')).toBeNull();
   });
 
   it('paints the per-location edge tint (F10) on the root only when a tint class is given', () => {

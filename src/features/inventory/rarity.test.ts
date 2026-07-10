@@ -1,53 +1,71 @@
 import { describe, it, expect } from 'vitest';
 import type { Item } from '@/db/repositories';
-import { RARITY_IDS, itemCollectionValue, itemRarity } from './rarity';
+import { COLLECTOR_FRACTION, RARITY_IDS, hashName, itemRarity } from './rarity';
 
 /**
- * Unit tests for the pure "Collector cards" rarity seam. `itemRarity` reads only a handful of
- * value/quantity fields, so the fixture supplies just those (cast through a partial) — the rest of
- * the {@link Item} shape is irrelevant to the tier maths.
+ * Unit tests for the pure "Collector cards" rarity seam. `itemRarity` reads only the item name, so
+ * the fixture supplies just that (cast through a partial).
  */
-const item = (over: Partial<Item>): Item => ({ quantity: 1, isUnlimited: false, ...over }) as Item;
+const item = (name: string): Item => ({ name }) as Item;
 
-describe('itemCollectionValue', () => {
-  it('is per-unit value × quantity (current value winning over unit cost)', () => {
-    expect(itemCollectionValue(item({ unitCost: 10, quantity: 3 }))).toBe(30);
-    // A manual current/market value wins over the replacement unit cost.
-    expect(itemCollectionValue(item({ unitCost: 10, currentValue: 40, quantity: 2 }))).toBe(80);
+describe('hashName', () => {
+  it('is deterministic and a 32-bit unsigned integer', () => {
+    const h = hashName('Excalibur');
+    expect(h).toBe(hashName('Excalibur'));
+    expect(Number.isInteger(h)).toBe(true);
+    expect(h).toBeGreaterThanOrEqual(0);
+    expect(h).toBeLessThanOrEqual(0xffffffff);
   });
 
-  it('values an unlimited-supply item per single unit (its quantity is meaningless)', () => {
-    expect(itemCollectionValue(item({ unitCost: 500, quantity: 999, isUnlimited: true }))).toBe(500);
-  });
-
-  it('is 0 for an unpriced, negative or non-finite per-unit value', () => {
-    expect(itemCollectionValue(item({ unitCost: null, currentValue: null }))).toBe(0);
-    expect(itemCollectionValue(item({ unitCost: -5, quantity: 4 }))).toBe(0);
-    expect(itemCollectionValue(item({ unitCost: Number.NaN, quantity: 4 }))).toBe(0);
-  });
-
-  it('never goes negative for a negative quantity', () => {
-    expect(itemCollectionValue(item({ unitCost: 10, quantity: -3 }))).toBe(0);
+  it('differs for different names', () => {
+    expect(hashName('Torch')).not.toBe(hashName('Torch ')); // a trailing space is a different name
   });
 });
 
 describe('itemRarity', () => {
-  it('buckets an item into the highest tier its collection value clears', () => {
-    expect(itemRarity(item({ unitCost: null }))).toBe('common'); // unpriced ⇒ 0
-    expect(itemRarity(item({ unitCost: 5, quantity: 1 }))).toBe('common'); // < 25
-    expect(itemRarity(item({ unitCost: 30, quantity: 1 }))).toBe('uncommon'); // 25–99
-    expect(itemRarity(item({ unitCost: 100, quantity: 1 }))).toBe('rare'); // 100–499
-    expect(itemRarity(item({ unitCost: 500, quantity: 1 }))).toBe('epic'); // 500–1999
-    expect(itemRarity(item({ unitCost: 2000, quantity: 1 }))).toBe('legendary'); // ≥ 2000
+  it('is deterministic — the same name always yields the same result', () => {
+    const first = itemRarity(item('NE555 timer'));
+    expect(itemRarity(item('NE555 timer'))).toBe(first);
   });
 
-  it('rises as quantity accumulates value', () => {
-    // 40 each: one unit is Uncommon, but a pile of 60 crosses into Legendary (2400 ≥ 2000).
-    expect(itemRarity(item({ unitCost: 40, quantity: 1 }))).toBe('uncommon');
-    expect(itemRarity(item({ unitCost: 40, quantity: 60 }))).toBe('legendary');
+  it('returns null for a non-collector and a known tier for a collector', () => {
+    // Deterministically pick one of each so the test never depends on a hand-computed hash.
+    const collector = firstName((n) => itemRarity(item(n)) != null);
+    const ordinary = firstName((n) => itemRarity(item(n)) == null);
+    expect(RARITY_IDS).toContain(itemRarity(item(collector)));
+    expect(itemRarity(item(ordinary))).toBeNull();
   });
 
-  it('only ever returns a known tier id', () => {
-    expect(RARITY_IDS).toContain(itemRarity(item({ unitCost: 123, quantity: 7 })));
+  it('marks roughly COLLECTOR_FRACTION (~5%) of items as collectors', () => {
+    const N = 8000;
+    let collectors = 0;
+    for (let i = 0; i < N; i++) if (itemRarity(item(`Widget ${i}`)) != null) collectors++;
+    const frac = collectors / N;
+    // Generous bounds around the 5% target — this only guards against a gross regression (e.g.
+    // every card, or none, becoming a collector), not the exact rate.
+    expect(frac).toBeGreaterThan(0.03);
+    expect(frac).toBeLessThan(0.08);
+    // Sanity: the constant the maths keys off is the advertised ~5%.
+    expect(COLLECTOR_FRACTION).toBeCloseTo(0.05, 5);
+  });
+
+  it('makes the showier tiers rarer than the plainer ones', () => {
+    const counts: Record<string, number> = {};
+    for (let i = 0; i < 40000; i++) {
+      const r = itemRarity(item(`Sample ${i}`));
+      if (r) counts[r] = (counts[r] ?? 0) + 1;
+    }
+    // Common is the most frequent collector tier; Legendary the least.
+    expect(counts.common ?? 0).toBeGreaterThan(counts.legendary ?? 0);
+    expect(counts.epic ?? 0).toBeGreaterThan(counts.legendary ?? 0);
   });
 });
+
+/** Scan short synthetic names for the first that satisfies `pred` (both cases exist well within). */
+function firstName(pred: (name: string) => boolean): string {
+  for (let i = 0; i < 100000; i++) {
+    const name = `Probe ${i}`;
+    if (pred(name)) return name;
+  }
+  throw new Error('no matching name found');
+}
