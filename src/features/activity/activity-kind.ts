@@ -59,6 +59,8 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   TRACKING_CHANGED: 'lifecycle',
   MAINTENANCE_LOGGED: 'lifecycle',
   WRITTEN_OFF: 'lifecycle',
+  // A manual current/market revaluation (feature-gap G9) — a record-keeping change.
+  REVALUED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.

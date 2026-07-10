@@ -100,6 +100,9 @@ export const inventoryKeys = {
   // existing supplier-part invalidation (which invalidates item()) refreshes it by prefix.
   supplierPartPriceHistory: (itemId: string, supplierPartId: string) =>
     [...inventoryKeys.item(itemId), 'supplier-part-price-history', supplierPartId] as const,
+  // Feature-gap G9 — an item's recorded manual-value revaluation points; under item() so a
+  // revaluation (which invalidates item()) refreshes the trend + value badge by prefix.
+  itemRevaluations: (itemId: string) => [...inventoryKeys.item(itemId), 'revaluations'] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   /** One kit item's component definition (Kits v1); under item() so an `items()`
@@ -168,6 +171,15 @@ export function useSupplierPartPriceHistory(itemId: string | undefined, supplier
     queryKey: inventoryKeys.supplierPartPriceHistory(itemId ?? '', supplierPartId ?? ''),
     queryFn: () => getSupplierPartRepository().listPriceHistory(supplierPartId!),
     enabled: Boolean(itemId) && Boolean(supplierPartId),
+  });
+}
+
+/** An item's recorded manual-value revaluation points (feature-gap G9), newest-first. */
+export function useItemRevaluations(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemRevaluations(itemId ?? ''),
+    queryFn: () => getItemRepository().listRevaluations(itemId!),
+    enabled: Boolean(itemId),
   });
 }
 

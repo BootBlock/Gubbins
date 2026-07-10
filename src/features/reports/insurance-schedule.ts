@@ -17,6 +17,7 @@
  * it and valuation falls back to the replacement-cost seam.
  */
 import { effectiveUnitCost, type ValuedUnit } from './reports';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
 
@@ -161,8 +162,9 @@ export function flattenLocationHierarchy(locations: readonly ScheduleLocationInp
 /** Resolve a single asset input to its display line, valuing it through the cost seams. */
 function toLine(item: ScheduleItemInput, now: number): ScheduleLine {
   const qty = Math.max(0, item.quantity);
-  // Manual current value (G9) wins; otherwise the effective replacement cost per unit.
-  const unitValue = item.currentValuePerUnit != null ? item.currentValuePerUnit : effectiveUnitCost(item);
+  // Manual current value (G9) wins; otherwise the effective replacement cost per unit. The
+  // override precedence is the single `effectiveUnitValue` seam shared with the valuation report.
+  const unitValue = effectiveUnitValue(item.currentValuePerUnit, effectiveUnitCost(item));
   return {
     id: item.id,
     name: item.name,

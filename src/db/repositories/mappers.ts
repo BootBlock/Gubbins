@@ -51,6 +51,8 @@ import type {
   SupplierPartRow,
   SupplierPartPriceHistoryEntry,
   SupplierPartPriceHistoryRow,
+  Revaluation,
+  RevaluationRow,
   Tag,
   TagRow,
 } from './types';
@@ -134,6 +136,8 @@ export function rowToItem(row: ItemRow): Item {
     warrantyExpiresAt: row.warranty_expires_at,
     purchasePrice: row.purchase_price,
     depreciationMonths: row.depreciation_months,
+    // Manual current / market value (feature-gap G9, v4); null for items never revalued.
+    currentValue: row.current_value,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -198,6 +202,18 @@ export function rowToSupplierPartPriceHistory(
     currency: row.currency,
     source: row.source,
     recordedAt: row.recorded_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToRevaluation(row: RevaluationRow): Revaluation {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    value: row.value,
+    revaluedAt: row.revalued_at,
+    note: row.note,
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }

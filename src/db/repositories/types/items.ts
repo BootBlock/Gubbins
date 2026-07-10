@@ -57,6 +57,12 @@ export interface ItemRow {
   readonly purchase_price: number | null;
   /** Useful life in months for straight-line depreciation; null = no depreciation (v24). */
   readonly depreciation_months: number | null;
+  /**
+   * Manual current / market value **per unit**, in the base currency; null = none set (v4/G9).
+   * Set by the newest {@link RevaluationRow} point and wins over the depreciated replacement
+   * cost in valuation. Independent of the depreciation curve — it can move up or down.
+   */
+  readonly current_value: number | null;
   readonly is_active: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -151,6 +157,14 @@ export interface Item {
   readonly warrantyExpiresAt: string | null;
   readonly purchasePrice: number | null;
   readonly depreciationMonths: number | null;
+  /**
+   * Manual current / market value **per unit**, in the base currency (feature-gap G9);
+   * `null` when none is set. Set by the newest recorded revaluation and — when present —
+   * wins over the depreciated replacement cost in valuation (the insurance schedule + the
+   * valuation reports). Independent of the depreciation curve, so it can move up or down.
+   * The append-only history of the points that set it is the `revaluations` log.
+   */
+  readonly currentValue: number | null;
   readonly isActive: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -218,6 +232,12 @@ export interface CreateItemInput {
   readonly purchasePrice?: number | null;
   /** Useful life in months for straight-line depreciation; omit/null for no depreciation (§4, v24). */
   readonly depreciationMonths?: number | null;
+  /**
+   * Manual current / market value per unit; omit/null for none (feature-gap G9). Seeds the
+   * live value at creation without a revaluation log entry (a starting point, like
+   * `purchasePrice`); later changes are recorded via `recordRevaluation`.
+   */
+  readonly currentValue?: number | null;
   readonly trackingMode?: TrackingMode;
   /** Initial quantity for DISCRETE items (SERIALISED is forced to 1 per record). */
   readonly quantity?: number;
@@ -273,6 +293,13 @@ export interface UpdateItemInput {
   readonly purchasePrice?: number | null;
   /** Useful life in months for straight-line depreciation; null clears it (§4, v24). */
   readonly depreciationMonths?: number | null;
+  /**
+   * Manual current / market value per unit (feature-gap G9); `null` clears it (reverting
+   * valuation to the depreciated replacement cost). A non-null change here does **not**
+   * append to the revaluation log — that is `recordRevaluation`'s job; this path exists for
+   * clearing and for import/round-trip. Omit to leave it untouched.
+   */
+  readonly currentValue?: number | null;
   /**
    * The §4.1.1 schema-less operational-parameter map. Pass a record to replace the
    * stored set wholesale, or `null` to clear it; omit to leave it untouched.
