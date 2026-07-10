@@ -2,15 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCENT_IDS,
   ACCENTS,
+  ANIMATION_LEVEL_IDS,
+  ANIMATION_LEVELS,
   DEFAULT_ACCENT,
+  DEFAULT_ANIMATION_LEVEL,
   DEFAULT_MODE,
   DEFAULT_STARFIELD_VARIANT,
   MODE_OPTIONS,
   STARFIELD_VARIANT_IDS,
   STARFIELD_VARIANTS,
+  animationLevelRank,
   normaliseAccent,
+  normaliseAnimationLevel,
   normaliseMode,
   normaliseStarfieldVariant,
+  suppressesFlourish,
+  suppressesMotion,
 } from './theme-registry';
 
 describe('MODE_OPTIONS', () => {
@@ -93,5 +100,51 @@ describe('normaliseStarfieldVariant', () => {
   it('coerces an unknown/stale persisted value to the cosmic default', () => {
     expect(normaliseStarfieldVariant('nebula')).toBe(DEFAULT_STARFIELD_VARIANT);
     expect(normaliseStarfieldVariant('')).toBe(DEFAULT_STARFIELD_VARIANT);
+  });
+});
+
+describe('ANIMATION_LEVELS', () => {
+  it('lists the five tiers liveliest → calmest (index === rank), each with a label + description', () => {
+    expect(ANIMATION_LEVELS.map((l) => l.id)).toEqual(['full', 'balanced', 'calm', 'off', 'headache']);
+    for (const l of ANIMATION_LEVELS) {
+      expect(l.label.length).toBeGreaterThan(0);
+      expect(l.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('defaults to the liveliest `full`, and ANIMATION_LEVEL_IDS mirrors the registry', () => {
+    expect(DEFAULT_ANIMATION_LEVEL).toBe('full');
+    expect(ANIMATION_LEVEL_IDS).toEqual(ANIMATION_LEVELS.map((l) => l.id));
+  });
+
+  it('ranks levels 0..4 in listed order', () => {
+    expect(ANIMATION_LEVEL_IDS.map(animationLevelRank)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe('normaliseAnimationLevel', () => {
+  it('passes every level id through unchanged', () => {
+    for (const id of ANIMATION_LEVEL_IDS) expect(normaliseAnimationLevel(id)).toBe(id);
+  });
+
+  it('coerces an unknown/stale persisted value to the `full` default', () => {
+    expect(normaliseAnimationLevel('sparkly')).toBe(DEFAULT_ANIMATION_LEVEL);
+    expect(normaliseAnimationLevel('')).toBe(DEFAULT_ANIMATION_LEVEL);
+  });
+});
+
+describe('animation-level thresholds', () => {
+  it('suppressesFlourish is true from Balanced onwards (a superset of motion)', () => {
+    expect(ANIMATION_LEVEL_IDS.map(suppressesFlourish)).toEqual([false, true, true, true, true]);
+  });
+
+  it('suppressesMotion is true from Calm onwards', () => {
+    expect(ANIMATION_LEVEL_IDS.map(suppressesMotion)).toEqual([false, false, true, true, true]);
+  });
+
+  it('every motion-suppressed level also suppresses flourishes (flourish ⊇ motion)', () => {
+    for (const id of ANIMATION_LEVEL_IDS) {
+      if (suppressesMotion(id)) expect(suppressesFlourish(id)).toBe(true);
+    }
   });
 });

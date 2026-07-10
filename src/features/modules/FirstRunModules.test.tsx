@@ -1,12 +1,12 @@
 /**
- * Component tests for the first-run module chooser (modular-ui-plan §4, Phase 8).
+ * Component tests for the first-run setup wizard (modular-ui-plan §4, Phase 8; animation step).
  *
- * Drives the real {@link useModulesStore} (reset between tests) rather than mocking it, so
- * the assertions exercise the true intent/first-run wiring. Covers the four behaviours the
- * chooser owns: it shows once while the flow is outstanding, picking a preset applies it and
- * completes, Skip completes without touching intent (everything stays on), and it never
- * re-shows once completed. The root gate's `/modules` suppression is checked via a
- * configurable router-state mock.
+ * Drives the real {@link useModulesStore} + {@link usePreferencesStore} (reset between tests)
+ * rather than mocking them, so the assertions exercise the true intent/first-run/preference wiring.
+ * Covers: it shows once while the flow is outstanding; step 1 picks a modules preset; Next advances
+ * to step 2 where an animation level is picked and applied live; "Use this setup" applies the preset
+ * and completes; Skip / Escape complete without touching module intent; and it never re-shows once
+ * completed. The root gate's `/modules` suppression is checked via a configurable router-state mock.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
@@ -26,19 +26,27 @@ vi.mock('@/components/icons', async (importOriginal) => {
 
 import { FirstRunModules } from './FirstRunModules';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { OPTIONAL_FEATURE_IDS } from './feature-registry';
+
+/** Advance from the modules step to the animation step. */
+function goToAnimationStep() {
+  fireEvent.click(screen.getByTestId('first-run-next'));
+}
 
 beforeEach(() => {
   mockPathname = '/';
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  usePreferencesStore.setState({ animationLevel: 'full' });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  usePreferencesStore.setState({ animationLevel: 'full' });
 });
 
 describe('FirstRunModules — visibility', () => {
-  it('shows the chooser once while the first-run flow is outstanding', () => {
+  it('shows the wizard on the modules step while the first-run flow is outstanding', () => {
     render(<FirstRunModules />);
     expect(screen.getByRole('dialog', { name: 'Set up your modules' })).toBeTruthy();
     expect(screen.getByTestId('first-run-presets')).toBeTruthy();
@@ -61,14 +69,16 @@ describe('FirstRunModules — visibility', () => {
   });
 });
 
-describe('FirstRunModules — picking a preset', () => {
-  it('applies the selected preset and completes', () => {
+describe('FirstRunModules — modules step', () => {
+  it('applies the selected preset and completes (after the animation step)', () => {
     render(<FirstRunModules />);
 
-    // Selecting Minimal marks its radio checked, then "Use this setup" applies it.
+    // Selecting Minimal marks its radio checked.
     fireEvent.click(screen.getByTestId('first-run-preset-minimal'));
     expect(screen.getByTestId('first-run-preset-minimal').getAttribute('aria-checked')).toBe('true');
 
+    // Advance and finish.
+    goToAnimationStep();
     fireEvent.click(screen.getByTestId('first-run-use'));
 
     const state = useModulesStore.getState();
@@ -84,6 +94,7 @@ describe('FirstRunModules — picking a preset', () => {
     // Everything is selected by default.
     expect(screen.getByTestId('first-run-preset-everything').getAttribute('aria-checked')).toBe('true');
 
+    goToAnimationStep();
     fireEvent.click(screen.getByTestId('first-run-use'));
 
     const state = useModulesStore.getState();
@@ -91,6 +102,38 @@ describe('FirstRunModules — picking a preset', () => {
     for (const id of OPTIONAL_FEATURE_IDS) {
       expect(state.intent[id]).toBe(true);
     }
+  });
+});
+
+describe('FirstRunModules — animation step', () => {
+  it('advances to the animation step, applies a level live, and Back returns to modules', () => {
+    render(<FirstRunModules />);
+    goToAnimationStep();
+
+    // Step 2 shows the animation radiogroup with a card per level.
+    expect(screen.getByRole('dialog', { name: 'How lively should Gubbins feel?' })).toBeTruthy();
+    expect(screen.getByTestId('first-run-animation')).toBeTruthy();
+    for (const id of ['full', 'balanced', 'calm', 'off', 'headache']) {
+      expect(screen.getByTestId(`first-run-animation-${id}`)).toBeTruthy();
+    }
+
+    // Picking a level applies it live to the preference store (previewed behind the dialog).
+    fireEvent.click(screen.getByTestId('first-run-animation-calm'));
+    expect(usePreferencesStore.getState().animationLevel).toBe('calm');
+
+    // Back returns to the modules step (its preset radiogroup is shown again).
+    fireEvent.click(screen.getByTestId('first-run-back'));
+    expect(screen.getByTestId('first-run-presets')).toBeTruthy();
+  });
+
+  it('keeps the chosen level after finishing', () => {
+    render(<FirstRunModules />);
+    goToAnimationStep();
+    fireEvent.click(screen.getByTestId('first-run-animation-headache'));
+    fireEvent.click(screen.getByTestId('first-run-use'));
+
+    expect(usePreferencesStore.getState().animationLevel).toBe('headache');
+    expect(useModulesStore.getState().firstRunComplete).toBe(true);
   });
 });
 
@@ -103,6 +146,8 @@ describe('FirstRunModules — skipping', () => {
     expect(state.firstRunComplete).toBe(true);
     // Intent untouched — nothing hidden, today's default behaviour preserved.
     expect(state.intent).toEqual({});
+    // The animation level was never touched, so it stays at the lively default.
+    expect(usePreferencesStore.getState().animationLevel).toBe('full');
   });
 
   it('dismissing via Escape also skips (completes, intent untouched)', () => {

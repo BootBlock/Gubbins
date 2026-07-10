@@ -62,7 +62,7 @@ function fakeCard(): HTMLElement {
 
 afterEach(() => {
   cleanup();
-  usePreferencesStore.setState({ reduceEffects: false });
+  usePreferencesStore.setState({ animationLevel: 'full' });
 });
 
 describe('usePointerTilt — gate fall-through', () => {
@@ -74,12 +74,13 @@ describe('usePointerTilt — gate fall-through', () => {
     expect(result.current.onPointerLeave).toBeUndefined();
   });
 
-  it('attaches no handlers when "Reduce effects" (F9) is on, even on a fine pointer with OS motion allowed', () => {
-    usePreferencesStore.setState({ reduceEffects: true });
+  it('attaches no handlers at the Balanced level (tilt is a flourish), even on a fine pointer with OS motion allowed', () => {
+    // Tilt is a "flourish" — suppressed one tier earlier than general motion, at Balanced.
+    usePreferencesStore.setState({ animationLevel: 'balanced' });
     const { result } = renderHook(() =>
       usePointerTilt({ mediaProvider: provide({ reduced: false, fine: true }) }),
     );
-    // The F9 pref OR's into the decoration-motion gate, so tilt is off without OS reduced-motion.
+    // The pref OR's into the decoration-motion flourish gate, so tilt is off without OS reduced-motion.
     expect(result.current.onPointerMove).toBeUndefined();
     expect(result.current.onPointerLeave).toBeUndefined();
   });

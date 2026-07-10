@@ -63,10 +63,23 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
-import { ACCENTS, MODE_OPTIONS, STARFIELD_VARIANTS } from './theme-registry';
+import { ACCENTS, ANIMATION_LEVELS, MODE_OPTIONS, STARFIELD_VARIANTS } from './theme-registry';
 
 /** Starfield-variant choices for the Appearance `Select` (visual-flair F11), in registry order. */
 const STARFIELD_VARIANT_OPTIONS = STARFIELD_VARIANTS.map((v) => ({ value: v.id, label: v.label }));
+
+/** Animation-level choices for the Appearance `Select`, liveliest → calmest (registry order). */
+const ANIMATION_LEVEL_OPTIONS = ANIMATION_LEVELS.map((l) => ({ value: l.id, label: l.label }));
+
+/** Rich-Markdown help for the animation-level control — spells out what each tier calms. */
+const ANIMATION_LEVEL_HINT =
+  'Sets **how visually animated Gubbins is** — from every flourish down to a perfectly still, ' +
+  'quiet interface. You’re first asked this when the app starts up; change it any time here.\n\n' +
+  ANIMATION_LEVELS.map((l) => `- **${l.label}** — ${l.description}`).join('\n') +
+  '\n\nIt never touches anything functional — loading spinners still spin, and the meaning, focus ' +
+  'rings and screen-reader announcements are unchanged. It **adds** to your device’s “reduce ' +
+  'motion” accessibility setting: if that already prefers reduced motion, the extras stay off ' +
+  'whatever you pick here.';
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -233,26 +246,17 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             />
           </SettingRow>
           <SettingRow
-            label="Reduce effects"
-            description="Calm the decorative motion and flair throughout the app."
-            hint={
-              'Turns the app’s **decorative motion** down: the number roll-ups, scroll reveals, ' +
-              'card tilt, page cross-fades, success bursts, progress-ring draw-on and the badge/' +
-              'toast pops all snap straight to their rest state instead of animating.\n\n' +
-              'It **doesn’t** touch anything functional — loading spinners still spin, and the ' +
-              'meaning, focus rings and screen-reader announcements are all unchanged.\n\n' +
-              'This is independent of your device’s “reduce motion” accessibility setting and ' +
-              '**adds** to it: if your device already prefers reduced motion, the effects stay off ' +
-              'whatever you pick here.'
-            }
+            label="Animation"
+            description="How visually animated the interface is."
+            hint={ANIMATION_LEVEL_HINT}
           >
             <Select
-              aria-label="Reduce effects"
-              data-testid="setting-reduce-effects"
-              className="h-9 w-40"
-              value={prefs.reduceEffects ? 'on' : 'off'}
-              onChange={(value) => prefs.setReduceEffects(value === 'on')}
-              options={OFF_ON_OPTIONS}
+              aria-label="Animation"
+              data-testid="setting-animation-level"
+              className="h-9 w-44"
+              value={prefs.animationLevel}
+              onChange={(value) => prefs.setAnimationLevel(value as typeof prefs.animationLevel)}
+              options={ANIMATION_LEVEL_OPTIONS}
             />
           </SettingRow>
           <SettingRow

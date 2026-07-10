@@ -11,7 +11,7 @@ import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oau
 // route it, then rewrites the location to the Sync screen. A no-op on an ordinary load.
 completeGoogleAuthRedirect();
 
-// Project the persisted appearance (mode + accent + OLED + high-contrast + reduce-effects +
+// Project the persisted appearance (mode + accent + OLED + high-contrast + animation level +
 // starfield variant) onto the document before first paint (no flash). The store hydrates
 // synchronously from localStorage, so this reflects the saved choice.
 {
@@ -21,7 +21,7 @@ completeGoogleAuthRedirect();
     accent: s.accent,
     oledDark: s.oledDark,
     highContrast: s.highContrast,
-    reduceEffects: s.reduceEffects,
+    animationLevel: s.animationLevel,
     starfieldVariant: s.starfieldVariant,
   });
 }

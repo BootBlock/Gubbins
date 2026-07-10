@@ -1917,6 +1917,40 @@
   animation: none !important;
 }
 
+/*
+ * Animation level — the graded static-flair opt-outs (supersedes the binary "Reduce effects").
+ * The motion-off tiers (Calm and calmer) already project `data-reduce-effects`, whose catch-all
+ * above clamps every decorative transition/animation; these `data-anim-level` blocks add the
+ * extra, level-specific suppression of *static* decoration a motion clamp cannot reach. Attribute
+ * presence encodes the tier: `full` sets no attribute, so `:root[data-anim-level]` matches Balanced
+ * and calmer (the flourish tier), and the explicit-value selectors pick out the Off / Headache
+ * tiers. The thresholds are the SSOT `suppressesFlourish` / `suppressesMotion` in
+ * `theme-registry.ts` (and the JS gate in `decoration-motion.ts`) — keep the two in step.
+ */
+
+/* Balanced and calmer — the showiest CSS flourishes drop entirely: the spotlight-border sweep (F5)
+ * and the pointer-tilt glare wash (F7). Their JS partners (the success burst F4 and the tilt
+ * transform F7) short-circuit at source via the shared decoration-motion flourish gate. */
+:root[data-anim-level] .gubbins-spotlight-border::before,
+:root[data-anim-level] .gubbins-tilt::after {
+  display: none;
+}
+
+/* Off and calmer — the ambient decorations themselves switch off: the drifting About-screen
+ * starfield (F11) and the accent glow behind the hero / empty states (F1). */
+:root[data-anim-level='off'] .gubbins-starfield,
+:root[data-anim-level='headache'] .gubbins-starfield,
+:root[data-anim-level='off'] .gubbins-accent-glow::before,
+:root[data-anim-level='headache'] .gubbins-accent-glow::before {
+  display: none;
+}
+
+/* "I have a headache" — the calmest tier also strips the remaining decorative colour: the
+ * per-location card/row tints (F10). */
+:root[data-anim-level='headache'] .gubbins-loc-tint {
+  background-image: none;
+}
+
 /* ── Print: the insurance / estate schedule document (feature-gap G1) ────────────────
  * The schedule screen renders with the usual design tokens on screen; when printed (or
  * "Saved as PDF") the app chrome is dropped, the page is forced to a legible light,

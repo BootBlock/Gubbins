@@ -13,7 +13,13 @@
  * pure (the OS preference is injected) so it is unit-testable without a `matchMedia` mock. The
  * appearance registry (`theme-registry.ts`) is the SSOT for the mode/accent ids.
  */
-import type { Accent, Mode, StarfieldVariant } from './theme-registry';
+import {
+  suppressesMotion,
+  type Accent,
+  type AnimationLevel,
+  type Mode,
+  type StarfieldVariant,
+} from './theme-registry';
 
 /** The CSS class the palette toggles for dark mode (see styles/index.css). */
 export const DARK_CLASS = 'dark';
@@ -48,12 +54,12 @@ export interface Appearance {
   /** Accessibility high-contrast mode; overrides mode/accent contrast + borders. */
   readonly highContrast: boolean;
   /**
-   * "Reduce effects" (visual-flair F9): dial the decorative motion/flair down independently of
-   * the OS `prefers-reduced-motion` setting. Purely additive to it — if the OS prefers reduced
-   * motion the effects stay off regardless of this pref. Not a colour, so its light/dark handling
-   * is a no-op; it lives here only so appearance is projected from one seam.
+   * Animation level: how visually animated the interface is (`full` → `headache`). Supersedes the
+   * binary "Reduce effects" switch. Projected as `data-anim-level` (for the graded static-flair
+   * opt-outs) plus `data-reduce-effects` for the motion-off tiers (Calm and calmer), so the whole
+   * F9 CSS + JS gate machinery keeps working unchanged. Additive to OS `prefers-reduced-motion`.
    */
-  readonly reduceEffects: boolean;
+  readonly animationLevel: AnimationLevel;
   /**
    * Starfield variant (visual-flair F11): which decorative recolour the About-screen starfield
    * uses. Projected as `data-starfield` so the CSS variant blocks re-point the `--star` /
@@ -75,9 +81,14 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   else delete root.dataset.oled;
   if (appearance.highContrast) root.dataset.contrast = 'high';
   else delete root.dataset.contrast;
-  // The visual-flair F9 lever: `styles/index.css` mirrors the reduced-motion catch-all under
-  // `:root[data-reduce-effects]`, so setting this clamps every decorative transition/animation.
-  if (appearance.reduceEffects) root.dataset.reduceEffects = '';
+  // Animation level: the `full` default carries no attribute; calmer levels set `data-anim-level`
+  // for the graded static-flair opt-outs (spotlight off at Balanced; starfield/glow off at Off;
+  // tints off at Headache). The motion-off tiers (Calm and calmer) additionally set the F9
+  // `data-reduce-effects` flag, whose `styles/index.css` catch-all mirror clamps every decorative
+  // transition/animation — so one derived flag drives the whole existing motion-suppression layer.
+  if (appearance.animationLevel !== 'full') root.dataset.animLevel = appearance.animationLevel;
+  else delete root.dataset.animLevel;
+  if (suppressesMotion(appearance.animationLevel)) root.dataset.reduceEffects = '';
   else delete root.dataset.reduceEffects;
   // Visual-flair F11: the `cosmic` default is the plain `--star`/`--star-flare` tokens, so it
   // carries no attribute; every other variant sets `data-starfield` for its CSS override block.

@@ -43,7 +43,7 @@ const APPEARANCE: Appearance = {
   accent: 'violet',
   oledDark: false,
   highContrast: false,
-  reduceEffects: false,
+  animationLevel: 'full',
   starfieldVariant: 'cosmic',
 };
 
@@ -213,6 +213,7 @@ describe('applyAppearance', () => {
     delete root.dataset.oled;
     delete root.dataset.contrast;
     delete root.dataset.reduceEffects;
+    delete root.dataset.animLevel;
     delete root.dataset.starfield;
   });
 
@@ -242,11 +243,30 @@ describe('applyAppearance', () => {
     expect(root.dataset.contrast).toBeUndefined();
   });
 
-  it('sets and clears data-reduce-effects for the "Reduce effects" switch (F9)', () => {
+  it('projects the animation level onto data-anim-level + data-reduce-effects by tier', () => {
     const root = document.createElement('div');
-    applyAppearance({ ...APPEARANCE, reduceEffects: true }, root);
+
+    // Full is the default: no attribute, and motion is not suppressed.
+    applyAppearance({ ...APPEARANCE, animationLevel: 'full' }, root);
+    expect(root.dataset.animLevel).toBeUndefined();
+    expect(root.dataset.reduceEffects).toBeUndefined();
+
+    // Balanced sets the attribute (for the flourish opt-outs) but does NOT reduce all motion.
+    applyAppearance({ ...APPEARANCE, animationLevel: 'balanced' }, root);
+    expect(root.dataset.animLevel).toBe('balanced');
+    expect(root.dataset.reduceEffects).toBeUndefined();
+
+    // Calm and calmer additionally set data-reduce-effects (the motion clamp).
+    applyAppearance({ ...APPEARANCE, animationLevel: 'calm' }, root);
+    expect(root.dataset.animLevel).toBe('calm');
     expect(root.dataset.reduceEffects).toBe('');
-    applyAppearance({ ...APPEARANCE, reduceEffects: false }, root);
+    applyAppearance({ ...APPEARANCE, animationLevel: 'headache' }, root);
+    expect(root.dataset.animLevel).toBe('headache');
+    expect(root.dataset.reduceEffects).toBe('');
+
+    // Back to Full clears both.
+    applyAppearance({ ...APPEARANCE, animationLevel: 'full' }, root);
+    expect(root.dataset.animLevel).toBeUndefined();
     expect(root.dataset.reduceEffects).toBeUndefined();
   });
 

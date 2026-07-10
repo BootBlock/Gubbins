@@ -33,7 +33,7 @@ import {
   type TiltVars,
 } from './pointer-tilt';
 import { type MediaQueryProvider } from './useReducedMotion';
-import { useDecorationMotionReduced } from './decoration-motion';
+import { useDecorationFlourishReduced } from './decoration-motion';
 import { useMediaQuery } from './useMediaQuery';
 
 /** Options for {@link usePointerTilt}. All optional — the defaults suit the Visual-density card. */
@@ -77,7 +77,8 @@ export function usePointerTilt(options: PointerTiltOptions = {}): PointerTiltHan
     [maxTiltDeg, parallaxPx],
   );
 
-  const reduced = useDecorationMotionReduced(mediaProvider);
+  // Tilt/parallax is a "flourish" — suppressed one tier earlier than general motion (at Balanced).
+  const reduced = useDecorationFlourishReduced(mediaProvider);
   const finePointer = useMediaQuery(FINE_POINTER_QUERY, mediaProvider);
   const enabled = computeShouldTilt(reduced) && finePointer;
 
