@@ -139,13 +139,14 @@ interface PreferencesStore {
    */
   readonly holographicCards: boolean;
   /**
-   * Collector-card gamification (Appearance flair): treats each inventory card like a collectible
-   * trading card, giving it a decorative **rarity** tier (Common → Legendary) drawn from how
-   * valuable its stock is — a rarity-tinted frame and a corner gem. **On by default** as part of
-   * the maximal "I have a headache" animation level, and — like the holographic foil — only shown
-   * at that top tier. Purely cosmetic and redundant with the item's real value (WCAG 1.4.1); the
-   * tier maths is the pure {@link import('@/features/inventory/rarity').itemRarity} seam. Projected
-   * onto `<html>` as `data-gamify-cards`; the CSS gates the frame/badge.
+   * Collector-card gamification (Appearance flair): turns a *lucky ~5%* of inventory cards into
+   * collectible trading cards with a decorative **rarity** (Common → Legendary) — a rarity-tinted
+   * frame and a corner gem. Which items are collectors (and their tier) is a stable hash of the
+   * item name, not its value, so it never churns — see the pure
+   * {@link import('@/features/inventory/rarity').itemRarity} seam. **On by default** as part of the
+   * maximal "I have a headache" animation level, and — like the holographic foil — only shown at
+   * that top tier. Purely cosmetic. Projected onto `<html>` as `data-gamify-cards`; the CSS gates
+   * the frame/badge.
    */
   readonly gamifyCards: boolean;
   readonly attachmentMode: AttachmentMode;

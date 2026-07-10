@@ -1607,45 +1607,44 @@
  */
 @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
   :root[data-holo-cards] .gubbins-tilt::after {
-    /* Two blended layers: a pointer-tracked white bloom over a diagonal repeating rainbow. The
-       rainbow is oversized and offset opposite the pointer so it drifts as the card tilts.
-       The rainbow stops are raw `oklch()` on purpose — this is a full-spectrum physical *foil*
-       simulation, not a themeable brand colour, so it is deliberately identical in light and dark
-       and no design token could reasonably apply (the same reasoning as the spotlight mask's raw
-       `#000` and the print block's raw ink values). The card's own accent tokens still drive the
+    /* A single, NON-repeating diagonal spectrum (no `repeating-*` → no hard tiling seams) with a
+       soft pointer-tracked bloom on top. The spectrum is 1.6× the card and slid by the pointer, so
+       the visible hue drifts as the card tilts without ever wrapping. The stops are raw `oklch()`
+       on purpose — this is a full-spectrum physical *foil*, not a themeable brand colour, so it is
+       deliberately identical in light and dark and no design token could reasonably apply (the same
+       reasoning as the spotlight mask's raw `#000`). The card's own accent tokens still drive the
        plain (non-foil) glare and the F5 comet. */
     background:
       radial-gradient(
         circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
-        color-mix(in oklab, white 55%, transparent),
-        transparent 42%
+        color-mix(in oklab, white 30%, transparent),
+        transparent 55%
       ),
-      repeating-linear-gradient(
-        115deg,
-        color-mix(in oklab, oklch(0.85 0.2 20) 55%, transparent) 0%,
-        color-mix(in oklab, oklch(0.85 0.2 90) 55%, transparent) 14%,
-        color-mix(in oklab, oklch(0.85 0.2 160) 55%, transparent) 28%,
-        color-mix(in oklab, oklch(0.85 0.2 230) 55%, transparent) 42%,
-        color-mix(in oklab, oklch(0.85 0.2 300) 55%, transparent) 56%,
-        color-mix(in oklab, oklch(0.85 0.2 350) 55%, transparent) 70%
+      linear-gradient(
+        110deg,
+        color-mix(in oklab, oklch(0.8 0.16 20) 40%, transparent),
+        color-mix(in oklab, oklch(0.8 0.16 90) 40%, transparent),
+        color-mix(in oklab, oklch(0.8 0.16 165) 40%, transparent),
+        color-mix(in oklab, oklch(0.8 0.16 240) 40%, transparent),
+        color-mix(in oklab, oklch(0.8 0.16 315) 40%, transparent)
       );
-    /* The bloom keeps its natural size — its centre is already the pointer via the gradient's
-       `at` — while the rainbow is oversized and slid opposite the pointer so it drifts on tilt. */
+    /* Bloom natural-size (its centre is the pointer via the gradient's `at`); the spectrum is
+       gently oversized and slid with the pointer for a soft, seam-free hue drift. */
     background-size:
       100% 100%,
-      300% 300%;
+      160% 160%;
     background-position:
       0 0,
-      calc(var(--tilt-gx, 50%) * -1) calc(var(--tilt-gy, 50%) * -1);
-    background-blend-mode: screen;
-    /* `color-dodge` lifts the foil to a bright metallic iridescence over the card face without
-       washing the text (the layer sits behind content and fades in only on hover). */
-    mix-blend-mode: color-dodge;
+      var(--tilt-gx, 50%) var(--tilt-gy, 50%);
+    /* `screen` *adds* the translucent spectrum as light over the dark-first card — clearly
+       iridescent but without the blown-out, garish cast `color-dodge` gave, and it keeps the text
+       legible. (On the near-white light surface `screen` is inherently subtler — an accepted
+       trade-off for the dark-first aesthetic.) */
+    mix-blend-mode: screen;
   }
-  /* A touch stronger than the plain glare (which tops out at opacity:1 soft-light) but held below
-     full so the card's own content always stays legible through the foil. */
+  /* Modest, so the foil is a soft iridescent sheen — not an opaque rainbow wash over the content. */
   :root[data-holo-cards] .gubbins-tilt:hover::after {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 }
 

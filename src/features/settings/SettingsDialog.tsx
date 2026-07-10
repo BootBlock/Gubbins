@@ -342,16 +342,17 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
           </SettingRow>
           <SettingRow
             label="Collector cards"
-            description="Dress each item card as a collectible card with a rarity tier."
+            description="Turn a lucky few of your items into collectible rarity cards."
             hint={
-              'Makes the inventory feel like a collection: each card is dressed as a **collectible ' +
-              'trading card** with a decorative **rarity** — Common, Uncommon, Rare, Epic or ' +
-              'Legendary — shown as a matching gem and a tinted frame. The tier comes from how ' +
-              'valuable that item’s stock is, so pricier piles read as rarer (Legendary cards even ' +
-              'get a gentle glow).\n\n' +
-              'It’s purely for fun and never changes any real data or figure — the rarity always ' +
-              'shows its word next to its colour. Like the foil above, it’s part of the **I have a ' +
-              'headache** animation level and only appears at that level. Turn it off any time.'
+              'Makes the inventory feel like a collection: a **lucky ~5%** of your items turn out to ' +
+              'be **collector cards**, each with a decorative **rarity** — Common, Uncommon, Rare, ' +
+              'Epic or Legendary — shown as a matching gem and a tinted frame (Legendary cards even ' +
+              'get a gentle glow). Which items are collectors is decided by their **name**, so it’s ' +
+              'stable — the same item is always the same card, and the showier tiers are the rarer ' +
+              'finds.\n\n' +
+              'It’s purely for fun and never changes any real data or figure. Like the foil above, ' +
+              'it’s part of the **I have a headache** animation level and only appears at that ' +
+              'level. Turn it off any time.'
             }
           >
             <Select
