@@ -30,6 +30,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   DISASSEMBLED: 'Disassembled',
   CHECKED_OUT: 'Checked out',
   CHECKED_IN: 'Checked in',
+  LOAN_RENEWED: 'Loan renewed',
   SCRAPE_APPLIED: 'Supplier data applied',
   RECONCILED: 'Reconciled',
   MAINTENANCE_LOGGED: 'Maintenance logged',

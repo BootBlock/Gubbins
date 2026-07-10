@@ -159,6 +159,7 @@ export {
   HandCoins as CheckoutIcon,
   Undo2 as CheckInIcon,
   CalendarClock as DueDateIcon,
+  CalendarSync as RenewIcon,
   CalendarRange as BookingIcon,
   Printer as PrintIcon,
   FileJson as ExportIcon,

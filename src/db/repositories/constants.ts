@@ -117,6 +117,7 @@ export const HISTORY_ACTIONS = [
   // Phase 6 — borrowing & checking out (§4 Borrowing & Checking Out).
   'CHECKED_OUT', // stock lent to a contact (optionally with a due date)
   'CHECKED_IN', // borrowed stock returned by a contact
+  'LOAN_RENEWED', // an open loan's due date was changed in place — extended, brought forward, or cleared (B3)
   // Phase 8 — external data scraping via extension (§4, §9).
   'SCRAPE_APPLIED', // supplier-scraped fields/alias merged onto the item (§4 no-overwrite)
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).

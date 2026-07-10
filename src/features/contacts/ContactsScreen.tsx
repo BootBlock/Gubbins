@@ -11,11 +11,19 @@ import {
   INFO_OPEN_DELAY_MS,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddContactIcon, CheckInIcon, ContactsIcon, DeleteIcon, DueDateIcon } from '@/components/icons';
+import {
+  AddContactIcon,
+  CheckInIcon,
+  ContactsIcon,
+  DeleteIcon,
+  DueDateIcon,
+  RenewIcon,
+} from '@/components/icons';
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { CheckInDialog } from './components/CheckInDialog';
+import { RenewLoanDialog } from './components/RenewLoanDialog';
 import { EditContactDialog } from './components/EditContactDialog';
 import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } from './contacts';
 
@@ -32,6 +40,9 @@ export function ContactsScreen() {
   // The loan whose return dialog is open (capturing the item's condition on return + a return
   // note, B2). Null = no return in progress; a "Return" tap opens the dialog for that checkout.
   const [returningCheckout, setReturningCheckout] = useState<CheckoutWithNames | null>(null);
+  // The loan whose renew (change-due-date) dialog is open (B3). Null = none in progress; a
+  // "Renew" tap opens the dialog for that checkout, editing its due date in place.
+  const [renewingCheckout, setRenewingCheckout] = useState<CheckoutWithNames | null>(null);
   // The contact open in the full Edit dialog (click a card), and one pending a delete
   // confirmation. A contact with no active loans deletes straight away; only one still
   // borrowing/loaning something prompts first, since deleting it checks those loans back in.
@@ -118,7 +129,12 @@ export function ContactsScreen() {
           ) : (
             <ul className="space-y-2">
               {onLoan.map((c) => (
-                <LoanRow key={c.id} checkout={c} onReturn={() => setReturningCheckout(c)} />
+                <LoanRow
+                  key={c.id}
+                  checkout={c}
+                  onReturn={() => setReturningCheckout(c)}
+                  onRenew={() => setRenewingCheckout(c)}
+                />
               ))}
             </ul>
           )}
@@ -179,6 +195,10 @@ export function ContactsScreen() {
         <CheckInDialog open onClose={() => setReturningCheckout(null)} checkout={returningCheckout} />
       ) : null}
 
+      {renewingCheckout ? (
+        <RenewLoanDialog open onClose={() => setRenewingCheckout(null)} checkout={renewingCheckout} />
+      ) : null}
+
       {editingContact ? (
         <EditContactDialog
           open
@@ -217,7 +237,15 @@ export function ContactsScreen() {
   );
 }
 
-function LoanRow({ checkout, onReturn }: { checkout: CheckoutWithNames; onReturn: () => void }) {
+function LoanRow({
+  checkout,
+  onReturn,
+  onRenew,
+}: {
+  checkout: CheckoutWithNames;
+  onReturn: () => void;
+  onRenew: () => void;
+}) {
   const fmt = useFormatters();
   const due = checkout.dueDate ? fmt.date(checkout.dueDate) : null;
   return (
@@ -255,6 +283,17 @@ function LoanRow({ checkout, onReturn }: { checkout: CheckoutWithNames; onReturn
           </span>
         </Tooltip>
       ) : null}
+      <Tooltip
+        content="Change this loan’s due date without ending it. The loan keeps its original checkout date and history."
+        triggerTabIndex={-1}
+      >
+        <span>
+          <Button variant="ghost" size="sm" onClick={onRenew}>
+            <RenewIcon />
+            Renew
+          </Button>
+        </span>
+      </Tooltip>
       <Tooltip
         content="Check this item back in. Stock returns to the location — and exact lot — it was lent from."
         triggerTabIndex={-1}

@@ -129,3 +129,17 @@ export function useCheckInItem() {
     onSettled: () => invalidateBorrowing(client),
   });
 }
+
+/**
+ * Renew an open loan by changing its due date in place (B3). Invalidates the same views as a
+ * check-in — the open-loan list re-renders with the new date (and its overdue flag), and the
+ * due date shifts any accrue-mode maintenance telemetry — without ending the loan.
+ */
+export function useRenewLoan() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ checkoutId, dueDate }: { checkoutId: string; dueDate: number | null }) =>
+      getCheckoutRepository().renew(checkoutId, { dueDate }),
+    onSettled: () => invalidateBorrowing(client),
+  });
+}
