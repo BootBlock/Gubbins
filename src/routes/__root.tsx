@@ -1,5 +1,6 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router';
 import { SkipLink } from '@/components/foundry';
+import { BackgroundEffects } from '@/components/background/BackgroundEffects';
 import { StorageBanners } from '@/features/storage/StorageBanners';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
@@ -27,6 +28,8 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
+      {/* Decorative animated weather layer, behind all content (opt-in; renders nothing when off). */}
+      <BackgroundEffects />
       <SkipLink />
       <div className="print-hide mx-auto w-full max-w-6xl px-4 pt-4 empty:hidden">
         <StorageBanners />

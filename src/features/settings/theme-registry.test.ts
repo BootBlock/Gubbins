@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCENT_IDS,
   ACCENTS,
+  BACKGROUND_EFFECT_IDS,
+  BACKGROUND_EFFECTS,
   DEFAULT_ACCENT,
+  DEFAULT_BACKGROUND_EFFECT,
   DEFAULT_MODE,
   DEFAULT_STARFIELD_VARIANT,
   MODE_OPTIONS,
   STARFIELD_VARIANT_IDS,
   STARFIELD_VARIANTS,
   normaliseAccent,
+  normaliseBackgroundEffect,
   normaliseMode,
   normaliseStarfieldVariant,
 } from './theme-registry';
@@ -93,5 +97,28 @@ describe('normaliseStarfieldVariant', () => {
   it('coerces an unknown/stale persisted value to the cosmic default', () => {
     expect(normaliseStarfieldVariant('nebula')).toBe(DEFAULT_STARFIELD_VARIANT);
     expect(normaliseStarfieldVariant('')).toBe(DEFAULT_STARFIELD_VARIANT);
+  });
+});
+
+describe('BACKGROUND_EFFECTS', () => {
+  it('offers none, rain and snow in registry order, each with a label', () => {
+    expect(BACKGROUND_EFFECTS.map((e) => e.id)).toEqual(['none', 'rain', 'snow']);
+    for (const e of BACKGROUND_EFFECTS) expect(e.label.length).toBeGreaterThan(0);
+  });
+
+  it('defaults to none (nothing painted), and BACKGROUND_EFFECT_IDS mirrors the registry', () => {
+    expect(DEFAULT_BACKGROUND_EFFECT).toBe('none');
+    expect(BACKGROUND_EFFECT_IDS).toEqual(BACKGROUND_EFFECTS.map((e) => e.id));
+  });
+});
+
+describe('normaliseBackgroundEffect', () => {
+  it('passes every effect id through unchanged', () => {
+    for (const id of BACKGROUND_EFFECT_IDS) expect(normaliseBackgroundEffect(id)).toBe(id);
+  });
+
+  it('coerces an unknown/stale persisted value to the none default', () => {
+    expect(normaliseBackgroundEffect('storm')).toBe(DEFAULT_BACKGROUND_EFFECT);
+    expect(normaliseBackgroundEffect('')).toBe(DEFAULT_BACKGROUND_EFFECT);
   });
 });

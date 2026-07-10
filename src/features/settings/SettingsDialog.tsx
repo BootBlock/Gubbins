@@ -63,10 +63,13 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
-import { ACCENTS, MODE_OPTIONS, STARFIELD_VARIANTS } from './theme-registry';
+import { ACCENTS, BACKGROUND_EFFECTS, MODE_OPTIONS, STARFIELD_VARIANTS } from './theme-registry';
 
 /** Starfield-variant choices for the Appearance `Select` (visual-flair F11), in registry order. */
 const STARFIELD_VARIANT_OPTIONS = STARFIELD_VARIANTS.map((v) => ({ value: v.id, label: v.label }));
+
+/** Background-effect choices for the Appearance `Select` (none / rain / snow), in registry order. */
+const BACKGROUND_EFFECT_OPTIONS = BACKGROUND_EFFECTS.map((e) => ({ value: e.id, label: e.label }));
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -277,6 +280,29 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               value={prefs.starfieldVariant}
               onChange={(value) => prefs.setStarfieldVariant(value as typeof prefs.starfieldVariant)}
               options={STARFIELD_VARIANT_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Background effect"
+            description="A gentle animated weather layer behind every screen."
+            hint={
+              'Adds a calm, animated layer that drifts behind all your content on every screen. ' +
+              'Purely decorative — it never carries any information and never gets in the way of the app.\n\n' +
+              '- **None** — no background effect (the default).\n' +
+              '- **Rain** — softly falling rain.\n' +
+              '- **Snow** — gently drifting snow.\n\n' +
+              'The effect is drawn efficiently on the GPU and pauses when the tab is in the ' +
+              'background. It stays still (no motion) when the “Reduce effects” switch above is on, ' +
+              'or when your system prefers reduced motion.'
+            }
+          >
+            <Select
+              aria-label="Background effect"
+              data-testid="setting-background-effect"
+              className="h-9 w-40"
+              value={prefs.backgroundEffect}
+              onChange={(value) => prefs.setBackgroundEffect(value as typeof prefs.backgroundEffect)}
+              options={BACKGROUND_EFFECT_OPTIONS}
             />
           </SettingRow>
           <SettingRow

@@ -112,3 +112,39 @@ export function normaliseStarfieldVariant(value: string): StarfieldVariant {
     ? (value as StarfieldVariant)
     : DEFAULT_STARFIELD_VARIANT;
 }
+
+/**
+ * App-wide animated **background effect** — a purely decorative weather layer painted behind all
+ * UI on every screen ({@link import('../../components/background/BackgroundEffects').BackgroundEffects}).
+ * Unlike the per-screen About starfield, this is a single GPU-composited `<canvas>` mounted once at
+ * the composition root; the choice drives which particle system (if any) that canvas runs.
+ *
+ * - `none` — no layer at all (the default; the baseline is unchanged and nothing is painted/animated).
+ * - `rain` — wind-slanted falling rain streaks with depth parallax.
+ * - `snow` — gently drifting, swaying snowflakes with depth parallax.
+ *
+ * The particle colours come from the `--precip-rain` / `--precip-snow` tokens (light + dark) in
+ * `styles/index.css`; the effect is decorative (aria-hidden, pointer-events-none) and respects the
+ * shared decoration-motion gate (OS reduced-motion + the F9 "Reduce effects" switch).
+ */
+export const BACKGROUND_EFFECTS = [
+  { id: 'none', label: 'None' },
+  { id: 'rain', label: 'Rain' },
+  { id: 'snow', label: 'Snow' },
+] as const;
+
+/** A background-effect id. */
+export type BackgroundEffect = (typeof BACKGROUND_EFFECTS)[number]['id'];
+
+/** Every background-effect id, for iteration / validation. */
+export const BACKGROUND_EFFECT_IDS = BACKGROUND_EFFECTS.map((e) => e.id) as BackgroundEffect[];
+
+/** The default background effect — `none`, so the shipped baseline paints nothing. */
+export const DEFAULT_BACKGROUND_EFFECT: BackgroundEffect = 'none';
+
+/** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link BackgroundEffect}. */
+export function normaliseBackgroundEffect(value: string): BackgroundEffect {
+  return (BACKGROUND_EFFECT_IDS as readonly string[]).includes(value)
+    ? (value as BackgroundEffect)
+    : DEFAULT_BACKGROUND_EFFECT;
+}
