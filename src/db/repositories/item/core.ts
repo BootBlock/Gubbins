@@ -38,6 +38,7 @@ import {
   normaliseUnitCost,
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
+import { buildCategoryMaintenanceInsert, type CategoryMaintenanceDefault } from './maintenance-default';
 import { itemOrderByClause, THUMBNAIL_SUBQUERY, type ItemSort } from './sql';
 import { buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { LowStockThresholds } from '../types';
@@ -137,7 +138,14 @@ export class ItemCoreRepository extends BaseRepository {
     this.assertWritable();
     const resolved = resolveCreate(input);
     const id = crypto.randomUUID();
-    await this.driver.transaction(buildInsert(id, resolved, null));
+    const statements = buildInsert(id, resolved, null);
+    // Apply the category-template default maintenance schedule (backlog T2a) in the same
+    // transaction, so an item created in a category with a default schedule can never be
+    // committed without it.
+    statements.push(
+      ...(await this.maintenanceDefaultInserts([{ itemId: id, categoryId: resolved.categoryId }])),
+    );
+    await this.driver.transaction(statements);
     return (await this.getById(id))!;
   }
 
@@ -155,13 +163,19 @@ export class ItemCoreRepository extends BaseRepository {
     if (inputs.length === 0) return [];
 
     const ids: string[] = [];
+    const pairs: { itemId: string; categoryId: string | null }[] = [];
     const statements: SqlStatement[] = [];
     for (const input of inputs) {
       const resolved = resolveCreate(input);
       const id = crypto.randomUUID();
       ids.push(id);
+      pairs.push({ itemId: id, categoryId: resolved.categoryId });
       statements.push(...buildInsert(id, resolved, null));
     }
+    // Category-template default maintenance schedules (backlog T2a) for every row whose
+    // category carries one — a single batched category read for the whole import, then one
+    // INSERT per applicable item, all folded into the one all-or-nothing transaction.
+    statements.push(...(await this.maintenanceDefaultInserts(pairs)));
     await this.driver.transaction(statements);
 
     const created = await Promise.all(ids.map((id) => this.getById(id)));
@@ -186,10 +200,44 @@ export class ItemCoreRepository extends BaseRepository {
       ids.push(id);
       statements.push(...buildInsert(id, resolved, serial));
     }
+    // Each serialised instance is its own asset, so each gets its own copy of the category's
+    // default maintenance schedule (backlog T2a) — e.g. three drills, three calibration clocks.
+    statements.push(
+      ...(await this.maintenanceDefaultInserts(
+        ids.map((itemId) => ({ itemId, categoryId: resolved.categoryId })),
+      )),
+    );
     await this.driver.transaction(statements);
 
     const created = await Promise.all(ids.map((id) => this.getById(id)));
     return created.filter((i): i is Item => i !== undefined);
+  }
+
+  /**
+   * Build the category-template default maintenance-schedule INSERTs (backlog T2a) for a batch
+   * of just-created items. One batched read of the distinct categories, then one schedule
+   * INSERT per item whose category carries a *complete* default — the statements are returned
+   * for the caller to fold into the item's own create transaction (atomic application).
+   */
+  private async maintenanceDefaultInserts(
+    pairs: readonly { readonly itemId: string; readonly categoryId: string | null }[],
+  ): Promise<SqlStatement[]> {
+    const categoryIds = [...new Set(pairs.map((p) => p.categoryId).filter((id): id is string => !!id))];
+    if (categoryIds.length === 0) return [];
+    const placeholders = categoryIds.map(() => '?').join(', ');
+    const rows = await this.driver.query<CategoryMaintenanceDefault & { id: string }>(
+      `SELECT id, default_maintenance_basis, default_maintenance_interval_days,
+              default_maintenance_interval_usage
+       FROM categories WHERE id IN (${placeholders});`,
+      categoryIds as SqlValue[],
+    );
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const out: SqlStatement[] = [];
+    for (const { itemId, categoryId } of pairs) {
+      const stmt = buildCategoryMaintenanceInsert(itemId, categoryId ? byId.get(categoryId) : undefined);
+      if (stmt) out.push(stmt);
+    }
+    return out;
   }
 
   async update(id: string, input: UpdateItemInput): Promise<Item> {

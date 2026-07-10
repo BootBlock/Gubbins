@@ -1,7 +1,7 @@
 /**
  * Category + custom-field row/DTO types (spec §4 "Categories & Schema Evolution").
  */
-import type { Condition, FieldType, TrackingMode } from '../constants';
+import type { Condition, FieldType, MaintenanceBasis, TrackingMode } from '../constants';
 
 // --- Categories (Phase 2 minimal stub; schemas/custom fields are Phase 3) --------
 
@@ -14,6 +14,12 @@ export interface CategoryRow {
   readonly default_condition: Condition | null;
   /** Optional category-template default warranty window in whole months (backlog T2); null = none. */
   readonly default_warranty_months: number | null;
+  /** Optional category-template default maintenance basis (backlog T2a); null = no schedule default. */
+  readonly default_maintenance_basis: MaintenanceBasis | null;
+  /** TIME interval in days for the default maintenance schedule (backlog T2a); null otherwise. */
+  readonly default_maintenance_interval_days: number | null;
+  /** USAGE interval in units for the default maintenance schedule (backlog T2a); null otherwise. */
+  readonly default_maintenance_interval_usage: number | null;
   readonly updated_at: number;
 }
 
@@ -36,6 +42,18 @@ export interface Category {
    * (acquired-on, else today, + N months) at submit. Null when the category carries no default.
    */
   readonly defaultWarrantyMonths: number | null;
+  /**
+   * Optional category-template default *maintenance schedule* (backlog T2a). Unlike the
+   * soft-prefill facets above, this is **applied** after an item is created — the item
+   * create paths add a matching `maintenance_schedules` row — rather than pre-filling a
+   * create-form field. The application requires a non-null basis *and* its matching
+   * interval; a basis without its interval is a no-op. Null basis = no schedule default.
+   */
+  readonly defaultMaintenanceBasis: MaintenanceBasis | null;
+  /** TIME interval in days (backlog T2a); non-null only when the basis is TIME and set. */
+  readonly defaultMaintenanceIntervalDays: number | null;
+  /** USAGE interval in units (backlog T2a); non-null only when the basis is USAGE and set. */
+  readonly defaultMaintenanceIntervalUsage: number | null;
   readonly updatedAt: number;
 }
 
@@ -52,6 +70,12 @@ export interface CreateCategoryInput {
   readonly defaultCondition?: Condition | null;
   /** Category-template default warranty window in whole months (backlog T2); omit/null for none. */
   readonly defaultWarrantyMonths?: number | null;
+  /** Category-template default maintenance basis (backlog T2a); omit/null for none. */
+  readonly defaultMaintenanceBasis?: MaintenanceBasis | null;
+  /** TIME interval in days for the default maintenance schedule (backlog T2a); omit/null for none. */
+  readonly defaultMaintenanceIntervalDays?: number | null;
+  /** USAGE interval in units for the default maintenance schedule (backlog T2a); omit/null for none. */
+  readonly defaultMaintenanceIntervalUsage?: number | null;
 }
 
 export interface UpdateCategoryInput {
@@ -62,6 +86,12 @@ export interface UpdateCategoryInput {
   readonly defaultCondition?: Condition | null;
   /** Category-template default warranty window in whole months (backlog T2); null clears it. */
   readonly defaultWarrantyMonths?: number | null;
+  /** Category-template default maintenance basis (backlog T2a); null clears it. */
+  readonly defaultMaintenanceBasis?: MaintenanceBasis | null;
+  /** TIME interval in days for the default maintenance schedule (backlog T2a); null clears it. */
+  readonly defaultMaintenanceIntervalDays?: number | null;
+  /** USAGE interval in units for the default maintenance schedule (backlog T2a); null clears it. */
+  readonly defaultMaintenanceIntervalUsage?: number | null;
 }
 
 // --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------

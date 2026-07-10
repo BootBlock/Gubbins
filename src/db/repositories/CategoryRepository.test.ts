@@ -5,17 +5,20 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { CategoryRepository } from './CategoryRepository';
 import { ItemRepository } from './ItemRepository';
+import { MaintenanceRepository } from './MaintenanceRepository';
 
 describe('CategoryRepository', () => {
   let driver: MemoryDriver;
   let categories: CategoryRepository;
   let items: ItemRepository;
+  let maintenance: MaintenanceRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
     await runMigrations(driver, migrations);
     categories = new CategoryRepository(driver);
     items = new ItemRepository(driver);
+    maintenance = new MaintenanceRepository(driver);
   });
 
   afterEach(async () => {
@@ -146,6 +149,138 @@ describe('CategoryRepository', () => {
       // A warranty *window* must be a positive number of months (CHECK ... > 0).
       categories.create({ name: 'Bad', defaultWarrantyMonths: 0 }),
     ).rejects.toThrow(/CHECK constraint failed/i);
+  });
+
+  it('round-trips the category default maintenance schedule through create/update/list (backlog T2a)', async () => {
+    // No default reads back as three nulls.
+    const plain = await categories.create({ name: 'Odds & ends' });
+    expect(plain.defaultMaintenanceBasis).toBeNull();
+    expect(plain.defaultMaintenanceIntervalDays).toBeNull();
+    expect(plain.defaultMaintenanceIntervalUsage).toBeNull();
+
+    // A TIME default carries basis + day interval through create, read and list.
+    const tools = await categories.create({
+      name: 'Tools',
+      defaultMaintenanceBasis: 'TIME',
+      defaultMaintenanceIntervalDays: 365,
+    });
+    expect(tools.defaultMaintenanceBasis).toBe('TIME');
+    expect(tools.defaultMaintenanceIntervalDays).toBe(365);
+    expect(tools.defaultMaintenanceIntervalUsage).toBeNull();
+    const listed = (await categories.list()).rows.find((c) => c.id === tools.id);
+    expect(listed?.defaultMaintenanceBasis).toBe('TIME');
+    expect(listed?.defaultMaintenanceIntervalDays).toBe(365);
+
+    // Switching to a USAGE default (basis + usage interval, TIME interval nulled).
+    const reused = await categories.update(tools.id, {
+      defaultMaintenanceBasis: 'USAGE',
+      defaultMaintenanceIntervalDays: null,
+      defaultMaintenanceIntervalUsage: 100,
+    });
+    expect(reused.defaultMaintenanceBasis).toBe('USAGE');
+    expect(reused.defaultMaintenanceIntervalDays).toBeNull();
+    expect(reused.defaultMaintenanceIntervalUsage).toBe(100);
+    expect(reused.name).toBe('Tools'); // partial LWW — the name is untouched
+
+    // Clearing the basis clears the schedule default.
+    const cleared = await categories.update(tools.id, {
+      defaultMaintenanceBasis: null,
+      defaultMaintenanceIntervalDays: null,
+      defaultMaintenanceIntervalUsage: null,
+    });
+    expect(cleared.defaultMaintenanceBasis).toBeNull();
+    expect(cleared.defaultMaintenanceIntervalUsage).toBeNull();
+  });
+
+  it('rejects a category default maintenance basis outside the MAINTENANCE_BASES SSOT (backlog T2a)', async () => {
+    await expect(
+      categories.create({ name: 'Bad', defaultMaintenanceBasis: 'MILEAGE' as never }),
+    ).rejects.toThrow(/CHECK constraint failed/i);
+  });
+
+  it('applies a category default TIME schedule to an item on create (backlog T2a)', async () => {
+    const tools = await categories.create({
+      name: 'Tools',
+      defaultMaintenanceBasis: 'TIME',
+      defaultMaintenanceIntervalDays: 365,
+    });
+    const drill = await items.create({ name: 'Cordless drill', categoryId: tools.id });
+
+    const schedules = await maintenance.listForItem(drill.id);
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0]?.basis).toBe('TIME');
+    expect(schedules[0]?.intervalDays).toBe(365);
+    expect(schedules[0]?.intervalUsage).toBeNull();
+  });
+
+  it('applies a category default USAGE schedule to an item on create (backlog T2a)', async () => {
+    const gear = await categories.create({
+      name: 'Test gear',
+      defaultMaintenanceBasis: 'USAGE',
+      defaultMaintenanceIntervalUsage: 100,
+    });
+    const meter = await items.create({ name: 'Insulation tester', categoryId: gear.id });
+
+    const schedules = await maintenance.listForItem(meter.id);
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0]?.basis).toBe('USAGE');
+    expect(schedules[0]?.intervalUsage).toBe(100);
+    expect(schedules[0]?.intervalDays).toBeNull();
+  });
+
+  it('creates no schedule for a category without a maintenance default, or one only half-configured (backlog T2a)', async () => {
+    // No basis at all → nothing.
+    const plain = await categories.create({ name: 'Odds & ends' });
+    const widget = await items.create({ name: 'Widget', categoryId: plain.id });
+    expect(await maintenance.listForItem(widget.id)).toHaveLength(0);
+
+    // A basis without its matching interval is a no-op (the application requires both).
+    const halfTime = await categories.create({ name: 'Half time', defaultMaintenanceBasis: 'TIME' });
+    const gadget = await items.create({ name: 'Gadget', categoryId: halfTime.id });
+    expect(await maintenance.listForItem(gadget.id)).toHaveLength(0);
+
+    // An item with no category at all is likewise untouched.
+    const orphan = await items.create({ name: 'Uncategorised' });
+    expect(await maintenance.listForItem(orphan.id)).toHaveLength(0);
+  });
+
+  it('applies the category default schedule to every serialised instance on create (backlog T2a)', async () => {
+    const tools = await categories.create({
+      name: 'Tools',
+      defaultMaintenanceBasis: 'TIME',
+      defaultMaintenanceIntervalDays: 365,
+    });
+    const drills = await items.createSerialised({
+      name: 'Cordless drill',
+      categoryId: tools.id,
+      trackingMode: 'SERIALISED',
+      count: 3,
+    });
+    expect(drills).toHaveLength(3);
+    for (const drill of drills) {
+      const schedules = await maintenance.listForItem(drill.id);
+      expect(schedules).toHaveLength(1);
+      expect(schedules[0]?.intervalDays).toBe(365);
+    }
+  });
+
+  it('honours the category default schedule on a bulk createMany (import path) (backlog T2a)', async () => {
+    const tools = await categories.create({
+      name: 'Tools',
+      defaultMaintenanceBasis: 'TIME',
+      defaultMaintenanceIntervalDays: 365,
+    });
+    const plain = await categories.create({ name: 'Consumables' });
+    const [drill, tape, loose] = await items.createMany([
+      { name: 'Drill', categoryId: tools.id },
+      { name: 'PTFE tape', categoryId: plain.id },
+      { name: 'Uncategorised' },
+    ]);
+
+    // Only the item in the schedule-bearing category gets one.
+    expect(await maintenance.listForItem(drill!.id)).toHaveLength(1);
+    expect(await maintenance.listForItem(tape!.id)).toHaveLength(0);
+    expect(await maintenance.listForItem(loose!.id)).toHaveLength(0);
   });
 
   it('deletes a category and nulls the category on its items (no item loss)', async () => {

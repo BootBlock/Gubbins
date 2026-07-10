@@ -69,14 +69,24 @@ musical instruments) pleasant; it is **not** tool-specific code.
     (measured from *Acquired date*, else today; calendar-month arithmetic, day-clamped, UTC).
   No editor UI yet (that is T3).
 
-- **T2a — Category default maintenance schedule (deferred from T2).** A default
-  `MAINTENANCE_BASES` basis + interval on a category, *applied* after item create as a
-  `maintenance_schedules` row (not a form soft-prefill — maintenance is a separate entity created
-  post-item via `MaintenanceRepository.create`, so it needs a new step in the create flow, not just
-  a defaulted input). Deferred from T2 deliberately: it is structurally heavier than the condition/
-  warranty soft-prefills. Columns to add mirror T2 (`default_maintenance_basis` +
-  `default_maintenance_interval_days` / `_usage`, folded into the v1 baseline). Do alongside or
-  after T3 so the editor can surface it too.
+- **T2a — Category default maintenance schedule (deferred from T2). ✅ Shipped 2026-07-10.** A
+  default `MAINTENANCE_BASES` basis + interval on a category, *applied* (not soft-prefilled) as a
+  `maintenance_schedules` row when an item is created in it. Three nullable columns folded into the
+  v1 baseline (golden snapshot regenerated) — `default_maintenance_basis` (CHECK ∈ `MAINTENANCE_BASES`),
+  `default_maintenance_interval_days` (TIME) / `default_maintenance_interval_usage` (USAGE), each
+  `> 0`, independently nullable (no coherence CHECK, so the editor's per-control auto-save stays a
+  legal partial LWW update) — threaded through `Category`/`CategoryRow`/`Create`/`UpdateCategoryInput`,
+  the `rowToCategory` mapper and `CategoryRepository` create/update/**list**. **Application lands in
+  the item repository create paths** (`create`/`createMany`/`createSerialised`), not the create
+  dialog: each builds the `maintenance_schedules` INSERT (pure `buildCategoryMaintenanceInsert` in
+  `item/maintenance-default.ts`, a seeded "Scheduled maintenance" name) into the item's own
+  transaction, so the schedule is atomic with the item and honoured by bulk **import** (`createMany`)
+  and by **every serialised instance** — while the create dialog needs no change (it already routes
+  through those methods). It fires only for a *complete* default (basis **and** its interval both
+  set); a leave-it-off / half-configured category gets nothing. Editor: a `SelectField` over
+  `MAINTENANCE_BASES` (leading "— No default —" → clears all three) + a numeric interval `FormField`
+  in `CategoryDefaultsSection`, seeding a sensible interval (365 days / 100 units) the moment a basis
+  is chosen so it is never a silent no-op, each auto-saving via `useUpdateCategory`.
 
 - **T3 — Template editor UI. ✅ Shipped 2026-07-10.** Added a "Defaults for new items in this
   category" section to the selected-category detail panel of
@@ -168,4 +178,4 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 ## Suggested order
 
 ~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → ~~`B5`~~ ✅ →
-~~`T4`~~ ✅ → then reassess `T2a` / `B4` by appetite.
+~~`T4`~~ ✅ → ~~`T2a`~~ ✅ → then reassess `B4` by appetite (the sole remaining task).
