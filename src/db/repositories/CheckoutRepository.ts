@@ -262,7 +262,10 @@ export class CheckoutRepository extends BaseRepository {
         ? [addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta)]
         : []),
       {
-        sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), note = COALESCE(?, note) WHERE id = ?;`,
+        // The return note lands in its OWN column — never `note`, which holds the reason the
+        // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
+        // remark no longer clobbers the loan note; both survive independently.
+        sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ?;`,
         params: [note?.trim() || null, checkoutId],
       },
       historyStatement(existing.item_id, 'CHECKED_IN', {

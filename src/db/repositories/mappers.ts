@@ -450,6 +450,7 @@ export function rowToCheckout(row: CheckoutRow): Checkout {
     checkedOutAt: row.checked_out_at,
     returnedAt: row.returned_at,
     note: row.note,
+    returnNote: row.return_note,
     sourceLocationId: row.source_location_id,
     sourceBatchKey: row.source_batch_key,
     updatedAt: row.updated_at,

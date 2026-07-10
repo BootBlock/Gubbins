@@ -59,6 +59,7 @@ export interface CheckoutRow {
   readonly checked_out_at: number;
   readonly returned_at: number | null;
   readonly note: string | null;
+  readonly return_note: string | null;
   readonly source_location_id: string | null;
   readonly source_batch_key: string | null;
   readonly updated_at: number;
@@ -75,7 +76,14 @@ export interface Checkout {
   readonly checkedOutAt: number;
   /** NULL while the item is still out; set when returned (drives OPEN/RETURNED). */
   readonly returnedAt: number | null;
+  /** The note captured when the units were lent *out* (the reason for the loan). */
   readonly note: string | null;
+  /**
+   * The note captured when the units were checked back *in* (e.g. "returned with a chipped
+   * blade"). Kept separate from {@link note} so a return remark never overwrites the loan's
+   * own note — both ends of the loan retain their own text. NULL while the loan is still open.
+   */
+  readonly returnNote: string | null;
   /**
    * The location the units were lent *from* (Phase 26, §4 per-location ledger). The
    * return restores stock here. NULL = no specific source (the item's primary location).

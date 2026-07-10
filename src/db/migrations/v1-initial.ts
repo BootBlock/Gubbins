@@ -763,6 +763,9 @@ export const v1Initial: Migration = {
       `,
     },
     { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
+    // A return keeps its own note, distinct from the checkout `note`, so a return remark
+    // never overwrites the loan's own note (both ends retain their text). NULL while open.
+    { sql: `ALTER TABLE checkouts ADD COLUMN return_note TEXT;` },
     {
       sql: `ALTER TABLE maintenance_schedules ADD COLUMN location_id TEXT REFERENCES locations(id);`,
     },

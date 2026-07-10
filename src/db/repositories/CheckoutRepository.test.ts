@@ -126,6 +126,27 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       expect(history.rows.some((h) => h.action === 'CHECKED_IN' && h.quantityDelta === 2)).toBe(true);
     });
 
+    it('records the return note in its own column without clobbering the loan note', async () => {
+      const itemId = await makeItem('Torque wrench', 1);
+      const checkout = await checkouts.checkout({
+        itemId,
+        contactName: 'Bob',
+        note: 'for the Henderson job',
+      });
+      const returned = await checkouts.checkIn(checkout.id, 'returned with a chipped blade');
+
+      // Both ends of the loan keep their own text — the return note no longer overwrites the loan note.
+      expect(returned.note).toBe('for the Henderson job');
+      expect(returned.returnNote).toBe('returned with a chipped blade');
+    });
+
+    it('leaves the return note null when a loan is returned without one', async () => {
+      const itemId = await makeItem('Clamp meter', 5);
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 2 });
+      const returned = await checkouts.checkIn(checkout.id);
+      expect(returned.returnNote).toBeNull();
+    });
+
     it('is idempotent on an already-returned checkout', async () => {
       const itemId = await makeItem('Clamp meter', 5);
       const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 2 });
