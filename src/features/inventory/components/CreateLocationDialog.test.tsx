@@ -90,11 +90,38 @@ describe('CreateLocationDialog', () => {
     expect(preview).toHaveTextContent('Drawer 3');
   });
 
+  it('previews comma-separated siblings as a fanned-out set', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Garage/Box 1, Box 2, Box 3' },
+    });
+    const preview = screen.getByText(/Existing levels are reused/i);
+    expect(preview).toHaveTextContent('Garage');
+    expect(preview).toHaveTextContent('Box 1');
+    expect(preview).toHaveTextContent('Box 2');
+    expect(preview).toHaveTextContent('Box 3');
+    expect(preview).toHaveTextContent(/as siblings/i);
+  });
+
+  it('passes a comma-separated sibling list through verbatim for the repo to fan out', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Garage/Box 1, Box 2, Box 3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(spies.create).toHaveBeenCalledTimes(1);
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ name: 'Garage/Box 1, Box 2, Box 3' });
+  });
+
   it('keeps Create disabled when the name is only separators or blank', () => {
     renderDialog();
     const createButton = screen.getByRole('button', { name: 'Create' });
     expect(createButton).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' / \\ ' } });
+    expect(createButton).toBeDisabled();
+    // A leaf that is only commas has no usable sibling names, so still nothing to create.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' , , ' } });
     expect(createButton).toBeDisabled();
   });
 });

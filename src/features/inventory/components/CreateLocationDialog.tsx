@@ -6,7 +6,7 @@ import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
 import { locationColorTextClass, type LocationColor } from '../location-color';
 import type { LocationKind } from '../location-kind';
-import { splitLocationPath } from '../location-path';
+import { parseLocationBranch } from '../location-path';
 import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationKindPicker } from './LocationKindPicker';
@@ -56,19 +56,21 @@ export function CreateLocationDialog({
   // right-aligned item-count hint (system/archived locations are never valid parents).
   const parentOptions = useMemo(() => buildParentOptions(locations, fmt.quantity), [locations, fmt]);
 
-  // A `/` or `\` in the name creates a whole nested branch at once (the leaf carries the
-  // metadata below; missing ancestors are added, existing ones reused). Parse once for both
-  // the submit guard and the live "what this will create" preview.
-  const segments = useMemo(() => splitLocationPath(name), [name]);
-  const isPath = segments.length > 1;
+  // The name can describe a whole branch at once: `/` or `\` nests levels *down* the tree and a
+  // `,` at the leaf fans *across* into siblings (missing ancestors are added, existing ones
+  // reused; each leaf carries the metadata below). Parse once for both the submit guard and the
+  // live "what this will create" preview.
+  const { ancestors, leaves } = useMemo(() => parseLocationBranch(name), [name]);
+  // Only show the preview when it says more than the plain single-name create already conveys.
+  const showPreview = ancestors.length > 0 || leaves.length > 1;
 
   const submit = () => {
-    if (segments.length === 0) return;
+    if (leaves.length === 0) return;
     const capacityNum = capacity.trim() === '' ? null : Number(capacity);
     create.mutate(
       {
-        // Pass the raw name through so the repository splits the path; a single segment
-        // behaves exactly like a plain create.
+        // Pass the raw name through so the repository parses the branch; a plain name (no
+        // separator) is a single leaf and behaves exactly like a plain create.
         name: name.trim(),
         parentId: parentId || null,
         description,
@@ -78,14 +80,15 @@ export function CreateLocationDialog({
         isDefault,
       },
       {
-        onSuccess: (location) => {
+        onSuccess: (created) => {
           setName('');
           setDescription('');
           setColor(null);
           setKind(null);
           setCapacity('');
           setIsDefault(false);
-          onCreated?.(location);
+          // Fanning out siblings yields several leaves; the inline picker selects the first.
+          if (created[0]) onCreated?.(created[0]);
           onClose();
         },
       },
@@ -107,19 +110,26 @@ export function CreateLocationDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="e.g. Workshop, or Workshop/Cabinet A/Drawer 3"
+            placeholder="e.g. Workshop/Cabinet A/Drawer 3, or Garage/Box 1, Box 2, Box 3"
             className={locationColorTextClass(color)}
           />
-          {isPath ? (
+          {showPreview ? (
             <p className="mt-field-gap-compact text-xs text-muted-foreground">
               Creates{' '}
-              {segments.map((segment, i) => (
-                <span key={i}>
+              {ancestors.map((level, i) => (
+                <span key={`ancestor-${i}`}>
                   {i > 0 ? <span aria-hidden="true"> › </span> : null}
-                  <span className="font-medium text-foreground">{segment}</span>
+                  <span className="font-medium text-foreground">{level}</span>
                 </span>
               ))}
-              . Existing levels are reused, not duplicated.
+              {ancestors.length > 0 ? <span aria-hidden="true"> › </span> : null}
+              {leaves.map((leaf, i) => (
+                <span key={`leaf-${i}`}>
+                  {i > 0 ? ', ' : null}
+                  <span className="font-medium text-foreground">{leaf}</span>
+                </span>
+              ))}
+              {leaves.length > 1 ? ' as siblings' : null}. Existing levels are reused, not duplicated.
             </p>
           ) : null}
         </FormField>
@@ -194,7 +204,7 @@ export function CreateLocationDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={create.isPending || segments.length === 0}>
+          <Button onClick={submit} disabled={create.isPending || leaves.length === 0}>
             Create
           </Button>
         </div>

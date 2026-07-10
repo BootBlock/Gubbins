@@ -11,15 +11,21 @@ export const HINT_NAME =
   'tinted with the colour you pick below.';
 
 /**
- * Name-field help for the **Add** dialog only — extends {@link HINT_NAME} with the nested-path
- * shortcut, which applies when creating (the Edit dialog just renames a single location).
+ * Name-field help for the **Add** dialog only — extends {@link HINT_NAME} with the nested-create
+ * shortcut (path nesting + sibling fan-out), which applies when creating (the Edit dialog just
+ * renames a single location).
  */
 export const HINT_NAME_CREATE =
   HINT_NAME +
   '\n\nUse a **`/`** (or **`\\`**) to create several nested levels at once: typing ' +
   '**`Workshop/Cabinet A/Drawer 3`** makes *Drawer 3* inside *Cabinet A* inside *Workshop*. ' +
   'Any level that already exists is reused rather than duplicated, so only the missing ones are ' +
-  'added.';
+  'added.' +
+  '\n\nUse a **comma** to add several locations side by side at the last level: ' +
+  '**`Garage/Box 1, Box 2, Box 3`** makes *Box 1*, *Box 2* and *Box 3* as siblings inside ' +
+  '*Garage*. They each take the type, colour and capacity you set below.' +
+  '\n\nNeed a comma **in** a name? Type it twice — **`Bay 1,, 2`** creates a single location ' +
+  'called *Bay 1, 2*.';
 
 export const HINT_PARENT =
   'Nest this location inside another to build your storage hierarchy ' +

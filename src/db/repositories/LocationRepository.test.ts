@@ -77,25 +77,25 @@ describe('LocationRepository', () => {
 
   describe('createPath (nested-create shortcut §4)', () => {
     it('creates the whole branch from a slash-separated path and returns the leaf', async () => {
-      const leaf = await locations.createPath({ name: 'Workshop/Cabinet A/Drawer 3' });
-      expect(leaf.name).toBe('Drawer 3');
+      const [leaf] = await locations.createPath({ name: 'Workshop/Cabinet A/Drawer 3' });
+      expect(leaf!.name).toBe('Drawer 3');
 
       const tree = await locations.getTree();
       const workshop = tree.find((n) => n.name === 'Workshop');
       const cabinet = workshop?.children[0];
       expect(cabinet?.name).toBe('Cabinet A');
       expect(cabinet?.children[0]?.name).toBe('Drawer 3');
-      expect(cabinet?.children[0]?.id).toBe(leaf.id);
+      expect(cabinet?.children[0]?.id).toBe(leaf!.id);
     });
 
     it('applies the metadata to the leaf only; ancestors are bare', async () => {
-      const leaf = await locations.createPath({
+      const [leaf] = await locations.createPath({
         name: 'Workshop/Drawer 3',
         kind: 'drawer',
         capacity: 12,
       });
-      expect(leaf.kind).toBe('drawer');
-      expect(leaf.capacity).toBe(12);
+      expect(leaf!.kind).toBe('drawer');
+      expect(leaf!.capacity).toBe(12);
 
       const workshop = (await locations.getTree()).find((n) => n.name === 'Workshop');
       expect(workshop?.kind).toBeNull();
@@ -115,32 +115,67 @@ describe('LocationRepository', () => {
     });
 
     it('matches existing levels case-insensitively', async () => {
-      const first = await locations.createPath({ name: 'Workshop/Cabinet A' });
-      const second = await locations.createPath({ name: 'workshop/cabinet a' });
+      const [first] = await locations.createPath({ name: 'Workshop/Cabinet A' });
+      const [second] = await locations.createPath({ name: 'workshop/cabinet a' });
       // The second path resolves to the same rows; the leaf is the already-created one.
-      expect(second.id).toBe(first.id);
+      expect(second!.id).toBe(first!.id);
       const workshops = (await locations.getTree()).filter((n) => n.name === 'Workshop');
       expect(workshops).toHaveLength(1);
     });
 
     it('nests the whole path under an explicit starting parent', async () => {
       const building = await locations.create({ name: 'Building' });
-      const leaf = await locations.createPath({ name: 'Room 1/Shelf', parentId: building.id });
+      const [leaf] = await locations.createPath({ name: 'Room 1/Shelf', parentId: building.id });
 
       const buildingNode = (await locations.getTree()).find((n) => n.id === building.id);
       const room = buildingNode?.children.find((n) => n.name === 'Room 1');
       expect(room?.children[0]?.name).toBe('Shelf');
-      expect(room?.children[0]?.id).toBe(leaf.id);
+      expect(room?.children[0]?.id).toBe(leaf!.id);
     });
 
     it('behaves like a plain create for a separator-free name', async () => {
-      const leaf = await locations.createPath({ name: 'Shelf', capacity: 5 });
-      expect(leaf.parentId).toBeNull();
-      expect(leaf.capacity).toBe(5);
+      const [leaf] = await locations.createPath({ name: 'Shelf', capacity: 5 });
+      expect(leaf!.parentId).toBeNull();
+      expect(leaf!.capacity).toBe(5);
     });
 
     it('rejects a path that has no usable segments', async () => {
       await expect(locations.createPath({ name: ' / \\ ' })).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('fans a comma-separated leaf out into siblings under the shared parent', async () => {
+      const created = await locations.createPath({ name: 'Garage/Box 1, Box 2, Box 3' });
+      expect(created.map((l) => l.name)).toEqual(['Box 1', 'Box 2', 'Box 3']);
+
+      const garage = (await locations.getTree()).find((n) => n.name === 'Garage');
+      expect(garage?.children.map((n) => n.name).sort()).toEqual(['Box 1', 'Box 2', 'Box 3']);
+      // All three share the one Garage parent — the ancestor is created once, not per sibling.
+      expect(created.every((l) => l.parentId === garage!.id)).toBe(true);
+    });
+
+    it('applies the shared metadata to every fanned-out sibling', async () => {
+      const created = await locations.createPath({
+        name: 'Garage/Box 1, Box 2',
+        kind: 'box',
+        capacity: 8,
+      });
+      expect(created.every((l) => l.kind === 'box' && l.capacity === 8)).toBe(true);
+    });
+
+    it('reuses an existing sibling and only creates the missing ones', async () => {
+      const [existing] = await locations.createPath({ name: 'Garage/Box 1' });
+      const created = await locations.createPath({ name: 'Garage/Box 1, Box 2' });
+      // Box 1 is reused (same id), Box 2 is freshly created.
+      expect(created[0]!.id).toBe(existing!.id);
+
+      const garage = (await locations.getTree()).find((n) => n.name === 'Garage');
+      expect(garage?.children.map((n) => n.name).sort()).toEqual(['Box 1', 'Box 2']);
+    });
+
+    it('honours the doubled-comma escape to create one literal-comma name', async () => {
+      const created = await locations.createPath({ name: 'Garage/Bay 1,, 2' });
+      expect(created).toHaveLength(1);
+      expect(created[0]!.name).toBe('Bay 1, 2');
     });
   });
 

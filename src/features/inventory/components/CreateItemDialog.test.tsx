@@ -340,8 +340,10 @@ describe('CreateItemDialog', () => {
   });
 
   it('creates a location inline without losing the form, then submits with it', async () => {
+    // createPath resolves with the created/resolved leaves (an array); the inline picker
+    // selects the first.
     spies.createLocation.mockImplementation((_input, opts) =>
-      opts?.onSuccess?.({ id: 'loc-9', name: 'Drawer 9' }),
+      opts?.onSuccess?.([{ id: 'loc-9', name: 'Drawer 9' }]),
     );
     renderDialog();
     fireEvent.change(itemDialog().getByLabelText('Name'), { target: { value: 'Calipers' } });
