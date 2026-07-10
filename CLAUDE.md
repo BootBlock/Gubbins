@@ -121,3 +121,34 @@ the system, drops the wiring the primitive gives you for free, and is easy to mi
 When a fix introduces a token-based Tailwind utility, remember **unknown utilities fail
 silently** (no CSS, no error) — verify it actually emits by building the CSS and grepping the
 output before trusting it.
+
+## User-facing strings are translated (i18n)
+
+Every user-facing string goes through the typed `t()` seam ([src/features/i18n](src/features/i18n)),
+not a hard-coded literal — the same discipline as design tokens: a raw string bypasses translation,
+silently diverges, and is easy to miss in review. `en.json` is the single source of truth for the
+English copy; other languages (currently `de.json`) are override catalogs.
+
+**The rule — when you add or change any user-facing string, include its translated equivalent too:**
+
+- **Route it through `t()`.** Add a key to
+  [src/features/i18n/catalogs/en.json](src/features/i18n/catalogs/en.json) and render it with
+  `const t = useT(); … {t('some.key')}` (see the memory note `i18n-typed-catalog-seam`). This covers
+  visible text **and** accessibility strings: `aria-label`, `title`, `alt`, `placeholder`, tooltip
+  content, live-region announcements — a screen-reader user gets the same language as a sighted one.
+- **Add the translation to *every* shipped catalog in the same change.** A key added to `en.json`
+  **must** also be added to `de.json` (and any future catalog) with a real translation — never leave
+  it English-only there. The catalog tests enforce this (they assert full pilot coverage + that every
+  `{placeholder}` is preserved), so a missing or malformed translation fails the build, not review.
+- **Keep the English value byte-identical to any code-side reference.** Where a data registry keeps an
+  English string beside its key (`NAV_DESTINATIONS[].label`, `DASHBOARD_WIDGETS[].title`), the
+  `en.json` value must equal it — a drift test asserts this, and the identity is what keeps existing
+  screen tests (which assert English copy) green.
+- **Pluralize and interpolate through the seam, never by hand.** A count-dependent message uses
+  `key.one` / `key.other` variants selected by `t('key', { vars: { count } })`; a value spliced into a
+  sentence is a `{placeholder}` var — do not concatenate strings or hand-roll `n === 1 ? … : …`.
+- **Scope reality:** only a slice is converted so far (global chrome, Dashboard, About). New strings in
+  a not-yet-converted screen still *should* be added via `t()` so that screen is ready to translate,
+  but the hard, build-enforced rule above applies to every string that goes through a catalog.
+  Untranslated keys fall back to English, so nothing breaks — but "add the string, skip the
+  translation" is not acceptable for a catalog key.
