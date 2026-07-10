@@ -69,11 +69,11 @@ memory note.
   stage it (seam + English catalog first, then one pilot language). Real breadth gap vs. mature
   tools.
 
-- [ ] **G5 — In-app natural-language → query.** *Low-medium.* The NL path exists only for external
-  agents (MCP / HA "where are my…"). Add a **rule-based, no-LLM** NL layer over the existing
-  `parseTextQuery` → AST so "low stock screws in the garage" resolves without learning the
-  `field:value` / `cap:key>n` syntax. Extends the existing parser (§5.1); produce the AST, never
-  hand-build SQL.
+- [x] **G5 — In-app natural-language → query.** ✅ **Shipped 2026-07-10.** *Low-medium.* The NL path
+  existed only for external agents (MCP / HA "where are my…"). Added a **rule-based, no-LLM** NL
+  layer over the existing `parseTextQuery` → AST so "low stock screws in the garage" resolves
+  without learning the `field:value` / `cap:key>n` syntax. Extends the existing parser (§5.1);
+  produces the AST, never hand-builds SQL.
 
 - [x] **G6 — Related-items cross-links ("works with" / accessory / spare-for).** ✅ **Shipped
   2026-07-10.** *Low / niche.* A
@@ -103,6 +103,31 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G5 — In-app natural-language → query** — shipped 2026-07-10. New pure
+  `features/search/nl-query.ts` seam (`interpretNaturalLanguage`) lowers a plain-English phrase to
+  the **exact** §5.1 `SearchAST` the Visual Builder edits and `parseASTtoSQL` translates — never
+  hand-building SQL — so, like `parseTextQuery`, the box merely *loads* the builder. A fixed
+  no-LLM lexicon recognises **stock level** ("out of stock"/"none left" → `quantity = 0`; "low
+  stock"/"running low" → `quantity < N`, N = the user's low-stock threshold with a friendly floor
+  when that pref is off; "in stock"/"available" → `quantity > 0`), **quantity comparisons** ("more
+  than 10", "fewer than 5", inclusive "at least 10"/"10 or more" → strict on integer counts,
+  "exactly 3", "5 in stock"; digit or spelled-out numbers), **location phrases** ("in the garage",
+  "on shelf 2" → `location = <id>`, resolved against caller-supplied location names, longest match
+  wins, determiner-prefixed names still match), **category mentions** (→ `category = <id>`), and
+  **residual words** minus filler (→ `name CONTAINS`). The time/loan attention statuses (expiring,
+  on-loan, warranty, overdue, maintenance-due) are deliberately **out of scope for the AST path** —
+  they need a runtime clock, tunable windows and correlated joins the context-free `parseASTtoSQL`
+  can't express, so forcing them in would mean hand-building SQL; they stay reachable via the
+  status-filter chips (the tooltip points there). Surfaced as an opt-in "ask in plain English" box
+  (`NaturalLanguageInput`) in the Visual Builder panel — a friendlier sibling to the power-user
+  `TextQueryInput`, same "fill the builder" `load`-action contract, plus an echo of what was
+  understood and a gentle miss note; Foundry primitives, design tokens and a11y throughout. No
+  migration, no schema change, no new dependency. `/code-review` (high): no correctness bugs; one
+  low-severity robustness gap fixed (a location name beginning with a determiner, e.g. "The Shed").
+  69 new tests (pure-seam intents/combinations/robustness + a `parseASTtoSQL` round-trip proving
+  every emitted tree is translatable, plus a component test of the affordance); typecheck + full
+  search suite green in merged `main`; production `vite build` clean.
 
 - **G6 — Related-items cross-links ("works with" / accessory / spare-for)** — shipped 2026-07-10.
   A synced many-to-many relation *between items*, distinct from variants (same product) and kits
