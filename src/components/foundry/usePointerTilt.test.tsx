@@ -25,8 +25,20 @@ function provide({ reduced, fine }: { reduced: boolean; fine: boolean }): MediaQ
 }
 
 /** A React-PointerEvent-shaped stub carrying only the fields the handlers read. */
-function pointerEvent(target: HTMLElement, x: number, y: number) {
-  return { currentTarget: target, clientX: x, clientY: y } as unknown as React.PointerEvent<HTMLElement>;
+function pointerEvent(
+  target: HTMLElement,
+  x: number,
+  y: number,
+  extra: { pointerType?: string; buttons?: number } = {},
+) {
+  const { pointerType = 'mouse', buttons = 0 } = extra;
+  return {
+    currentTarget: target,
+    clientX: x,
+    clientY: y,
+    pointerType,
+    buttons,
+  } as unknown as React.PointerEvent<HTMLElement>;
 }
 
 /** A card element with a fixed 200×100 box so the resolved tilt values are exact. */
@@ -99,6 +111,25 @@ describe('usePointerTilt — CSS-var writes (enabled)', () => {
     expect(card.style.getPropertyValue('--tilt-py')).toBe('10px');
     expect(card.style.getPropertyValue('--tilt-gx')).toBe('0%');
     expect(card.style.getPropertyValue('--tilt-gy')).toBe('0%');
+  });
+
+  it('ignores a touch pointer even when attached (hybrid fine+coarse device)', () => {
+    const { result } = renderHook(() =>
+      usePointerTilt({ mediaProvider: provide({ reduced: false, fine: true }) }),
+    );
+    const card = fakeCard();
+    act(() => result.current.onPointerMove!(pointerEvent(card, 0, 0, { pointerType: 'touch' })));
+    // No var written — tilt is a hover affordance, never fired by a finger.
+    expect(card.style.getPropertyValue('--tilt-rx')).toBe('');
+  });
+
+  it('ignores a move while a button is held (a press-drag, not a hover)', () => {
+    const { result } = renderHook(() =>
+      usePointerTilt({ mediaProvider: provide({ reduced: false, fine: true }) }),
+    );
+    const card = fakeCard();
+    act(() => result.current.onPointerMove!(pointerEvent(card, 0, 0, { buttons: 1 })));
+    expect(card.style.getPropertyValue('--tilt-rx')).toBe('');
   });
 
   it('resets to the flat rest state on pointer-leave', () => {

@@ -106,6 +106,14 @@ export function usePointerTilt(options: PointerTiltOptions = {}): PointerTiltHan
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
+      // Two per-event guards on top of the render-time gate:
+      //  - `touch`: `(pointer: fine)` reflects the *primary* pointer, so on a hybrid device (a
+      //    laptop with a touchscreen) the handlers are attached even though a finger is coarse.
+      //    Tilt is a hover affordance — never run it for an actual touch pointer.
+      //  - buttons held: a press-drag (the item drag-to-move gesture, or any button-held move) is
+      //    not a hover; tilting the source card while the floating drag preview follows reads as a
+      //    distracting double-motion. Only a plain, no-button hover tilts.
+      if (event.pointerType === 'touch' || event.buttons !== 0) return;
       pendingRef.current = { el: event.currentTarget, x: event.clientX, y: event.clientY };
       if (frameRef.current == null) frameRef.current = requestAnimationFrame(flush);
     },
