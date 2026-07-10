@@ -1,21 +1,28 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
   Button,
+  buttonVariants,
   Checkbox,
+  FormField,
+  InfoHint,
+  Input,
   Money,
   PageContainer,
   PageHeader,
   SelectField,
   Spinner,
   Surface,
+  Textarea,
   MAIN_CONTENT_ID,
   type SelectOption,
 } from '@/components/foundry';
-import { CatalogueIcon, PrintIcon } from '@/components/icons';
+import { CatalogueIcon, ChevronDownIcon, DeleteIcon, PrintIcon, UploadIcon } from '@/components/icons';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { logoToDataUrl } from './catalogue-branding';
 import {
   CONDITION_COLOR_CLASS,
   CONDITION_LABELS,
@@ -40,6 +47,32 @@ import { useCatalogueLaunch } from './useCatalogueLaunch';
 /** Which family of items the catalogue is built from — the reader's top-level scope choice. */
 type ScopeKind = 'all' | 'location' | 'project' | 'selection';
 
+/** The letterhead/branding a company can stamp onto the printed catalogue (from preferences). */
+interface CatalogueBranding {
+  readonly title: string;
+  readonly orgName: string;
+  readonly orgDetails: string;
+  readonly footer: string;
+  readonly logo: string;
+  readonly showGeneratedDate: boolean;
+}
+
+// Rich-Markdown help surfaced through the Foundry `hint` badge on each control.
+const SHOW_HINT =
+  'Choose which items the catalogue lists:\n\n' +
+  '- **All items** — your whole active inventory.\n' +
+  '- **By location** — a location *and everything nested inside it*.\n' +
+  "- **By project** — every item on a project's bill of materials.\n" +
+  '- **Selected items** — the items you ticked in the inventory.';
+const LOCATION_HINT = 'Includes the chosen location **and every sub-location beneath it**.';
+const PROJECT_HINT = "Lists every item on this project's **bill of materials**.";
+const COLUMNS_HINT =
+  'The item **name** always prints. Turn on **Line value** to total each location and the whole catalogue.';
+const LOGO_HINT = 'Stored on this device only and shrunk automatically. Prints at the top of the catalogue.';
+const ORG_DETAILS_HINT = 'Address or contact details. **Line breaks are kept** as you type them.';
+const TITLE_HINT = 'Overrides the printed document title (the default is "Catalogue").';
+const FOOTER_HINT = 'Printed at the foot of the catalogue — e.g. a confidentiality or copyright line.';
+
 /**
  * The parts-catalogue screen (issue #22): a printable, column-configurable list of items scoped
  * by all / a location subtree / a project / an ad-hoc selection. It renders on screen with the
@@ -53,6 +86,37 @@ type ScopeKind = 'all' | 'location' | 'project' | 'selection';
 export function CatalogueScreen() {
   const f = useFormatters();
   const projectsEnabled = useEnabledFeatures().has('projects');
+
+  // Persisted print letterhead — set once, reused on every print. Read each field + setter
+  // individually so a change to one never re-renders on an unrelated preference.
+  const branding: CatalogueBranding = {
+    title: usePreferencesStore((s) => s.catalogueTitle),
+    orgName: usePreferencesStore((s) => s.catalogueOrgName),
+    orgDetails: usePreferencesStore((s) => s.catalogueOrgDetails),
+    footer: usePreferencesStore((s) => s.catalogueFooter),
+    logo: usePreferencesStore((s) => s.catalogueLogo),
+    showGeneratedDate: usePreferencesStore((s) => s.catalogueShowGeneratedDate),
+  };
+  const setCatalogueTitle = usePreferencesStore((s) => s.setCatalogueTitle);
+  const setCatalogueOrgName = usePreferencesStore((s) => s.setCatalogueOrgName);
+  const setCatalogueOrgDetails = usePreferencesStore((s) => s.setCatalogueOrgDetails);
+  const setCatalogueFooter = usePreferencesStore((s) => s.setCatalogueFooter);
+  const setCatalogueLogo = usePreferencesStore((s) => s.setCatalogueLogo);
+  const setCatalogueShowGeneratedDate = usePreferencesStore((s) => s.setCatalogueShowGeneratedDate);
+  // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
+  const [logoError, setLogoError] = useState('');
+
+  const onPickLogo = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // let the same file be re-picked after a Remove
+    if (!file) return;
+    try {
+      setLogoError('');
+      setCatalogueLogo(await logoToDataUrl(file));
+    } catch {
+      setLogoError('That image could not be used. Try a different file.');
+    }
+  };
 
   // A launcher (e.g. the inventory multi-select "Print catalogue" action) may have stashed a
   // pre-chosen scope. Read it once for the initial state, then consume (clear) it on mount so a
@@ -161,7 +225,7 @@ export function CatalogueScreen() {
         tabIndex={-1}
         className="catalogue-doc flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        {/* Configuration panel — the scope and column pickers. Never printed. */}
+        {/* Configuration panel — the scope, column pickers and print letterhead. Never printed. */}
         <Surface className="print-hide flex flex-col gap-5 p-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SelectField
@@ -169,6 +233,7 @@ export function CatalogueScreen() {
               options={scopeOptions}
               value={scopeKind}
               onChange={(v) => setScopeKind(v as ScopeKind)}
+              hint={SHOW_HINT}
               data-testid="catalogue-scope"
             />
             {scopeKind === 'location' ? (
@@ -178,23 +243,39 @@ export function CatalogueScreen() {
                 value={locationId}
                 onChange={setLocationId}
                 placeholder="Choose a location…"
+                hint={LOCATION_HINT}
                 data-testid="catalogue-location"
               />
             ) : null}
             {scopeKind === 'project' ? (
-              <SelectField
-                label="Project"
-                options={projectOptions}
-                value={projectId}
-                onChange={setProjectId}
-                placeholder="Choose a project…"
-                data-testid="catalogue-project"
-              />
+              projectOptions.length > 0 ? (
+                <SelectField
+                  label="Project"
+                  options={projectOptions}
+                  value={projectId}
+                  onChange={setProjectId}
+                  placeholder="Choose a project…"
+                  hint={PROJECT_HINT}
+                  data-testid="catalogue-project"
+                />
+              ) : (
+                // No projects exist — show a plain message where the (otherwise empty) combobox
+                // would sit, so the control never renders as a broken, unusable dropdown.
+                <div>
+                  <span className="mb-field-gap block text-sm font-medium">Project</span>
+                  <p className="text-sm text-muted-foreground" data-testid="catalogue-no-projects">
+                    No projects are in the system.
+                  </p>
+                </div>
+              )
             ) : null}
           </div>
 
           <fieldset>
-            <legend className="mb-field-gap text-sm font-medium">Columns</legend>
+            <legend className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
+              Columns
+              <InfoHint content={COLUMNS_HINT} />
+            </legend>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
               {CATALOGUE_FIELDS.map((field) => (
                 <label key={field.key} className="flex items-center gap-2 text-sm">
@@ -208,6 +289,109 @@ export function CatalogueScreen() {
               ))}
             </div>
           </fieldset>
+
+          {/* Print letterhead — an optional company logo, name/address, title and footer stamped
+              onto the printed document. Persisted, so it's set once and reused on every print. */}
+          <details className="group border-t border-border pt-4">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
+              <ChevronDownIcon
+                aria-hidden="true"
+                className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+              />
+              Header &amp; branding
+            </summary>
+
+            <div className="mt-4 flex flex-col gap-4">
+              <div>
+                <div className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
+                  Logo
+                  <InfoHint content={LOGO_HINT} />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {branding.logo ? (
+                    <img
+                      src={branding.logo}
+                      alt="Current catalogue logo"
+                      className="max-h-12 w-auto rounded border border-border object-contain"
+                    />
+                  ) : null}
+                  <label className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+                    <UploadIcon />
+                    {branding.logo ? 'Replace logo' : 'Upload logo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      aria-label="Upload logo"
+                      onChange={onPickLogo}
+                    />
+                  </label>
+                  {branding.logo ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCatalogueLogo('');
+                        setLogoError('');
+                      }}
+                    >
+                      <DeleteIcon />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+                {logoError ? (
+                  <p role="alert" className="mt-1 text-xs text-destructive">
+                    {logoError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Title" hint={TITLE_HINT}>
+                  <Input
+                    value={branding.title}
+                    onChange={(e) => setCatalogueTitle(e.target.value)}
+                    placeholder="Catalogue"
+                    data-testid="catalogue-branding-title"
+                  />
+                </FormField>
+                <FormField label="Company name">
+                  <Input
+                    value={branding.orgName}
+                    onChange={(e) => setCatalogueOrgName(e.target.value)}
+                    data-testid="catalogue-branding-org"
+                  />
+                </FormField>
+              </div>
+
+              <FormField label="Address / contact" hint={ORG_DETAILS_HINT}>
+                <Textarea
+                  value={branding.orgDetails}
+                  onChange={(e) => setCatalogueOrgDetails(e.target.value)}
+                  rows={3}
+                  data-testid="catalogue-branding-details"
+                />
+              </FormField>
+
+              <FormField label="Footer" hint={FOOTER_HINT}>
+                <Input
+                  value={branding.footer}
+                  onChange={(e) => setCatalogueFooter(e.target.value)}
+                  data-testid="catalogue-branding-footer"
+                />
+              </FormField>
+
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={branding.showGeneratedDate}
+                  onChange={(e) => setCatalogueShowGeneratedDate(e.target.checked)}
+                  data-testid="catalogue-branding-show-date"
+                />
+                Show the generated date on the printed catalogue
+              </label>
+            </div>
+          </details>
         </Surface>
 
         {/* The document itself. */}
@@ -216,7 +400,9 @@ export function CatalogueScreen() {
             {scopeKind === 'location'
               ? 'Choose a location to build its catalogue.'
               : scopeKind === 'project'
-                ? 'Choose a project to build its parts catalogue.'
+                ? projectOptions.length > 0
+                  ? 'Choose a project to build its parts catalogue.'
+                  : 'Add a project to build a parts catalogue for it.'
                 : 'No items are selected.'}
           </p>
         ) : catalogue.isLoading ? (
@@ -234,6 +420,7 @@ export function CatalogueScreen() {
             catalogue={catalogue.data!}
             fields={selectedFields}
             showTotals={showTotals}
+            branding={branding}
             formatters={f}
           />
         )}
@@ -242,38 +429,68 @@ export function CatalogueScreen() {
   );
 }
 
-/** The document body: a title/metadata band, the location groups, and an optional total footer. */
+/** The document body: an optional letterhead, the title/metadata band, the location groups,
+ * an optional totals footer and an optional branding footer line. */
 function CatalogueDocument({
   catalogue,
   fields,
   showTotals,
+  branding,
   formatters,
 }: {
   catalogue: PartsCatalogue;
   fields: readonly (typeof CATALOGUE_FIELDS)[number][];
   showTotals: boolean;
+  branding: CatalogueBranding;
   formatters: Formatters;
 }) {
   const f = formatters;
+  const hasLetterhead = Boolean(branding.logo || branding.orgName || branding.orgDetails);
   return (
     <>
-      <header className="flex flex-col gap-1 border-b border-border pb-4">
-        <h2 className="text-lg font-semibold">Catalogue</h2>
-        <p className="text-sm text-muted-foreground">
-          Generated {f.date(catalogue.generatedAt)} · {f.quantity(catalogue.itemCount)}{' '}
-          {plural(catalogue.itemCount, 'item')}
-          {showTotals ? (
-            <>
-              {' · total value '}
-              <Money
-                value={catalogue.grandTotal}
-                formatters={f}
-                className="font-medium text-foreground"
-                data-testid="catalogue-grand-total"
+      <header className="flex flex-col gap-3 border-b border-border pb-4">
+        {hasLetterhead ? (
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              {branding.orgName ? (
+                <p className="text-base font-semibold text-foreground" data-testid="catalogue-org-name">
+                  {branding.orgName}
+                </p>
+              ) : null}
+              {branding.orgDetails ? (
+                <p className="whitespace-pre-line text-sm text-muted-foreground">{branding.orgDetails}</p>
+              ) : null}
+            </div>
+            {branding.logo ? (
+              <img
+                src={branding.logo}
+                alt={branding.orgName ? `${branding.orgName} logo` : 'Catalogue logo'}
+                className="catalogue-logo max-h-20 w-auto shrink-0 object-contain"
               />
-            </>
-          ) : null}
-        </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold" data-testid="catalogue-title">
+            {branding.title || 'Catalogue'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {branding.showGeneratedDate ? <>Generated {f.date(catalogue.generatedAt)} · </> : null}
+            {f.quantity(catalogue.itemCount)} {plural(catalogue.itemCount, 'item')}
+            {showTotals ? (
+              <>
+                {' · total value '}
+                <Money
+                  value={catalogue.grandTotal}
+                  formatters={f}
+                  className="font-medium text-foreground"
+                  data-testid="catalogue-grand-total"
+                />
+              </>
+            ) : null}
+          </p>
+        </div>
       </header>
 
       {catalogue.groups.map((group) => (
@@ -287,9 +504,18 @@ function CatalogueDocument({
       ))}
 
       {showTotals ? (
-        <footer className="flex items-center justify-between border-t-2 border-border pt-3 text-base font-semibold">
+        <div className="flex items-center justify-between border-t-2 border-border pt-3 text-base font-semibold">
           <span>Total value</span>
           <Money value={catalogue.grandTotal} formatters={f} />
+        </div>
+      ) : null}
+
+      {branding.footer ? (
+        <footer
+          className="border-t border-border pt-3 text-xs text-muted-foreground"
+          data-testid="catalogue-footer"
+        >
+          {branding.footer}
         </footer>
       ) : null}
     </>

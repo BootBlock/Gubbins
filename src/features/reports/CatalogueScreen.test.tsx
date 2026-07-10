@@ -100,9 +100,23 @@ vi.mock('./queries', () => ({
 }));
 
 import { CatalogueScreen } from './CatalogueScreen';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useCatalogueLaunch } from './useCatalogueLaunch';
+
+/** The letterhead preference defaults — restored between tests so branding never leaks. */
+const BRANDING_DEFAULTS = {
+  catalogueTitle: '',
+  catalogueOrgName: '',
+  catalogueOrgDetails: '',
+  catalogueFooter: '',
+  catalogueLogo: '',
+  catalogueShowGeneratedDate: true,
+};
 
 afterEach(() => {
   cleanup();
+  usePreferencesStore.setState(BRANDING_DEFAULTS);
+  useCatalogueLaunch.setState({ pendingScope: null });
 });
 
 describe('CatalogueScreen', () => {
@@ -141,5 +155,40 @@ describe('CatalogueScreen', () => {
 
     expect(screen.queryByTestId('catalogue-grand-total')).toBeNull();
     expect(screen.queryByRole('columnheader', { name: 'Line value' })).toBeNull();
+  });
+
+  it('carries rich-Markdown help badges on its controls', () => {
+    render(<CatalogueScreen />);
+    // Show + Columns + the branding fields (logo/title/address/footer) all carry an InfoHint.
+    expect(screen.getAllByRole('img', { name: 'More information' }).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('shows "No projects are in the system." in place of the project picker when none exist', () => {
+    // Launch the screen already scoped to a project; useProjects is mocked with no rows.
+    useCatalogueLaunch.getState().launch({ kind: 'project', projectId: 'p1' });
+    render(<CatalogueScreen />);
+
+    expect(screen.getByTestId('catalogue-no-projects').textContent).toBe('No projects are in the system.');
+    expect(screen.queryByTestId('catalogue-project')).toBeNull();
+  });
+
+  it('stamps the letterhead org name and title override onto the printed document', () => {
+    usePreferencesStore.setState({ catalogueOrgName: 'Acme Ltd', catalogueTitle: 'Spare Parts' });
+    render(<CatalogueScreen />);
+
+    expect(screen.getByTestId('catalogue-org-name').textContent).toBe('Acme Ltd');
+    expect(screen.getByTestId('catalogue-title').textContent).toBe('Spare Parts');
+  });
+
+  it('falls back to the "Catalogue" title and can hide the generated date', () => {
+    render(<CatalogueScreen />);
+    // Default: no title override → "Catalogue"; generated date shown.
+    expect(screen.getByTestId('catalogue-title').textContent).toBe('Catalogue');
+    expect(document.body.textContent).toContain('Generated');
+
+    cleanup();
+    usePreferencesStore.setState({ catalogueShowGeneratedDate: false });
+    render(<CatalogueScreen />);
+    expect(document.body.textContent).not.toContain('Generated');
   });
 });
