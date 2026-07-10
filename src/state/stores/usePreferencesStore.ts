@@ -450,8 +450,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // preserved untouched.
       // v2: the binary "Reduce effects" switch became the graded `animationLevel` scale. An
       // install that had turned Reduce-effects ON keeps that intent as the equivalent `calm`
-      // level (all decorative motion still); everyone else lands on the `full` default.
-      version: 2,
+      // level (all decorative motion still); everyone else lands on the "everything on" default.
+      // v3: the scale was re-labelled/re-ordered so `headache` is the "everything on" top tier and
+      // `off` is the barest floor, with a new `minimal` rung inserted. Installs carrying the interim
+      // v2 ids are remapped; installs deriving fresh from `reduceEffects` already produce final ids.
+      version: 3,
       migrate: (persistedState, fromVersion) => {
         // Copy into a mutable record — the store fields are declared `readonly`.
         const state = { ...(persistedState as Partial<PreferencesStore>) } as Record<string, unknown>;
@@ -460,10 +463,18 @@ export const usePreferencesStore = create<PreferencesStore>()(
           if (state.lowStockGaugePercent === 15) state.lowStockGaugePercent = LOW_STOCK_GAUGE_PERCENT;
         }
         if (fromVersion < 2) {
+          // Pre-animationLevel install: derive from the old binary reduceEffects (a *final* id).
           if (state.animationLevel === undefined) {
             state.animationLevel = state.reduceEffects === true ? 'calm' : DEFAULT_ANIMATION_LEVEL;
           }
           delete state.reduceEffects;
+        }
+        if (fromVersion === 2) {
+          // Only a v2 install carries the interim ids; remap them to the final scale. (A pre-v2
+          // install produced a final id in the block above, so it must NOT be remapped.)
+          const REMAP: Record<string, string> = { full: 'headache', off: 'minimal', headache: 'off' };
+          const current = state.animationLevel;
+          if (typeof current === 'string' && current in REMAP) state.animationLevel = REMAP[current];
         }
         return state as unknown as PreferencesStore;
       },

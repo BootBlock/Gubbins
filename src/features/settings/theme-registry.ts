@@ -116,30 +116,32 @@ export function normaliseStarfieldVariant(value: string): StarfieldVariant {
 /**
  * Animation level — how visually animated the interface is (visual-flair; offered up-front on the
  * first-run wizard and in Settings → Appearance). A single graded scale that supersedes the earlier
- * binary "Reduce effects" switch, listed **liveliest → calmest** so its array index is its rank.
+ * binary "Reduce effects" switch, listed **most flair → least** so its array index is its rank.
  *
  * The rank drives two thresholds, encoded once here ({@link suppressesFlourish} /
  * {@link suppressesMotion}) so every effect reads the tier meaning from the SSOT rather than
  * hard-coding a level id:
- * - `full` — everything on (default; nothing suppressed).
+ * - `headache` — **everything on** (default; nothing suppressed). Named for the headache all that
+ *   sparkle *could* give you — it is the maximal, all-effects tier.
  * - `balanced` — the showiest **flourishes** off (success bursts, card tilt/parallax, the spotlight
  *   sweep); the gentler motion stays.
  * - `calm` — all decorative **motion** holds still (number roll-ups, scroll reveals, page
- *   cross-fades, badge/toast/ring pops), i.e. the former "Reduce effects" behaviour; static flair
+ *   cross-fades, badge/toast/ring pops) — matches your device's reduced-motion setting; static flair
  *   (accent glow, per-location tint, the still starfield) remains.
- * - `off` — Calm, plus the ambient decorations themselves drop: the drifting starfield and the
+ * - `minimal` — Calm, plus the ambient decorations themselves drop: the drifting starfield and the
  *   accent glow are switched off.
- * - `headache` — Off, plus the remaining decorative colour (per-location tints, decorative
- *   gradients) is dialled back for the calmest, most uniform interface.
+ * - `off` — Minimal, plus the remaining decorative colour (per-location tints, decorative gradients)
+ *   is dropped: **everything off**, the barest, quietest interface.
  *
  * This is *additive to* the OS `prefers-reduced-motion` setting, never subtractive — see
  * `components/foundry/decoration-motion.ts`.
  */
 export const ANIMATION_LEVELS = [
   {
-    id: 'full',
-    label: 'Full',
-    description: 'Every animation and flourish, just as designed.',
+    id: 'headache',
+    label: 'I have a headache',
+    description:
+      'Everything on, all at once — every animation, flourish and sparkle, so lively it might just give you a headache. The full, maximal Gubbins.',
   },
   {
     id: 'balanced',
@@ -151,30 +153,30 @@ export const ANIMATION_LEVELS = [
     id: 'calm',
     label: 'Calm',
     description:
-      'All decorative motion holds still — number roll-ups, reveals, page cross-fades and pops settle instantly.',
+      'All decorative motion holds still — number roll-ups, reveals, page cross-fades and pops settle instantly (matches your device’s reduced-motion setting).',
+  },
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    description:
+      'Calm, plus the ambient touches switch off too — the drifting starfield and the accent glow.',
   },
   {
     id: 'off',
     label: 'Off',
     description:
-      'No decorative motion, and the ambient touches — the drifting starfield and accent glow — switch off too.',
-  },
-  {
-    id: 'headache',
-    label: 'I have a headache',
-    description:
-      'For when the app’s cheerful little flourishes feel like a marching band inside your skull. Everything holds perfectly still, the stars stop drifting and the decorative colour is dialled right back — the calmest, quietest Gubbins can be. Turn it back up once the paracetamol kicks in.',
+      'Everything off: no motion, no starfield or glow, and even the per-location card tints are dropped. The barest, quietest interface.',
   },
 ] as const;
 
 /** An animation level id. */
 export type AnimationLevel = (typeof ANIMATION_LEVELS)[number]['id'];
 
-/** Every animation level id, liveliest → calmest (index === rank), for iteration / validation. */
+/** Every animation level id, most flair → least (index === rank), for iteration / validation. */
 export const ANIMATION_LEVEL_IDS = ANIMATION_LEVELS.map((l) => l.id) as AnimationLevel[];
 
-/** The default animation level — everything on, so the shipped experience is unchanged. */
-export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'full';
+/** The default animation level — everything on, so the shipped all-effects experience is unchanged. */
+export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'headache';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link AnimationLevel}. */
 export function normaliseAnimationLevel(value: string): AnimationLevel {
@@ -207,13 +209,13 @@ export function suppressesMotion(level: AnimationLevel): boolean {
 /**
  * Whether the app's **ambient decorations** — the drifting starfield, the accent glow, and the
  * animated background weather layer — are switched off *entirely* at this level (not merely frozen),
- * i.e. Off and calmer. Mirrors the `data-anim-level='off'|'headache'` CSS that hides the starfield /
- * accent glow; the JS-driven weather layer reads it to render nothing at those tiers. The third
- * threshold on the level, alongside {@link suppressesFlourish} (Balanced+) and
+ * i.e. Minimal and calmer. Mirrors the `data-anim-level='minimal'|'off'` CSS that hides the
+ * starfield / accent glow; the JS-driven weather layer reads it to render nothing at those tiers.
+ * The third threshold on the level, alongside {@link suppressesFlourish} (Balanced+) and
  * {@link suppressesMotion} (Calm+).
  */
 export function suppressesAmbient(level: AnimationLevel): boolean {
-  return animationLevelRank(level) >= animationLevelRank('off');
+  return animationLevelRank(level) >= animationLevelRank('minimal');
 }
 
 /**
@@ -228,8 +230,9 @@ export function suppressesAmbient(level: AnimationLevel): boolean {
  *
  * The particle colours come from the `--precip-rain` / `--precip-snow` tokens (light + dark) in
  * `styles/index.css`. The effect is decorative (aria-hidden, pointer-events-none) and honours the
- * animation level: it animates at Full/Balanced, holds a static frame at Calm ({@link suppressesMotion}),
- * and is removed entirely at Off/Headache ({@link suppressesAmbient}) — like the starfield.
+ * animation level: it animates at the livelier tiers, holds a static frame at Calm
+ * ({@link suppressesMotion}), and is removed entirely at Minimal/Off ({@link suppressesAmbient}) —
+ * like the starfield.
  */
 export const BACKGROUND_EFFECTS = [
   { id: 'none', label: 'None' },

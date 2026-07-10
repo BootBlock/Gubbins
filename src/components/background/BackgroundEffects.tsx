@@ -11,9 +11,9 @@
  * - **Off by default.** When the effect is `none` nothing renders — no canvas, no listeners, no
  *   frames — so the baseline is completely untouched.
  * - **Animation level.** The layer is an ambient decoration, so it tracks the graded animation
- *   level exactly like the starfield: it animates at Full/Balanced, holds a single calm static
+ *   level exactly like the starfield: it animates at the livelier tiers, holds a single static
  *   frame at Calm (folded into {@link useDecorationMotionReduced} with the OS `prefers-reduced-
- *   motion` setting), and drops out entirely at Off/Headache (`suppressesAmbient`). A canvas is
+ *   motion` setting), and drops out entirely at Minimal/Off (`suppressesAmbient`). A canvas is
  *   invisible to the CSS `data-anim-level` / reduced-motion catch-alls, so these gates are applied
  *   here in JS.
  * - **Theme-correct.** The engine reads its colours from the `--precip-*` tokens; a light/dark
@@ -29,7 +29,7 @@ import { startPrecip, type PrecipController } from './precip-engine';
 export function BackgroundEffects() {
   const effect = usePreferencesStore((s) => s.backgroundEffect);
   const reduced = useDecorationMotionReduced();
-  // Off/Headache switch ambient decorations off entirely (not just freeze them), like the starfield.
+  // Minimal/Off switch ambient decorations off entirely (not just freeze them), like the starfield.
   const ambientOff = usePreferencesStore((s) => suppressesAmbient(s.animationLevel));
   // Theme-affecting prefs: a change re-reads the token colours (no pool reset).
   const mode = usePreferencesStore((s) => s.mode);
