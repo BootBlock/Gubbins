@@ -1472,6 +1472,53 @@
   box-shadow: 0 0 calc(var(--s, 3px) * 1.6) color-mix(in oklab, var(--star) 80%, transparent);
 }
 
+/* ── View transitions (visual-flair F6) ──────────────────────────────────────────────
+ * The View Transitions API dissolves the two big discrete swaps — top-level route
+ * navigations and the inventory density (Visual ↔ Data) restyle — so they read as a
+ * deliberate cross-fade rather than a hard cut. The whole decision lives in one gated seam
+ * (`components/foundry/view-transition.ts`): the JS side skips `startViewTransition`
+ * entirely where the API is unavailable or the user prefers reduced motion (progressive
+ * enhancement — the update runs directly, falling back to the existing `animate-rise` page
+ * entrance / list swaps), so these rules only ever run when motion is permitted.
+ *
+ * Only the default `root` capture is styled — no element carries a `view-transition-name`,
+ * so the virtualised inventory rows (which recycle on scroll) are never named: a per-row
+ * name would be a correctness/perf trap. The whole page cross-fades; unchanged chrome
+ * (sidebar, header) fades identical-to-identical and so reads as untouched. Timing is the
+ * signature emphasized ease at the `animate-rise` page-entrance duration it composes with,
+ * so the incoming screen's rise and the cross-fade move in lockstep rather than fighting. */
+::view-transition-old(root) {
+  animation: gubbins-vt-out 0.3s var(--ease-emphasized) both;
+}
+
+::view-transition-new(root) {
+  animation: gubbins-vt-in 0.3s var(--ease-emphasized) both;
+}
+
+@keyframes gubbins-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes gubbins-vt-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Route navigations carry the `gubbins-route` transition type, and every screen's <main>
+ * plays the `animate-rise` entrance on mount. During a route cross-fade the two would stack
+ * (the incoming screen fading via `::view-transition-new(root)` *and* rising in on its own
+ * opacity/transform) — so suppress the rise for the duration of the cross-fade and let the
+ * dissolve be the sole entrance. `:active-view-transition-type()` matches only while that
+ * transition runs, so the rise is untouched on a normal (non-transitioned) mount; browsers
+ * without view-transition-types simply fall back to the (harmless, matched-timing) compose.
+ * The density restyle carries no type, so its transitions never match this rule. */
+:root:active-view-transition-type(gubbins-route) .animate-rise {
+  animation: none;
+}
+
 /*
  * Reduced-motion safety net (spec §3 accessible UI; WCAG 2.3.3 Animation from
  * Interactions). The app is deliberately animation-rich, but a user who asks their OS
@@ -1504,6 +1551,16 @@
   /* Loading spinners convey "work in progress" — keep them spinning. */
   .animate-spin {
     animation: gubbins-spin 0.8s linear infinite !important;
+  }
+
+  /* View-transition pseudo-elements live in a separate pseudo-tree the universal `*` rule
+   * above cannot reach, so neutralise them explicitly (belt-and-braces on top of the JS
+   * seam, which already skips `startViewTransition` under reduced motion). A cross-fade
+   * snaps instantly — no dissolve — for these users. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 

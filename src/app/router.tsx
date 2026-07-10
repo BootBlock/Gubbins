@@ -1,5 +1,6 @@
 import { createRouter } from '@tanstack/react-router';
 import { routeTree } from '@/routeTree.gen';
+import { resolveRouteViewTransitionTypes } from '@/components/foundry/view-transition';
 
 /**
  * The type-safe client-side router (spec §2.4.2). `routeTree` is generated from
@@ -22,6 +23,13 @@ export const router = createRouter({
   basepath,
   defaultPreload: 'intent',
   scrollRestoration: true,
+  // Cross-fade every top-level screen navigation via the View Transitions API (visual-flair
+  // F6). The gate lives in one place: `resolveRouteViewTransitionTypes` returns `false` — so
+  // TanStack Router runs the navigation directly, with no `startViewTransition` — where the
+  // API is unavailable or the user prefers reduced motion, and only cross-fades on an actual
+  // pathname change (not an in-screen search/hash update). The cross-fade itself is styled on
+  // the `::view-transition-*` pseudo-elements in `styles/index.css`.
+  defaultViewTransition: { types: resolveRouteViewTransitionTypes },
 });
 
 declare module '@tanstack/react-router' {
