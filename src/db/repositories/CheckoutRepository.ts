@@ -17,7 +17,7 @@ import { DbError } from '../errors';
 import { SQL_NOW_MS } from '../migrations';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, type RepositoryOptions } from './base';
-import type { CheckoutStatus } from './constants';
+import type { CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
 import { stockRowId } from './stock';
 import {
@@ -69,6 +69,25 @@ export function onLoanCheckoutExistsSql(): string {
     WHERE k.item_id = items.id
       AND k.returned_at IS NULL
   )`;
+}
+
+/**
+ * Optional facets captured when a loan is returned (§4 Borrowing).
+ *
+ * A single options object rather than positional args so the return flow can grow more
+ * captured state (condition, note, and future recount/maintenance flags) without churning
+ * the signature at every call site. Both fields are optional — `checkIn(id)` with no options
+ * is the fast one-tap return.
+ */
+export interface CheckInOptions {
+  /** Free-text return remark; stored in the checkout's own `return_note` column (B1). */
+  readonly note?: string;
+  /**
+   * The item's condition *on return* (B2). When supplied and different from the item's current
+   * condition, updates `items.condition` and logs `CONDITION_CHANGED` in the same transaction.
+   * Omitted leaves the condition untouched.
+   */
+  readonly condition?: Condition;
 }
 
 export class CheckoutRepository extends BaseRepository {
@@ -227,8 +246,18 @@ export class CheckoutRepository extends BaseRepository {
     return (await this.getById(id))!;
   }
 
-  /** Return an open checkout: restore stock, stamp `returned_at`, log `CHECKED_IN`. */
-  async checkIn(checkoutId: string, note?: string): Promise<Checkout> {
+  /**
+   * Return an open checkout: restore stock, stamp `returned_at`, log `CHECKED_IN`.
+   *
+   * Optional `note` records a free-text return remark in the checkout's own `return_note`
+   * column (never the loan note — see B1). Optional `condition` captures the item's state
+   * *on return* (B2): when supplied and different from the item's current condition, it
+   * updates `items.condition` and logs a `CONDITION_CHANGED` row in the same transaction —
+   * a returned tool is frequently in a different state (blunt, chipped, now due calibration).
+   * Leaving `condition` unset never touches the item, preserving the fast one-tap return.
+   */
+  async checkIn(checkoutId: string, options: CheckInOptions = {}): Promise<Checkout> {
+    const { note, condition } = options;
     const existing = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
       checkoutId,
     ]);
@@ -239,10 +268,11 @@ export class CheckoutRepository extends BaseRepository {
       return rowToCheckout(existing); // already returned — idempotent
     }
 
-    const item = await this.driver.queryOne<{ location_id: string; tracking_mode: string }>(
-      'SELECT location_id, tracking_mode FROM items WHERE id = ?;',
-      [existing.item_id],
-    );
+    const item = await this.driver.queryOne<{
+      location_id: string;
+      tracking_mode: string;
+      condition: string | null;
+    }>('SELECT location_id, tracking_mode, condition FROM items WHERE id = ?;', [existing.item_id]);
     // SERIALISED stock was never decremented (it is pinned to 1), so it is not restored.
     // The loan is returned to *where it was lent from* (Phase 26): the stored source
     // placement, or the item's current primary location when no source was recorded (or
@@ -256,6 +286,13 @@ export class CheckoutRepository extends BaseRepository {
     const restoreIdentity = existing.source_batch_key
       ? batchIdentityFromKey(existing.source_batch_key)
       : UNTRACKED_BATCH;
+
+    // Condition on return (B2): only when a condition was supplied *and* it differs from the
+    // item's current one do we record a change — mirroring `ItemRepository.update`'s guard so a
+    // return that re-affirms the same condition logs no spurious `CONDITION_CHANGED`. Leaving it
+    // unset (undefined) never touches the item, keeping the empty submit a pure one-tap return.
+    const currentCondition = item?.condition ?? null;
+    const conditionChanged = condition !== undefined && condition !== currentCondition;
 
     await this.driver.transaction([
       ...(restoreDelta > 0 && restoreLocationId
@@ -273,6 +310,21 @@ export class CheckoutRepository extends BaseRepository {
         note: note?.trim() || `Returned ${existing.quantity} from loan.`,
         metadata: { checkoutId },
       }),
+      // The condition change rides in the same transaction as the return + stock restore, so a
+      // returned tool's new state is atomic with its check-in. `updated_at` self-stamps via the
+      // items trigger (the UPDATE leaves it untouched), exactly as `ItemRepository.update` relies on.
+      ...(conditionChanged
+        ? [
+            {
+              sql: `UPDATE items SET condition = ? WHERE id = ?;`,
+              params: [condition, existing.item_id] as SqlValue[],
+            },
+            historyStatement(existing.item_id, 'CONDITION_CHANGED', {
+              note: `Condition changed ${currentCondition ? `from "${currentCondition}" ` : ''}to "${condition}" on return.`,
+              metadata: { from: currentCondition, to: condition, checkoutId },
+            }),
+          ]
+        : []),
     ]);
     return (await this.getById(checkoutId))!;
   }

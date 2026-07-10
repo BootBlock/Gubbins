@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { Button, FormField, Input, Modal, Textarea } from '@/components/foundry';
+import { Button, FormField, Input, Modal, Spinner, Textarea } from '@/components/foundry';
 import { DeleteIcon } from '@/components/icons';
-import type { Contact } from '@/db/repositories';
-import { useUpdateContact } from '../contacts';
+import type { Contact, CheckoutWithNames } from '@/db/repositories';
+import { useFormatters } from '@/lib/useFormatters';
+import { useContactCheckouts, useUpdateContact } from '../contacts';
 
 /**
  * Edit an existing contact's details: rename them, and fill in the optional metadata
@@ -135,6 +136,8 @@ export function EditContactDialog({
           />
         </FormField>
 
+        <LoanHistory contactId={contact.id} />
+
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -166,5 +169,74 @@ export function EditContactDialog({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * This contact's borrowing history (spec §4) — every item they have out or have returned,
+ * newest/open first. It is the home for the loan note and the *return* note (B1): both are
+ * recorded on a checkout but were previously never displayed. A loan carries the reason it
+ * went out ("for the Henderson job") and a return can carry its own remark ("chipped blade,
+ * now due calibration", B2), and both survive independently — so both are surfaced here.
+ */
+function LoanHistory({ contactId }: { contactId: string }) {
+  const history = useContactCheckouts(contactId);
+  const rows = history.data?.rows ?? [];
+
+  return (
+    <section className="space-y-2" aria-label="Loan history">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loan history</h3>
+      {history.isLoading ? (
+        <Spinner />
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing borrowed yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((c) => (
+            <LoanHistoryRow key={c.id} checkout={c} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function LoanHistoryRow({ checkout }: { checkout: CheckoutWithNames }) {
+  const fmt = useFormatters();
+  const returned = checkout.returnedAt !== null;
+  // Status reads at a glance from a token-tinted chip: overdue (danger) / on loan (primary) /
+  // returned (muted). Colour is never the sole signal — the label always reads (WCAG 1.4.1).
+  const status = checkout.isOverdue
+    ? { label: 'Overdue', className: 'bg-destructive/15 text-destructive' }
+    : returned
+      ? { label: 'Returned', className: 'bg-secondary text-muted-foreground' }
+      : { label: 'On loan', className: 'bg-primary/15 text-primary' };
+
+  return (
+    <li className="rounded-lg border border-border bg-card p-3 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate font-medium">
+          {checkout.quantity > 1 ? `${checkout.quantity} × ` : ''}
+          {checkout.itemName}
+        </span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${status.className}`}>
+          {status.label}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Out {fmt.date(checkout.checkedOutAt)}
+        {returned ? ` · returned ${fmt.date(checkout.returnedAt!)}` : ''}
+      </p>
+      {checkout.note ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          <span className="font-medium">Loan note:</span> “{checkout.note}”
+        </p>
+      ) : null}
+      {checkout.returnNote ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          <span className="font-medium">Return note:</span> “{checkout.returnNote}”
+        </p>
+      ) : null}
+    </li>
   );
 }
