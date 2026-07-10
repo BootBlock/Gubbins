@@ -113,10 +113,12 @@ describe('startPrecip', () => {
     ctrl.stop();
   });
 
-  it('falls in depth layers — near drops fall faster than far ones (parallax)', () => {
+  it('falls in depth layers — near drops fall faster than far/back ones (parallax)', () => {
     // Pin depth so every drop shares one z, then measure how far particle 0 falls in one 16ms
     // step. Rain's vertical velocity is the pure depth-scaled fall speed (no vertical turbulence),
-    // so a near layer must advance markedly more than a far one.
+    // so a near layer must advance markedly more than a far one. The 0.1 sample also falls below
+    // deepLayerFraction, so those drops land in a deep-background layer — slower still, which only
+    // widens the gap the assertion checks.
     const fallOverOneStep = (z: number): number => {
       vi.spyOn(Math, 'random').mockReturnValue(z);
       rafQueue = [];
@@ -136,6 +138,28 @@ describe('startPrecip', () => {
     expect(near).toBeGreaterThan(0);
     expect(far).toBeGreaterThan(0);
     expect(near).toBeGreaterThan(far * 1.8);
+  });
+
+  it('has deep-background layers that fall slower than the main field', () => {
+    // How far particle 0 falls in one 16ms step for a pinned depth sample.
+    const fallOverOneStep = (sample: number): number => {
+      vi.spyOn(Math, 'random').mockReturnValue(sample);
+      rafQueue = [];
+      const rec = makeCtx();
+      const ctrl = startPrecip(makeCanvas(rec), { kind: 'rain', reduced: false });
+      pump(16);
+      pump(32);
+      ctrl.stop();
+      vi.restoreAllMocks();
+      const perFrame = rec.translates.length / 2;
+      return rec.translates[perFrame][1] - rec.translates[0][1];
+    };
+    // 0.05 < deepLayerFraction → every drop spawns in a deep-background layer (depth < 0).
+    const deep = fallOverOneStep(0.05);
+    // 0.2 ≥ deepLayerFraction → main field, and near its slow back edge.
+    const mainBack = fallOverOneStep(0.2);
+    expect(deep).toBeGreaterThan(0); // still falling, not frozen or reversed
+    expect(deep).toBeLessThan(mainBack); // …but slower than the main field's back layer
   });
 
   it('rotates near snow crystals around their centre', () => {
