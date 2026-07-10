@@ -1507,6 +1507,18 @@
   }
 }
 
+/* Route navigations carry the `gubbins-route` transition type, and every screen's <main>
+ * plays the `animate-rise` entrance on mount. During a route cross-fade the two would stack
+ * (the incoming screen fading via `::view-transition-new(root)` *and* rising in on its own
+ * opacity/transform) — so suppress the rise for the duration of the cross-fade and let the
+ * dissolve be the sole entrance. `:active-view-transition-type()` matches only while that
+ * transition runs, so the rise is untouched on a normal (non-transitioned) mount; browsers
+ * without view-transition-types simply fall back to the (harmless, matched-timing) compose.
+ * The density restyle carries no type, so its transitions never match this rule. */
+:root:active-view-transition-type(gubbins-route) .animate-rise {
+  animation: none;
+}
+
 /*
  * Reduced-motion safety net (spec §3 accessible UI; WCAG 2.3.3 Animation from
  * Interactions). The app is deliberately animation-rich, but a user who asks their OS
