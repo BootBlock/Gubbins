@@ -81,14 +81,24 @@ const TUNING = {
     min: 40,
     max: 240,
     /**
-     * Vertical fall speed range (css px/s), lerped by depth (far = slow, near = fast). The range is
-     * deliberately wide (near ≈ 3.7× the far speed) so the depth layers read as clearly different
-     * fall speeds — the parallax cue. Critically, streak *length* is NOT tied to this speed (see
-     * {@link windStretchGain} below), so a fast near-drop isn't drawn proportionally longer, which would
-     * cancel the very speed difference we want to show. The two {@link deepLayers} sit *behind* this
-     * range (depth < 0) and so fall slower still. Kept deliberately gentle.
+     * ── THE rain-speed knob ──────────────────────────────────────────────────────────────────
+     * `fallSpeed` is the single value to change to make rain faster or slower: it is the foreground
+     * (nearest) fall speed in css px/s, and *every other rain speed derives from it* — the distant
+     * main layers fall {@link depthSpeedRatio} × `fallSpeed`, and the deep-background
+     * {@link deepLayers} extrapolate slower still. So lowering this one number makes the whole field
+     * gentler while keeping the depth parallax intact; raising it makes all layers faster together.
      */
-    speed: [231, 853] as const,
+    fallSpeed: 853,
+    /**
+     * The most-distant main layer falls this fraction of {@link fallSpeed}; a drop's actual fall
+     * speed is lerped between `fallSpeed × depthSpeedRatio` (far) and `fallSpeed` (near) by its
+     * depth. This controls how pronounced the depth→speed parallax is (smaller ⇒ a wider spread
+     * between the fast foreground and the slow background), not the overall speed — change
+     * {@link fallSpeed} for that. Streak *length* is deliberately NOT tied to fall speed (see
+     * {@link windStretchGain}), so faster near-drops aren't drawn longer in a way that would mask
+     * the very speed difference this creates.
+     */
+    depthSpeedRatio: 0.27,
     /** Baseline wind lean as a fraction of fall speed, before gusts. */
     baseLean: 0.1,
     /** Extra lean a full gust adds (fraction of fall speed); flurries amplify it. */
@@ -557,7 +567,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
 
   function stepRain(p: Particle, dt: number): void {
     const t = TUNING.rain;
-    const fall = lerp(t.speed[0], t.speed[1], p.z);
+    // Far layers fall a fraction of the foreground fallSpeed; depth lerps between them (deep layers,
+    // depth < 0, extrapolate slower still). All of it scales with the single {@link fallSpeed} knob.
+    const fall = lerp(t.fallSpeed * t.depthSpeedRatio, t.fallSpeed, p.z);
     const lean = t.baseLean + frameGust * t.gustLean * (0.6 + frameFlurry * 0.7);
     const c = curlField(p.x, p.y, elapsed);
     p.vx = fall * lean + c.x * t.turb * p.z;
