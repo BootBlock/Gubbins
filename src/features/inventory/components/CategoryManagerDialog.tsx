@@ -10,7 +10,7 @@ import {
   Tooltip,
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
-import { AddIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
+import { AddIcon, CloseIcon, DeleteIcon, InfoIcon, ToolsIcon } from '@/components/icons';
 import {
   FIELD_TYPES,
   TRACKING_MODES,
@@ -29,6 +29,12 @@ import {
   useDeleteCategoryField,
   useUpdateCategory,
 } from '../categories';
+import {
+  applyCategoryStarterSeed,
+  hasCategoryNamed,
+  TOOLS_STARTER_CATEGORY_NAME,
+  TOOLS_STARTER_SEED,
+} from '../tools-starter-seed';
 import {
   ATTACHMENT_MODE_LABELS,
   conditionSelectOptions,
@@ -126,6 +132,7 @@ function CategoryManagerBody() {
             ))
           )}
         </ul>
+        <ToolsStarterButton existingNames={rows.map((c) => c.name)} onSeeded={(id) => setSelectedId(id)} />
       </div>
 
       {/* Selected category detail */}
@@ -145,6 +152,50 @@ function CategoryManagerBody() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * One-tap "Add a Tools category" affordance (backlog T4). A convenience/discoverability
+ * shortcut that materialises the {@link TOOLS_STARTER_SEED} — a category pre-wired with
+ * the T1/T2 facet defaults and a couple of tool-ish custom fields — through the ordinary
+ * create-category / add-field mutation path (no bespoke repository method).
+ *
+ * Idempotent by construction: it hides itself once a category named "Tools" exists, so a
+ * second tap can never create a duplicate.
+ */
+function ToolsStarterButton({
+  existingNames,
+  onSeeded,
+}: {
+  existingNames: readonly string[];
+  onSeeded: (categoryId: string) => void;
+}) {
+  const createCategory = useCreateCategory();
+  const addField = useAddCategoryField();
+
+  if (hasCategoryNamed(existingNames, TOOLS_STARTER_CATEGORY_NAME)) return null;
+
+  const pending = createCategory.isPending || addField.isPending;
+
+  const seed = () =>
+    void applyCategoryStarterSeed(TOOLS_STARTER_SEED, {
+      createCategory: (input) => createCategory.mutateAsync(input),
+      addField: (categoryId, input) => addField.mutateAsync({ categoryId, input }),
+    }).then(onSeeded);
+
+  return (
+    <Tooltip
+      content="Create a ready-made **Tools** category — serialised tracking, a 12-month warranty window, and *Serial number* & *Calibration certificate* fields — that you can tweak afterwards."
+      triggerTabIndex={-1}
+    >
+      <span className="block">
+        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={seed} disabled={pending}>
+          <ToolsIcon />
+          Add a Tools category
+        </Button>
+      </span>
+    </Tooltip>
   );
 }
 
