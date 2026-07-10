@@ -46,6 +46,8 @@ export {
   Pencil as EditIcon,
   Star as PreferredIcon,
   StarOff as NotPreferredIcon,
+  // Decorative rarity gem for the "Collector cards" gamification (Appearance flair).
+  Gem as RarityIcon,
   FolderTree as MoveIcon,
   Search as SearchIcon,
   ChevronRight as ChevronRightIcon,

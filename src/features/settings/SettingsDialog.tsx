@@ -319,6 +319,51 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             />
           </SettingRow>
           <SettingRow
+            label="Holographic foil cards"
+            description="Give item cards a rainbow trading-card foil shimmer on hover."
+            hint={
+              'Turns the sheen that plays across an item card as you hover it into a shifting ' +
+              '**rainbow foil**, like light catching a holographic trading card — the glow and the ' +
+              'edge sheen go prismatic and slide as you move the pointer.\n\n' +
+              'It’s part of the **I have a headache** animation level (the maximal one), so — like ' +
+              'the card tilt it rides on — it only appears at that level, on a mouse/trackpad, and ' +
+              'never when your system prefers reduced motion. Purely decorative. Turn it off to keep ' +
+              'the plain single-colour sheen.'
+            }
+          >
+            <Select
+              aria-label="Holographic foil cards"
+              data-testid="setting-holographic-cards"
+              className="h-9 w-40"
+              value={prefs.holographicCards ? 'on' : 'off'}
+              onChange={(value) => prefs.setHolographicCards(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Collector cards"
+            description="Dress each item card as a collectible card with a rarity tier."
+            hint={
+              'Makes the inventory feel like a collection: each card is dressed as a **collectible ' +
+              'trading card** with a decorative **rarity** — Common, Uncommon, Rare, Epic or ' +
+              'Legendary — shown as a matching gem and a tinted frame. The tier comes from how ' +
+              'valuable that item’s stock is, so pricier piles read as rarer (Legendary cards even ' +
+              'get a gentle glow).\n\n' +
+              'It’s purely for fun and never changes any real data or figure — the rarity always ' +
+              'shows its word next to its colour. Like the foil above, it’s part of the **I have a ' +
+              'headache** animation level and only appears at that level. Turn it off any time.'
+            }
+          >
+            <Select
+              aria-label="Collector cards"
+              data-testid="setting-gamify-cards"
+              className="h-9 w-40"
+              value={prefs.gamifyCards ? 'on' : 'off'}
+              onChange={(value) => prefs.setGamifyCards(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
             label="Base currency"
             description="Used for all financial tracking and BOM costs."
             hint={

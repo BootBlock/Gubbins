@@ -201,6 +201,21 @@
   --precip-rain: oklch(0.55 0.06 245);
   --precip-snow: oklch(0.83 0.012 250);
 
+  /*
+   * Collector-card rarity palette (the "Collector cards" Appearance gamification). Five tiers,
+   * Common → Legendary, drawn from an item's stock value by the pure `rarity.ts` seam and used
+   * only to *decorate* the card (a tinted frame + a corner gem) at the maximal "I have a headache"
+   * animation level. A trading-card gradient of hue + saturation: neutral slate for Common, rising
+   * through green / blue / violet to a warm gold for Legendary. On the near-white light surface
+   * these sit darker/more saturated to stay legible; the .dark block lifts them. Purely decorative
+   * and always paired with the tier's word (WCAG 1.4.1) — colour is never the sole signal.
+   */
+  --rarity-common: oklch(0.55 0.02 260);
+  --rarity-uncommon: oklch(0.58 0.14 150);
+  --rarity-rare: oklch(0.55 0.16 250);
+  --rarity-epic: oklch(0.55 0.2 300);
+  --rarity-legendary: oklch(0.66 0.15 80);
+
   --radius: 0.65rem;
 }
 
@@ -309,6 +324,14 @@
    * near-black surface (see :root for the rationale). */
   --precip-rain: oklch(0.82 0.045 240);
   --precip-snow: oklch(0.97 0.006 250);
+
+  /* Collector-card rarity palette, dark-theme variant — lifted brighter/lighter to read on the
+   * near-black surface (see :root for the rationale and the hue progression). */
+  --rarity-common: oklch(0.72 0.02 260);
+  --rarity-uncommon: oklch(0.76 0.14 150);
+  --rarity-rare: oklch(0.72 0.15 250);
+  --rarity-epic: oklch(0.72 0.18 300);
+  --rarity-legendary: oklch(0.83 0.15 85);
 }
 
 /*
@@ -721,6 +744,15 @@
   --color-abc-a: var(--abc-a);
   --color-abc-b: var(--abc-b);
   --color-abc-c: var(--abc-c);
+
+  /* Collector-card rarity tiers → `text-rarity-*` / `border-rarity-*` utilities for the gamified
+   * card frame + gem. The `.gubbins-rarity[data-rarity]` blocks below also fold these into one
+   * `--rarity` var so the frame can read a single tier colour. */
+  --color-rarity-common: var(--rarity-common);
+  --color-rarity-uncommon: var(--rarity-uncommon);
+  --color-rarity-rare: var(--rarity-rare);
+  --color-rarity-epic: var(--rarity-epic);
+  --color-rarity-legendary: var(--rarity-legendary);
 
   /* Condition "Good" lime → `text-cond-good` (the one condition hue not already a
    * semantic token; Mint/Out-for-calibration/Needs-repair use success/warning/destructive). */
@@ -1555,6 +1587,152 @@
    opt out of their decorative layer in that mode. */
 [data-contrast='high'] .gubbins-tilt::after {
   display: none;
+}
+
+/*
+ * Holographic foil item cards ("Holographic foil" Appearance flair; `data-holo-cards` on <html>).
+ * Turns the plain single-hue hover glare into a shifting rainbow **trading-card foil**: a diagonal
+ * iridescent sweep plus a bright specular bloom, both anchored to the pointer via the same
+ * `--tilt-gx/gy` vars the tilt writes, so leaning the card slides the spectrum across its face —
+ * exactly how light plays over a real foil card. The edge "sheen" (the F5 spotlight comet) is
+ * recoloured to a prismatic arc to match.
+ *
+ * It rides ON the F7 tilt glare (`.gubbins-tilt::after`) and the F5 spotlight comet
+ * (`.gubbins-spotlight-border::before`), both of which are already hidden at any calmer animation
+ * level (`:root[data-anim-level] …{display:none}` below), so the foil is automatically confined to
+ * the maximal "I have a headache" tier — no extra level gate needed here. The active rules stay
+ * inside the same `(pointer: fine) and (prefers-reduced-motion: no-preference)` guard as the tilt,
+ * so touch / reduced-motion users see nothing, and high-contrast still drops the glare wash above.
+ * Purely decorative; it never touches the focus ring, hover-lift or selection ring.
+ */
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  :root[data-holo-cards] .gubbins-tilt::after {
+    /* Two blended layers: a pointer-tracked white bloom over a diagonal repeating rainbow. The
+       rainbow is oversized and offset opposite the pointer so it drifts as the card tilts.
+       The rainbow stops are raw `oklch()` on purpose — this is a full-spectrum physical *foil*
+       simulation, not a themeable brand colour, so it is deliberately identical in light and dark
+       and no design token could reasonably apply (the same reasoning as the spotlight mask's raw
+       `#000` and the print block's raw ink values). The card's own accent tokens still drive the
+       plain (non-foil) glare and the F5 comet. */
+    background:
+      radial-gradient(
+        circle at var(--tilt-gx, 50%) var(--tilt-gy, 50%),
+        color-mix(in oklab, white 55%, transparent),
+        transparent 42%
+      ),
+      repeating-linear-gradient(
+        115deg,
+        color-mix(in oklab, oklch(0.85 0.2 20) 55%, transparent) 0%,
+        color-mix(in oklab, oklch(0.85 0.2 90) 55%, transparent) 14%,
+        color-mix(in oklab, oklch(0.85 0.2 160) 55%, transparent) 28%,
+        color-mix(in oklab, oklch(0.85 0.2 230) 55%, transparent) 42%,
+        color-mix(in oklab, oklch(0.85 0.2 300) 55%, transparent) 56%,
+        color-mix(in oklab, oklch(0.85 0.2 350) 55%, transparent) 70%
+      );
+    /* The bloom keeps its natural size — its centre is already the pointer via the gradient's
+       `at` — while the rainbow is oversized and slid opposite the pointer so it drifts on tilt. */
+    background-size:
+      100% 100%,
+      300% 300%;
+    background-position:
+      0 0,
+      calc(var(--tilt-gx, 50%) * -1) calc(var(--tilt-gy, 50%) * -1);
+    background-blend-mode: screen;
+    /* `color-dodge` lifts the foil to a bright metallic iridescence over the card face without
+       washing the text (the layer sits behind content and fades in only on hover). */
+    mix-blend-mode: color-dodge;
+  }
+  /* A touch stronger than the plain glare (which tops out at opacity:1 soft-light) but held below
+     full so the card's own content always stays legible through the foil. */
+  :root[data-holo-cards] .gubbins-tilt:hover::after {
+    opacity: 0.55;
+  }
+}
+
+/* Prismatic edge sheen: recolour the F5 spotlight comet to a rainbow arc under the foil. Inherits
+   the same `@property`-driven rotation + reduced-motion/high-contrast handling as the base comet. */
+:root[data-holo-cards] .gubbins-spotlight-border::before {
+  background: conic-gradient(
+    from var(--gubbins-spotlight-angle),
+    transparent 30deg,
+    color-mix(in oklab, oklch(0.82 0.2 20) 85%, transparent) 70deg,
+    color-mix(in oklab, oklch(0.85 0.2 150) 85%, transparent) 120deg,
+    color-mix(in oklab, oklch(0.82 0.2 280) 85%, transparent) 175deg,
+    transparent 220deg
+  );
+}
+
+/*
+ * Collector-card rarity gamification ("Collector cards" Appearance flair; `data-gamify-cards` on
+ * <html>). Dresses each inventory card as a collectible trading card: its border is tinted with a
+ * decorative **rarity** tier (Common → Legendary, from the pure `rarity.ts` seam) and a matching
+ * rarity gem badge appears beside the tracking pills. The `data-rarity` attribute the card carries
+ * folds the tier's `--rarity-<id>` token into one inherited `--rarity` var the frame + badge read.
+ *
+ * Gated to the maximal "I have a headache" tier via `:not([data-anim-level])` (the headache level
+ * is the one that sets no such attribute) AND-ed with `data-gamify-cards`, so a calmer level or the
+ * toggle-off state shows nothing — and, being static (no motion), it needs no reduced-motion gate,
+ * exactly like the per-location tint. Purely decorative and redundant with the item's real value
+ * (the tier word always shows alongside its colour — WCAG 1.4.1). The badge is `display:none` at
+ * rest, so it stays out of the accessibility tree until the feature is actually on.
+ */
+.gubbins-rarity[data-rarity='common'] {
+  --rarity: var(--rarity-common);
+}
+.gubbins-rarity[data-rarity='uncommon'] {
+  --rarity: var(--rarity-uncommon);
+}
+.gubbins-rarity[data-rarity='rare'] {
+  --rarity: var(--rarity-rare);
+}
+.gubbins-rarity[data-rarity='epic'] {
+  --rarity: var(--rarity-epic);
+}
+.gubbins-rarity[data-rarity='legendary'] {
+  --rarity: var(--rarity-legendary);
+}
+
+.gubbins-rarity-badge {
+  display: none;
+  color: var(--rarity);
+  border-color: color-mix(in oklab, var(--rarity) 45%, transparent);
+  background-color: color-mix(in oklab, var(--rarity) 14%, transparent);
+}
+
+:root[data-gamify-cards]:not([data-anim-level]) .gubbins-rarity-badge {
+  display: inline-flex;
+}
+/* Tint the card's own 1px border to its rarity colour — a subtle collectible frame that composes
+   with Surface's shadow/blur (only the border *colour* changes, never the box). */
+:root[data-gamify-cards]:not([data-anim-level]) .gubbins-rarity {
+  border-color: color-mix(in oklab, var(--rarity) 40%, var(--border));
+}
+
+/* High-contrast mode keeps the readable rarity gem but restores the accessibility border (the
+   bold neutral frame that mode relies on), rather than the decorative rarity tint. All three
+   flags sit on the same <html> root, so they compose into one compound selector. */
+:root[data-contrast='high'][data-gamify-cards]:not([data-anim-level]) .gubbins-rarity {
+  border-color: var(--border);
+}
+
+/* Legendary cards get a gentle pulsing gem glow — the one flourish reserved for the top tier.
+   Motion only, so it sits behind the reduced-motion guard (belt-and-braces with the global
+   catch-all, which also clamps it). */
+@keyframes gubbins-rarity-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 8px 0 color-mix(in oklab, var(--rarity) 60%, transparent);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-gamify-cards]:not([data-anim-level])
+    .gubbins-rarity[data-rarity='legendary']
+    .gubbins-rarity-badge {
+    animation: gubbins-rarity-pulse 2.6s var(--ease-emphasized) infinite;
+  }
 }
 
 /*

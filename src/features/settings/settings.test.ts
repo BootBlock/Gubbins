@@ -45,6 +45,8 @@ const APPEARANCE: Appearance = {
   highContrast: false,
   animationLevel: 'headache',
   starfieldVariant: 'cosmic',
+  holographicCards: true,
+  gamifyCards: true,
 };
 
 describe('clampExpiryWindowDays', () => {
@@ -215,6 +217,8 @@ describe('applyAppearance', () => {
     delete root.dataset.reduceEffects;
     delete root.dataset.animLevel;
     delete root.dataset.starfield;
+    delete root.dataset.holoCards;
+    delete root.dataset.gamifyCards;
   });
 
   it('toggles .dark for the resolved mode and sets data-accent', () => {
@@ -277,6 +281,18 @@ describe('applyAppearance', () => {
     // The default look carries no attribute, so it falls back to the base --star* tokens.
     applyAppearance({ ...APPEARANCE, starfieldVariant: 'cosmic' }, root);
     expect(root.dataset.starfield).toBeUndefined();
+  });
+
+  it('sets/clears data-holo-cards + data-gamify-cards for the two card-flair switches', () => {
+    const root = document.createElement('div');
+    // On (the default) — both presence-only flags are set.
+    applyAppearance({ ...APPEARANCE, holographicCards: true, gamifyCards: true }, root);
+    expect(root.dataset.holoCards).toBe('');
+    expect(root.dataset.gamifyCards).toBe('');
+    // Off — both are cleared (the CSS then shows the plain sheen / no rarity frame).
+    applyAppearance({ ...APPEARANCE, holographicCards: false, gamifyCards: false }, root);
+    expect(root.dataset.holoCards).toBeUndefined();
+    expect(root.dataset.gamifyCards).toBeUndefined();
   });
 
   it('is idempotent on the .dark class', () => {

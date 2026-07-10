@@ -66,12 +66,24 @@ export interface Appearance {
    * `--star-flare` tokens; the `cosmic` default emits no attribute (the shipped look).
    */
   readonly starfieldVariant: StarfieldVariant;
+  /**
+   * Holographic-foil item cards (Appearance flair): projected as the presence-only
+   * `data-holo-cards` attribute (on = present). The CSS gates the foil to the maximal
+   * `headache` tier + a fine pointer + full motion, so the attribute alone never forces it on.
+   */
+  readonly holographicCards: boolean;
+  /**
+   * Collector-card rarity gamification (Appearance flair): projected as the presence-only
+   * `data-gamify-cards` attribute (on = present). The CSS shows the rarity frame/badge only at
+   * the maximal `headache` tier, so the attribute alone never forces it on at a calmer level.
+   */
+  readonly gamifyCards: boolean;
 }
 
 /**
  * Apply `appearance` to `root` (idempotent): toggle `.dark` for the resolved mode, set
- * `data-accent`, and set/clear `data-oled` / `data-contrast` / `data-reduce-effects` for the
- * three composable switches.
+ * `data-accent`, and set/clear `data-oled` / `data-contrast` / `data-reduce-effects` /
+ * `data-holo-cards` / `data-gamify-cards` for the composable switches.
  */
 export function applyAppearance(appearance: Appearance, root: HTMLElement = document.documentElement): void {
   const base = resolveMode(appearance.mode, systemPrefersDark());
@@ -94,4 +106,11 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   // carries no attribute; every other variant sets `data-starfield` for its CSS override block.
   if (appearance.starfieldVariant !== 'cosmic') root.dataset.starfield = appearance.starfieldVariant;
   else delete root.dataset.starfield;
+  // Appearance flair: presence-only flags for the holographic foil + collector-card gamification.
+  // The CSS scopes both to the maximal `headache` tier (and the foil to a fine pointer + full
+  // motion), so setting the attribute is necessary but not sufficient — a calmer level shows neither.
+  if (appearance.holographicCards) root.dataset.holoCards = '';
+  else delete root.dataset.holoCards;
+  if (appearance.gamifyCards) root.dataset.gamifyCards = '';
+  else delete root.dataset.gamifyCards;
 }

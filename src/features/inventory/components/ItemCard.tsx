@@ -11,10 +11,12 @@ import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
+import { RarityBadge } from './RarityBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldList } from './ItemCardFields';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
+import { itemRarity } from '../rarity';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -81,6 +83,10 @@ export const ItemCard = memo(function ItemCard({
   // glare, gated to fine pointers + full motion in one seam. Returns no handlers (nothing attached)
   // under reduced motion or on touch. Pure decoration — see `usePointerTilt`.
   const tiltProps = usePointerTilt();
+  // Decorative "Collector cards" rarity tier (Appearance flair). Pure + cheap; the frame/badge it
+  // drives are painted only by CSS when the toggle is on *and* the maximal animation level is
+  // active, so computing it always is harmless (an idle card carries the class but no visuals).
+  const rarity = itemRarity(item);
   return (
     <Surface
       ref={ref}
@@ -88,6 +94,7 @@ export const ItemCard = memo(function ItemCard({
       {...dragProps}
       {...tiltProps}
       onClick={onClick}
+      data-rarity={rarity}
       className={cn(
         // Surface's `interactive` supplies the transition + hover shadow; the card takes a
         // slightly bigger lift (`-translate-y-1`, twMerge keeps the last), and no hover
@@ -106,6 +113,10 @@ export const ItemCard = memo(function ItemCard({
         // is inert (and no handlers are attached). Its `transform` composes with the `-translate-y-1`
         // hover-lift (a `translate`) without clobbering it.
         'gubbins-tilt',
+        // Collector-card rarity frame (Appearance flair): pairs with `data-rarity` to tint the
+        // card's border to its rarity tier. Inert (no visuals) unless the gamify toggle is on and
+        // the maximal animation level is active — the CSS gates both the frame and the gem badge.
+        'gubbins-rarity',
         // Per-location accent tint (F10): a faint left-edge accent in this card's location swatch
         // so the grid reads location-clustered at a glance. A painted background layer (no border /
         // no pseudo — both taken by F5/F7), static, and undefined for an uncoloured location.
@@ -147,6 +158,7 @@ export const ItemCard = memo(function ItemCard({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <RarityBadge rarity={rarity} />
           <TrackingBadge mode={item.trackingMode} />
           {isUnlimited(item) ? <UnlimitedBadge /> : null}
         </div>

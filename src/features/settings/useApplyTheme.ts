@@ -17,8 +17,19 @@ export function useApplyTheme(): void {
   const highContrast = usePreferencesStore((s) => s.highContrast);
   const animationLevel = usePreferencesStore((s) => s.animationLevel);
   const starfieldVariant = usePreferencesStore((s) => s.starfieldVariant);
+  const holographicCards = usePreferencesStore((s) => s.holographicCards);
+  const gamifyCards = usePreferencesStore((s) => s.gamifyCards);
   useEffect(() => {
-    const appearance = { mode, accent, oledDark, highContrast, animationLevel, starfieldVariant };
+    const appearance = {
+      mode,
+      accent,
+      oledDark,
+      highContrast,
+      animationLevel,
+      starfieldVariant,
+      holographicCards,
+      gamifyCards,
+    };
     applyAppearance(appearance);
     // Only the 'system' mode tracks the OS; an explicit choice needs no listener.
     if (mode !== 'system' || typeof matchMedia !== 'function') return;
@@ -26,5 +37,5 @@ export function useApplyTheme(): void {
     const onChange = () => applyAppearance(appearance);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
-  }, [mode, accent, oledDark, highContrast, animationLevel, starfieldVariant]);
+  }, [mode, accent, oledDark, highContrast, animationLevel, starfieldVariant, holographicCards, gamifyCards]);
 }

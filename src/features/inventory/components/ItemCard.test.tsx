@@ -141,6 +141,20 @@ describe('ItemCard — content branches', () => {
     expect(root.classList.contains('gubbins-spotlight-border')).toBe(true);
   });
 
+  it('carries its collector-card rarity on the root and renders the rarity gem badge', () => {
+    // The frame/badge are painted only by CSS when the gamify toggle + maximal level are on; the
+    // DOM wiring (the `gubbins-rarity` class, the `data-rarity` tier and the badge) is always present.
+    const { container } = renderCard(makeItem({ unitCost: 3000, quantity: 1 }));
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.classList.contains('gubbins-rarity')).toBe(true);
+    expect(root.dataset.rarity).toBe('legendary');
+    expect(screen.getByTestId('rarity-badge')).toHaveTextContent('Legendary');
+
+    // An unpriced item falls to the Common tier.
+    const { container: plain } = renderCard(makeItem());
+    expect((plain.firstElementChild as HTMLElement).dataset.rarity).toBe('common');
+  });
+
   it('paints the per-location edge tint (F10) on the root only when a tint class is given', () => {
     const { container: tinted } = renderCard(makeItem(), {
       locationTintClass: 'gubbins-loc-tint loc-tint-teal',

@@ -141,7 +141,7 @@ export const ANIMATION_LEVELS = [
     id: 'headache',
     label: 'I have a headache',
     description:
-      'Everything on, all at once — every animation, flourish and sparkle, so lively it might just give you a headache. The full, maximal Gubbins.',
+      'Everything on, all at once — every animation, flourish and sparkle, plus the holographic-foil card sheen and the collector-card rarity flair, so lively it might just give you a headache. The full, maximal Gubbins.',
   },
   {
     id: 'balanced',
