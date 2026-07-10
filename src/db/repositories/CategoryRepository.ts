@@ -50,6 +50,8 @@ export class CategoryRepository extends BaseRepository {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<CategoryCountRow>(
       `SELECT c.id, c.name, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
+              c.default_maintenance_basis, c.default_maintenance_interval_days,
+              c.default_maintenance_interval_usage,
               c.updated_at, COUNT(f.id) AS field_count
        FROM categories c
        LEFT JOIN category_fields f ON f.category_id = c.id
@@ -73,14 +75,19 @@ export class CategoryRepository extends BaseRepository {
     }
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO categories (id, name, default_tracking_mode, default_condition, default_warranty_months)
-       VALUES (?, ?, ?, ?, ?);`,
+      `INSERT INTO categories
+         (id, name, default_tracking_mode, default_condition, default_warranty_months,
+          default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
         input.defaultTrackingMode ?? null,
         input.defaultCondition ?? null,
         input.defaultWarrantyMonths ?? null,
+        input.defaultMaintenanceBasis ?? null,
+        input.defaultMaintenanceIntervalDays ?? null,
+        input.defaultMaintenanceIntervalUsage ?? null,
       ],
     );
     return (await this.getById(id))!;
@@ -113,6 +120,18 @@ export class CategoryRepository extends BaseRepository {
     if (input.defaultWarrantyMonths !== undefined) {
       sets.push('default_warranty_months = ?');
       params.push(input.defaultWarrantyMonths);
+    }
+    if (input.defaultMaintenanceBasis !== undefined) {
+      sets.push('default_maintenance_basis = ?');
+      params.push(input.defaultMaintenanceBasis);
+    }
+    if (input.defaultMaintenanceIntervalDays !== undefined) {
+      sets.push('default_maintenance_interval_days = ?');
+      params.push(input.defaultMaintenanceIntervalDays);
+    }
+    if (input.defaultMaintenanceIntervalUsage !== undefined) {
+      sets.push('default_maintenance_interval_usage = ?');
+      params.push(input.defaultMaintenanceIntervalUsage);
     }
     if (sets.length > 0) {
       params.push(id);

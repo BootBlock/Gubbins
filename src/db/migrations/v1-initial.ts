@@ -121,10 +121,26 @@ export const v1Initial: Migration = {
           --    form turns it into an expiry date (acquired-on + N months) at submit.
           default_condition       TEXT,
           default_warranty_months INTEGER,
+          -- Optional category template default maintenance schedule (backlog T2a). Unlike the
+          -- soft-prefill facets above, this is *applied* after item create as a
+          -- maintenance_schedules row (the item create paths honour it) rather than pre-filling a
+          -- form field. Columns mirror maintenance_schedules and are independently nullable:
+          --  · default_maintenance_basis          — TIME|USAGE (MAINTENANCE_BASES SSOT).
+          --  · default_maintenance_interval_days  — TIME interval in days (mirrors interval_days).
+          --  · default_maintenance_interval_usage — USAGE interval in units (mirrors interval_usage).
+          -- The application step requires a basis *and* its matching interval both set, so a
+          -- half-configured default (basis without an interval) is simply a no-op — hence no
+          -- cross-column coherence CHECK, keeping partial LWW updates from the editor legal.
+          default_maintenance_basis          TEXT,
+          default_maintenance_interval_days  INTEGER,
+          default_maintenance_interval_usage REAL,
           updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
           CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),
-          CHECK (default_warranty_months IS NULL OR default_warranty_months > 0)
+          CHECK (default_warranty_months IS NULL OR default_warranty_months > 0),
+          CHECK (default_maintenance_basis IS NULL OR default_maintenance_basis IN (${basisList})),
+          CHECK (default_maintenance_interval_days IS NULL OR default_maintenance_interval_days > 0),
+          CHECK (default_maintenance_interval_usage IS NULL OR default_maintenance_interval_usage > 0)
         ) STRICT;
       `,
     },

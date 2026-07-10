@@ -73,6 +73,9 @@ const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWith
   defaultTrackingMode: null,
   defaultCondition: null,
   defaultWarrantyMonths: null,
+  defaultMaintenanceBasis: null,
+  defaultMaintenanceIntervalDays: null,
+  defaultMaintenanceIntervalUsage: null,
   updatedAt: 0,
   fieldCount: 1,
   ...overrides,
@@ -353,6 +356,107 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
       expect(h.updateCategory).toHaveBeenCalledWith({
         id: 'cat-1',
         input: { defaultWarrantyMonths: null },
+      }),
+    );
+  });
+
+  it('seeds a coherent TIME default maintenance schedule when the basis is first chosen (T2a)', async () => {
+    // The interval field only appears once a basis is chosen (none set on this category).
+    expect(screen.queryByLabelText('Default maintenance interval in days')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Maintenance schedule' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Time-based' }));
+
+    // Picking the basis persists it together with a seeded (annual) day interval, never a no-op.
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: {
+          defaultMaintenanceBasis: 'TIME',
+          defaultMaintenanceIntervalDays: 365,
+          defaultMaintenanceIntervalUsage: null,
+        },
+      }),
+    );
+  });
+
+  it('seeds a USAGE default onto the usage interval column (T2a)', async () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Maintenance schedule' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Usage-based' }));
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: {
+          defaultMaintenanceBasis: 'USAGE',
+          defaultMaintenanceIntervalDays: null,
+          defaultMaintenanceIntervalUsage: 100,
+        },
+      }),
+    );
+  });
+
+  it('renders the day interval for a TIME category and persists an edited value (T2a)', async () => {
+    cleanup();
+    h.categoryRows = [category({ defaultMaintenanceBasis: 'TIME', defaultMaintenanceIntervalDays: 365 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = screen.getByLabelText('Default maintenance interval in days');
+    expect(input).toHaveValue(365);
+    fireEvent.change(input, { target: { value: '90' } });
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: {
+          defaultMaintenanceBasis: 'TIME',
+          defaultMaintenanceIntervalDays: 90,
+          defaultMaintenanceIntervalUsage: null,
+        },
+      }),
+    );
+  });
+
+  it('labels the interval for a USAGE category and persists an edited value (T2a)', async () => {
+    cleanup();
+    h.categoryRows = [category({ defaultMaintenanceBasis: 'USAGE', defaultMaintenanceIntervalUsage: 100 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = screen.getByLabelText('Default maintenance usage interval');
+    expect(input).toHaveValue(100);
+    fireEvent.change(input, { target: { value: '250' } });
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: {
+          defaultMaintenanceBasis: 'USAGE',
+          defaultMaintenanceIntervalDays: null,
+          defaultMaintenanceIntervalUsage: 250,
+        },
+      }),
+    );
+  });
+
+  it('clears the whole maintenance default when picking — No default — (T2a)', async () => {
+    cleanup();
+    h.categoryRows = [category({ defaultMaintenanceBasis: 'TIME', defaultMaintenanceIntervalDays: 365 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Maintenance schedule' }));
+    fireEvent.click(screen.getByRole('option', { name: '— No default —' }));
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: {
+          defaultMaintenanceBasis: null,
+          defaultMaintenanceIntervalDays: null,
+          defaultMaintenanceIntervalUsage: null,
+        },
       }),
     );
   });

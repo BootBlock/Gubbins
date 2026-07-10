@@ -13,10 +13,12 @@ import {
 import { AddIcon, CloseIcon, DeleteIcon, InfoIcon, ToolsIcon } from '@/components/icons';
 import {
   FIELD_TYPES,
+  MAINTENANCE_BASES,
   TRACKING_MODES,
   type CategoryWithFieldCount,
   type Condition,
   type FieldType,
+  type MaintenanceBasis,
   type TrackingMode,
 } from '@/db/repositories';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
@@ -39,6 +41,7 @@ import {
   ATTACHMENT_MODE_LABELS,
   conditionSelectOptions,
   FIELD_TYPE_LABELS,
+  MAINTENANCE_BASIS_LABELS,
   TRACKING_MODE_LABELS,
 } from './inventory-ui';
 import { TypedFieldControl } from './TypedFieldControl';
@@ -262,12 +265,21 @@ function CategoryDetail({
 }
 
 /**
- * "Defaults for new items in this category" — the editor for the T1/T2 category-template
- * defaults (tracking mode, condition, warranty window). These are plain LWW columns with
- * no draft/confirm model, so each control **auto-saves immediately** via `useUpdateCategory`
- * (mirroring the Settings dialog's per-row auto-save), clearing to `null`. This is a direct
- * read-from-category / write-back-to-category editor — the *soft-prefill* / never-re-stomp
- * logic lives on the create form (T1/T2), not here.
+ * Seed interval offered the moment a maintenance basis is first chosen (backlog T2a), so a
+ * freshly-picked basis is immediately effective rather than a silent no-op — the user can still
+ * edit or clear it. A year for TIME (matching the "annual calibration" archetype); 100 units for
+ * USAGE (mirrors the MaintenanceEditor's own default).
+ */
+const MAINTENANCE_INTERVAL_SEED: Record<MaintenanceBasis, number> = { TIME: 365, USAGE: 100 };
+
+/**
+ * "Defaults for new items in this category" — the editor for the category-template defaults:
+ * the T1/T2 soft-prefills (tracking mode, condition, warranty window) plus the T2a default
+ * *maintenance schedule*. These are plain LWW columns with no draft/confirm model, so each
+ * control **auto-saves immediately** via `useUpdateCategory` (mirroring the Settings dialog's
+ * per-row auto-save), clearing to `null`. This is a direct read-from-category / write-back
+ * editor — the T1/T2 *soft-prefill* logic lives on the create form, and the T2a schedule is
+ * *applied* by the item create paths, not here.
  */
 function CategoryDefaultsSection({ category }: { category: CategoryWithFieldCount }) {
   const updateCategory = useUpdateCategory();
@@ -275,6 +287,9 @@ function CategoryDefaultsSection({ category }: { category: CategoryWithFieldCoun
     defaultTrackingMode?: TrackingMode | null;
     defaultCondition?: Condition | null;
     defaultWarrantyMonths?: number | null;
+    defaultMaintenanceBasis?: MaintenanceBasis | null;
+    defaultMaintenanceIntervalDays?: number | null;
+    defaultMaintenanceIntervalUsage?: number | null;
   }) => updateCategory.mutate({ id: category.id, input });
 
   // The warranty field is a free-text number, so it keeps a local buffer (reset when the
@@ -300,6 +315,60 @@ function CategoryDefaultsSection({ category }: { category: CategoryWithFieldCoun
     if (Number.isInteger(months) && months >= 1) {
       save({ defaultWarrantyMonths: months });
     }
+  };
+
+  // Default maintenance schedule (backlog T2a). Like the warranty field, the interval keeps a
+  // local buffer so mid-edit keystrokes aren't clobbered by the write-back refresh; it is seeded
+  // from whichever interval column matches the persisted basis.
+  const maintBasis = category.defaultMaintenanceBasis;
+  const persistedInterval =
+    maintBasis === 'TIME'
+      ? category.defaultMaintenanceIntervalDays
+      : maintBasis === 'USAGE'
+        ? category.defaultMaintenanceIntervalUsage
+        : null;
+  const [maintIntervalText, setMaintIntervalText] = useState(
+    persistedInterval != null ? String(persistedInterval) : '',
+  );
+  useEffect(() => {
+    setMaintIntervalText(persistedInterval != null ? String(persistedInterval) : '');
+  }, [category.id, persistedInterval]);
+
+  // Persist the {basis, matching-interval} pair coherently: only the interval column for the
+  // chosen basis is set, the other is nulled. A blank/invalid interval stores null — a
+  // half-configured default the item create paths treat as a no-op — so nothing junk is written.
+  const saveMaintenance = (basis: MaintenanceBasis, text: string) => {
+    const n = Number.parseInt(text.trim(), 10);
+    const val = text.trim() !== '' && Number.isInteger(n) && n >= 1 ? n : null;
+    save({
+      defaultMaintenanceBasis: basis,
+      defaultMaintenanceIntervalDays: basis === 'TIME' ? val : null,
+      defaultMaintenanceIntervalUsage: basis === 'USAGE' ? val : null,
+    });
+  };
+
+  const changeBasis = (value: string) => {
+    if (value === '') {
+      setMaintIntervalText('');
+      save({
+        defaultMaintenanceBasis: null,
+        defaultMaintenanceIntervalDays: null,
+        defaultMaintenanceIntervalUsage: null,
+      });
+      return;
+    }
+    const basis = value as MaintenanceBasis;
+    // Seed a friendly interval when the field is empty, so a just-chosen basis is effective
+    // straight away (never a silent no-op); keep any number the user already typed.
+    const seeded = maintIntervalText.trim() || String(MAINTENANCE_INTERVAL_SEED[basis]);
+    setMaintIntervalText(seeded);
+    saveMaintenance(basis, seeded);
+  };
+
+  const commitInterval = (raw: string) => {
+    setMaintIntervalText(raw);
+    if (maintBasis == null) return; // no basis chosen yet — nothing to attach the interval to
+    saveMaintenance(maintBasis, raw);
   };
 
   return (
@@ -347,6 +416,52 @@ function CategoryDefaultsSection({ category }: { category: CategoryWithFieldCoun
           onChange={(e) => commitWarranty(e.target.value)}
         />
       </FormField>
+
+      <SelectField
+        label="Maintenance schedule"
+        hint={
+          'Give new items in this category a **recurring service schedule** automatically — e.g. an ' +
+          'annual calibration. Unlike the fields above (which only pre-fill the create form), this ' +
+          'schedule is **created on the item** the moment it is added.\n\n' +
+          '- **Time-based** — due every N **days**.\n' +
+          '- **Usage-based** — due every N units of use.\n\n' +
+          'Choose *— No default —* for none. You can rename or tweak each schedule on the item later.'
+        }
+        value={maintBasis ?? ''}
+        onChange={changeBasis}
+        options={[
+          { value: '', label: '— No default —' },
+          ...MAINTENANCE_BASES.map((b) => ({ value: b, label: MAINTENANCE_BASIS_LABELS[b] })),
+        ]}
+      />
+
+      {maintBasis != null ? (
+        <FormField
+          label={maintBasis === 'TIME' ? 'Every (days)' : 'Every (uses)'}
+          hint={
+            maintBasis === 'TIME'
+              ? 'How often the service falls due, in **whole days** — e.g. *365* for a yearly ' +
+                'calibration. Clear it to leave the schedule off.'
+              : 'How many **units of use** between services — e.g. *100* running hours. Clear it to ' +
+                'leave the schedule off.'
+          }
+        >
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            placeholder={maintBasis === 'TIME' ? 'e.g. 365' : 'e.g. 100'}
+            aria-label={
+              maintBasis === 'TIME'
+                ? 'Default maintenance interval in days'
+                : 'Default maintenance usage interval'
+            }
+            value={maintIntervalText}
+            onChange={(e) => commitInterval(e.target.value)}
+          />
+        </FormField>
+      ) : null}
     </div>
   );
 }

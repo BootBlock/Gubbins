@@ -358,6 +358,9 @@ export function rowToCategory(row: CategoryRow): Category {
     defaultTrackingMode: row.default_tracking_mode,
     defaultCondition: row.default_condition,
     defaultWarrantyMonths: row.default_warranty_months,
+    defaultMaintenanceBasis: row.default_maintenance_basis,
+    defaultMaintenanceIntervalDays: row.default_maintenance_interval_days,
+    defaultMaintenanceIntervalUsage: row.default_maintenance_interval_usage,
     updatedAt: row.updated_at,
   };
 }
