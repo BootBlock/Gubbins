@@ -138,6 +138,13 @@ const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   SOLD: 'stock.adjusted',
   WRITTEN_OFF: 'stock.adjusted',
   RETURNED_TO_SUPPLIER: 'stock.adjusted',
+  // Record-keeping lifecycle events with no stock movement and no dedicated public event type
+  // (a manual revaluation, G9; a per-instance test / calibration / service record, G7). They map
+  // to the generic documented `item.changed` — exactly what the `?? 'item.changed'` fallback
+  // already emitted for them — so this only makes the exhaustive `Record<HistoryAction>` map
+  // complete (bridge type-check) without introducing an event type absent from the OpenAPI enum.
+  REVALUED: 'item.changed',
+  TESTED: 'item.changed',
 };
 
 /** The dotted event type for a ledger action (unknown actions → `item.changed`). */

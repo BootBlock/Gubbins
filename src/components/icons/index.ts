@@ -173,6 +173,9 @@ export {
   CalendarX as ExpiryIcon,
   GitBranch as VariantIcon,
 
+  // Per-instance test / calibration / service records (feature-gap G7) — a lab flask glyph.
+  FlaskConical as TestRecordIcon,
+
   // Modular UI feature registry (feat/modular-ui) — semantic glyphs for the
   // capability sub-features toggled from the Modules manager. Warranty/asset
   // lifecycle reuses the shield-check "protection" glyph; batches/lots reuse the

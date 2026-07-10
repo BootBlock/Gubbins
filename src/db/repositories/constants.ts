@@ -134,6 +134,8 @@ export const HISTORY_ACTIONS = [
   'RETURNED_TO_SUPPLIER', // received stock refunded back to a supplier (inverse of RECEIVED)
   // Feature-gap G9 — a manual current/market revaluation was recorded (append-only value log).
   'REVALUED', // the item's manual current value was (re)set, independent of depreciation
+  // Feature-gap G7 — a per-instance test / calibration / service record was logged (QA audit trail).
+  'TESTED', // a structured pass/fail + reading record was added against a serialised unit
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

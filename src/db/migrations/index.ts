@@ -17,7 +17,8 @@
  * `items.current_value` column and the append-only `revaluations` log table; `v5-item-relations`
  * (feature-gap G6) follows with the additive `item_relations` join table (related-items
  * cross-links); `v6-wishlist` (feature-gap G8) follows with the additive standalone `wishlist`
- * table (manual "to-buy" list). A database left ahead of the highest registered version (e.g. a pre-squash
+ * table (manual "to-buy" list); `v7-test-records` (feature-gap G7) follows with the additive
+ * `test_records` table (per-instance test / calibration / service log). A database left ahead of the highest registered version (e.g. a pre-squash
  * user_version 3–4) is refused at boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the
  * local-data reset.
  */
@@ -28,6 +29,7 @@ import { v3ActiveLocationIndex } from './v3-active-location-index';
 import { v4Revaluations } from './v4-revaluations';
 import { v5ItemRelations } from './v5-item-relations';
 import { v6Wishlist } from './v6-wishlist';
+import { v7TestRecords } from './v7-test-records';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
@@ -36,6 +38,7 @@ export const migrations: readonly Migration[] = [
   v4Revaluations,
   v5ItemRelations,
   v6Wishlist,
+  v7TestRecords,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

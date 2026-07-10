@@ -17,6 +17,7 @@ import {
   SettingsIcon,
   SupplierIcon,
   TagsIcon,
+  TestRecordIcon,
 } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
@@ -35,6 +36,7 @@ import { ReorderPointEditor } from './ReorderPointEditor';
 import { RelationsEditor } from './RelationsEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
 import { TagEditor } from './TagEditor';
+import { TestRecordsEditor } from './TestRecordsEditor';
 
 /**
  * Item detail dialog — the home for every per-item facet (images §4.2, tags §5,
@@ -173,6 +175,19 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <MaintenanceEditor itemId={item.id} />,
           feature: 'maintenance',
         },
+        // Per-instance test / calibration / service records (feature-gap G7). Structured pass/fail
+        // + reading logs are only meaningful for a *serialised* unit (a specific instance with a
+        // serial number), so the section is gated to SERIALISED tracking rather than a module
+        // feature — a bulk/consumable line has no single instance to keep a QA audit trail against.
+        ...(item.trackingMode === 'SERIALISED'
+          ? [
+              {
+                title: 'Test & calibration records',
+                icon: <TestRecordIcon />,
+                content: <TestRecordsEditor item={item} />,
+              },
+            ]
+          : []),
       ],
     },
     {

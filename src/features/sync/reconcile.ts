@@ -371,6 +371,10 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
       { col: 'from_item_id', parent: 'items', nullable: false },
       { col: 'to_item_id', parent: 'items', nullable: false },
     ],
+    // Per-instance test / calibration / service records (feature-gap G7). item_id mirrors the
+    // item-child cascade above — drop an incoming record whose item did not survive the merge
+    // (ON DELETE CASCADE, NOT NULL), exactly like revaluations.
+    test_records: [{ col: 'item_id', parent: 'items', nullable: false }],
     // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
     // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
     supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
