@@ -4,9 +4,13 @@ import {
   ACCENTS,
   DEFAULT_ACCENT,
   DEFAULT_MODE,
+  DEFAULT_STARFIELD_VARIANT,
   MODE_OPTIONS,
+  STARFIELD_VARIANT_IDS,
+  STARFIELD_VARIANTS,
   normaliseAccent,
   normaliseMode,
+  normaliseStarfieldVariant,
 } from './theme-registry';
 
 describe('MODE_OPTIONS', () => {
@@ -66,5 +70,28 @@ describe('normaliseAccent', () => {
   it('coerces an unknown/stale persisted value to the default', () => {
     expect(normaliseAccent('turquoise')).toBe(DEFAULT_ACCENT);
     expect(normaliseAccent('')).toBe(DEFAULT_ACCENT);
+  });
+});
+
+describe('STARFIELD_VARIANTS (visual-flair F11)', () => {
+  it('offers the curated variant set in registry order, each with a label', () => {
+    expect(STARFIELD_VARIANTS.map((v) => v.id)).toEqual(['cosmic', 'accent', 'aurora', 'ember', 'mono']);
+    for (const v of STARFIELD_VARIANTS) expect(v.label.length).toBeGreaterThan(0);
+  });
+
+  it('defaults to the shipped cosmic look, and STARFIELD_VARIANT_IDS mirrors the registry', () => {
+    expect(DEFAULT_STARFIELD_VARIANT).toBe('cosmic');
+    expect(STARFIELD_VARIANT_IDS).toEqual(STARFIELD_VARIANTS.map((v) => v.id));
+  });
+});
+
+describe('normaliseStarfieldVariant', () => {
+  it('passes every variant id through unchanged', () => {
+    for (const id of STARFIELD_VARIANT_IDS) expect(normaliseStarfieldVariant(id)).toBe(id);
+  });
+
+  it('coerces an unknown/stale persisted value to the cosmic default', () => {
+    expect(normaliseStarfieldVariant('nebula')).toBe(DEFAULT_STARFIELD_VARIANT);
+    expect(normaliseStarfieldVariant('')).toBe(DEFAULT_STARFIELD_VARIANT);
   });
 });

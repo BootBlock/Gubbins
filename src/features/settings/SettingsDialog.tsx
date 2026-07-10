@@ -63,7 +63,10 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
-import { ACCENTS, MODE_OPTIONS } from './theme-registry';
+import { ACCENTS, MODE_OPTIONS, STARFIELD_VARIANTS } from './theme-registry';
+
+/** Starfield-variant choices for the Appearance `Select` (visual-flair F11), in registry order. */
+const STARFIELD_VARIANT_OPTIONS = STARFIELD_VARIANTS.map((v) => ({ value: v.id, label: v.label }));
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -250,6 +253,30 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               value={prefs.reduceEffects ? 'on' : 'off'}
               onChange={(value) => prefs.setReduceEffects(value === 'on')}
               options={OFF_ON_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Starfield"
+            description="The look of the decorative sky on the About screen."
+            hint={
+              'Picks the colour of the gentle starfield that drifts behind the **About** screen. ' +
+              'Purely decorative — it never carries any information.\n\n' +
+              '- **Cosmic** — the signature violet-and-cyan sky (the default).\n' +
+              '- **Accent** — tinted with your chosen accent colour, so it follows the Colour above.\n' +
+              '- **Aurora** — cool greens and teals.\n' +
+              '- **Ember** — warm ambers and rose.\n' +
+              '- **Mono** — a quiet, colourless sky.\n\n' +
+              'Every variant stays calm and reduced-motion-friendly, and honours the “Reduce ' +
+              'effects” switch above.'
+            }
+          >
+            <Select
+              aria-label="Starfield"
+              data-testid="setting-starfield"
+              className="h-9 w-40"
+              value={prefs.starfieldVariant}
+              onChange={(value) => prefs.setStarfieldVariant(value as typeof prefs.starfieldVariant)}
+              options={STARFIELD_VARIANT_OPTIONS}
             />
           </SettingRow>
           <SettingRow

@@ -13,7 +13,7 @@
  * pure (the OS preference is injected) so it is unit-testable without a `matchMedia` mock. The
  * appearance registry (`theme-registry.ts`) is the SSOT for the mode/accent ids.
  */
-import type { Accent, Mode } from './theme-registry';
+import type { Accent, Mode, StarfieldVariant } from './theme-registry';
 
 /** The CSS class the palette toggles for dark mode (see styles/index.css). */
 export const DARK_CLASS = 'dark';
@@ -54,6 +54,12 @@ export interface Appearance {
    * is a no-op; it lives here only so appearance is projected from one seam.
    */
   readonly reduceEffects: boolean;
+  /**
+   * Starfield variant (visual-flair F11): which decorative recolour the About-screen starfield
+   * uses. Projected as `data-starfield` so the CSS variant blocks re-point the `--star` /
+   * `--star-flare` tokens; the `cosmic` default emits no attribute (the shipped look).
+   */
+  readonly starfieldVariant: StarfieldVariant;
 }
 
 /**
@@ -73,4 +79,8 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   // `:root[data-reduce-effects]`, so setting this clamps every decorative transition/animation.
   if (appearance.reduceEffects) root.dataset.reduceEffects = '';
   else delete root.dataset.reduceEffects;
+  // Visual-flair F11: the `cosmic` default is the plain `--star`/`--star-flare` tokens, so it
+  // carries no attribute; every other variant sets `data-starfield` for its CSS override block.
+  if (appearance.starfieldVariant !== 'cosmic') root.dataset.starfield = appearance.starfieldVariant;
+  else delete root.dataset.starfield;
 }

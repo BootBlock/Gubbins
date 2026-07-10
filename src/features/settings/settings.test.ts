@@ -44,6 +44,7 @@ const APPEARANCE: Appearance = {
   oledDark: false,
   highContrast: false,
   reduceEffects: false,
+  starfieldVariant: 'cosmic',
 };
 
 describe('clampExpiryWindowDays', () => {
@@ -212,6 +213,7 @@ describe('applyAppearance', () => {
     delete root.dataset.oled;
     delete root.dataset.contrast;
     delete root.dataset.reduceEffects;
+    delete root.dataset.starfield;
   });
 
   it('toggles .dark for the resolved mode and sets data-accent', () => {
@@ -246,6 +248,15 @@ describe('applyAppearance', () => {
     expect(root.dataset.reduceEffects).toBe('');
     applyAppearance({ ...APPEARANCE, reduceEffects: false }, root);
     expect(root.dataset.reduceEffects).toBeUndefined();
+  });
+
+  it('sets data-starfield for a variant and omits it for the cosmic default (F11)', () => {
+    const root = document.createElement('div');
+    applyAppearance({ ...APPEARANCE, starfieldVariant: 'aurora' }, root);
+    expect(root.dataset.starfield).toBe('aurora');
+    // The default look carries no attribute, so it falls back to the base --star* tokens.
+    applyAppearance({ ...APPEARANCE, starfieldVariant: 'cosmic' }, root);
+    expect(root.dataset.starfield).toBeUndefined();
   });
 
   it('is idempotent on the .dark class', () => {

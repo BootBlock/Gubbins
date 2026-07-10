@@ -106,6 +106,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       oledDark: false,
       highContrast: false,
       reduceEffects: false,
+      starfieldVariant: 'cosmic',
     });
     const root = document.documentElement;
     root.classList.remove('dark');
@@ -113,6 +114,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     delete root.dataset.oled;
     delete root.dataset.contrast;
     delete root.dataset.reduceEffects;
+    delete root.dataset.starfield;
   });
 
   it('mode, colour, OLED and high-contrast controls land on <html>', () => {
@@ -151,6 +153,12 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByTestId('setting-reduce-effects'));
     fireEvent.click(screen.getByRole('option', { name: 'On' }));
     expect(root.dataset.reduceEffects).toBe('');
+
+    // Starfield variant (F11): a non-default variant sets data-starfield, which the CSS
+    // variant blocks key off to re-point the --star/--star-flare tokens.
+    fireEvent.click(screen.getByTestId('setting-starfield'));
+    fireEvent.click(screen.getByRole('option', { name: 'Aurora' }));
+    expect(root.dataset.starfield).toBe('aurora');
   });
 });
 
