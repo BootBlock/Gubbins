@@ -86,6 +86,12 @@ export const ItemCard = memo(function ItemCard({
         // grab-hand: the grabbing cursor appears only while actively pressing to drag
         // (`:active`); hover shows a pointer when the card body is click-actionable, else default.
         'flex select-none flex-col gap-4 p-5 hover:-translate-y-1 active:cursor-grabbing',
+        // Spotlight ring (F5): a slow accent-tinted conic "comet" sweeps the card's edge
+        // while it is the focal card — the ring is invisible/paused at rest and only lights
+        // for the single card under `:hover`/`:focus-within`, so exactly one is ever lit and
+        // it stays safe on the virtualised list (no per-mount entrance to re-fire on recycle).
+        // Decoration only — the hover-lift and the real focus ring remain the focus signals.
+        'gubbins-spotlight-border',
         clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',

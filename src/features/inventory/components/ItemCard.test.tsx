@@ -134,6 +134,11 @@ describe('ItemCard — content branches', () => {
     expect(root.classList.contains('cursor-grab')).toBe(false);
     expect(root.classList.contains('select-none')).toBe(true);
     expect(root.classList.contains('active:cursor-grabbing')).toBe(true);
+    // F5 spotlight ring: the card carries the focal-card class. The ring is CSS-only and
+    // scoped to `:hover`/`:focus-within` (invisible/paused at rest), so exactly one card is
+    // ever lit; its rotation + reduced-motion static fallback are verified against the real
+    // built CSS (no runtime motion logic to assert here).
+    expect(root.classList.contains('gubbins-spotlight-border')).toBe(true);
   });
 
   it('appends the serial number to the heading when present', () => {
