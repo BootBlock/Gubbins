@@ -464,8 +464,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
         }
         if (fromVersion < 2) {
           // Pre-animationLevel install: derive from the old binary reduceEffects (a *final* id).
+          // Reduce-effects ON → `calm`; OFF → `headache` (the "everything on" tier — its prior
+          // experience), NOT the new `balanced` default, so upgrading never silently dims effects
+          // an existing install was already showing. Only fresh installs pick up the new default.
           if (state.animationLevel === undefined) {
-            state.animationLevel = state.reduceEffects === true ? 'calm' : DEFAULT_ANIMATION_LEVEL;
+            state.animationLevel = state.reduceEffects === true ? 'calm' : 'headache';
           }
           delete state.reduceEffects;
         }

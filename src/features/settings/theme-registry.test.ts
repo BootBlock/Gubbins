@@ -117,8 +117,8 @@ describe('ANIMATION_LEVELS', () => {
     }
   });
 
-  it('defaults to the "everything on" `headache` top tier, and ANIMATION_LEVEL_IDS mirrors the registry', () => {
-    expect(DEFAULT_ANIMATION_LEVEL).toBe('headache');
+  it('defaults a fresh install to the calm-but-lively `balanced` tier, and ANIMATION_LEVEL_IDS mirrors the registry', () => {
+    expect(DEFAULT_ANIMATION_LEVEL).toBe('balanced');
     expect(ANIMATION_LEVEL_IDS).toEqual(ANIMATION_LEVELS.map((l) => l.id));
   });
 
@@ -132,7 +132,7 @@ describe('normaliseAnimationLevel', () => {
     for (const id of ANIMATION_LEVEL_IDS) expect(normaliseAnimationLevel(id)).toBe(id);
   });
 
-  it('coerces an unknown/stale persisted value to the `headache` default', () => {
+  it('coerces an unknown/stale persisted value to the `balanced` default', () => {
     expect(normaliseAnimationLevel('sparkly')).toBe(DEFAULT_ANIMATION_LEVEL);
     // `full` was an interim id that no longer exists — it must not pass through.
     expect(normaliseAnimationLevel('full')).toBe(DEFAULT_ANIMATION_LEVEL);

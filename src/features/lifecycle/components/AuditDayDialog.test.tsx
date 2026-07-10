@@ -10,11 +10,12 @@
  * summary; skip a location; a "choose specific locations" scope; and resuming a persisted
  * half-done session.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuditDayDialog } from './AuditDayDialog';
 import { BurstProvider, type MediaQueryProvider } from '@/components/foundry';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuditSessionStore } from '../useAuditSessionStore';
 import { startAudit, markLocation } from '../audit-session';
 
@@ -82,8 +83,12 @@ async function waitForCountInput() {
   await waitFor(() => expect(screen.getByTestId(COUNT_TESTID)).toBeTruthy());
 }
 
+// The completion burst is a flourish (off at the Balanced default); enable it so the fire-path
+// tests exercise it. The OS reduced-motion side is injected per test via the BurstProvider.
+beforeEach(() => usePreferencesStore.setState({ animationLevel: 'headache' }));
 afterEach(() => {
   cleanup();
+  usePreferencesStore.setState({ animationLevel: 'balanced' });
   // Reset the persisted session between tests.
   useAuditSessionStore.setState({ session: null });
   localStorage.clear();

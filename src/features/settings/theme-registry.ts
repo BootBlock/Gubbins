@@ -121,10 +121,10 @@ export function normaliseStarfieldVariant(value: string): StarfieldVariant {
  * The rank drives two thresholds, encoded once here ({@link suppressesFlourish} /
  * {@link suppressesMotion}) so every effect reads the tier meaning from the SSOT rather than
  * hard-coding a level id:
- * - `headache` — **everything on** (default; nothing suppressed). Named for the headache all that
- *   sparkle *could* give you — it is the maximal, all-effects tier.
- * - `balanced` — the showiest **flourishes** off (success bursts, card tilt/parallax, the spotlight
- *   sweep); the gentler motion stays.
+ * - `headache` — **everything on** (nothing suppressed). Named for the headache all that sparkle
+ *   *could* give you — it is the maximal, all-effects tier.
+ * - `balanced` — **the default**: the showiest **flourishes** off (success bursts, card tilt/
+ *   parallax, the spotlight sweep) while the gentler motion stays — a calm, still-lively baseline.
  * - `calm` — all decorative **motion** holds still (number roll-ups, scroll reveals, page
  *   cross-fades, badge/toast/ring pops) — matches your device's reduced-motion setting; static flair
  *   (accent glow, per-location tint, the still starfield) remains.
@@ -175,8 +175,12 @@ export type AnimationLevel = (typeof ANIMATION_LEVELS)[number]['id'];
 /** Every animation level id, most flair → least (index === rank), for iteration / validation. */
 export const ANIMATION_LEVEL_IDS = ANIMATION_LEVELS.map((l) => l.id) as AnimationLevel[];
 
-/** The default animation level — everything on, so the shipped all-effects experience is unchanged. */
-export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'headache';
+/**
+ * The default animation level for a **fresh install** — `balanced`, a calm but still-lively baseline
+ * that drops only the showiest flourishes. (Existing installs keep whatever they had: the store
+ * migration preserves their level rather than forcing this default onto them.)
+ */
+export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'balanced';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link AnimationLevel}. */
 export function normaliseAnimationLevel(value: string): AnimationLevel {

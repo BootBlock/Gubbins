@@ -16,6 +16,7 @@ vi.mock('@/features/inventory/queries', () => ({ useItemCount: () => itemCountMo
 import { FirstItemCelebration } from './FirstItemCelebration';
 import { BurstProvider, ToastProvider } from '@/components/foundry';
 import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { MediaQueryProvider } from '@/components/foundry';
 
 /** A reduced-motion provider reporting the given preference (full motion by default here). */
@@ -37,8 +38,13 @@ function renderWatcher() {
 beforeEach(() => {
   useMilestonesStore.setState({ firstItemCelebrated: false });
   itemCountMock.mockReturnValue({ data: 0, isPending: false });
+  // The burst is a flourish, off at the Balanced default; enable it (OS motion is injected).
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  usePreferencesStore.setState({ animationLevel: 'balanced' });
+});
 
 describe('FirstItemCelebration', () => {
   it('celebrates the empty → first-item transition once, with a toast + burst', () => {
