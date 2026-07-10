@@ -638,6 +638,7 @@ function InventoryWorkspace() {
               resultSummary={
                 astActive ? `${flatItems.length} ${plural(flatItems.length, 'match', 'matches')}` : undefined
               }
+              onClose={() => setBuilderOpen(false)}
             />
           </div>
         </div>

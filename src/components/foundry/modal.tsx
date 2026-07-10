@@ -2,8 +2,7 @@ import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Surface } from './surface';
-import { Button } from './button';
-import { CloseIcon } from '@/components/icons';
+import { CloseButton } from './close-button';
 import { FOCUSABLE_SELECTOR, nextTrapIndex } from './focus-trap';
 import { isTopModal, openModalCount, popModal, pushModal } from './modal-stack';
 import { useReducedMotion } from './useReducedMotion';
@@ -148,9 +147,7 @@ export function Modal({
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <CloseIcon className="text-glyph-neutral" />
-          </Button>
+          <CloseButton onClick={onClose} />
         </div>
         {/* The body region. `min-h-0` lets this flex child shrink below its content height so a
             too-tall dialog scrolls rather than growing past the cap. By default it *is* the

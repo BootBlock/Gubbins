@@ -1,4 +1,4 @@
-import { Surface } from '@/components/foundry';
+import { CloseButton, Surface } from '@/components/foundry';
 import { FilterIcon } from '@/components/icons';
 import { useSearchBuilder } from '../SearchBuilderContext';
 import { astError } from '../queries';
@@ -11,8 +11,11 @@ import { TextQueryInput } from './TextQueryInput';
  * the Tier-3 AST. It renders the root group recursively and surfaces any
  * translation error inline (so an in-progress invalid edit never reaches the
  * worker). The results it drives are rendered by the inventory workspace.
+ *
+ * `onClose` dismisses the panel from its top-right ✕ — the same Foundry {@link CloseButton}
+ * the dialog headers use, so closing the card matches closing any dialog.
  */
-export function VisualBuilder({ resultSummary }: { resultSummary?: string }) {
+export function VisualBuilder({ resultSummary, onClose }: { resultSummary?: string; onClose: () => void }) {
   const { ast, dispatch, conditionCount } = useSearchBuilder();
   const error = conditionCount > 0 ? astError(ast) : null;
 
@@ -24,15 +27,18 @@ export function VisualBuilder({ resultSummary }: { resultSummary?: string }) {
         </span>
         <h2 className="text-sm font-semibold">Visual search</h2>
         {resultSummary ? <span className="text-xs text-muted-foreground">· {resultSummary}</span> : null}
-        {conditionCount > 0 ? (
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'reset' })}
-            className="ml-auto text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-          >
-            Clear
-          </button>
-        ) : null}
+        <div className="ml-auto flex items-center gap-1">
+          {conditionCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'reset' })}
+              className="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            >
+              Clear
+            </button>
+          ) : null}
+          <CloseButton onClick={onClose} label="Close visual search" />
+        </div>
       </div>
 
       <NaturalLanguageInput />
