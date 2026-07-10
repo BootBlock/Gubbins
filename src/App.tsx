@@ -5,9 +5,10 @@ import { AppErrorBoundary } from '@/app/error/AppErrorBoundary';
 import { BootGate } from '@/app/boot/BootGate';
 import { createQueryClient } from '@/state/query/queryClient';
 import { router } from '@/app/router';
-import { ToastProvider } from '@/components/foundry';
+import { BurstProvider, ToastProvider } from '@/components/foundry';
 import { ScrapeBridgeProvider } from '@/features/scraping';
 import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveTabScrapeListener';
+import { FirstItemCelebration } from '@/features/inventory/components/FirstItemCelebration';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 
@@ -33,15 +34,23 @@ export function App() {
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
-          <ScrapeBridgeProvider>
-            <PwaUpdatePrompt />
-            <BootGate>
-              <RouterProvider router={router} />
-              {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable
-                  add-item dialog. Inside BootGate so the DB/queries it needs are ready. */}
-              <ActiveTabScrapeListener />
-            </BootGate>
-          </ScrapeBridgeProvider>
+          {/* App-wide milestone success burst overlay (visual-flair F4). Sits above the router so
+              any feature can fire a one-shot celebration via `useBurst()`; its fixed overlay is
+              pointer-events-none and decorative (aria-hidden). */}
+          <BurstProvider>
+            <ScrapeBridgeProvider>
+              <PwaUpdatePrompt />
+              <BootGate>
+                <RouterProvider router={router} />
+                {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable
+                    add-item dialog. Inside BootGate so the DB/queries it needs are ready. */}
+                <ActiveTabScrapeListener />
+                {/* Milestone burst (F4): celebrates the first item ever added. Inside BootGate so
+                    the item-count query it watches has a ready database. */}
+                <FirstItemCelebration />
+              </BootGate>
+            </ScrapeBridgeProvider>
+          </BurstProvider>
         </ToastProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

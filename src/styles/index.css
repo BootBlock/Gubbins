@@ -1054,6 +1054,63 @@
 }
 
 /*
+ * Milestone success burst (visual-flair F4). A one-shot, tasteful celebratory burst played by
+ * the Foundry `BurstProvider` on a genuine milestone (the first item ever added, a completed
+ * stock-take) — not a screen-filling confetti storm. Each spark translates outward from the
+ * burst origin to a per-particle offset (set inline as `--burst-dx` / `--burst-dy`) while fading
+ * and shrinking, and a single soft ring expands once behind them.
+ *
+ * Compositor-only — transform + opacity, no layout/paint thrash — and every colour is drawn from
+ * the accent-tracking brand tokens (`--primary` / `--highlight`, set inline as each spark's
+ * `background-color` / the ring's border), so the burst recolours for free whenever the user
+ * changes their Colour (the Accent axis recolours exactly those tokens — see the appearance
+ * Mode × Accent model).
+ *
+ * Reduced motion: the provider renders *no* particle at all under `prefers-reduced-motion`, so
+ * these users get nothing to stutter — the milestone itself is surfaced by a toast / the audit
+ * summary's static success glyph, never by the animation. The global reduced-motion catch-all
+ * would neutralise the keyframes regardless (belt-and-braces).
+ */
+@keyframes gubbins-burst-spark {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(0.3);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--burst-dx, 0), var(--burst-dy, 0), 0) scale(0.5);
+  }
+}
+
+@utility animate-burst-spark {
+  /* `both` (not `forwards`) so the invisible 0% frame also fills *backwards* during a spark's
+     entrance stagger (`animation-delay`) — otherwise it would flash at its natural full opacity
+     at the origin for a frame before the animation starts. */
+  animation: gubbins-burst-spark var(--burst-duration, 0.9s) var(--ease-emphasized) both;
+}
+
+@keyframes gubbins-burst-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  28% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@utility animate-burst-ring {
+  animation: gubbins-burst-ring var(--burst-duration, 0.9s) var(--ease-emphasized) both;
+}
+
+/*
  * Specular "sheen" sweep for a primary call-to-action (spec §1.1 glassmorphism /
  * §2.4.1 premium aesthetic). A soft diagonal band of the `--glass-sheen` specular
  * highlight glides across the button on hover, so a solid primary/destructive CTA
