@@ -45,7 +45,8 @@ memory note.
   (`effectiveUnitCost`), and should consume G9's current-value once that lands. Grounding:
   Sortly / Encircle / NestEgg / HomeProof all sell a "one-tap insurance PDF" / schedule of loss.
 
-- [ ] **G2 — On-device receipt / label OCR prefill.** *Medium; opt-in, fully offline.* Attachments
+- [x] **G2 — On-device receipt / label OCR prefill.** ✅ **Shipped 2026-07-10.** *Medium; opt-in,
+  fully offline.* Attachments
   exist but nothing extracts data from them. Add an **opt-in** OCR (Tesseract.js WASM — keyless,
   no cloud, runs in a worker like the scanner) that reads a photographed **receipt or product
   label** and pre-fills a *reviewable* Create/Edit-item draft (price, date, model/MPN, serial).
@@ -101,6 +102,27 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G2 — On-device receipt / label OCR prefill** — shipped 2026-07-10. New pure
+  `features/inventory/ocr/receipt-ocr.ts` seam (`parseReceiptText` → currency-aware price with
+  UK/EU decimal handling + total-keyword ranking, day-first/US date disambiguation, labelled
+  MPN/serial extraction) — dependency-free, no DOM/worker/Tesseract import, exhaustively
+  unit-tested. Lazy, feature-detected `ocr-engine.ts` (`hasOcr`, injectable
+  `OcrRecognizerFactory`, `runReceiptOcr`) runs **Tesseract.js WASM in a worker** (OEM 1 LSTM,
+  `fast`/`best` model tiers) loaded from our own origin under `/ocr/` — keyless, CSP-compliant
+  (`worker-src 'self' blob:` + `wasm-unsafe-eval` already present), no third-party CDN. The
+  worker + WASM cores + language models are **precache-excluded** (`injectManifest.globIgnores`
+  `**/ocr/**`) so the base offline shell never bloats; `scripts/setup-ocr-assets.mjs`
+  (`npm run ocr:assets`) stages the worker/cores from `node_modules` and downloads the models
+  into a **git-ignored** `public/ocr/` (no multi-MB binaries in the repo). Reviewable
+  `OcrPrefillDialog` + `useReceiptOcr` wired into the Create-item form behind an opt-in
+  `ocrEnabled` toggle (default off) with a `fast`/`best` accuracy choice in Settings; fills only
+  blank fields, never auto-writes. Added an **Acquired date** field to the create form as a
+  prefill target (serial, which has no field, goes to Notes). `/code-review` (high): 3 findings
+  fixed (money-parse multi-separator decimal, a slash-date's year outranking the total, an
+  unlabelled hidden file input). 46 new tests; verified end-to-end in the built app under vite
+  preview (real WASM engine + production CSP): a rendered receipt yields price 12.99, date
+  2024-03-15 and MPN NE555P with no console errors.
 
 - **G3 — Local reminder notifications** — shipped 2026-07-10. The alert centre's four lanes
   (low stock, expiry, maintenance-due, warranty-due) now surface as **OS notifications** from an
