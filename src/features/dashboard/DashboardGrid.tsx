@@ -11,7 +11,7 @@
  * affordance: below `sm` the board collapses to a single-column flow in row-major
  * order, so the coordinate placement only engages on wider screens.
  */
-import { useMemo, useState, type CSSProperties, type DragEvent, type KeyboardEvent } from 'react';
+import { useMemo, type CSSProperties, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import {
@@ -26,6 +26,8 @@ import { DragHandleIcon, HideIcon, ShowIcon, ResetIcon } from '@/components/icon
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useReorderFlip } from './useReorderFlip';
+import { useBoardPointerDrag, type DragSourceProps, type DropTargetProps } from './useBoardPointerDrag';
+import { BoardMoveButtons, type MoveDir } from './BoardMoveButtons';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
@@ -58,6 +60,20 @@ function cellStyle(x: number, y: number): CSSProperties {
 
 const PLACEMENT = 'sm:[grid-column:var(--gx)] sm:[grid-row:var(--gy)]';
 
+/** Drop-target key for grid cell `(x, y)`. */
+function cellKey(x: number, y: number): string {
+  return `cell:${x},${y}`;
+}
+
+/** Decode a `cell:<x>,<y>` drop key back into coordinates, or null for any other/absent key. */
+function parseCellKey(key: string | null): { x: number; y: number } | null {
+  if (!key || !key.startsWith('cell:')) return null;
+  const parts = key.slice(5).split(',');
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  return Number.isNaN(x) || Number.isNaN(y) ? null : { x, y };
+}
+
 export function DashboardGrid() {
   const t = useT();
   const stored = useLayoutStore((s) => s.dashboardLayout);
@@ -65,13 +81,9 @@ export function DashboardGrid() {
   // Edit mode is the hub's single, shared "Customise" state (toggled by the one button up in
   // DashboardNav) — the widget board no longer has its own Customise button.
   const editing = useDashboardCustomise((s) => s.editing);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
   // Drop the ghost's decorative motion at source for reduced-motion users (mirrors the
   // Foundry Modal/Tooltip seam) — they still get a static dashed highlight of the target.
   const reduced = useReducedMotion();
-  // The cell currently under the pointer during a drag — drives the drop ghost. Cleared
-  // when the drag ends so the indicator only shows while arranging.
-  const [overCell, setOverCell] = useState<{ x: number; y: number } | null>(null);
 
   // Which Modular UI features are on (modular-ui-plan §4). Drives both what appears on the
   // board and whether a surviving widget's quick-link stays live.
@@ -112,29 +124,24 @@ export function DashboardGrid() {
     if (next !== layout) setLayout([...next, ...gated]);
   };
 
-  const endDrag = () => {
-    setDraggingId(null);
-    setOverCell(null);
-  };
-
-  // Track the hovered cell so the ghost can follow the pointer. Guarded so a repeated
-  // `dragover` on the same cell doesn't churn state (the event fires continuously).
-  const markOver = (x: number, y: number) => (e: DragEvent) => {
-    e.preventDefault();
-    setOverCell((prev) => (prev && prev.x === x && prev.y === y ? prev : { x, y }));
-  };
-
-  const handleDrop = (x: number, y: number) => (e: DragEvent) => {
-    e.preventDefault();
-    const id = draggingId ?? e.dataTransfer.getData('text/plain');
-    endDrag();
-    if (id) apply(moveWidget(layout, id, x, y));
-  };
+  // Pointer drag-to-move (mouse / pen / touch, replacing the touch-blind HTML5 drag). Dropping a
+  // widget onto a cell key moves it there (swapping any occupant); the arrow keys and the on-tile
+  // move buttons are the touch-free equivalents. Enabled only while customising.
+  const drag = useBoardPointerDrag({
+    boardId: 'grid',
+    enabled: editing,
+    onDrop: (id, key) => {
+      const cell = parseCellKey(key);
+      if (cell) apply(moveWidget(layout, id, cell.x, cell.y));
+    },
+  });
+  // The cell under the pointer during a drag, decoded from the active drop key — drives the ghost.
+  const overCell = parseCellKey(drag.overKey);
 
   // Where the dragged widget would land: the hovered cell, unless it's the tile's own
   // current cell (a no-op move — no point flagging it). An occupied target swaps, so the
   // ghost still correctly marks "your widget goes here".
-  const dragging = draggingId ? layout.find((p) => p.id === draggingId) : undefined;
+  const dragging = drag.draggingId ? layout.find((p) => p.id === drag.draggingId) : undefined;
   const ghost =
     editing && dragging && overCell && !(dragging.x === overCell.x && dragging.y === overCell.y)
       ? overCell
@@ -209,11 +216,17 @@ export function DashboardGrid() {
               editing={editing}
               linkActive={linkActive}
               isDropTarget={p.id === ghostTargetId}
+              isDragging={drag.draggingId === p.id}
               nodeRef={registerTile(p.id)}
-              onDragStart={() => setDraggingId(p.id)}
-              onDragEnd={endDrag}
-              onDragOver={markOver(p.x, p.y)}
-              onDrop={handleDrop(p.x, p.y)}
+              dragSourceProps={drag.sourceProps(p.id, t(def.titleKey))}
+              dropProps={drag.dropProps(cellKey(p.x, p.y))}
+              onMove={(dir) => apply(nudgeWidget(layout, p.id, dir))}
+              moveDisabled={{
+                up: nudgeWidget(layout, p.id, 'up') === layout,
+                down: nudgeWidget(layout, p.id, 'down') === layout,
+                left: nudgeWidget(layout, p.id, 'left') === layout,
+                right: nudgeWidget(layout, p.id, 'right') === layout,
+              }}
               onKeyDown={handleKeyDown(p.id)}
               onHide={() => apply(setWidgetVisible(layout, p.id, false))}
             />
@@ -224,8 +237,7 @@ export function DashboardGrid() {
           <div
             key={`cell-${x}-${y}`}
             style={cellStyle(x, y)}
-            onDragOver={markOver(x, y)}
-            onDrop={handleDrop(x, y)}
+            {...drag.dropProps(cellKey(x, y))}
             data-testid="dashboard-drop-cell"
             aria-hidden
             className={cn(
@@ -261,6 +273,9 @@ export function DashboardGrid() {
           </div>
         ) : null}
       </div>
+
+      {/* The floating drag preview that follows the pointer (mouse / pen / touch). */}
+      {drag.preview}
 
       {editing && hidden.length > 0 ? (
         <div className="mt-4" data-testid="hidden-widgets">
@@ -304,11 +319,12 @@ function WidgetTile({
   editing,
   linkActive,
   isDropTarget,
+  isDragging,
   nodeRef,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
+  dragSourceProps,
+  dropProps,
+  onMove,
+  moveDisabled,
   onKeyDown,
   onHide,
 }: {
@@ -320,12 +336,18 @@ function WidgetTile({
   /** Whether this tile's `to` link is live (its target route's feature is enabled). */
   linkActive: boolean;
   isDropTarget: boolean;
+  /** Whether this tile is the one currently being dragged (dims it under the floating preview). */
+  isDragging: boolean;
   /** FLIP ref: the outermost (grid-placed) element, so it can glide to its new cell. */
   nodeRef: (el: HTMLElement | null) => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDragOver: (e: DragEvent) => void;
-  onDrop: (e: DragEvent) => void;
+  /** Pointer-drag source props (begins a drag of this widget, previewing its title). */
+  dragSourceProps: DragSourceProps;
+  /** Pointer-drag drop-target props (registers this tile's cell as a drop target). */
+  dropProps: DropTargetProps;
+  /** Nudge this widget one cell (the touch/click move buttons, mirroring the arrow keys). */
+  onMove: (dir: MoveDir) => void;
+  /** Which move directions are at an edge (a no-op) and should render disabled. */
+  moveDisabled: Record<MoveDir, boolean>;
   onKeyDown: (e: KeyboardEvent) => void;
   onHide: () => void;
 }) {
@@ -348,27 +370,24 @@ function WidgetTile({
       : undefined;
 
   if (editing) {
+    const title = t(def.titleKey);
     return (
       <Surface
         ref={nodeRef}
+        {...dragSourceProps}
+        {...dropProps}
         data-testid={`widget-${def.id}`}
         style={cellStyle(x, y)}
-        draggable
         tabIndex={0}
         role="group"
-        aria-label={t('dashboard.grid.tileAria', { vars: { title: t(def.titleKey) } })}
-        onDragStart={(e) => {
-          e.dataTransfer.setData('text/plain', def.id);
-          e.dataTransfer.effectAllowed = 'move';
-          onDragStart();
-        }}
-        onDragEnd={onDragEnd}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
+        aria-label={t('dashboard.grid.tileAria', { vars: { title } })}
         onKeyDown={onKeyDown}
         className={cn(
           PLACEMENT,
           'cursor-grab p-4 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
+          // The dragged source dims so the floating preview reads as the thing in flight
+          // (the pointer path has no native drag-image).
+          isDragging && 'opacity-50',
           // The static drag ring, dropped while this tile is the drop target so the
           // dashed ghost overlay isn't doubled with a solid outline.
           !isDropTarget && 'ring-2 ring-primary/40',
@@ -384,7 +403,7 @@ function WidgetTile({
               type="button"
               onClick={onHide}
               data-testid={`widget-hide-${def.id}`}
-              aria-label={t('dashboard.grid.hideAria', { vars: { title: t(def.titleKey) } })}
+              aria-label={t('dashboard.grid.hideAria', { vars: { title } })}
               className="rounded-md p-1 hover:bg-muted hover:text-foreground [&_svg]:size-4"
             >
               <HideIcon />
@@ -395,6 +414,20 @@ function WidgetTile({
         <div className="pointer-events-none">
           <Body />
         </div>
+        {/* Touch/click move controls — the drag-free, accessible way to reorder (issue #11).
+            Arrow keys do the same for a physical keyboard. */}
+        <BoardMoveButtons
+          onMove={onMove}
+          disabled={moveDisabled}
+          labels={{
+            up: t('dashboard.grid.moveUp', { vars: { title } }),
+            down: t('dashboard.grid.moveDown', { vars: { title } }),
+            left: t('dashboard.grid.moveLeft', { vars: { title } }),
+            right: t('dashboard.grid.moveRight', { vars: { title } }),
+          }}
+          testIdPrefix={`widget-move-${def.id}`}
+          className="mt-3 justify-center border-t border-border/40 pt-2"
+        />
       </Surface>
     );
   }
