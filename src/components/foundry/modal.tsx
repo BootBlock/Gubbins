@@ -20,6 +20,11 @@ export interface ModalProps {
   readonly children: ReactNode;
   readonly className?: string;
   /**
+   * Optional element rendered in the header's top-right, just left of the close button — e.g. a
+   * status pill or badge that belongs with the title rather than in the body. Omit for none.
+   */
+  readonly titleAccessory?: ReactNode;
+  /**
    * Opt-in: move initial focus to this element on open, rather than the dialog
    * container. Use for a dialog whose first action is typing (e.g. a Name field) so the
    * user can begin immediately. When omitted, focus parks on the container (the
@@ -47,6 +52,7 @@ export function Modal({
   description,
   children,
   className,
+  titleAccessory,
   initialFocusRef,
   scrollBody = true,
 }: ModalProps) {
@@ -147,7 +153,10 @@ export function Modal({
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
           </div>
-          <CloseButton onClick={onClose} />
+          <div className="flex items-center gap-2">
+            {titleAccessory}
+            <CloseButton onClick={onClose} />
+          </div>
         </div>
         {/* The body region. `min-h-0` lets this flex child shrink below its content height so a
             too-tall dialog scrolls rather than growing past the cap. By default it *is* the

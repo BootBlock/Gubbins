@@ -29,6 +29,8 @@ export interface RailModalProps {
   readonly description?: string;
   /** Extra classes for the {@link Modal} surface — typically a wider `max-w-*`. */
   readonly className?: string;
+  /** Forwarded to {@link Modal}: an element pinned in the header's top-right (left of Close). */
+  readonly titleAccessory?: ReactNode;
   /** Accessible name for the `role="tablist"` rail (e.g. "Settings sections"). */
   readonly railAriaLabel: string;
   /** Namespace for the generated tab/panel element ids, so two rail dialogs never collide. */
@@ -80,6 +82,7 @@ export function RailModal({
   title,
   description,
   className,
+  titleAccessory,
   railAriaLabel,
   idPrefix,
   tabs,
@@ -212,6 +215,7 @@ export function RailModal({
       title={title}
       description={description}
       className={className}
+      titleAccessory={titleAccessory}
       scrollBody={false}
       initialFocusRef={initialFocusRef}
     >

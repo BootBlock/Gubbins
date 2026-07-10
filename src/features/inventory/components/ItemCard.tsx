@@ -11,7 +11,6 @@ import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
-import { RarityBadge } from './RarityBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldList } from './ItemCardFields';
@@ -84,9 +83,9 @@ export const ItemCard = memo(function ItemCard({
   // under reduced motion or on touch. Pure decoration — see `usePointerTilt`.
   const tiltProps = usePointerTilt();
   // Decorative "Collector cards" rarity (Appearance flair). Only ~5% of items are collectors
-  // (deterministic from the name); the rest get `null` — no frame, no badge. Pure + cheap; the
-  // frame/badge are painted only by CSS when the toggle is on *and* the maximal animation level is
-  // active, so computing it always is harmless.
+  // (deterministic from the name); the rest get `null` — no frame. Pure + cheap. On the card this
+  // drives only the rarity-tinted *border* (painted by CSS when the toggle is on at the maximal
+  // animation level); the rarity gem badge itself lives in the item's detail dialog, not here.
   const rarity = itemRarity(item);
   return (
     <Surface
@@ -160,7 +159,6 @@ export const ItemCard = memo(function ItemCard({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {rarity ? <RarityBadge rarity={rarity} /> : null}
           <TrackingBadge mode={item.trackingMode} />
           {isUnlimited(item) ? <UnlimitedBadge /> : null}
         </div>

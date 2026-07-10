@@ -141,12 +141,12 @@ interface PreferencesStore {
   /**
    * Collector-card gamification (Appearance flair): turns a *lucky ~5%* of inventory cards into
    * collectible trading cards with a decorative **rarity** (Common → Legendary) — a rarity-tinted
-   * frame and a corner gem. Which items are collectors (and their tier) is a stable hash of the
-   * item name, not its value, so it never churns — see the pure
-   * {@link import('@/features/inventory/rarity').itemRarity} seam. **On by default** as part of the
-   * maximal "I have a headache" animation level, and — like the holographic foil — only shown at
+   * frame on the card, and a rarity gem in the item's detail dialog. Which items are collectors
+   * (and their tier) is a stable hash of the item name, not its value, so it never churns — see the
+   * pure {@link import('@/features/inventory/rarity').itemRarity} seam. **On by default** as part of
+   * the maximal "I have a headache" animation level, and — like the holographic foil — only shown at
    * that top tier. Purely cosmetic. Projected onto `<html>` as `data-gamify-cards`; the CSS gates
-   * the frame/badge.
+   * the card frame (the dialog gem is gated in JS at its call site).
    */
   readonly gamifyCards: boolean;
   readonly attachmentMode: AttachmentMode;

@@ -1663,60 +1663,59 @@
 
 /*
  * Collector-card rarity gamification ("Collector cards" Appearance flair; `data-gamify-cards` on
- * <html>). Dresses each inventory card as a collectible trading card: its border is tinted with a
- * decorative **rarity** tier (Common → Legendary, from the pure `rarity.ts` seam) and a matching
- * rarity gem badge appears beside the tracking pills. The `data-rarity` attribute the card carries
- * folds the tier's `--rarity-<id>` token into one inherited `--rarity` var the frame + badge read.
+ * <html>). Marks the ~5% of items that are collectors (from the pure `rarity.ts` seam) two ways:
+ * on the inventory card its border is tinted with the decorative **rarity** tier (Common →
+ * Legendary), and — because the badge would crowd the card face — the matching rarity gem lives in
+ * the item's detail dialog instead (top-right of the header, with an explanatory tooltip). Any
+ * element carrying `data-rarity` folds the tier's `--rarity-<id>` token into one `--rarity` var the
+ * frame and the badge tint themselves with; the badge sets its own, so it is self-contained.
  *
- * Gated to the maximal "I have a headache" tier via `:not([data-anim-level])` (the headache level
- * is the one that sets no such attribute) AND-ed with `data-gamify-cards`, so a calmer level or the
+ * The **card frame** is gated to the maximal "I have a headache" tier via `:not([data-anim-level])`
+ * (the level that sets no such attribute) AND-ed with `data-gamify-cards`, so a calmer level or the
  * toggle-off state shows nothing — and, being static (no motion), it needs no reduced-motion gate,
- * exactly like the per-location tint. Purely decorative and redundant with the item's real value
- * (the tier word always shows alongside its colour — WCAG 1.4.1). The badge is `display:none` at
- * rest, so it stays out of the accessibility tree until the feature is actually on.
+ * exactly like the per-location tint. The **dialog badge** is instead gated in JS at its call site
+ * (same condition), so no root-attribute display rule is needed here. Purely decorative and
+ * redundant with the item's real data (the tier word always shows alongside its colour — WCAG 1.4.1).
  */
-.gubbins-rarity[data-rarity='common'] {
+[data-rarity='common'] {
   --rarity: var(--rarity-common);
 }
-.gubbins-rarity[data-rarity='uncommon'] {
+[data-rarity='uncommon'] {
   --rarity: var(--rarity-uncommon);
 }
-.gubbins-rarity[data-rarity='rare'] {
+[data-rarity='rare'] {
   --rarity: var(--rarity-rare);
 }
-.gubbins-rarity[data-rarity='epic'] {
+[data-rarity='epic'] {
   --rarity: var(--rarity-epic);
 }
-.gubbins-rarity[data-rarity='legendary'] {
+[data-rarity='legendary'] {
   --rarity: var(--rarity-legendary);
 }
 
+/* The rarity gem pill (rendered in the item dialog) tints itself from its own `--rarity`. */
 .gubbins-rarity-badge {
-  display: none;
   color: var(--rarity);
   border-color: color-mix(in oklab, var(--rarity) 45%, transparent);
   background-color: color-mix(in oklab, var(--rarity) 14%, transparent);
 }
 
-:root[data-gamify-cards]:not([data-anim-level]) .gubbins-rarity-badge {
-  display: inline-flex;
-}
 /* Tint the card's own 1px border to its rarity colour — a subtle collectible frame that composes
    with Surface's shadow/blur (only the border *colour* changes, never the box). */
 :root[data-gamify-cards]:not([data-anim-level]) .gubbins-rarity {
   border-color: color-mix(in oklab, var(--rarity) 40%, var(--border));
 }
 
-/* High-contrast mode keeps the readable rarity gem but restores the accessibility border (the
-   bold neutral frame that mode relies on), rather than the decorative rarity tint. All three
-   flags sit on the same <html> root, so they compose into one compound selector. */
+/* High-contrast mode restores the accessibility border (the bold neutral frame that mode relies
+   on) rather than the decorative rarity tint. All three flags sit on the same <html> root, so they
+   compose into one compound selector. */
 :root[data-contrast='high'][data-gamify-cards]:not([data-anim-level]) .gubbins-rarity {
   border-color: var(--border);
 }
 
-/* Legendary cards get a gentle pulsing gem glow — the one flourish reserved for the top tier.
-   Motion only, so it sits behind the reduced-motion guard (belt-and-braces with the global
-   catch-all, which also clamps it). */
+/* Legendary gems get a gentle pulsing glow — the one flourish reserved for the top tier. Motion
+   only, so it sits behind the reduced-motion guard (belt-and-braces with the global catch-all,
+   which also clamps it). */
 @keyframes gubbins-rarity-pulse {
   0%,
   100% {
@@ -1727,9 +1726,7 @@
   }
 }
 @media (prefers-reduced-motion: no-preference) {
-  :root[data-gamify-cards]:not([data-anim-level])
-    .gubbins-rarity[data-rarity='legendary']
-    .gubbins-rarity-badge {
+  .gubbins-rarity-badge[data-rarity='legendary'] {
     animation: gubbins-rarity-pulse 2.6s var(--ease-emphasized) infinite;
   }
 }
