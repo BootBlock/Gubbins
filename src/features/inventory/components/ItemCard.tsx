@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
-import { Surface } from '@/components/foundry';
+import { Surface, usePointerTilt } from '@/components/foundry';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
@@ -74,11 +74,16 @@ export const ItemCard = memo(function ItemCard({
   // labelled action buttons (details/move/label), so keyboard/AT users keep full parity without
   // the card itself becoming a redundant, nested-interactive tab stop — hence no role/tabindex.
   const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);
+  // Pointer tilt/parallax/glare (F7): a subtle 3D lean toward the cursor with a moving specular
+  // glare, gated to fine pointers + full motion in one seam. Returns no handlers (nothing attached)
+  // under reduced motion or on touch. Pure decoration — see `usePointerTilt`.
+  const tiltProps = usePointerTilt();
   return (
     <Surface
       ref={ref}
       interactive
       {...dragProps}
+      {...tiltProps}
       onClick={onClick}
       className={cn(
         // Surface's `interactive` supplies the transition + hover shadow; the card takes a
@@ -92,6 +97,12 @@ export const ItemCard = memo(function ItemCard({
         // it stays safe on the virtualised list (no per-mount entrance to re-fire on recycle).
         // Decoration only — the hover-lift and the real focus ring remain the focus signals.
         'gubbins-spotlight-border',
+        // Pointer tilt/parallax/glare (F7): leans toward the cursor on hover with a moving glare.
+        // The class only *consumes* the `--tilt-*` vars `usePointerTilt` writes; every active rule
+        // is gated to fine-pointer + full-motion in the stylesheet, so on touch / reduced motion it
+        // is inert (and no handlers are attached). Its `transform` composes with the `-translate-y-1`
+        // hover-lift (a `translate`) without clobbering it.
+        'gubbins-tilt',
         clickable && 'cursor-pointer',
         !item.isActive && 'opacity-60',
         selected && 'ring-2 ring-primary/60',
@@ -114,7 +125,9 @@ export const ItemCard = memo(function ItemCard({
             <Thumbnail
               bytes={item.thumbnailBlob}
               alt={item.name}
-              className="size-11 shrink-0 rounded-lg border border-border/60"
+              // `gubbins-tilt-layer` (F7): drifts against the tilt for a counter-parallax so the
+              // thumbnail reads as floating above the card face. Inert unless the card is tilting.
+              className="gubbins-tilt-layer size-11 shrink-0 rounded-lg border border-border/60"
             />
           ) : null}
           <div className="min-w-0">
@@ -138,7 +151,9 @@ export const ItemCard = memo(function ItemCard({
           virtualised list's per-card measurement stable. */}
       <CardFieldList fields={fields} locationColorClass={locationColorClass} />
 
-      <div className="flex-1">
+      {/* `gubbins-tilt-layer` (F7): the hero visualisation is the card's focal point, so it takes
+          the counter-parallax drift for depth. Inert (no translate) unless the card is tilting. */}
+      <div className="gubbins-tilt-layer flex-1">
         {isUnlimited(item) ? (
           <div className="flex items-center justify-between">
             <span
