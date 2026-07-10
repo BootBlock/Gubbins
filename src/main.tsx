@@ -11,12 +11,18 @@ import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oau
 // route it, then rewrites the location to the Sync screen. A no-op on an ordinary load.
 completeGoogleAuthRedirect();
 
-// Project the persisted appearance (mode + accent + OLED + high-contrast) onto the document
-// before first paint (no flash). The store hydrates synchronously from localStorage, so this
-// reflects the saved choice.
+// Project the persisted appearance (mode + accent + OLED + high-contrast + reduce-effects) onto
+// the document before first paint (no flash). The store hydrates synchronously from localStorage,
+// so this reflects the saved choice.
 {
   const s = usePreferencesStore.getState();
-  applyAppearance({ mode: s.mode, accent: s.accent, oledDark: s.oledDark, highContrast: s.highContrast });
+  applyAppearance({
+    mode: s.mode,
+    accent: s.accent,
+    oledDark: s.oledDark,
+    highContrast: s.highContrast,
+    reduceEffects: s.reduceEffects,
+  });
 }
 
 const rootElement = document.getElementById('root');

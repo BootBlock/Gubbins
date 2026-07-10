@@ -4,6 +4,7 @@ import { usePointerTilt } from './usePointerTilt';
 import type { MediaQueryLike, MediaQueryProvider } from './useReducedMotion';
 import { PREFERS_REDUCED_MOTION_QUERY } from '@/lib/env/motion';
 import { FINE_POINTER_QUERY } from './pointer-tilt';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /** A minimal static MediaQueryList fake (the hook re-reads via matchMedia; no live flip needed). */
 class FakeMedia implements MediaQueryLike {
@@ -59,13 +60,26 @@ function fakeCard(): HTMLElement {
   return el;
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  usePreferencesStore.setState({ reduceEffects: false });
+});
 
 describe('usePointerTilt — gate fall-through', () => {
   it('attaches no handlers under reduced motion (belt-and-braces with the CSS)', () => {
     const { result } = renderHook(() =>
       usePointerTilt({ mediaProvider: provide({ reduced: true, fine: true }) }),
     );
+    expect(result.current.onPointerMove).toBeUndefined();
+    expect(result.current.onPointerLeave).toBeUndefined();
+  });
+
+  it('attaches no handlers when "Reduce effects" (F9) is on, even on a fine pointer with OS motion allowed', () => {
+    usePreferencesStore.setState({ reduceEffects: true });
+    const { result } = renderHook(() =>
+      usePointerTilt({ mediaProvider: provide({ reduced: false, fine: true }) }),
+    );
+    // The F9 pref OR's into the decoration-motion gate, so tilt is off without OS reduced-motion.
     expect(result.current.onPointerMove).toBeUndefined();
     expect(result.current.onPointerLeave).toBeUndefined();
   });

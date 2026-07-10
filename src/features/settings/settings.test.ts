@@ -38,7 +38,13 @@ import { applyAppearance, DARK_CLASS, resolveMode } from './theme';
 import type { Appearance } from './theme';
 
 /** A base appearance for applyAppearance tests — override just the field under test. */
-const APPEARANCE: Appearance = { mode: 'dark', accent: 'violet', oledDark: false, highContrast: false };
+const APPEARANCE: Appearance = {
+  mode: 'dark',
+  accent: 'violet',
+  oledDark: false,
+  highContrast: false,
+  reduceEffects: false,
+};
 
 describe('clampExpiryWindowDays', () => {
   it('passes valid in-range values through, rounding to a whole day', () => {
@@ -205,6 +211,7 @@ describe('applyAppearance', () => {
     delete root.dataset.accent;
     delete root.dataset.oled;
     delete root.dataset.contrast;
+    delete root.dataset.reduceEffects;
   });
 
   it('toggles .dark for the resolved mode and sets data-accent', () => {
@@ -231,6 +238,14 @@ describe('applyAppearance', () => {
     expect(root.dataset.contrast).toBe('high');
     applyAppearance({ ...APPEARANCE, highContrast: false }, root);
     expect(root.dataset.contrast).toBeUndefined();
+  });
+
+  it('sets and clears data-reduce-effects for the "Reduce effects" switch (F9)', () => {
+    const root = document.createElement('div');
+    applyAppearance({ ...APPEARANCE, reduceEffects: true }, root);
+    expect(root.dataset.reduceEffects).toBe('');
+    applyAppearance({ ...APPEARANCE, reduceEffects: false }, root);
+    expect(root.dataset.reduceEffects).toBeUndefined();
   });
 
   it('is idempotent on the .dark class', () => {

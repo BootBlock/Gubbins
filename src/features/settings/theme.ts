@@ -4,9 +4,11 @@
  * The two orthogonal axes (mode + accent) and the two composable switches (OLED, high contrast)
  * live in `usePreferencesStore`; this is the single seam that projects them onto the document.
  * It toggles the `.dark` class for the resolved mode (so `@custom-variant dark`, the `dark:`
- * utilities, `color-scheme` and the reduced-motion catch-all keep working) and sets three data
- * attributes the CSS palettes key off: `data-accent` (the colour), `data-oled` (pure-black
- * surfaces, effective only in dark mode) and `data-contrast="high"` (the accessibility mode).
+ * utilities, `color-scheme` and the reduced-motion catch-all keep working) and sets four data
+ * attributes the CSS palettes / motion catch-all key off: `data-accent` (the colour),
+ * `data-oled` (pure-black surfaces, effective only in dark mode), `data-contrast="high"` (the
+ * accessibility mode) and `data-reduce-effects` (the visual-flair F9 "Reduce effects" switch —
+ * dials the decorative motion/flair down independently of the OS reduced-motion setting).
  * The `system` mode is resolved against the OS `prefers-color-scheme` here. `resolveMode` is
  * pure (the OS preference is injected) so it is unit-testable without a `matchMedia` mock. The
  * appearance registry (`theme-registry.ts`) is the SSOT for the mode/accent ids.
@@ -45,11 +47,19 @@ export interface Appearance {
   readonly oledDark: boolean;
   /** Accessibility high-contrast mode; overrides mode/accent contrast + borders. */
   readonly highContrast: boolean;
+  /**
+   * "Reduce effects" (visual-flair F9): dial the decorative motion/flair down independently of
+   * the OS `prefers-reduced-motion` setting. Purely additive to it — if the OS prefers reduced
+   * motion the effects stay off regardless of this pref. Not a colour, so its light/dark handling
+   * is a no-op; it lives here only so appearance is projected from one seam.
+   */
+  readonly reduceEffects: boolean;
 }
 
 /**
  * Apply `appearance` to `root` (idempotent): toggle `.dark` for the resolved mode, set
- * `data-accent`, and set/clear `data-oled` / `data-contrast` for the two switches.
+ * `data-accent`, and set/clear `data-oled` / `data-contrast` / `data-reduce-effects` for the
+ * three composable switches.
  */
 export function applyAppearance(appearance: Appearance, root: HTMLElement = document.documentElement): void {
   const base = resolveMode(appearance.mode, systemPrefersDark());
@@ -59,4 +69,8 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   else delete root.dataset.oled;
   if (appearance.highContrast) root.dataset.contrast = 'high';
   else delete root.dataset.contrast;
+  // The visual-flair F9 lever: `styles/index.css` mirrors the reduced-motion catch-all under
+  // `:root[data-reduce-effects]`, so setting this clamps every decorative transition/animation.
+  if (appearance.reduceEffects) root.dataset.reduceEffects = '';
+  else delete root.dataset.reduceEffects;
 }

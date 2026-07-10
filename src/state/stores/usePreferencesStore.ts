@@ -88,6 +88,14 @@ interface PreferencesStore {
   readonly oledDark: boolean;
   /** Accessibility high-contrast mode; boosts contrast + borders over the active mode/accent. */
   readonly highContrast: boolean;
+  /**
+   * "Reduce effects" (visual-flair F9): dial the app's decorative motion/flair down
+   * independently of the OS `prefers-reduced-motion` setting. **Off by default.** Purely
+   * additive to the OS preference — the effects stay off if the OS prefers reduced motion
+   * regardless of this. Projected onto `<html>` as `data-reduce-effects` by the apply seam,
+   * and OR'd into the shared decoration-motion gate that the JS-driven effects read.
+   */
+  readonly reduceEffects: boolean;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
@@ -231,6 +239,8 @@ interface PreferencesStore {
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
   setHighContrast: (enabled: boolean) => void;
+  /** Turn the "Reduce effects" decorative-motion switch on/off (visual-flair F9). */
+  setReduceEffects: (enabled: boolean) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
@@ -279,6 +289,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       accent: 'violet',
       oledDark: false,
       highContrast: false,
+      reduceEffects: false,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
@@ -314,6 +325,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),
       setOledDark: (oledDark) => set({ oledDark }),
       setHighContrast: (highContrast) => set({ highContrast }),
+      setReduceEffects: (reduceEffects) => set({ reduceEffects }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.

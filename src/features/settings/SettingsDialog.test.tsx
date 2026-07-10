@@ -100,12 +100,19 @@ describe('SettingsDialog — Projects off', () => {
 
 describe('SettingsDialog — appearance controls apply to the document', () => {
   afterEach(() => {
-    usePreferencesStore.setState({ mode: 'dark', accent: 'violet', oledDark: false, highContrast: false });
+    usePreferencesStore.setState({
+      mode: 'dark',
+      accent: 'violet',
+      oledDark: false,
+      highContrast: false,
+      reduceEffects: false,
+    });
     const root = document.documentElement;
     root.classList.remove('dark');
     delete root.dataset.accent;
     delete root.dataset.oled;
     delete root.dataset.contrast;
+    delete root.dataset.reduceEffects;
   });
 
   it('mode, colour, OLED and high-contrast controls land on <html>', () => {
@@ -139,6 +146,11 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByTestId('setting-high-contrast'));
     fireEvent.click(screen.getByRole('option', { name: 'On' }));
     expect(root.dataset.contrast).toBe('high');
+
+    // Reduce effects (F9): sets data-reduce-effects, which the CSS catch-all keys off.
+    fireEvent.click(screen.getByTestId('setting-reduce-effects'));
+    fireEvent.click(screen.getByRole('option', { name: 'On' }));
+    expect(root.dataset.reduceEffects).toBe('');
   });
 });
 

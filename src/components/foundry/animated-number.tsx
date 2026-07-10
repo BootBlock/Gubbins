@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { useCountUp } from './useCountUp';
-import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
+import { type MediaQueryProvider } from './useReducedMotion';
+import { useDecorationMotionReduced } from './decoration-motion';
 
 /**
  * Foundry AnimatedNumber — a "ticker" that rolls a figure smoothly up (or down) to its
@@ -15,9 +16,9 @@ import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
  *    read the real figure, and synchronous tests see it without waiting on a frame loop.
  *  - **A change while mounted animates** from the previous value to the new one, then
  *    settles with a brief `animate-count-pop` scale bounce.
- *  - **Reduced motion snaps.** When the user prefers reduced motion (or the frame loop is
- *    unavailable) the value is set instantly with no roll and no pop — belt-and-braces
- *    alongside the global CSS catch-all.
+ *  - **Reduced motion snaps.** When decorative motion is suppressed (OS reduced-motion OR the
+ *    F9 "Reduce effects" switch, or the frame loop is unavailable) the value is set instantly
+ *    with no roll and no pop — belt-and-braces alongside the global CSS catch-all.
  *
  * The rendered text is the animating figure; at rest that equals the true value, so
  * assistive tech and copy-paste read the real number. There is deliberately no `aria-live`
@@ -41,7 +42,7 @@ export interface AnimatedNumberProps {
   readonly animateOnMount?: boolean;
   readonly className?: string;
   readonly 'data-testid'?: string;
-  /** Injectable reduced-motion provider (test seam), forwarded to {@link useReducedMotion}. */
+  /** Injectable reduced-motion provider (test seam), forwarded to the decoration-motion gate. */
   readonly motionProvider?: MediaQueryProvider;
 }
 
@@ -59,7 +60,7 @@ export function AnimatedNumber({
   'data-testid': testId,
   motionProvider,
 }: AnimatedNumberProps) {
-  const reduced = useReducedMotion(motionProvider);
+  const reduced = useDecorationMotionReduced(motionProvider);
   const display = useCountUp(value, { durationMs, animateOnMount, reduced });
 
   return (

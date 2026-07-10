@@ -1739,6 +1739,51 @@
   }
 }
 
+/*
+ * "Reduce effects" (visual-flair F9) — the in-app switch that calms the decoration without
+ * forcing OS-level reduced motion. Settings → Appearance → "Reduce effects" sets
+ * `data-reduce-effects` on <html> (via `theme.ts`), and this block *mirrors the reduced-motion
+ * catch-all above* so ONE lever neutralises every decorative transition/animation app-wide —
+ * including the CSS-driven flair that has no JS gate (F5 spotlight-border sweep, F8 ring-draw /
+ * badge-pop / toast-in, and any reveal/entrance `animate-rise`), and by construction any future
+ * effect built on a `transition-*` / `animate-*` utility. **Design choice:** it clamps the
+ * *whole* decorative motion layer, exactly like `prefers-reduced-motion` — the same predictable
+ * "calm the app" behaviour, spinner still exempt as functional feedback — rather than trying to
+ * distinguish a decorative subset. The JS-gated effects (F2 count-up, F3 reveal *arming*, F4
+ * burst, F6 view-transitions, F7 tilt) additionally short-circuit at source via the shared
+ * decoration-motion gate (`decoration-motion.ts`), which OR's this pref with the OS preference —
+ * necessary where the effect is a *static* hold (F3 holds `opacity-0` until scroll) that a
+ * duration clamp alone can't undo. (F1 accent-glow is a static gradient, not motion, so — as
+ * under reduced-motion — it is intentionally left alone.) It is *additive* to the OS setting (it
+ * can only suppress more motion), so `prefers-reduced-motion` always wins regardless of this
+ * switch. Kept a separate block, not merged into the `@media` above, because a media query and an
+ * attribute selector are distinct mechanisms that cannot share one rule.
+ */
+:root[data-reduce-effects] *,
+:root[data-reduce-effects] *::before,
+:root[data-reduce-effects] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Loading spinners are functional feedback — keep them spinning here too. */
+:root[data-reduce-effects] .animate-spin {
+  animation: gubbins-spin 0.8s linear infinite !important;
+}
+
+/* Belt-and-braces for the view-transition pseudo-tree (the universal `*` rule can't reach it),
+ * matching the reduced-motion guard. The JS seam already declines to start a cross-fade while
+ * "Reduce effects" is on, so this only ever matters if one is somehow in flight when it is toggled. */
+:root[data-reduce-effects]::view-transition-group(*),
+:root[data-reduce-effects]::view-transition-old(*),
+:root[data-reduce-effects]::view-transition-new(*) {
+  animation: none !important;
+}
+
 /* ── Print: the insurance / estate schedule document (feature-gap G1) ────────────────
  * The schedule screen renders with the usual design tokens on screen; when printed (or
  * "Saved as PDF") the app chrome is dropped, the page is forced to a legible light,
