@@ -1,10 +1,11 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
-import { Button, Tooltip } from '@/components/foundry';
+import { Button, Menu, MenuAction, Tooltip } from '@/components/foundry';
 import {
   CheckoutIcon,
   DeleteIcon,
   EditIcon,
   GaugeIcon,
+  MoreIcon,
   MoveIcon,
   QrCodeIcon,
   RestoreIcon,
@@ -35,9 +36,13 @@ export interface ItemActionsHandle {
 }
 
 /**
- * Shared item action controls (move, update gauge, soft-delete/restore) plus the
- * dialogs they open. Used by both the Visual and Data presentations so behaviour
- * stays identical across the density toggle.
+ * Shared item action controls (details, update gauge, label, soft-delete/restore) plus the
+ * dialogs they open. Used by both the Visual and Data presentations so behaviour stays
+ * identical across the density toggle.
+ *
+ * The secondary stock actions (move, loan, sell, write off) live behind a single "More
+ * actions" overflow {@link Menu} rather than as their own buttons, so the card footer stays
+ * uncluttered and fits its width; they keep the same module + tracking-mode gating.
  *
  * Forwards a {@link ItemActionsHandle} ref so the parent card can open a dialog on a body
  * click without a second set of dialog state.
@@ -102,22 +107,6 @@ export const ItemActions = forwardRef<
         </Tooltip>
       ) : null}
       <Tooltip
-        content="Move this item to another location. The move is recorded in the activity log."
-        triggerTabIndex={-1}
-      >
-        <span>
-          <Button
-            variant="outline"
-            size="icon"
-            className={size}
-            aria-label="Move item"
-            onClick={() => setDialog('move')}
-          >
-            <MoveIcon className="text-glyph-move" />
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip
         content="Show a printable label — a QR that deep-links back to this item, and/or a Code 128 barcode of its MPN."
         triggerTabIndex={-1}
       >
@@ -133,63 +122,45 @@ export const ItemActions = forwardRef<
           </Button>
         </span>
       </Tooltip>
-      {contactsEnabled &&
-      item.isActive &&
-      item.trackingMode !== 'CONSUMABLE_GAUGE' &&
-      item.trackingMode !== 'UNTRACKED' ? (
-        <Tooltip
-          content="Loan this item to a contact, tracking who has it and when it is due back."
-          triggerTabIndex={-1}
-        >
-          <span>
-            <Button
-              variant="outline"
-              size="icon"
-              className={size}
-              aria-label="Check out"
-              onClick={() => setDialog('checkout')}
+      {/* Secondary stock actions (move, loan, sell, write off) are tucked behind a single
+          "More actions" overflow menu so the card footer stays uncluttered and fits its width.
+          Move is always offered, so the menu is never empty; loan/sell/write-off keep the same
+          module + tracking-mode gating they had as standalone buttons. */}
+      <Menu
+        label="More actions"
+        trigger={<MoreIcon className="text-muted-foreground" />}
+        triggerSize="icon"
+        triggerClassName={size}
+        triggerProps={{ 'data-testid': 'item-actions-more' }}
+      >
+        <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
+          Move…
+        </MenuAction>
+        {contactsEnabled &&
+        item.isActive &&
+        item.trackingMode !== 'CONSUMABLE_GAUGE' &&
+        item.trackingMode !== 'UNTRACKED' ? (
+          <MenuAction
+            icon={<CheckoutIcon className="text-glyph-checkout" />}
+            onSelect={() => setDialog('checkout')}
+          >
+            Loan out…
+          </MenuAction>
+        ) : null}
+        {canSell ? (
+          <>
+            <MenuAction icon={<SaleIcon className="text-glyph-sale" />} onSelect={() => setDialog('sell')}>
+              Sell…
+            </MenuAction>
+            <MenuAction
+              icon={<WriteOffIcon className="text-glyph-neutral" />}
+              onSelect={() => setDialog('writeoff')}
             >
-              <CheckoutIcon className="text-glyph-checkout" />
-            </Button>
-          </span>
-        </Tooltip>
-      ) : null}
-      {canSell ? (
-        <>
-          <Tooltip
-            content="Sell units of this item — records a sale price and feeds the sales & margin report."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button
-                variant="outline"
-                size="icon"
-                className={size}
-                aria-label="Sell"
-                onClick={() => setDialog('sell')}
-              >
-                <SaleIcon className="text-glyph-sale" />
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip
-            content="Write off units as lost, damaged or expired — removes the stock with no proceeds."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button
-                variant="outline"
-                size="icon"
-                className={size}
-                aria-label="Write off"
-                onClick={() => setDialog('writeoff')}
-              >
-                <WriteOffIcon className="text-glyph-neutral" />
-              </Button>
-            </span>
-          </Tooltip>
-        </>
-      ) : null}
+              Write off…
+            </MenuAction>
+          </>
+        ) : null}
+      </Menu>
       {item.isActive ? (
         <Tooltip
           content="**Soft-delete** — hides the item but keeps its history. Tick *Show removed* to restore it later."
