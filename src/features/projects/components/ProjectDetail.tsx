@@ -16,6 +16,7 @@ import {
   AssemblyIcon,
   CostIcon,
   DeleteIcon,
+  EditIcon,
   ImportIcon,
   ProjectIcon,
   ShoppingCartIcon,
@@ -33,6 +34,7 @@ import {
   useShoppingList,
 } from '../projects';
 import { COSTING_MODE_LABELS, PROJECT_STATUS_LABELS } from './projects-ui';
+import { EditProjectDialog } from './EditProjectDialog';
 import { BomLineTable } from './BomLineTable';
 import { AddBomLineDialog } from './AddBomLineDialog';
 import { ImportBomDialog } from './ImportBomDialog';
@@ -65,6 +67,7 @@ export function ProjectDetail({
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [finaliseOpen, setFinaliseOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   if (project.isLoading) {
@@ -145,6 +148,10 @@ export function ProjectDetail({
               </Button>
             </span>
           </Tooltip>
+          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} data-testid="edit-project">
+            <EditIcon />
+            Edit
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -248,6 +255,7 @@ export function ProjectDetail({
         projectId={projectId}
         items={items}
       />
+      <EditProjectDialog open={editOpen} onClose={() => setEditOpen(false)} project={project.data} />
       <ImportBomDialog open={importOpen} onClose={() => setImportOpen(false)} projectId={projectId} />
       <FinaliseAssemblyDialog
         open={finaliseOpen}

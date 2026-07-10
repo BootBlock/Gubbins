@@ -1,26 +1,16 @@
-import { useId, useRef } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useRef } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Button, FormField, GlyphPickerButton, Input, Modal, SelectField } from '@/components/foundry';
-import { ProjectIcon } from '@/components/icons';
-import { COSTING_MODES } from '@/db/repositories';
+import { Button, Modal } from '@/components/foundry';
 import { useCreateProject } from '../projects';
-import { COSTING_MODE_LABELS } from './projects-ui';
+import { ProjectFormFields } from './ProjectFormFields';
+import { projectFormSchema, type ProjectFormValues } from './project-form';
 
 /**
- * Project creation form (spec §2.4.4, §4) — React Hook Form bound to Zod. Captures
- * the name, an optional description, an optional icon and the initial BOM costing mode (§4).
+ * Project creation form (spec §2.4.4, §4) — React Hook Form bound to Zod. Captures the
+ * name, an optional description, an optional icon and the initial BOM costing mode (§4);
+ * a new project always starts in the PLANNING status, so that control is edit-only.
  */
-const schema = z.object({
-  name: z.string().trim().min(1, 'Please enter a project name.'),
-  description: z.string().optional(),
-  icon: z.string().nullable().optional(),
-  costingMode: z.enum(COSTING_MODES),
-});
-
-type FormValues = z.infer<typeof schema>;
-
 export function CreateProjectDialog({
   open,
   onClose,
@@ -32,16 +22,21 @@ export function CreateProjectDialog({
 }) {
   const createProject = useCreateProject();
   const nameRef = useRef<HTMLInputElement>(null);
-  const iconFieldId = useId();
   const {
     control,
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: '', description: '', icon: null, costingMode: 'CURRENT_REPLACEMENT' },
+  } = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      icon: null,
+      status: 'PLANNING',
+      costingMode: 'CURRENT_REPLACEMENT',
+    },
   });
 
   const close = () => {
@@ -49,7 +44,7 @@ export function CreateProjectDialog({
     onClose();
   };
 
-  const onSubmit = (values: FormValues) => {
+  const onSubmit = (values: ProjectFormValues) => {
     createProject.mutate(
       {
         name: values.name.trim(),
@@ -75,62 +70,7 @@ export function CreateProjectDialog({
       initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <FormField label="Name" error={errors.name?.message}>
-          <Input
-            placeholder="e.g. Bench power supply"
-            {...(() => {
-              const { ref, ...rest } = register('name');
-              return {
-                ...rest,
-                ref: (el: HTMLInputElement | null) => {
-                  ref(el);
-                  nameRef.current = el;
-                },
-              };
-            })()}
-          />
-        </FormField>
-
-        <FormField label="Description (optional)">
-          <Input placeholder="A short summary" {...register('description')} />
-        </FormField>
-
-        {/* Explicit <label htmlFor> (a <button> is a labelable element) rather than
-            FormField's implicit-label wrap, which is meant for a single input — mirrors
-            AutocompleteField. */}
-        <div>
-          <label htmlFor={iconFieldId} className="mb-field-gap block text-sm font-medium">
-            Icon (optional)
-          </label>
-          <Controller
-            control={control}
-            name="icon"
-            render={({ field }) => (
-              <GlyphPickerButton
-                id={iconFieldId}
-                value={field.value ?? null}
-                onChange={field.onChange}
-                fallback={ProjectIcon}
-                placeholder="Choose an icon"
-                title="Choose a project icon"
-                clearable
-              />
-            )}
-          />
-        </div>
-
-        <Controller
-          control={control}
-          name="costingMode"
-          render={({ field }) => (
-            <SelectField
-              label="Costing"
-              value={field.value}
-              onChange={field.onChange}
-              options={COSTING_MODES.map((mode) => ({ value: mode, label: COSTING_MODE_LABELS[mode] }))}
-            />
-          )}
-        />
+        <ProjectFormFields control={control} register={register} errors={errors} nameRef={nameRef} />
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={close}>
