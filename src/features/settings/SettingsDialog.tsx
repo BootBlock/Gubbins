@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
+import { ReminderSettings } from '@/features/alerts/ReminderSettings';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
 import { DatabaseMaintenance } from '@/features/maintenance';
@@ -651,6 +652,8 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
       content: (
         <>
           <SettingsSection icon={<NotificationIcon />} title="Notifications">
+            {/* G3: local reminder notifications — opt-in, permission-gated, per-lane. */}
+            <ReminderSettings />
             <SettingRow
               label="Scrape notifications"
               description="How supplier-scrape updates are announced. Either way the change still applies and is logged."

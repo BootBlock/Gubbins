@@ -44,6 +44,12 @@ import {
   type LabelTemplate,
 } from '@/features/inventory/labels/label-template';
 import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
+import {
+  DEFAULT_REMINDER_KINDS,
+  normaliseReminderKinds,
+  type ReminderKinds,
+} from '@/features/alerts/reminders';
+import type { AlertKind } from '@/features/alerts/alerts';
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -166,6 +172,21 @@ interface PreferencesStore {
    */
   readonly kioskMode: boolean;
   /**
+   * Local reminder notifications (G3, §3). When on — and the browser grants notification
+   * permission — the alert lanes (low stock, expiry, maintenance-due, warranty-due) are
+   * surfaced as OS notifications from an installed PWA, not only in-app. **Off by default**
+   * (opt-in; the permission prompt is only shown when the user turns this on). Local only —
+   * never Web Push. Degrades silently where notifications are unsupported/denied.
+   */
+  readonly remindersEnabled: boolean;
+  /**
+   * Which alert lanes may fire a reminder notification (G3). A per-lane opt-in map; a lane set
+   * to `false` is suppressed even while {@link remindersEnabled} is on. Defaults to all on.
+   * Persisted as intent and reconciled through `normaliseReminderKinds` so a stale/partial
+   * value can never leave a lane `undefined` at the decision site.
+   */
+  readonly reminderKinds: ReminderKinds;
+  /**
    * Landing-page (Dashboard) optional features (§3 dashboard improvements). Each is a
    * user-facing enhancement the user can switch off from the Settings "Dashboard" group;
    * all default **on** so they're discoverable. The two extra widgets (Recent activity,
@@ -233,6 +254,10 @@ interface PreferencesStore {
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
   setKioskMode: (kioskMode: boolean) => void;
+  /** Turn local reminder notifications on/off (the permission prompt is a UI concern). */
+  setRemindersEnabled: (enabled: boolean) => void;
+  /** Toggle whether a single alert lane may fire a reminder. */
+  setReminderKind: (kind: AlertKind, enabled: boolean) => void;
   setDashboardCommandPalette: (enabled: boolean) => void;
   setDashboardQuickActions: (enabled: boolean) => void;
   setDashboardGettingStarted: (enabled: boolean) => void;
@@ -273,6 +298,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
       kioskMode: false,
+      remindersEnabled: false,
+      reminderKinds: DEFAULT_REMINDER_KINDS,
       dashboardCommandPalette: true,
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
@@ -320,6 +347,12 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDowngradeWindowMonths: (months) => set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),
       setKioskMode: (kioskMode) => set({ kioskMode }),
+      setRemindersEnabled: (remindersEnabled) => set({ remindersEnabled }),
+      // Merge one lane's choice (normalised) over the map, leaving the others untouched.
+      setReminderKind: (kind, enabled) =>
+        set((state) => ({
+          reminderKinds: normaliseReminderKinds({ ...state.reminderKinds, [kind]: enabled }),
+        })),
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),

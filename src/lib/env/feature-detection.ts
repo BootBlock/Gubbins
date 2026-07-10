@@ -69,6 +69,33 @@ export function hasFileSystemAccess(): boolean {
   return typeof globalThis !== 'undefined' && 'showSaveFilePicker' in globalThis;
 }
 
+/**
+ * True when local OS notifications can be shown — the Notification API **and** a service
+ * worker are both present (G3 reminders; notifications are shown via the SW registration).
+ * Absent on iOS Safari's non-installed browser, so callers degrade to in-app only (§3, §6.1).
+ */
+export function hasNotifications(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator
+  );
+}
+
+/**
+ * True when the Periodic Background Sync API is present — lets the service worker wake
+ * periodically to re-check reminders (G3, best-effort). Chromium-installed-PWA only; where
+ * absent, reminders are foreground-only. Never gate correctness on this — it is advisory.
+ */
+export function hasPeriodicSync(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'ServiceWorkerRegistration' in window &&
+    'periodicSync' in ServiceWorkerRegistration.prototype
+  );
+}
+
 /** True when the native Barcode Detection API is available — primary scanner engine (§6.6). */
 export function hasBarcodeDetector(): boolean {
   return typeof globalThis !== 'undefined' && 'BarcodeDetector' in globalThis;
