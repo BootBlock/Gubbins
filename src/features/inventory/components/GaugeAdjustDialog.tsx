@@ -12,7 +12,7 @@ import {
 } from '@/db/repositories/gauge';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAdjustGauge } from '../mutations';
-import { GaugeBar } from './GaugeBar';
+import { GaugeBar, GaugeRing } from './GaugeBar';
 
 type Mode = 'consume' | 'weighin' | 'refill';
 
@@ -83,8 +83,14 @@ export function GaugeAdjustDialog({
       description="Record usage or recalibrate against a scale."
       initialFocusRef={valueRef}
     >
-      <div className="mb-4">
-        <GaugeBar gauge={gauge} />
+      {/* At-a-glance ring (draws on once as the dialog opens — a mount-once surface, so the
+          one-shot sweep never re-fires the way it would on a recycled list row) beside the
+          precise net/gross bar. */}
+      <div className="mb-4 flex items-center gap-4">
+        <GaugeRing gauge={gauge} size={56} drawOn />
+        <div className="min-w-0 flex-1">
+          <GaugeBar gauge={gauge} />
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-2">

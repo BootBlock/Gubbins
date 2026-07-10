@@ -936,6 +936,27 @@
 }
 
 /*
+ * Toast enter — a refined "pop" entrance for the Foundry Toast (visual-flair F8). The mirror of
+ * `gubbins-toast-out`: instead of the generic `animate-rise` (fade + translate only) the toast
+ * eases up from a hair under full size, so a passive notification arrives with a small, premium
+ * emphasis rather than sliding in flatly. Deliberately restrained — a 0.96 → 1 scale, no
+ * overshoot/bounce — and compositor-only (transform + opacity). Same signature `--ease-emphasized`
+ * and 0.3s duration as the entrance it replaces, so it reads as the same motion language, just
+ * richer. Reduced motion: the global catch-all neutralises it (and the provider still announces
+ * via the `role="status"` live region regardless of the animation).
+ */
+@keyframes gubbins-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
  * Drop-target ghost — the live "your widget lands here" indicator on the customisable
  * dashboard board (spec §3). While a tile is dragged, a single translucent placeholder
  * tracks the cell under the pointer; this gives it a calm, breathing primary glow so the
@@ -1014,6 +1035,10 @@
   animation: gubbins-slide-in-left 1s var(--ease-emphasized) both;
 }
 
+@utility animate-toast-in {
+  animation: gubbins-toast-in 0.3s var(--ease-emphasized) both;
+}
+
 @utility animate-toast-out {
   animation: gubbins-toast-out 0.2s var(--ease-emphasized) both;
 }
@@ -1051,6 +1076,68 @@
 
 @utility animate-count-pop {
   animation: gubbins-count-pop 0.4s var(--ease-emphasized);
+}
+
+/*
+ * Badge/notification "pop" (visual-flair F8). A small, tasteful entrance for a count pill or
+ * notification badge as it first appears (or re-appears on a keyed remount when its value
+ * changes): the badge fades in while easing up from small with a gentle single overshoot, so a
+ * new count reads as "this just arrived" without a jittery bounce-fest. Sibling to
+ * `gubbins-count-pop` — same 0.4s / `--ease-emphasized` pop family, but with opacity + a scale-up
+ * *entrance* (count-pop is a settle bounce on already-visible digits). Compositor-only
+ * (transform + opacity). Reduced motion: neutralised by the global catch-all — the badge simply
+ * appears (its count already rides the tile's `aria-label`, so nothing is lost to AT).
+ */
+@keyframes gubbins-badge-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-badge-pop {
+  animation: gubbins-badge-pop 0.4s var(--ease-emphasized) both;
+}
+
+/*
+ * Progress-ring "draw-on" (visual-flair F8). When a {@link GaugeRing} first reveals on a
+ * mount-once surface (e.g. the gauge-adjust dialog), its stroke sweeps on from empty to its real
+ * value by animating `stroke-dashoffset` — a compositor-friendly SVG paint, no layout thrash —
+ * settling with the signature `--ease-emphasized` at the same 0.5s the gauge already uses for a
+ * live value change (`transition-all duration-500`), so the draw-on and later adjustments share
+ * one timing.
+ *
+ * The keyframe defines only the `from` (fully "undrawn": offset = the whole circumference, set
+ * inline as `--gubbins-ring-circ`); the implicit `to` is the element's own `stroke-dashoffset`
+ * presentation attribute (its true value), which `both` then holds. So the ring always *rests* at
+ * its real value — the animation only backfills the empty-to-full sweep on mount.
+ *
+ * ONE-SHOT, opt-in only (the `drawOn` prop / this class). It is deliberately NEVER applied to the
+ * per-row rings in the virtualised item list — those recycle on scroll and would re-fire the sweep
+ * (same rule as the F3 scroll-reveal / F7 tilt seams); there the ring renders static at its value.
+ *
+ * Reduced motion (and, in future, the F9 "reduce effects" switch): the global
+ * `prefers-reduced-motion` catch-all clamps this to ~0.01ms, so the ring snaps straight to its
+ * real value with no visible sweep — belt-and-braces, since `both` already rests it at the true
+ * offset. When F9 lands it neutralises this the same way it will the other pure-CSS effects (F5):
+ * by extending that catch-all's selector, no per-call-site wiring needed.
+ */
+@keyframes gubbins-ring-draw {
+  from {
+    stroke-dashoffset: var(--gubbins-ring-circ, 0);
+  }
+}
+
+@utility animate-ring-draw {
+  animation: gubbins-ring-draw 0.5s var(--ease-emphasized) both;
 }
 
 /*

@@ -57,6 +57,33 @@ export function gaugeTone(percentage: number): GaugeTone {
   return { fill: 'bg-success', text: 'text-success', track: 'bg-success/15' };
 }
 
+/** The stroke-dash geometry of a ring gauge (`GaugeRing`), resolved from its value and size. */
+export interface RingGeometry {
+  /** The remaining percentage, clamped to `[0, 100]` — the single source for both dash + tone. */
+  readonly pct: number;
+  /** Ring radius (px) — the circle's `r`, inset by half the stroke width. */
+  readonly radius: number;
+  /** Full stroke length (px) = the `stroke-dasharray`, and the "empty ring" dash offset. */
+  readonly circumference: number;
+  /** The `stroke-dashoffset` for the current value: `circumference` at 0%, `0` at 100%. */
+  readonly offset: number;
+}
+
+/**
+ * Pure stroke-dash geometry for the ring gauge (visual-flair F8), kept here beside {@link gaugeTone}
+ * so it can be unit-tested without a DOM (happy-dom has no real SVG geometry). `percentageRemaining`
+ * is clamped to `[0, 100]` — so a stale/out-of-range value can never produce a negative or
+ * over-long dash — and the offset runs from the whole `circumference` (empty ring, the draw-on's
+ * `from`) down to `0` (a full ring). The clamped `pct` is returned so the caller can drive the
+ * colour tone off the same single clamp.
+ */
+export function ringGeometry(percentageRemaining: number, size: number, stroke: number): RingGeometry {
+  const pct = Math.max(0, Math.min(100, percentageRemaining));
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  return { pct, radius, circumference, offset: circumference * (1 - pct / 100) };
+}
+
 export const TRACKING_MODE_LABELS: Record<TrackingMode, string> = {
   DISCRETE: 'Bulk',
   SERIALISED: 'Serialised',
