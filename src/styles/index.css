@@ -1736,7 +1736,7 @@
     filter: saturate(1.35) contrast(1.1) hue-rotate(var(--holo-hue));
   }
   :root.dark[data-holo-cards] .gubbins-tilt:hover::after {
-    opacity: 0.5;
+    opacity: 0.4;
   }
 }
 
