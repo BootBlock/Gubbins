@@ -13,7 +13,13 @@ import {
   Surface,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { ExportIcon, InsuranceScheduleIcon, LowStockIcon, ReportIcon } from '@/components/icons';
+import {
+  CatalogueIcon,
+  ExportIcon,
+  InsuranceScheduleIcon,
+  LowStockIcon,
+  ReportIcon,
+} from '@/components/icons';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
@@ -183,6 +189,14 @@ export function ReportsScreen() {
         title="Reports & valuation"
         actions={
           <>
+            <Link
+              to="/catalogue"
+              className={buttonVariants({ variant: 'outline' })}
+              data-testid="open-catalogue"
+            >
+              <CatalogueIcon />
+              Catalogue
+            </Link>
             <Link
               to="/insurance-schedule"
               className={buttonVariants({ variant: 'outline' })}

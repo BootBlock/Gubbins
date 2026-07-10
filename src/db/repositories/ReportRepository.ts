@@ -14,6 +14,7 @@
  * fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
+import type { SqlValue } from '@/db/rpc/driver';
 import {
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
@@ -62,6 +63,13 @@ import {
   type ScheduleItemInput,
   type ScheduleLocationInput,
 } from '@/features/reports/insurance-schedule';
+import {
+  buildPartsCatalogue,
+  type CatalogueItemInput,
+  type CatalogueLocationInput,
+  type CatalogueScope,
+  type PartsCatalogue,
+} from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
 import {
   buildReorderPlan,
@@ -111,6 +119,17 @@ function notUnlimited(col: string): string {
  */
 function preferredSupplierCostSql(col: string): string {
   return `(SELECT sp.unit_cost FROM supplier_parts sp
+             WHERE sp.item_id = ${col} AND sp.is_preferred = 1
+             ORDER BY sp.updated_at DESC LIMIT 1)`;
+}
+
+/**
+ * Correlated subquery yielding the **preferred** supplier part's `supplier_name` for an item
+ * (NULL when none is marked), for the parts-catalogue "Supplier" column. Mirrors
+ * {@link preferredSupplierCostSql}'s single-preferred-row invariant and defensive tiebreak.
+ */
+function preferredSupplierNameSql(col: string): string {
+  return `(SELECT sp.supplier_name FROM supplier_parts sp
              WHERE sp.item_id = ${col} AND sp.is_preferred = 1
              ORDER BY sp.updated_at DESC LIMIT 1)`;
 }
@@ -256,6 +275,139 @@ export class ReportRepository extends BaseRepository {
     }));
 
     return buildInsuranceSchedule(items, locations, now);
+  }
+
+  /**
+   * Parts catalogue (issue #22): a printable list of items scoped by `all`, by a location and
+   * its whole subtree, by a project's bill of materials, or by an explicit ad-hoc selection.
+   * One row per active, non-parent item (a variant parent holds no stock of its own); the
+   * pure {@link buildPartsCatalogue} groups them by location and rolls up value subtotals.
+   * Cost flows through the same {@link preferredSupplierCostSql} → `effectiveUnitCost` seam as
+   * every valuation. The columns the reader ultimately prints are a UI concern — every field
+   * is resolved here.
+   */
+  async partsCatalogue(scope: CatalogueScope, now: number = Date.now()): Promise<PartsCatalogue> {
+    const filter = await this.catalogueScopeFilter(scope);
+    // An empty ad-hoc selection resolves to nothing — short-circuit rather than emit an
+    // `IN ()` (a syntax error) or fetch the whole catalogue.
+    if (filter === null) {
+      return { groups: [], grandTotal: 0, itemCount: 0, hasValue: false, generatedAt: now };
+    }
+
+    const itemRows = await this.driver.query<{
+      id: string;
+      name: string;
+      location_id: string;
+      category_name: string | null;
+      quantity: number;
+      unit_of_measure: string | null;
+      condition: string | null;
+      serial_no: number | null;
+      mpn: string | null;
+      manufacturer: string | null;
+      supplier_name: string | null;
+      unit_cost: number | null;
+      preferred_supplier_cost: number | null;
+      purchase_price: number | null;
+      acquired_at: string | null;
+      warranty_expires_at: string | null;
+      notes: string | null;
+    }>(
+      `SELECT items.id AS id, items.name AS name, items.location_id AS location_id,
+              categories.name AS category_name,
+              items.quantity AS quantity, items.unit_of_measure AS unit_of_measure,
+              items.condition AS condition, items.serial_no AS serial_no,
+              items.mpn AS mpn, items.manufacturer AS manufacturer,
+              ${preferredSupplierNameSql('items.id')} AS supplier_name,
+              items.unit_cost AS unit_cost,
+              ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
+              items.purchase_price AS purchase_price,
+              items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
+              items.notes AS notes
+         FROM items
+         LEFT JOIN categories ON categories.id = items.category_id
+        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')}${filter.clause};`,
+      filter.params,
+    );
+
+    const locationRows = await this.driver.query<{
+      id: string;
+      name: string;
+      parent_id: string | null;
+    }>(`SELECT id, name, parent_id FROM locations;`);
+
+    const items: CatalogueItemInput[] = itemRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      locationId: r.location_id,
+      category: r.category_name,
+      quantity: r.quantity,
+      unitOfMeasure: r.unit_of_measure,
+      condition: (r.condition as CatalogueItemInput['condition']) ?? null,
+      serialNo: r.serial_no,
+      mpn: r.mpn,
+      manufacturer: r.manufacturer,
+      supplier: r.supplier_name,
+      unitCost: r.unit_cost,
+      preferredSupplierCost: r.preferred_supplier_cost,
+      purchasePrice: r.purchase_price,
+      acquiredAt: r.acquired_at,
+      warrantyExpiresAt: r.warranty_expires_at,
+      notes: r.notes,
+    }));
+    const locations: CatalogueLocationInput[] = locationRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      parentId: r.parent_id,
+    }));
+
+    return buildPartsCatalogue(items, locations, now);
+  }
+
+  /**
+   * Resolve a {@link CatalogueScope} to the extra `WHERE` clause (appended to the base active +
+   * non-variant-parent predicate) and its bind params. Returns `null` for an empty selection —
+   * the one case that must yield no rows rather than an `IN ()`. The location scope resolves
+   * the target's whole subtree up-front via a recursive CTE (mirrors the kit-descendant query),
+   * so a catalogue "for the Garage" includes every shelf beneath it.
+   */
+  private async catalogueScopeFilter(
+    scope: CatalogueScope,
+  ): Promise<{ clause: string; params: SqlValue[] } | null> {
+    switch (scope.kind) {
+      case 'all':
+        return { clause: '', params: [] };
+      case 'location': {
+        const rows = await this.driver.query<{ id: string }>(
+          `WITH RECURSIVE subtree(id) AS (
+             SELECT ?
+             UNION
+             SELECT l.id FROM locations l JOIN subtree s ON l.parent_id = s.id
+           )
+           SELECT id FROM subtree;`,
+          [scope.locationId],
+        );
+        const ids = rows.map((r) => r.id);
+        if (ids.length === 0) return null;
+        return {
+          clause: ` AND items.location_id IN (${ids.map(() => '?').join(', ')})`,
+          params: ids,
+        };
+      }
+      case 'project':
+        return {
+          clause: ` AND items.id IN (SELECT DISTINCT item_id FROM project_bom_lines
+                                      WHERE project_id = ? AND item_id IS NOT NULL)`,
+          params: [scope.projectId],
+        };
+      case 'items': {
+        if (scope.itemIds.length === 0) return null;
+        return {
+          clause: ` AND items.id IN (${scope.itemIds.map(() => '?').join(', ')})`,
+          params: [...scope.itemIds],
+        };
+      }
+    }
   }
 
   /**

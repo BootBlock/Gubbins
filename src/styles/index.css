@@ -2264,6 +2264,7 @@
    * global chrome (storage-warning banners, the offline pill) that would otherwise
    * bleed onto the page. `.print-hide` is the reusable "never prints" hook. */
   .schedule-chrome,
+  .catalogue-chrome,
   .print-hide,
   [data-testid='offline-indicator'] {
     display: none !important;
@@ -2274,34 +2275,43 @@
    * so flattening the token tints to black stays within WCAG 1.4.1 while maximising
    * print legibility. */
   .schedule-doc,
-  .schedule-doc * {
+  .schedule-doc *,
+  .catalogue-doc,
+  .catalogue-doc * {
     color: #000 !important;
     background: transparent !important;
   }
 
-  .schedule-table {
+  .schedule-table,
+  .catalogue-table {
     width: 100%;
     border-collapse: collapse;
   }
 
   /* Repeat the column headers at the top of every printed page of a long room. */
-  .schedule-table thead {
+  .schedule-table thead,
+  .catalogue-table thead {
     display: table-header-group;
   }
 
-  /* Never split a single asset row, or orphan a room heading, across a page break. */
+  /* Never split a single row, or orphan a group heading, across a page break. */
   .schedule-table tr,
-  .schedule-group-heading {
+  .schedule-group-heading,
+  .catalogue-table tr,
+  .catalogue-group-heading {
     break-inside: avoid;
   }
 
-  .schedule-group-heading {
+  .schedule-group-heading,
+  .catalogue-group-heading {
     break-after: avoid;
   }
 
   .schedule-table th,
   .schedule-table td,
-  .schedule-photo {
+  .schedule-photo,
+  .catalogue-table th,
+  .catalogue-table td {
     border-color: #ccc !important;
   }
 }

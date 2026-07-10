@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { plural } from '@/lib/plural';
 import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
@@ -7,6 +8,7 @@ import {
   BuilderIcon,
   CategoryIcon,
   CloseIcon,
+  CatalogueIcon,
   CycleCountIcon,
   DataDensityIcon,
   DuplicateTabIcon,
@@ -73,6 +75,7 @@ import { PrintLabelsDialog } from './components/PrintLabelsDialog';
 import { ImportDataDialog } from './components/ImportDataDialog';
 import { BulkEditDialog } from './components/BulkEditDialog';
 import { useCloneItem } from './mutations';
+import { useCatalogueLaunch } from '@/features/reports/useCatalogueLaunch';
 import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
@@ -127,6 +130,10 @@ function InventoryWorkspace() {
   // Label printing is its own module (Modular UI): with it off, the bulk "Print labels"
   // action and the per-location label action disappear. The underlying data is untouched.
   const labelsEnabled = useFeature('labels');
+  // The printable parts catalogue lives under the Reports module; with it off, the selection-bar
+  // "Print catalogue" shortcut disappears (the catalogue screen itself is route-guarded too).
+  const reportsEnabled = useFeature('reports');
+  const navigate = useNavigate();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -780,6 +787,21 @@ function InventoryWorkspace() {
                       </Button>
                     </span>
                   </Tooltip>
+                  {reportsEnabled ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        useCatalogueLaunch.getState().launch({ kind: 'items', itemIds: [...selectedIds] });
+                        void navigate({ to: '/catalogue' });
+                      }}
+                      disabled={selected.size === 0}
+                      data-testid="print-catalogue"
+                    >
+                      <CatalogueIcon />
+                      Catalogue
+                    </Button>
+                  ) : null}
                   {labelsEnabled ? (
                     <Button
                       size="sm"
