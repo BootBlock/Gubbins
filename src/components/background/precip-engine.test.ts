@@ -17,6 +17,7 @@ interface DrawCall {
 function makeCtx() {
   const translates: Array<[number, number]> = [];
   const drawImages: DrawCall[] = [];
+  const drawAlphas: number[] = [];
   let rotateCount = 0;
   let clearCount = 0;
   const ctx = {
@@ -35,12 +36,14 @@ function makeCtx() {
     },
     drawImage: (...args: unknown[]) => {
       drawImages.push({ args });
+      drawAlphas.push(ctx.globalAlpha); // the alpha set immediately before this blit
     },
   };
   return {
     ctx,
     translates,
     drawImages,
+    drawAlphas,
     get rotateCount() {
       return rotateCount;
     },
@@ -160,6 +163,20 @@ describe('startPrecip', () => {
     const mainBack = fallOverOneStep(0.2);
     expect(deep).toBeGreaterThan(0); // still falling, not frozen or reversed
     expect(deep).toBeLessThan(mainBack); // …but slower than the main field's back layer
+  });
+
+  it('lifts the opacity of deep-background drops so they stay visible', () => {
+    // 0.05 < deepLayerFraction → every drop spawns in a deep-background layer (depth ≈ -0.12).
+    vi.spyOn(Math, 'random').mockReturnValue(0.05);
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'rain', reduced: false });
+    pump(16); // one draw pass
+    ctrl.stop();
+    vi.restoreAllMocks();
+    // The raw depth-driven alpha at that depth is ≈0.11 (near-invisible); the deep-layer boost
+    // lifts every deep drop well past it, so this fails if the boost is ever dropped.
+    expect(rec.drawAlphas.length).toBeGreaterThan(0);
+    for (const a of rec.drawAlphas) expect(a).toBeGreaterThan(0.15);
   });
 
   it('rotates near snow crystals around their centre', () => {
