@@ -185,7 +185,7 @@ function AboutSection({
     // into near-invisibility with a visible ~1s "pop". Without the filter the final
     // look is present from the first paint, and the sharp stars stay visible through
     // the tint, which is the point of the starfield.
-    <Surface className="bg-card/20 p-5 backdrop-blur-none">
+    <Surface className="bg-card/60 p-5 backdrop-blur-none">
       <div className="flex items-center gap-2.5 text-muted-foreground [&_svg]:size-4">
         {icon}
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
