@@ -1,19 +1,26 @@
 /**
  * Category + custom-field row/DTO types (spec §4 "Categories & Schema Evolution").
  */
-import type { FieldType } from '../constants';
+import type { FieldType, TrackingMode } from '../constants';
 
 // --- Categories (Phase 2 minimal stub; schemas/custom fields are Phase 3) --------
 
 export interface CategoryRow {
   readonly id: string;
   readonly name: string;
+  /** Optional category-template default tracking mode (backlog T1); null = no default. */
+  readonly default_tracking_mode: TrackingMode | null;
   readonly updated_at: number;
 }
 
 export interface Category {
   readonly id: string;
   readonly name: string;
+  /**
+   * Optional category-template default (backlog T1): soft-prefills a new item's tracking
+   * mode in the create form. Null when the category carries no default.
+   */
+  readonly defaultTrackingMode: TrackingMode | null;
   readonly updatedAt: number;
 }
 
@@ -24,10 +31,14 @@ export interface CategoryWithFieldCount extends Category {
 
 export interface CreateCategoryInput {
   readonly name: string;
+  /** Category-template default tracking mode (backlog T1); omit/null for none. */
+  readonly defaultTrackingMode?: TrackingMode | null;
 }
 
 export interface UpdateCategoryInput {
   readonly name?: string;
+  /** Category-template default tracking mode (backlog T1); null clears it. */
+  readonly defaultTrackingMode?: TrackingMode | null;
 }
 
 // --- Category custom fields (spec §4 "Categories & Schema Evolution") -----------

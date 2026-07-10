@@ -31,7 +31,15 @@ vi.mock('../media', () => ({
 }));
 
 vi.mock('../categories', () => ({
-  useCategories: () => ({ data: { rows: [{ id: 'cat-1', name: 'Resistors' }] } }),
+  useCategories: () => ({
+    data: {
+      rows: [
+        { id: 'cat-1', name: 'Resistors' },
+        // A category template with a default tracking mode (backlog T1 soft prefill).
+        { id: 'cat-tools', name: 'Tools', defaultTrackingMode: 'SERIALISED' },
+      ],
+    },
+  }),
   useCreateCategory: () => ({ mutate: spies.createCategory, isPending: false }),
 }));
 
@@ -269,6 +277,45 @@ describe('CreateItemDialog', () => {
       name: 'Torque wrench',
       categoryId: 'cat-9',
     });
+  });
+
+  it('soft-prefills the tracking mode from the selected category default (backlog T1)', async () => {
+    renderDialog();
+    // Selecting the "Tools" category (default SERIALISED) fills the still-untouched Tracking field.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Tools' }));
+
+    // The Tracking combobox now reflects the category's default, and the serialised-only
+    // "how many" field it drives has appeared.
+    expect(screen.getByRole('combobox', { name: 'Tracking' })).toHaveTextContent('Serialised');
+    expect(screen.getByLabelText(/How many/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Torque wrench' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    // A serialised create routes through the clone mutation with the prefilled mode.
+    await waitFor(() => expect(spies.createSerialised).toHaveBeenCalledTimes(1));
+    expect(spies.createSerialised.mock.calls[0][0]).toMatchObject({
+      name: 'Torque wrench',
+      categoryId: 'cat-tools',
+      trackingMode: 'SERIALISED',
+    });
+  });
+
+  it('never re-stomps a manually chosen tracking mode when a category is selected (backlog T1)', async () => {
+    renderDialog();
+    // The user picks a tracking mode by hand FIRST…
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Untracked' }));
+    expect(screen.getByRole('combobox', { name: 'Tracking' })).toHaveTextContent('Untracked');
+
+    // …then selects the Tools category (default SERIALISED). The manual choice must win —
+    // the soft prefill's dirty-check keeps it from re-stomping.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Tools' }));
+
+    expect(screen.getByRole('combobox', { name: 'Tracking' })).toHaveTextContent('Untracked');
+    // Still Untracked, so the serialised-only "how many" field never appears.
+    expect(screen.queryByLabelText(/How many/)).toBeNull();
   });
 
   it('rejects an invalid ASIN with an accessible error', () => {

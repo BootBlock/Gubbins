@@ -45,12 +45,15 @@ that category's defaults, which the user can still override per item. This is a 
 "category defaults" feature that happens to make tools (and any asset class — cameras, test gear,
 musical instruments) pleasant; it is **not** tool-specific code.
 
-- **T1 — Category default tracking mode.** Add an optional `default_tracking_mode` to a category
-  (fold into the v1 baseline per [[migration-baseline-squashed]] — no forward migration). When a
-  category is selected in `CreateItemDialog` **and the user hasn't manually touched the tracking-mode
-  field yet**, set `trackingMode` to the category default (e.g. "Tools" → `SERIALISED`). Must be a
-  *soft* prefill: a dirty-check so it never stomps a value the user already chose, and switching
-  category after a manual change doesn't re-stomp. Smallest, highest-leverage task — do it first.
+- **T1 — Category default tracking mode. ✅ Shipped 2026-07-10.** Added an optional
+  `default_tracking_mode` column to `categories` (folded into the v1 baseline per
+  [[migration-baseline-squashed]]; golden snapshot regenerated), threaded through
+  `Category`/`CategoryRow`/`CreateCategoryInput`/`UpdateCategoryInput`, the row→DTO mapper and
+  `CategoryRepository` create/update (a plain LWW column, no history action, constrained to the
+  `TRACKING_MODES` SSOT by a CHECK mirroring `items.tracking_mode`). `CreateItemDialog` now
+  *soft*-prefills the Tracking field from the selected category's `defaultTrackingMode`: a
+  `trackingModeTouched` ref flips true on any manual Tracking change, so a category (re)selection
+  never re-stomps a mode the user picked. No editor UI yet (that's T3).
 
 - **T2 — Category default facets (condition / warranty / maintenance).** Extend the template to the
   Phase-9 lifecycle facets: a default `condition`, a default maintenance schedule
@@ -122,4 +125,4 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → `T1` → `T2` → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → `T2` → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.

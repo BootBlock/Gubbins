@@ -49,7 +49,7 @@ export class CategoryRepository extends BaseRepository {
   async list(params: PageParams = {}): Promise<Page<CategoryWithFieldCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<CategoryCountRow>(
-      `SELECT c.id, c.name, c.updated_at, COUNT(f.id) AS field_count
+      `SELECT c.id, c.name, c.default_tracking_mode, c.updated_at, COUNT(f.id) AS field_count
        FROM categories c
        LEFT JOIN category_fields f ON f.category_id = c.id
        GROUP BY c.id
@@ -71,19 +71,37 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', 'A category must have a name.');
     }
     const id = crypto.randomUUID();
-    await this.driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', [id, name]);
+    await this.driver.execute('INSERT INTO categories (id, name, default_tracking_mode) VALUES (?, ?, ?);', [
+      id,
+      name,
+      input.defaultTrackingMode ?? null,
+    ]);
     return (await this.getById(id))!;
   }
 
   async update(id: string, input: UpdateCategoryInput): Promise<Category> {
     this.assertWritable();
     await this.requireCategory(id);
+    // Plain LWW columns (no history action): assemble only the provided fields so an update
+    // touching just one leaves the rest untouched. `default_tracking_mode` is a category
+    // template default (backlog T1); null clears it.
+    const sets: string[] = [];
+    const params: SqlValue[] = [];
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A category must have a name.');
       }
-      await this.driver.execute('UPDATE categories SET name = ? WHERE id = ?;', [name, id]);
+      sets.push('name = ?');
+      params.push(name);
+    }
+    if (input.defaultTrackingMode !== undefined) {
+      sets.push('default_tracking_mode = ?');
+      params.push(input.defaultTrackingMode);
+    }
+    if (sets.length > 0) {
+      params.push(id);
+      await this.driver.execute(`UPDATE categories SET ${sets.join(', ')} WHERE id = ?;`, params);
     }
     return (await this.getById(id))!;
   }

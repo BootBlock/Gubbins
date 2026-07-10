@@ -108,9 +108,14 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TABLE categories (
-          id         TEXT    PRIMARY KEY NOT NULL,
-          name       TEXT    NOT NULL,
-          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+          id                    TEXT    PRIMARY KEY NOT NULL,
+          name                  TEXT    NOT NULL,
+          -- Optional category template default (backlog T1): soft-prefills a new item's
+          -- tracking mode in the create form. Nullable (no default); constrained to the
+          -- TRACKING_MODES SSOT exactly as items.tracking_mode is.
+          default_tracking_mode TEXT,
+          updated_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList}))
         ) STRICT;
       `,
     },

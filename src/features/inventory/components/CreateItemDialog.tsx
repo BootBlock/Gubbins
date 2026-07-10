@@ -352,6 +352,13 @@ export function CreateItemDialog({
   const lowStockPolicy = watch('lowStockPolicy') ?? 'default';
   const isUnlimited = watch('isUnlimited') ?? false;
 
+  // Category-template soft prefill (backlog T1): selecting a category whose `defaultTrackingMode`
+  // is set fills the Tracking field with that default — but only until the user has chosen a
+  // tracking mode themselves. This ref is the dirty-check (mirroring the OCR/scrape "fill only the
+  // blank field" idiom): flipped true on any manual Tracking change, so a later category switch
+  // never re-stomps a mode the user picked. Reset alongside the form on close/create.
+  const trackingModeTouched = useRef(false);
+
   // Choosing "Custom" seeds a friendly non-zero trigger so the user isn't left staring at a
   // blank required-feeling field (they can still change it). Only seeds when currently
   // empty, so re-selecting Custom never clobbers a value they've typed.
@@ -568,6 +575,7 @@ export function CreateItemDialog({
     };
     const done = () => {
       reset();
+      trackingModeTouched.current = false;
       setPendingAliases([]);
       setInlineCreate(null);
       resetAsin();
@@ -667,6 +675,7 @@ export function CreateItemDialog({
 
   const handleClose = () => {
     reset();
+    trackingModeTouched.current = false;
     setPendingAliases([]);
     setInlineCreate(null);
     resetAsin();
@@ -813,7 +822,12 @@ export function CreateItemDialog({
               }
               options={TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] }))}
               value={field.value}
-              onChange={field.onChange}
+              onChange={(value) => {
+                // A manual pick disables the category-default soft prefill (backlog T1) from here
+                // on, so switching category later never re-stomps the mode the user chose.
+                trackingModeTouched.current = true;
+                field.onChange(value);
+              }}
             />
           )}
         />
@@ -837,9 +851,19 @@ export function CreateItemDialog({
               { value: CREATE_CATEGORY_VALUE, label: '＋ New category…', kind: 'action' as const },
             ]}
             value={field.value ?? ''}
-            onChange={(value) =>
-              value === CREATE_CATEGORY_VALUE ? setInlineCreate('category') : field.onChange(value)
-            }
+            onChange={(value) => {
+              if (value === CREATE_CATEGORY_VALUE) {
+                setInlineCreate('category');
+                return;
+              }
+              field.onChange(value);
+              // Category-template soft prefill (backlog T1): adopt the chosen category's default
+              // tracking mode, but only while the user hasn't picked a tracking mode themselves.
+              if (!trackingModeTouched.current) {
+                const def = categories?.rows.find((c) => c.id === value)?.defaultTrackingMode;
+                if (def) setValue('trackingMode', def);
+              }
+            }}
           />
         )}
       />
