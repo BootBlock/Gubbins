@@ -229,15 +229,14 @@ describe('readBackupFile', () => {
     expect(parsed.sqlite).not.toBeNull();
   });
 
-  it('falls back to a bare-JSON snapshot (legacy backup)', () => {
+  it('rejects a bare-JSON snapshot (the legacy format is no longer accepted)', () => {
+    // The pre-zip "Download backup" bare-`.json` output is not a valid backup any more; only
+    // the `.zip` container is. A bare JSON blob is not a zip, so it is refused.
     const bare = strToU8(JSON.stringify(makeSnapshot()));
-    const parsed = readBackupFile(bare);
-    expect(parsed.manifest).toBeNull();
-    expect(parsed.snapshot.tables.items).toHaveLength(4);
-    expect(parsed.sqlite).toBeNull();
+    expect(() => readBackupFile(bare)).toThrow(InvalidBackupError);
   });
 
-  it('rejects a file that is neither a zip nor a backup JSON', () => {
+  it('rejects a file that is not a zip', () => {
     expect(() => readBackupFile(strToU8('definitely not a backup'))).toThrow(InvalidBackupError);
   });
 });

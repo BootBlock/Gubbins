@@ -3,29 +3,20 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
-import { v2WarrantyIndex } from './v2-warranty-index';
-import { v3ActiveLocationIndex } from './v3-active-location-index';
-import { v4Revaluations } from './v4-revaluations';
-import { v5ItemRelations } from './v5-item-relations';
-import { v6Wishlist } from './v6-wishlist';
-import { v7TestRecords } from './v7-test-records';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
 /**
- * Schema-baseline lock (Phase 69 consolidation, re-squashed by the Add-item
- * enrichment work).
+ * Schema-baseline lock.
  *
  * `schema-baseline.snapshot.json` is the committed GOLDEN fixture — the full,
  * deterministic schema dump (every `sqlite_master.sql`, every column / FK / index, and
- * `user_version`) the registered migration chain produces. These tests build a fresh
+ * `user_version`) the sole `v1-initial` migration produces. These tests build a fresh
  * database from the registered `migrations` and assert the resulting schema reproduces the
  * fixture **byte-for-byte**, so any unintended schema change (an edited table, index,
- * trigger, FK or column) fails until the fixture is deliberately regenerated. The fixture
- * is regenerated only when the schema intentionally changes — most recently the re-squash
- * of the v2–v4 forward steps into the baseline alongside `items.notes` (in the table and
- * the FTS index) and the `UNTRACKED` tracking mode, which reset the recorded
- * `user_version` back to 1.
+ * trigger, FK or column) fails until the fixture is deliberately regenerated. Gubbins is
+ * pre-release, so every historical migration (the original v1…v24 chain and the later
+ * forward steps v2…v7) is folded into this single baseline at `user_version = 1`.
  */
 describe('schema baseline lock', () => {
   let driver: MemoryDriver;
@@ -38,24 +29,12 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the consolidated baseline plus the v2–v7 forward steps', () => {
-    expect(migrations).toHaveLength(7);
+  it('registers the single consolidated baseline migration', () => {
+    expect(migrations).toHaveLength(1);
     expect(migrations[0]).toBe(v1Initial);
-    expect(migrations[1]).toBe(v2WarrantyIndex);
-    expect(migrations[2]).toBe(v3ActiveLocationIndex);
-    expect(migrations[3]).toBe(v4Revaluations);
-    expect(migrations[4]).toBe(v5ItemRelations);
-    expect(migrations[5]).toBe(v6Wishlist);
-    expect(migrations[6]).toBe(v7TestRecords);
     expect(v1Initial.version).toBe(1);
-    expect(v2WarrantyIndex.version).toBe(2);
-    expect(v3ActiveLocationIndex.version).toBe(3);
-    expect(v4Revaluations.version).toBe(4);
-    expect(v5ItemRelations.version).toBe(5);
-    expect(v6Wishlist.version).toBe(6);
-    expect(v7TestRecords.version).toBe(7);
     // The build's target is simply the highest registered version.
-    expect(TARGET_SCHEMA_VERSION).toBe(7);
+    expect(TARGET_SCHEMA_VERSION).toBe(1);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -79,14 +58,14 @@ describe('schema baseline lock', () => {
   it('boots a fresh database cleanly to the target user_version', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(7);
-    expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(report.to).toBe(1);
+    expect(report.applied).toEqual([1]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(7);
+    expect(Number(row?.user_version)).toBe(1);
   });
 
-  it('creates the partial warranty index on the v2 forward step', async () => {
+  it('creates the partial warranty index (folded former v2)', async () => {
     await runMigrations(driver, migrations);
     const index = await driver.queryOne<{ sql: string }>(
       "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_items_warranty';",
@@ -96,7 +75,7 @@ describe('schema baseline lock', () => {
     );
   });
 
-  it('creates the partial active-location index on the v3 forward step', async () => {
+  it('creates the partial active-location index (folded former v3)', async () => {
     await runMigrations(driver, migrations);
     const index = await driver.queryOne<{ sql: string }>(
       "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_items_active_location';",
@@ -136,7 +115,7 @@ describe('schema baseline lock', () => {
     }
   });
 
-  it('creates the revaluations table + current_value column on the v4 forward step', async () => {
+  it('creates the revaluations table + current_value column (folded former v4)', async () => {
     await runMigrations(driver, migrations);
 
     const table = await driver.queryOne<{ name: string }>(
@@ -150,7 +129,7 @@ describe('schema baseline lock', () => {
     expect(column?.name).toBe('current_value');
   });
 
-  it('creates the item_relations table on the v5 forward step', async () => {
+  it('creates the item_relations table (folded former v5)', async () => {
     await runMigrations(driver, migrations);
 
     const table = await driver.queryOne<{ name: string }>(
@@ -180,7 +159,7 @@ describe('schema baseline lock', () => {
     expect(Number(remaining?.n)).toBe(0);
   });
 
-  it('creates the standalone wishlist table on the v6 forward step', async () => {
+  it('creates the standalone wishlist table (folded former v6)', async () => {
     await runMigrations(driver, migrations);
 
     const table = await driver.queryOne<{ name: string }>(
@@ -201,7 +180,7 @@ describe('schema baseline lock', () => {
     ).rejects.toThrow(/CHECK constraint failed/i);
   });
 
-  it('creates the test_records table on the v7 forward step', async () => {
+  it('creates the test_records table (folded former v7)', async () => {
     await runMigrations(driver, migrations);
 
     const table = await driver.queryOne<{ name: string }>(
@@ -233,8 +212,8 @@ describe('schema baseline lock', () => {
   });
 
   it('refuses a database whose version is ahead of the target', async () => {
-    // A database left ahead of the highest registered version (target 7) — e.g. a
-    // pre-squash baseline stranded on a former forward chain — must be refused loudly
+    // A database left ahead of the highest registered version (target 1) — e.g. a
+    // pre-squash install stranded on a former forward chain — must be refused loudly
     // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.
     await driver.execute('PRAGMA user_version = 9;');
     await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
