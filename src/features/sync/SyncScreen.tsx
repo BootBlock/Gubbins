@@ -48,6 +48,7 @@ import { GoogleApiError } from './providers/google-drive-api';
 import { consumeGoogleAuthError } from './providers/google-oauth';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
+import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 
 /**
@@ -387,11 +388,7 @@ export function SyncScreen() {
               explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
               The region must pre-exist for the later content change to be announced. */}
             <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
-              {result && result.status !== 'HARD_STOP'
-                ? `${result.status} · pulled ${result.pulled} · deleted ${result.deleted}` +
-                  (result.reparented > 0 ? ` · re-parented ${result.reparented}` : '') +
-                  (result.rejectedCycles > 0 ? ` · cycles blocked ${result.rejectedCycles}` : '')
-                : null}
+              {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
             </LiveRegion>
           </div>
         </section>
