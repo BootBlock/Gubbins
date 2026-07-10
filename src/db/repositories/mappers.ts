@@ -56,12 +56,15 @@ import type {
   ItemRelation,
   ItemRelationRow,
   ItemRelationView,
+  TestRecord,
+  TestRecordRow,
   Tag,
   TagRow,
   WishlistEntry,
   WishlistRow,
 } from './types';
 import type { RelationKind } from '@/features/inventory/item-relations';
+import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
 
 function parseJson(value: string | null): Record<string, unknown> | null {
@@ -274,6 +277,27 @@ export function rowToItemRelationView(row: ItemRelationViewRow): ItemRelationVie
     otherItemId: row.other_item_id,
     otherItemName: row.other_item_name,
     otherItemSerialNo: row.other_item_serial_no,
+  };
+}
+
+/**
+ * Map a raw test-record row (feature-gap G7). `kind`/`result` are normalised through the seam (the
+ * DB has no CHECK on either, so a stale/unknown value softens to its default rather than leaking out
+ * untyped), exactly like `rowToWishlistEntry`'s priority.
+ */
+export function rowToTestRecord(row: TestRecordRow): TestRecord {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    kind: normaliseTestRecordKind(row.kind),
+    name: row.name,
+    result: normaliseTestResult(row.result),
+    reading: row.reading,
+    unit: row.unit,
+    note: row.note,
+    performedAt: row.performed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

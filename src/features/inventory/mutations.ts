@@ -26,6 +26,7 @@ import {
   type Item,
   type Page,
   type RecordRevaluationInput,
+  type RecordTestResultInput,
   type ScrapeApplyInput,
   type UpdateItemInput,
   type UpdateLocationInput,
@@ -209,6 +210,40 @@ export function useRemoveRelation() {
     onSettled: (_d, _e, { fromItemId, toItemId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(fromItemId) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(toItemId) });
+    },
+  });
+}
+
+/**
+ * Record a test / calibration / service result against an item (feature-gap G7) — append a
+ * `test_records` row + a `TESTED` Activity-Ledger entry. Invalidation-based: the write touches the
+ * item's test-records slice and its Activity Log together (plus `items()` so any timeline/feed
+ * reflects the new event), so a targeted refresh is simpler than an optimistic patch.
+ */
+export function useRecordTestResult() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RecordTestResultInput }) =>
+      getItemRepository().recordTestResult(id, input),
+    onSettled: (_d, _e, { id }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemTestRecords(id) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+    },
+  });
+}
+
+/**
+ * Remove a mistaken test record (feature-gap G7). The caller passes the owning `itemId` alongside
+ * the record id so its test-records slice refreshes (a record shows only on its own item).
+ */
+export function useRemoveTestRecord() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ recordId }: { recordId: string; itemId: string }) =>
+      getItemRepository().removeTestRecord(recordId),
+    onSettled: (_d, _e, { itemId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemTestRecords(itemId) });
     },
   });
 }

@@ -8,6 +8,7 @@ import { v3ActiveLocationIndex } from './v3-active-location-index';
 import { v4Revaluations } from './v4-revaluations';
 import { v5ItemRelations } from './v5-item-relations';
 import { v6Wishlist } from './v6-wishlist';
+import { v7TestRecords } from './v7-test-records';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
@@ -37,22 +38,24 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the consolidated baseline plus the v2–v6 forward steps', () => {
-    expect(migrations).toHaveLength(6);
+  it('registers the consolidated baseline plus the v2–v7 forward steps', () => {
+    expect(migrations).toHaveLength(7);
     expect(migrations[0]).toBe(v1Initial);
     expect(migrations[1]).toBe(v2WarrantyIndex);
     expect(migrations[2]).toBe(v3ActiveLocationIndex);
     expect(migrations[3]).toBe(v4Revaluations);
     expect(migrations[4]).toBe(v5ItemRelations);
     expect(migrations[5]).toBe(v6Wishlist);
+    expect(migrations[6]).toBe(v7TestRecords);
     expect(v1Initial.version).toBe(1);
     expect(v2WarrantyIndex.version).toBe(2);
     expect(v3ActiveLocationIndex.version).toBe(3);
     expect(v4Revaluations.version).toBe(4);
     expect(v5ItemRelations.version).toBe(5);
     expect(v6Wishlist.version).toBe(6);
+    expect(v7TestRecords.version).toBe(7);
     // The build's target is simply the highest registered version.
-    expect(TARGET_SCHEMA_VERSION).toBe(6);
+    expect(TARGET_SCHEMA_VERSION).toBe(7);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -76,11 +79,11 @@ describe('schema baseline lock', () => {
   it('boots a fresh database cleanly to the target user_version', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(6);
-    expect(report.applied).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(report.to).toBe(7);
+    expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(6);
+    expect(Number(row?.user_version)).toBe(7);
   });
 
   it('creates the partial warranty index on the v2 forward step', async () => {
@@ -198,11 +201,42 @@ describe('schema baseline lock', () => {
     ).rejects.toThrow(/CHECK constraint failed/i);
   });
 
+  it('creates the test_records table on the v7 forward step', async () => {
+    await runMigrations(driver, migrations);
+
+    const table = await driver.queryOne<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'test_records';",
+    );
+    expect(table?.name).toBe('test_records');
+
+    // kind/result default and a record cascades on item delete.
+    const loc = '00000000-0000-4000-8000-000000000001'; // seeded Unassigned location
+    await driver.execute(
+      `INSERT INTO items (id, name, location_id, tracking_mode, quantity)
+       VALUES ('tr-item', 'Meter', ?, 'SERIALISED', 1);`,
+      [loc],
+    );
+    await driver.execute(
+      "INSERT INTO test_records (id, item_id, name) VALUES ('tr1', 'tr-item', 'Insulation');",
+    );
+    const row = await driver.queryOne<{ kind: string; result: string; reading: number | null }>(
+      "SELECT kind, result, reading FROM test_records WHERE id = 'tr1';",
+    );
+    expect(row?.kind).toBe('TEST');
+    expect(row?.result).toBe('PASS');
+    expect(row?.reading).toBeNull();
+
+    // Deleting the owning item cascades the record away.
+    await driver.execute("DELETE FROM items WHERE id = 'tr-item';");
+    const remaining = await driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM test_records;');
+    expect(Number(remaining?.n)).toBe(0);
+  });
+
   it('refuses a database whose version is ahead of the target', async () => {
-    // A database left ahead of the highest registered version (target 6) — e.g. a
+    // A database left ahead of the highest registered version (target 7) — e.g. a
     // pre-squash baseline stranded on a former forward chain — must be refused loudly
     // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.
-    await driver.execute('PRAGMA user_version = 8;');
+    await driver.execute('PRAGMA user_version = 9;');
     await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
       code: 'SCHEMA_TOO_NEW',
     });

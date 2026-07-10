@@ -61,6 +61,8 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   WRITTEN_OFF: 'lifecycle',
   // A manual current/market revaluation (feature-gap G9) — a record-keeping change.
   REVALUED: 'lifecycle',
+  // A per-instance test / calibration / service record (feature-gap G7) — a QA record-keeping event.
+  TESTED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.

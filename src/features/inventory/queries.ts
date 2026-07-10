@@ -106,6 +106,9 @@ export const inventoryKeys = {
   // Feature-gap G6 — an item's related-items cross-links ("works with"/accessory/spare-for); under
   // item() so an `items()` invalidation refreshes it by prefix.
   itemRelations: (itemId: string) => [...inventoryKeys.item(itemId), 'relations'] as const,
+  // Feature-gap G7 — an item's test/calibration/service records; under item() so an `items()`
+  // invalidation refreshes it by prefix.
+  itemTestRecords: (itemId: string) => [...inventoryKeys.item(itemId), 'test-records'] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   /** One kit item's component definition (Kits v1); under item() so an `items()`
@@ -191,6 +194,15 @@ export function useItemRelations(itemId: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.itemRelations(itemId ?? ''),
     queryFn: () => getItemRepository().listRelations(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+/** An item's test / calibration / service records (feature-gap G7), newest-first. */
+export function useItemTestRecords(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemTestRecords(itemId ?? ''),
+    queryFn: () => getItemRepository().listTestRecords(itemId!),
     enabled: Boolean(itemId),
   });
 }

@@ -40,6 +40,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   WRITTEN_OFF: 'Written off',
   RETURNED_TO_SUPPLIER: 'Returned to supplier',
   REVALUED: 'Revalued',
+  TESTED: 'Test recorded',
 };
 
 /**
