@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { Banner, buttonVariants } from '@/components/foundry';
 import { CloudUploadIcon, DatabaseIcon, FolderSyncIcon, InfoIcon, SuccessIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
+import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { CommandBlock, ChoiceCards, BranchPanel, StepCard } from '../components';
 import { useGuide, tokenForDisplay } from '../context';
 
@@ -20,6 +21,9 @@ export function DataStep() {
   const { token } = useGuide();
   const displayToken = tokenForDisplay(token);
   const [path, setPath] = useState<DataPath | null>(null);
+  // Folder sync needs the File System Access API — Chromium-only (Chrome/Edge/Opera). When it is
+  // absent (Firefox/Safari) we steer the reader to the browser-agnostic paths instead of a dead end.
+  const fsSupported = hasFileSystemAccess();
 
   return (
     <div className="space-y-6">
@@ -30,6 +34,11 @@ export function DataStep() {
           <span className="text-foreground">auto-detects</span> which you chose, and re-reads the data
           automatically whenever it changes, so you set this up once.
         </p>
+        <Banner tone="info" icon={<InfoIcon />}>
+          Gubbins keeps its data separately in each browser (and each install), so run the sync or export
+          below from the browser that already holds your inventory — otherwise the bridge will see an empty
+          library.
+        </Banner>
       </StepCard>
 
       <ChoiceCards
@@ -62,6 +71,14 @@ export function DataStep() {
       {path === 'folder' ? (
         <BranchPanel>
           <StepCard title="Use a synced folder">
+            {!fsSupported ? (
+              <Banner tone="warning" icon={<InfoIcon />} heading="This browser can't sync to a folder">
+                Folder sync uses the File System Access API, which only Chromium browsers (Chrome, Edge,
+                Opera) provide — Firefox and Safari don't. In those, choose{' '}
+                <span className="text-foreground">Push from the app</span> or{' '}
+                <span className="text-foreground">Raw database export</span> above instead.
+              </Banner>
+            ) : null}
             <p className="text-sm text-muted-foreground">
               Gubbins can sync to a folder you control (e.g. one inside a cloud-drive mount, a NAS share, or a
               synced drive). That folder holds a{' '}

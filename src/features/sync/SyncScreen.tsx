@@ -402,6 +402,10 @@ export function SyncScreen() {
             Save a complete backup — your inventory and records, full-resolution images, and settings — to a
             single file, then restore it later on this or another device. Choose exactly what to include.
           </p>
+          <p className="text-sm text-muted-foreground">
+            Gubbins stores its data separately in each browser, so this is also how you move your library
+            between them — export here, then restore in the other browser (e.g. Firefox to Edge).
+          </p>
           <Tooltip
             content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
             triggerTabIndex={-1}
