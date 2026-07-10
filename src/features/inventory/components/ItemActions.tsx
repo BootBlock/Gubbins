@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
-import { Button, Menu, MenuAction, Tooltip } from '@/components/foundry';
+import { Button, Menu, MenuAction, MenuSeparator, Tooltip } from '@/components/foundry';
 import {
   CheckoutIcon,
   DeleteIcon,
@@ -36,13 +36,19 @@ export interface ItemActionsHandle {
 }
 
 /**
- * Shared item action controls (details, update gauge, label, soft-delete/restore) plus the
- * dialogs they open. Used by both the Visual and Data presentations so behaviour stays
- * identical across the density toggle.
+ * Shared item action controls plus the dialogs they open. Used by both the Visual and Data
+ * presentations so behaviour stays identical across the density toggle.
  *
- * The secondary stock actions (move, loan, sell, write off) live behind a single "More
- * actions" overflow {@link Menu} rather than as their own buttons, so the card footer stays
- * uncluttered and fits its width; they keep the same module + tracking-mode gating.
+ * To keep the card/row footer compact enough to sit on one line beside the quantity stepper,
+ * only the most immediate controls stay as their own buttons: **update gauge** (gauge items
+ * only) and **remove / restore**. Everything else — **edit details**, **print label**, and the
+ * secondary stock actions (**move**, **loan out**, **sell**, **write off**) — lives behind a
+ * single "More actions" overflow {@link Menu}, keeping the same module + tracking-mode gating.
+ *
+ * Edit and label stay in the menu even though a body click can open them (the `cardClickAction`
+ * shortcut defaults to opening details): that shortcut is a pointer-only convenience, so a
+ * keyboard/AT user reaches the same actions through these focusable menu rows — the parity the
+ * card-click invariant relies on. Move is always present, so the menu is never empty.
  *
  * Forwards a {@link ItemActionsHandle} ref so the parent card can open a dialog on a body
  * click without a second set of dialog state.
@@ -72,22 +78,6 @@ export const ItemActions = forwardRef<
 
   return (
     <div className="flex items-center gap-1">
-      <Tooltip
-        content="Open the full item record — edit its details, images, tags, capabilities, custom fields & datasheets."
-        triggerTabIndex={-1}
-      >
-        <span>
-          <Button
-            variant="outline"
-            size="icon"
-            className={size}
-            aria-label="Item details"
-            onClick={() => setDialog('details')}
-          >
-            <EditIcon className="text-glyph-edit" />
-          </Button>
-        </span>
-      </Tooltip>
       {item.trackingMode === 'CONSUMABLE_GAUGE' ? (
         <Tooltip
           content="Record usage or weigh-in against a scale to update the remaining level."
@@ -106,26 +96,12 @@ export const ItemActions = forwardRef<
           </span>
         </Tooltip>
       ) : null}
-      <Tooltip
-        content="Show a printable label — a QR that deep-links back to this item, and/or a Code 128 barcode of its MPN."
-        triggerTabIndex={-1}
-      >
-        <span>
-          <Button
-            variant="outline"
-            size="icon"
-            className={size}
-            aria-label="Item label"
-            onClick={() => setDialog('qr')}
-          >
-            <QrCodeIcon className="text-glyph-scan" />
-          </Button>
-        </span>
-      </Tooltip>
-      {/* Secondary stock actions (move, loan, sell, write off) are tucked behind a single
-          "More actions" overflow menu so the card footer stays uncluttered and fits its width.
-          Move is always offered, so the menu is never empty; loan/sell/write-off keep the same
-          module + tracking-mode gating they had as standalone buttons. */}
+      {/* The record actions (edit, label) and secondary stock actions (move, loan, sell, write
+          off) all live behind a single "More actions" overflow menu so the footer fits on one
+          line beside the quantity stepper. Edit + label stay here — not as their own buttons —
+          so keyboard/AT users still reach the `cardClickAction` targets the pointer body-click
+          mirrors. Move is always offered, so the menu is never empty; loan/sell/write-off keep
+          the same module + tracking-mode gating they had as standalone buttons. */}
       <Menu
         label="More actions"
         trigger={<MoreIcon className="text-muted-foreground" />}
@@ -133,6 +109,13 @@ export const ItemActions = forwardRef<
         triggerClassName={size}
         triggerProps={{ 'data-testid': 'item-actions-more' }}
       >
+        <MenuAction icon={<EditIcon className="text-glyph-edit" />} onSelect={() => setDialog('details')}>
+          Edit details…
+        </MenuAction>
+        <MenuAction icon={<QrCodeIcon className="text-glyph-scan" />} onSelect={() => setDialog('qr')}>
+          Print label…
+        </MenuAction>
+        <MenuSeparator />
         <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
           Move…
         </MenuAction>
