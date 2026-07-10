@@ -107,6 +107,7 @@ export {
   ShoppingCart as ShoppingCartIcon,
   Truck as TruckIcon,
   Wrench as AssemblyIcon,
+  Wrench as ToolsIcon,
   PoundSterling as CostIcon,
   Coins as ValueIcon,
   Receipt as SaleIcon,

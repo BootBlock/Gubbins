@@ -17,19 +17,25 @@ const h = vi.hoisted(() => ({
   categoryRows: [] as CategoryWithFieldCount[],
   fields: [] as CategoryField[],
   createCategory: vi.fn(),
+  createCategoryAsync: vi.fn(),
   updateCategory: vi.fn(),
   deleteCategory: vi.fn(),
   addField: vi.fn(),
+  addFieldAsync: vi.fn(),
   deleteField: vi.fn(),
 }));
 
 vi.mock('../categories', () => ({
   useCategories: () => ({ data: { rows: h.categoryRows } }),
-  useCreateCategory: () => ({ mutate: h.createCategory, isPending: false }),
+  useCreateCategory: () => ({
+    mutate: h.createCategory,
+    mutateAsync: h.createCategoryAsync,
+    isPending: false,
+  }),
   useUpdateCategory: () => ({ mutate: h.updateCategory, isPending: false }),
   useDeleteCategory: () => ({ mutate: h.deleteCategory, isPending: false }),
   useCategoryFields: () => ({ data: h.fields }),
-  useAddCategoryField: () => ({ mutate: h.addField, isPending: false }),
+  useAddCategoryField: () => ({ mutate: h.addField, mutateAsync: h.addFieldAsync, isPending: false }),
   useDeleteCategoryField: () => ({ mutate: h.deleteField, isPending: false }),
 }));
 
@@ -80,9 +86,11 @@ beforeEach(() => {
     .mockImplementation((input, opts) =>
       opts?.onSuccess?.({ id: 'cat-new', name: input.name, fieldCount: 0 }),
     );
+  h.createCategoryAsync.mockReset().mockResolvedValue({ id: 'cat-new' });
   h.updateCategory.mockReset();
   h.deleteCategory.mockReset();
   h.addField.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
+  h.addFieldAsync.mockReset().mockResolvedValue(undefined);
   h.deleteField.mockReset();
   onClose.mockReset();
   usePreferencesStore.setState({ attachmentMode: 'URL_ONLY' });
@@ -347,6 +355,47 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
         input: { defaultWarrantyMonths: null },
       }),
     );
+  });
+});
+
+describe('CategoryManagerDialog — the Tools starter affordance (T4)', () => {
+  const toolsButton = () => screen.queryByRole('button', { name: 'Add a Tools category' });
+
+  it('seeds a Tools category with its T1/T2 defaults and both tool-ish fields, in order', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a Tools category' }));
+
+    await waitFor(() =>
+      expect(h.createCategoryAsync).toHaveBeenCalledWith({
+        name: 'Tools',
+        defaultTrackingMode: 'SERIALISED',
+        defaultCondition: 'GOOD',
+        defaultWarrantyMonths: 12,
+      }),
+    );
+    await waitFor(() => expect(h.addFieldAsync).toHaveBeenCalledTimes(2));
+    expect(h.addFieldAsync).toHaveBeenNthCalledWith(1, {
+      categoryId: 'cat-new',
+      input: { name: 'Serial number', fieldType: 'TEXT', position: 0 },
+    });
+    expect(h.addFieldAsync).toHaveBeenNthCalledWith(2, {
+      categoryId: 'cat-new',
+      input: { name: 'Calibration certificate', fieldType: 'URL', position: 1 },
+    });
+  });
+
+  it('hides the affordance when a Tools category already exists (idempotent — no duplicate)', () => {
+    cleanup();
+    h.categoryRows = [category({ name: 'Tools' })];
+    renderDialog();
+    expect(toolsButton()).not.toBeInTheDocument();
+  });
+
+  it('matches an existing Tools category case-insensitively', () => {
+    cleanup();
+    h.categoryRows = [category({ name: '  tools  ' })];
+    renderDialog();
+    expect(toolsButton()).not.toBeInTheDocument();
   });
 });
 

@@ -91,10 +91,15 @@ musical instruments) pleasant; it is **not** tool-specific code.
   deliberately minimal (defaults are set in the manager after creation, exactly as custom fields
   are). UI only — no schema/migration/snapshot change.
 
-- **T4 — Seed a "Tools" starter template (optional).** A one-tap "Add a Tools category" affordance
-  (e.g. in first-run or the empty category list) that creates a category pre-wired with the T1/T2
-  defaults and a couple of tool-ish custom fields (e.g. serial number, calibration cert URL). Pure
-  convenience / discoverability; lowest priority. Keep the seed data synthetic and generic.
+- **T4 — Seed a "Tools" starter template. ✅ Shipped 2026-07-10.** A one-tap **"Add a Tools
+  category"** affordance below the category-manager list creates a category pre-wired with the T1/T2
+  defaults (`SERIALISED` tracking, `GOOD` condition, a 12-month warranty window) and two synthetic
+  tool-ish custom fields (a `TEXT` *Serial number* + a `URL` *Calibration certificate*). Built from a
+  pure, DB-free seed descriptor (`tools-starter-seed.ts`: `TOOLS_STARTER_SEED` + `hasCategoryNamed`
+  guard + `applyCategoryStarterSeed` orchestrator) materialised through the ordinary create-category /
+  add-field mutation path — no bespoke repository method, no schema/migration/snapshot change. The
+  affordance is idempotent by construction: it hides once a category named "Tools" (case-insensitive)
+  exists, so a second tap never duplicates it. UI/seed-data only.
 
 **Why not a first-class "Tool" type?** It would duplicate the `TRACKING_MODES` × facet design,
 fork the codebase into "tools vs items" for every list/filter/report, and buy nothing the template
@@ -159,5 +164,5 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → then reassess
-`T2a` / `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → ~~`T4`~~ ✅ → then
+reassess `T2a` / `B4` / `B5` by appetite.
