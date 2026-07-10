@@ -534,8 +534,14 @@ interface MutableLine {
 class AssemblyLedger {
   private readonly discrete = new Map<string, MutableLine[]>();
   private readonly gauge = new Map<string, number>();
+  private readonly meta: Map<string, ItemMeta>;
 
-  constructor(private readonly meta: Map<string, ItemMeta>) {}
+  // NB: an explicit field + assignment, not a `private readonly meta` constructor parameter
+  // property. The bridge runs this source directly under Node's strip-only TypeScript loader
+  // (see bridge/loader.mjs), which rejects parameter properties — so keep this class free of them.
+  constructor(meta: Map<string, ItemMeta>) {
+    this.meta = meta;
+  }
 
   /** Load each item's current batch composition (or gauge net value) into the projection. */
   async preload(driver: IDatabaseDriver): Promise<void> {
