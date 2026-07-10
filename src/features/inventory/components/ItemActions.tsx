@@ -17,7 +17,7 @@ import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useFeature } from '@/features/modules/useFeature';
 import { SellDialog } from '@/features/sales/components/SellDialog';
 import { WriteOffDialog } from '@/features/sales/components/WriteOffDialog';
-import { useRestoreItem, useSoftDeleteItem } from '../mutations';
+import { useRestoreItem, useSoftDeleteItem, useUpdateItem } from '../mutations';
 import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
@@ -25,6 +25,18 @@ import { QrCodeDialog } from './QrCodeDialog';
 
 /** Which of the item's dialogs to open — the shared vocabulary between a button and a card click. */
 export type ItemDialogKind = 'move' | 'gauge' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff';
+
+/**
+ * Rich help behind the loan-out row for an **Untracked** item (B5). A loan needs a countable
+ * unit to check out and back in, so `checkout` rejects Untracked assets by design — but rather
+ * than silently hiding "Loan out…", we surface *why* and offer the one-step, lossless escape
+ * hatch: converting to **Bulk** (Discrete ↔ Untracked is reversible and keeps the on-hand
+ * quantity), after which the item can be loaned. See {@link CONVERTIBLE_TRACKING_MODES}.
+ */
+const HINT_UNTRACKED_LOAN =
+  '**Untracked items can’t be loaned.** A loan checks a countable unit out and back in, and an ' +
+  'Untracked item has no quantity to track.\n\nConvert it to **Bulk** tracking to loan it out — ' +
+  'its details and stock are kept, and you can switch it back to Untracked at any time.';
 
 /**
  * Imperative handle {@link ItemActions} exposes so the containing card/row can open one of the
@@ -65,6 +77,7 @@ export const ItemActions = forwardRef<
   useImperativeHandle(ref, () => ({ open: setDialog }), []);
   const softDelete = useSoftDeleteItem();
   const restore = useRestoreItem();
+  const update = useUpdateItem();
   // Checking out loans an item to a contact, so the entry point belongs to the Contacts
   // module (modular-ui-plan §4, Phase 6). Hidden when Contacts is off — the checkout
   // mutation and any existing loans stay intact, only the way in disappears.
@@ -119,16 +132,31 @@ export const ItemActions = forwardRef<
         <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
           Move…
         </MenuAction>
-        {contactsEnabled &&
-        item.isActive &&
-        item.trackingMode !== 'CONSUMABLE_GAUGE' &&
-        item.trackingMode !== 'UNTRACKED' ? (
-          <MenuAction
-            icon={<CheckoutIcon className="text-glyph-checkout" />}
-            onSelect={() => setDialog('checkout')}
-          >
-            Loan out…
-          </MenuAction>
+        {contactsEnabled && item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
+          item.trackingMode === 'UNTRACKED' ? (
+            // Untracked assets can't be loaned by design (`checkout` rejects them — no unit to
+            // check out/in). Rather than silently omit the action, offer the reason plus the
+            // lossless one-step fix: convert to Bulk (Discrete ↔ Untracked is reversible and keeps
+            // the on-hand quantity), routed through the same `useUpdateItem` path the details
+            // editor uses — the repository guards it with `isConvertibleTrackingChange`. This is a
+            // deliberate, user-initiated convert, never an auto-convert on a loan attempt (B5).
+            <Tooltip content={HINT_UNTRACKED_LOAN} triggerTabIndex={-1} className="w-full">
+              <MenuAction
+                icon={<CheckoutIcon className="text-glyph-checkout" />}
+                onSelect={() => update.mutate({ id: item.id, input: { trackingMode: 'DISCRETE' } })}
+                data-testid="item-actions-loan-untracked-convert"
+              >
+                Convert to Bulk to loan out…
+              </MenuAction>
+            </Tooltip>
+          ) : (
+            <MenuAction
+              icon={<CheckoutIcon className="text-glyph-checkout" />}
+              onSelect={() => setDialog('checkout')}
+            >
+              Loan out…
+            </MenuAction>
+          )
         ) : null}
         {canSell ? (
           <>

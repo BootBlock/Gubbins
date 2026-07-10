@@ -147,17 +147,20 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
   Larger — it touches the `checkouts` schema and the resolve-or-create path — so scope it carefully;
   the pseudo-contact workaround is tolerable in the meantime. Lower priority than B1–B3.
 
-- **B5 — Untracked assets can't be loaned (by design) — document the escape hatch.** `checkout`
-  deliberately rejects `UNTRACKED` items ("use a serialised item for assets that are checked out")
-  and the "Loan out…" action is hidden for them
-  ([ItemActions.tsx](../../src/features/inventory/components/ItemActions.tsx) ~L122). That's the
-  right call, but there's no in-product nudge telling a user *why* the bench-vice they marked
-  Untracked can't be loaned, or offering the in-place `UNTRACKED → DISCRETE` convert
-  ([[item-model-parallel-lists]]). A small hint/CTA, not a model change. Lowest priority.
+- **B5 — Untracked assets can't be loaned (by design) — document the escape hatch. ✅ Shipped
+  2026-07-10.** `checkout` deliberately rejects `UNTRACKED` items, and the "Loan out…" action was
+  simply *hidden* for them, leaving no in-product nudge as to why. Now, in the item overflow menu
+  ([ItemActions.tsx](../../src/features/inventory/components/ItemActions.tsx)), an active Untracked
+  item shows a **"Convert to Bulk to loan out…"** row in place of "Loan out…", carrying a Foundry
+  `Tooltip` that explains *why* an Untracked item can't be loaned. Selecting it performs the lossless,
+  reversible `UNTRACKED → DISCRETE` convert via the same `useUpdateItem` path the details editor uses
+  (repository-guarded by `isConvertibleTrackingChange`) — a deliberate, user-initiated step, never an
+  auto-convert on a loan attempt. Hidden entirely when Contacts is off, exactly as the live loan
+  action is. UI-only: no schema/model change.
 
 ---
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → then reassess
-`T2a` / `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → ~~`B5`~~ ✅ →
+then reassess `T2a` / `B4` / `T4` by appetite.

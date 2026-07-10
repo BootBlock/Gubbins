@@ -11,9 +11,11 @@ vi.mock('./GaugeAdjustDialog', () => ({ GaugeAdjustDialog: () => null }));
 vi.mock('./ItemDetailDialog', () => ({ ItemDetailDialog: () => null }));
 vi.mock('./MoveItemDialog', () => ({ MoveItemDialog: () => null }));
 vi.mock('./QrCodeDialog', () => ({ QrCodeDialog: () => null }));
+const spies = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock('../mutations', () => ({
   useSoftDeleteItem: () => ({ mutate: vi.fn() }),
   useRestoreItem: () => ({ mutate: vi.fn() }),
+  useUpdateItem: () => ({ mutate: spies.update, isPending: false }),
 }));
 
 import { ItemActions } from './ItemActions';
@@ -57,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
+  spies.update.mockReset();
 });
 
 /** Open the "More actions" overflow menu so its rows (move / loan / sell / write off) render. */
@@ -81,6 +84,49 @@ describe('ItemActions — checkout gating (Phase 6)', () => {
     expect(screen.queryByRole('menuitem', { name: /Edit details/ })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Print label/ })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Move/ })).not.toBeNull();
+  });
+});
+
+describe('ItemActions — Untracked loan escape hatch (B5)', () => {
+  const untracked: Item = { ...item, trackingMode: 'UNTRACKED', quantity: 0 };
+
+  it('replaces live "Loan out…" with the convert hint on an Untracked item', () => {
+    render(<ItemActions item={untracked} locations={[]} />);
+    openMoreMenu();
+    // No live loan action for an Untracked item — checkout rejects it by design…
+    expect(screen.queryByRole('menuitem', { name: /^Loan out/ })).toBeNull();
+    // …but the convert-to-Bulk escape hatch is offered in its place.
+    expect(screen.queryByRole('menuitem', { name: /Convert to Bulk to loan out/ })).not.toBeNull();
+  });
+
+  it('does not show the convert hint on a DISCRETE item (it can be loaned directly)', () => {
+    render(<ItemActions item={item} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Convert to Bulk to loan out/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Loan out/ })).not.toBeNull();
+  });
+
+  it('does not show the convert hint on a SERIALISED item', () => {
+    render(<ItemActions item={{ ...item, trackingMode: 'SERIALISED', quantity: 1 }} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Convert to Bulk to loan out/ })).toBeNull();
+  });
+
+  it('hides the convert hint when Contacts is off (the way in disappears entirely)', () => {
+    useModulesStore.getState().setFeatureIntent('contacts', false);
+    render(<ItemActions item={untracked} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Convert to Bulk to loan out/ })).toBeNull();
+  });
+
+  it('invokes the tracking-mode change to DISCRETE when the convert CTA is chosen', () => {
+    render(<ItemActions item={untracked} locations={[]} />);
+    openMoreMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Convert to Bulk to loan out/ }));
+    expect(spies.update).toHaveBeenCalledWith({
+      id: untracked.id,
+      input: { trackingMode: 'DISCRETE' },
+    });
   });
 });
 
