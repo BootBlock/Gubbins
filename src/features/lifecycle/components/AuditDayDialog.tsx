@@ -115,6 +115,17 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
       ? 'Walk a set of locations in turn, counting and reconciling each. Your progress is saved, so you can pause and resume.'
       : undefined;
 
+  // Announce completion as text for screen-reader users (WCAG 4.1.3): the milestone burst is
+  // decorative (aria-hidden) and the summary's success glyph is aria-hidden too, so without this
+  // the completed stock-take would be a silent, visual-only moment. Held in an always-mounted
+  // region (empty until complete) so the empty → text change is reliably announced — the stepper's
+  // own live region has unmounted by the time the summary shows, so it can't carry this.
+  const completionAnnouncement = (() => {
+    if (stage !== 'summary' || !session) return '';
+    const tally = summarise(session);
+    return `Stock-take complete. Walked ${session.scope.length} ${plural(session.scope.length, 'location')} — ${tally.totalAdjustmentsMade} ${plural(tally.totalAdjustmentsMade, 'adjustment')} applied.`;
+  })();
+
   return (
     <Modal open={open} onClose={onClose} title={title} description={description} className="max-w-xl">
       {stage === 'scope' ? (
@@ -129,6 +140,12 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
       ) : (
         <AuditStepper onClose={onClose} onAbandon={abandon} />
       )}
+
+      {/* Always-mounted completion announce (see note above) — empty in the scope/stepper stages,
+          populated once the walk is complete so the change is spoken. */}
+      <LiveRegion visuallyHidden data-testid="audit-complete-live">
+        {completionAnnouncement}
+      </LiveRegion>
     </Modal>
   );
 }

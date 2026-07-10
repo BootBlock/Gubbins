@@ -295,4 +295,13 @@ describe('AuditDayDialog — completion burst (F4)', () => {
     renderWithBurst(true);
     expect(screen.queryByTestId('burst')).not.toBeInTheDocument();
   });
+
+  it('announces stock-take completion as text (the burst is decorative)', () => {
+    useAuditSessionStore.setState({ session: completeSession() });
+    // Even under reduced motion (no burst at all), the milestone must reach screen readers.
+    renderWithBurst(true);
+    expect(screen.getByTestId('audit-complete-live')).toHaveTextContent(
+      'Stock-take complete. Walked 2 locations — 0 adjustments applied.',
+    );
+  });
 });
