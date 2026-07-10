@@ -1211,6 +1211,100 @@
 }
 
 /*
+ * Spotlight / rotating gradient border (visual-flair F5). A slow conic-gradient "comet"
+ * sweeps around the edge of the single focal card — kin to the drop-target ghost — so the
+ * element the pointer or keyboard is on reads as premium and alive without turning the
+ * whole grid into a disco. The tint comes entirely from the accent-tracking brand tokens
+ * (`--primary` / `--highlight` via `color-mix`), so the ring recolours for free with the
+ * user's Colour, exactly like the F1 hero glow and the F4 burst.
+ *
+ * Restraint by construction: the ring is invisible and paused at rest (`opacity: 0` +
+ * `animation-play-state: paused`) and only fades in + starts rotating for the ONE card
+ * under `:hover` or `:focus-within`. Because that is pure CSS state re-evaluated by the
+ * browser, exactly one card is ever lit at a time and it is safe on the virtualised list
+ * (rows recycle on scroll, but there is no per-mount entrance to re-fire — an idle recycled
+ * card simply isn't hovered/focused). It is decoration only: the real focus ring, the card's
+ * hover-lift and the `selected` ring remain the actual focus/selection signals.
+ *
+ * Drawn on a `::before` masked to just the border ring: the conic fills the box, then the
+ * two-layer mask (border-box XOR content-box) carves out the centre, leaving only the
+ * `padding`-width edge — so no `overflow: hidden` is needed and the card keeps its hover
+ * shadow. The sweep is driven by animating the registered `--gubbins-spotlight-angle`
+ * custom property (an `@property <angle>`, which is what lets it interpolate); the
+ * rotation itself is `linear` — the only sane timing for a continuous spin (matching the
+ * loading spinner), while the hover reveal uses the signature `--ease-emphasized`. Where
+ * `@property` is unsupported the angle can't animate, so it degrades to a static gradient
+ * border — the same graceful end state the reduced-motion path gives.
+ *
+ * Reduced motion: the global `prefers-reduced-motion` catch-all clamps the rotation to a
+ * single 0.01ms pass (angle wraps 0deg→360deg = the same rest position) and the fade to an
+ * instant show, so those users get a static, tasteful gradient border on hover/focus — never
+ * a stuttered spin. Dropped entirely under high-contrast to keep that mode pristine, exactly
+ * as the ambient glow is.
+ */
+@property --gubbins-spotlight-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes gubbins-spotlight {
+  to {
+    --gubbins-spotlight-angle: 360deg;
+  }
+}
+
+.gubbins-spotlight-border {
+  position: relative;
+  isolation: isolate;
+}
+.gubbins-spotlight-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px; /* ring thickness — carved to just this edge by the mask below */
+  pointer-events: none;
+  /* A single bright "comet" arc; transparent elsewhere so most of the card's own border
+     shows through and only a sweeping highlight rides over it (restraint, not a full ring). */
+  background: conic-gradient(
+    from var(--gubbins-spotlight-angle),
+    transparent 40deg,
+    color-mix(in oklab, var(--primary) 60%, transparent) 95deg,
+    color-mix(in oklab, var(--highlight) 90%, transparent) 130deg,
+    color-mix(in oklab, var(--primary) 60%, transparent) 165deg,
+    transparent 220deg
+  );
+  /* Carve out the centre so only the padding-width edge paints (border-box XOR content-box).
+     The `#000` here is not a UI colour — it is a fully-opaque mask *alpha* operator ("keep
+     this pixel"); any opaque value is equivalent, so no design token applies (the same reason
+     the print block uses raw ink values). Nothing themeable is expressed by it. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease-emphasized);
+  animation: gubbins-spotlight 7s linear infinite;
+  animation-play-state: paused;
+}
+.gubbins-spotlight-border:hover::before,
+.gubbins-spotlight-border:focus-within::before {
+  opacity: 1;
+  animation-play-state: running;
+}
+
+/* High-contrast mode opts out of the spotlight ring to keep contrast maximal, matching
+   the ambient glow. The real focus ring / selected state remain the focus signals. */
+[data-contrast='high'] .gubbins-spotlight-border::before {
+  display: none;
+}
+
+/*
  * Skeleton "shimmer" sweep (spec §3 loading states). Replaces a flat `animate-pulse`
  * placeholder with a light band travelling across the muted bar, so a loading widget
  * reads as actively fetching rather than merely dimmed. The base is the `--muted`
