@@ -1,45 +1,20 @@
 /**
  * The ordered migration registry (spec §2.3).
  *
- * The Phase 69 migration-baseline consolidation collapsed the historical v1…v24 chain
- * into a single `v1-initial` migration that builds the entire baseline schema in one step
- * (Gubbins is pre-release, so no incremental upgrade path from an *older* on-disk version
- * is needed). Three forward steps (v2 `asset_bookings`, v3 `supplier_part_price_history`,
- * v4 location-metadata) accumulated on top of that baseline and have since been
- * re-squashed into it by the Add-item enrichment work, which needed two non-additive
- * schema changes (the widened `tracking_mode` CHECK and the `notes` column in the FTS
- * index) that a forward `ALTER TABLE` cannot express. Future forward migrations are
- * appended here in ascending version order; the target schema version Gubbins expects is
- * simply the highest registered version. `v2-warranty-index` is the first such forward
- * step — a purely additive partial index on `items.warranty_expires_at`; `v3-active-location-index`
- * follows it with a partial index on `items(location_id) WHERE is_active = 1` for the hot
- * per-location active-stock reads; `v4-revaluations` (feature-gap G9) follows with the additive
- * `items.current_value` column and the append-only `revaluations` log table; `v5-item-relations`
- * (feature-gap G6) follows with the additive `item_relations` join table (related-items
- * cross-links); `v6-wishlist` (feature-gap G8) follows with the additive standalone `wishlist`
- * table (manual "to-buy" list); `v7-test-records` (feature-gap G7) follows with the additive
- * `test_records` table (per-instance test / calibration / service log). A database left ahead of the highest registered version (e.g. a pre-squash
- * user_version 3–4) is refused at boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the
- * local-data reset.
+ * Gubbins is pre-release with disposable developer-only data, so the entire schema lives in
+ * a single `v1-initial` migration — every historical step (the original v1…v24 chain and the
+ * later forward steps v2…v7) has been folded into that one baseline. There is no incremental
+ * upgrade path from an older on-disk version. The target schema version Gubbins expects is
+ * simply the highest registered version (1). Any future non-trivial schema change is likewise
+ * folded into the baseline while pre-release; once released, forward migrations would instead
+ * be appended here in ascending version order. A database left ahead of the highest registered
+ * version is refused at boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the local-data
+ * reset.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
-import { v2WarrantyIndex } from './v2-warranty-index';
-import { v3ActiveLocationIndex } from './v3-active-location-index';
-import { v4Revaluations } from './v4-revaluations';
-import { v5ItemRelations } from './v5-item-relations';
-import { v6Wishlist } from './v6-wishlist';
-import { v7TestRecords } from './v7-test-records';
 
-export const migrations: readonly Migration[] = [
-  v1Initial,
-  v2WarrantyIndex,
-  v3ActiveLocationIndex,
-  v4Revaluations,
-  v5ItemRelations,
-  v6Wishlist,
-  v7TestRecords,
-];
+export const migrations: readonly Migration[] = [v1Initial];
 
 /** The schema version the current build expects after boot migrations complete. */
 export const TARGET_SCHEMA_VERSION = migrations.reduce(

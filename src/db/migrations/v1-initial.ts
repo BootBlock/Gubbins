@@ -16,37 +16,30 @@ import {
 import { SQL_NOW_MS, type Migration } from './migration';
 
 /**
- * v1 — Consolidated baseline schema (Phase 69 migration-baseline squash; re-squashed
- * for the Add-item enrichment work).
+ * v1 — Consolidated baseline schema (the sole migration).
  *
- * This single migration builds the **entire current schema** in one step. It began as
- * the squash of the original v1…v24 migration chain (Phase 69); the Add-item
- * enrichment re-squashed the subsequent v2 `asset_bookings`, v3
- * `supplier_part_price_history` and v4 location-metadata forward steps back into this
- * baseline **because that work makes two non-additive changes** that a forward
- * `ALTER TABLE` cannot express: the `items.tracking_mode` CHECK gains `UNTRACKED`,
- * and the `items_fts` index (plus its sync triggers) gains the new `notes` column.
- * Gubbins is pre-release with disposable developer-only data, so no incremental
- * upgrade path from an older on-disk version is required — a pre-squash database
- * (user_version 2–4) exceeds the new target of 1 and is refused at boot with
- * `SCHEMA_TOO_NEW`, whose rescue screen offers the local-data reset. The migration
- * *engine* (`runMigrations`/`getUserVersion`/the strict-contiguity guard) and all
- * its sync wiring (`SYNC_TABLES`, `FK_REFS`) are unchanged.
+ * This single migration builds the **entire current schema** in one step. Gubbins is
+ * pre-release with disposable developer-only data, so it carries no incremental upgrade
+ * path from any older on-disk version: every historical migration — the original v1…v24
+ * chain and the later forward steps v2 (`idx_items_warranty`), v3
+ * (`idx_items_active_location`), v4 (`revaluations` + `items.current_value`, G9), v5
+ * (`item_relations`, G6), v6 (`wishlist`, G8) and v7 (`test_records`, G7) — is folded into
+ * this one baseline, so a fresh install builds the whole schema here and the target schema
+ * version is simply 1. A database left ahead of v1 (e.g. a pre-squash install stranded on a
+ * former forward chain) exceeds the target and is refused at boot with `SCHEMA_TOO_NEW`,
+ * whose rescue screen offers the local-data reset. The migration *engine*
+ * (`runMigrations`/`getUserVersion`/the strict-contiguity guard) and all its sync wiring
+ * (`SYNC_TABLES`, `FK_REFS`) are unchanged.
  *
  * ## Zero schema drift — a hard contract
- * The statement stream below is the ordered concatenation of the original chain's
- * `statements` (minus per-step `PRAGMA user_version` bumps, which the engine still
- * appends — once, for v1), with the folded v2–v4 streams re-issued verbatim at the
- * tail and a small set of deliberate edits in place: `items.notes` in the CREATE
- * TABLE, `notes` in the FTS index + its three sync triggers, the widened
- * tracking-mode CHECK (derived from `TRACKING_MODES`, so it can never drift from the
- * application constant), (Phase 82) the additive `items.is_unlimited` boolean column
- * with its two CHECKs, and the additive `items.barcode` column (retail GTIN) — indexed
- * and added to the FTS index + its three sync triggers alongside the MPN. ALTER-added columns are re-issued as ALTERs in their
- * original positions (SQLite stores such columns verbatim at the tail of the table's
- * stored `sql`). The `v1-initial.test.ts` golden-equivalence test locks the result
- * against the committed `__fixtures__/schema-baseline.snapshot.json`, so any
- * *unintended* schema change still fails loudly.
+ * The folded forward-step statements (marked "Folded former vN" below) are re-issued
+ * verbatim at the tail — purely additive indexes, columns and child tables — so the
+ * resulting schema is byte-for-byte identical to what the former chain produced, only now
+ * reached in one step at `user_version = 1`. ALTER-added columns are re-issued as ALTERs in
+ * their original positions (SQLite stores such columns verbatim at the tail of the table's
+ * stored `sql`). The `v1-initial.test.ts` golden-equivalence test locks the result against
+ * the committed `__fixtures__/schema-baseline.snapshot.json`, so any *unintended* schema
+ * change still fails loudly.
  *
  * The per-phase grouping is preserved as authored: tables come before the
  * children that reference them, triggers after their tables, the FTS index after its
@@ -988,5 +981,151 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_kit_components_component_item_id ON kit_components(component_item_id);`,
     },
     { sql: updatedAtTrigger('kit_components') },
+    // --- Folded former v2: partial index on items.warranty_expires_at -------------
+    // Most items carry no warranty date, so the index is partial (mirrors idx_items_expiry):
+    // the warranty-attention probe / listWarrantyExpiring / alert centre seek the small set
+    // that actually has one rather than scanning the whole items table.
+    {
+      sql: `CREATE INDEX idx_items_warranty ON items(warranty_expires_at) WHERE warranty_expires_at IS NOT NULL;`,
+    },
+    // --- Folded former v3: partial index on items(location_id) WHERE is_active = 1 -
+    // The hot per-location active-stock reads emit `WHERE is_active = 1 AND location_id = ?`.
+    // Encoding `is_active = 1` in the index's WHERE (rather than a composite second column)
+    // keeps it single-column and makes the no-stats planner prefer it for exactly this query.
+    {
+      sql: `CREATE INDEX idx_items_active_location ON items(location_id) WHERE is_active = 1;`,
+    },
+    // --- Folded former v4: manual current value + revaluation log (feature-gap G9) -
+    // Additive: a live manual per-unit value on items, plus an append-only LWW log of the
+    // valuation points that set it (value can move up or down, independent of depreciation).
+    {
+      sql: `ALTER TABLE items ADD COLUMN current_value REAL CHECK (current_value IS NULL OR current_value >= 0);`,
+    },
+    {
+      sql: `
+        CREATE TABLE revaluations (
+          id          TEXT    PRIMARY KEY NOT NULL,
+          item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          value       REAL    NOT NULL,                    -- the recorded per-unit value at revalued_at
+          revalued_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}), -- effective date of the valuation (UNIX-ms)
+          note        TEXT,
+          created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (value >= 0)
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_revaluations_item_id ON revaluations(item_id, revalued_at);`,
+    },
+    {
+      sql: `
+        CREATE TRIGGER trg_revaluations_updated_at
+        AFTER UPDATE ON revaluations
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+          UPDATE revaluations SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
+        END;
+      `,
+    },
+    // --- Folded former v5: related-items cross-links (feature-gap G6) --------------
+    // A synced many-to-many relation between items, distinct from variants (items.parent_id)
+    // and kits. Deterministic `from|to|kind` primary key so two devices minting the same
+    // logical relation converge by LWW; `kind` is app-enforced free TEXT (no DB CHECK).
+    {
+      sql: `
+        CREATE TABLE item_relations (
+          id           TEXT    PRIMARY KEY NOT NULL,   -- canonical "from|to|kind" (deterministic)
+          from_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          to_item_id   TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          kind         TEXT    NOT NULL,               -- WORKS_WITH | ACCESSORY_FOR | SPARE_FOR (app-enforced)
+          note         TEXT,                           -- optional free-text context for the link
+          created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (from_item_id <> to_item_id)
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_item_relations_from ON item_relations(from_item_id);`,
+    },
+    {
+      sql: `CREATE INDEX idx_item_relations_to ON item_relations(to_item_id);`,
+    },
+    {
+      sql: `
+        CREATE TRIGGER trg_item_relations_updated_at
+        AFTER UPDATE ON item_relations
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+          UPDATE item_relations SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
+        END;
+      `,
+    },
+    // --- Folded former v6: manual "to-buy" / wishlist (feature-gap G8) -------------
+    // A standalone dictionary table (no FK, like contacts/projects) of wanted-but-not-owned
+    // things; `priority` is app-enforced free TEXT (HIGH | MEDIUM | LOW | NONE), default NONE.
+    {
+      sql: `
+        CREATE TABLE wishlist (
+          id           TEXT    PRIMARY KEY NOT NULL,
+          name         TEXT    NOT NULL,
+          note         TEXT,                           -- optional free-text context
+          url          TEXT,                           -- optional http(s) link (app-sanitised)
+          target_price REAL    CHECK (target_price IS NULL OR target_price >= 0),
+          priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)
+          created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `
+        CREATE TRIGGER trg_wishlist_updated_at
+        AFTER UPDATE ON wishlist
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+          UPDATE wishlist SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
+        END;
+      `,
+    },
+    // --- Folded former v7: per-instance test / calibration / service records (G7) --
+    // An append-only LWW child of items (structured pass/fail + reading log per serialised
+    // unit). `kind` (TEST | CALIBRATION | SERVICE) and `result` (PASS | FAIL | LIMIT | NA)
+    // are app-enforced free TEXT; `reading` is deliberately unconstrained (may be negative).
+    {
+      sql: `
+        CREATE TABLE test_records (
+          id           TEXT    PRIMARY KEY NOT NULL,
+          item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          kind         TEXT    NOT NULL DEFAULT 'TEST',   -- TEST | CALIBRATION | SERVICE (app-enforced)
+          name         TEXT    NOT NULL,                  -- the check / test name
+          result       TEXT    NOT NULL DEFAULT 'PASS',   -- PASS | FAIL | LIMIT | NA (app-enforced)
+          reading      REAL,                              -- optional measured value (may be negative)
+          unit         TEXT,                              -- optional unit for the reading (e.g. "MΩ")
+          note         TEXT,
+          performed_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}), -- effective date of the record (UNIX-ms)
+          created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_test_records_item_id ON test_records(item_id, performed_at);`,
+    },
+    {
+      sql: `
+        CREATE TRIGGER trg_test_records_updated_at
+        AFTER UPDATE ON test_records
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+          UPDATE test_records SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
+        END;
+      `,
+    },
   ],
 };

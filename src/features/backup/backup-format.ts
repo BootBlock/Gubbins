@@ -248,7 +248,7 @@ export function assembleBackup(sources: BackupSources): BackupArtifacts {
 
 /** The decoded contents of a backup, ready for {@link import('./restore-backup').restoreBackup}. */
 export interface ParsedBackup {
-  /** The manifest when present; null for a legacy bare-`.json` snapshot import. */
+  /** The manifest when present; null for a `.zip` that carries `backup.json` but no manifest. */
   readonly manifest: BackupManifest | null;
   /** The portable snapshot (always present and version-validated). */
   readonly snapshot: SyncSnapshot;
@@ -323,30 +323,22 @@ export function parseBackupEntries(entries: Record<string, Uint8Array>): ParsedB
 
 /**
  * Read a chosen backup file (its raw bytes) into {@link ParsedBackup}. Accepts a full `.zip`
- * backup or a legacy bare `.json` snapshot (the previous "Download backup" output). Pure;
- * throws {@link InvalidBackupError} or the snapshot version-guard error for unreadable input.
+ * backup — the only format Gubbins produces. Pure; throws {@link InvalidBackupError} for a
+ * non-zip or a zip missing its data file, or the snapshot version-guard error for a backup
+ * written by a newer build.
  */
 export function readBackupFile(bytes: Uint8Array): ParsedBackup {
-  let entries: Record<string, Uint8Array> | null = null;
+  let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(bytes);
   } catch {
-    entries = null; // not a zip — fall through to the bare-JSON path
+    throw new InvalidBackupError('That file is not a Gubbins backup (.zip).');
   }
 
-  if (entries && (SNAPSHOT_ENTRY in entries || MANIFEST_ENTRY in entries)) {
-    return parseBackupEntries(entries);
+  if (!(SNAPSHOT_ENTRY in entries || MANIFEST_ENTRY in entries)) {
+    throw new InvalidBackupError('That file is not a Gubbins backup (.zip).');
   }
-
-  // Legacy bare-JSON backup (or a hand-exported snapshot).
-  let snapshot: SyncSnapshot;
-  try {
-    snapshot = parseBackupJson(strFromU8(bytes));
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('newer version')) throw err; // keep the version guard wording
-    throw new InvalidBackupError('That file is not a Gubbins backup (.zip or backup .json).');
-  }
-  return { manifest: null, snapshot, sqlite: null, images: [], settings: null };
+  return parseBackupEntries(entries);
 }
 
 /** Re-export so call sites can build/inspect settings via one module. */

@@ -342,14 +342,13 @@ function RestorePanel({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Restore from a Gubbins backup (<code className="rounded bg-secondary/60 px-1">.zip</code>) or an older
-        data file (<code className="rounded bg-secondary/60 px-1">.json</code>).
+        Restore from a Gubbins backup (<code className="rounded bg-secondary/60 px-1">.zip</code>).
       </p>
 
       <input
         ref={fileRef}
         type="file"
-        accept=".zip,application/zip,.json,application/json"
+        accept=".zip,application/zip"
         className="hidden"
         data-testid="restore-backup-input"
         onChange={(e) => void onFileChosen(e)}
@@ -370,7 +369,7 @@ function RestorePanel({
             <p className="text-muted-foreground">
               {parsed.manifest
                 ? `Created ${new Date(parsed.manifest.createdAt).toLocaleString()} · Gubbins ${parsed.manifest.appVersion}`
-                : 'Older backup (data only).'}
+                : 'Backup (data only).'}
             </p>
             <div className="flex flex-wrap gap-1.5">
               <Badge>{parsed.snapshot.tables.items?.length ?? 0} items</Badge>
