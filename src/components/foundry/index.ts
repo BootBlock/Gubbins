@@ -91,6 +91,14 @@ export {
   type MediaQueryLike,
   type MediaQueryProvider,
 } from './useReducedMotion';
+export {
+  withViewTransition,
+  shouldViewTransition,
+  useViewTransitionsEnabled,
+  viewTransitionsSupported,
+  resolveRouteViewTransitionTypes,
+  ROUTE_VIEW_TRANSITION_TYPE,
+} from './view-transition';
 export { useMediaQuery, useLargeFormat } from './useMediaQuery';
 export { useRovingRadioGroup } from './useRovingRadioGroup';
 export {

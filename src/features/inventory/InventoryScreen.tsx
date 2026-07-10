@@ -31,6 +31,8 @@ import {
   PageHeader,
   SplitButton,
   Tooltip,
+  useViewTransitionsEnabled,
+  withViewTransition,
 } from '@/components/foundry';
 import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
@@ -377,10 +379,17 @@ function InventoryWorkspace() {
   useEffect(() => {
     prevDensity.current = density;
   }, [density]);
+  // When view transitions are active the density restyle cross-fades the whole region
+  // (the toggle routes through `withViewTransition` below), so the horizontal slide is
+  // suppressed — the two would otherwise double-animate. Where transitions are unavailable
+  // or motion is reduced, `vtEnabled` is false and the slide remains as the fallback.
+  const vtEnabled = useViewTransitionsEnabled();
   const listEntrance = densityChanged
-    ? density === 'data'
-      ? 'animate-slide-in-right'
-      : 'animate-slide-in-left'
+    ? vtEnabled
+      ? ''
+      : density === 'data'
+        ? 'animate-slide-in-right'
+        : 'animate-slide-in-left'
     : 'animate-swap-in';
   // Re-key (and so replay the entrance) when the *arrangement* changes: switching between
   // flat and grouped swaps the whole region. Grouped mode keeps a density-stable key so a
@@ -549,7 +558,7 @@ function InventoryWorkspace() {
                 <MenuAction
                   key={mode.value}
                   icon={<mode.icon />}
-                  onSelect={() => setDensity(mode.value)}
+                  onSelect={() => withViewTransition(() => setDensity(mode.value))}
                   selected={density === mode.value}
                 >
                   View: {mode.label}
