@@ -86,9 +86,9 @@ const TUNING = {
      * fall speeds — the parallax cue. Critically, streak *length* is NOT tied to this speed (see
      * {@link windStretchGain} below), so a fast near-drop isn't drawn proportionally longer, which would
      * cancel the very speed difference we want to show. The two {@link deepLayers} sit *behind* this
-     * range (depth < 0) and so fall slower still.
+     * range (depth < 0) and so fall slower still. Kept deliberately gentle.
      */
-    speed: [272, 1003] as const,
+    speed: [231, 853] as const,
     /** Baseline wind lean as a fraction of fall speed, before gusts. */
     baseLean: 0.1,
     /** Extra lean a full gust adds (fraction of fall speed); flurries amplify it. */
@@ -116,15 +116,18 @@ const TUNING = {
     alpha: [0.16, 0.62] as const,
     /**
      * Two extra depth layers sitting *further back* than the main field. Their depth params are
-     * negative, so the shared speed/scale/alpha lerps extrapolate to slower, smaller and fainter
-     * drops — a hazy, distant backdrop behind the main rain. A slice of the field
-     * ({@link deepLayerFraction}) is placed in these layers, added *on top of* the main count so the
-     * foreground isn't thinned; {@link deepLayerJitter} spreads each layer's depth a touch so its
-     * drops don't fall in lockstep.
+     * negative, so the shared speed/scale/alpha lerps extrapolate to slower and smaller drops — a
+     * distant backdrop behind the main rain. A slice of the field ({@link deepLayerFraction}) is
+     * placed in these layers, added *on top of* the main count so the foreground isn't thinned;
+     * {@link deepLayerJitter} spreads each layer's depth a touch so its drops don't fall in
+     * lockstep. Their opacity is lifted by {@link deepAlphaBoost} — the raw alpha extrapolation
+     * would fade them to near-invisible, so this keeps them faintly but genuinely visible while the
+     * (unchanged) smaller size and slower speed still read as depth.
      */
     deepLayers: [-0.1, -0.2] as const,
     deepLayerFraction: 0.18,
     deepLayerJitter: 0.02,
+    deepAlphaBoost: 0.15,
   },
   snow: {
     density: 15000,
@@ -599,10 +602,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const h = s.halfH * 2 * scale * stretch;
     // Rotate the vertical sprite so its downward axis aligns with the drop's velocity.
     const angle = Math.atan2(-p.vx, p.vy);
+    // Deep-background layers (depth < 0) get an opacity lift so they don't fade to invisible; the
+    // main field keeps its plain depth-driven alpha.
+    const alpha = lerp(t.alpha[0], t.alpha[1], p.z) + (p.z < 0 ? t.deepAlphaBoost : 0);
     ctx!.save();
     ctx!.translate(p.x, p.y);
     ctx!.rotate(angle);
-    ctx!.globalAlpha = lerp(t.alpha[0], t.alpha[1], p.z);
+    ctx!.globalAlpha = alpha;
     ctx!.drawImage(s.canvas, -w / 2, -h / 2, w, h);
     ctx!.restore();
   }
