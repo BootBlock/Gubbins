@@ -9,8 +9,16 @@ import {
   Surface,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddIcon, DeleteIcon, LowStockIcon, ShoppingCartIcon, TruckIcon } from '@/components/icons';
+import {
+  AddIcon,
+  DeleteIcon,
+  LowStockIcon,
+  ShoppingCartIcon,
+  TruckIcon,
+  WishlistIcon,
+} from '@/components/icons';
 import { ReorderTab } from './ReorderTab';
+import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
@@ -35,19 +43,21 @@ import { PurchaseOrderLineDialog, type LineItemOption } from './components/Purch
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
 import { ReturnLineDialog } from './components/ReturnLineDialog';
 
-/** The two top-level tabs on the Purchase Orders screen. */
-type PoTab = 'orders' | 'reorder';
+/** The top-level tabs on the Purchase Orders screen. */
+type PoTab = 'orders' | 'reorder' | 'wishlist';
 
 /**
- * The Purchase Orders screen (inventory-depth Phase 62 + Phase 65).
+ * The Purchase Orders screen (inventory-depth Phase 62 + Phase 65 + feature-gap G8).
  *
  * - **Orders tab**: the existing supplier-keyed DRAFT/ORDERED/RECEIVED order list +
  *   detail panel (Phase 62).
  * - **Reorder / Shopping list tab**: items below their reorder point grouped by
  *   preferred supplier, with editable quantities and one-click DRAFT PO creation
- *   (Phase 65).
+ *   (Phase 65) — *stock-driven* buying.
+ * - **Wishlist tab**: a manual list of wanted-but-not-owned things to buy (feature-gap
+ *   G8) — *manual* buying, the counterpart to the stock-driven Reorder list.
  *
- * Both tabs live within the single `/purchase-orders` route (no new route file) so
+ * All three tabs live within the single `/purchase-orders` route (no new route file) so
  * route-tree merges with parallel phases remain clean. Status badges and design tokens
  * follow CLAUDE.md; copy is British English.
  */
@@ -99,6 +109,16 @@ export function PurchaseOrdersScreen() {
         >
           <LowStockIcon className="size-4" aria-hidden="true" />
           Reorder / Shopping list
+        </TabButton>
+        <TabButton
+          id="po-tab-wishlist"
+          panelId="po-panel-wishlist"
+          active={activeTab === 'wishlist'}
+          onClick={() => setActiveTab('wishlist')}
+          data-testid="po-tab-wishlist"
+        >
+          <WishlistIcon className="size-4" aria-hidden="true" />
+          Wishlist
         </TabButton>
       </div>
 
@@ -173,6 +193,16 @@ export function PurchaseOrdersScreen() {
           hidden={activeTab !== 'reorder'}
         >
           <ReorderTab />
+        </div>
+
+        {/* Wishlist tab panel */}
+        <div
+          id="po-panel-wishlist"
+          role="tabpanel"
+          aria-labelledby="po-tab-wishlist"
+          hidden={activeTab !== 'wishlist'}
+        >
+          <WishlistTab />
         </div>
       </main>
 

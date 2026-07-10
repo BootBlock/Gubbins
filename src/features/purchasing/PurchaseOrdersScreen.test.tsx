@@ -65,6 +65,15 @@ vi.mock('./queries', () => ({
   }),
 }));
 
+// Feature-gap G8 — Wishlist tab. Its panel is always mounted (hidden), so its query hooks run
+// on render; stub them so the screen needs no real repository/driver.
+vi.mock('./wishlist-queries', () => ({
+  useWishlist: () => ({ isLoading: false, data: { rows: [] } }),
+  useCreateWishlistEntry: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
+  useUpdateWishlistEntry: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteWishlistEntry: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
+}));
+
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [] } }),
   useLocations: () => ({ data: { rows: [] } }),
