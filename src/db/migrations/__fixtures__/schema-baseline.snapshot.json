@@ -347,7 +347,7 @@
       "type": "table",
       "name": "checkouts",
       "tbl_name": "checkouts",
-      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          contact_id     TEXT    NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT,\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at)\n        ) STRICT"
+      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          contact_id     TEXT    NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT, return_note TEXT,\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1297,6 +1297,14 @@
         {
           "cid": 10,
           "name": "source_batch_key",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "return_note",
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,
