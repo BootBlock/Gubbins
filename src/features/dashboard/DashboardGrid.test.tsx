@@ -203,3 +203,32 @@ describe('DashboardGrid — shared Customise mode', () => {
     expect(screen.getByTestId('reset-dashboard')).toBeInTheDocument();
   });
 });
+
+describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
+  it('nudges a widget one cell via the move buttons (the drag-free reorder path)', () => {
+    // Alpha at (0,0), Delta at (1,0); the rest flow after. Moving Alpha right swaps it with Delta.
+    useLayoutStore.setState({
+      dashboardLayout: [
+        { id: 'alpha', x: 0, y: 0, visible: true },
+        { id: 'delta', x: 1, y: 0, visible: true },
+      ],
+    });
+    render(<DashboardGrid />);
+    enterCustomise();
+
+    fireEvent.click(screen.getByTestId('widget-move-alpha-right'));
+
+    const layout = useLayoutStore.getState().dashboardLayout;
+    expect(layout.find((p) => p.id === 'alpha')).toMatchObject({ x: 1, y: 0 });
+    expect(layout.find((p) => p.id === 'delta')).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it('disables a move control that would push a widget off the grid', () => {
+    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, visible: true }] });
+    render(<DashboardGrid />);
+    enterCustomise();
+    // Alpha sits in the top-left corner: it can move neither up nor left.
+    expect(screen.getByTestId('widget-move-alpha-up')).toBeDisabled();
+    expect(screen.getByTestId('widget-move-alpha-left')).toBeDisabled();
+  });
+});

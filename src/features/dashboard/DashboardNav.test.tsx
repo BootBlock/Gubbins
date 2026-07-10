@@ -191,18 +191,35 @@ describe('DashboardNav — reorder & pin (backlog B1)', () => {
     expect(useLayoutStore.getState().navTileOrder.find((p) => p.id === '/reports')?.pinned).toBe(true);
   });
 
-  it('moves a tile into another group by dropping it on the group’s drop zone', () => {
+  it('moves a tile into another group via the move-right control (touch-friendly)', () => {
     render(<DashboardNav />);
     customise();
-    // The drop zone names its group so it's clear what dropping there does.
+    // The drop zone (the pointer-drag target) still names its group…
     expect(screen.getByTestId('nav-drop-end-manage')).toHaveTextContent(
       'Drop a tile here to add it to Manage',
     );
-    const dataTransfer = { setData: vi.fn(), getData: () => '/reports', effectAllowed: '' };
-    fireEvent.dragStart(screen.getByTestId('nav-tile-/reports'), { dataTransfer });
-    fireEvent.drop(screen.getByTestId('nav-drop-end-manage'), { dataTransfer });
+    // …but the touch/click path is the on-tile move buttons: nudging Reports right moves it out of
+    // the Workspaces group into the next group (Manage). Native HTML5 drag never fired on touch (#11).
+    fireEvent.click(screen.getByTestId('nav-move-/reports-right'));
     expect(persistedGroup('manage')).toContain('/reports');
     expect(persistedGroup('primary')).not.toContain('/reports');
+  });
+
+  it('reorders within a group via the move-up control', () => {
+    render(<DashboardNav />);
+    customise();
+    // Default primary order starts Inventory, Projects, … — move-up on Projects floats it above
+    // Inventory, exactly like the ArrowUp keyboard path.
+    fireEvent.click(screen.getByTestId('nav-move-/projects-up'));
+    expect(persistedGroup('primary').slice(0, 2)).toEqual(['/projects', '/inventory']);
+  });
+
+  it('disables the move controls at a group edge (first tile can’t move up or to a prior group)', () => {
+    render(<DashboardNav />);
+    customise();
+    // Inventory is first in the primary (Workspaces) group, which is itself the first group.
+    expect(screen.getByTestId('nav-move-/inventory-up')).toBeDisabled();
+    expect(screen.getByTestId('nav-move-/inventory-left')).toBeDisabled();
   });
 
   it('never offers a hidden (feature-gated) tile for ordering', () => {

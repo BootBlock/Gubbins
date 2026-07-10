@@ -16,7 +16,7 @@
  * (with Modular UI gating and stale-order reconcile) by {@link useNavOrder}, so this component
  * stays presentation. A hidden tile never appears and can't be ordered.
  */
-import { useState, type DragEvent, type KeyboardEvent } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
@@ -29,7 +29,7 @@ import {
   useReducedMotion,
 } from '@/components/foundry';
 import { CheckIcon, CustomiseIcon, DragHandleIcon, PinIcon, ResetIcon } from '@/components/icons';
-import { type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinations';
+import { NAV_GROUP_ORDER, type AppRoutePath, type NavGroup } from '@/components/nav/nav-destinations';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import type { NavCountTone } from '@/features/settings/settings';
@@ -38,6 +38,8 @@ import { useNavCounts } from './useNavCounts';
 import { useNavOrder, type NavMoveResult } from './useNavOrder';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useReorderFlip } from './useReorderFlip';
+import { useBoardPointerDrag } from './useBoardPointerDrag';
+import { BoardMoveButtons, type MoveDir } from './BoardMoveButtons';
 
 /** i18n key for each nav group heading (the SSOT keys are terse identifiers). */
 const GROUP_LABEL_KEYS: Record<NavGroup, MessageKey> = {
@@ -93,6 +95,17 @@ const ARROW_DIRECTIONS: Record<string, 'up' | 'down' | 'left' | 'right'> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
 };
+
+/**
+ * Parse a nav drop-target key into the group + display index a dropped tile should reinsert at.
+ * Both a tile position (`pos:<group>:<index>`) and a group's trailing drop zone
+ * (`end:<group>:<count>`) share the `kind:group:index` shape, so one parser serves both.
+ */
+function parseNavDropKey(key: string): { group: NavGroup; index: number } | null {
+  const [kind, group, index] = key.split(':');
+  if ((kind !== 'pos' && kind !== 'end') || !group || index === undefined) return null;
+  return { group: group as NavGroup, index: Number(index) };
+}
 
 /**
  * "Problem" count-pill colours (backlog A2). When a tile's chosen metric counts something
@@ -167,8 +180,6 @@ export function DashboardNav() {
   const editing = useDashboardCustomise((s) => s.editing);
   const toggleEditing = useDashboardCustomise((s) => s.toggle);
   const [announcement, setAnnouncement] = useState('');
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [overKey, setOverKey] = useState<string | null>(null);
 
   // Glide a tile to its new place when it's dragged/arrow-keyed/pinned (FLIP), on the signature
   // easing. Keyed on the resolved per-group order (with pin markers) so any rearrangement plays;
@@ -177,11 +188,6 @@ export function DashboardNav() {
     .map((g) => `${g.group}:${g.tiles.map((tile) => (tile.pinned ? '*' : '') + tile.dest.to).join(',')}`)
     .join('|');
   const registerTile = useReorderFlip(orderKey, editing && !reduced);
-
-  const endDrag = () => {
-    setDraggingId(null);
-    setOverKey(null);
-  };
 
   // Announce the outcome of a move/pin (WCAG 4.1.3). A `null` result is a no-op (a clamped
   // arrow-key nudge at an edge, or a redundant pin) — nothing changed, so nothing is said.
@@ -214,18 +220,17 @@ export function DashboardNav() {
     announceMove(move(id, dir));
   };
 
-  const handleDrop = (group: NavGroup, index: number) => (e: DragEvent) => {
-    e.preventDefault();
-    const id = draggingId ?? e.dataTransfer.getData('text/plain');
-    endDrag();
-    if (id) announceMove(moveTo(id, group, index));
-  };
-
-  // Guarded dragover so a continuous stream on the same target doesn't churn state.
-  const markOver = (key: string) => (e: DragEvent) => {
-    e.preventDefault();
-    setOverKey((prev) => (prev === key ? prev : key));
-  };
+  // Pointer drag-to-reorder (mouse / pen / touch, replacing the touch-blind HTML5 drag). Dropping a
+  // tile onto a position key reinserts it there; the arrow keys and the on-tile move buttons are the
+  // touch-free equivalents. `enabled` only while customising, so tiles navigate normally otherwise.
+  const drag = useBoardPointerDrag({
+    boardId: 'nav',
+    enabled: editing,
+    onDrop: (id, key) => {
+      const dropAt = parseNavDropKey(key);
+      if (dropAt) announceMove(moveTo(id, dropAt.group, dropAt.index));
+    },
+  });
 
   return (
     <div className="flex flex-col gap-3">
@@ -341,34 +346,43 @@ export function DashboardNav() {
                   </>
                 );
 
-                // Edit mode: the tile is a draggable, arrow-key-movable card with a pin
-                // toggle — it never navigates. Mirrors DashboardGrid's WidgetTile edit shell.
+                // Edit mode: the tile is a pointer-draggable, arrow-key- and button-movable card
+                // with a pin toggle — it never navigates. Mirrors DashboardGrid's WidgetTile shell.
                 if (editing) {
-                  const isOver = overKey === dest.to;
+                  const posKey = `pos:${group}:${index}`;
+                  const isOver = drag.overKey === posKey;
+                  const isDragging = drag.draggingId === dest.to;
+                  const name = t(dest.messageKey);
+                  const groupIdx = NAV_GROUP_ORDER.indexOf(group);
+                  // Edge states for the move buttons. Up/down can't cross the pinned↔unpinned
+                  // partition (mirrors `nudgeTile`), so a neighbour of the other pin state counts
+                  // as an edge; left/right are bounded by the group order.
+                  const moveDisabled: Record<MoveDir, boolean> = {
+                    up: index === 0 || tiles[index - 1]?.pinned !== pinned,
+                    down: index === tiles.length - 1 || tiles[index + 1]?.pinned !== pinned,
+                    left: groupIdx <= 0,
+                    right: groupIdx >= NAV_GROUP_ORDER.length - 1,
+                  };
                   return (
                     <li key={dest.to} ref={registerTile(dest.to)}>
                       <Surface
+                        {...drag.sourceProps(dest.to, tileLabel)}
+                        {...drag.dropProps(posKey)}
                         data-testid={`nav-tile-${dest.to}`}
-                        draggable
                         tabIndex={0}
                         role="group"
                         aria-label={t('dashboard.nav.tileEditAria', {
                           vars: {
-                            name: t(dest.messageKey),
+                            name,
                             pinned: pinned ? t('dashboard.nav.pinnedComma') : '',
                           },
                         })}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', dest.to);
-                          e.dataTransfer.effectAllowed = 'move';
-                          setDraggingId(dest.to);
-                        }}
-                        onDragEnd={endDrag}
-                        onDragOver={markOver(dest.to)}
-                        onDrop={handleDrop(group, index)}
                         onKeyDown={handleTileKeyDown(dest.to)}
                         className={cn(
                           'flex h-full cursor-grab flex-col gap-2 p-3 transition-shadow focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:cursor-grabbing',
+                          // The dragged source dims so the floating preview reads as the thing in
+                          // flight (there is no native drag-image with the pointer path).
+                          isDragging && 'opacity-50',
                           // Drop target: the same dashed, breathing-glow "goes here" indicator
                           // the widget board uses (DashboardGrid ghost + `animate-ghost`), with
                           // the resting ring suppressed so the dashed outline reads alone rather
@@ -391,7 +405,7 @@ export function DashboardNav() {
                             aria-label={t(
                               pinned ? 'dashboard.nav.pinTileAria.unpin' : 'dashboard.nav.pinTileAria.pin',
                               {
-                                vars: { name: t(dest.messageKey) },
+                                vars: { name },
                               },
                             )}
                             className={cn(
@@ -406,6 +420,20 @@ export function DashboardNav() {
                         <div className="pointer-events-none flex items-center gap-2.5 [&_svg]:size-5 [&_svg]:shrink-0">
                           {body}
                         </div>
+                        {/* Touch/click move controls — the accessible, drag-free way to reorder
+                            (issue #11). Arrow keys do the same for a physical keyboard. */}
+                        <BoardMoveButtons
+                          onMove={(dir) => announceMove(move(dest.to, dir))}
+                          disabled={moveDisabled}
+                          labels={{
+                            up: t('dashboard.nav.moveUp', { vars: { name } }),
+                            down: t('dashboard.nav.moveDown', { vars: { name } }),
+                            left: t('dashboard.nav.moveToPrevGroup', { vars: { name } }),
+                            right: t('dashboard.nav.moveToNextGroup', { vars: { name } }),
+                          }}
+                          testIdPrefix={`nav-move-${dest.to}`}
+                          className="mt-auto justify-center border-t border-border/40 pt-1.5"
+                        />
                       </Surface>
                     </li>
                   );
@@ -466,13 +494,12 @@ export function DashboardNav() {
               {editing ? (
                 <li className="col-span-2">
                   <div
-                    onDragOver={markOver(`end:${group}`)}
-                    onDrop={handleDrop(group, tiles.length)}
+                    {...drag.dropProps(`end:${group}:${tiles.length}`)}
                     data-testid={`nav-drop-end-${group}`}
                     aria-hidden
                     className={cn(
                       'flex min-h-10 items-center justify-center rounded-xl border-2 border-dashed px-3 text-center text-xs font-medium transition-colors',
-                      overKey === `end:${group}`
+                      drag.overKey === `end:${group}:${tiles.length}`
                         ? 'border-primary/60 bg-primary/5 text-primary'
                         : 'border-border/60 text-muted-foreground/60',
                     )}
@@ -485,6 +512,9 @@ export function DashboardNav() {
           </section>
         ))}
       </nav>
+
+      {/* The floating drag preview that follows the pointer (mouse / pen / touch). */}
+      {drag.preview}
 
       {/* Announce-only twin of the visual reorder, so a keyboard/pointer move isn't silent. */}
       <LiveRegion visuallyHidden>{announcement ? <p>{announcement}</p> : null}</LiveRegion>
