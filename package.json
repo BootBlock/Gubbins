@@ -21,6 +21,7 @@
     "test": "vitest",
     "test:run": "node scripts/run-unit-tests.mjs",
     "test:bridge": "vitest run --config bridge/vitest.config.ts",
+    "smoke:bridge": "node bridge/smoke.mjs",
     "test:e2e": "node scripts/browser-smoke.mjs",
     "type-check": "npm run type-check:app && npm run type-check:bridge",
     "type-check:app": "tsc -b --noEmit",
