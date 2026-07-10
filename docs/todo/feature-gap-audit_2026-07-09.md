@@ -81,7 +81,8 @@ memory note.
   product) and **kits** (assemblies). Follow the `item_tags` M:N + LWW-leaf sync pattern.
   Maker/collection value; only if wanted.
 
-- [ ] **G7 — Per-instance test / calibration / service records (InvenTree parity).** *Low / niche.*
+- [x] **G7 — Per-instance test / calibration / service records (InvenTree parity).** ✅ **Shipped
+  2026-07-10.** *Low / niche.*
   Structured pass/fail + reading logs per **serialised** unit, beyond free-form maintenance
   history. Model on the existing history/maintenance seams. Narrow audience (lab/maker QA).
 
@@ -104,6 +105,36 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G7 — Per-instance test / calibration / service records** — shipped 2026-07-10. A structured
+  pass/fail + reading log per **SERIALISED** unit (InvenTree "test result" parity) — the QA audit
+  trail a lab / maker / calibration house keeps against a serial number, beyond the free-form
+  maintenance history. New pure `features/inventory/test-records.ts` seam owns all non-trivial logic:
+  the closed **result** (`PASS`/`FAIL`/`LIMIT`/`NA`) and **kind** (`TEST`/`CALIBRATION`/`SERVICE`)
+  vocabularies (free TEXT, no DB CHECK, app-enforced like `item_relations.kind` — a future value
+  syncs forward), `planTestRecord` (the write choke-point: rejects a blank name / non-finite reading,
+  drops a unit with no reading), `sortTestRecords` (newest-first) and `summariseTestRecords` —
+  dependency-free, exhaustively unit-tested. New **v7** migration adds an append-only `test_records`
+  LWW-leaf table (`item_id` → items **ON DELETE CASCADE**, a numeric `reading` deliberately
+  unconstrained — may be negative), added to `SYNC_TABLES` + reconcile `FK_REFS` (an item FK guard,
+  exactly like G9's `revaluations`); golden baseline snapshot regenerated (user_version 7). Thin
+  `withTestRecords` ItemRepository mixin: `recordTestResult` appends the row + a `TESTED` Activity-Log
+  entry in one transaction, `listTestRecords` (newest-first, its SQL order asserted equivalent to the
+  seam's `sortTestRecords`), `removeTestRecord` DELETE + tombstone (no-op for an unknown id). New
+  `TESTED` history action wired through **every** `Record<HistoryAction>` map (activity-kind,
+  history-format, and the bridge event-type map). `TestRecordsEditor` on the ItemDetailDialog
+  **Lifecycle** tab, gated to `SERIALISED` items (a bulk/consumable line has no single instance to
+  audit); Foundry primitives, design tokens, a11y live regions, field-anchored errors.
+  `/code-review` (high): no correctness bugs in the app diff; fixed the bridge `ACTION_EVENT_TYPE`
+  `Record<HistoryAction>` map (newly non-exhaustive for `TESTED` — mapped `TESTED`/`REVALUED` to the
+  generic `item.changed`, the prior fallback, so no OpenAPI-enum drift) and a **pre-existing G9** gap
+  in the bridge item-DTO test fixture (missing `currentValue`) so `type-check:bridge` is green again.
+  ~180 new tests (seam intents/robustness + repo CRUD incl. cascade + tombstone + a repo↔seam
+  order-equivalence check + a two-device sync round-trip incl. the FK guard + the migration-lock v7
+  additions + a component affordance test); merged-`main` app + bridge (444) suites and both
+  typechecks green; production `vite build` clean. Verified end-to-end in the built app (vite preview,
+  real OPFS sqlite-wasm): a SERIALISED item records a result that renders and persists across a full
+  reload with no console errors.
 
 - **G8 — Manual "to-buy" / wishlist** — shipped 2026-07-10. A manual list of
   **wanted-but-not-owned** things to buy — the counterpart to the *stock-driven* Reorder /
