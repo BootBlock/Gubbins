@@ -36,6 +36,7 @@ import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-pay
 import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { ReminderSettings } from '@/features/alerts/ReminderSettings';
@@ -156,6 +157,7 @@ const NAV_COUNT_HINTS: Record<NavCountRoute, string> = {
  * Default-exported so it can be `React.lazy`-imported by its host.
  */
 export default function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const prefs = usePreferencesStore();
   const [triageOpen, setTriageOpen] = useState(false);
   const install = useInstallPrompt();
@@ -347,15 +349,12 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             </div>
           </SettingRow>
           <SettingRow
-            label="Locale"
-            description="Controls date and number formatting."
-            hint={
-              'How dates, times and numbers are formatted — e.g. `31/12/2026` vs `12/31/2026`, and the thousands/decimal separators.\n\n' +
-              'This is purely about **formatting**; it does not translate the interface or change your currency.'
-            }
+            label={t('settings.language.label')}
+            description={t('settings.language.description')}
+            hint={t('settings.language.hint')}
           >
             <Select
-              aria-label="Locale"
+              aria-label={t('settings.language.label')}
               data-testid="setting-locale"
               className="h-9 w-56"
               value={prefs.locale}

@@ -32,6 +32,7 @@ import { useBootResult } from '@/app/boot/boot-context';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
+import { useT, type MessageKey } from '@/features/i18n';
 import { shortfall } from '@/features/inventory/reorder-policy';
 import {
   useExpiringItems,
@@ -55,7 +56,10 @@ import type { FeatureId } from '@/features/modules/feature-registry';
 
 export interface WidgetDefinition {
   readonly id: string;
+  /** English widget title — the stable reference; the *displayed* label is `t(titleKey)`. */
   readonly title: string;
+  /** i18n key for the displayed widget title (G4); its English value equals {@link title}. */
+  readonly titleKey: MessageKey;
   readonly icon: ReactNode;
   /** Optional quick-link target — the whole tile navigates here in view mode. */
   readonly to?: string;
@@ -111,6 +115,7 @@ function WidgetShell({
   error?: boolean;
   children: ReactNode;
 }) {
+  const t = useT();
   const showCount = count !== undefined && !loading && !error;
   return (
     <>
@@ -126,7 +131,7 @@ function WidgetShell({
       </div>
       <div className="mt-2 space-y-1">
         {error ? (
-          <p className="text-xs text-warning">Couldn’t load this widget.</p>
+          <p className="text-xs text-warning">{t('dashboard.widget.error')}</p>
         ) : loading ? (
           <WidgetSkeleton />
         ) : (
@@ -188,6 +193,7 @@ function Pill({ ok, children }: { ok: boolean; children: ReactNode }) {
 // --- Lifecycle / inventory widgets ---------------------------------------------
 
 function LowStockWidget() {
+  const t = useT();
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const lowStock = useLowStockItems({ qtyThreshold, gaugePercent });
@@ -202,14 +208,14 @@ function LowStockWidget() {
   return (
     <WidgetShell
       icon={<LowStockIcon />}
-      title="Low stock"
+      title={t('dashboard.widget.lowStock.title')}
       count={rows.length}
       tone={rows.length > 0 ? 'warning' : 'quiet'}
       loading={lowStock.isPending}
       error={lowStock.isError}
     >
       {rows.length === 0 ? (
-        <EmptyRow>Stock levels healthy.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.lowStock.empty')}</EmptyRow>
       ) : (
         rows.slice(0, 3).map((item) => {
           // For a low discrete item, surface the suggested top-up (its own reorder
@@ -253,18 +259,20 @@ function LowStockWidget() {
  * handled. Decorative icon is hidden from assistive tech; the count text carries the meaning.
  */
 function OnOrderTag({ qty }: { qty: number }) {
+  const t = useT();
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1 text-primary [&_svg]:size-3"
       data-testid="low-stock-on-order"
     >
       <TruckIcon aria-hidden />
-      {qty} on order
+      {t('dashboard.widget.onOrder', { vars: { qty } })}
     </span>
   );
 }
 
 function ExpiringWidget() {
+  const t = useT();
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
   const fmt = useFormatters();
   const expiring = useExpiringItems(expirySoonWindowDays);
@@ -272,14 +280,14 @@ function ExpiringWidget() {
   return (
     <WidgetShell
       icon={<ExpiryIcon />}
-      title="Soon to expire"
+      title={t('dashboard.widget.expiring.title')}
       count={rows.length}
       tone={rows.length > 0 ? 'warning' : 'quiet'}
       loading={expiring.isPending}
       error={expiring.isError}
     >
       {rows.length === 0 ? (
-        <EmptyRow>All clear.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.expiring.empty')}</EmptyRow>
       ) : (
         rows
           .slice(0, 3)
@@ -296,6 +304,7 @@ function ExpiringWidget() {
 }
 
 function OverdueWidget() {
+  const t = useT();
   const openCheckouts = useOpenCheckouts();
   // One query returns every open loan (see `useOpenCheckouts`); the overdue set is derived from
   // it in a single pass (no per-checkout round-trip), and the count of the remainder still on
@@ -307,7 +316,7 @@ function OverdueWidget() {
   return (
     <WidgetShell
       icon={<DueDateIcon />}
-      title="Overdue items"
+      title={t('dashboard.widget.overdue.title')}
       count={overdue.length}
       // Danger tone (and the red count) fires only when something is actually late — a board of
       // merely-open, not-yet-due loans stays quiet, so the escalation reads at a glance.
@@ -317,7 +326,9 @@ function OverdueWidget() {
     >
       {overdue.length === 0 ? (
         <EmptyRow>
-          {stillOnLoan > 0 ? `Nothing overdue — ${stillOnLoan} on loan.` : 'Nothing overdue.'}
+          {stillOnLoan > 0
+            ? t('dashboard.widget.overdue.emptyWithLoans', { vars: { count: stillOnLoan } })
+            : t('dashboard.widget.overdue.empty')}
         </EmptyRow>
       ) : (
         <>
@@ -327,14 +338,18 @@ function OverdueWidget() {
               label={c.itemName}
               meta={
                 <span className="flex items-center gap-2">
-                  <span className="truncate">with {c.contactName}</span>
+                  <span className="truncate">
+                    {t('dashboard.widget.overdue.with', { vars: { name: c.contactName } })}
+                  </span>
                   <DaysOverdueTag days={daysOverdue(c.dueDate ?? now, now)} />
                 </span>
               }
             />
           ))}
           {stillOnLoan > 0 ? (
-            <p className="text-[11px] text-muted-foreground">{stillOnLoan} more on loan, not yet due.</p>
+            <p className="text-[11px] text-muted-foreground">
+              {t('dashboard.widget.overdue.moreOnLoan', { vars: { count: stillOnLoan } })}
+            </p>
           ) : null}
         </>
       )}
@@ -360,19 +375,20 @@ function DaysOverdueTag({ days }: { days: number }) {
 }
 
 function MaintenanceWidget() {
+  const t = useT();
   const dueMaintenance = useDueMaintenance();
   const rows = dueMaintenance.data?.rows ?? [];
   return (
     <WidgetShell
       icon={<MaintenanceIcon />}
-      title="Maintenance due"
+      title={t('dashboard.widget.maintenance.title')}
       count={rows.length}
       tone={rows.length > 0 ? 'warning' : 'quiet'}
       loading={dueMaintenance.isPending}
       error={dueMaintenance.isError}
     >
       {rows.length === 0 ? (
-        <EmptyRow>Nothing due.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.maintenance.empty')}</EmptyRow>
       ) : (
         rows.slice(0, 3).map((m) => <WidgetRow key={m.id} label={m.itemName} meta={m.name} />)
       )}
@@ -381,19 +397,20 @@ function MaintenanceWidget() {
 }
 
 function InTransitWidget() {
+  const t = useT();
   const inTransit = useInTransitLines();
   const rows = inTransit.data?.rows ?? [];
   return (
     <WidgetShell
       icon={<TruckIcon />}
-      title="In transit"
+      title={t('dashboard.widget.inTransit.title')}
       count={rows.length}
       tone={rows.length > 0 ? 'info' : 'quiet'}
       loading={inTransit.isPending}
       error={inTransit.isError}
     >
       {rows.length === 0 ? (
-        <EmptyRow>Nothing inbound.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.inTransit.empty')}</EmptyRow>
       ) : (
         rows.slice(0, 3).map((line) => (
           // Show the quantity still to arrive — part-received lines surface only their
@@ -410,20 +427,21 @@ function InTransitWidget() {
 }
 
 function ProjectsWidget() {
+  const t = useT();
   const projects = useProjects();
   // Surface the live (non-archived) projects with their lifecycle status (§3).
   const active = (projects.data?.rows ?? []).filter((p) => p.status !== 'ARCHIVED');
   return (
     <WidgetShell
       icon={<ProjectIcon />}
-      title="Project statuses"
+      title={t('dashboard.widget.projects.title')}
       count={active.length}
       tone={active.length > 0 ? 'info' : 'quiet'}
       loading={projects.isPending}
       error={projects.isError}
     >
       {active.length === 0 ? (
-        <EmptyRow>No active projects.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.projects.empty')}</EmptyRow>
       ) : (
         active.slice(0, 3).map((p) => <WidgetRow key={p.id} label={p.name} meta={p.status.toLowerCase()} />)
       )}
@@ -432,6 +450,7 @@ function ProjectsWidget() {
 }
 
 function BudgetAlertsWidget() {
+  const t = useT();
   const warnPercent = usePreferencesStore((s) => s.budgetWarnPercent);
   const fmt = useFormatters();
   const alerts = useBudgetAlerts();
@@ -456,14 +475,14 @@ function BudgetAlertsWidget() {
   return (
     <WidgetShell
       icon={<BudgetIcon />}
-      title="Budget alerts"
+      title={t('dashboard.widget.budget.title')}
       count={flagged.length}
       tone={tone}
       loading={alerts.isPending}
       error={alerts.isError}
     >
       {flagged.length === 0 ? (
-        <EmptyRow>All budgets on track.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.budget.empty')}</EmptyRow>
       ) : (
         flagged.slice(0, 3).map((a) => (
           <WidgetRow
@@ -482,6 +501,7 @@ function BudgetAlertsWidget() {
 }
 
 function InventoryTotalsWidget() {
+  const t = useT();
   const fmt = useFormatters();
   const value = useInventoryValue();
   const itemCount = useItemCount();
@@ -496,19 +516,24 @@ function InventoryTotalsWidget() {
   const loading = value.isPending || itemCount.isPending || locations.isPending || categories.isPending;
   const error = value.isError || itemCount.isError || locations.isError || categories.isError;
   return (
-    <WidgetShell icon={<ValueIcon />} title="Inventory totals" loading={loading} error={error}>
+    <WidgetShell
+      icon={<ValueIcon />}
+      title={t('dashboard.widget.totals.title')}
+      loading={loading}
+      error={error}
+    >
       {/* The at-a-glance pulse — its headline figures "count in" from zero on load (and
           roll on any later change). Reduced motion snaps to the final value. */}
-      <StatusRow label="Items">
+      <StatusRow label={t('dashboard.widget.totals.items')}>
         <AnimatedNumber value={totalItems} animateOnMount />
       </StatusRow>
-      <StatusRow label="Stock value">
+      <StatusRow label={t('dashboard.widget.totals.stockValue')}>
         <Money value={totalValue} formatters={fmt} animate animateOnMount />
       </StatusRow>
-      <StatusRow label="Locations">
+      <StatusRow label={t('dashboard.widget.totals.locations')}>
         <AnimatedNumber value={locationCount} animateOnMount />
       </StatusRow>
-      <StatusRow label="Categories">
+      <StatusRow label={t('dashboard.widget.totals.categories')}>
         <AnimatedNumber value={categoryCount} animateOnMount />
       </StatusRow>
     </WidgetShell>
@@ -516,15 +541,21 @@ function InventoryTotalsWidget() {
 }
 
 function RecentActivityWidget() {
+  const t = useT();
   // The global activity feed (Phase 80), newest-first — a *continuity* list so the user
   // can pick up what they were last working on, unlike the exception trackers. Reuses the
   // pure describeHistoryEntry seam (Phase 52) for each row's label.
   const feed = useActivityFeed(undefined);
   const rows = (feed.data?.pages.flatMap((p) => p.rows) ?? []).slice(0, 4);
   return (
-    <WidgetShell icon={<HistoryIcon />} title="Recent activity" loading={feed.isPending} error={feed.isError}>
+    <WidgetShell
+      icon={<HistoryIcon />}
+      title={t('dashboard.widget.recent.title')}
+      loading={feed.isPending}
+      error={feed.isError}
+    >
       {rows.length === 0 ? (
-        <EmptyRow>No recent changes.</EmptyRow>
+        <EmptyRow>{t('dashboard.widget.recent.empty')}</EmptyRow>
       ) : (
         rows.map((entry) => (
           <WidgetRow key={entry.id} label={entry.itemName} meta={describeHistoryEntry(entry).label} />
@@ -537,15 +568,20 @@ function RecentActivityWidget() {
 // --- System-status widgets (Phase 1 board, now pinnable) -----------------------
 
 function DatabaseWidget() {
+  const t = useT();
   const { diagnostics, migration } = useBootResult();
   return (
-    <WidgetShell icon={<DatabaseIcon />} title="Database">
-      <StatusRow label="Engine">SQLite {diagnostics.sqliteVersion}</StatusRow>
-      <StatusRow label="Storage VFS">{diagnostics.vfs.toUpperCase()}</StatusRow>
-      <StatusRow label="Full-text search">
-        <Pill ok={diagnostics.fts5Available}>{diagnostics.fts5Available ? 'FTS5' : 'No FTS5'}</Pill>
+    <WidgetShell icon={<DatabaseIcon />} title={t('dashboard.widget.database.title')}>
+      <StatusRow label={t('dashboard.widget.database.engine')}>SQLite {diagnostics.sqliteVersion}</StatusRow>
+      <StatusRow label={t('dashboard.widget.database.vfs')}>{diagnostics.vfs.toUpperCase()}</StatusRow>
+      <StatusRow label={t('dashboard.widget.database.fts')}>
+        <Pill ok={diagnostics.fts5Available}>
+          {diagnostics.fts5Available
+            ? t('dashboard.widget.database.ftsYes')
+            : t('dashboard.widget.database.ftsNo')}
+        </Pill>
       </StatusRow>
-      <StatusRow label="Schema">
+      <StatusRow label={t('dashboard.widget.database.schema')}>
         v{diagnostics.userVersion}
         {migration.applied.length > 0 ? (
           <span className="ml-1 text-muted-foreground">
@@ -558,51 +594,63 @@ function DatabaseWidget() {
 }
 
 function StorageWidget() {
+  const t = useT();
   const persisted = useStorageStore((state) => state.persisted);
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
   const fmt = useFormatters();
   return (
-    <WidgetShell icon={<StorageIcon />} title="Storage">
-      <StatusRow label="Persistence">
-        <Pill ok={persisted}>{persisted ? 'Persistent' : 'Ephemeral'}</Pill>
+    <WidgetShell icon={<StorageIcon />} title={t('dashboard.widget.storage.title')}>
+      <StatusRow label={t('dashboard.widget.storage.persistence')}>
+        <Pill ok={persisted}>
+          {persisted ? t('dashboard.widget.storage.persistent') : t('dashboard.widget.storage.ephemeral')}
+        </Pill>
       </StatusRow>
-      <StatusRow label="Used">
+      <StatusRow label={t('dashboard.widget.storage.used')}>
         {estimate && estimate.supported
           ? `${fmt.bytes(estimate.usage)} / ${fmt.bytes(estimate.quota)}`
-          : 'Unknown'}
+          : t('dashboard.widget.storage.unknown')}
       </StatusRow>
-      <StatusRow label="Capacity">
+      <StatusRow label={t('dashboard.widget.storage.capacity')}>
         <span className="flex items-center gap-1">
           {estimate && estimate.supported ? fmt.percent(ratio) : '—'}
-          <Tooltip
-            content="The browser's estimate for the whole origin, not Gubbins alone. The safeguards use the percentage, so a high shared figure won't trip a false Hard Stop."
-            openDelayMs={INFO_OPEN_DELAY_MS}
-          >
-            <InfoIcon className="size-3 text-muted-foreground/70" aria-label="About storage" />
+          <Tooltip content={t('dashboard.widget.storage.capacityHint')} openDelayMs={INFO_OPEN_DELAY_MS}>
+            <InfoIcon
+              className="size-3 text-muted-foreground/70"
+              aria-label={t('dashboard.widget.storage.aboutAria')}
+            />
           </Tooltip>
         </span>
       </StatusRow>
-      <Tooltip content="Manage &amp; erase data" openDelayMs={INFO_OPEN_DELAY_MS} triggerTabIndex={-1}>
-        <p className="mt-1 text-[11px] text-muted-foreground/60">Manage storage &amp; erase data &rarr;</p>
+      <Tooltip
+        content={t('dashboard.widget.storage.manageTooltip')}
+        openDelayMs={INFO_OPEN_DELAY_MS}
+        triggerTabIndex={-1}
+      >
+        <p className="mt-1 text-[11px] text-muted-foreground/60">{t('dashboard.widget.storage.manage')}</p>
       </Tooltip>
     </WidgetShell>
   );
 }
 
 function PlatformWidget() {
+  const t = useT();
   const { diagnostics } = useBootResult();
   const isolated = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
   const sab = typeof SharedArrayBuffer !== 'undefined';
   return (
-    <WidgetShell icon={<SecureIcon />} title="Platform">
-      <StatusRow label="Cross-origin isolated">
-        <Pill ok={isolated}>{isolated ? 'Isolated' : 'No'}</Pill>
+    <WidgetShell icon={<SecureIcon />} title={t('dashboard.widget.platform.title')}>
+      <StatusRow label={t('dashboard.widget.platform.isolated')}>
+        <Pill ok={isolated}>
+          {isolated ? t('dashboard.widget.platform.isolatedYes') : t('dashboard.widget.platform.isolatedNo')}
+        </Pill>
       </StatusRow>
-      <StatusRow label="SharedArrayBuffer">
-        <Pill ok={sab}>{sab ? 'Available' : 'Missing'}</Pill>
+      <StatusRow label={t('dashboard.widget.platform.sab')}>
+        <Pill ok={sab}>
+          {sab ? t('dashboard.widget.platform.sabYes') : t('dashboard.widget.platform.sabNo')}
+        </Pill>
       </StatusRow>
-      <StatusRow label="DB file">
+      <StatusRow label={t('dashboard.widget.platform.dbFile')}>
         <span className="font-mono text-[11px]">{diagnostics.filename}</span>
       </StatusRow>
     </WidgetShell>
@@ -619,6 +667,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'inventory-totals',
     title: 'Inventory totals',
+    titleKey: 'dashboard.widget.totals.title',
     icon: <ValueIcon />,
     to: '/reports',
     Component: InventoryTotalsWidget,
@@ -627,6 +676,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'low-stock',
     title: 'Low stock',
+    titleKey: 'dashboard.widget.lowStock.title',
     icon: <LowStockIcon />,
     to: '/inventory',
     Component: LowStockWidget,
@@ -634,6 +684,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'expiring',
     title: 'Soon to expire',
+    titleKey: 'dashboard.widget.expiring.title',
     icon: <ExpiryIcon />,
     to: '/inventory',
     feature: 'perishables',
@@ -642,6 +693,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'overdue',
     title: 'Overdue items',
+    titleKey: 'dashboard.widget.overdue.title',
     icon: <DueDateIcon />,
     to: '/contacts',
     feature: 'contacts',
@@ -650,6 +702,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'maintenance',
     title: 'Maintenance due',
+    titleKey: 'dashboard.widget.maintenance.title',
     icon: <MaintenanceIcon />,
     to: '/inventory',
     feature: 'maintenance',
@@ -658,6 +711,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'in-transit',
     title: 'In transit',
+    titleKey: 'dashboard.widget.inTransit.title',
     icon: <TruckIcon />,
     to: '/inventory',
     // Land scoped to the system In-Transit location (spec §4 "liminal procurement") rather
@@ -669,6 +723,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'projects',
     title: 'Project statuses',
+    titleKey: 'dashboard.widget.projects.title',
     icon: <ProjectIcon />,
     to: '/projects',
     feature: 'projects',
@@ -677,6 +732,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'budget-alerts',
     title: 'Budget alerts',
+    titleKey: 'dashboard.widget.budget.title',
     icon: <BudgetIcon />,
     to: '/projects',
     // Budgets live inside Projects (no separate flag in v1), so they gate together.
@@ -686,21 +742,35 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   {
     id: 'recent-activity',
     title: 'Recent activity',
+    titleKey: 'dashboard.widget.recent.title',
     icon: <HistoryIcon />,
     to: '/activity',
     feature: 'activity',
     Component: RecentActivityWidget,
   },
   // System-status board — app plumbing, meaningful whatever modules are on (no gate).
-  { id: 'system-database', title: 'Database', icon: <DatabaseIcon />, Component: DatabaseWidget },
+  {
+    id: 'system-database',
+    title: 'Database',
+    titleKey: 'dashboard.widget.database.title',
+    icon: <DatabaseIcon />,
+    Component: DatabaseWidget,
+  },
   {
     id: 'system-storage',
     title: 'Storage',
+    titleKey: 'dashboard.widget.storage.title',
     icon: <StorageIcon />,
     to: '/settings',
     Component: StorageWidget,
   },
-  { id: 'system-platform', title: 'Platform', icon: <SecureIcon />, Component: PlatformWidget },
+  {
+    id: 'system-platform',
+    title: 'Platform',
+    titleKey: 'dashboard.widget.platform.title',
+    icon: <SecureIcon />,
+    Component: PlatformWidget,
+  },
 ];
 
 /** Stable registry id list — the input to `reconcileLayout`/`defaultLayout`. */

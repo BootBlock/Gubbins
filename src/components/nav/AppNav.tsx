@@ -5,6 +5,7 @@ import { MenuIcon, WikiIcon, ExternalLinkIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
+import { useT } from '@/features/i18n';
 import { NAV_DESTINATIONS, NAV_GROUP_ORDER } from './nav-destinations';
 
 /**
@@ -23,6 +24,7 @@ const WIKI_URL = 'https://github.com/BootBlock/Gubbins/wiki';
  * row carries a live badge of undismissed alerts.
  */
 export function AppNav() {
+  const t = useT();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
@@ -39,13 +41,13 @@ export function AppNav() {
 
   return (
     <Menu
-      label="Navigation menu"
+      label={t('nav.menuLabel')}
       align="end"
       triggerProps={{ 'data-testid': 'app-nav' }}
       trigger={
         <span className="relative flex items-center gap-2">
           <MenuIcon />
-          <span className="hidden sm:inline">Menu</span>
+          <span className="hidden sm:inline">{t('nav.menu')}</span>
           {alertCount > 0 && (
             <span
               aria-hidden
@@ -68,7 +70,7 @@ export function AppNav() {
                 // than navigating (a link would also prefetch-open it on hover). See
                 // `useSettingsDialog` / `SettingsDialogHost`.
                 <MenuAction icon={<dest.Icon />} onSelect={openSettings} data-testid="app-nav-settings">
-                  {dest.label}
+                  {t(dest.messageKey)}
                 </MenuAction>
               ) : (
                 <MenuLink
@@ -86,7 +88,7 @@ export function AppNav() {
                     ) : undefined
                   }
                 >
-                  {dest.label}
+                  {t(dest.messageKey)}
                 </MenuLink>
               )}
               {/* Wiki (external) sits directly under Settings, above About. */}
@@ -97,7 +99,7 @@ export function AppNav() {
                   trailing={<ExternalLinkIcon className="ml-auto opacity-60" aria-hidden />}
                   data-testid="app-nav-wiki"
                 >
-                  Wiki
+                  {t('nav.wiki')}
                 </MenuExternalLink>
               )}
             </Fragment>

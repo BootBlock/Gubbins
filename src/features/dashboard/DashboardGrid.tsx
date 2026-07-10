@@ -29,6 +29,7 @@ import { useReorderFlip } from './useReorderFlip';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import {
   DASHBOARD_COLUMNS,
   moveWidget,
@@ -58,6 +59,7 @@ function cellStyle(x: number, y: number): CSSProperties {
 const PLACEMENT = 'sm:[grid-column:var(--gx)] sm:[grid-row:var(--gy)]';
 
 export function DashboardGrid() {
+  const t = useT();
   const stored = useLayoutStore((s) => s.dashboardLayout);
   const setLayout = useLayoutStore((s) => s.setDashboardLayout);
   // Edit mode is the hub's single, shared "Customise" state (toggled by the one button up in
@@ -169,16 +171,12 @@ export function DashboardGrid() {
           here, shown while customising. */}
       <div className="mb-3 flex items-center gap-3">
         <h2 id="dashboard-widgets-heading" className="text-sm font-semibold text-muted-foreground">
-          Dashboard
+          {t('dashboard.grid.heading')}
         </h2>
         {editing ? (
           // Reset to defaults: an empty stored layout reconciles to the row-major
           // default with every widget visible (see reconcileLayout / defaultLayout).
-          <Tooltip
-            content="Restore the default widget layout — every widget shown, in the original order."
-            triggerTabIndex={-1}
-            className="ml-auto"
-          >
+          <Tooltip content={t('dashboard.grid.resetTooltip')} triggerTabIndex={-1} className="ml-auto">
             <button
               type="button"
               onClick={() => setLayout([])}
@@ -186,7 +184,7 @@ export function DashboardGrid() {
               className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             >
               <ResetIcon />
-              Reset widgets
+              {t('dashboard.grid.resetWidgets')}
             </button>
           </Tooltip>
         ) : null}
@@ -266,13 +264,19 @@ export function DashboardGrid() {
 
       {editing && hidden.length > 0 ? (
         <div className="mt-4" data-testid="hidden-widgets">
-          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Hidden widgets</h3>
+          <h3 className="mb-2 text-xs font-semibold text-muted-foreground">
+            {t('dashboard.grid.hiddenWidgets')}
+          </h3>
           <div className="flex flex-wrap gap-2">
             {hidden.map((p) => {
               const def = widgetById(p.id);
               if (!def) return null;
               return (
-                <Tooltip key={p.id} content={`Add **${def.title}** back to the board.`} triggerTabIndex={-1}>
+                <Tooltip
+                  key={p.id}
+                  content={t('dashboard.grid.addBack', { vars: { title: t(def.titleKey) } })}
+                  triggerTabIndex={-1}
+                >
                   <button
                     type="button"
                     onClick={() => apply(setWidgetVisible(layout, p.id, true))}
@@ -280,7 +284,7 @@ export function DashboardGrid() {
                     className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                   >
                     <ShowIcon />
-                    {def.title}
+                    {t(def.titleKey)}
                   </button>
                 </Tooltip>
               );
@@ -325,6 +329,7 @@ function WidgetTile({
   onKeyDown: (e: KeyboardEvent) => void;
   onHide: () => void;
 }) {
+  const t = useT();
   const Body = def.Component;
   const openSettings = useSettingsDialog((s) => s.openSettings);
   // Scroll-reveal (F3): rather than rising on mount, each tile holds invisible until it
@@ -351,7 +356,7 @@ function WidgetTile({
         draggable
         tabIndex={0}
         role="group"
-        aria-label={`${def.title} widget. Use the arrow keys to move it.`}
+        aria-label={t('dashboard.grid.tileAria', { vars: { title: t(def.titleKey) } })}
         onDragStart={(e) => {
           e.dataTransfer.setData('text/plain', def.id);
           e.dataTransfer.effectAllowed = 'move';
@@ -371,17 +376,15 @@ function WidgetTile({
       >
         <div className="mb-2 flex items-center gap-2 text-muted-foreground [&_svg]:size-4">
           <DragHandleIcon aria-hidden />
-          <span className="text-[11px] font-medium uppercase tracking-wide">Drag or arrow-key to move</span>
-          <Tooltip
-            content="Remove this widget from the board. You can add it back from “Hidden widgets” below."
-            triggerTabIndex={-1}
-            className="ml-auto"
-          >
+          <span className="text-[11px] font-medium uppercase tracking-wide">
+            {t('dashboard.grid.dragHint')}
+          </span>
+          <Tooltip content={t('dashboard.grid.removeTooltip')} triggerTabIndex={-1} className="ml-auto">
             <button
               type="button"
               onClick={onHide}
               data-testid={`widget-hide-${def.id}`}
-              aria-label={`Hide ${def.title}`}
+              aria-label={t('dashboard.grid.hideAria', { vars: { title: t(def.titleKey) } })}
               className="rounded-md p-1 hover:bg-muted hover:text-foreground [&_svg]:size-4"
             >
               <HideIcon />

@@ -11,6 +11,7 @@ import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveT
 import { FirstItemCelebration } from '@/features/inventory/components/FirstItemCelebration';
 import { ReminderNotifications } from '@/features/alerts/ReminderNotifications';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
+import { useApplyLanguage } from '@/features/i18n';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 
 /**
@@ -30,6 +31,9 @@ import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 export function App() {
   const [queryClient] = useState(createQueryClient);
   useApplyTheme();
+  // Keep the active message catalog in step with the formatting locale (G4): text and
+  // number/date/currency formatting share the one locale.
+  useApplyLanguage();
 
   return (
     <AppErrorBoundary>

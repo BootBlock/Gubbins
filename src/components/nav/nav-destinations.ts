@@ -1,5 +1,6 @@
 import type { LucideIcon } from '@/components/icons';
 import type { FeatureId } from '@/features/modules/feature-registry';
+import type { MessageKey } from '@/features/i18n';
 import {
   AlertIcon,
   BookingIcon,
@@ -55,7 +56,14 @@ export type NavGroup = 'primary' | 'manage' | 'system';
 
 export interface NavDestination {
   readonly to: AppRoutePath;
+  /**
+   * The English label — the stable identifier used for command-palette search text and as the
+   * i18n fallback. The *displayed* label is `t(messageKey)`, so a translated UI shows the
+   * localized text while this English string keeps searching/testing deterministic.
+   */
   readonly label: string;
+  /** i18n key for the displayed nav label (G4); its English value in `en.json` equals {@link label}. */
+  readonly messageKey: MessageKey;
   readonly Icon: LucideIcon;
   readonly group: NavGroup;
   /**
@@ -72,34 +80,113 @@ export interface NavDestination {
 
 export const NAV_DESTINATIONS: readonly NavDestination[] = [
   // Primary — the everyday workspaces.
-  { to: '/', label: 'Dashboard', Icon: HomeIcon, group: 'primary', feature: 'dashboard' },
-  { to: '/inventory', label: 'Inventory', Icon: PackageIcon, group: 'primary', feature: 'inventory' },
-  { to: '/projects', label: 'Projects', Icon: ProjectIcon, group: 'primary', feature: 'projects' },
+  {
+    to: '/',
+    label: 'Dashboard',
+    messageKey: 'nav.dashboard',
+    Icon: HomeIcon,
+    group: 'primary',
+    feature: 'dashboard',
+  },
+  {
+    to: '/inventory',
+    label: 'Inventory',
+    messageKey: 'nav.inventory',
+    Icon: PackageIcon,
+    group: 'primary',
+    feature: 'inventory',
+  },
+  {
+    to: '/projects',
+    label: 'Projects',
+    messageKey: 'nav.projects',
+    Icon: ProjectIcon,
+    group: 'primary',
+    feature: 'projects',
+  },
   {
     to: '/purchase-orders',
     label: 'Purchase orders',
+    messageKey: 'nav.purchaseOrders',
     Icon: ShoppingCartIcon,
     group: 'primary',
     feature: 'purchase-orders',
   },
-  { to: '/reports', label: 'Reports', Icon: ReportIcon, group: 'primary', feature: 'reports' },
+  {
+    to: '/reports',
+    label: 'Reports',
+    messageKey: 'nav.reports',
+    Icon: ReportIcon,
+    group: 'primary',
+    feature: 'reports',
+  },
   // Manage — people, time and what needs attention.
-  { to: '/contacts', label: 'Contacts', Icon: ContactsIcon, group: 'manage', feature: 'contacts' },
-  { to: '/bookings', label: 'Bookings', Icon: BookingIcon, group: 'manage', feature: 'bookings' },
-  { to: '/upcoming', label: 'Upcoming', Icon: DueDateIcon, group: 'manage', feature: 'upcoming' },
-  { to: '/activity', label: 'Activity', Icon: HistoryIcon, group: 'manage', feature: 'activity' },
-  { to: '/alerts', label: 'Alerts', Icon: AlertIcon, group: 'manage', feature: 'alerts' },
+  {
+    to: '/contacts',
+    label: 'Contacts',
+    messageKey: 'nav.contacts',
+    Icon: ContactsIcon,
+    group: 'manage',
+    feature: 'contacts',
+  },
+  {
+    to: '/bookings',
+    label: 'Bookings',
+    messageKey: 'nav.bookings',
+    Icon: BookingIcon,
+    group: 'manage',
+    feature: 'bookings',
+  },
+  {
+    to: '/upcoming',
+    label: 'Upcoming',
+    messageKey: 'nav.upcoming',
+    Icon: DueDateIcon,
+    group: 'manage',
+    feature: 'upcoming',
+  },
+  {
+    to: '/activity',
+    label: 'Activity',
+    messageKey: 'nav.activity',
+    Icon: HistoryIcon,
+    group: 'manage',
+    feature: 'activity',
+  },
+  {
+    to: '/alerts',
+    label: 'Alerts',
+    messageKey: 'nav.alerts',
+    Icon: AlertIcon,
+    group: 'manage',
+    feature: 'alerts',
+  },
   // System — sync, preferences and app info.
-  { to: '/sync', label: 'Sync', Icon: CloudIcon, group: 'system', feature: 'sync' },
+  { to: '/sync', label: 'Sync', messageKey: 'nav.sync', Icon: CloudIcon, group: 'system', feature: 'sync' },
   {
     to: '/home-assistant',
     label: 'Home Assistant',
+    messageKey: 'nav.homeAssistant',
     Icon: ExtensionIcon,
     group: 'system',
     feature: 'home-assistant',
   },
-  { to: '/settings', label: 'Settings', Icon: SettingsIcon, group: 'system', feature: 'settings' },
-  { to: '/about', label: 'About', Icon: InfoIcon, group: 'system', feature: 'about' },
+  {
+    to: '/settings',
+    label: 'Settings',
+    messageKey: 'nav.settings',
+    Icon: SettingsIcon,
+    group: 'system',
+    feature: 'settings',
+  },
+  {
+    to: '/about',
+    label: 'About',
+    messageKey: 'nav.about',
+    Icon: InfoIcon,
+    group: 'system',
+    feature: 'about',
+  },
 ];
 
 /** The groups in display order, for rendering separators between them. */

@@ -23,8 +23,10 @@ import { CloudUploadIcon, SecureIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useItemCount } from '@/features/inventory/queries';
+import { useT } from '@/features/i18n';
 
 export function DashboardBackupNudge({ className }: { readonly className?: string }) {
+  const t = useT();
   const dismissed = usePreferencesStore((s) => s.backupNudgeDismissed);
   const dismiss = usePreferencesStore((s) => s.dismissBackupNudge);
   const providerId = useAuthStore((s) => s.providerId);
@@ -40,17 +42,14 @@ export function DashboardBackupNudge({ className }: { readonly className?: strin
     <Banner
       tone="info"
       icon={<SecureIcon aria-hidden className="text-primary" />}
-      heading="Keep your inventory safe"
+      heading={t('dashboard.backupNudge.heading')}
       className={className}
       data-testid="dashboard-backup-nudge"
       onDismiss={dismiss}
-      dismissLabel="Dismiss"
+      dismissLabel={t('dashboard.backupNudge.dismiss')}
       dismissTestId="backup-nudge-dismiss"
     >
-      <p>
-        Gubbins stores everything privately in this browser. Set up Cloud Sync or take a backup so a browser
-        clear-out, a lost device, or a new browser can&apos;t lose your inventory.
-      </p>
+      <p>{t('dashboard.backupNudge.body')}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           to="/sync"
@@ -58,7 +57,7 @@ export function DashboardBackupNudge({ className }: { readonly className?: strin
           data-testid="backup-nudge-open"
         >
           <CloudUploadIcon />
-          Set up sync &amp; backup
+          {t('dashboard.backupNudge.action')}
         </Link>
       </div>
     </Banner>

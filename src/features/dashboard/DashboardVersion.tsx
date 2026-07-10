@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import { Tooltip } from '@/components/foundry';
 import { checkForAppUpdate } from '@/components/foundry/usePwaUpdate';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
+import { useT } from '@/features/i18n';
 
 /** Release date formatted once for display (the constant never changes at runtime). */
 const RELEASE_LABEL = new Intl.DateTimeFormat(undefined, {
@@ -19,6 +20,7 @@ const RELEASE_LABEL = new Intl.DateTimeFormat(undefined, {
 type CheckStatus = 'idle' | 'checking' | 'checked';
 
 export function DashboardVersion() {
+  const t = useT();
   const [status, setStatus] = useState<CheckStatus>('idle');
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -33,18 +35,23 @@ export function DashboardVersion() {
     resetTimer.current = setTimeout(() => setStatus('idle'), 2500);
   };
 
-  const subtitle = status === 'checking' ? 'Checking…' : status === 'checked' ? 'Up to date' : RELEASE_LABEL;
+  const subtitle =
+    status === 'checking'
+      ? t('dashboard.version.checking')
+      : status === 'checked'
+        ? t('dashboard.version.upToDate')
+        : RELEASE_LABEL;
 
   return (
     <Tooltip
-      content={`**Check for updates**\n\nGubbins v${APP_VERSION}, released ${RELEASE_LABEL}.`}
+      content={t('dashboard.version.tooltip', { vars: { version: APP_VERSION, date: RELEASE_LABEL } })}
       className="ml-auto"
       triggerTabIndex={-1}
     >
       <button
         type="button"
         onClick={() => void check()}
-        aria-label="Check for app updates"
+        aria-label={t('dashboard.version.check')}
         data-testid="dashboard-version"
         className="cursor-pointer rounded text-right text-xs leading-tight text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >

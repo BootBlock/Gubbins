@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
-import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
 import { AppNav } from '@/components/nav/AppNav';
 import { ExternalLinkIcon } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useWakeLock } from './useWakeLock';
@@ -27,6 +27,7 @@ const REPO_URL = 'https://github.com/BootBlock/Gubbins';
  * hero; the grouped destination tiles live in {@link DashboardNav} below it.
  */
 export function DashboardScreen() {
+  const t = useT();
   const kioskMode = usePreferencesStore((state) => state.kioskMode);
 
   // §3 Kiosk & Tablet Ergonomics: keep a hardwired dashboard awake while kiosk mode
@@ -57,7 +58,7 @@ export function DashboardScreen() {
           href={REPO_URL}
           target="_blank"
           rel="noreferrer"
-          aria-label="Open the Gubbins GitHub repository (opens in a new tab)"
+          aria-label={t('dashboard.hero.repoLabel')}
           className="group flex items-center gap-4 rounded-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <BrandMark className="size-12 rounded-2xl transition-transform duration-200 ease-emphasized group-hover:-translate-y-0.5" />
@@ -71,7 +72,7 @@ export function DashboardScreen() {
                 className="size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100"
               />
             </span>
-            <p className="text-sm text-muted-foreground">Local-first inventory · your dashboard</p>
+            <p className="text-sm text-muted-foreground">{t('dashboard.hero.tagline')}</p>
           </div>
         </a>
 
@@ -120,7 +121,7 @@ export function DashboardScreen() {
       </div>
 
       <LiveRegion visuallyHidden>
-        {alertCount > 0 ? `${alertCount} ${plural(alertCount, 'item')} need attention` : ''}
+        {alertCount > 0 ? t('dashboard.attention.live', { vars: { count: alertCount } }) : ''}
       </LiveRegion>
 
       {/* The landing hub shows every destination as a grouped tile grid, mapped from the
