@@ -61,8 +61,16 @@ export type { OcrModel };
  * - `oledDark` — pure-black surfaces (effective in dark mode).
  * - `highContrast` — accessibility high-contrast mode.
  */
-import { normaliseAccent, normaliseMode, type Accent, type Mode } from '@/features/settings/theme-registry';
-export type { Accent, Mode };
+import {
+  normaliseAccent,
+  normaliseMode,
+  normaliseStarfieldVariant,
+  DEFAULT_STARFIELD_VARIANT,
+  type Accent,
+  type Mode,
+  type StarfieldVariant,
+} from '@/features/settings/theme-registry';
+export type { Accent, Mode, StarfieldVariant };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -98,6 +106,13 @@ interface PreferencesStore {
    * and OR'd into the shared decoration-motion gate that the JS-driven effects read.
    */
   readonly reduceEffects: boolean;
+  /**
+   * Starfield variant (visual-flair F11): the decorative recolour the About-screen starfield
+   * uses. **Defaults to `cosmic`** (the shipped violet/cyan look, so nothing regresses). Purely
+   * cosmetic — projected onto `<html>` as `data-starfield` by the apply seam, where the CSS
+   * variant blocks re-point the `--star` / `--star-flare` tokens. `accent` tracks the Colour axis.
+   */
+  readonly starfieldVariant: StarfieldVariant;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
@@ -258,6 +273,8 @@ interface PreferencesStore {
   setHighContrast: (enabled: boolean) => void;
   /** Turn the "Reduce effects" decorative-motion switch on/off (visual-flair F9). */
   setReduceEffects: (enabled: boolean) => void;
+  /** Choose the About-screen starfield variant (visual-flair F11). */
+  setStarfieldVariant: (variant: StarfieldVariant) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
@@ -311,6 +328,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       oledDark: false,
       highContrast: false,
       reduceEffects: false,
+      starfieldVariant: DEFAULT_STARFIELD_VARIANT,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
@@ -349,6 +367,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setOledDark: (oledDark) => set({ oledDark }),
       setHighContrast: (highContrast) => set({ highContrast }),
       setReduceEffects: (reduceEffects) => set({ reduceEffects }),
+      // Normalise so a stale/unknown persisted value can never reach the apply seam.
+      setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.

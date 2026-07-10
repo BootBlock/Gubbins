@@ -561,6 +561,68 @@
   --input: oklch(1 0 0 / 60%);
 }
 
+/*
+ * Starfield variants (visual-flair F11). A selection layered on the ONE existing themeable
+ * starfield (`features/about/Starfield.tsx` + the `.gubbins-star`/`.gubbins-flare` rules below):
+ * each variant only re-points the decorative `--star` (small twinkling dots) and `--star-flare`
+ * (the larger lens-flare glow + crossed streaks) tokens — no second field, no new geometry/motion.
+ * The apply seam (`theme.ts`) sets `data-starfield="<id>"` on <html>; the default `cosmic` look
+ * carries NO attribute (it is the base `:root` / `.dark` `--star*` tokens), so nothing regresses.
+ *
+ * Authored per mode exactly like the accents: a light block `[data-starfield='<id>']` and a dark
+ * block `.dark[data-starfield='<id>']`. Both plain-attribute and `:root` are specificity (0,1,0),
+ * so these must come AFTER `:root`/`.dark` in source order (they do) to win the light values; the
+ * `.dark[data-starfield]` form is (0,2,0) and always beats the base `.dark`.
+ *
+ * `accent` tracks the Colour axis: its flare is `var(--highlight)` (the accent token, already
+ * authored mode-correct per `[data-accent]`), and its dots mix a little of that highlight into the
+ * mode's neutral star colour — so the whole field recolours with whatever accent is chosen, the
+ * same `color-mix`-off-the-accent-token trick as F1/F4/F5. `mono` drops all hue for a quiet sky.
+ *
+ * No high-contrast opt-out (unlike F1/F5/F7/F10): those paint tints/glare directly ON interactive
+ * item cards, where colour could compete with the boosted focus/border treatment. The starfield is
+ * a full-viewport backdrop *behind* translucent content cards — it is never part of any text/
+ * surface contrast pair — so recolouring it is not a contrast hazard, which is exactly why the
+ * shipped cosmic field already renders (coloured) under high contrast with no opt-out.
+ */
+[data-starfield='accent'] {
+  /* Faint accent tint over the light theme's dark dots; flare defers to the accent token. */
+  --star: color-mix(in oklab, oklch(0.55 0.03 281) 78%, var(--highlight));
+  --star-flare: var(--highlight);
+}
+.dark[data-starfield='accent'] {
+  /* Faint accent tint over the dark theme's cool near-white dots. */
+  --star: color-mix(in oklab, oklch(0.96 0.012 250) 82%, var(--highlight));
+  --star-flare: var(--highlight);
+}
+
+[data-starfield='aurora'] {
+  --star: oklch(0.53 0.05 168);
+  --star-flare: oklch(0.55 0.15 162);
+}
+.dark[data-starfield='aurora'] {
+  --star: oklch(0.95 0.03 168);
+  --star-flare: oklch(0.84 0.14 162);
+}
+
+[data-starfield='ember'] {
+  --star: oklch(0.55 0.05 45);
+  --star-flare: oklch(0.58 0.15 40);
+}
+.dark[data-starfield='ember'] {
+  --star: oklch(0.95 0.03 55);
+  --star-flare: oklch(0.82 0.14 45);
+}
+
+[data-starfield='mono'] {
+  --star: oklch(0.5 0 0);
+  --star-flare: oklch(0.55 0 0);
+}
+.dark[data-starfield='mono'] {
+  --star: oklch(0.95 0 0);
+  --star-flare: oklch(0.88 0 0);
+}
+
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
  * `bg-background`, `text-muted-foreground`, `border-border`, `bg-warning`, etc.
  * all resolve and switch with the active theme. */
