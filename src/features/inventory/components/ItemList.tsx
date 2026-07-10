@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Spinner } from '@/components/foundry';
 import { PackageIcon } from '@/components/icons';
@@ -93,8 +93,7 @@ export function ItemList({
     'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
   >;
 }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const columns = useColumns(parentRef, density);
+  const { columns, scrollRef: parentRef, setScrollEl } = useColumns(density);
 
   // Absolute row count: the virtualizer indexes the full loaded-so-far span, so a
   // trimmed-off front page never shifts the rows the user is looking at.
@@ -162,7 +161,7 @@ export function ItemList({
   // `pb-4` give the soft accent glow room to fall off; `pt-2` already covers the top.
   return (
     <div
-      ref={parentRef}
+      ref={setScrollEl}
       data-testid="item-list-scroll"
       className="min-h-0 flex-1 overflow-auto px-4 pb-4 pt-2"
     >
@@ -238,28 +237,50 @@ export function ItemList({
   );
 }
 
-/** Responsive column count: 1 for Data density, width-derived for Visual. */
-function useColumns(ref: React.RefObject<HTMLDivElement | null>, density: LayoutDensity): number {
+/**
+ * Responsive column count: 1 for Data density, width-derived for Visual.
+ *
+ * The scroll element is tracked in **state** (via {@link setScrollEl}, a callback ref) rather
+ * than read from a plain ref, so a scroller that mounts *after* this component's first render
+ * still triggers a measure. That late mount is exactly the first-item case: the list renders its
+ * empty banner first (no scroll container exists yet), then the container appears once the first
+ * item arrives. A ref-only measure ran once — while the container was still absent — attached no
+ * observer, and never re-ran, so the lone card rendered stretched full-width until some unrelated
+ * remount happened to heal it. Keying the layout effect off the element makes it (re)measure and
+ * (re)observe whenever the scroller attaches, so the grid is correct on first paint.
+ *
+ * Returns the merged `scrollRef` (for the virtualizer's `getScrollElement`) alongside the
+ * `setScrollEl` callback ref the scroll container binds.
+ */
+function useColumns(density: LayoutDensity): {
+  columns: number;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  setScrollEl: (node: HTMLDivElement | null) => void;
+} {
   const [columns, setColumns] = useState(1);
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const setScrollEl = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
+    setEl(node);
+  }, []);
 
   useLayoutEffect(() => {
     if (density === 'data') {
       setColumns(1);
       return;
     }
-    const el = ref.current;
     if (!el) return;
     const update = () => {
-      const width = el.clientWidth;
-      setColumns(Math.max(1, Math.floor(width / VISUAL_CARD_MIN_WIDTH)));
+      setColumns(Math.max(1, Math.floor(el.clientWidth / VISUAL_CARD_MIN_WIDTH)));
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [ref, density]);
+  }, [el, density]);
 
-  return columns;
+  return { columns, scrollRef, setScrollEl };
 }
 
 /**
