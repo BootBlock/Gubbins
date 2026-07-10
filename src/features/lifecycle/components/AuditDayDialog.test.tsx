@@ -14,6 +14,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuditDayDialog } from './AuditDayDialog';
+import { BurstProvider, type MediaQueryProvider } from '@/components/foundry';
 import { useAuditSessionStore } from '../useAuditSessionStore';
 import { startAudit, markLocation } from '../audit-session';
 
@@ -222,5 +223,76 @@ describe('AuditDayDialog — resume', () => {
     expect(screen.getByTestId('audit-stat-audited').textContent).toBe('2');
     expect(screen.getByTestId('audit-stat-variances').textContent).toBe('2');
     expect(screen.getByTestId('audit-stat-adjustments').textContent).toBe('2');
+  });
+});
+
+describe('AuditDayDialog — completion burst (F4)', () => {
+  /** A reduced-motion provider reporting the given preference. */
+  const motion =
+    (matches: boolean): MediaQueryProvider =>
+    () => ({
+      matches,
+      addEventListener() {},
+      removeEventListener() {},
+    });
+
+  /** A session where every scoped location is reconciled — i.e. the walk is complete. */
+  const completeSession = () =>
+    markLocation(
+      markLocation(
+        startAudit([
+          { id: 'locA', name: 'Drawer A' },
+          { id: 'locB', name: 'Drawer B' },
+        ]),
+        'locA',
+        'reconciled',
+        {
+          variancesFound: 0,
+          adjustmentsMade: 0,
+        },
+      ),
+      'locB',
+      'reconciled',
+      { variancesFound: 0, adjustmentsMade: 0 },
+    );
+
+  function renderWithBurst(reduced: boolean) {
+    return render(
+      <QueryClientProvider client={makeClient()}>
+        <BurstProvider motionProvider={motion(reduced)} rng={() => 0.5}>
+          <AuditDayDialog open onClose={() => {}} />
+        </BurstProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('fires exactly one burst when a completed walk is shown', () => {
+    useAuditSessionStore.setState({ session: completeSession() });
+    renderWithBurst(false);
+    expect(screen.getAllByTestId('burst')).toHaveLength(1);
+  });
+
+  it('does not re-fire when a completed walk is reopened (same session)', () => {
+    useAuditSessionStore.setState({ session: completeSession() });
+    const { rerender } = renderWithBurst(false);
+    expect(screen.getAllByTestId('burst')).toHaveLength(1);
+
+    // Close then reopen the still-complete session — the burst must not fire a second time.
+    const tree = (open: boolean) => (
+      <QueryClientProvider client={makeClient()}>
+        <BurstProvider motionProvider={motion(false)} rng={() => 0.5}>
+          <AuditDayDialog open={open} onClose={() => {}} />
+        </BurstProvider>
+      </QueryClientProvider>
+    );
+    rerender(tree(false));
+    rerender(tree(true));
+    expect(screen.getAllByTestId('burst')).toHaveLength(1);
+  });
+
+  it('renders no burst under reduced motion', () => {
+    useAuditSessionStore.setState({ session: completeSession() });
+    renderWithBurst(true);
+    expect(screen.queryByTestId('burst')).not.toBeInTheDocument();
   });
 });

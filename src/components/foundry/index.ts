@@ -71,6 +71,21 @@ export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-regio
 export { liveRegionAttrs, type LiveRegionAttrs } from './aria-live';
 export { ToastProvider, useToast, type ToastOptions, type ToastTone } from './toast';
 export {
+  BurstProvider,
+  useBurst,
+  type BurstProviderProps,
+  type BurstOptions,
+  type BurstOrigin,
+} from './success-burst';
+export {
+  buildBurstParticles,
+  BURST_PARTICLE_COUNT,
+  BURST_DURATION_MS,
+  type BurstParticle,
+  type BurstHue,
+  type Rng,
+} from './success-burst-geometry';
+export {
   useReducedMotion,
   defaultMediaQueryProvider,
   type MediaQueryLike,

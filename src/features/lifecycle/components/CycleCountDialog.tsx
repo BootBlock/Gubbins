@@ -11,10 +11,10 @@
  * {@link CycleCountLines}, both shared with the guided audit-day stepper so the two never
  * fork; the transient count lives in the Tier-3 {@link CycleCountProvider}.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
-import { Button, LiveRegion, Modal, Tooltip } from '@/components/foundry';
+import { Button, LiveRegion, Modal, Tooltip, useBurst } from '@/components/foundry';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
 import { CycleCountLines } from './CycleCountLines';
@@ -53,6 +53,24 @@ function CycleCountBody({
   const count = useLocationCycleCount(location);
   const { isLoading, isEmpty, drift, missing, totalToApply, pending } = count;
   const [applied, setApplied] = useState<number | null>(null);
+
+  // Celebrate a completed count with a one-shot milestone burst (visual-flair F4) as the result
+  // view appears. Edge-detected on the `null → confirmed` transition via a ref so it fires exactly
+  // once — not on every render of the result view — and resets if the body is reused for a fresh
+  // count. The result text is announced separately by the LiveRegion below, and the burst is a
+  // no-op under reduced motion. Every finish path (clean / variance / empty) sets `applied`.
+  const { burst } = useBurst();
+  const celebrated = useRef(false);
+  useEffect(() => {
+    if (applied !== null) {
+      if (!celebrated.current) {
+        celebrated.current = true;
+        burst();
+      }
+    } else {
+      celebrated.current = false;
+    }
+  }, [applied, burst]);
 
   // The completion message — null until the count is confirmed. Kept as a derived string so a
   // single always-mounted LiveRegion (below) receives it as mutating children (WCAG 4.1.3).

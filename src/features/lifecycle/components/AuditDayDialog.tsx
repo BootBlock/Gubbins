@@ -20,6 +20,7 @@ import {
   SelectField,
   Spinner,
   Tooltip,
+  useBurst,
   type SelectOption,
 } from '@/components/foundry';
 import { CheckIcon, ChevronRightIcon, CycleCountIcon, SuccessIcon, WarningIcon } from '@/components/icons';
@@ -68,6 +69,7 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
   const session = useAuditSessionStore((s) => s.session);
   const resume = useAuditSessionStore((s) => s.resume);
   const abandon = useAuditSessionStore((s) => s.abandon);
+  const { burst } = useBurst();
 
   // On (re)open, land an in-progress walk on the first location still needing work so a
   // resumed audit picks up where it left off rather than wherever the index was persisted.
@@ -76,6 +78,26 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
   }, [open, resume]);
 
   const prog = session ? progress(session) : null;
+
+  // Celebrate a completed stock-take once with the milestone burst (visual-flair F4), fired on the
+  // walk's transition into "complete". This lives here — in the always-mounted dialog, keyed on
+  // completion state — rather than in the summary view: that view remounts on every reopen, so
+  // firing on its mount would re-burst each time a *completed* walk is reopened (a nag). The ref
+  // resets once the walk is no longer complete (the session is abandoned, or a fresh one starts),
+  // so the next genuine completion celebrates again. No Modular-UI gate is needed — this dialog is
+  // only reachable when the stock-take capability is on. The burst is a no-op under reduced motion;
+  // the summary's static success glyph and live-region wording carry the achievement.
+  const celebratedCompletionRef = useRef(false);
+  useEffect(() => {
+    const complete = !!(session && prog?.isComplete);
+    if (complete && !celebratedCompletionRef.current) {
+      celebratedCompletionRef.current = true;
+      burst();
+    } else if (!complete) {
+      celebratedCompletionRef.current = false;
+    }
+  }, [session, prog?.isComplete, burst]);
+
   const stage: 'scope' | 'stepper' | 'summary' = !session
     ? 'scope'
     : prog!.isComplete
