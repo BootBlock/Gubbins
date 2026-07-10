@@ -1,5 +1,9 @@
 # Feature-gap audit — backlog (living plan)
 
+> ✅ **COMPLETE (2026-07-10).** Every actionable item G1–G9 has shipped and passed review; **G4 (UI
+> internationalization) was the last.** This file is retained as the record of the audit — the
+> deliberate non-goals below remain non-goals. No open items remain.
+
 A grounded backlog of genuine feature gaps, to be implemented **one task at a time** in
 separate sessions. Each task has a stable ID (`G1`, `G2`, …) so a session can be kicked off with
 just "implement `G1`". This is the single source of truth for the audit backlog; the matching
@@ -62,12 +66,11 @@ memory note.
   (local notifications only; not Web Push). Degrade silently where absent/denied (iOS Safari) —
   same injectable-seam + feature-detect pattern as `useWakeLock` / `useInstallPrompt`.
 
-- [ ] **G4 — UI internationalization (multi-language).** *Medium value, large effort.* Only
-  number/date/currency formatting is locale-aware (`lib/format.ts`); **all UI copy is
-  English-only**. Extract strings behind a lightweight typed `t()` over JSON message catalogs (no
-  heavy dep — avoid a framework unless justified) so additional languages can ship. Big sweep;
-  stage it (seam + English catalog first, then one pilot language). Real breadth gap vs. mature
-  tools.
+- [x] **G4 — UI internationalization (multi-language).** ✅ **Shipped 2026-07-10.** *Medium value,
+  large effort.* Was: only number/date/currency formatting was locale-aware (`lib/format.ts`); all
+  UI copy was English-only. Landed a lightweight, dependency-free typed `t()` over JSON message
+  catalogs and converted a first slice (staged with the user). **Last open item — this audit is now
+  complete.** See the Shipped section below.
 
 - [x] **G5 — In-app natural-language → query.** ✅ **Shipped 2026-07-10.** *Low-medium.* The NL path
   existed only for external agents (MCP / HA "where are my…"). Added a **rule-based, no-LLM** NL
@@ -105,6 +108,32 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G4 — UI internationalization (multi-language)** — shipped 2026-07-10. **The last open item; this
+  audit is complete.** Was: only number/date/currency formatting was locale-aware (`lib/format.ts`),
+  all UI copy English-only. New pure `features/i18n/i18n.ts` seam owns all non-trivial logic — dotted
+  key lookup, `{name}` interpolation (numeric vars grouped through the same locale as the rest of the
+  app), CLDR pluralization via `Intl.PluralRules` (`key.<category>` variants), and fallback (active →
+  base English → caller fallback → key) — exhaustively unit-tested, no React/DOM/catalog files.
+  `catalogs/en.json` is the source of truth for every converted English string; `de.json` is the
+  **German pilot**, lazy-imported into its own chunk so a language costs nothing in the base bundle
+  until selected (a coverage test asserts de ⊆ en, full de coverage, and placeholder preservation; a
+  drift test asserts `NAV_DESTINATIONS[].label`/`DASHBOARD_WIDGETS[].title` equal their catalog
+  English). **Integration:** the UI language derives from the existing `locale` preference (base
+  subtag: `de-DE` → German), so text and number/date/currency share **one** locale — no new
+  preference; the Settings "Locale" control became "Language & region". `useT()` is the React seam
+  (typed to the catalog keys incl. pluralized bases, mirroring `useFormatters`); `useApplyLanguage()`
+  lazy-loads the active catalog beside `useApplyTheme`. **Staged slice** (confirmed with the user):
+  global chrome (`AppNav` + nav labels) + the Settings language control + the **Dashboard** (screen,
+  hero, actions, nav tiles + announcements/tooltips, getting-started, backup nudge, WIP banner,
+  version, the whole 12-widget board + grid) and **About** screens, fully; the other 16 screens keep
+  working in English via base-catalog fallback (no regression). **Deliberate seam boundary** (next
+  increment): SR-only aria strings that interpolate nav-count metric nouns keep the noun English (it
+  is owned by the separate Settings metric-config subsystem); the owned parts are translated. No
+  schema/migration/dependency change. `/code-review` (high): one low-severity finding (dead/unguarded
+  English-reference field → added the drift test). tsc + full suite (3610) + 46 new i18n tests green;
+  prod build clean; verified end-to-end in the built app under Edge (`vite preview`, real OPFS):
+  switching to `de-DE` renders chrome/Dashboard/About in German with no console errors.
 
 - **G7 — Per-instance test / calibration / service records** — shipped 2026-07-10. A structured
   pass/fail + reading log per **SERIALISED** unit (InvenTree "test result" parity) — the QA audit
