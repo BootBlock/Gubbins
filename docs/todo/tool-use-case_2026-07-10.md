@@ -85,16 +85,18 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
   return note overwrote the original loan note (e.g. "for the Henderson job" → "returned with chipped
   blade"). Fixed by adding a `return_note` column (folded into the v1 baseline; golden snapshot
   regenerated) and writing the return remark there; both ends of the loan now keep their own text,
-  exposed as `Checkout.returnNote`. **Still open:** surfacing `returnNote` in the loan history UI —
-  the column is populated but not yet displayed (a natural rider on B2's check-in dialog).
+  exposed as `Checkout.returnNote`. **✅ Rider done (with B2):** both the loan note and the return
+  note now surface in the contact's **Loan history** section in `EditContactDialog`; the loan note
+  also shows on the open-loan row.
 
-- **B2 — No condition capture on return.** When a tool comes back it's frequently in a *different*
-  condition (blunt, chipped, now due calibration), but `checkIn` only takes an optional note — it
-  can't update the item's `condition` or trigger a maintenance flag. The `CONDITION_CHANGED` and
-  `MAINTENANCE_LOGGED` history actions already exist; wire an optional "condition on return"
-  control into the check-in UI that writes a `CONDITION_CHANGED` alongside `CHECKED_IN` in the same
-  transaction. This is the single most tool-relevant loan enhancement — a returned tool's state is
-  the whole point of tracking it.
+- **B2 — No condition capture on return. ✅ Shipped 2026-07-10.** A returned tool is frequently in a
+  *different* condition (blunt, chipped, now due calibration), but `checkIn` only took an optional
+  note. Added a `CheckInDialog` (opened from the "Return" affordance) that optionally captures a
+  **condition on return** (reusing `conditionSelectOptions`) and a **return note**; `checkIn` now
+  takes a `CheckInOptions` object (`{ note?, condition? }`) and, when a condition is supplied *and*
+  differs from the item's current one, updates `items.condition` and logs `CONDITION_CHANGED`
+  alongside `CHECKED_IN` in the same transaction. An empty submit is unchanged from the old one-tap
+  return. (Maintenance-flag triggering was left to B3/maintenance work — out of scope here.)
 
 - **B3 — Can't extend/renew a loan.** To change a due date you must check the tool in and back out
   again (losing the loan's continuity and its original checkout timestamp). Add a "renew / change
@@ -120,4 +122,4 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → `T1` → `T2` → `B2` → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → `T1` → `T2` → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.

@@ -41,7 +41,7 @@ export { PurchaseOrderRepository } from './PurchaseOrderRepository';
 export { ReportRepository } from './ReportRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
-export { CheckoutRepository } from './CheckoutRepository';
+export { CheckoutRepository, type CheckInOptions } from './CheckoutRepository';
 export { AssetBookingRepository } from './AssetBookingRepository';
 export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';

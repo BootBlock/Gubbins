@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getCheckoutRepository,
   getContactRepository,
+  type CheckInOptions,
   type CheckoutItemInput,
   type CreateContactInput,
   type UpdateContactInput,
@@ -123,8 +124,8 @@ export function useCheckoutItem() {
 export function useCheckInItem() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ checkoutId, note }: { checkoutId: string; note?: string }) =>
-      getCheckoutRepository().checkIn(checkoutId, note),
+    mutationFn: ({ checkoutId, ...options }: { checkoutId: string } & CheckInOptions) =>
+      getCheckoutRepository().checkIn(checkoutId, options),
     onSettled: () => invalidateBorrowing(client),
   });
 }

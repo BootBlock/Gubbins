@@ -15,14 +15,9 @@ import { AddContactIcon, CheckInIcon, ContactsIcon, DeleteIcon, DueDateIcon } fr
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
+import { CheckInDialog } from './components/CheckInDialog';
 import { EditContactDialog } from './components/EditContactDialog';
-import {
-  useContacts,
-  useCreateContact,
-  useDeleteContact,
-  useOpenCheckouts,
-  useCheckInItem,
-} from './contacts';
+import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } from './contacts';
 
 /**
  * The borrowing hub (spec §4 Borrowing & Checking Out, Phase 6): everything still
@@ -31,10 +26,12 @@ import {
 export function ContactsScreen() {
   const open = useOpenCheckouts();
   const contacts = useContacts();
-  const checkIn = useCheckInItem();
   const createContact = useCreateContact();
   const deleteContact = useDeleteContact();
   const [newName, setNewName] = useState('');
+  // The loan whose return dialog is open (capturing the item's condition on return + a return
+  // note, B2). Null = no return in progress; a "Return" tap opens the dialog for that checkout.
+  const [returningCheckout, setReturningCheckout] = useState<CheckoutWithNames | null>(null);
   // The contact open in the full Edit dialog (click a card), and one pending a delete
   // confirmation. A contact with no active loans deletes straight away; only one still
   // borrowing/loaning something prompts first, since deleting it checks those loans back in.
@@ -121,12 +118,7 @@ export function ContactsScreen() {
           ) : (
             <ul className="space-y-2">
               {onLoan.map((c) => (
-                <LoanRow
-                  key={c.id}
-                  checkout={c}
-                  onReturn={() => checkIn.mutate({ checkoutId: c.id })}
-                  returning={checkIn.isPending}
-                />
+                <LoanRow key={c.id} checkout={c} onReturn={() => setReturningCheckout(c)} />
               ))}
             </ul>
           )}
@@ -183,6 +175,10 @@ export function ContactsScreen() {
         </section>
       </main>
 
+      {returningCheckout ? (
+        <CheckInDialog open onClose={() => setReturningCheckout(null)} checkout={returningCheckout} />
+      ) : null}
+
       {editingContact ? (
         <EditContactDialog
           open
@@ -221,15 +217,7 @@ export function ContactsScreen() {
   );
 }
 
-function LoanRow({
-  checkout,
-  onReturn,
-  returning,
-}: {
-  checkout: CheckoutWithNames;
-  onReturn: () => void;
-  returning: boolean;
-}) {
+function LoanRow({ checkout, onReturn }: { checkout: CheckoutWithNames; onReturn: () => void }) {
   const fmt = useFormatters();
   const due = checkout.dueDate ? fmt.date(checkout.dueDate) : null;
   return (
@@ -243,6 +231,10 @@ function LoanRow({
         <p className="text-xs text-muted-foreground">
           {checkout.quantity} with <span className="text-foreground">{checkout.contactName}</span>
         </p>
+        {/* The reason the item was lent out (B1's loan note), when one was recorded. */}
+        {checkout.note ? (
+          <p className="truncate text-xs italic text-muted-foreground">“{checkout.note}”</p>
+        ) : null}
       </div>
       {due ? (
         <Tooltip
@@ -268,7 +260,7 @@ function LoanRow({
         triggerTabIndex={-1}
       >
         <span>
-          <Button variant="outline" size="sm" onClick={onReturn} disabled={returning}>
+          <Button variant="outline" size="sm" onClick={onReturn}>
             <CheckInIcon />
             Return
           </Button>

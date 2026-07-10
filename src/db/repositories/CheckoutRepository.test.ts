@@ -133,7 +133,7 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
         contactName: 'Bob',
         note: 'for the Henderson job',
       });
-      const returned = await checkouts.checkIn(checkout.id, 'returned with a chipped blade');
+      const returned = await checkouts.checkIn(checkout.id, { note: 'returned with a chipped blade' });
 
       // Both ends of the loan keep their own text — the return note no longer overwrites the loan note.
       expect(returned.note).toBe('for the Henderson job');
@@ -154,6 +154,50 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const again = await checkouts.checkIn(checkout.id);
       expect(again.returnedAt).not.toBeNull();
       expect((await items.getById(itemId))?.quantity).toBe(5); // not double-restored
+    });
+
+    it('records the condition on return, updating the item and logging CONDITION_CHANGED (B2)', async () => {
+      const drill = await items.create({ name: 'Hammer drill', quantity: 1, condition: 'MINT' });
+      const checkout = await checkouts.checkout({ itemId: drill.id, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id, { condition: 'NEEDS_REPAIR' });
+
+      // The item's live condition now reflects how it came back...
+      expect((await items.getById(drill.id))?.condition).toBe('NEEDS_REPAIR');
+      // ...and the change is on the immutable ledger alongside the check-in.
+      const history = await items.getHistory(drill.id);
+      const changed = history.rows.find((h) => h.action === 'CONDITION_CHANGED');
+      expect(changed).toBeDefined();
+      expect(changed?.metadata).toMatchObject({ from: 'MINT', to: 'NEEDS_REPAIR' });
+      expect(history.rows.some((h) => h.action === 'CHECKED_IN')).toBe(true);
+    });
+
+    it('records a condition on return even when the item had none set', async () => {
+      const drill = await items.create({ name: 'Bare drill', quantity: 1 }); // no condition
+      const checkout = await checkouts.checkout({ itemId: drill.id, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id, { condition: 'GOOD' });
+      expect((await items.getById(drill.id))?.condition).toBe('GOOD');
+      const history = await items.getHistory(drill.id);
+      expect(history.rows.some((h) => h.action === 'CONDITION_CHANGED')).toBe(true);
+    });
+
+    it('leaves the condition untouched and logs no CONDITION_CHANGED when none is given', async () => {
+      const drill = await items.create({ name: 'Impact driver', quantity: 1, condition: 'GOOD' });
+      const checkout = await checkouts.checkout({ itemId: drill.id, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id, { note: 'back in the van' });
+
+      expect((await items.getById(drill.id))?.condition).toBe('GOOD');
+      const history = await items.getHistory(drill.id);
+      expect(history.rows.some((h) => h.action === 'CONDITION_CHANGED')).toBe(false);
+    });
+
+    it('logs no CONDITION_CHANGED when the return re-affirms the same condition', async () => {
+      const drill = await items.create({ name: 'Angle grinder', quantity: 1, condition: 'GOOD' });
+      const checkout = await checkouts.checkout({ itemId: drill.id, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id, { condition: 'GOOD' }); // unchanged
+
+      expect((await items.getById(drill.id))?.condition).toBe('GOOD');
+      const history = await items.getHistory(drill.id);
+      expect(history.rows.some((h) => h.action === 'CONDITION_CHANGED')).toBe(false);
     });
   });
 
