@@ -16,18 +16,27 @@
  *    calm between them (harder wind, longer streaks, a touch denser).
  *  - **Turbulence & vortices** — a divergence-free curl field ({@link curlField}) plus a handful of
  *    transient {@link Vortex} eddies swirl flakes into curls and loops instead of a tidy diagonal.
- * Rain streaks additionally **rotate to follow their velocity and stretch with speed** (the
- * motion-blur look of a real drop), so a gust visibly rakes them sideways.
+ *
+ * ## Look — the particles themselves
+ *
+ * Each kind pre-renders a *small set* of particle sprites once (see {@link buildSprites}) and every
+ * particle picks one at spawn, so the field isn't a wall of identical dots:
+ *  - **Rain** streaks are a bright thin core under a soft wide halo with a rounded, brighter head
+ *    (the glassy look of a real drop), in two thicknesses. They **rotate to follow their velocity
+ *    and stretch with speed**, so a gust visibly rakes them sideways and long.
+ *  - **Snow** is a mix of soft round grains (distant) and six-armed ice crystals — a plain star and
+ *    a branched dendrite (nearer) — each crystal **slowly rotating** with a faint twinkle, so close
+ *    flakes read as real snowflakes rather than blurry discs.
  *
  * ## Performance — cheap, and composited entirely on the GPU
  *
  * The layer sits behind every screen, so it must be cheap and must never touch pixels on the CPU:
- *  - **Every frame is `drawImage` of a pre-rendered sprite.** Each kind rasterises *one* particle
- *    bitmap (a soft rain streak / a soft snow disc) into an offscreen canvas once. Per frame we only
- *    blit that cached texture as a translated/rotated/scaled quad — the GPU-accelerated fast path in
- *    every modern browser. There is **no per-frame path building, filter, gradient or pixel work**,
- *    so all rasterisation and compositing happens on the GPU; the CPU only runs the tiny per-particle
- *    vector maths (a few hundred particles), which is negligible.
+ *  - **Every frame is `drawImage` of a pre-rendered sprite.** The crystal/streak bitmaps are
+ *    rasterised into offscreen canvases *once* (rebuilt only on a theme/colour or DPR change). Per
+ *    frame we only blit a cached texture as a translated/rotated/scaled quad — the GPU-accelerated
+ *    fast path in every modern browser. There is **no per-frame path building, filter, gradient or
+ *    pixel work**, so all rasterisation and compositing happens on the GPU; the CPU only runs the
+ *    tiny per-particle vector maths (a few hundred particles), which is negligible.
  *  - **Fixed particle pool, zero per-frame allocation.** Particles (and vortices) are created once
  *    (count scales with viewport area, hard-capped) and mutated in place; velocity is stashed on the
  *    particle so the draw pass reuses it. Recycling a particle reuses the same object.
@@ -37,7 +46,7 @@
  *  - **DPR-capped** backing store so a 3× phone doesn't rasterise 9× the pixels.
  *
  * Colours come from the `--precip-rain` / `--precip-snow` design tokens (read live, so the layer is
- * theme-correct); {@link PrecipController.refresh} re-reads them + rebuilds the sprite when the
+ * theme-correct); {@link PrecipController.refresh} re-reads them + rebuilds the sprites when the
  * theme changes. The layer is decorative — the caller marks the canvas `aria-hidden` — so under a
  * reduced-motion preference the engine paints a single calm static frame and never starts the loop.
  */
@@ -48,7 +57,7 @@ export type PrecipKind = 'rain' | 'snow';
 
 /** Handle returned by {@link startPrecip} to control a running layer. */
 export interface PrecipController {
-  /** Re-read the theme colours and rebuild the sprite (call on a light/dark change). */
+  /** Re-read the theme colours and rebuild the sprites (call on a light/dark change). */
   refresh(): void;
   /** Stop the loop and detach every listener (idempotent). */
   stop(): void;
@@ -79,9 +88,11 @@ const TUNING = {
     turb: 26,
     /** How strongly rain feels the eddies (heavy drops cut mostly straight through). */
     vortexFactor: 0.25,
-    /** Reference streak length / width (css px) before the per-particle depth scale. */
-    refLen: 20,
-    refWidth: 1.5,
+    /** Streak sprite variants (core width / length, css px) so drops aren't all identical. */
+    variants: [
+      { width: 1.2, len: 17 },
+      { width: 1.7, len: 22 },
+    ] as const,
     /** Speed (css px/s) at which a streak draws at its natural length; faster ⇒ stretched. */
     refSpeed: 780,
     /** Streak length multiplier bounds vs {@link refSpeed}. */
@@ -103,8 +114,17 @@ const TUNING = {
     vortexFactor: 1,
     /** Cap on horizontal speed as a multiple of fall speed (never pure sideways flight). */
     maxDriftRatio: 2.4,
-    /** Reference flake radius (css px) before the per-particle depth scale. */
-    refRadius: 3.2,
+    /** Grain (soft disc) radius in css px, for the small distant flakes. */
+    grainRadius: 3,
+    /** Ice-crystal arm length in css px, for the larger near flakes. */
+    crystalArm: 8,
+    /** Below this depth a flake is a plain grain; at/above it, a rotating crystal. */
+    grainMaxZ: 0.4,
+    /** Crystal spin range (rad/s); the sign is the spin direction. */
+    spin: [-0.7, 0.7] as const,
+    /** Twinkle: shimmer speed (rad/s) and depth (fraction of alpha removed at the dimmest). */
+    twinkleSpeed: 1.6,
+    twinkleAmp: 0.14,
     scale: [0.4, 1.25] as const,
     alpha: [0.32, 0.9] as const,
   },
@@ -143,6 +163,12 @@ interface Particle {
   /** Velocity this frame (css px/s), stashed by the step pass for the draw pass to reuse. */
   vx: number;
   vy: number;
+  /** Index into the kind's sprite set (which streak thickness / flake shape this particle is). */
+  variant: number;
+  /** Spin rate (rad/s) for a rotating crystal; 0 for grains/rain. */
+  spin: number;
+  /** Random phase for spin start + twinkle, so flakes are decorrelated. */
+  phase: number;
 }
 
 /** A drifting eddy that adds a tangential swirl to nearby particles. */
@@ -155,6 +181,16 @@ interface Vortex {
   /** Signed peak tangential speed (css px/s); the sign is the spin direction. */
   peak: number;
 }
+
+/** A pre-rendered particle bitmap plus its half-extent in css px (for centring the blit). */
+interface Sprite {
+  canvas: HTMLCanvasElement;
+  halfW: number;
+  halfH: number;
+}
+
+/** Snow sprite-set indices. Grains are angularly symmetric (no rotation); crystals rotate. */
+const SNOW_GRAIN = 0;
 
 /** Uniform random in [min, max). Positions/timings only — no security concern. */
 function rand(min: number, max: number): number {
@@ -179,49 +215,86 @@ function readToken(name: string, fallback: string): string {
 }
 
 /**
- * Build the rain-streak sprite: a soft vertical line, transparent at the trailing (top) end and
- * brightest at the leading (bottom) tip. Drawn vertical; the engine rotates it to the drop's
- * velocity at draw time, so the wind slant is live rather than baked in.
+ * Wrap a CSS colour so it renders at a given alpha, without parsing it: `color-mix` blends it
+ * toward `transparent`. Supported wherever the app runs (the token values are already `oklch`).
  */
-function buildRainSprite(dpr: number, color: string): HTMLCanvasElement {
-  const t = TUNING.rain;
-  const pad = t.refWidth; // room for the round cap so the tip isn't clipped
-  const w = Math.ceil(t.refWidth + pad * 2);
-  const h = Math.ceil(t.refLen + pad * 2);
+function colorWithAlpha(color: string, alpha: number): string {
+  return `color-mix(in oklab, ${color} ${Math.round(alpha * 100)}%, transparent)`;
+}
+
+/** Allocate a css-sized offscreen canvas with a DPR-scaled backing store, ready to draw into. */
+function makeCanvas(
+  cssW: number,
+  cssH: number,
+  dpr: number,
+): [HTMLCanvasElement, CanvasRenderingContext2D | null] {
   const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(w * dpr));
-  c.height = Math.max(1, Math.round(h * dpr));
+  c.width = Math.max(1, Math.round(cssW * dpr));
+  c.height = Math.max(1, Math.round(cssH * dpr));
   const g = c.getContext('2d');
+  if (g) g.scale(dpr, dpr);
+  return [c, g];
+}
+
+/**
+ * Build a rain-streak sprite for one thickness: a bright thin core over a soft wide halo, with a
+ * rounded brighter head at the leading (bottom) tip. Drawn vertical; the engine rotates it to the
+ * drop's velocity at draw time, so the wind slant is live rather than baked in.
+ */
+function buildRainStreak(dpr: number, color: string, width: number, len: number): HTMLCanvasElement {
+  const headR = width * 1.4;
+  const topPad = width * 1.6;
+  const botPad = Math.max(width * 1.6, headR + 1);
+  const halo = width * 2.4;
+  const w = Math.ceil(halo + 2);
+  const h = Math.ceil(len + topPad + botPad);
+  const [c, g] = makeCanvas(w, h, dpr);
   if (g) {
-    g.scale(dpr, dpr);
     const cx = w / 2;
-    const top = pad;
-    const bottom = pad + t.refLen;
-    const grad = g.createLinearGradient(cx, top, cx, bottom);
-    grad.addColorStop(0, 'transparent');
-    grad.addColorStop(0.35, colorWithAlpha(color, 0.35));
-    grad.addColorStop(1, color);
-    g.strokeStyle = grad;
-    g.lineWidth = t.refWidth;
+    const top = topPad;
+    const bottom = topPad + len;
     g.lineCap = 'round';
+    // Soft wide halo — the drop's glassy blur.
+    const gh = g.createLinearGradient(cx, top, cx, bottom);
+    gh.addColorStop(0, 'transparent');
+    gh.addColorStop(0.4, colorWithAlpha(color, 0.1));
+    gh.addColorStop(1, colorWithAlpha(color, 0.22));
+    g.strokeStyle = gh;
+    g.lineWidth = halo;
     g.beginPath();
     g.moveTo(cx, top);
     g.lineTo(cx, bottom);
     g.stroke();
+    // Bright thin core.
+    const gc = g.createLinearGradient(cx, top, cx, bottom);
+    gc.addColorStop(0, 'transparent');
+    gc.addColorStop(0.3, colorWithAlpha(color, 0.4));
+    gc.addColorStop(1, color);
+    g.strokeStyle = gc;
+    g.lineWidth = width;
+    g.beginPath();
+    g.moveTo(cx, top);
+    g.lineTo(cx, bottom);
+    g.stroke();
+    // Rounded, brighter head at the leading tip.
+    const gr = g.createRadialGradient(cx, bottom, 0, cx, bottom, headR);
+    gr.addColorStop(0, color);
+    gr.addColorStop(0.5, colorWithAlpha(color, 0.6));
+    gr.addColorStop(1, 'transparent');
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(cx, bottom, headR, 0, Math.PI * 2);
+    g.fill();
   }
   return c;
 }
 
-/** Build the soft snow-flake sprite: a radial gradient disc that fades to transparent. */
-function buildSnowSprite(dpr: number, color: string): HTMLCanvasElement {
-  const r = TUNING.snow.refRadius;
+/** Build the soft snow-grain sprite: a radial gradient disc that fades to transparent. */
+function buildSnowGrain(dpr: number, color: string): HTMLCanvasElement {
+  const r = TUNING.snow.grainRadius;
   const size = Math.ceil(r * 4);
-  const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(size * dpr));
-  c.height = Math.max(1, Math.round(size * dpr));
-  const g = c.getContext('2d');
+  const [c, g] = makeCanvas(size, size, dpr);
   if (g) {
-    g.scale(dpr, dpr);
     const cx = size / 2;
     const grad = g.createRadialGradient(cx, cx, 0, cx, cx, r * 1.8);
     grad.addColorStop(0, color);
@@ -236,11 +309,65 @@ function buildSnowSprite(dpr: number, color: string): HTMLCanvasElement {
 }
 
 /**
- * Wrap a CSS colour so it renders at a given alpha, without parsing it: `color-mix` blends it
- * toward `transparent`. Supported wherever the app runs (the token values are already `oklch`).
+ * Build a six-armed ice-crystal sprite. `dendrite` adds side-branches to each arm (a fuller
+ * snowflake); otherwise it's a plain six-point star. A faint central glow and bright core dot give
+ * it body. Drawn small and soft so at background scale it reads as a delicate flake, not an icon.
  */
-function colorWithAlpha(color: string, alpha: number): string {
-  return `color-mix(in oklab, ${color} ${Math.round(alpha * 100)}%, transparent)`;
+function buildSnowCrystal(dpr: number, color: string, dendrite: boolean): HTMLCanvasElement {
+  const arm = TUNING.snow.crystalArm;
+  const pad = 2;
+  const size = Math.ceil(arm * 2 + pad * 2);
+  const [c, g] = makeCanvas(size, size, dpr);
+  if (g) {
+    const cx = size / 2;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    // Faint central glow.
+    const glow = g.createRadialGradient(cx, cx, 0, cx, cx, arm * 0.55);
+    glow.addColorStop(0, colorWithAlpha(color, 0.5));
+    glow.addColorStop(1, 'transparent');
+    g.fillStyle = glow;
+    g.beginPath();
+    g.arc(cx, cx, arm * 0.55, 0, Math.PI * 2);
+    g.fill();
+    // Six arms, fading from bright at the hub to faint at the tips.
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const ex = cx + Math.cos(a) * arm;
+      const ey = cx + Math.sin(a) * arm;
+      const ga = g.createLinearGradient(cx, cx, ex, ey);
+      ga.addColorStop(0, colorWithAlpha(color, 0.85));
+      ga.addColorStop(1, colorWithAlpha(color, 0.1));
+      g.strokeStyle = ga;
+      g.lineWidth = 1.1;
+      g.beginPath();
+      g.moveTo(cx, cx);
+      g.lineTo(ex, ey);
+      g.stroke();
+      if (dendrite) {
+        g.strokeStyle = colorWithAlpha(color, 0.5);
+        g.lineWidth = 0.9;
+        for (const f of [0.5, 0.72]) {
+          const bx = cx + Math.cos(a) * arm * f;
+          const by = cx + Math.sin(a) * arm * f;
+          const blen = arm * (f === 0.5 ? 0.34 : 0.22);
+          for (const s of [-1, 1]) {
+            const ba = a + (s * Math.PI) / 3;
+            g.beginPath();
+            g.moveTo(bx, by);
+            g.lineTo(bx + Math.cos(ba) * blen, by + Math.sin(ba) * blen);
+            g.stroke();
+          }
+        }
+      }
+    }
+    // Bright core dot.
+    g.fillStyle = color;
+    g.beginPath();
+    g.arc(cx, cx, 1.1, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
 }
 
 export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions): PrecipController {
@@ -254,9 +381,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let dpr = 1;
   let cssWidth = 0;
   let cssHeight = 0;
-  let sprite: HTMLCanvasElement | null = null;
-  let spriteHalfW = 0;
-  let spriteHalfH = 0;
+  let sprites: Sprite[] = [];
+  /** Largest sprite half-height across the set (for the off-screen margin + recycle test). */
+  let spriteMaxHalfH = 0;
   let particles: Particle[] = [];
   let vortices: Vortex[] = [];
   let rafId = 0;
@@ -270,27 +397,49 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   /** How far off each edge a particle travels before it wraps/recycles (kept fully off-screen). */
   let edgeMargin = 0;
 
-  function buildSprite(): void {
+  function toSprite(c: HTMLCanvasElement): Sprite {
+    return { canvas: c, halfW: c.width / dpr / 2, halfH: c.height / dpr / 2 };
+  }
+
+  function buildSprites(): void {
     const color = readToken(kind === 'rain' ? '--precip-rain' : '--precip-snow', FALLBACK_COLOR[kind]);
-    sprite = kind === 'rain' ? buildRainSprite(dpr, color) : buildSnowSprite(dpr, color);
-    // Draw-time offsets so a particle's (x, y) is its centre.
-    spriteHalfW = sprite.width / dpr / 2;
-    spriteHalfH = sprite.height / dpr / 2;
-    // The rain streak stretches (up to stretch[1]) and every sprite scales up with depth, so the
-    // margin uses the largest drawn half-height to keep a particle fully off-screen before it wraps.
-    const t = TUNING[kind];
+    if (kind === 'rain') {
+      sprites = TUNING.rain.variants.map((v) => toSprite(buildRainStreak(dpr, color, v.width, v.len)));
+    } else {
+      sprites = [
+        toSprite(buildSnowGrain(dpr, color)),
+        toSprite(buildSnowCrystal(dpr, color, false)),
+        toSprite(buildSnowCrystal(dpr, color, true)),
+      ];
+    }
+    spriteMaxHalfH = sprites.reduce((m, s) => Math.max(m, s.halfH), 0);
+    // Streaks stretch (up to stretch[1]) and every sprite scales up with depth, so the margin uses
+    // the largest drawn half-height to keep a particle fully off-screen before it wraps.
     const maxStretch = kind === 'rain' ? TUNING.rain.stretch[1] : 1;
-    edgeMargin = spriteHalfH * 2 * t.scale[1] * maxStretch + 8;
+    edgeMargin = spriteMaxHalfH * 2 * TUNING[kind].scale[1] * maxStretch + 8;
   }
 
   function spawn(p: Particle, initial: boolean): void {
     p.z = Math.random();
     p.vx = 0;
     p.vy = 0;
+    p.phase = rand(0, Math.PI * 2);
+    if (kind === 'snow') {
+      if (p.z < TUNING.snow.grainMaxZ) {
+        p.variant = SNOW_GRAIN;
+        p.spin = 0;
+      } else {
+        p.variant = Math.random() < 0.5 ? 1 : 2; // plain star or branched dendrite
+        p.spin = rand(TUNING.snow.spin[0], TUNING.snow.spin[1]);
+      }
+    } else {
+      p.variant = Math.random() < 0.5 ? 0 : 1; // streak thickness
+      p.spin = 0;
+    }
     p.x = rand(-edgeMargin, cssWidth + edgeMargin);
     // On (re)spawn a particle starts just above the top; on the very first fill it is scattered
     // across the height so the field is already full at t=0 rather than raining in from nothing.
-    p.y = initial ? rand(0, cssHeight) : -rand(spriteHalfH, spriteHalfH + cssHeight * 0.2);
+    p.y = initial ? rand(0, cssHeight) : -rand(spriteMaxHalfH, spriteMaxHalfH + cssHeight * 0.2);
   }
 
   function spawnVortex(v: Vortex, initial: boolean): void {
@@ -311,13 +460,22 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     canvas.height = Math.max(1, Math.round(cssHeight * dpr));
     // Draw in CSS pixels; the backing store is the DPR-scaled size.
     ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-    buildSprite();
+    buildSprites();
 
     const t = TUNING[kind];
     const area = Math.max(1, cssWidth * cssHeight);
     const count = Math.round(clamp(area / t.density, t.min, t.max));
     if (particles.length !== count) {
-      particles = Array.from({ length: count }, () => ({ x: 0, y: 0, z: 0, vx: 0, vy: 0 }));
+      particles = Array.from({ length: count }, () => ({
+        x: 0,
+        y: 0,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        variant: 0,
+        spin: 0,
+        phase: 0,
+      }));
       for (const p of particles) spawn(p, true);
     }
 
@@ -388,37 +546,51 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   function wrapAndRecycle(p: Particle): void {
     if (p.x < -edgeMargin) p.x += cssWidth + 2 * edgeMargin;
     else if (p.x > cssWidth + edgeMargin) p.x -= cssWidth + 2 * edgeMargin;
-    if (p.y - spriteHalfH > cssHeight) spawn(p, false);
+    if (p.y - spriteMaxHalfH > cssHeight) spawn(p, false);
   }
 
   function drawRain(p: Particle): void {
-    if (!sprite) return;
+    const s = sprites[p.variant];
+    if (!s) return;
     const t = TUNING.rain;
     const scale = lerp(t.scale[0], t.scale[1], p.z);
     const speed = Math.hypot(p.vx, p.vy);
     const stretch = speed <= 0 ? t.stretch[0] : clamp(speed / t.refSpeed, t.stretch[0], t.stretch[1]);
-    const w = spriteHalfW * 2 * scale;
-    const h = spriteHalfH * 2 * scale * stretch;
+    const w = s.halfW * 2 * scale;
+    const h = s.halfH * 2 * scale * stretch;
     // Rotate the vertical sprite so its downward axis aligns with the drop's velocity.
     const angle = Math.atan2(-p.vx, p.vy);
     ctx!.save();
     ctx!.translate(p.x, p.y);
     ctx!.rotate(angle);
     ctx!.globalAlpha = lerp(t.alpha[0], t.alpha[1], p.z);
-    ctx!.drawImage(sprite, -w / 2, -h / 2, w, h);
+    ctx!.drawImage(s.canvas, -w / 2, -h / 2, w, h);
     ctx!.restore();
   }
 
   function drawSnow(p: Particle): void {
-    if (!sprite) return;
+    const s = sprites[p.variant];
+    if (!s) return;
     const t = TUNING.snow;
     const scale = lerp(t.scale[0], t.scale[1], p.z);
-    const w = spriteHalfW * 2 * scale;
-    const h = spriteHalfH * 2 * scale;
-    // A flurry lifts the whole field's opacity a touch, so surges read as "thicker" snow.
-    const alpha = lerp(t.alpha[0], t.alpha[1], p.z) * (0.85 + frameFlurry * 0.15);
+    const w = s.halfW * 2 * scale;
+    const h = s.halfH * 2 * scale;
+    // A flurry lifts the whole field's opacity a touch (surges read as "thicker"); a faint per-flake
+    // twinkle keeps close crystals from looking static.
+    const twinkle = 1 - t.twinkleAmp * (0.5 + 0.5 * Math.sin(elapsed * t.twinkleSpeed + p.phase));
+    const alpha = lerp(t.alpha[0], t.alpha[1], p.z) * (0.85 + frameFlurry * 0.15) * twinkle;
     ctx!.globalAlpha = alpha > 1 ? 1 : alpha;
-    ctx!.drawImage(sprite, p.x - w / 2, p.y - h / 2, w, h);
+    if (p.variant === SNOW_GRAIN) {
+      // Grains are angularly symmetric — a plain blit, the cheapest path.
+      ctx!.drawImage(s.canvas, p.x - w / 2, p.y - h / 2, w, h);
+      return;
+    }
+    // Crystals rotate slowly around their centre.
+    ctx!.save();
+    ctx!.translate(p.x, p.y);
+    ctx!.rotate(elapsed * p.spin + p.phase);
+    ctx!.drawImage(s.canvas, -w / 2, -h / 2, w, h);
+    ctx!.restore();
   }
 
   function paint(animate: boolean, dt: number): void {
@@ -500,7 +672,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   return {
     refresh() {
       if (stopped) return;
-      buildSprite();
+      buildSprites();
       if (reduced) paint(false, 0);
     },
     stop() {

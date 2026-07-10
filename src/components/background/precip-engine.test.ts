@@ -2,7 +2,9 @@
  * Engine smoke tests for {@link startPrecip}. The test DOM has no real 2D canvas context, so we
  * inject a recording stub and drive `requestAnimationFrame` by hand. These verify the actual engine
  * code path the component wiring can't: that it runs frames without throwing, advances particles,
- * rotates rain streaks (but not snow), and honours the reduced-motion static-frame gate.
+ * rotates rain streaks and near snow crystals (but blits distant grains plainly), and honours the
+ * reduced-motion static-frame gate. Depth (`Math.random`) is pinned where a specific sprite variant
+ * is under test, so the grain-vs-crystal path is exercised deterministically rather than by chance.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startPrecip } from './precip-engine';
@@ -81,6 +83,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('startPrecip', () => {
@@ -110,14 +113,33 @@ describe('startPrecip', () => {
     ctrl.stop();
   });
 
-  it('draws snow without rotating (radial sprite needs no orientation)', () => {
+  it('rotates near snow crystals around their centre', () => {
+    // Depth ≥ grainMaxZ → every flake spawns as a rotating crystal.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
     const rec = makeCtx();
     const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
     pump(0);
     pump(16);
     expect(rec.drawImages.length).toBeGreaterThan(0);
+    expect(rec.rotateCount).toBeGreaterThan(0); // crystals rotate
+    expect(rec.translates.length).toBeGreaterThan(0); // …about a translated centre
+    ctrl.stop();
+  });
+
+  it('blits distant snow grains plainly (no rotation) and advances them', () => {
+    // Depth < grainMaxZ → every flake spawns as a plain grain.
+    vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), { kind: 'snow', reduced: false });
+    pump(0);
+    pump(16);
+    pump(32);
+    expect(rec.drawImages.length).toBeGreaterThan(0);
     expect(rec.rotateCount).toBe(0);
-    expect(rec.translates.length).toBe(0); // snow blits at absolute coords, no translate
+    expect(rec.translates.length).toBe(0); // grains blit at absolute coords
+    // They fall: the y arg of drawImage changes across frames.
+    const uniqueY = new Set(rec.drawImages.map((d) => Math.round(d.args[2] as number)));
+    expect(uniqueY.size).toBeGreaterThan(1);
     ctrl.stop();
   });
 
