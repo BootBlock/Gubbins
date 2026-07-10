@@ -330,6 +330,52 @@ export class CheckoutRepository extends BaseRepository {
   }
 
   /**
+   * Renew an open loan by changing its due date **in place** (B3).
+   *
+   * To move a loan's due date users previously had to check the item in and back out again —
+   * losing the loan's continuity and its original checkout timestamp. This updates `due_date`
+   * on the *open* checkout directly and logs a `LOAN_RENEWED` row (old → new date in the note
+   * and metadata), leaving `checked_out_at` and the original loan `note` untouched — that
+   * continuity is the whole point. No stock moves; the item is not touched.
+   *
+   * `dueDate` accepts `null` — clearing a due date is a valid renew, turning a dated loan into
+   * an open-ended one. Unlike {@link checkIn} (which no-ops idempotently on an already-returned
+   * row), renewing a *closed* loan is a genuinely invalid request, so it throws: there is no
+   * open loan to extend.
+   */
+  async renew(checkoutId: string, options: { dueDate: number | null }): Promise<Checkout> {
+    const existing = await this.driver.queryOne<CheckoutRow>('SELECT * FROM checkouts WHERE id = ?;', [
+      checkoutId,
+    ]);
+    if (!existing) {
+      throw new DbError('SQLITE_CONSTRAINT', `Checkout "${checkoutId}" does not exist.`);
+    }
+    if (existing.returned_at !== null) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'This loan has already been returned — there is nothing to renew.',
+      );
+    }
+
+    const newDueDate = options.dueDate ?? null;
+    const oldDueDate = existing.due_date;
+
+    await this.driver.transaction([
+      {
+        // Only `due_date` changes — `checked_out_at` and the loan `note` are deliberately left
+        // alone so the loan keeps its identity and history across a renewal.
+        sql: `UPDATE checkouts SET due_date = ? WHERE id = ?;`,
+        params: [newDueDate, checkoutId],
+      },
+      historyStatement(existing.item_id, 'LOAN_RENEWED', {
+        note: renewNote(oldDueDate, newDueDate),
+        metadata: { checkoutId, from: oldDueDate, to: newDueDate },
+      }),
+    ]);
+    return (await this.getById(checkoutId))!;
+  }
+
+  /**
    * Return every still-open checkout for a contact, exactly as an ordinary check-in
    * would (restoring stock to its source placement/lot and logging `CHECKED_IN`) —
    * used before a contact is deleted so their active loans never strand stock.
@@ -424,6 +470,16 @@ function toCheckoutWithNames(row: CheckoutJoinRow, now: number): CheckoutWithNam
     status,
     isOverdue: status === 'OPEN' && base.dueDate !== null && base.dueDate < now,
   };
+}
+
+/**
+ * A British-English ledger note for a loan renewal (B3), describing the due-date change as
+ * old → new. Dates render as `yyyy-MM-dd` (locale-independent, since the repository has no
+ * formatter); a null date reads as "open-ended", covering set/clear/extend uniformly.
+ */
+function renewNote(from: number | null, to: number | null): string {
+  const label = (ms: number | null) => (ms === null ? 'open-ended' : new Date(ms).toISOString().slice(0, 10));
+  return `Loan due date changed from ${label(from)} to ${label(to)}.`;
 }
 
 interface HistoryFields {

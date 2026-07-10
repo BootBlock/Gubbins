@@ -125,10 +125,20 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
   alongside `CHECKED_IN` in the same transaction. An empty submit is unchanged from the old one-tap
   return. (Maintenance-flag triggering was left to B3/maintenance work — out of scope here.)
 
-- **B3 — Can't extend/renew a loan.** To change a due date you must check the tool in and back out
-  again (losing the loan's continuity and its original checkout timestamp). Add a "renew / change
-  due date" action that updates `due_date` on the open checkout in place and logs it. Common for
-  long-running tool loans.
+- **B3 — Can't extend/renew a loan. ✅ Shipped 2026-07-10.** To change a due date you previously had
+  to check the tool in and back out again (losing the loan's continuity and its original checkout
+  timestamp). Added `CheckoutRepository.renew(checkoutId, { dueDate })`: it updates `due_date` on the
+  *open* checkout **in place** (leaving `checked_out_at` and the loan `note` untouched) inside a
+  transaction, alongside a new first-class `LOAN_RENEWED` history row recording the old → new date in
+  its note + metadata. `dueDate: number | null` — clearing it renews to an open-ended loan; renewing a
+  returned or nonexistent checkout **throws** (a closed loan is a genuinely invalid renew, unlike
+  `checkIn`'s idempotent no-op). The `LOAN_RENEWED` action was threaded through the SSOT
+  `HISTORY_ACTIONS` list and **all three** exhaustive `Record<HistoryAction>` maps — `ACTION_LABELS`
+  ("Loan renewed"), `ACTION_KIND` ('loan'), and the bridge's `ACTION_EVENT_TYPE` (→ generic
+  `item.changed`, the REVALUED/TESTED precedent, so no new OpenAPI event type). UI: a "Renew"
+  affordance beside "Return" on each `LoanRow` opens a `RenewLoanDialog` (Foundry `Modal` + `FormField`
+  + `Input type="date"`, seeded via `to/fromDateInputValue`) wired through a new `useRenewLoan` hook
+  that invalidates the same query keys as `useCheckInItem`.
 
 - **B4 — Loans are to a contact only, never to a project/location.** A tool is often "out on the
   Henderson job" or "in the van", not lent to a named person. Today the only borrower is a
@@ -149,5 +159,5 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → `B3` → then reassess `T2a` /
-`B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → then reassess
+`T2a` / `B4` / `T4` / `B5` by appetite.

@@ -145,6 +145,10 @@ const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   // complete (bridge type-check) without introducing an event type absent from the OpenAPI enum.
   REVALUED: 'item.changed',
   TESTED: 'item.changed',
+  // A loan renewal (B3) changes a due date in place — a record-keeping event with no stock
+  // movement and no dedicated OpenAPI event type, so it maps to the generic `item.changed`
+  // (the `?? 'item.changed'` fallback already emitted this) — keeping the exhaustive map complete.
+  LOAN_RENEWED: 'item.changed',
 };
 
 /** The dotted event type for a ledger action (unknown actions → `item.changed`). */

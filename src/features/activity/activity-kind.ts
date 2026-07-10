@@ -49,6 +49,7 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   // Loans & project reservations.
   CHECKED_OUT: 'loan',
   CHECKED_IN: 'loan',
+  LOAN_RENEWED: 'loan',
   RESERVED: 'loan',
   RESERVATION_CLEARED: 'loan',
   // Status / record lifecycle.

@@ -11,7 +11,7 @@
  * is needed.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { CheckoutWithNames } from '@/db/repositories';
 
 // ─── dependency stubs ─────────────────────────────────────────────────────────
@@ -64,6 +64,7 @@ vi.mock('./contacts', () => ({
   useContacts: () => contactsState,
   useCreateContact: () => ({ mutate: vi.fn(), isPending: false }),
   useCheckInItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useRenewLoan: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -191,5 +192,17 @@ describe('ContactsScreen — aria-live result-count regions (WCAG 4.1.3, Phase 6
     const region = screen.getByTestId('contacts-count-live');
     expect(region.textContent).toContain('1 contact');
     expect(region.textContent).not.toContain('1 contacts');
+  });
+});
+
+describe('ContactsScreen — renew loan affordance (B3)', () => {
+  it('opens the renew dialog seeded from the loan when "Renew" is clicked', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('c1', false)] } };
+    render(<ContactsScreen />);
+
+    // The dialog is not mounted until the row's Renew affordance is used.
+    expect(screen.queryByTestId('renew-due-date')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /renew/i }));
+    expect(screen.getByTestId('renew-due-date')).toBeTruthy();
   });
 });

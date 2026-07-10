@@ -201,6 +201,73 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
     });
   });
 
+  describe('renew (change due date in place, B3)', () => {
+    it('updates the due date in place, preserving checked_out_at and the loan note', async () => {
+      const itemId = await makeItem('Torque wrench', 1);
+      const originalDue = Date.now() + MS_PER_DAY;
+      const checkout = await checkouts.checkout({
+        itemId,
+        contactName: 'Bob',
+        note: 'for the Henderson job',
+        dueDate: originalDue,
+      });
+
+      const newDue = Date.now() + 14 * MS_PER_DAY;
+      const renewed = await checkouts.renew(checkout.id, { dueDate: newDue });
+
+      expect(renewed.dueDate).toBe(newDue);
+      // The loan keeps its identity — same open row, original checkout timestamp and loan note.
+      expect(renewed.returnedAt).toBeNull();
+      expect(renewed.checkedOutAt).toBe(checkout.checkedOutAt);
+      expect(renewed.note).toBe('for the Henderson job');
+    });
+
+    it('logs a LOAN_RENEWED history row recording the old → new due date', async () => {
+      const itemId = await makeItem('Drill', 1);
+      const originalDue = Date.now() + MS_PER_DAY;
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', dueDate: originalDue });
+      const newDue = Date.now() + 30 * MS_PER_DAY;
+      await checkouts.renew(checkout.id, { dueDate: newDue });
+
+      const history = await items.getHistory(itemId);
+      const renewed = history.rows.find((h) => h.action === 'LOAN_RENEWED');
+      expect(renewed).toBeDefined();
+      expect(renewed?.metadata).toMatchObject({ from: originalDue, to: newDue, checkoutId: checkout.id });
+    });
+
+    it('clears the due date to null (an open-ended loan is a valid renew)', async () => {
+      const itemId = await makeItem('Clamp meter', 1);
+      const checkout = await checkouts.checkout({
+        itemId,
+        contactName: 'Bob',
+        dueDate: Date.now() + MS_PER_DAY,
+      });
+      const renewed = await checkouts.renew(checkout.id, { dueDate: null });
+      expect(renewed.dueDate).toBeNull();
+    });
+
+    it('can set a due date on a loan that started open-ended', async () => {
+      const itemId = await makeItem('Saw', 1);
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob' }); // no dueDate
+      const newDue = Date.now() + 7 * MS_PER_DAY;
+      const renewed = await checkouts.renew(checkout.id, { dueDate: newDue });
+      expect(renewed.dueDate).toBe(newDue);
+    });
+
+    it('throws when the checkout does not exist', async () => {
+      await expect(checkouts.renew('does-not-exist', { dueDate: Date.now() })).rejects.toBeInstanceOf(
+        DbError,
+      );
+    });
+
+    it('throws when the loan has already been returned (a closed loan cannot be renewed)', async () => {
+      const itemId = await makeItem('Multimeter', 1);
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id);
+      await expect(checkouts.renew(checkout.id, { dueDate: Date.now() })).rejects.toBeInstanceOf(DbError);
+    });
+  });
+
   describe('checkInAllForContact', () => {
     it('returns every open checkout for a contact, restoring stock and history', async () => {
       const drill = await makeItem('Drill', 3);
