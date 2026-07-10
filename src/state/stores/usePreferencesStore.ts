@@ -66,14 +66,17 @@ import {
   normaliseMode,
   normaliseStarfieldVariant,
   normaliseAnimationLevel,
+  normaliseBackgroundEffect,
   DEFAULT_STARFIELD_VARIANT,
   DEFAULT_ANIMATION_LEVEL,
+  DEFAULT_BACKGROUND_EFFECT,
   type Accent,
   type Mode,
   type StarfieldVariant,
   type AnimationLevel,
+  type BackgroundEffect,
 } from '@/features/settings/theme-registry';
-export type { Accent, Mode, StarfieldVariant, AnimationLevel };
+export type { Accent, Mode, StarfieldVariant, AnimationLevel, BackgroundEffect };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -118,6 +121,14 @@ interface PreferencesStore {
    * variant blocks re-point the `--star` / `--star-flare` tokens. `accent` tracks the Colour axis.
    */
   readonly starfieldVariant: StarfieldVariant;
+  /**
+   * App-wide animated background effect (weather layer). **Defaults to `none`** so nothing is
+   * painted or animated on the shipped baseline. Purely decorative — a single GPU-composited
+   * `<canvas>` behind all UI on every screen (`components/background/BackgroundEffects`), gated by
+   * the shared decoration-motion gate. Read directly from this store by the canvas component (it is
+   * JS-driven, so — unlike the mode/accent/OLED axes — it is not projected onto `<html>`).
+   */
+  readonly backgroundEffect: BackgroundEffect;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
@@ -280,6 +291,8 @@ interface PreferencesStore {
   setAnimationLevel: (level: AnimationLevel) => void;
   /** Choose the About-screen starfield variant (visual-flair F11). */
   setStarfieldVariant: (variant: StarfieldVariant) => void;
+  /** Choose the app-wide animated background effect (none / rain / snow). */
+  setBackgroundEffect: (effect: BackgroundEffect) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
@@ -334,6 +347,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       highContrast: false,
       animationLevel: DEFAULT_ANIMATION_LEVEL,
       starfieldVariant: DEFAULT_STARFIELD_VARIANT,
+      backgroundEffect: DEFAULT_BACKGROUND_EFFECT,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
@@ -375,6 +389,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAnimationLevel: (level) => set({ animationLevel: normaliseAnimationLevel(level) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
+      // Normalise so a stale/unknown persisted value can never reach the canvas engine.
+      setBackgroundEffect: (effect) => set({ backgroundEffect: normaliseBackgroundEffect(effect) }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.

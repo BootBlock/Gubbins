@@ -190,6 +190,17 @@
   --star: oklch(0.55 0.03 281);
   --star-flare: oklch(0.5 0.18 277);
 
+  /*
+   * Animated background weather layer (app-wide, `components/background/BackgroundEffects`).
+   * Theme-aware so the particles read on either surface: on the near-white light theme they are
+   * *darker* (a mid steel-blue rain / soft grey snow) so they show against the pale background;
+   * the .dark block lifts them to a cool light steel-blue / near-white. The canvas reads these
+   * via `getComputedStyle` and layers its own per-particle depth alpha on top, so keep them
+   * fairly opaque hues. Purely decorative (the layer is aria-hidden) and never carries meaning.
+   */
+  --precip-rain: oklch(0.55 0.06 245);
+  --precip-snow: oklch(0.83 0.012 250);
+
   --radius: 0.65rem;
 }
 
@@ -293,6 +304,11 @@
    * glow on the near-black surface (see :root for the rationale). */
   --star: oklch(0.96 0.012 250);
   --star-flare: oklch(0.82 0.12 215);
+
+  /* Weather layer, dark-theme variant — a cool light steel-blue rain and near-white snow on the
+   * near-black surface (see :root for the rationale). */
+  --precip-rain: oklch(0.82 0.045 240);
+  --precip-snow: oklch(0.97 0.006 250);
 }
 
 /*

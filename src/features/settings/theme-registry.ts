@@ -203,3 +203,52 @@ export function suppressesFlourish(level: AnimationLevel): boolean {
 export function suppressesMotion(level: AnimationLevel): boolean {
   return animationLevelRank(level) >= animationLevelRank('calm');
 }
+
+/**
+ * Whether the app's **ambient decorations** — the drifting starfield, the accent glow, and the
+ * animated background weather layer — are switched off *entirely* at this level (not merely frozen),
+ * i.e. Off and calmer. Mirrors the `data-anim-level='off'|'headache'` CSS that hides the starfield /
+ * accent glow; the JS-driven weather layer reads it to render nothing at those tiers. The third
+ * threshold on the level, alongside {@link suppressesFlourish} (Balanced+) and
+ * {@link suppressesMotion} (Calm+).
+ */
+export function suppressesAmbient(level: AnimationLevel): boolean {
+  return animationLevelRank(level) >= animationLevelRank('off');
+}
+
+/**
+ * App-wide animated **background effect** — a purely decorative weather layer painted behind all
+ * UI on every screen ({@link import('../../components/background/BackgroundEffects').BackgroundEffects}).
+ * Unlike the per-screen About starfield, this is a single GPU-composited `<canvas>` mounted once at
+ * the composition root; the choice drives which particle system (if any) that canvas runs.
+ *
+ * - `none` — no layer at all (the default; the baseline is unchanged and nothing is painted/animated).
+ * - `rain` — wind-slanted falling rain streaks with depth parallax.
+ * - `snow` — gently drifting, swaying snowflakes with depth parallax.
+ *
+ * The particle colours come from the `--precip-rain` / `--precip-snow` tokens (light + dark) in
+ * `styles/index.css`. The effect is decorative (aria-hidden, pointer-events-none) and honours the
+ * animation level: it animates at Full/Balanced, holds a static frame at Calm ({@link suppressesMotion}),
+ * and is removed entirely at Off/Headache ({@link suppressesAmbient}) — like the starfield.
+ */
+export const BACKGROUND_EFFECTS = [
+  { id: 'none', label: 'None' },
+  { id: 'rain', label: 'Rain' },
+  { id: 'snow', label: 'Snow' },
+] as const;
+
+/** A background-effect id. */
+export type BackgroundEffect = (typeof BACKGROUND_EFFECTS)[number]['id'];
+
+/** Every background-effect id, for iteration / validation. */
+export const BACKGROUND_EFFECT_IDS = BACKGROUND_EFFECTS.map((e) => e.id) as BackgroundEffect[];
+
+/** The default background effect — `none`, so the shipped baseline paints nothing. */
+export const DEFAULT_BACKGROUND_EFFECT: BackgroundEffect = 'none';
+
+/** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link BackgroundEffect}. */
+export function normaliseBackgroundEffect(value: string): BackgroundEffect {
+  return (BACKGROUND_EFFECT_IDS as readonly string[]).includes(value)
+    ? (value as BackgroundEffect)
+    : DEFAULT_BACKGROUND_EFFECT;
+}

@@ -4,8 +4,11 @@ import {
   ACCENTS,
   ANIMATION_LEVEL_IDS,
   ANIMATION_LEVELS,
+  BACKGROUND_EFFECT_IDS,
+  BACKGROUND_EFFECTS,
   DEFAULT_ACCENT,
   DEFAULT_ANIMATION_LEVEL,
+  DEFAULT_BACKGROUND_EFFECT,
   DEFAULT_MODE,
   DEFAULT_STARFIELD_VARIANT,
   MODE_OPTIONS,
@@ -14,8 +17,10 @@ import {
   animationLevelRank,
   normaliseAccent,
   normaliseAnimationLevel,
+  normaliseBackgroundEffect,
   normaliseMode,
   normaliseStarfieldVariant,
+  suppressesAmbient,
   suppressesFlourish,
   suppressesMotion,
 } from './theme-registry';
@@ -146,5 +151,32 @@ describe('animation-level thresholds', () => {
     for (const id of ANIMATION_LEVEL_IDS) {
       if (suppressesMotion(id)) expect(suppressesFlourish(id)).toBe(true);
     }
+  });
+
+  it('suppressesAmbient is true from Off onwards (a subset of motion)', () => {
+    expect(ANIMATION_LEVEL_IDS.map(suppressesAmbient)).toEqual([false, false, false, true, true]);
+  });
+});
+
+describe('BACKGROUND_EFFECTS', () => {
+  it('offers none, rain and snow in registry order, each with a label', () => {
+    expect(BACKGROUND_EFFECTS.map((e) => e.id)).toEqual(['none', 'rain', 'snow']);
+    for (const e of BACKGROUND_EFFECTS) expect(e.label.length).toBeGreaterThan(0);
+  });
+
+  it('defaults to none (nothing painted), and BACKGROUND_EFFECT_IDS mirrors the registry', () => {
+    expect(DEFAULT_BACKGROUND_EFFECT).toBe('none');
+    expect(BACKGROUND_EFFECT_IDS).toEqual(BACKGROUND_EFFECTS.map((e) => e.id));
+  });
+});
+
+describe('normaliseBackgroundEffect', () => {
+  it('passes every effect id through unchanged', () => {
+    for (const id of BACKGROUND_EFFECT_IDS) expect(normaliseBackgroundEffect(id)).toBe(id);
+  });
+
+  it('coerces an unknown/stale persisted value to the none default', () => {
+    expect(normaliseBackgroundEffect('storm')).toBe(DEFAULT_BACKGROUND_EFFECT);
+    expect(normaliseBackgroundEffect('')).toBe(DEFAULT_BACKGROUND_EFFECT);
   });
 });

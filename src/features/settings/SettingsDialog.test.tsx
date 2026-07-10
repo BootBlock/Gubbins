@@ -107,6 +107,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       highContrast: false,
       animationLevel: 'full',
       starfieldVariant: 'cosmic',
+      backgroundEffect: 'none',
     });
     const root = document.documentElement;
     root.classList.remove('dark');
@@ -162,6 +163,18 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByTestId('setting-starfield'));
     fireEvent.click(screen.getByRole('option', { name: 'Aurora' }));
     expect(root.dataset.starfield).toBe('aurora');
+  });
+
+  it('background-effect control persists the chosen weather layer to the store', () => {
+    // The effect is canvas/JS-driven (not projected onto <html>), so the control's job is simply
+    // to persist the choice; the composition-root <BackgroundEffects> reads it from the store.
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(usePreferencesStore.getState().backgroundEffect).toBe('none');
+    fireEvent.click(screen.getByTestId('setting-background-effect'));
+    fireEvent.click(screen.getByRole('option', { name: 'Snow' }));
+    expect(usePreferencesStore.getState().backgroundEffect).toBe('snow');
   });
 });
 
