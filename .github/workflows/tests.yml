@@ -90,3 +90,9 @@ jobs:
 
       - name: Run bridge tests
         run: npm run test:bridge
+
+      # Boot-smoke both entry points under REAL Node (not esbuild/Vitest), so any
+      # strip-only-incompatible TypeScript in the bridge's import graph — parameter
+      # properties, enum, namespace — fails here rather than only at runtime.
+      - name: Boot-smoke the bridge
+        run: npm run smoke:bridge

@@ -160,7 +160,12 @@ type Node = ASTGroupNode | FilterCondition;
 
 class Parser {
   private pos = 0;
-  constructor(private readonly tokens: readonly Token[]) {}
+  // Explicit field + assignment, NOT a `private readonly tokens` parameter property: the bridge
+  // runs under Node's strip-only loader (see loader.mjs), which rejects parameter properties.
+  private readonly tokens: readonly Token[];
+  constructor(tokens: readonly Token[]) {
+    this.tokens = tokens;
+  }
 
   /** orExpr := andExpr ( 'or' andExpr )* */
   parseOr(): Node {
