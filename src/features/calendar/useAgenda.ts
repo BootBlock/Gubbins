@@ -169,7 +169,7 @@ export function useAgenda(): {
           id: k.id,
           itemId: k.itemId,
           itemName: k.itemName,
-          contactName: k.contactName,
+          borrowerName: k.borrowerName,
           dueDate: k.dueDate,
         }))
       : [],

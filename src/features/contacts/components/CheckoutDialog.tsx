@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Modal, SelectField } from '@/components/foundry';
 import { CheckoutIcon } from '@/components/icons';
-import type { Item, ItemBatchPlacement } from '@/db/repositories';
+import type { BorrowerType, CheckoutItemInput, Item, ItemBatchPlacement } from '@/db/repositories';
 import { isDefaultBatch } from '@/features/inventory/batches';
 import { useItemBatches, useItemStock } from '@/features/lifecycle/hooks';
+import { useLocations } from '@/features/inventory/queries';
+import { useProjects } from '@/features/projects/projects';
+import { useFeature } from '@/features/modules/useFeature';
 import { useContacts, useCheckoutItem } from '../contacts';
 import { MS_PER_DAY } from '@/features/scanner/due-date';
 
@@ -29,16 +32,48 @@ function lotLabel(b: ItemBatchPlacement): string {
  */
 export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose: () => void; item: Item }) {
   const contacts = useContacts();
+  const projects = useProjects();
+  const locations = useLocations();
+  const projectsOn = useFeature('projects');
   const checkout = useCheckoutItem();
   const stock = useItemStock(item.id);
   const itemBatches = useItemBatches(item.id);
+  // The borrower is a tagged union (B4): a loan targets a contact (a person), a project ("out
+  // on the Henderson job") or a location ("in the van"). The target-type choice drives which
+  // picker shows; the contact path keeps the low-friction type-a-name-to-create convenience,
+  // while project/location are picked from existing rows.
+  const [targetType, setTargetType] = useState<BorrowerType>('contact');
   const [name, setName] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [dueDate, setDueDate] = useState(''); // yyyy-mm-dd, '' = none
   const [fromLocationId, setFromLocationId] = useState<string>(item.locationId);
   const [fromBatchKey, setFromBatchKey] = useState(ANY_LOT);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // Project is only offered when the Projects module is on; contacts and locations are always
+  // available (the loan flow itself is gated on Contacts upstream).
+  const targetOptions = useMemo(
+    () => [
+      { value: 'contact' as const, label: 'A person (contact)' },
+      ...(projectsOn ? [{ value: 'project' as const, label: 'A project' }] : []),
+      { value: 'location' as const, label: 'A location' },
+    ],
+    [projectsOn],
+  );
+
+  const projectRows = projects.data?.rows ?? [];
+  const locationRows = locations.data?.rows ?? [];
+
+  // Whether a borrower has been chosen for the active target type — drives submit-enablement.
+  const hasBorrower =
+    targetType === 'contact'
+      ? name.trim().length > 0
+      : targetType === 'project'
+        ? projectId.length > 0
+        : locationId.length > 0;
 
   const isDiscrete = item.trackingMode === 'DISCRETE';
   // Per-location source (Phase 26): only when the item's stock is genuinely split across
@@ -88,15 +123,29 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
 
   const submit = () => {
     setError(null);
-    if (name.trim().length === 0) {
-      setError('Enter who is borrowing this.');
+    if (!hasBorrower) {
+      setError(
+        targetType === 'contact'
+          ? 'Enter who is borrowing this.'
+          : targetType === 'project'
+            ? 'Pick a project to loan this to.'
+            : 'Pick a location to loan this to.',
+      );
       return;
     }
     const dueMs = dueDate ? new Date(`${dueDate}T23:59:59`).getTime() : null;
+    // Exactly one borrower target per the tagged union (B4): a contact name (resolve-or-create),
+    // an existing project id, or an existing location id.
+    const borrower: Pick<CheckoutItemInput, 'contactName' | 'projectId' | 'locationId'> =
+      targetType === 'contact'
+        ? { contactName: name.trim() }
+        : targetType === 'project'
+          ? { projectId }
+          : { locationId };
     checkout.mutate(
       {
         itemId: item.id,
-        contactName: name.trim(),
+        ...borrower,
         quantity: isDiscrete ? quantity : 1,
         dueDate: dueMs,
         // Only send a source when the stock is split; otherwise the repository defaults
@@ -108,6 +157,8 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
       {
         onSuccess: () => {
           setName('');
+          setProjectId('');
+          setLocationId('');
           setQuantity(1);
           setDueDate('');
           setFromBatchKey(ANY_LOT);
@@ -121,22 +172,53 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   return (
     <Modal open={open} onClose={onClose} title="Check out" description={item.name} initialFocusRef={nameRef}>
       <div className="space-y-4">
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Borrower</span>
-          <Input
-            ref={nameRef}
-            list="contact-suggestions"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="Type a name — new names are added automatically"
+        <SelectField
+          label="Loan to"
+          value={targetType}
+          onChange={(value) => {
+            setTargetType(value as BorrowerType);
+            setError(null);
+          }}
+          data-testid="checkout-target-type"
+          options={targetOptions}
+        />
+
+        {targetType === 'contact' ? (
+          <label className="block">
+            <span className="mb-field-gap block text-sm font-medium">Borrower</span>
+            <Input
+              ref={nameRef}
+              list="contact-suggestions"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              placeholder="Type a name — new names are added automatically"
+            />
+            <datalist id="contact-suggestions">
+              {contacts.data?.rows.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
+          </label>
+        ) : targetType === 'project' ? (
+          <SelectField
+            label="Project"
+            value={projectId}
+            onChange={setProjectId}
+            data-testid="checkout-project"
+            placeholder="Choose a project…"
+            options={projectRows.map((p) => ({ value: p.id, label: p.name }))}
           />
-          <datalist id="contact-suggestions">
-            {contacts.data?.rows.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
-        </label>
+        ) : (
+          <SelectField
+            label="Location"
+            value={locationId}
+            onChange={setLocationId}
+            data-testid="checkout-location"
+            placeholder="Choose a location…"
+            options={locationRows.map((l) => ({ value: l.id, label: l.name }))}
+          />
+        )}
 
         {isSplit ? (
           <div>
@@ -225,7 +307,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={checkout.isPending || name.trim().length === 0}>
+          <Button onClick={submit} disabled={checkout.isPending || !hasBorrower}>
             <CheckoutIcon />
             Check out
           </Button>

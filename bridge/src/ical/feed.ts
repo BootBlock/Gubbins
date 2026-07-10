@@ -169,7 +169,9 @@ async function loanEvents(driver: IDatabaseDriver, dtstamp: ICalDate): Promise<V
 }
 
 function loanEvent(checkout: CheckoutWithNames, dtstamp: ICalDate): VEvent {
-  const detail = `On loan to ${checkout.contactName}. Quantity ${checkout.quantity}.`;
+  // The borrower may be a contact, a project or a location (B4) — `borrowerName` is resolved
+  // per target type by the repository, so this reads correctly for all three.
+  const detail = `On loan to ${checkout.borrowerName}. Quantity ${checkout.quantity}.`;
   return allDayEvent({
     uid: `loan-${checkout.id}${UID_SUFFIX}`,
     dtstamp,

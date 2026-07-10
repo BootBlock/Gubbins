@@ -347,3 +347,14 @@ export const LOCATION_QR_PARAM = 'location';
  */
 export const CHECKOUT_STATUSES = ['OPEN', 'RETURNED'] as const;
 export type CheckoutStatus = (typeof CHECKOUT_STATUSES)[number];
+
+/**
+ * What a loan is checked out **to** (B4). A tool is not always lent to a *person*: it may be
+ * "out on the Henderson job" (a project) or "in the van" (a location). The borrower is a
+ * tagged union of exactly one of these three targets — enforced in storage by the `checkouts`
+ * XOR CHECK across the nullable `contact_id` / `project_id` / `location_id` columns, and in the
+ * type layer by {@link CheckoutBorrower}. `contact` keeps the low-friction resolve-or-create-
+ * by-name convenience; `project` / `location` are always picked from existing rows.
+ */
+export const BORROWER_TYPES = ['contact', 'project', 'location'] as const;
+export type BorrowerType = (typeof BORROWER_TYPES)[number];

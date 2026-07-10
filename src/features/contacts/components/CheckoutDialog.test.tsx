@@ -18,6 +18,9 @@ const h = vi.hoisted(() => ({
   placements: [] as ItemStockPlacement[],
   batches: [] as ItemBatchPlacement[],
   contactRows: [] as { id: string; name: string }[],
+  projectRows: [] as { id: string; name: string }[],
+  locationRows: [] as { id: string; name: string }[],
+  projectsOn: true,
   mutate: vi.fn(),
 }));
 
@@ -28,6 +31,16 @@ vi.mock('../contacts', () => ({
 vi.mock('@/features/lifecycle/hooks', () => ({
   useItemStock: () => ({ data: h.placements }),
   useItemBatches: () => ({ data: h.batches }),
+}));
+// B4: the dialog now also reads the project/location pickers and the Projects feature flag.
+vi.mock('@/features/projects/projects', () => ({
+  useProjects: () => ({ data: { rows: h.projectRows } }),
+}));
+vi.mock('@/features/inventory/queries', () => ({
+  useLocations: () => ({ data: { rows: h.locationRows } }),
+}));
+vi.mock('@/features/modules/useFeature', () => ({
+  useFeature: () => h.projectsOn,
 }));
 
 import { CheckoutDialog } from './CheckoutDialog';
@@ -78,6 +91,12 @@ beforeEach(() => {
   h.placements = [{ locationId: 'loc-1', locationName: 'Shelf A', quantity: 3 }];
   h.batches = [];
   h.contactRows = [{ id: 'c-1', name: 'Existing Borrower' }];
+  h.projectRows = [{ id: 'p-1', name: 'Henderson job' }];
+  h.locationRows = [
+    { id: 'loc-1', name: 'Shelf A' },
+    { id: 'van', name: 'The van' },
+  ];
+  h.projectsOn = true;
   h.mutate.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
   onClose.mockReset();
 });
@@ -261,6 +280,69 @@ describe('CheckoutDialog — due date', () => {
         expect.anything(),
       ),
     );
+  });
+});
+
+describe('CheckoutDialog — loan target is a tagged union (B4)', () => {
+  /** Switch the "Loan to" Foundry Select to the named option. */
+  const chooseTarget = (name: RegExp) => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Loan to' }));
+    fireEvent.click(screen.getByRole('option', { name }));
+  };
+
+  it('shows the project picker and dispatches a projectId (not a contact) when Project is chosen', async () => {
+    renderDialog();
+    // The contact name box is the default; switching to Project swaps in the project picker.
+    expect(screen.queryByPlaceholderText(/Type a name/)).not.toBeNull();
+    chooseTarget(/A project/);
+    expect(screen.queryByPlaceholderText(/Type a name/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Henderson job' }));
+    fireEvent.click(checkoutButton());
+
+    await waitFor(() =>
+      expect(h.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ itemId: 'item-1', projectId: 'p-1' }),
+        expect.anything(),
+      ),
+    );
+    // No contact fields leak into the project loan.
+    const input = h.mutate.mock.calls[0][0];
+    expect(input.contactName).toBeUndefined();
+    expect(input.locationId).toBeUndefined();
+  });
+
+  it('dispatches a locationId when Location is chosen', async () => {
+    renderDialog();
+    chooseTarget(/A location/);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Location' }));
+    fireEvent.click(screen.getByRole('option', { name: 'The van' }));
+    fireEvent.click(checkoutButton());
+
+    await waitFor(() =>
+      expect(h.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ itemId: 'item-1', locationId: 'van' }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('keeps Check out disabled until a project is picked', () => {
+    renderDialog();
+    chooseTarget(/A project/);
+    expect(checkoutButton()).toBeDisabled();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Project' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Henderson job' }));
+    expect(checkoutButton()).toBeEnabled();
+  });
+
+  it('omits the Project option when the Projects module is off', () => {
+    h.projectsOn = false;
+    renderDialog();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Loan to' }));
+    expect(screen.queryByRole('option', { name: /A project/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /A location/ })).not.toBeNull();
   });
 });
 

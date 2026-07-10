@@ -14,6 +14,7 @@ import {
 import {
   AddIcon,
   AssemblyIcon,
+  CheckoutIcon,
   CostIcon,
   DeleteIcon,
   EditIcon,
@@ -24,6 +25,8 @@ import {
 import { COSTING_MODES, type CostingMode } from '@/db/repositories';
 import { useInventoryItems } from '@/features/inventory/queries';
 import { useLocations } from '@/features/inventory/queries';
+import { useProjectCheckouts } from '@/features/contacts/contacts';
+import { BorrowerLoansSection } from '@/features/contacts/components/BorrowerLoansSection';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   useBomLines,
@@ -54,6 +57,7 @@ export function ProjectDetail({
   const lines = useBomLines(projectId);
   const costing = useProjectCosting(projectId);
   const shoppingList = useShoppingList(projectId);
+  const loans = useProjectCheckouts(projectId);
   const setCostingMode = useSetCostingMode();
   const deleteProject = useDeleteProject();
   const { show } = useToast();
@@ -83,6 +87,9 @@ export function ProjectDetail({
 
   const lineRows = lines.data?.rows ?? [];
   const list = shoppingList.data ?? [];
+  // Tools currently out on this project (B4). Only surface the section when something is
+  // actually on loan, so a project that never borrows stays uncluttered.
+  const openLoans = (loans.data?.rows ?? []).filter((c) => c.status === 'OPEN');
   const projectName = project.data.name;
 
   const onConfirmDelete = () => {
@@ -203,6 +210,23 @@ export function ProjectDetail({
           <h3 className="mb-2 text-sm font-semibold">Bill of materials</h3>
           {lines.isLoading ? <Spinner /> : <BomLineTable projectId={projectId} lines={lineRows} />}
         </section>
+
+        {openLoans.length > 0 ? (
+          <section aria-label="Tools on loan to this project">
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold [&_svg]:size-4">
+              <CheckoutIcon />
+              Out on this project
+              <span className="text-xs font-normal text-muted-foreground">
+                (tools checked out to the job)
+              </span>
+            </h3>
+            <BorrowerLoansSection
+              loans={openLoans}
+              emptyText="Nothing is out on this project."
+              data-testid="project-loans"
+            />
+          </section>
+        ) : null}
 
         <section>
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold [&_svg]:size-4">

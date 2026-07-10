@@ -51,9 +51,21 @@
     },
     {
       "type": "index",
+      "name": "idx_checkouts_location_id",
+      "tbl_name": "checkouts",
+      "sql": "CREATE INDEX idx_checkouts_location_id ON checkouts(location_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_checkouts_open",
       "tbl_name": "checkouts",
       "sql": "CREATE INDEX idx_checkouts_open ON checkouts(due_date) WHERE returned_at IS NULL"
+    },
+    {
+      "type": "index",
+      "name": "idx_checkouts_project_id",
+      "tbl_name": "checkouts",
+      "sql": "CREATE INDEX idx_checkouts_project_id ON checkouts(project_id)"
     },
     {
       "type": "index",
@@ -347,7 +359,7 @@
       "type": "table",
       "name": "checkouts",
       "tbl_name": "checkouts",
-      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          contact_id     TEXT    NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT, return_note TEXT,\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at)\n        ) STRICT"
+      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          -- The borrower is a TAGGED UNION (B4): a loan targets exactly one of a contact\n          -- (a person), a project (\"out on the Henderson job\") or a location (\"in the van\").\n          -- All three FKs are nullable and the XOR CHECK below enforces that precisely one is\n          -- set. Each cascades on the target's delete, mirroring the contact precedent — the\n          -- app returns any open loan first (restoring stock) so a delete never strands stock.\n          -- NB: a borrower location_id is the loan TARGET, distinct from source_location_id\n          -- (the provenance — where the units were lent FROM), added by a later ALTER below.\n          contact_id     TEXT    REFERENCES contacts(id)  ON DELETE CASCADE,\n          project_id     TEXT    REFERENCES projects(id)  ON DELETE CASCADE,\n          location_id    TEXT    REFERENCES locations(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT, return_note TEXT,\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at),\n          -- Exactly one borrower: contact XOR project XOR location.\n          CHECK (\n            (contact_id IS NOT NULL) + (project_id IS NOT NULL) + (location_id IS NOT NULL) = 1\n          )\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1282,12 +1294,28 @@
           "cid": 2,
           "name": "contact_id",
           "type": "TEXT",
-          "notnull": 1,
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         },
         {
           "cid": 3,
+          "name": "project_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
           "name": "quantity",
           "type": "INTEGER",
           "notnull": 1,
@@ -1295,7 +1323,7 @@
           "pk": 0
         },
         {
-          "cid": 4,
+          "cid": 6,
           "name": "due_date",
           "type": "INTEGER",
           "notnull": 0,
@@ -1303,7 +1331,7 @@
           "pk": 0
         },
         {
-          "cid": 5,
+          "cid": 7,
           "name": "checked_out_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -1311,7 +1339,7 @@
           "pk": 0
         },
         {
-          "cid": 6,
+          "cid": 8,
           "name": "returned_at",
           "type": "INTEGER",
           "notnull": 0,
@@ -1319,7 +1347,7 @@
           "pk": 0
         },
         {
-          "cid": 7,
+          "cid": 9,
           "name": "note",
           "type": "TEXT",
           "notnull": 0,
@@ -1327,7 +1355,7 @@
           "pk": 0
         },
         {
-          "cid": 8,
+          "cid": 10,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -1335,7 +1363,7 @@
           "pk": 0
         },
         {
-          "cid": 9,
+          "cid": 11,
           "name": "source_location_id",
           "type": "TEXT",
           "notnull": 0,
@@ -1343,7 +1371,7 @@
           "pk": 0
         },
         {
-          "cid": 10,
+          "cid": 12,
           "name": "source_batch_key",
           "type": "TEXT",
           "notnull": 0,
@@ -1351,7 +1379,7 @@
           "pk": 0
         },
         {
-          "cid": 11,
+          "cid": 13,
           "name": "return_note",
           "type": "TEXT",
           "notnull": 0,
@@ -1373,6 +1401,26 @@
         {
           "id": 1,
           "seq": 0,
+          "table": "locations",
+          "from": "location_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 2,
+          "seq": 0,
+          "table": "projects",
+          "from": "project_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 3,
+          "seq": 0,
           "table": "contacts",
           "from": "contact_id",
           "to": "id",
@@ -1381,7 +1429,7 @@
           "match": "NONE"
         },
         {
-          "id": 2,
+          "id": 4,
           "seq": 0,
           "table": "items",
           "from": "item_id",
@@ -1393,15 +1441,22 @@
       ],
       "indexes": [
         {
-          "seq": 1,
+          "seq": 3,
           "name": "idx_checkouts_contact_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 2,
+          "seq": 4,
           "name": "idx_checkouts_item_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "idx_checkouts_location_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
@@ -1414,7 +1469,14 @@
           "partial": 1
         },
         {
-          "seq": 3,
+          "seq": 2,
+          "name": "idx_checkouts_project_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 5,
           "name": "sqlite_autoindex_checkouts_1",
           "unique": 1,
           "origin": "pk",

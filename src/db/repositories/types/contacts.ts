@@ -1,7 +1,7 @@
 /**
  * Contact + checkout row/DTO types (spec §4 Borrowing & Checking Out, Phase 6).
  */
-import type { CheckoutStatus } from '../constants';
+import type { BorrowerType, CheckoutStatus } from '../constants';
 
 export interface ContactRow {
   readonly id: string;
@@ -53,7 +53,10 @@ export interface UpdateContactInput {
 export interface CheckoutRow {
   readonly id: string;
   readonly item_id: string;
-  readonly contact_id: string;
+  /** Borrower tagged union (B4): exactly one of contact/project/location is non-null. */
+  readonly contact_id: string | null;
+  readonly project_id: string | null;
+  readonly location_id: string | null;
   readonly quantity: number;
   readonly due_date: number | null;
   readonly checked_out_at: number;
@@ -68,7 +71,18 @@ export interface CheckoutRow {
 export interface Checkout {
   readonly id: string;
   readonly itemId: string;
-  readonly contactId: string;
+  /**
+   * The borrower tagged union (B4). Exactly one of {@link contactId} / {@link projectId} /
+   * {@link locationId} is non-null (the DB enforces this via the `checkouts` XOR CHECK);
+   * {@link borrowerType} names which one, so consumers can switch without re-deriving it.
+   */
+  readonly borrowerType: BorrowerType;
+  /** Non-null when this loan is to a contact (a person). */
+  readonly contactId: string | null;
+  /** Non-null when this loan is to a project ("out on the Henderson job"). */
+  readonly projectId: string | null;
+  /** Non-null when this loan is to a location ("in the van"). */
+  readonly locationId: string | null;
   /** Units lent out on this checkout (DISCRETE on-hand is decremented while open). */
   readonly quantity: number;
   /** Optional due date (UNIX-ms) for overdue tracking (§4 Due Dates). */
@@ -99,13 +113,29 @@ export interface Checkout {
   readonly updatedAt: number;
 }
 
-/** A checkout joined with its item + contact display names, for list/dashboard rows. */
+/** A checkout joined with its item + borrower display names, for list/dashboard rows. */
 export interface CheckoutWithNames extends Checkout {
   readonly itemName: string;
-  readonly contactName: string;
+  /**
+   * The borrower's display name, resolved per {@link Checkout.borrowerType} (the contact's,
+   * project's or location's name). Pair with `borrowerType` when a label needs to distinguish
+   * the kind of target; on its own it is the "on loan to …" name for any target.
+   */
+  readonly borrowerName: string;
   readonly status: CheckoutStatus;
   /** True when the checkout is open and its due date is in the past. */
   readonly isOverdue: boolean;
+}
+
+/**
+ * A resolved borrower (B4) — the single target a loan is checked out to, after the
+ * {@link CheckoutItemInput} discriminator has been resolved to an existing row. `contact`
+ * targets may be auto-created by name; `project` / `location` are always existing rows.
+ */
+export interface CheckoutBorrower {
+  readonly type: BorrowerType;
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface CheckoutItemInput {
@@ -113,6 +143,17 @@ export interface CheckoutItemInput {
   /** Existing contact id, OR a raw name to low-friction auto-create (§4 Ergonomics). */
   readonly contactId?: string;
   readonly contactName?: string;
+  /**
+   * Loan to a project instead of a contact (B4) — an existing project id (never created by
+   * name). Mutually exclusive with the contact and location targets: supply exactly one.
+   */
+  readonly projectId?: string;
+  /**
+   * Loan to a location instead of a contact (B4) — an existing location id (never created by
+   * name). This is the loan *target* ("in the van"), distinct from {@link fromLocationId}
+   * (the provenance — where the units are drawn from). Supply exactly one borrower target.
+   */
+  readonly locationId?: string;
   readonly quantity?: number;
   readonly dueDate?: number | null;
   readonly note?: string | null;

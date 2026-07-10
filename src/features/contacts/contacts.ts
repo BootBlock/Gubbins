@@ -31,6 +31,8 @@ export const checkoutKeys = {
   all: ['checkouts'] as const,
   open: () => [...checkoutKeys.all, 'open'] as const,
   forItem: (itemId: string) => [...checkoutKeys.all, 'item', itemId] as const,
+  forProject: (projectId: string) => [...checkoutKeys.all, 'project', projectId] as const,
+  forLocation: (locationId: string) => [...checkoutKeys.all, 'location', locationId] as const,
 } as const;
 
 // --- reads ---------------------------------------------------------------------
@@ -54,6 +56,24 @@ export function useItemCheckouts(itemId: string | undefined) {
     queryKey: checkoutKeys.forItem(itemId ?? ''),
     queryFn: () => getCheckoutRepository().listForItem(itemId!, { limit: 100 }),
     enabled: Boolean(itemId),
+  });
+}
+
+/** Loans checked out **to** a project (B4) — the open + returned history for a project. */
+export function useProjectCheckouts(projectId: string | undefined) {
+  return useQuery({
+    queryKey: checkoutKeys.forProject(projectId ?? ''),
+    queryFn: () => getCheckoutRepository().listForProject(projectId!, { limit: 100 }),
+    enabled: Boolean(projectId),
+  });
+}
+
+/** Loans checked out **to** a location (B4) — the open + returned history for a location. */
+export function useLocationCheckouts(locationId: string | undefined) {
+  return useQuery({
+    queryKey: checkoutKeys.forLocation(locationId ?? ''),
+    queryFn: () => getCheckoutRepository().listForLocation(locationId!, { limit: 100 }),
+    enabled: Boolean(locationId),
   });
 }
 
