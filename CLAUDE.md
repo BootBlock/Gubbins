@@ -152,3 +152,69 @@ English copy; other languages (currently `de.json`) are override catalogs.
   but the hard, build-enforced rule above applies to every string that goes through a catalog.
   Untranslated keys fall back to English, so nothing breaks — but "add the string, skip the
   translation" is not acceptable for a catalog key.
+
+## Actioning a GitHub issue (workflow)
+
+When the maintainer gives you a Gubbins issue URL —
+`https://github.com/BootBlock/Gubbins/issues/<id>` — with no other instruction, treat it as a
+request to **action that issue end-to-end** using the workflow below. (Bare `#<id>` or "issue
+<id>" in the Gubbins context means the same.) If the message clearly wants only discussion —
+"what do you think of…", "should we…", "explain #<id>" — answer instead; when in doubt, ask.
+
+The structural steps here (worktree, code review, merge mechanics) are **internal process**.
+They must **never** leak into anything world-readable — not the issue comment, commit messages,
+branch names, or code. An end user reading the issue should see only *what* changed and *why*,
+never the plumbing. This is the [public-repository hygiene](#public-repository-hygiene-mandatory)
+rule applied to issue handling.
+
+**The workflow, in order:**
+
+1. **Read the issue.** `gh issue view <id> --repo BootBlock/Gubbins --json title,body,labels,comments`.
+   Understand what's actually being asked; locate the relevant code before changing anything.
+2. **Work in a git worktree — always.** Other agents edit this repo concurrently, so every issue
+   task runs in its own worktree (see the memory note `gubbins-concurrent-agents-worktrees`): edit
+   via worktree-relative absolute paths, never touch another agent's worktree, and expect `main` to
+   have advanced. This is required even though the issue itself won't say so.
+3. **Implement the fix following every project convention** above — design tokens, i18n `t()`,
+   accessibility wiring, Foundry primitives, and the no-secrets / public-hygiene rules. Match the
+   surrounding code's style.
+4. **Verify it works.** Typecheck (`npx tsc -b`) and run any tests the change touches; where the
+   change has a runtime surface, drive it (the `verify` skill) rather than trusting types alone.
+5. **Code review before committing.** Run `/code-review high` on the diff and **fix every confirmed
+   finding** before proceeding. Re-verify after fixing. Commit inside the worktree once clean.
+6. **Checkpoint — pause here.** Before any outward-facing, hard-to-undo step, stop and give the
+   maintainer a concise summary (what changed, review outcome, files touched) and **wait for the
+   go-ahead**. Do not merge, push, or close the issue until approved.
+7. **On approval, land it:** merge the worktree branch into `main` with `--no-ff`, then
+   `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
+   worktree (remove the `node_modules` junction *before* `git worktree remove` — see
+   `feedback-worktree-junction-cleanup`); leave other agents' worktrees alone.
+8. **Comment, then close as completed.** Post a comment (`gh issue comment <id>`) describing *what*
+   was done and *why* in plain user-facing terms. **Before posting, self-audit the drafted comment
+   against these rules — the comment is world-readable and permanent:**
+
+   - **No personally identifiable information about anyone — third parties *or* the maintainer.**
+     Never include a real private email address, a real name tied to a private account, phone
+     numbers, internal hostnames or IP addresses, or any third party's data. Use the GitHub
+     `noreply` identity / the public `@BootBlock` handle / `example.com` placeholders only. (This
+     is the [no-secrets](#no-secrets-in-the-repository-mandatory) and
+     [public-hygiene](#public-repository-hygiene-mandatory) rules applied to the comment.)
+   - **No internal development process, strategy, or tooling, and nothing an end user shouldn't
+     see.** Keep out worktree / code-review / branch / merge mechanics, internal test or file-tool
+     names, private tickets, CI/infra details, and the agent's own reasoning or strategy. Describe
+     the *what* and *why* of the change, never the plumbing that produced it.
+   - **High-level, durable public references are fine** (the repo is public): the affected
+     feature, and optionally a commit SHA or a file link. Prefer these over process detail.
+   - **Always append this exact trailer** as the last lines (agent attribution is disclosure, not
+     internal process — it stays):
+
+     ```markdown
+     ---
+     This issue was actioned by an agent on behalf of @BootBlock.
+     ```
+
+   Then `gh issue close <id> --repo BootBlock/Gubbins --reason completed`.
+
+If any step can't be completed cleanly (the fix is larger than the issue implies, review surfaces
+something structural, `main` conflicts non-trivially), stop and surface it rather than forcing the
+workflow through — an issue URL authorises *this* workflow, not an unbounded change.
