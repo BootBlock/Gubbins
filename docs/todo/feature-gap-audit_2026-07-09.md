@@ -86,7 +86,8 @@ memory note.
   a manual list of **wanted-but-not-owned** items is a separate small surface. Marginal — likely
   fold into an existing list rather than a new screen.
 
-- [ ] **G9 — Manual current-value / revaluation history (appreciating assets).** *Medium; strong
+- [x] **G9 — Manual current-value / revaluation history (appreciating assets).** ✅ **Shipped 2026-07-10.**
+  *Medium; strong
   collector + insurance fit.* Today an item's worth is derived only from `purchase_price` minus
   **straight-line depreciation** (`asset-lifecycle.ts`) — a book value that only ever *decreases*
   to a salvage floor. Collectibles, tools, and property **appreciate**, and an insurance
@@ -99,6 +100,19 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G9 — Manual current-value / revaluation history (appreciating assets)** — shipped
+  2026-07-10. New v4 migration adds `items.current_value` (nullable, non-negative) and a
+  syncable append-only `revaluations` log table (FK → items CASCADE, LWW leaf); a new pure
+  `valuation.ts` seam beside `asset-lifecycle.ts` (`effectiveUnitValue` = manual value wins
+  over the depreciated replacement cost, `describeValueChange`, `buildRevaluationSeries`,
+  exhaustively unit-tested). `ItemRepository.recordRevaluation` appends a log point + sets the
+  live value + logs a `REVALUED` activity entry in one transaction. The valuation reports and
+  G1's insurance schedule value each line through `effectiveUnitValue`, so an appreciating
+  asset is scheduled at today's worth. `RevaluationEditor` in the item Asset tab shows the
+  current value + trend vs purchase, a sparkline, a record-revaluation form and the value
+  history (the depreciated figure is relabelled "Book value" to disambiguate). Manual current
+  value / revaluation stays **manual** — live secondary-market price feeds remain a non-goal.
 
 - **G1 — Insurance / estate schedule export (print + PDF)** — shipped 2026-07-10. New
   `/insurance-schedule` route + `InsuranceScheduleScreen`: a room-by-room, print-styled
