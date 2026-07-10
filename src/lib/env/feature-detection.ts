@@ -101,6 +101,16 @@ export function hasBarcodeDetector(): boolean {
   return typeof globalThis !== 'undefined' && 'BarcodeDetector' in globalThis;
 }
 
+/**
+ * True when on-device OCR can run — a `Worker` to host the Tesseract WASM engine and
+ * `WebAssembly` itself (feature-gap G2). Absent → the opt-in receipt/label scanner degrades
+ * to hidden, never a throw. The engine + language model are lazily fetched from our own
+ * origin, so no CDN/key is required.
+ */
+export function hasOcr(): boolean {
+  return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
+}
+
 /** True when haptic feedback is available — scanner confirmation (§6.5). */
 export function hasVibrate(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';

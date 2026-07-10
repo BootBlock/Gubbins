@@ -50,6 +50,8 @@ import {
   type ReminderKinds,
 } from '@/features/alerts/reminders';
 import type { AlertKind } from '@/features/alerts/alerts';
+import { DEFAULT_OCR_MODEL, normaliseOcrModel, type OcrModel } from '@/features/inventory/ocr/ocr-engine';
+export type { OcrModel };
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -187,6 +189,21 @@ interface PreferencesStore {
    */
   readonly reminderKinds: ReminderKinds;
   /**
+   * On-device receipt / label OCR prefill (feature-gap G2). When on, an opt-in "Scan a
+   * receipt or label" affordance appears in the add-item flow: an offline, keyless Tesseract
+   * WASM engine reads a photographed receipt/label and pre-fills a **reviewable** draft (price,
+   * acquired date, model/MPN, serial). **Off by default** — the engine + language model are
+   * several MB, lazily fetched on first use, so nothing downloads until the user opts in. It
+   * never auto-writes; the user always confirms. Degrades to hidden where OCR is unsupported.
+   */
+  readonly ocrEnabled: boolean;
+  /**
+   * Which OCR language-model tier to use (G2): `'fast'` (small integer model — the default,
+   * quick and ample for receipts) or `'best'` (larger, higher-accuracy LSTM). Persisted as
+   * intent and reconciled through `normaliseOcrModel` so a stale value can never reach the engine.
+   */
+  readonly ocrModel: OcrModel;
+  /**
    * Landing-page (Dashboard) optional features (§3 dashboard improvements). Each is a
    * user-facing enhancement the user can switch off from the Settings "Dashboard" group;
    * all default **on** so they're discoverable. The two extra widgets (Recent activity,
@@ -258,6 +275,10 @@ interface PreferencesStore {
   setRemindersEnabled: (enabled: boolean) => void;
   /** Toggle whether a single alert lane may fire a reminder. */
   setReminderKind: (kind: AlertKind, enabled: boolean) => void;
+  /** Turn opt-in on-device receipt/label OCR prefill on/off (G2). */
+  setOcrEnabled: (enabled: boolean) => void;
+  /** Choose the OCR language-model accuracy tier (G2). */
+  setOcrModel: (model: OcrModel) => void;
   setDashboardCommandPalette: (enabled: boolean) => void;
   setDashboardQuickActions: (enabled: boolean) => void;
   setDashboardGettingStarted: (enabled: boolean) => void;
@@ -300,6 +321,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       kioskMode: false,
       remindersEnabled: false,
       reminderKinds: DEFAULT_REMINDER_KINDS,
+      ocrEnabled: false,
+      ocrModel: DEFAULT_OCR_MODEL,
       dashboardCommandPalette: true,
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
@@ -353,6 +376,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set((state) => ({
           reminderKinds: normaliseReminderKinds({ ...state.reminderKinds, [kind]: enabled }),
         })),
+      setOcrEnabled: (ocrEnabled) => set({ ocrEnabled }),
+      // Normalise so a stale/unknown persisted value can never reach the engine.
+      setOcrModel: (model) => set({ ocrModel: normaliseOcrModel(model) }),
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),

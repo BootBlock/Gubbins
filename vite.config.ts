@@ -132,6 +132,12 @@ export default defineConfig({
         // SQLite WASM binaries are large, so lift the default 2 MiB single-file cap.
         // `png` is included so the raster app icons are precached for offline too.
         globPatterns: ['**/*.{js,css,html,wasm,woff2,svg,ico,png}'],
+        // The on-device OCR assets (feature-gap G2) — Tesseract's worker, WASM cores and
+        // language models under `ocr/` — are deliberately kept OUT of the precache: they are
+        // several MB, opt-in and lazily loaded on first use, so precaching them would bloat
+        // the base offline shell for a feature most installs never touch (see
+        // scripts/setup-ocr-assets.mjs).
+        globIgnores: ['**/ocr/**'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
       manifest: {
