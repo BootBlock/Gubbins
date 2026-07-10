@@ -34,8 +34,14 @@ export function InfoHint({
         role="img"
         aria-label="More information"
         className={cn(
-          'grid size-4 cursor-help place-items-center rounded-full text-muted-foreground/70',
+          'relative grid size-4 cursor-help place-items-center rounded-full text-muted-foreground/70',
           'transition-colors ease-emphasized hover:text-foreground [&_svg]:size-3.5',
+          // Enlarge the *touch* target without growing the visible glyph: a transparent
+          // pseudo-element extends the tappable area to a comfortable ~36px (a small badge
+          // is hard to tap on touch) while the badge itself stays 16px. It is absolutely
+          // positioned so it never affects layout, and it lives inside the Tooltip trigger,
+          // so a tap on it still bubbles to the trigger's handlers.
+          "before:absolute before:-inset-2.5 before:content-['']",
           className,
         )}
       >
