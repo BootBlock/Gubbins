@@ -21,6 +21,7 @@ import {
   type CreateItemInput,
   type CreateLocationInput,
   type CreateSupplierPartInput,
+  type AddRelationInput,
   type GaugeAdjustment,
   type Item,
   type Page,
@@ -174,6 +175,40 @@ export function useRecordRevaluation() {
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRevaluations(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+    },
+  });
+}
+
+/**
+ * Add a related-items cross-link (feature-gap G6). A relation is reciprocal, so it changes what
+ * BOTH endpoints show — invalidate each item's relations slice (the `from`/`to` pair). Deliberately
+ * invalidation-based (not optimistic): the write is low-frequency and validates/canonicalises in the
+ * repository, so a targeted refresh is simpler than patching a derived, resolved list.
+ */
+export function useAddRelation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AddRelationInput) => getItemRepository().addRelation(input),
+    onSettled: (_d, _e, input) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(input.fromItemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(input.toItemId) });
+    },
+  });
+}
+
+/**
+ * Remove a related-items cross-link (feature-gap G6). The relation id encodes its endpoints, so the
+ * caller passes them alongside so both items' relations slices refresh (the removed link showed on
+ * each).
+ */
+export function useRemoveRelation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ relationId }: { relationId: string; fromItemId: string; toItemId: string }) =>
+      getItemRepository().removeRelation(relationId),
+    onSettled: (_d, _e, { fromItemId, toItemId }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(fromItemId) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemRelations(toItemId) });
     },
   });
 }

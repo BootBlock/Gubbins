@@ -24,6 +24,7 @@ import { withKits } from './item/kits';
 import { withDashboardFeeds } from './item/feeds';
 import { withCycleCount } from './item/cycle-count';
 import { withRevaluations } from './item/revaluations';
+import { withRelations } from './item/relations';
 
 export type { ItemListFilters } from './item/core';
 export {
@@ -48,7 +49,9 @@ export class ItemRepository extends withStock(
     withAliases(
       withCapabilities(
         withSearch(
-          withVariants(withKits(withDashboardFeeds(withCycleCount(withRevaluations(ItemCoreRepository))))),
+          withVariants(
+            withKits(withDashboardFeeds(withCycleCount(withRevaluations(withRelations(ItemCoreRepository))))),
+          ),
         ),
       ),
     ),

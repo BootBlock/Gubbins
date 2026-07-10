@@ -14,21 +14,25 @@
  * step — a purely additive partial index on `items.warranty_expires_at`; `v3-active-location-index`
  * follows it with a partial index on `items(location_id) WHERE is_active = 1` for the hot
  * per-location active-stock reads; `v4-revaluations` (feature-gap G9) follows with the additive
- * `items.current_value` column and the append-only `revaluations` log table. A database left
- * ahead of the highest registered version (e.g. a pre-squash user_version 3–4) is refused at
- * boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the local-data reset.
+ * `items.current_value` column and the append-only `revaluations` log table; `v5-item-relations`
+ * (feature-gap G6) follows with the additive `item_relations` join table (related-items
+ * cross-links). A database left ahead of the highest registered version (e.g. a pre-squash
+ * user_version 3–4) is refused at boot with `SCHEMA_TOO_NEW`, whose rescue screen offers the
+ * local-data reset.
  */
 import type { Migration } from './migration';
 import { v1Initial } from './v1-initial';
 import { v2WarrantyIndex } from './v2-warranty-index';
 import { v3ActiveLocationIndex } from './v3-active-location-index';
 import { v4Revaluations } from './v4-revaluations';
+import { v5ItemRelations } from './v5-item-relations';
 
 export const migrations: readonly Migration[] = [
   v1Initial,
   v2WarrantyIndex,
   v3ActiveLocationIndex,
   v4Revaluations,
+  v5ItemRelations,
 ];
 
 /** The schema version the current build expects after boot migrations complete. */

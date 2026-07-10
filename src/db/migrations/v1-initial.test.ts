@@ -6,6 +6,7 @@ import { v1Initial } from './v1-initial';
 import { v2WarrantyIndex } from './v2-warranty-index';
 import { v3ActiveLocationIndex } from './v3-active-location-index';
 import { v4Revaluations } from './v4-revaluations';
+import { v5ItemRelations } from './v5-item-relations';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
@@ -35,18 +36,20 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the consolidated baseline plus the v2–v4 forward steps', () => {
-    expect(migrations).toHaveLength(4);
+  it('registers the consolidated baseline plus the v2–v5 forward steps', () => {
+    expect(migrations).toHaveLength(5);
     expect(migrations[0]).toBe(v1Initial);
     expect(migrations[1]).toBe(v2WarrantyIndex);
     expect(migrations[2]).toBe(v3ActiveLocationIndex);
     expect(migrations[3]).toBe(v4Revaluations);
+    expect(migrations[4]).toBe(v5ItemRelations);
     expect(v1Initial.version).toBe(1);
     expect(v2WarrantyIndex.version).toBe(2);
     expect(v3ActiveLocationIndex.version).toBe(3);
     expect(v4Revaluations.version).toBe(4);
+    expect(v5ItemRelations.version).toBe(5);
     // The build's target is simply the highest registered version.
-    expect(TARGET_SCHEMA_VERSION).toBe(4);
+    expect(TARGET_SCHEMA_VERSION).toBe(5);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -70,11 +73,11 @@ describe('schema baseline lock', () => {
   it('boots a fresh database cleanly to the target user_version', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(4);
-    expect(report.applied).toEqual([1, 2, 3, 4]);
+    expect(report.to).toBe(5);
+    expect(report.applied).toEqual([1, 2, 3, 4, 5]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(4);
+    expect(Number(row?.user_version)).toBe(5);
   });
 
   it('creates the partial warranty index on the v2 forward step', async () => {
@@ -141,11 +144,41 @@ describe('schema baseline lock', () => {
     expect(column?.name).toBe('current_value');
   });
 
+  it('creates the item_relations table on the v5 forward step', async () => {
+    await runMigrations(driver, migrations);
+
+    const table = await driver.queryOne<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'item_relations';",
+    );
+    expect(table?.name).toBe('item_relations');
+
+    // Both endpoints cascade on item delete, and a self-relation is refused by the CHECK.
+    const loc = '00000000-0000-4000-8000-000000000001'; // seeded Unassigned location
+    await driver.execute(
+      `INSERT INTO items (id, name, location_id, tracking_mode, quantity)
+       VALUES ('ir-a', 'A', ?, 'DISCRETE', 1), ('ir-b', 'B', ?, 'DISCRETE', 1);`,
+      [loc, loc],
+    );
+    await driver.execute(
+      `INSERT INTO item_relations (id, from_item_id, to_item_id, kind) VALUES ('ir-a|ir-b|WORKS_WITH', 'ir-a', 'ir-b', 'WORKS_WITH');`,
+    );
+    await expect(
+      driver.execute(
+        `INSERT INTO item_relations (id, from_item_id, to_item_id, kind) VALUES ('self', 'ir-a', 'ir-a', 'WORKS_WITH');`,
+      ),
+    ).rejects.toThrow(/CHECK constraint failed/i);
+
+    // Deleting an endpoint cascades the relation away.
+    await driver.execute("DELETE FROM items WHERE id = 'ir-b';");
+    const remaining = await driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM item_relations;');
+    expect(Number(remaining?.n)).toBe(0);
+  });
+
   it('refuses a database whose version is ahead of the target', async () => {
-    // A database left ahead of the highest registered version (target 4) — e.g. a
+    // A database left ahead of the highest registered version (target 5) — e.g. a
     // pre-squash baseline stranded on a former forward chain — must be refused loudly
     // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.
-    await driver.execute('PRAGMA user_version = 6;');
+    await driver.execute('PRAGMA user_version = 7;');
     await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
       code: 'SCHEMA_TOO_NEW',
     });

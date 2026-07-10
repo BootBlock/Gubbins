@@ -103,6 +103,9 @@ export const inventoryKeys = {
   // Feature-gap G9 — an item's recorded manual-value revaluation points; under item() so a
   // revaluation (which invalidates item()) refreshes the trend + value badge by prefix.
   itemRevaluations: (itemId: string) => [...inventoryKeys.item(itemId), 'revaluations'] as const,
+  // Feature-gap G6 — an item's related-items cross-links ("works with"/accessory/spare-for); under
+  // item() so an `items()` invalidation refreshes it by prefix.
+  itemRelations: (itemId: string) => [...inventoryKeys.item(itemId), 'relations'] as const,
   // Phase 9 — procurement & lifecycle logistics (§4, §4.3, §4.4).
   itemVariants: (parentId: string) => [...inventoryKeys.item(parentId), 'variants'] as const,
   /** One kit item's component definition (Kits v1); under item() so an `items()`
@@ -179,6 +182,15 @@ export function useItemRevaluations(itemId: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.itemRevaluations(itemId ?? ''),
     queryFn: () => getItemRepository().listRevaluations(itemId!),
+    enabled: Boolean(itemId),
+  });
+}
+
+/** An item's related-items cross-links (feature-gap G6), each resolved to the other item. */
+export function useItemRelations(itemId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.itemRelations(itemId ?? ''),
+    queryFn: () => getItemRepository().listRelations(itemId!),
     enabled: Boolean(itemId),
   });
 }

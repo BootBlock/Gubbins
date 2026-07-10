@@ -11,6 +11,7 @@ import {
   GaugeIcon,
   HistoryIcon,
   ImageIcon,
+  LinkIcon,
   LocationOtherIcon,
   LowStockIcon,
   SettingsIcon,
@@ -31,6 +32,7 @@ import { ItemDetailsEditor } from './ItemDetailsEditor';
 import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
+import { RelationsEditor } from './RelationsEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
 import { TagEditor } from './TagEditor';
 
@@ -186,6 +188,21 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           icon: <AssemblyIcon />,
           content: <KitEditor item={item} />,
           feature: 'kits',
+        },
+      ],
+    },
+    {
+      id: 'related',
+      label: 'Related',
+      icon: <LinkIcon />,
+      sections: [
+        {
+          // Cross-links to *other* items — "works with" / accessory / spare-for. Distinct from
+          // variants (same product) and kits (an assembly); reciprocal and always available (a
+          // core relational facet, so ungated).
+          title: 'Related items',
+          icon: <LinkIcon />,
+          content: <RelationsEditor item={item} />,
         },
       ],
     },

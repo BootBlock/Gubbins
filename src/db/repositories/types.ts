@@ -25,6 +25,7 @@ export type * from './types/aliases';
 export type * from './types/supplier-parts';
 export type * from './types/supplier-part-price-history';
 export type * from './types/revaluation';
+export type * from './types/relations';
 export type * from './types/purchase-orders';
 export type * from './types/capabilities';
 export type * from './types/projects';
