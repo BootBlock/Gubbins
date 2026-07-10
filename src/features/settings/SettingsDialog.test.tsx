@@ -105,7 +105,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       accent: 'violet',
       oledDark: false,
       highContrast: false,
-      reduceEffects: false,
+      animationLevel: 'full',
       starfieldVariant: 'cosmic',
     });
     const root = document.documentElement;
@@ -114,6 +114,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     delete root.dataset.oled;
     delete root.dataset.contrast;
     delete root.dataset.reduceEffects;
+    delete root.dataset.animLevel;
     delete root.dataset.starfield;
   });
 
@@ -149,9 +150,11 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByRole('option', { name: 'On' }));
     expect(root.dataset.contrast).toBe('high');
 
-    // Reduce effects (F9): sets data-reduce-effects, which the CSS catch-all keys off.
-    fireEvent.click(screen.getByTestId('setting-reduce-effects'));
-    fireEvent.click(screen.getByRole('option', { name: 'On' }));
+    // Animation level: a motion-off tier sets both data-anim-level and the derived
+    // data-reduce-effects (the motion clamp the CSS catch-all keys off).
+    fireEvent.click(screen.getByTestId('setting-animation-level'));
+    fireEvent.click(screen.getByRole('option', { name: 'Calm' }));
+    expect(root.dataset.animLevel).toBe('calm');
     expect(root.dataset.reduceEffects).toBe('');
 
     // Starfield variant (F11): a non-default variant sets data-starfield, which the CSS

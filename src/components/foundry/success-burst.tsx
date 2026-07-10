@@ -45,7 +45,7 @@ import {
   type Rng,
 } from './success-burst-geometry';
 import { type MediaQueryProvider } from './useReducedMotion';
-import { useDecorationMotionReduced } from './decoration-motion';
+import { useDecorationFlourishReduced } from './decoration-motion';
 
 /** Viewport (client) coordinates the burst radiates from. */
 export interface BurstOrigin {
@@ -102,7 +102,8 @@ export interface BurstProviderProps {
 }
 
 export function BurstProvider({ children, motionProvider, rng }: BurstProviderProps) {
-  const reduced = useDecorationMotionReduced(motionProvider);
+  // The burst is a "flourish" — suppressed one tier earlier than general motion (at Balanced).
+  const reduced = useDecorationFlourishReduced(motionProvider);
   const [bursts, setBursts] = useState<readonly ActiveBurst[]>([]);
 
   // `burst` is a stable callback, so read the live reduced-motion flag through a ref rather than

@@ -65,12 +65,15 @@ import {
   normaliseAccent,
   normaliseMode,
   normaliseStarfieldVariant,
+  normaliseAnimationLevel,
   DEFAULT_STARFIELD_VARIANT,
+  DEFAULT_ANIMATION_LEVEL,
   type Accent,
   type Mode,
   type StarfieldVariant,
+  type AnimationLevel,
 } from '@/features/settings/theme-registry';
-export type { Accent, Mode, StarfieldVariant };
+export type { Accent, Mode, StarfieldVariant, AnimationLevel };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -99,13 +102,15 @@ interface PreferencesStore {
   /** Accessibility high-contrast mode; boosts contrast + borders over the active mode/accent. */
   readonly highContrast: boolean;
   /**
-   * "Reduce effects" (visual-flair F9): dial the app's decorative motion/flair down
-   * independently of the OS `prefers-reduced-motion` setting. **Off by default.** Purely
-   * additive to the OS preference — the effects stay off if the OS prefers reduced motion
-   * regardless of this. Projected onto `<html>` as `data-reduce-effects` by the apply seam,
-   * and OR'd into the shared decoration-motion gate that the JS-driven effects read.
+   * Animation level: how visually animated the interface is, on a single graded scale
+   * (`full` → `balanced` → `calm` → `off` → `headache`). **Defaults to `full`** (the shipped
+   * experience). Supersedes the earlier binary "Reduce effects" switch; it is projected onto
+   * `<html>` as `data-anim-level` (+ `data-reduce-effects` for the motion-off tiers) by the apply
+   * seam, and drives the shared decoration-motion gate the JS effects read. Additive to the OS
+   * `prefers-reduced-motion` setting — the effects stay off if the OS prefers reduced motion
+   * regardless. Offered up-front on the first-run wizard and in Settings → Appearance.
    */
-  readonly reduceEffects: boolean;
+  readonly animationLevel: AnimationLevel;
   /**
    * Starfield variant (visual-flair F11): the decorative recolour the About-screen starfield
    * uses. **Defaults to `cosmic`** (the shipped violet/cyan look, so nothing regresses). Purely
@@ -271,8 +276,8 @@ interface PreferencesStore {
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
   setHighContrast: (enabled: boolean) => void;
-  /** Turn the "Reduce effects" decorative-motion switch on/off (visual-flair F9). */
-  setReduceEffects: (enabled: boolean) => void;
+  /** Set how visually animated the interface is (full → balanced → calm → off → headache). */
+  setAnimationLevel: (level: AnimationLevel) => void;
   /** Choose the About-screen starfield variant (visual-flair F11). */
   setStarfieldVariant: (variant: StarfieldVariant) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
@@ -327,7 +332,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       accent: 'violet',
       oledDark: false,
       highContrast: false,
-      reduceEffects: false,
+      animationLevel: DEFAULT_ANIMATION_LEVEL,
       starfieldVariant: DEFAULT_STARFIELD_VARIANT,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
@@ -366,7 +371,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),
       setOledDark: (oledDark) => set({ oledDark }),
       setHighContrast: (highContrast) => set({ highContrast }),
-      setReduceEffects: (reduceEffects) => set({ reduceEffects }),
+      // Normalise so a stale/unknown persisted value can never reach the apply seam / gate.
+      setAnimationLevel: (level) => set({ animationLevel: normaliseAnimationLevel(level) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
@@ -426,13 +432,22 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // tuned — is reset to off so freshly-added items stop nagging on the dashboard. A
       // value the user actually chose (anything other than the old hard-coded default) is
       // preserved untouched.
-      version: 1,
+      // v2: the binary "Reduce effects" switch became the graded `animationLevel` scale. An
+      // install that had turned Reduce-effects ON keeps that intent as the equivalent `calm`
+      // level (all decorative motion still); everyone else lands on the `full` default.
+      version: 2,
       migrate: (persistedState, fromVersion) => {
         // Copy into a mutable record — the store fields are declared `readonly`.
         const state = { ...(persistedState as Partial<PreferencesStore>) } as Record<string, unknown>;
         if (fromVersion < 1) {
           if (state.lowStockQtyThreshold === 5) state.lowStockQtyThreshold = LOW_STOCK_QTY_THRESHOLD;
           if (state.lowStockGaugePercent === 15) state.lowStockGaugePercent = LOW_STOCK_GAUGE_PERCENT;
+        }
+        if (fromVersion < 2) {
+          if (state.animationLevel === undefined) {
+            state.animationLevel = state.reduceEffects === true ? 'calm' : DEFAULT_ANIMATION_LEVEL;
+          }
+          delete state.reduceEffects;
         }
         return state as unknown as PreferencesStore;
       },

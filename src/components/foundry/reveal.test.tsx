@@ -21,7 +21,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 afterEach(() => {
   cleanup();
-  usePreferencesStore.setState({ reduceEffects: false });
+  usePreferencesStore.setState({ animationLevel: 'full' });
 });
 
 /** A controllable fake IntersectionObserver that records wiring and can fire on demand. */
@@ -139,11 +139,11 @@ describe('<Reveal>', () => {
     expect(observers).toHaveLength(0);
   });
 
-  it('under "Reduce effects" (F9) renders fully visible even with OS motion allowed', () => {
+  it('at a motion-off animation level renders fully visible even with OS motion allowed', () => {
     // The reveal holds content at a static `opacity-0` the CSS motion catch-all can't clear, so
-    // the F9 pref must skip arming entirely — otherwise below-the-fold content would stay hidden
-    // until scrolled to. OS motion is allowed here (motion(false)); only the pref gates.
-    usePreferencesStore.setState({ reduceEffects: true });
+    // the animation-level pref must skip arming entirely — otherwise below-the-fold content would
+    // stay hidden until scrolled to. OS motion is allowed here (motion(false)); only the pref gates.
+    usePreferencesStore.setState({ animationLevel: 'calm' });
     const { factory, observers } = makeFactory();
     render(
       <Reveal data-testid="r" motionProvider={motion(false)} observerFactory={factory}>

@@ -112,3 +112,94 @@ export function normaliseStarfieldVariant(value: string): StarfieldVariant {
     ? (value as StarfieldVariant)
     : DEFAULT_STARFIELD_VARIANT;
 }
+
+/**
+ * Animation level — how visually animated the interface is (visual-flair; offered up-front on the
+ * first-run wizard and in Settings → Appearance). A single graded scale that supersedes the earlier
+ * binary "Reduce effects" switch, listed **liveliest → calmest** so its array index is its rank.
+ *
+ * The rank drives two thresholds, encoded once here ({@link suppressesFlourish} /
+ * {@link suppressesMotion}) so every effect reads the tier meaning from the SSOT rather than
+ * hard-coding a level id:
+ * - `full` — everything on (default; nothing suppressed).
+ * - `balanced` — the showiest **flourishes** off (success bursts, card tilt/parallax, the spotlight
+ *   sweep); the gentler motion stays.
+ * - `calm` — all decorative **motion** holds still (number roll-ups, scroll reveals, page
+ *   cross-fades, badge/toast/ring pops), i.e. the former "Reduce effects" behaviour; static flair
+ *   (accent glow, per-location tint, the still starfield) remains.
+ * - `off` — Calm, plus the ambient decorations themselves drop: the drifting starfield and the
+ *   accent glow are switched off.
+ * - `headache` — Off, plus the remaining decorative colour (per-location tints, decorative
+ *   gradients) is dialled back for the calmest, most uniform interface.
+ *
+ * This is *additive to* the OS `prefers-reduced-motion` setting, never subtractive — see
+ * `components/foundry/decoration-motion.ts`.
+ */
+export const ANIMATION_LEVELS = [
+  {
+    id: 'full',
+    label: 'Full',
+    description: 'Every animation and flourish, just as designed.',
+  },
+  {
+    id: 'balanced',
+    label: 'Balanced',
+    description:
+      'Keeps the gentle motion but drops the showiest flourishes — success bursts, card tilt and the spotlight sweep.',
+  },
+  {
+    id: 'calm',
+    label: 'Calm',
+    description:
+      'All decorative motion holds still — number roll-ups, reveals, page cross-fades and pops settle instantly.',
+  },
+  {
+    id: 'off',
+    label: 'Off',
+    description:
+      'No decorative motion, and the ambient touches — the drifting starfield and accent glow — switch off too.',
+  },
+  {
+    id: 'headache',
+    label: 'I have a headache',
+    description:
+      'For when the app’s cheerful little flourishes feel like a marching band inside your skull. Everything holds perfectly still, the stars stop drifting and the decorative colour is dialled right back — the calmest, quietest Gubbins can be. Turn it back up once the paracetamol kicks in.',
+  },
+] as const;
+
+/** An animation level id. */
+export type AnimationLevel = (typeof ANIMATION_LEVELS)[number]['id'];
+
+/** Every animation level id, liveliest → calmest (index === rank), for iteration / validation. */
+export const ANIMATION_LEVEL_IDS = ANIMATION_LEVELS.map((l) => l.id) as AnimationLevel[];
+
+/** The default animation level — everything on, so the shipped experience is unchanged. */
+export const DEFAULT_ANIMATION_LEVEL: AnimationLevel = 'full';
+
+/** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link AnimationLevel}. */
+export function normaliseAnimationLevel(value: string): AnimationLevel {
+  return (ANIMATION_LEVEL_IDS as readonly string[]).includes(value)
+    ? (value as AnimationLevel)
+    : DEFAULT_ANIMATION_LEVEL;
+}
+
+/** A level's rank on the liveliest(0) → calmest scale. Higher = calmer / more suppressed. */
+export function animationLevelRank(level: AnimationLevel): number {
+  return ANIMATION_LEVEL_IDS.indexOf(level);
+}
+
+/**
+ * Whether the loud "flourish" effects (success bursts, pointer tilt/parallax, the spotlight sweep)
+ * are suppressed at this level — i.e. Balanced and calmer. The single source for that threshold.
+ */
+export function suppressesFlourish(level: AnimationLevel): boolean {
+  return animationLevelRank(level) >= animationLevelRank('balanced');
+}
+
+/**
+ * Whether *all* decorative motion is suppressed at this level — i.e. Calm and calmer. Mirrors the
+ * former binary "Reduce effects" behaviour; the apply seam projects `data-reduce-effects` off this.
+ */
+export function suppressesMotion(level: AnimationLevel): boolean {
+  return animationLevelRank(level) >= animationLevelRank('calm');
+}

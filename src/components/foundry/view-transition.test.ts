@@ -40,7 +40,7 @@ afterEach(() => {
   delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
   prefersReducedMotion.mockReset();
   prefersReducedMotion.mockReturnValue(false);
-  usePreferencesStore.setState({ reduceEffects: false });
+  usePreferencesStore.setState({ animationLevel: 'full' });
 });
 
 describe('viewTransitionsSupported', () => {
@@ -72,11 +72,11 @@ describe('shouldViewTransition', () => {
     expect(shouldViewTransition()).toBe(false);
   });
 
-  it('is false with the API and OS motion allowed but "Reduce effects" (F9) on', () => {
+  it('is false with the API and OS motion allowed but a motion-off animation level', () => {
     stubViewTransitions();
     prefersReducedMotion.mockReturnValue(false);
-    usePreferencesStore.setState({ reduceEffects: true });
-    // The F9 switch OR's into the shared decoration-motion gate, so the cross-fade is skipped.
+    usePreferencesStore.setState({ animationLevel: 'calm' });
+    // A Calm-or-calmer level OR's into the shared decoration-motion gate, so the cross-fade is skipped.
     expect(shouldViewTransition()).toBe(false);
   });
 });

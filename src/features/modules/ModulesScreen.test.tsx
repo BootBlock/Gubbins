@@ -173,6 +173,8 @@ describe('ModulesScreen — run setup again', () => {
     expect(screen.getByRole('dialog', { name: 'Set up your modules' })).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('first-run-preset-minimal'));
+    // The wizard now has a second (animation) step; advance, then finish.
+    fireEvent.click(screen.getByTestId('first-run-next'));
     fireEvent.click(screen.getByTestId('first-run-use'));
 
     // Dialog closes and the preset is applied live in the toggle list.
