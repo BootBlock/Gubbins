@@ -77,7 +77,7 @@ export interface StartPrecipOptions {
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
 const TUNING = {
   rain: {
-    density: 9500,
+    density: 9000,
     min: 40,
     max: 240,
     /**
@@ -88,7 +88,7 @@ const TUNING = {
      * {@link deepLayers} extrapolate slower still. So lowering this one number makes the whole field
      * gentler while keeping the depth parallax intact; raising it makes all layers faster together.
      */
-    fallSpeed: 853,
+    fallSpeed: 525,
     /**
      * The most-distant main layer falls this fraction of {@link fallSpeed}; a drop's actual fall
      * speed is lerped between `fallSpeed × depthSpeedRatio` (far) and `fallSpeed` (near) by its
