@@ -74,13 +74,27 @@ describe('ItemActions — checkout gating (Phase 6)', () => {
   it('hides Loan out when Contacts is off, leaving the other actions intact', () => {
     useModulesStore.getState().setFeatureIntent('contacts', false);
     render(<ItemActions item={item} locations={[]} />);
-    // Core actions (unrelated to the Contacts module) remain available.
-    expect(screen.queryByLabelText('Item details')).not.toBeNull();
-    expect(screen.queryByLabelText('Item label')).not.toBeNull();
     openMoreMenu();
     expect(screen.queryByRole('menuitem', { name: /Loan out/ })).toBeNull();
-    // Move is always offered, so the overflow menu is never empty.
+    // The record + move actions (unrelated to the Contacts module) remain in the menu; Move
+    // is always offered, so the overflow menu is never empty.
+    expect(screen.queryByRole('menuitem', { name: /Edit details/ })).not.toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Print label/ })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Move/ })).not.toBeNull();
+  });
+});
+
+describe('ItemActions — record actions live in the overflow menu', () => {
+  it('exposes edit + label as focusable menu rows, not standalone buttons', () => {
+    render(<ItemActions item={item} locations={[]} />);
+    // Edit / label no longer take a slot on the compact footer row…
+    expect(screen.queryByLabelText('Item details')).toBeNull();
+    expect(screen.queryByLabelText('Item label')).toBeNull();
+    // …they are reachable through the overflow menu instead (keyboard parity for the
+    // `cardClickAction` body-click shortcut).
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Edit details/ })).not.toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Print label/ })).not.toBeNull();
   });
 });
 
