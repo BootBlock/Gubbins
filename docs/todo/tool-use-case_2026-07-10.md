@@ -78,11 +78,18 @@ musical instruments) pleasant; it is **not** tool-specific code.
   `default_maintenance_interval_days` / `_usage`, folded into the v1 baseline). Do alongside or
   after T3 so the editor can surface it too.
 
-- **T3 — Template editor UI.** Surface the T1/T2 defaults in the existing
-  [CategoryManagerDialog](../../src/features/inventory/components/CategoryManagerDialog.tsx) /
-  `CreateCategoryDialog`, next to the custom-field editor, as a "Defaults for new items in this
-  category" section. Keep it a `FormField` stack with the same tokens/gaps as the rest of the
-  dialog. Do **after** T1/T2 so there's something to edit.
+- **T3 — Template editor UI. ✅ Shipped 2026-07-10.** Added a "Defaults for new items in this
+  category" section to the selected-category detail panel of
+  [CategoryManagerDialog](../../src/features/inventory/components/CategoryManagerDialog.tsx)
+  (`CategoryDefaultsSection`), below the custom-field editor: a `SelectField` over
+  `TRACKING_MODES`/`TRACKING_MODE_LABELS` (leading "— No default —" → `null`), a `SelectField` over
+  `conditionSelectOptions('— No default —')`, and a "Warranty (months)" `FormField` + numeric
+  `Input` (min 1, empty → `null`). Each control **auto-saves immediately** via `useUpdateCategory`
+  (per-control write, mirroring the Settings dialog's `SettingRow`), clearing to `null` — no
+  "Save" button, no draft/confirm model. Direct read-from-category / write-back editor; the
+  soft-prefill / never-re-stomp logic stays on the create form (T1/T2). `CreateCategoryDialog` kept
+  deliberately minimal (defaults are set in the manager after creation, exactly as custom fields
+  are). UI only — no schema/migration/snapshot change.
 
 - **T4 — Seed a "Tools" starter template (optional).** A one-tap "Add a Tools category" affordance
   (e.g. in first-run or the empty category list) that creates a category pre-wired with the T1/T2
@@ -142,5 +149,5 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `T2a` / `B4` /
-`T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → `B3` → then reassess `T2a` /
+`B4` / `T4` / `B5` by appetite.
