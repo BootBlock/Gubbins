@@ -85,9 +85,10 @@ memory note.
   Structured pass/fail + reading logs per **serialised** unit, beyond free-form maintenance
   history. Model on the existing history/maintenance seams. Narrow audience (lab/maker QA).
 
-- [ ] **G8 — Manual "to-buy" / wishlist.** *Low.* Reorder automation covers *stock-driven* buying;
-  a manual list of **wanted-but-not-owned** items is a separate small surface. Marginal — likely
-  fold into an existing list rather than a new screen.
+- [x] **G8 — Manual "to-buy" / wishlist.** ✅ **Shipped 2026-07-10.** *Low.* Reorder automation
+  covers *stock-driven* buying; a manual list of **wanted-but-not-owned** items is a separate small
+  surface. Folded into the Purchase Orders screen as a third **Wishlist** tab (beside Orders and the
+  stock-driven Reorder / Shopping list) rather than a new screen.
 
 - [x] **G9 — Manual current-value / revaluation history (appreciating assets).** ✅ **Shipped 2026-07-10.**
   *Medium; strong
@@ -103,6 +104,29 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G8 — Manual "to-buy" / wishlist** — shipped 2026-07-10. A manual list of
+  **wanted-but-not-owned** things to buy — the counterpart to the *stock-driven* Reorder /
+  Shopping list — folded into the Purchase Orders screen as a third **Wishlist** tab (no new
+  top-level screen). Each entry is free-standing (references no item): a name plus an optional
+  note, `http(s)` link, target price and priority. New pure `features/purchasing/wishlist.ts` seam
+  owns all non-trivial logic — the priority vocabulary (free TEXT, app-enforced like
+  `item_relations.kind`) + ordering, XSS-safe link sanitisation (a non-`http(s)` scheme such as
+  `javascript:` is rejected, a scheme-less host defaults to `https://`), the `planWishlistEntry`
+  write choke-point, the display sort and the summary aggregation — dependency-free and
+  exhaustively unit-tested. New **v6** migration adds a standalone `wishlist` table: an independent
+  LWW leaf (own `updated_at` + auto-stamp trigger, random-UUID PK, **no FK**), added to
+  `SYNC_TABLES` so it publishes / reconciles / deletes through the generic engine — **no `FK_REFS`
+  reconcile entry** needed (it references nothing and nothing references it, so there is no FK
+  guard to add, unlike G6/G9); golden baseline snapshot regenerated (user_version 6). Thin
+  `WishlistRepository` (create / update / delete + tombstone / list) funnels every write through
+  the seam and builds its list ORDER BY from the seam's priority SSOT so SQL can't drift from
+  `sortWishlist`. `WishlistTab` + `WishlistEntryDialog` (Foundry primitives, design tokens, a11y
+  live regions) add / edit / remove entries with reviewable, field-anchored errors. `/code-review`
+  (high): no correctness bugs; one simplification applied (a redundant NaN ternary). 55 new tests
+  (pure-seam intents / robustness + repo CRUD + a repo↔`sortWishlist` order-equivalence check + a
+  two-device sync round-trip + a component affordance test); typecheck + purchasing / sync / backup
+  suites green in merged `main`; production `vite build` clean.
 
 - **G5 — In-app natural-language → query** — shipped 2026-07-10. New pure
   `features/search/nl-query.ts` seam (`interpretNaturalLanguage`) lowers a plain-English phrase to
