@@ -91,6 +91,11 @@ name):
 | **JSON snapshot** (`gubbins-sync.json`) | The versioned-JSON the Phase 7 FS-Access **sync** writes to a shared folder — cross-device by design. | The default and recommended source: it is the sync channel the PWA reads back, so it also supports the opt-in [limited writes](#limited-writes-opt-in) and [snapshot push](#snapshot-push-opt-in). |
 | **Raw `.sqlite` export** (`*.sqlite` / `*.db`) | The whole database file, written by the app's raw DB export (Safe-Mode rescue / "export database"). | For a user who exports the raw DB rather than enabling FS-Access sync. **Read-only** — see below. |
 
+> **Browser note.** The "Local folder" sync that writes `gubbins-sync.json` relies on the
+> File System Access API, which is **Chromium-only** (Chrome / Edge / Opera). On **Firefox** or
+> **Safari** folder sync is unavailable — use the [snapshot push](#snapshot-push-opt-in) flow,
+> or point the bridge at a raw `.sqlite` export instead.
+
 Everything downstream — the [query core](#http-api-read-only), the [`/api/v1`](#versioned-rest-api-apiv1)
 surface, the [MCP server](#mcp-server-for-llmagent-tools), and the auto-re-hydrating watcher —
 is **identical** regardless of source; only this front-end differs. The app's *own* repositories
@@ -522,7 +527,9 @@ required). All diagnostic logging goes to **stderr**; stdout carries only the pr
 ### Wiring it into an MCP client
 
 Most MCP clients take a launch command plus an `env` block. Point the command at `mcp.mjs`
-and supply the snapshot path (the client stores it; nothing is committed):
+and supply the snapshot path (the client stores it; nothing is committed). This is the shape
+**Claude Desktop** uses in its `claude_desktop_config.json`; other clients accept an
+equivalent object:
 
 ```json
 {
@@ -536,10 +543,81 @@ and supply the snapshot path (the client stores it; nothing is committed):
 }
 ```
 
+Use absolute paths — the client launches `node` with no particular working directory. On
+Windows the two paths look like `C:\\Users\\<you>\\Gubbins\\bridge\\mcp.mjs` and
+`C:\\Users\\<you>\\Gubbins\\gubbins-sync.json` (JSON needs the backslashes doubled; forward
+slashes also work).
+
 > Needs **Node ≥ 24** (or **22.16+ LTS**) on `PATH` — for built-in TypeScript type-stripping
 > plus `node:sqlite` **with FTS5** (the v23.x line never got FTS5; see the
 > [Requirements](#requirements) caveat below). An older Node can fall back to
 > `--experimental-strip-types`, but you still need FTS5 support for a working database.
+
+### Wiring it into Claude Code
+
+Claude Code registers MCP servers from the command line rather than a hand-edited JSON file.
+Add the bridge with `claude mcp add`, passing the snapshot path as an `-e` env entry and the
+launch command after `--`:
+
+```bash
+claude mcp add gubbins -s local \
+  -e GUBBINS_SNAPSHOT_PATH="/path/to/your/synced/gubbins-sync.json" \
+  -- node "/path/to/gubbins/bridge/mcp.mjs"
+```
+
+On Windows the same command uses Windows paths (no backslash-doubling needed here — this is a
+shell argument, not JSON):
+
+```powershell
+claude mcp add gubbins -s local `
+  -e GUBBINS_SNAPSHOT_PATH="C:\Users\<you>\Gubbins\gubbins-sync.json" `
+  -- node "C:\Users\<you>\Gubbins\bridge\mcp.mjs"
+```
+
+What the flags do:
+
+- **`-s local`** keeps the entry in your **per-project** user config (`~/.claude.json`), which
+  is outside this repository — so the machine-specific absolute paths never get committed to a
+  public repo. (`-s project` would write a shared `.mcp.json` in the tree; don't use it here —
+  an absolute path from one machine must not be committed.)
+- **`-e KEY="value"`** sets an environment variable for the launched server — this is how the
+  bridge receives `GUBBINS_SNAPSHOT_PATH`.
+- **Everything after `--`** is the launch command and its arguments, run verbatim: `node`
+  followed by the absolute path to `mcp.mjs`.
+
+MCP servers are launched when the client starts, so after adding it **restart (or reload) the
+Claude Code session**; the six `gubbins_*` tools then appear. `claude mcp list` shows each
+configured server with a health status — you want `gubbins` to report `Connected`.
+
+### Verify it works
+
+Because the server just speaks JSON-RPC on stdin/stdout, you can smoke-test it with no MCP
+client at all — pipe a couple of requests in and read the responses. Send `initialize`, then
+`tools/list` (and, if you like, a `tools/call` of `gubbins_search`):
+
+```bash
+export GUBBINS_SNAPSHOT_PATH=/path/to/your/synced/gubbins-sync.json
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"gubbins_search","arguments":{"q":"cable"}}}' \
+  | node bridge/mcp.mjs
+```
+
+On Windows/PowerShell set the env var first, then pipe the same requests in:
+
+```powershell
+$env:GUBBINS_SNAPSHOT_PATH = "C:\Users\<you>\Gubbins\gubbins-sync.json"
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',
+'{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | node bridge/mcp.mjs
+```
+
+You should see JSON-RPC responses on stdout: the `initialize` reply advertises a `serverInfo`
+of **`gubbins-bridge-mcp`**, and `tools/list` returns the **six `gubbins_*` tools** below. On
+stderr you'll see `Gubbins MCP server ready on stdio (read-only).`. A missing snapshot file is
+**non-fatal** — the server still starts and the tools return an "Inventory snapshot is not
+loaded yet" message until the file appears, so you can wire everything up before the first
+sync has written `gubbins-sync.json`.
 
 ### Tools
 
@@ -980,6 +1058,10 @@ imported.
 - The repo-root dev toolchain (Vitest, TypeScript) — the bridge has **no `node_modules` of
   its own** and no runtime dependencies; it borrows the root install. Run `npm install`
   once at the repository root.
+- Any app source the bridge imports must stay **strip-only-compatible** — Node's type-stripping
+  loader erases types but does not transform code, so no TypeScript parameter properties,
+  `enum`, or `namespace` may appear anywhere in the bridge's import graph (they would fail at
+  runtime even though they type-check and pass under Vitest's esbuild).
 
 ---
 
