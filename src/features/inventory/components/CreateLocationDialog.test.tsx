@@ -103,6 +103,17 @@ describe('CreateLocationDialog', () => {
     expect(preview).toHaveTextContent(/as siblings/i);
   });
 
+  it('keeps the Name control findable by its label once the preview shows', () => {
+    // The preview lives outside FormField's <label>, so it must not fold into the control's
+    // accessible name — the field stays queryable by exactly "Name".
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Garage/Box 1, Box 2' },
+    });
+    expect(screen.getByText(/Existing levels are reused/i)).toBeTruthy();
+    expect(screen.getByLabelText('Name')).toBeTruthy();
+  });
+
   it('passes a comma-separated sibling list through verbatim for the repo to fan out', () => {
     renderDialog();
     fireEvent.change(screen.getByLabelText('Name'), {
@@ -112,6 +123,34 @@ describe('CreateLocationDialog', () => {
 
     expect(spies.create).toHaveBeenCalledTimes(1);
     expect(spies.create.mock.calls[0][0]).toMatchObject({ name: 'Garage/Box 1, Box 2, Box 3' });
+  });
+
+  it('disables the Default toggle while several siblings are being created', () => {
+    renderDialog();
+    const toggle = screen.getByLabelText(/default location for new items/i);
+    // Tick it for a single location…
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+
+    // …then fan out siblings: the toggle unchecks and disables (no single default possible).
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Garage/Box 1, Box 2' } });
+    expect(toggle).toBeDisabled();
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText(/only a single location can be the default/i)).toBeTruthy();
+
+    // Back to one leaf and the earlier choice is restored, not lost.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Garage/Box 1' } });
+    expect(toggle).not.toBeDisabled();
+    expect(toggle).toBeChecked();
+  });
+
+  it('never sets isDefault when fanning out siblings, even if it was ticked first', () => {
+    renderDialog();
+    fireEvent.click(screen.getByLabelText(/default location for new items/i));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Garage/Box 1, Box 2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ isDefault: false });
   });
 
   it('keeps Create disabled when the name is only separators or blank', () => {
