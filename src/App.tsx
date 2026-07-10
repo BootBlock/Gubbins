@@ -9,6 +9,7 @@ import { BurstProvider, ToastProvider } from '@/components/foundry';
 import { ScrapeBridgeProvider } from '@/features/scraping';
 import { ActiveTabScrapeListener } from '@/features/inventory/components/ActiveTabScrapeListener';
 import { FirstItemCelebration } from '@/features/inventory/components/FirstItemCelebration';
+import { ReminderNotifications } from '@/features/alerts/ReminderNotifications';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
 
@@ -48,6 +49,10 @@ export function App() {
                 {/* Milestone burst (F4): celebrates the first item ever added. Inside BootGate so
                     the item-count query it watches has a ready database. */}
                 <FirstItemCelebration />
+                {/* Local reminder notifications (G3): fires OS notifications for due alerts and
+                    handles their clicks. Inside BootGate so the alert feeds it reads have a ready
+                    database; renders nothing. Opt-in and silent unless enabled + permission granted. */}
+                <ReminderNotifications />
               </BootGate>
             </ScrapeBridgeProvider>
           </BurstProvider>

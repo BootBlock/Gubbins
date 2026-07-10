@@ -19,6 +19,12 @@ import {
   pruneStaleShares,
   SHARE_INBOX_CACHE,
 } from './features/share/share-inbox';
+import {
+  REMINDER_CLICK_MESSAGE,
+  REMINDER_SYNC_MESSAGE,
+  REMINDER_FALLBACK_ROUTE,
+  REMINDER_PERIODIC_SYNC_TAG,
+} from './features/alerts/reminder-messages';
 
 interface PrecacheEntry {
   url: string;
@@ -85,6 +91,59 @@ sw.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') {
     void sw.skipWaiting();
   }
+});
+
+/** The `data` payload a reminder notification carries — its deep-link target (G3). */
+interface ReminderNotificationData {
+  readonly target?: { readonly route?: string; readonly itemId?: string; readonly itemName?: string };
+}
+
+// A local reminder notification (G3) was clicked. Focus an already-open window and post the
+// alert's target so the app deep-links to it (seed search + flash the item); if none is open,
+// open a new one at the target route. Notifications are shown by this worker
+// (`registration.showNotification`), so this worker is where their clicks land.
+sw.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = (event.notification.data as ReminderNotificationData | null) ?? {};
+  const target = data.target;
+  const route = target?.route && target.route.length > 0 ? target.route : REMINDER_FALLBACK_ROUTE;
+  // Resolve against this worker's own URL so the link tracks the `/Gubbins/` base path.
+  const url = new URL(route.replace(/^\/+/, ''), sw.location.href).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const existing = windows.find((client): client is WindowClient => 'focus' in client);
+      if (existing) {
+        await existing.focus();
+        existing.postMessage({ type: REMINDER_CLICK_MESSAGE, target });
+        return;
+      }
+      await sw.clients.openWindow(url);
+    })(),
+  );
+});
+
+// Periodic Background Sync wake (G3, best-effort, where the platform supports it). This worker
+// cannot compute alerts — the inventory database is only reachable from the app — so it asks any
+// live (possibly backgrounded) window to re-check its alert feeds so fresh reminders can fire.
+// A no-op where the app is fully closed; true no-client background delivery needs a server (the
+// deferred Web Push path). `periodicsync` is not in the TS SW lib, so the listener is added via a
+// widened view of the global scope.
+(
+  sw as unknown as {
+    addEventListener(
+      type: 'periodicsync',
+      listener: (event: ExtendableEvent & { tag: string }) => void,
+    ): void;
+  }
+).addEventListener('periodicsync', (event) => {
+  if (event.tag !== REMINDER_PERIODIC_SYNC_TAG) return;
+  event.waitUntil(
+    (async () => {
+      const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of windows) client.postMessage({ type: REMINDER_SYNC_MESSAGE });
+    })(),
+  );
 });
 
 sw.addEventListener('activate', (event) => {
