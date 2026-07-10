@@ -339,7 +339,7 @@ function OverdueWidget() {
               meta={
                 <span className="flex items-center gap-2">
                   <span className="truncate">
-                    {t('dashboard.widget.overdue.with', { vars: { name: c.contactName } })}
+                    {t('dashboard.widget.overdue.with', { vars: { name: c.borrowerName } })}
                   </span>
                   <DaysOverdueTag days={daysOverdue(c.dueDate ?? now, now)} />
                 </span>

@@ -141,8 +141,8 @@ describe('buildAgenda — lane builders', () => {
       {
         ...EMPTY,
         checkouts: [
-          { id: 'k1', itemId: 'i1', itemName: 'Camera', contactName: 'Sam', dueDate: due },
-          { id: 'k2', itemId: 'i2', itemName: 'Tripod', contactName: 'Lee', dueDate: null },
+          { id: 'k1', itemId: 'i1', itemName: 'Camera', borrowerName: 'Sam', dueDate: due },
+          { id: 'k2', itemId: 'i2', itemName: 'Tripod', borrowerName: 'Lee', dueDate: null },
         ],
       },
       NOW,
@@ -158,7 +158,7 @@ describe('buildAgenda — lane builders', () => {
       {
         ...EMPTY,
         checkouts: [
-          { id: 'k1', itemId: 'i1', itemName: 'Camera', contactName: 'Sam', dueDate: SOD - 3 * MS_PER_DAY },
+          { id: 'k1', itemId: 'i1', itemName: 'Camera', borrowerName: 'Sam', dueDate: SOD - 3 * MS_PER_DAY },
         ],
       },
       NOW,
@@ -176,8 +176,8 @@ describe('buildAgenda — lane builders', () => {
       {
         ...EMPTY,
         checkouts: [
-          { id: 'soon', itemId: 'i1', itemName: 'Drill', contactName: 'Lee', dueDate: SOD + 2 * MS_PER_DAY },
-          { id: 'late', itemId: 'i2', itemName: 'Saw', contactName: 'Ada', dueDate: SOD - MS_PER_DAY },
+          { id: 'soon', itemId: 'i1', itemName: 'Drill', borrowerName: 'Lee', dueDate: SOD + 2 * MS_PER_DAY },
+          { id: 'late', itemId: 'i2', itemName: 'Saw', borrowerName: 'Ada', dueDate: SOD - MS_PER_DAY },
         ],
       },
       NOW,

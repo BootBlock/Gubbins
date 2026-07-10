@@ -145,12 +145,28 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
   + `Input type="date"`, seeded via `to/fromDateInputValue`) wired through a new `useRenewLoan` hook
   that invalidates the same query keys as `useCheckInItem`.
 
-- **B4 — Loans are to a contact only, never to a project/location.** A tool is often "out on the
-  Henderson job" or "in the van", not lent to a named person. Today the only borrower is a
-  `Contact` (a person), so users end up creating pseudo-contacts named after jobs/vehicles. Consider
-  allowing a loan target of a **project** (or a location) as a first-class alternative to a contact.
-  Larger — it touches the `checkouts` schema and the resolve-or-create path — so scope it carefully;
-  the pseudo-contact workaround is tolerable in the meantime. Lower priority than B1–B3.
+- **B4 — Loans are to a contact only, never to a project/location. ✅ Shipped 2026-07-10.** The
+  borrower became a **tagged union** — a loan targets exactly one of a **contact** (a person), a
+  **project** ("out on the Henderson job") or a **location** ("in the van"). Schema (folded into the
+  v1 baseline, golden snapshot regenerated): `checkouts.contact_id` made nullable and joined by two
+  new nullable FKs `project_id REFERENCES projects(id)` / `location_id REFERENCES locations(id)`,
+  all three `ON DELETE CASCADE`, under a table CHECK that **exactly one** is non-null (an XOR guard);
+  added `idx_checkouts_project_id` / `idx_checkouts_location_id`. The borrower `location_id` (loan
+  *target*) is kept distinct from `source_location_id` (provenance — where the units were lent from).
+  Repository: `checkout` resolves a discriminated borrower (contact keeps resolve-or-create-by-name;
+  project/location are picked from existing rows), threaded through `Checkout` /
+  `CheckoutRow` / `CheckoutWithNames` (a `borrowerType` + `borrowerName`, joined per type via
+  `COALESCE(c.name, p.name, l.name)`); `checkIn` / `renew` are borrower-agnostic; the old
+  `checkInAllForContact` cascade helper generalised to `checkInAllForTarget(type, id)` with
+  `listForProject` / `listForLocation` siblings. **Delete = return-then-cascade** (the contact
+  precedent): `useDeleteProject` / `useDeleteLocation` return every open loan first (restoring stock)
+  before the FK cascade removes the rows. UI: `CheckoutDialog` gained a **"Loan to"** target-type
+  `SelectField` (contact / project / location, the project option gated on the Projects module)
+  driving which picker shows; the loan row was extracted to a shared `LoanRow` + `BorrowerLoansSection`
+  so a project loan surfaces (visible + returnable) on the project detail, and every loan — of any
+  target — surfaces polymorphically on the global borrowing hub, the dashboard Overdue widget, the
+  calendar/agenda and the bridge iCal feed (all now reading `borrowerName`). No new bridge event type
+  (the loan event stays generic — the B3 precedent).
 
 - **B5 — Untracked assets can't be loaned (by design) — document the escape hatch. ✅ Shipped
   2026-07-10.** `checkout` deliberately rejects `UNTRACKED` items, and the "Loan out…" action was
@@ -168,4 +184,4 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 ## Suggested order
 
 ~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → ~~`T3`~~ ✅ → ~~`B3`~~ ✅ → ~~`B5`~~ ✅ →
-~~`T4`~~ ✅ → then reassess `T2a` / `B4` by appetite.
+~~`T4`~~ ✅ → ~~`B4`~~ ✅ → then reassess `T2a` by appetite (the only task left).

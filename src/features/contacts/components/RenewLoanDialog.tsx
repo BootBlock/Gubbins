@@ -46,7 +46,7 @@ export function RenewLoanDialog({
       open={open}
       onClose={onClose}
       title="Renew loan"
-      description={`${checkout.itemName} — on loan to ${checkout.contactName}`}
+      description={`${checkout.itemName} — on loan to ${checkout.borrowerName}`}
       initialFocusRef={dueDateRef}
     >
       <div className="space-y-4">

@@ -49,7 +49,7 @@ const LANE_DATA: Record<string, unknown> = {
   },
   expiry: { rows: [{ id: 'it-3', name: 'Milk', expiryDate: PAST }] },
   checkouts: {
-    rows: [{ id: 'ck-1', itemId: 'it-4', itemName: 'Camera', contactName: 'Alex', dueDate: PAST }],
+    rows: [{ id: 'ck-1', itemId: 'it-4', itemName: 'Camera', borrowerName: 'Alex', dueDate: PAST }],
   },
   reorder: [{ itemId: 'it-5', itemName: 'Screws', shortfall: 3 }],
   bookings: {

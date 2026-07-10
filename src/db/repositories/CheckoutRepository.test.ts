@@ -7,6 +7,8 @@ import { MS_PER_DAY } from './constants';
 import { CheckoutRepository, overdueCheckoutExistsSql } from './CheckoutRepository';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
+import { ProjectRepository } from './ProjectRepository';
+import { LocationRepository } from './LocationRepository';
 
 describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
   let driver: MemoryDriver;
@@ -314,7 +316,8 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const open = await checkouts.listOpen();
       expect(open.rows).toHaveLength(1);
       expect(open.rows[0].itemName).toBe('Drill');
-      expect(open.rows[0].contactName).toBe('Bob');
+      expect(open.rows[0].borrowerName).toBe('Bob');
+      expect(open.rows[0].borrowerType).toBe('contact');
       expect(open.rows[0].status).toBe('OPEN');
       expect(open.rows[0].isOverdue).toBe(true);
     });
@@ -389,5 +392,124 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
     const itemId = await makeItem('Drill', 3);
     const locked = new CheckoutRepository(driver, { isWriteSuspended: () => true });
     await expect(locked.checkout({ itemId, contactName: 'Bob' })).rejects.toBeInstanceOf(DbError);
+  });
+
+  // --- B4: polymorphic borrower (loan to a project or location) --------------------
+  describe('borrower is a project or location (B4)', () => {
+    let projects: ProjectRepository;
+    let locations: LocationRepository;
+
+    beforeEach(() => {
+      projects = new ProjectRepository(driver);
+      locations = new LocationRepository(driver);
+    });
+
+    it('checks a tool out to a project — stock decrements, borrower joins by name', async () => {
+      const itemId = await makeItem('Impact driver', 5);
+      const project = await projects.create({ name: 'Henderson job' });
+
+      const checkout = await checkouts.checkout({ itemId, projectId: project.id, quantity: 2 });
+
+      expect(checkout.borrowerType).toBe('project');
+      expect(checkout.projectId).toBe(project.id);
+      expect(checkout.contactId).toBeNull();
+      expect(checkout.locationId).toBeNull();
+      expect((await items.getById(itemId))?.quantity).toBe(3);
+
+      const open = await checkouts.listForProject(project.id);
+      expect(open.rows).toHaveLength(1);
+      expect(open.rows[0].borrowerName).toBe('Henderson job');
+      expect(open.rows[0].borrowerType).toBe('project');
+
+      // The ledger note names the project, not a contact.
+      const history = await items.getHistory(itemId);
+      const out = history.rows.find((h) => h.action === 'CHECKED_OUT');
+      expect(out?.note).toContain('Henderson job');
+    });
+
+    it('checks a tool out to a location ("in the van")', async () => {
+      const itemId = await makeItem('Torque wrench', 1);
+      const van = await locations.create({ name: 'The van' });
+
+      const checkout = await checkouts.checkout({ itemId, locationId: van.id });
+
+      expect(checkout.borrowerType).toBe('location');
+      expect(checkout.locationId).toBe(van.id);
+      const open = await checkouts.listForLocation(van.id);
+      expect(open.rows).toHaveLength(1);
+      expect(open.rows[0].borrowerName).toBe('The van');
+    });
+
+    it('rejects a checkout with no borrower', async () => {
+      const itemId = await makeItem('Sander', 2);
+      await expect(checkouts.checkout({ itemId })).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('rejects a checkout with more than one borrower target', async () => {
+      const itemId = await makeItem('Router', 2);
+      const project = await projects.create({ name: 'Job A' });
+      await expect(
+        checkouts.checkout({ itemId, contactName: 'Bob', projectId: project.id }),
+      ).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('rejects a checkout to a non-existent project / location', async () => {
+      const itemId = await makeItem('Level', 2);
+      await expect(checkouts.checkout({ itemId, projectId: 'nope' })).rejects.toBeInstanceOf(DbError);
+      await expect(checkouts.checkout({ itemId, locationId: 'nope' })).rejects.toBeInstanceOf(DbError);
+    });
+
+    it('checks in and renews a project loan regardless of target type', async () => {
+      const itemId = await makeItem('Nail gun', 4);
+      const project = await projects.create({ name: 'Deck build' });
+      const checkout = await checkouts.checkout({ itemId, projectId: project.id, quantity: 2 });
+
+      const due = Date.now() + 7 * MS_PER_DAY;
+      const renewed = await checkouts.renew(checkout.id, { dueDate: due });
+      expect(renewed.dueDate).toBe(due);
+
+      const returned = await checkouts.checkIn(checkout.id, { note: 'back from the deck' });
+      expect(returned.returnedAt).not.toBeNull();
+      expect(returned.returnNote).toBe('back from the deck');
+      expect((await items.getById(itemId))?.quantity).toBe(4); // stock restored
+    });
+
+    it('checkInAllForTarget returns every open loan for a project (delete safety net)', async () => {
+      const drill = await makeItem('Drill', 3);
+      const saw = await makeItem('Saw', 2);
+      const project = await projects.create({ name: 'Big job' });
+      const first = await checkouts.checkout({ itemId: drill, projectId: project.id, quantity: 1 });
+      const second = await checkouts.checkout({ itemId: saw, projectId: project.id, quantity: 2 });
+
+      await checkouts.checkInAllForTarget('project', project.id);
+
+      expect((await checkouts.getById(first.id))?.returnedAt).not.toBeNull();
+      expect((await checkouts.getById(second.id))?.returnedAt).not.toBeNull();
+      expect((await items.getById(drill))?.quantity).toBe(3);
+      expect((await items.getById(saw))?.quantity).toBe(2);
+    });
+
+    it('cascades checkout rows when the borrower project is deleted', async () => {
+      const itemId = await makeItem('Saw', 2);
+      const project = await projects.create({ name: 'Doomed job' });
+      const checkout = await checkouts.checkout({ itemId, projectId: project.id, quantity: 1 });
+
+      // Simulate the app's return-then-cascade (the hook returns open loans first), then delete.
+      await checkouts.checkInAllForTarget('project', project.id);
+      await projects.delete(project.id);
+
+      expect(await checkouts.getById(checkout.id)).toBeUndefined();
+    });
+
+    it('cascades checkout rows when the borrower location is deleted', async () => {
+      const itemId = await makeItem('Ladder', 2);
+      const van = await locations.create({ name: 'Old van' });
+      const checkout = await checkouts.checkout({ itemId, locationId: van.id, quantity: 1 });
+
+      await checkouts.checkInAllForTarget('location', van.id);
+      await locations.delete(van.id);
+
+      expect(await checkouts.getById(checkout.id)).toBeUndefined();
+    });
   });
 });

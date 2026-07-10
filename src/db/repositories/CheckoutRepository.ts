@@ -17,7 +17,7 @@ import { DbError } from '../errors';
 import { SQL_NOW_MS } from '../migrations';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, type RepositoryOptions } from './base';
-import type { CheckoutStatus, Condition } from './constants';
+import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
 import { stockRowId } from './stock';
 import {
@@ -30,11 +30,20 @@ import {
 } from './stock-batches';
 import { batchIdentityFromKey, planBatchSelection } from '@/features/inventory/batches';
 import { rowToCheckout } from './mappers';
-import type { CheckoutItemInput, Checkout, CheckoutRow, CheckoutWithNames, Page, PageParams } from './types';
+import type {
+  CheckoutBorrower,
+  CheckoutItemInput,
+  Checkout,
+  CheckoutRow,
+  CheckoutWithNames,
+  Page,
+  PageParams,
+} from './types';
 
 interface CheckoutJoinRow extends CheckoutRow {
   readonly item_name: string;
-  readonly contact_name: string;
+  /** The borrower's display name, resolved per target type via the LEFT JOINs (B4). */
+  readonly borrower_name: string;
 }
 
 /**
@@ -197,7 +206,7 @@ export class CheckoutRepository extends BaseRepository {
       }
     }
 
-    const contact = await this.resolveContact(input);
+    const borrower = await this.resolveBorrower(input);
     const id = crypto.randomUUID();
     const stockDelta = isSerialised ? 0 : quantity;
     const dueDate = input.dueDate ?? null;
@@ -224,12 +233,14 @@ export class CheckoutRepository extends BaseRepository {
     await this.driver.transaction([
       ...stockStatements,
       {
-        sql: `INSERT INTO checkouts (id, item_id, contact_id, quantity, due_date, note, source_location_id, source_batch_key)
+        // The borrower lands in exactly one of the three FK columns per its target type; the
+        // other two stay NULL (the XOR CHECK enforces this). `borrowerColumn` picks the column.
+        sql: `INSERT INTO checkouts (id, item_id, ${borrowerColumn(borrower.type)}, quantity, due_date, note, source_location_id, source_batch_key)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
         params: [
           id,
           input.itemId,
-          contact.id,
+          borrower.id,
           quantity,
           dueDate,
           input.note?.trim() || null,
@@ -239,8 +250,16 @@ export class CheckoutRepository extends BaseRepository {
       },
       historyStatement(input.itemId, 'CHECKED_OUT', {
         quantityDelta: stockDelta === 0 ? null : -stockDelta,
-        note: `Checked out ${quantity} to ${contact.name}${dueDate ? ' (due set)' : ''}.`,
-        metadata: { checkoutId: id, contactId: contact.id, quantity, dueDate, fromLocationId, fromBatchKey },
+        note: `Checked out ${quantity} to ${borrower.name}${dueDate ? ' (due set)' : ''}.`,
+        metadata: {
+          checkoutId: id,
+          borrowerType: borrower.type,
+          borrowerId: borrower.id,
+          quantity,
+          dueDate,
+          fromLocationId,
+          fromBatchKey,
+        },
       }),
     ]);
     return (await this.getById(id))!;
@@ -376,19 +395,28 @@ export class CheckoutRepository extends BaseRepository {
   }
 
   /**
-   * Return every still-open checkout for a contact, exactly as an ordinary check-in
-   * would (restoring stock to its source placement/lot and logging `CHECKED_IN`) —
-   * used before a contact is deleted so their active loans never strand stock.
-   * Deliberately unbounded: every open loan must be returned, not just the first page.
+   * Return every still-open checkout borrowed by a target (contact, project or location),
+   * exactly as an ordinary check-in would (restoring stock to its source placement/lot and
+   * logging `CHECKED_IN`) — used before a borrower is deleted so its active loans never strand
+   * stock. The target's `ON DELETE CASCADE` then removes the (now-returned) rows. Deliberately
+   * unbounded: every open loan must be returned, not just the first page.
    */
-  async checkInAllForContact(contactId: string): Promise<void> {
+  async checkInAllForTarget(type: BorrowerType, id: string): Promise<void> {
     const open = await this.driver.query<{ id: string }>(
-      'SELECT id FROM checkouts WHERE contact_id = ? AND returned_at IS NULL;',
-      [contactId],
+      `SELECT id FROM checkouts WHERE ${borrowerColumn(type)} = ? AND returned_at IS NULL;`,
+      [id],
     );
     for (const row of open) {
       await this.checkIn(row.id);
     }
+  }
+
+  /**
+   * Return every still-open checkout for a contact (a {@link checkInAllForTarget} shorthand
+   * for the `contact` target — the contact-delete cascade helper).
+   */
+  async checkInAllForContact(contactId: string): Promise<void> {
+    await this.checkInAllForTarget('contact', contactId);
   }
 
   /** All open (still-out) checkouts, soonest due first, with item + contact names. */
@@ -408,29 +436,85 @@ export class CheckoutRepository extends BaseRepository {
 
   /** A single contact's checkout history (open first, then newest), bounded. */
   async listForContact(contactId: string, params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
+    return this.listForBorrower('contact', contactId, params);
+  }
+
+  /** A single project's checkout history (open first, then newest), bounded (B4). */
+  async listForProject(projectId: string, params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
+    return this.listForBorrower('project', projectId, params);
+  }
+
+  /** A single location's checkout history (open first, then newest), bounded (B4). */
+  async listForLocation(locationId: string, params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
+    return this.listForBorrower('location', locationId, params);
+  }
+
+  // --- internals -----------------------------------------------------------------
+
+  /** A single borrower's checkout history, keyed by its target column (B4). */
+  private listForBorrower(
+    type: BorrowerType,
+    id: string,
+    params: PageParams,
+  ): Promise<Page<CheckoutWithNames>> {
     return this.listJoined(
-      'WHERE k.contact_id = ?',
-      [contactId],
+      `WHERE k.${borrowerColumn(type)} = ?`,
+      [id],
       params,
       'k.returned_at IS NULL DESC, k.checked_out_at DESC',
     );
   }
 
-  // --- internals -----------------------------------------------------------------
+  /**
+   * Resolve the loan's borrower (B4) from the discriminated input: exactly one of a contact
+   * (by id or auto-created name), a project id, or a location id. Zero or multiple targets is
+   * an error (the DB's XOR CHECK would reject it anyway, but a clear message beats a constraint
+   * failure). A contact keeps the low-friction resolve-or-create-by-name convenience; project
+   * and location must reference an existing row (never created here).
+   */
+  private async resolveBorrower(input: CheckoutItemInput): Promise<CheckoutBorrower> {
+    const hasContact = Boolean(input.contactId) || Boolean(input.contactName?.trim());
+    const provided = [hasContact, Boolean(input.projectId), Boolean(input.locationId)].filter(Boolean).length;
+    if (provided === 0) {
+      throw new DbError('SQLITE_CONSTRAINT', 'A checkout needs a borrower (a contact, project or location).');
+    }
+    if (provided > 1) {
+      throw new DbError(
+        'SQLITE_CONSTRAINT',
+        'A loan can go to only one borrower — pick a contact, a project or a location, not several.',
+      );
+    }
 
-  private async resolveContact(input: CheckoutItemInput) {
+    if (input.projectId) {
+      const project = await this.driver.queryOne<{ name: string }>(
+        'SELECT name FROM projects WHERE id = ?;',
+        [input.projectId],
+      );
+      if (!project) {
+        throw new DbError('SQLITE_CONSTRAINT', `Project "${input.projectId}" does not exist.`);
+      }
+      return { type: 'project', id: input.projectId, name: project.name };
+    }
+    if (input.locationId) {
+      const location = await this.driver.queryOne<{ name: string }>(
+        'SELECT name FROM locations WHERE id = ?;',
+        [input.locationId],
+      );
+      if (!location) {
+        throw new DbError('SQLITE_CONSTRAINT', `Location "${input.locationId}" does not exist.`);
+      }
+      return { type: 'location', id: input.locationId, name: location.name };
+    }
+
     if (input.contactId) {
       const contact = await this.contacts.getById(input.contactId);
       if (!contact) {
         throw new DbError('SQLITE_CONSTRAINT', `Contact "${input.contactId}" does not exist.`);
       }
-      return contact;
+      return { type: 'contact', id: contact.id, name: contact.name };
     }
-    const name = input.contactName?.trim();
-    if (!name) {
-      throw new DbError('SQLITE_CONSTRAINT', 'A checkout needs a contact (id or name).');
-    }
-    return this.contacts.resolveOrCreate(name);
+    const contact = await this.contacts.resolveOrCreate(input.contactName!.trim());
+    return { type: 'contact', id: contact.id, name: contact.name };
   }
 
   private async listJoined(
@@ -440,11 +524,16 @@ export class CheckoutRepository extends BaseRepository {
     orderBy: string,
   ): Promise<Page<CheckoutWithNames>> {
     const { limit, offset } = this.resolvePage(params);
+    // The borrower is a tagged union (B4): LEFT JOIN all three target tables and COALESCE the
+    // name — exactly one FK is set per the XOR CHECK, so exactly one join contributes a name.
     const rows = await this.driver.query<CheckoutJoinRow>(
-      `SELECT k.*, i.name AS item_name, c.name AS contact_name
+      `SELECT k.*, i.name AS item_name,
+              COALESCE(c.name, p.name, l.name) AS borrower_name
        FROM checkouts k
        JOIN items i ON i.id = k.item_id
-       JOIN contacts c ON c.id = k.contact_id
+       LEFT JOIN contacts c ON c.id = k.contact_id
+       LEFT JOIN projects p ON p.id = k.project_id
+       LEFT JOIN locations l ON l.id = k.location_id
        ${where}
        ORDER BY ${orderBy}
        LIMIT ? OFFSET ?;`,
@@ -459,6 +548,18 @@ export class CheckoutRepository extends BaseRepository {
   }
 }
 
+/** The `checkouts` FK column that stores a borrower of the given target type (B4). */
+function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' | 'location_id' {
+  switch (type) {
+    case 'project':
+      return 'project_id';
+    case 'location':
+      return 'location_id';
+    default:
+      return 'contact_id';
+  }
+}
+
 /** Compose a joined checkout row into the display DTO with derived status/overdue. */
 function toCheckoutWithNames(row: CheckoutJoinRow, now: number): CheckoutWithNames {
   const base = rowToCheckout(row);
@@ -466,7 +567,7 @@ function toCheckoutWithNames(row: CheckoutJoinRow, now: number): CheckoutWithNam
   return {
     ...base,
     itemName: row.item_name,
-    contactName: row.contact_name,
+    borrowerName: row.borrower_name,
     status,
     isOverdue: status === 'OPEN' && base.dueDate !== null && base.dueDate < now,
   };

@@ -506,7 +506,16 @@ export const v1Initial: Migration = {
         CREATE TABLE checkouts (
           id             TEXT    PRIMARY KEY NOT NULL,
           item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          contact_id     TEXT    NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+          -- The borrower is a TAGGED UNION (B4): a loan targets exactly one of a contact
+          -- (a person), a project ("out on the Henderson job") or a location ("in the van").
+          -- All three FKs are nullable and the XOR CHECK below enforces that precisely one is
+          -- set. Each cascades on the target's delete, mirroring the contact precedent — the
+          -- app returns any open loan first (restoring stock) so a delete never strands stock.
+          -- NB: a borrower location_id is the loan TARGET, distinct from source_location_id
+          -- (the provenance — where the units were lent FROM), added by a later ALTER below.
+          contact_id     TEXT    REFERENCES contacts(id)  ON DELETE CASCADE,
+          project_id     TEXT    REFERENCES projects(id)  ON DELETE CASCADE,
+          location_id    TEXT    REFERENCES locations(id) ON DELETE CASCADE,
           quantity       INTEGER NOT NULL DEFAULT 1,
           due_date       INTEGER,
           checked_out_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -514,12 +523,18 @@ export const v1Initial: Migration = {
           note           TEXT,
           updated_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (quantity > 0),
-          CHECK (returned_at IS NULL OR returned_at >= checked_out_at)
+          CHECK (returned_at IS NULL OR returned_at >= checked_out_at),
+          -- Exactly one borrower: contact XOR project XOR location.
+          CHECK (
+            (contact_id IS NOT NULL) + (project_id IS NOT NULL) + (location_id IS NOT NULL) = 1
+          )
         ) STRICT;
       `,
     },
     { sql: `CREATE INDEX idx_checkouts_item_id ON checkouts(item_id);` },
     { sql: `CREATE INDEX idx_checkouts_contact_id ON checkouts(contact_id);` },
+    { sql: `CREATE INDEX idx_checkouts_project_id ON checkouts(project_id);` },
+    { sql: `CREATE INDEX idx_checkouts_location_id ON checkouts(location_id);` },
     {
       sql: `CREATE INDEX idx_checkouts_open ON checkouts(due_date) WHERE returned_at IS NULL;`,
     },

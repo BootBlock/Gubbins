@@ -14,6 +14,7 @@
 import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import {
   getCategoryRepository,
+  getCheckoutRepository,
   getItemRepository,
   getLocationRepository,
   getSupplierPartRepository,
@@ -572,11 +573,20 @@ export function useArchiveLocation() {
 export function useDeleteLocation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => getLocationRepository().delete(id),
+    mutationFn: async (id: string) => {
+      // Return every tool still out to this location first (restoring stock/history as a normal
+      // check-in would) so deleting the location never silently strands stock still marked
+      // "out" (B4) — mirroring the contact-delete flow. The location's `ON DELETE CASCADE` on
+      // the borrower `location_id` then removes the now-returned checkout rows. (This is the
+      // loan *target*; the delete's own SQL still nulls the distinct source_location_id.)
+      await getCheckoutRepository().checkInAllForTarget('location', id);
+      await getLocationRepository().delete(id);
+    },
     onSettled: () => {
       // A delete re-parents items to Unassigned, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: ['checkouts'] });
     },
   });
 }

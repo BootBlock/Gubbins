@@ -59,7 +59,7 @@ export function CheckInDialog({
       open={open}
       onClose={onClose}
       title="Return item"
-      description={`${checkout.itemName} — on loan to ${checkout.contactName}`}
+      description={`${checkout.itemName} — on loan to ${checkout.borrowerName}`}
       initialFocusRef={noteRef}
     >
       <div className="space-y-4">

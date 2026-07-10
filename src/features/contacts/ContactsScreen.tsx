@@ -7,23 +7,14 @@ import {
   PageHeader,
   Spinner,
   Surface,
-  Tooltip,
-  INFO_OPEN_DELAY_MS,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import {
-  AddContactIcon,
-  CheckInIcon,
-  ContactsIcon,
-  DeleteIcon,
-  DueDateIcon,
-  RenewIcon,
-} from '@/components/icons';
+import { AddContactIcon, ContactsIcon, DeleteIcon } from '@/components/icons';
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
 import { plural } from '@/lib/plural';
-import { useFormatters } from '@/lib/useFormatters';
 import { CheckInDialog } from './components/CheckInDialog';
 import { RenewLoanDialog } from './components/RenewLoanDialog';
+import { LoanRow } from './components/LoanRow';
 import { EditContactDialog } from './components/EditContactDialog';
 import { useContacts, useCreateContact, useDeleteContact, useOpenCheckouts } from './contacts';
 
@@ -234,77 +225,5 @@ export function ContactsScreen() {
         </div>
       </Modal>
     </PageContainer>
-  );
-}
-
-function LoanRow({
-  checkout,
-  onReturn,
-  onRenew,
-}: {
-  checkout: CheckoutWithNames;
-  onReturn: () => void;
-  onRenew: () => void;
-}) {
-  const fmt = useFormatters();
-  const due = checkout.dueDate ? fmt.date(checkout.dueDate) : null;
-  return (
-    <Surface
-      className={`flex flex-wrap items-center gap-3 p-3 transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10 ${
-        checkout.isOverdue ? 'border-destructive/40' : ''
-      }`}
-    >
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{checkout.itemName}</p>
-        <p className="text-xs text-muted-foreground">
-          {checkout.quantity} with <span className="text-foreground">{checkout.contactName}</span>
-        </p>
-        {/* The reason the item was lent out (B1's loan note), when one was recorded. */}
-        {checkout.note ? (
-          <p className="truncate text-xs italic text-muted-foreground">“{checkout.note}”</p>
-        ) : null}
-      </div>
-      {due ? (
-        <Tooltip
-          content={
-            checkout.isOverdue
-              ? 'Past its due date — this loan is **overdue**.'
-              : 'The date this loan is **due back**.'
-          }
-          openDelayMs={INFO_OPEN_DELAY_MS}
-        >
-          <span
-            className={`inline-flex items-center gap-1 text-xs [&_svg]:size-3.5 ${
-              checkout.isOverdue ? 'text-destructive' : 'text-muted-foreground'
-            }`}
-          >
-            <DueDateIcon />
-            {due}
-          </span>
-        </Tooltip>
-      ) : null}
-      <Tooltip
-        content="Change this loan’s due date without ending it. The loan keeps its original checkout date and history."
-        triggerTabIndex={-1}
-      >
-        <span>
-          <Button variant="ghost" size="sm" onClick={onRenew}>
-            <RenewIcon />
-            Renew
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip
-        content="Check this item back in. Stock returns to the location — and exact lot — it was lent from."
-        triggerTabIndex={-1}
-      >
-        <span>
-          <Button variant="outline" size="sm" onClick={onReturn}>
-            <CheckInIcon />
-            Return
-          </Button>
-        </span>
-      </Tooltip>
-    </Surface>
   );
 }

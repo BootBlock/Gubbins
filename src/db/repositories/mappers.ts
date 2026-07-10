@@ -63,6 +63,7 @@ import type {
   WishlistEntry,
   WishlistRow,
 } from './types';
+import type { BorrowerType } from './constants';
 import type { RelationKind } from '@/features/inventory/item-relations';
 import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
@@ -447,11 +448,28 @@ export function rowToContact(row: ContactRow): Contact {
   };
 }
 
+/**
+ * Which borrower target a checkout row carries (B4). Exactly one of the three FK columns is
+ * non-null (the `checkouts` XOR CHECK guarantees it), so this resolves the row's tagged-union
+ * discriminant. A row that somehow has none (should be impossible under the CHECK) falls back
+ * to `contact`, the historical default.
+ */
+export function borrowerTypeOf(
+  row: Pick<CheckoutRow, 'contact_id' | 'project_id' | 'location_id'>,
+): BorrowerType {
+  if (row.project_id !== null) return 'project';
+  if (row.location_id !== null) return 'location';
+  return 'contact';
+}
+
 export function rowToCheckout(row: CheckoutRow): Checkout {
   return {
     id: row.id,
     itemId: row.item_id,
+    borrowerType: borrowerTypeOf(row),
     contactId: row.contact_id,
+    projectId: row.project_id,
+    locationId: row.location_id,
     quantity: row.quantity,
     dueDate: row.due_date,
     checkedOutAt: row.checked_out_at,

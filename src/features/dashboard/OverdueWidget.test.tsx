@@ -21,7 +21,10 @@ const NOW = Date.now();
 const baseCheckout: CheckoutWithNames = {
   id: 'k1',
   itemId: 'i1',
+  borrowerType: 'contact',
   contactId: 'c1',
+  projectId: null,
+  locationId: null,
   quantity: 1,
   dueDate: null,
   note: null,
@@ -31,7 +34,7 @@ const baseCheckout: CheckoutWithNames = {
   sourceBatchKey: null,
   updatedAt: NOW,
   itemName: 'Item',
-  contactName: 'Contact',
+  borrowerName: 'Contact',
   status: 'OPEN',
   isOverdue: false,
 };
@@ -60,7 +63,7 @@ describe('OverdueWidget — days-overdue affordance', () => {
       loan({
         id: 'a',
         itemName: 'Camera',
-        contactName: 'Sam',
+        borrowerName: 'Sam',
         dueDate: NOW - 3 * MS_PER_DAY,
         isOverdue: true,
       }),

@@ -97,7 +97,8 @@ export interface CheckoutAgendaSource {
   readonly id: string;
   readonly itemId: string;
   readonly itemName: string;
-  readonly contactName: string;
+  /** Who/what the loan is out to (B4): a contact, project or location name. */
+  readonly borrowerName: string;
   /** UNIX-ms due-back date; null ⇒ no due-back event (open-ended loan). */
   readonly dueDate: number | null;
 }
@@ -224,8 +225,8 @@ function buildCheckoutEvents(sources: readonly CheckoutAgendaSource[], now: numb
     // already-passed loan sorting to the top of the chronological view.
     const overdue = s.dueDate < now;
     const detail = overdue
-      ? `On loan to ${s.contactName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${isoDate(s.dueDate)}).`
-      : `On loan to ${s.contactName} — due ${isoDate(s.dueDate)}.`;
+      ? `On loan to ${s.borrowerName} — ${overdueLabel(daysOverdue(s.dueDate, now))} (due ${isoDate(s.dueDate)}).`
+      : `On loan to ${s.borrowerName} — due ${isoDate(s.dueDate)}.`;
     events.push({
       id: `checkout-due:${s.id}`,
       kind: 'checkout-due',
