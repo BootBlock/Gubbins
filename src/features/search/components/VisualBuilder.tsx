@@ -3,6 +3,7 @@ import { FilterIcon } from '@/components/icons';
 import { useSearchBuilder } from '../SearchBuilderContext';
 import { astError } from '../queries';
 import { GroupEditor } from './GroupEditor';
+import { NaturalLanguageInput } from './NaturalLanguageInput';
 import { TextQueryInput } from './TextQueryInput';
 
 /**
@@ -33,6 +34,10 @@ export function VisualBuilder({ resultSummary }: { resultSummary?: string }) {
           </button>
         ) : null}
       </div>
+
+      <NaturalLanguageInput />
+
+      <div className="h-px bg-border/60" role="separator" />
 
       <TextQueryInput />
 
