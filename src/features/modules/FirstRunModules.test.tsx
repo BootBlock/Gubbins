@@ -37,12 +37,12 @@ function goToAnimationStep() {
 beforeEach(() => {
   mockPathname = '/';
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 
 describe('FirstRunModules — visibility', () => {
@@ -113,7 +113,7 @@ describe('FirstRunModules — animation step', () => {
     // Step 2 shows the animation radiogroup with a card per level.
     expect(screen.getByRole('dialog', { name: 'How lively should Gubbins feel?' })).toBeTruthy();
     expect(screen.getByTestId('first-run-animation')).toBeTruthy();
-    for (const id of ['full', 'balanced', 'calm', 'off', 'headache']) {
+    for (const id of ['headache', 'balanced', 'calm', 'minimal', 'off']) {
       expect(screen.getByTestId(`first-run-animation-${id}`)).toBeTruthy();
     }
 
@@ -129,10 +129,11 @@ describe('FirstRunModules — animation step', () => {
   it('keeps the chosen level after finishing', () => {
     render(<FirstRunModules />);
     goToAnimationStep();
-    fireEvent.click(screen.getByTestId('first-run-animation-headache'));
+    // Pick a non-default level (the beforeEach resets to the `headache` default) so this proves a change.
+    fireEvent.click(screen.getByTestId('first-run-animation-off'));
     fireEvent.click(screen.getByTestId('first-run-use'));
 
-    expect(usePreferencesStore.getState().animationLevel).toBe('headache');
+    expect(usePreferencesStore.getState().animationLevel).toBe('off');
     expect(useModulesStore.getState().firstRunComplete).toBe(true);
   });
 });
@@ -146,8 +147,8 @@ describe('FirstRunModules — skipping', () => {
     expect(state.firstRunComplete).toBe(true);
     // Intent untouched — nothing hidden, today's default behaviour preserved.
     expect(state.intent).toEqual({});
-    // The animation level was never touched, so it stays at the lively default.
-    expect(usePreferencesStore.getState().animationLevel).toBe('full');
+    // The animation level was never touched, so it stays at the "everything on" default.
+    expect(usePreferencesStore.getState().animationLevel).toBe('headache');
   });
 
   it('dismissing via Escape also skips (completes, intent untouched)', () => {

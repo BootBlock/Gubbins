@@ -105,7 +105,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       accent: 'violet',
       oledDark: false,
       highContrast: false,
-      animationLevel: 'full',
+      animationLevel: 'headache',
       starfieldVariant: 'cosmic',
       backgroundEffect: 'none',
     });

@@ -40,7 +40,7 @@ afterEach(() => {
   delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
   prefersReducedMotion.mockReset();
   prefersReducedMotion.mockReturnValue(false);
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 
 describe('viewTransitionsSupported', () => {

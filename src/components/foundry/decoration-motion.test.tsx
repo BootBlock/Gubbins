@@ -42,15 +42,15 @@ function provide(reduced: boolean): MediaQueryProvider {
 beforeEach(() => {
   prefersReducedMotion.mockReset();
   prefersReducedMotion.mockReturnValue(false);
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 afterEach(() => {
   cleanup();
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 
 describe('decorationMotionReduced (imperative, motion tier = Calm and calmer)', () => {
-  it('is false at the Full level with the OS allowing motion', () => {
+  it('is false at the everything (headache) level with the OS allowing motion', () => {
     expect(decorationMotionReduced()).toBe(false);
   });
 
@@ -62,18 +62,18 @@ describe('decorationMotionReduced (imperative, motion tier = Calm and calmer)', 
   it('is true at Calm (and calmer)', () => {
     usePreferencesStore.setState({ animationLevel: 'calm' });
     expect(decorationMotionReduced()).toBe(true);
-    usePreferencesStore.setState({ animationLevel: 'headache' });
+    usePreferencesStore.setState({ animationLevel: 'off' });
     expect(decorationMotionReduced()).toBe(true);
   });
 
-  it('is true when the OS prefers reduced motion even at Full — the OR', () => {
+  it('is true when the OS prefers reduced motion even at the everything level — the OR', () => {
     prefersReducedMotion.mockReturnValue(true);
     expect(decorationMotionReduced()).toBe(true);
   });
 });
 
 describe('decorationFlourishReduced (imperative, flourish tier = Balanced and calmer)', () => {
-  it('is false only at Full', () => {
+  it('is false only at the everything (headache) level', () => {
     expect(decorationFlourishReduced()).toBe(false);
   });
 
@@ -84,7 +84,7 @@ describe('decorationFlourishReduced (imperative, flourish tier = Balanced and ca
     expect(decorationFlourishReduced()).toBe(true);
   });
 
-  it('is true when the OS prefers reduced motion even at Full — the OR', () => {
+  it('is true when the OS prefers reduced motion even at the everything level — the OR', () => {
     prefersReducedMotion.mockReturnValue(true);
     expect(decorationFlourishReduced()).toBe(true);
   });
@@ -108,8 +108,8 @@ describe('useDecorationMotionReduced (reactive)', () => {
     expect(c.result.current).toBe(true);
     c.unmount();
 
-    // OS prefers reduced motion, level Full → reduced (the OS side alone gates decoration).
-    usePreferencesStore.setState({ animationLevel: 'full' });
+    // OS prefers reduced motion, everything level → reduced (the OS side alone gates decoration).
+    usePreferencesStore.setState({ animationLevel: 'headache' });
     const d = renderHook(() => useDecorationMotionReduced(provide(true)));
     expect(d.result.current).toBe(true);
   });

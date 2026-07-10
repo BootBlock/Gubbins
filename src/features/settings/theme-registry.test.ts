@@ -109,20 +109,20 @@ describe('normaliseStarfieldVariant', () => {
 });
 
 describe('ANIMATION_LEVELS', () => {
-  it('lists the five tiers liveliest → calmest (index === rank), each with a label + description', () => {
-    expect(ANIMATION_LEVELS.map((l) => l.id)).toEqual(['full', 'balanced', 'calm', 'off', 'headache']);
+  it('lists the five tiers most flair → least (index === rank), each with a label + description', () => {
+    expect(ANIMATION_LEVELS.map((l) => l.id)).toEqual(['headache', 'balanced', 'calm', 'minimal', 'off']);
     for (const l of ANIMATION_LEVELS) {
       expect(l.label.length).toBeGreaterThan(0);
       expect(l.description.length).toBeGreaterThan(0);
     }
   });
 
-  it('defaults to the liveliest `full`, and ANIMATION_LEVEL_IDS mirrors the registry', () => {
-    expect(DEFAULT_ANIMATION_LEVEL).toBe('full');
+  it('defaults to the "everything on" `headache` top tier, and ANIMATION_LEVEL_IDS mirrors the registry', () => {
+    expect(DEFAULT_ANIMATION_LEVEL).toBe('headache');
     expect(ANIMATION_LEVEL_IDS).toEqual(ANIMATION_LEVELS.map((l) => l.id));
   });
 
-  it('ranks levels 0..4 in listed order', () => {
+  it('ranks levels 0..4 in listed order (headache = 0, off = 4)', () => {
     expect(ANIMATION_LEVEL_IDS.map(animationLevelRank)).toEqual([0, 1, 2, 3, 4]);
   });
 });
@@ -132,8 +132,10 @@ describe('normaliseAnimationLevel', () => {
     for (const id of ANIMATION_LEVEL_IDS) expect(normaliseAnimationLevel(id)).toBe(id);
   });
 
-  it('coerces an unknown/stale persisted value to the `full` default', () => {
+  it('coerces an unknown/stale persisted value to the `headache` default', () => {
     expect(normaliseAnimationLevel('sparkly')).toBe(DEFAULT_ANIMATION_LEVEL);
+    // `full` was an interim id that no longer exists — it must not pass through.
+    expect(normaliseAnimationLevel('full')).toBe(DEFAULT_ANIMATION_LEVEL);
     expect(normaliseAnimationLevel('')).toBe(DEFAULT_ANIMATION_LEVEL);
   });
 });
@@ -153,7 +155,7 @@ describe('animation-level thresholds', () => {
     }
   });
 
-  it('suppressesAmbient is true from Off onwards (a subset of motion)', () => {
+  it('suppressesAmbient is true from Minimal onwards (a subset of motion)', () => {
     expect(ANIMATION_LEVEL_IDS.map(suppressesAmbient)).toEqual([false, false, false, true, true]);
   });
 });

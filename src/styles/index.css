@@ -1938,10 +1938,11 @@
  * The motion-off tiers (Calm and calmer) already project `data-reduce-effects`, whose catch-all
  * above clamps every decorative transition/animation; these `data-anim-level` blocks add the
  * extra, level-specific suppression of *static* decoration a motion clamp cannot reach. Attribute
- * presence encodes the tier: `full` sets no attribute, so `:root[data-anim-level]` matches Balanced
- * and calmer (the flourish tier), and the explicit-value selectors pick out the Off / Headache
- * tiers. The thresholds are the SSOT `suppressesFlourish` / `suppressesMotion` in
- * `theme-registry.ts` (and the JS gate in `decoration-motion.ts`) — keep the two in step.
+ * presence encodes the tier: the "everything on" `headache` default sets no attribute, so
+ * `:root[data-anim-level]` matches Balanced and calmer (the flourish tier), and the explicit-value
+ * selectors pick out the Minimal / Off tiers. The thresholds are the SSOT `suppressesFlourish` /
+ * `suppressesMotion` in `theme-registry.ts` (and the JS gate in `decoration-motion.ts`) — keep the
+ * two in step.
  */
 
 /* Balanced and calmer — the showiest CSS flourishes drop entirely: the spotlight-border sweep (F5)
@@ -1952,18 +1953,18 @@
   display: none;
 }
 
-/* Off and calmer — the ambient decorations themselves switch off: the drifting About-screen
+/* Minimal and Off — the ambient decorations themselves switch off: the drifting About-screen
  * starfield (F11) and the accent glow behind the hero / empty states (F1). */
+:root[data-anim-level='minimal'] .gubbins-starfield,
 :root[data-anim-level='off'] .gubbins-starfield,
-:root[data-anim-level='headache'] .gubbins-starfield,
-:root[data-anim-level='off'] .gubbins-accent-glow::before,
-:root[data-anim-level='headache'] .gubbins-accent-glow::before {
+:root[data-anim-level='minimal'] .gubbins-accent-glow::before,
+:root[data-anim-level='off'] .gubbins-accent-glow::before {
   display: none;
 }
 
-/* "I have a headache" — the calmest tier also strips the remaining decorative colour: the
- * per-location card/row tints (F10). */
-:root[data-anim-level='headache'] .gubbins-loc-tint {
+/* Off — the barest tier also strips the remaining decorative colour: the per-location
+ * card/row tints (F10). */
+:root[data-anim-level='off'] .gubbins-loc-tint {
   background-image: none;
 }
 

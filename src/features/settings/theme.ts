@@ -81,12 +81,12 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   else delete root.dataset.oled;
   if (appearance.highContrast) root.dataset.contrast = 'high';
   else delete root.dataset.contrast;
-  // Animation level: the `full` default carries no attribute; calmer levels set `data-anim-level`
-  // for the graded static-flair opt-outs (spotlight off at Balanced; starfield/glow off at Off;
-  // tints off at Headache). The motion-off tiers (Calm and calmer) additionally set the F9
-  // `data-reduce-effects` flag, whose `styles/index.css` catch-all mirror clamps every decorative
-  // transition/animation — so one derived flag drives the whole existing motion-suppression layer.
-  if (appearance.animationLevel !== 'full') root.dataset.animLevel = appearance.animationLevel;
+  // Animation level: the `headache` "everything on" default carries no attribute; calmer levels set
+  // `data-anim-level` for the graded static-flair opt-outs (spotlight off at Balanced; starfield/
+  // glow off at Minimal; tints off at Off). The motion-off tiers (Calm and calmer) additionally set
+  // the `data-reduce-effects` flag, whose `styles/index.css` catch-all mirror clamps every
+  // decorative transition/animation — so one derived flag drives the whole motion-suppression layer.
+  if (appearance.animationLevel !== 'headache') root.dataset.animLevel = appearance.animationLevel;
   else delete root.dataset.animLevel;
   if (suppressesMotion(appearance.animationLevel)) root.dataset.reduceEffects = '';
   else delete root.dataset.reduceEffects;

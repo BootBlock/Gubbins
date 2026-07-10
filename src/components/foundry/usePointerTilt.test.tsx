@@ -62,7 +62,7 @@ function fakeCard(): HTMLElement {
 
 afterEach(() => {
   cleanup();
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 
 describe('usePointerTilt — gate fall-through', () => {

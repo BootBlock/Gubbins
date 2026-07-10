@@ -43,7 +43,7 @@ const APPEARANCE: Appearance = {
   accent: 'violet',
   oledDark: false,
   highContrast: false,
-  animationLevel: 'full',
+  animationLevel: 'headache',
   starfieldVariant: 'cosmic',
 };
 
@@ -246,8 +246,8 @@ describe('applyAppearance', () => {
   it('projects the animation level onto data-anim-level + data-reduce-effects by tier', () => {
     const root = document.createElement('div');
 
-    // Full is the default: no attribute, and motion is not suppressed.
-    applyAppearance({ ...APPEARANCE, animationLevel: 'full' }, root);
+    // `headache` = "everything on", the default: no attribute, and motion is not suppressed.
+    applyAppearance({ ...APPEARANCE, animationLevel: 'headache' }, root);
     expect(root.dataset.animLevel).toBeUndefined();
     expect(root.dataset.reduceEffects).toBeUndefined();
 
@@ -260,12 +260,12 @@ describe('applyAppearance', () => {
     applyAppearance({ ...APPEARANCE, animationLevel: 'calm' }, root);
     expect(root.dataset.animLevel).toBe('calm');
     expect(root.dataset.reduceEffects).toBe('');
-    applyAppearance({ ...APPEARANCE, animationLevel: 'headache' }, root);
-    expect(root.dataset.animLevel).toBe('headache');
+    applyAppearance({ ...APPEARANCE, animationLevel: 'off' }, root);
+    expect(root.dataset.animLevel).toBe('off');
     expect(root.dataset.reduceEffects).toBe('');
 
-    // Back to Full clears both.
-    applyAppearance({ ...APPEARANCE, animationLevel: 'full' }, root);
+    // Back to the everything default clears both.
+    applyAppearance({ ...APPEARANCE, animationLevel: 'headache' }, root);
     expect(root.dataset.animLevel).toBeUndefined();
     expect(root.dataset.reduceEffects).toBeUndefined();
   });

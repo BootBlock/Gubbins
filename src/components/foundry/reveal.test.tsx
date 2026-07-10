@@ -21,7 +21,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 afterEach(() => {
   cleanup();
-  usePreferencesStore.setState({ animationLevel: 'full' });
+  usePreferencesStore.setState({ animationLevel: 'headache' });
 });
 
 /** A controllable fake IntersectionObserver that records wiring and can fire on demand. */
