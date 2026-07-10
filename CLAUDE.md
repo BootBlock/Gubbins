@@ -182,9 +182,11 @@ rule applied to issue handling.
    change has a runtime surface, drive it (the `verify` skill) rather than trusting types alone.
 5. **Code review before committing.** Run `/code-review high` on the diff and **fix every confirmed
    finding** before proceeding. Re-verify after fixing. Commit inside the worktree once clean.
-6. **Checkpoint — pause here.** Before any outward-facing, hard-to-undo step, stop and give the
-   maintainer a concise summary (what changed, review outcome, files touched) and **wait for the
-   go-ahead**. Do not merge, push, or close the issue until approved.
+6. **Checkpoint — pause here.** Before any outward-facing, hard-to-undo step, give the maintainer
+   a concise summary (what changed, review outcome, files touched), then **pause for the go-ahead
+   using the `AskUserQuestion` tool** — offer a clear approve/hold choice (e.g. "Land it" vs "Hold")
+   rather than asking for a freeform reply. Do not merge, push, or close the issue until the
+   maintainer approves via that prompt.
 7. **On approval, land it:** merge the worktree branch into `main` with `--no-ff`, then
    `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
    worktree (remove the `node_modules` junction *before* `git worktree remove` — see
