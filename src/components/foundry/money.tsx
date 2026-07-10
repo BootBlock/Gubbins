@@ -3,7 +3,8 @@ import { cn } from '@/lib/utils';
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
 import { useCountUp } from './useCountUp';
-import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
+import { type MediaQueryProvider } from './useReducedMotion';
+import { useDecorationMotionReduced } from './decoration-motion';
 
 export interface MoneyProps {
   /** The monetary amount. A non-finite value renders the em-dash placeholder. */
@@ -34,7 +35,7 @@ export interface MoneyProps {
   readonly animateOnMount?: boolean;
   /** Roll duration in milliseconds when animating. Default 650ms. */
   readonly durationMs?: number;
-  /** Injectable reduced-motion provider (test seam), forwarded to {@link useReducedMotion}. */
+  /** Injectable reduced-motion provider (test seam), forwarded to the decoration-motion gate. */
   readonly motionProvider?: MediaQueryProvider;
   /** Classes merged onto the wrapping `<span>`. */
   readonly className?: string;
@@ -134,7 +135,7 @@ function AnimatedMoney({
   symbolClassName?: string;
   'data-testid'?: string;
 }) {
-  const reduced = useReducedMotion(motionProvider);
+  const reduced = useDecorationMotionReduced(motionProvider);
   const display = useCountUp(value, { durationMs, animateOnMount, reduced });
 
   return (

@@ -15,8 +15,9 @@ export function useApplyTheme(): void {
   const accent = usePreferencesStore((s) => s.accent);
   const oledDark = usePreferencesStore((s) => s.oledDark);
   const highContrast = usePreferencesStore((s) => s.highContrast);
+  const reduceEffects = usePreferencesStore((s) => s.reduceEffects);
   useEffect(() => {
-    const appearance = { mode, accent, oledDark, highContrast };
+    const appearance = { mode, accent, oledDark, highContrast, reduceEffects };
     applyAppearance(appearance);
     // Only the 'system' mode tracks the OS; an explicit choice needs no listener.
     if (mode !== 'system' || typeof matchMedia !== 'function') return;
@@ -24,5 +25,5 @@ export function useApplyTheme(): void {
     const onChange = () => applyAppearance(appearance);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
-  }, [mode, accent, oledDark, highContrast]);
+  }, [mode, accent, oledDark, highContrast, reduceEffects]);
 }

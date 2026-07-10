@@ -17,9 +17,11 @@
  *    with `will-change` hints; the particle count is capped in {@link buildBurstParticles}.
  *  - **Tokens only** — every colour is a brand token (`--primary` / `--highlight`) that tracks the
  *    user's accent, so the burst recolours for free with their Colour.
- *  - **Reduced motion is nothing** — under `prefers-reduced-motion` (resolved live via
- *    {@link useReducedMotion}) `burst()` is a no-op that renders no particle at all; the milestone
- *    is announced elsewhere (a toast, the audit summary's static glyph), never by this animation.
+ *  - **Reduced motion is nothing** — when decorative motion is suppressed (OS
+ *    `prefers-reduced-motion` OR the F9 "Reduce effects" switch, resolved live via
+ *    {@link useDecorationMotionReduced}) `burst()` is a no-op that renders no particle at all; the
+ *    milestone is announced elsewhere (a toast, the audit summary's static glyph), never by this
+ *    animation.
  *
  * The burst is purely decorative and marked `aria-hidden`; it is never the sole signal of an
  * achievement. Consistent with that, {@link useBurst} degrades to a no-op when no provider is
@@ -42,7 +44,8 @@ import {
   type BurstParticle,
   type Rng,
 } from './success-burst-geometry';
-import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
+import { type MediaQueryProvider } from './useReducedMotion';
+import { useDecorationMotionReduced } from './decoration-motion';
 
 /** Viewport (client) coordinates the burst radiates from. */
 export interface BurstOrigin {
@@ -99,7 +102,7 @@ export interface BurstProviderProps {
 }
 
 export function BurstProvider({ children, motionProvider, rng }: BurstProviderProps) {
-  const reduced = useReducedMotion(motionProvider);
+  const reduced = useDecorationMotionReduced(motionProvider);
   const [bursts, setBursts] = useState<readonly ActiveBurst[]>([]);
 
   // `burst` is a stable callback, so read the live reduced-motion flag through a ref rather than

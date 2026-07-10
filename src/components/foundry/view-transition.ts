@@ -16,16 +16,16 @@
  *    suppressing an entrance animation that would otherwise double up with the cross-fade).
  *
  * **Progressive enhancement.** Where the API is unavailable, or the user prefers reduced
- * motion (or, in future, has turned effects down — see below), the transition is skipped
- * *entirely*: the DOM update runs directly with no cross-fade, falling back to the existing
+ * motion, or has turned "Reduce effects" on (both via the shared decoration-motion gate), the
+ * transition is skipped *entirely*: the DOM update runs directly with no cross-fade, falling back
+ * to the existing
  * `animate-rise` / list entrances. A transition never traps focus, never swallows the update
  * if it throws or its promises reject, and never leaves the SPA half-transitioned — the
  * update always happens. The CSS side (`::view-transition-*` in `styles/index.css`) carries a
  * belt-and-braces `prefers-reduced-motion` guard on top of this JS skip.
  */
 import { flushSync } from 'react-dom';
-import { prefersReducedMotion } from '@/lib/env/motion';
-import { useReducedMotion } from './useReducedMotion';
+import { decorationMotionReduced, useDecorationMotionReduced } from './decoration-motion';
 
 /**
  * The named view-transition type applied to route navigations. Not required for the plain
@@ -44,33 +44,36 @@ export function viewTransitionsSupported(): boolean {
 }
 
 /**
- * The pure gate: should the given reduced-motion state permit a view-transition? Kept pure
- * (state in, boolean out) so the imperative reader ({@link shouldViewTransition}) and the
+ * The pure gate: should the given (decoration-)reduced state permit a view-transition? Kept
+ * pure (state in, boolean out) so the imperative reader ({@link shouldViewTransition}) and the
  * reactive hook ({@link useViewTransitionsEnabled}) can't drift.
  *
- * **F9 seam:** the coming "Reduce effects" appearance switch dials decoration down
- * independent of the OS reduced-motion setting. When it lands it OR's in here — one edit,
- * and every view-transition call site respects it for free.
+ * **F9 seam (wired):** `reduced` comes from the shared decoration-motion gate
+ * ({@link decorationMotionReduced} / {@link useDecorationMotionReduced}), which OR's the OS
+ * reduced-motion preference with the "Reduce effects" appearance switch — so both turn the
+ * cross-fade off, at every call site, from one place.
  */
 function computeShouldViewTransition(reduced: boolean): boolean {
   return viewTransitionsSupported() && !reduced;
 }
 
 /**
- * Imperative gate — evaluated at the moment of an action (a click). Reads the reduced-motion
- * preference live. Use {@link useViewTransitionsEnabled} for render-time decisions.
+ * Imperative gate — evaluated at the moment of an action (a click). Reads the decoration-motion
+ * gate live (OS reduced-motion OR "Reduce effects"). Use {@link useViewTransitionsEnabled} for
+ * render-time decisions.
  */
 export function shouldViewTransition(): boolean {
-  return computeShouldViewTransition(prefersReducedMotion());
+  return computeShouldViewTransition(decorationMotionReduced());
 }
 
 /**
- * Reactive gate for render-time decisions — re-renders the consumer when the reduced-motion
- * preference changes. A screen uses this to drop an entrance animation that would otherwise
- * double up with the cross-fade (see `InventoryScreen`'s density slide).
+ * Reactive gate for render-time decisions — re-renders the consumer when the OS reduced-motion
+ * preference or the "Reduce effects" switch changes. A screen uses this to drop an entrance
+ * animation that would otherwise double up with the cross-fade (see `InventoryScreen`'s density
+ * slide).
  */
 export function useViewTransitionsEnabled(): boolean {
-  return computeShouldViewTransition(useReducedMotion());
+  return computeShouldViewTransition(useDecorationMotionReduced());
 }
 
 /**

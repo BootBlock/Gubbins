@@ -95,13 +95,12 @@ export function computeTilt(
 }
 
 /**
- * The pure motion gate, mirroring the F6 view-transition seam ({@link computeShouldViewTransition}):
- * state in, boolean out, so the hook can't drift from a future second reader. The tilt is decoration,
- * so it is off whenever the user prefers reduced motion.
+ * The pure motion gate, mirroring the F6 view-transition seam: state in, boolean out, so the hook
+ * can't drift from a second reader. The tilt is decoration, so it is off whenever motion is reduced.
  *
- * **F9 seam:** the coming "Reduce effects" appearance switch dials decoration down independent of
- * the OS reduced-motion setting. When it lands it OR's in here — one edit, and every tilt call site
- * (and, via the mirrored seam, the view transitions) respects it for free.
+ * **F9 seam (wired):** the hook feeds `reduced` from the shared decoration-motion gate
+ * ({@link useDecorationMotionReduced}), which OR's the OS reduced-motion preference with the
+ * "Reduce effects" appearance switch — so both turn the tilt off, from one place.
  *
  * Note this covers only the *motion* gate. Whether the device has a fine pointer (tilt is a
  * pointer-hover affordance, meaningless on touch) is an orthogonal check the hook ANDs in.

@@ -230,6 +230,29 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             />
           </SettingRow>
           <SettingRow
+            label="Reduce effects"
+            description="Calm the decorative motion and flair throughout the app."
+            hint={
+              'Turns the app’s **decorative motion** down: the number roll-ups, scroll reveals, ' +
+              'card tilt, page cross-fades, success bursts, progress-ring draw-on and the badge/' +
+              'toast pops all snap straight to their rest state instead of animating.\n\n' +
+              'It **doesn’t** touch anything functional — loading spinners still spin, and the ' +
+              'meaning, focus rings and screen-reader announcements are all unchanged.\n\n' +
+              'This is independent of your device’s “reduce motion” accessibility setting and ' +
+              '**adds** to it: if your device already prefers reduced motion, the effects stay off ' +
+              'whatever you pick here.'
+            }
+          >
+            <Select
+              aria-label="Reduce effects"
+              data-testid="setting-reduce-effects"
+              className="h-9 w-40"
+              value={prefs.reduceEffects ? 'on' : 'off'}
+              onChange={(value) => prefs.setReduceEffects(value === 'on')}
+              options={OFF_ON_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
             label="Base currency"
             description="Used for all financial tracking and BOM costs."
             hint={

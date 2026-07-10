@@ -4,12 +4,13 @@
  * cursor, a counter-parallax drift of its hero layer, and a soft specular glare that tracks the
  * pointer — settling flat on pointer-leave. The pure maths + the motion gate live in
  * {@link ./pointer-tilt}; this hook owns the pointer plumbing and the CSS-var writes in ONE place
- * so no call site hand-rolls the rAF throttle, the reduced-motion / (coming F9) "reduce effects"
- * gate, or the fine-pointer guard.
+ * so no call site hand-rolls the rAF throttle, the decoration-motion gate (OS reduced-motion OR
+ * the F9 "Reduce effects" switch), or the fine-pointer guard.
  *
- * **Gate (mirrors the F6 view-transition seam).** The handlers are returned only when motion is
- * permitted *and* the device has a fine pointer — {@link computeShouldTilt} (reactive
- * `useReducedMotion`) ANDed with a live `(pointer: fine)` read. When the gate is off the hook
+ * **Gate (mirrors the F6 view-transition seam).** The handlers are returned only when decorative
+ * motion is permitted *and* the device has a fine pointer — {@link computeShouldTilt} (fed by the
+ * reactive {@link useDecorationMotionReduced}) ANDed with a live `(pointer: fine)` read. When the
+ * gate is off the hook
  * returns an empty object, so the card attaches **no listeners at all** (belt-and-braces with the
  * CSS, which scopes every active rule to `(pointer: fine) and (prefers-reduced-motion:
  * no-preference)`, and with the global reduced-motion catch-all). The effect is pure decoration:
@@ -31,7 +32,8 @@ import {
   type TiltConfig,
   type TiltVars,
 } from './pointer-tilt';
-import { useReducedMotion, type MediaQueryProvider } from './useReducedMotion';
+import { type MediaQueryProvider } from './useReducedMotion';
+import { useDecorationMotionReduced } from './decoration-motion';
 import { useMediaQuery } from './useMediaQuery';
 
 /** Options for {@link usePointerTilt}. All optional — the defaults suit the Visual-density card. */
@@ -75,7 +77,7 @@ export function usePointerTilt(options: PointerTiltOptions = {}): PointerTiltHan
     [maxTiltDeg, parallaxPx],
   );
 
-  const reduced = useReducedMotion(mediaProvider);
+  const reduced = useDecorationMotionReduced(mediaProvider);
   const finePointer = useMediaQuery(FINE_POINTER_QUERY, mediaProvider);
   const enabled = computeShouldTilt(reduced) && finePointer;
 

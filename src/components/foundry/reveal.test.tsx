@@ -17,8 +17,12 @@ import {
   type RevealOnScrollOptions,
 } from './useRevealOnScroll';
 import type { MediaQueryProvider } from './useReducedMotion';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  usePreferencesStore.setState({ reduceEffects: false });
+});
 
 /** A controllable fake IntersectionObserver that records wiring and can fire on demand. */
 class FakeObserver implements ObserverLike {
@@ -126,6 +130,23 @@ describe('<Reveal>', () => {
     const { factory, observers } = makeFactory();
     render(
       <Reveal data-testid="r" motionProvider={motion(true)} observerFactory={factory}>
+        <p>Body</p>
+      </Reveal>,
+    );
+    const el = screen.getByTestId('r');
+    expect(el).not.toHaveClass('opacity-0');
+    expect(el).not.toHaveClass('animate-rise');
+    expect(observers).toHaveLength(0);
+  });
+
+  it('under "Reduce effects" (F9) renders fully visible even with OS motion allowed', () => {
+    // The reveal holds content at a static `opacity-0` the CSS motion catch-all can't clear, so
+    // the F9 pref must skip arming entirely — otherwise below-the-fold content would stay hidden
+    // until scrolled to. OS motion is allowed here (motion(false)); only the pref gates.
+    usePreferencesStore.setState({ reduceEffects: true });
+    const { factory, observers } = makeFactory();
+    render(
+      <Reveal data-testid="r" motionProvider={motion(false)} observerFactory={factory}>
         <p>Body</p>
       </Reveal>,
     );
