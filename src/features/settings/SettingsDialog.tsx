@@ -346,8 +346,9 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             hint={
               'Makes the inventory feel like a collection: a **lucky ~5%** of your items turn out to ' +
               'be **collector cards**, each with a decorative **rarity** — Common, Uncommon, Rare, ' +
-              'Epic or Legendary — shown as a matching gem and a tinted frame (Legendary cards even ' +
-              'get a gentle glow). Which items are collectors is decided by their **name**, so it’s ' +
+              'Epic or Legendary. The card gets a subtly **rarity-tinted frame**, and opening the ' +
+              'item shows its **rarity gem** in the top-right of the dialog (Legendary gems even get ' +
+              'a gentle glow). Which items are collectors is decided by their **name**, so it’s ' +
               'stable — the same item is always the same card, and the showier tiers are the rarer ' +
               'finds.\n\n' +
               'It’s purely for fun and never changes any real data or figure. Like the foil above, ' +

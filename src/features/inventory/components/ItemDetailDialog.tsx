@@ -30,6 +30,10 @@ import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
 import { ItemDetailsEditor } from './ItemDetailsEditor';
+import { RarityBadge } from './RarityBadge';
+import { itemRarity } from '../rarity';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { suppressesFlourish } from '@/features/settings/theme-registry';
 import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
@@ -67,6 +71,15 @@ export function ItemDetailDialog({
   const enabledFeatures = useEnabledFeatures();
   const tabs = buildTabs(item, enabledFeatures);
 
+  // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
+  // ~5% of items that are collectors. Gated to match the card frame — shown only when the
+  // "Collector cards" toggle is on *and* the maximal ("I have a headache") animation level is
+  // active (the one tier `suppressesFlourish` does not suppress). Purely cosmetic; see `rarity.ts`.
+  const rarity = itemRarity(item);
+  const gamifyCards = usePreferencesStore((s) => s.gamifyCards);
+  const animationLevel = usePreferencesStore((s) => s.animationLevel);
+  const rarityEnabled = gamifyCards && !suppressesFlourish(animationLevel);
+
   // Map each tab's grouped sections into the rail's panel content: the shared RailModal
   // owns the Modal frame, the rail and its keyboard navigation, so this dialog only
   // decides what each panel shows. Each section stays wrapped in its own Section card so
@@ -88,6 +101,7 @@ export function ItemDetailDialog({
       onClose={onClose}
       title={item.serialNo === null ? item.name : `${item.name} #${item.serialNo}`}
       description="Edit details — plus images, tags, capabilities, custom fields & datasheets."
+      titleAccessory={rarity !== null && rarityEnabled ? <RarityBadge rarity={rarity} /> : undefined}
       className="max-w-4xl"
       railAriaLabel="Item sections"
       idPrefix="item"

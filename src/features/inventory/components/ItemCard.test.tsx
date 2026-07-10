@@ -151,10 +151,11 @@ describe('ItemCard — content branches', () => {
     expect(root.classList.contains('gubbins-spotlight-border')).toBe(true);
   });
 
-  it('wires the collector-card rarity only on the ~5% of items that are collectors', () => {
+  it('wires the collector-card frame only on the ~5% of items that are collectors — no badge on the card', () => {
     // Collector status is a stable hash of the item name; pick one of each deterministically so the
-    // test never depends on a hand-computed hash. The frame/badge are painted only by CSS at the
-    // gamify+maximal tier, but the DOM wiring (class, `data-rarity`, badge) is what this asserts.
+    // test never depends on a hand-computed hash. On the card, a collector carries the frame wiring
+    // (the `gubbins-rarity` class + a `data-rarity` tier); the rarity gem badge itself lives in the
+    // detail dialog, never on the card face.
     const collectorName = firstName((n) => itemRarity(makeItem({ name: n })) != null);
     const ordinaryName = firstName((n) => itemRarity(makeItem({ name: n })) == null);
 
@@ -162,15 +163,14 @@ describe('ItemCard — content branches', () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root.classList.contains('gubbins-rarity')).toBe(true);
     expect(RARITY_IDS).toContain(root.dataset.rarity);
-    expect(screen.getByTestId('rarity-badge')).toHaveTextContent(new RegExp(root.dataset.rarity!, 'i'));
+    // The gem badge is NOT rendered on the card any more.
+    expect(container.querySelector('[data-testid="rarity-badge"]')).toBeNull();
 
     // A non-collector item carries no rarity wiring at all.
     const { container: plain } = renderCard(makeItem({ name: ordinaryName }));
     const plainRoot = plain.firstElementChild as HTMLElement;
     expect(plainRoot.classList.contains('gubbins-rarity')).toBe(false);
     expect(plainRoot.dataset.rarity).toBeUndefined();
-    // Scope to this card's container — the collector card rendered above is still in document.body.
-    expect(plain.querySelector('[data-testid="rarity-badge"]')).toBeNull();
   });
 
   it('paints the per-location edge tint (F10) on the root only when a tint class is given', () => {
