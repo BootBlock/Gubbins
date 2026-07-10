@@ -356,6 +356,8 @@ export function rowToCategory(row: CategoryRow): Category {
     id: row.id,
     name: row.name,
     defaultTrackingMode: row.default_tracking_mode,
+    defaultCondition: row.default_condition,
+    defaultWarrantyMonths: row.default_warranty_months,
     updatedAt: row.updated_at,
   };
 }

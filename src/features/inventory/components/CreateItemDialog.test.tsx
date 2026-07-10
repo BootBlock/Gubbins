@@ -35,8 +35,15 @@ vi.mock('../categories', () => ({
     data: {
       rows: [
         { id: 'cat-1', name: 'Resistors' },
-        // A category template with a default tracking mode (backlog T1 soft prefill).
-        { id: 'cat-tools', name: 'Tools', defaultTrackingMode: 'SERIALISED' },
+        // A category template carrying default facets (backlog T1 tracking mode + T2 condition /
+        // warranty window) that soft-prefill the create form when the category is chosen.
+        {
+          id: 'cat-tools',
+          name: 'Tools',
+          defaultTrackingMode: 'SERIALISED',
+          defaultCondition: 'GOOD',
+          defaultWarrantyMonths: 12,
+        },
       ],
     },
   }),
@@ -316,6 +323,68 @@ describe('CreateItemDialog', () => {
     expect(screen.getByRole('combobox', { name: 'Tracking' })).toHaveTextContent('Untracked');
     // Still Untracked, so the serialised-only "how many" field never appears.
     expect(screen.queryByLabelText(/How many/)).toBeNull();
+  });
+
+  it('soft-prefills condition and warranty window from the selected category default (backlog T2)', async () => {
+    renderDialog();
+    // Set the name and choose the "Tools" category on the Details tab (it carries T2 defaults)
+    // before leaving for the Lifecycle tab, where the facets the defaults fill live.
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Torque wrench' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Tools' }));
+
+    // The lifecycle facets those defaults fill live on the Lifecycle rail tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    expect(screen.getByRole('combobox', { name: 'Condition (optional)' })).toHaveTextContent('Good');
+    expect(screen.getByTestId('item-warranty-months')).toHaveValue(12);
+
+    // On create, the condition rides along and the months window becomes an absolute expiry
+    // date (no acquired date set ⇒ measured from today, so ~12 months out — next year). The
+    // footer Create submits from any tab.
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    // Tools defaults SERIALISED, so the create routes through the clone mutation.
+    await waitFor(() => expect(spies.createSerialised).toHaveBeenCalledTimes(1));
+    const payload = spies.createSerialised.mock.calls[0][0];
+    expect(payload).toMatchObject({ name: 'Torque wrench', condition: 'GOOD' });
+    expect(payload.warrantyExpiresAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(payload.warrantyExpiresAt.slice(0, 4)).toBe(String(new Date().getUTCFullYear() + 1));
+  });
+
+  it('never re-stomps a manually set condition or warranty when a category is selected (backlog T2)', async () => {
+    renderDialog();
+    // The user sets the lifecycle facets by hand FIRST, on the Lifecycle tab…
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Condition (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Needs repair' }));
+    fireEvent.change(screen.getByTestId('item-warranty-months'), { target: { value: '36' } });
+
+    // …then selects the Tools category (defaults GOOD + 12) back on the Details tab. The manual
+    // choices must win — each facet's dirty-check keeps the soft prefill from re-stomping it.
+    fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Category (optional)' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Tools' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    expect(screen.getByRole('combobox', { name: 'Condition (optional)' })).toHaveTextContent('Needs repair');
+    expect(screen.getByTestId('item-warranty-months')).toHaveValue(36);
+  });
+
+  it('derives the warranty expiry from the acquired date + months window at submit (backlog T2)', async () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Calibrated gauge' } });
+    // Enter an explicit acquired date + a 24-month warranty on the Lifecycle tab.
+    fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
+    fireEvent.change(screen.getByTestId('item-acquired'), { target: { value: '2026-01-15' } });
+    fireEvent.change(screen.getByTestId('item-warranty-months'), { target: { value: '24' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    // DISCRETE default ⇒ the plain create mutation; the window is measured from the acquired date.
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0]).toMatchObject({
+      name: 'Calibrated gauge',
+      acquiredAt: '2026-01-15',
+      warrantyExpiresAt: '2028-01-15',
+    });
   });
 
   it('rejects an invalid ASIN with an accessible error', () => {

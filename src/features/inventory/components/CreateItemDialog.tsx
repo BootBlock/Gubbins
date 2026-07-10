@@ -34,6 +34,7 @@ import { valueForPolicy, type LowStockPolicy } from '../low-stock-policy';
 import { LowStockPolicyPicker } from './LowStockPolicyPicker';
 import { DEFAULT_AMAZON_MARKETPLACE, asinToUrl, marketplaceFromHost, parseAsin } from '../asin';
 import { conditionSelectOptions, fromDateInputValue } from './inventory-ui';
+import { warrantyExpiryFromWindow } from '../asset-lifecycle';
 import {
   applyScrapeMerge,
   buildScrapeMergePlan,
@@ -92,6 +93,9 @@ const schema = z
     batchNumber: z.string().optional(),
     lotNumber: z.string().optional(),
     condition: z.string().optional(),
+    // Warranty *window* in whole months (backlog T2). Soft-prefilled from a category default;
+    // turned into an absolute `warrantyExpiresAt` (acquired-on, else today, + N months) at submit.
+    warrantyMonths: z.string().optional(),
     quantity: z.string().optional(),
     count: z.string().optional(),
     unitOfMeasure: z.string().optional(),
@@ -160,6 +164,7 @@ const FIELD_TAB: Record<string, CreateTabId> = {
   acquiredAt: 'lifecycle',
   expiryDate: 'lifecycle',
   condition: 'lifecycle',
+  warrantyMonths: 'lifecycle',
   batchNumber: 'lifecycle',
   lotNumber: 'lifecycle',
 };
@@ -334,6 +339,7 @@ export function CreateItemDialog({
       batchNumber: '',
       lotNumber: '',
       condition: '',
+      warrantyMonths: '',
       quantity: '1',
       count: '1',
       unitOfMeasure: 'g',
@@ -352,12 +358,17 @@ export function CreateItemDialog({
   const lowStockPolicy = watch('lowStockPolicy') ?? 'default';
   const isUnlimited = watch('isUnlimited') ?? false;
 
-  // Category-template soft prefill (backlog T1): selecting a category whose `defaultTrackingMode`
-  // is set fills the Tracking field with that default — but only until the user has chosen a
-  // tracking mode themselves. This ref is the dirty-check (mirroring the OCR/scrape "fill only the
-  // blank field" idiom): flipped true on any manual Tracking change, so a later category switch
-  // never re-stomps a mode the user picked. Reset alongside the form on close/create.
+  // Category-template soft prefill (backlog T1/T2): selecting a category whose default for a
+  // facet is set fills that facet's field — but only until the user has touched it themselves.
+  // Each ref is that field's dirty-check (mirroring the OCR/scrape "fill only the blank field"
+  // idiom): flipped true on any manual change to its field, so a later category switch never
+  // re-stomps a value the user chose. All reset alongside the form on close/create.
+  //  · trackingModeTouched   — Tracking mode (T1).
+  //  · conditionTouched      — Condition (T2).
+  //  · warrantyMonthsTouched — Warranty window in months (T2).
   const trackingModeTouched = useRef(false);
+  const conditionTouched = useRef(false);
+  const warrantyMonthsTouched = useRef(false);
 
   // Choosing "Custom" seeds a friendly non-zero trigger so the user isn't left staring at a
   // blank required-feeling field (they can still change it). Only seeds when currently
@@ -552,6 +563,12 @@ export function CreateItemDialog({
       }
     }
 
+    // Warranty window → absolute expiry (backlog T2): a whole-month window is measured from the
+    // acquired-on date (else today), matching the category-template default's "N-month warranty".
+    const warrantyExpiresAt = values.warrantyMonths?.trim()
+      ? warrantyExpiryFromWindow(values.acquiredAt?.trim() || null, Number(values.warrantyMonths), Date.now())
+      : null;
+
     const base = {
       name: values.name.trim(),
       locationId: values.locationId,
@@ -570,12 +587,16 @@ export function CreateItemDialog({
       ...(values.batchNumber?.trim() ? { batchNumber: values.batchNumber.trim() } : {}),
       ...(values.lotNumber?.trim() ? { lotNumber: values.lotNumber.trim() } : {}),
       ...(values.condition ? { condition: values.condition as CreateItemInput['condition'] } : {}),
+      // Warranty expiry derived from the months window above (backlog T2) — omitted when unset.
+      ...(warrantyExpiresAt ? { warrantyExpiresAt } : {}),
       // Per-item low-stock policy (Phase 59 reorder policy) — resolved above.
       ...reorderFields,
     };
     const done = () => {
       reset();
       trackingModeTouched.current = false;
+      conditionTouched.current = false;
+      warrantyMonthsTouched.current = false;
       setPendingAliases([]);
       setInlineCreate(null);
       resetAsin();
@@ -676,6 +697,8 @@ export function CreateItemDialog({
   const handleClose = () => {
     reset();
     trackingModeTouched.current = false;
+    conditionTouched.current = false;
+    warrantyMonthsTouched.current = false;
     setPendingAliases([]);
     setInlineCreate(null);
     resetAsin();
@@ -857,11 +880,18 @@ export function CreateItemDialog({
                 return;
               }
               field.onChange(value);
-              // Category-template soft prefill (backlog T1): adopt the chosen category's default
-              // tracking mode, but only while the user hasn't picked a tracking mode themselves.
-              if (!trackingModeTouched.current) {
-                const def = categories?.rows.find((c) => c.id === value)?.defaultTrackingMode;
-                if (def) setValue('trackingMode', def);
+              // Category-template soft prefill (backlog T1/T2): adopt the chosen category's
+              // defaults for each lifecycle facet, but only while the user hasn't touched that
+              // facet's field themselves — so switching category never re-stomps a manual value.
+              const cat = categories?.rows.find((c) => c.id === value);
+              if (cat && !trackingModeTouched.current && cat.defaultTrackingMode) {
+                setValue('trackingMode', cat.defaultTrackingMode);
+              }
+              if (cat && !conditionTouched.current && cat.defaultCondition) {
+                setValue('condition', cat.defaultCondition);
+              }
+              if (cat && !warrantyMonthsTouched.current && cat.defaultWarrantyMonths != null) {
+                setValue('warrantyMonths', String(cat.defaultWarrantyMonths));
               }
             }}
           />
@@ -1192,15 +1222,46 @@ export function CreateItemDialog({
             label="Condition (optional)"
             hint={
               'The physical state of this stock (e.g. *New*, *Used*, *Damaged*). **Untracked** ' +
-              'simply records no condition. Useful for second-hand or salvaged parts.'
+              'simply records no condition. Useful for second-hand or salvaged parts.\n\n' +
+              'A category can pre-fill this — you can still change it here.'
             }
             data-testid="item-condition"
             options={conditionSelectOptions('— Untracked —')}
             value={field.value ?? ''}
-            onChange={field.onChange}
+            onChange={(value) => {
+              // A manual pick disables the category-default soft prefill (backlog T2) from here
+              // on, so switching category later never re-stomps the condition the user chose.
+              conditionTouched.current = true;
+              field.onChange(value);
+            }}
           />
         )}
       />
+      <FormField
+        label="Warranty (months, optional)"
+        hint={
+          'How long this item is under warranty, in **whole months**. On create this is turned ' +
+          'into a warranty **expiry date** measured from the *Acquired date* above (or today, if ' +
+          'that is blank) — so a *12* here on an item acquired today expires in a year.\n\n' +
+          'A category can pre-fill this for its items; leave blank for no warranty. You can set an ' +
+          'exact expiry date later from the item’s **Asset** details.'
+        }
+      >
+        <Input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          placeholder="e.g. 12"
+          data-testid="item-warranty-months"
+          {...register('warrantyMonths', {
+            // A manual edit disables the category-default soft prefill (backlog T2) from here on.
+            onChange: () => {
+              warrantyMonthsTouched.current = true;
+            },
+          })}
+        />
+      </FormField>
       <FormField
         label="Batch no. (optional)"
         hint={

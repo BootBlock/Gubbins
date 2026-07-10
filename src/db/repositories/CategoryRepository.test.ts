@@ -79,6 +79,75 @@ describe('CategoryRepository', () => {
     ).rejects.toThrow(/CHECK constraint failed/i);
   });
 
+  it('round-trips category default condition + warranty window, defaulting to null (backlog T2)', async () => {
+    // A category with no lifecycle defaults reads them back as null.
+    const plain = await categories.create({ name: 'Odds & ends' });
+    expect(plain.defaultCondition).toBeNull();
+    expect(plain.defaultWarrantyMonths).toBeNull();
+    const readPlain = await categories.getById(plain.id);
+    expect(readPlain?.defaultCondition).toBeNull();
+    expect(readPlain?.defaultWarrantyMonths).toBeNull();
+
+    // One created with the defaults carries them through create and read…
+    const tools = await categories.create({
+      name: 'Tools',
+      defaultCondition: 'GOOD',
+      defaultWarrantyMonths: 12,
+    });
+    expect(tools.defaultCondition).toBe('GOOD');
+    expect(tools.defaultWarrantyMonths).toBe(12);
+    const readTools = await categories.getById(tools.id);
+    expect(readTools?.defaultCondition).toBe('GOOD');
+    expect(readTools?.defaultWarrantyMonths).toBe(12);
+
+    // …and they surface in the management list too (CategoryWithFieldCount extends Category).
+    const listed = (await categories.list()).rows.find((c) => c.id === tools.id);
+    expect(listed?.defaultCondition).toBe('GOOD');
+    expect(listed?.defaultWarrantyMonths).toBe(12);
+  });
+
+  it('updates and clears the category default condition + warranty window independently (backlog T2)', async () => {
+    const cat = await categories.create({
+      name: 'Test gear',
+      defaultCondition: 'GOOD',
+      defaultWarrantyMonths: 12,
+    });
+
+    // Update just the condition — the warranty window and name are left untouched (partial LWW).
+    const set = await categories.update(cat.id, { defaultCondition: 'MINT' });
+    expect(set.name).toBe('Test gear');
+    expect(set.defaultCondition).toBe('MINT');
+    expect(set.defaultWarrantyMonths).toBe(12);
+
+    // Update just the warranty window — the condition is left untouched.
+    const rewindowed = await categories.update(cat.id, { defaultWarrantyMonths: 24 });
+    expect(rewindowed.defaultCondition).toBe('MINT');
+    expect(rewindowed.defaultWarrantyMonths).toBe(24);
+
+    // Passing null clears each back to "no default".
+    const cleared = await categories.update(cat.id, {
+      defaultCondition: null,
+      defaultWarrantyMonths: null,
+    });
+    expect(cleared.defaultCondition).toBeNull();
+    expect(cleared.defaultWarrantyMonths).toBeNull();
+    expect(cleared.name).toBe('Test gear');
+  });
+
+  it('rejects a category default condition outside the CONDITIONS SSOT (backlog T2)', async () => {
+    await expect(
+      // The DB CHECK mirrors items.condition, so a bogus condition is refused.
+      categories.create({ name: 'Bad', defaultCondition: 'PRISTINE' as never }),
+    ).rejects.toThrow(/CHECK constraint failed/i);
+  });
+
+  it('rejects a non-positive category default warranty window (backlog T2)', async () => {
+    await expect(
+      // A warranty *window* must be a positive number of months (CHECK ... > 0).
+      categories.create({ name: 'Bad', defaultWarrantyMonths: 0 }),
+    ).rejects.toThrow(/CHECK constraint failed/i);
+  });
+
   it('deletes a category and nulls the category on its items (no item loss)', async () => {
     const cat = await categories.create({ name: 'Doomed' });
     const item = await items.create({ name: 'Widget', categoryId: cat.id });
