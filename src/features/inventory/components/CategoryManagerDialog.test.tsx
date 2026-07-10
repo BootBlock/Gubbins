@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   categoryRows: [] as CategoryWithFieldCount[],
   fields: [] as CategoryField[],
   createCategory: vi.fn(),
+  updateCategory: vi.fn(),
   deleteCategory: vi.fn(),
   addField: vi.fn(),
   deleteField: vi.fn(),
@@ -25,6 +26,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../categories', () => ({
   useCategories: () => ({ data: { rows: h.categoryRows } }),
   useCreateCategory: () => ({ mutate: h.createCategory, isPending: false }),
+  useUpdateCategory: () => ({ mutate: h.updateCategory, isPending: false }),
   useDeleteCategory: () => ({ mutate: h.deleteCategory, isPending: false }),
   useCategoryFields: () => ({ data: h.fields }),
   useAddCategoryField: () => ({ mutate: h.addField, isPending: false }),
@@ -59,14 +61,26 @@ function selectCategory(name: string | RegExp) {
 
 const addFieldButton = () => screen.getByRole('button', { name: /Add field/ });
 
+const category = (overrides: Partial<CategoryWithFieldCount> = {}): CategoryWithFieldCount => ({
+  id: 'cat-1',
+  name: 'Resistors',
+  defaultTrackingMode: null,
+  defaultCondition: null,
+  defaultWarrantyMonths: null,
+  updatedAt: 0,
+  fieldCount: 1,
+  ...overrides,
+});
+
 beforeEach(() => {
-  h.categoryRows = [{ id: 'cat-1', name: 'Resistors', fieldCount: 1 }];
+  h.categoryRows = [category()];
   h.fields = [field()];
   h.createCategory
     .mockReset()
     .mockImplementation((input, opts) =>
       opts?.onSuccess?.({ id: 'cat-new', name: input.name, fieldCount: 0 }),
     );
+  h.updateCategory.mockReset();
   h.deleteCategory.mockReset();
   h.addField.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
   h.deleteField.mockReset();
@@ -255,6 +269,84 @@ describe('CategoryManagerDialog — the Default-value control matches the field 
     fireEvent.click(screen.getByRole('combobox', { name: 'Default value' }));
     expect(screen.getByRole('option', { name: 'Red' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Green' })).toBeInTheDocument();
+  });
+});
+
+describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
+  beforeEach(() => {
+    renderDialog();
+    selectCategory(/Resistors/);
+  });
+
+  it('persists a chosen default tracking mode via the update mutation', async () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking mode' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Serialised' }));
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: { defaultTrackingMode: 'SERIALISED' },
+      }),
+    );
+  });
+
+  it('persists a chosen default condition via the update mutation', async () => {
+    fireEvent.click(screen.getByRole('combobox', { name: 'Condition' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Good' }));
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: { defaultCondition: 'GOOD' },
+      }),
+    );
+  });
+
+  it('persists a typed default warranty window via the update mutation', async () => {
+    fireEvent.change(screen.getByLabelText('Default warranty in months'), { target: { value: '12' } });
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: { defaultWarrantyMonths: 12 },
+      }),
+    );
+  });
+
+  it('clears a default tracking mode to null when picking — No default —', async () => {
+    // Start from a category that already carries a default so there is something to clear.
+    cleanup();
+    h.categoryRows = [category({ defaultTrackingMode: 'SERIALISED' })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Tracking mode' }));
+    fireEvent.click(screen.getByRole('option', { name: '— No default —' }));
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: { defaultTrackingMode: null },
+      }),
+    );
+  });
+
+  it('clears the default warranty window to null when the field is emptied', async () => {
+    cleanup();
+    h.categoryRows = [category({ defaultWarrantyMonths: 24 })];
+    renderDialog();
+    selectCategory(/Resistors/);
+
+    const input = screen.getByLabelText('Default warranty in months');
+    expect(input).toHaveValue(24);
+    fireEvent.change(input, { target: { value: '' } });
+
+    await waitFor(() =>
+      expect(h.updateCategory).toHaveBeenCalledWith({
+        id: 'cat-1',
+        input: { defaultWarrantyMonths: null },
+      }),
+    );
   });
 });
 

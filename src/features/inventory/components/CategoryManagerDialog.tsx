@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -11,7 +11,14 @@ import {
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
 import { AddIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
-import { FIELD_TYPES, type CategoryWithFieldCount, type FieldType } from '@/db/repositories';
+import {
+  FIELD_TYPES,
+  TRACKING_MODES,
+  type CategoryWithFieldCount,
+  type Condition,
+  type FieldType,
+  type TrackingMode,
+} from '@/db/repositories';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import {
   useAddCategoryField,
@@ -20,8 +27,14 @@ import {
   useCreateCategory,
   useDeleteCategory,
   useDeleteCategoryField,
+  useUpdateCategory,
 } from '../categories';
-import { ATTACHMENT_MODE_LABELS, FIELD_TYPE_LABELS } from './inventory-ui';
+import {
+  ATTACHMENT_MODE_LABELS,
+  conditionSelectOptions,
+  FIELD_TYPE_LABELS,
+  TRACKING_MODE_LABELS,
+} from './inventory-ui';
 import { TypedFieldControl } from './TypedFieldControl';
 
 /**
@@ -191,6 +204,98 @@ function CategoryDetail({
       </ul>
 
       <AddFieldForm categoryId={category.id} />
+
+      <CategoryDefaultsSection category={category} />
+    </div>
+  );
+}
+
+/**
+ * "Defaults for new items in this category" — the editor for the T1/T2 category-template
+ * defaults (tracking mode, condition, warranty window). These are plain LWW columns with
+ * no draft/confirm model, so each control **auto-saves immediately** via `useUpdateCategory`
+ * (mirroring the Settings dialog's per-row auto-save), clearing to `null`. This is a direct
+ * read-from-category / write-back-to-category editor — the *soft-prefill* / never-re-stomp
+ * logic lives on the create form (T1/T2), not here.
+ */
+function CategoryDefaultsSection({ category }: { category: CategoryWithFieldCount }) {
+  const updateCategory = useUpdateCategory();
+  const save = (input: {
+    defaultTrackingMode?: TrackingMode | null;
+    defaultCondition?: Condition | null;
+    defaultWarrantyMonths?: number | null;
+  }) => updateCategory.mutate({ id: category.id, input });
+
+  // The warranty field is a free-text number, so it keeps a local buffer (reset when the
+  // selected category changes) rather than being driven straight from the persisted value —
+  // that keeps mid-edit keystrokes from being clobbered by the write-back refresh.
+  const [warrantyText, setWarrantyText] = useState(
+    category.defaultWarrantyMonths != null ? String(category.defaultWarrantyMonths) : '',
+  );
+  useEffect(() => {
+    setWarrantyText(category.defaultWarrantyMonths != null ? String(category.defaultWarrantyMonths) : '');
+  }, [category.id, category.defaultWarrantyMonths]);
+
+  const commitWarranty = (raw: string) => {
+    setWarrantyText(raw);
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      save({ defaultWarrantyMonths: null });
+      return;
+    }
+    const months = Number.parseInt(trimmed, 10);
+    // Only persist a valid whole-month window (>= 1); an in-progress/invalid entry is held
+    // in the buffer until it parses, never written as junk.
+    if (Number.isInteger(months) && months >= 1) {
+      save({ defaultWarrantyMonths: months });
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-secondary/10 p-2.5">
+      <h4 className="flex items-center gap-1.5 text-sm font-semibold">
+        Defaults for new items in this category
+        <InfoHint content="Pre-fill the create-item form for this category. Each is a **starting point** you can still change per item — changing them here never touches existing items." />
+      </h4>
+
+      <SelectField
+        label="Tracking mode"
+        hint="How a new item in this category is tracked by default — e.g. **Serialised** for tools you track one-by-one. Choose *— No default —* to leave it unset."
+        value={category.defaultTrackingMode ?? ''}
+        onChange={(value) => save({ defaultTrackingMode: value === '' ? null : (value as TrackingMode) })}
+        options={[
+          { value: '', label: '— No default —' },
+          ...TRACKING_MODES.map((mode) => ({ value: mode, label: TRACKING_MODE_LABELS[mode] })),
+        ]}
+      />
+
+      <SelectField
+        label="Condition"
+        hint="The condition a new item in this category starts in — e.g. **Good**. Choose *— No default —* to leave it unset."
+        value={category.defaultCondition ?? ''}
+        onChange={(value) => save({ defaultCondition: value === '' ? null : (value as Condition) })}
+        options={conditionSelectOptions('— No default —')}
+      />
+
+      <FormField
+        label="Warranty (months)"
+        hint={
+          'A default warranty **window in whole months** (not a date). On create it is turned ' +
+          'into an expiry date measured from the item’s *Acquired date* (or today) — so *12* ' +
+          'here means a new item is under warranty for a year. Leave blank for no default.'
+        }
+      >
+        <Input
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          placeholder="e.g. 12"
+          aria-label="Default warranty in months"
+          value={warrantyText}
+          onChange={(e) => commitWarranty(e.target.value)}
+        />
+      </FormField>
     </div>
   );
 }
