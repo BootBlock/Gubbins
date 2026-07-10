@@ -12,6 +12,7 @@ import { setStockStatement } from '../stock';
 import type { CreateItemInput } from '../types';
 import { historyStatement } from './history';
 import {
+  normaliseCurrentValue,
   normaliseExpiry,
   normaliseIsoDate,
   normalisePurchasePrice,
@@ -46,6 +47,7 @@ export interface ResolvedCreate {
   readonly warrantyExpiresAt: string | null;
   readonly purchasePrice: number | null;
   readonly depreciationMonths: number | null;
+  readonly currentValue: number | null;
   readonly trackingMode: string;
   readonly quantity: number;
   readonly unit: string | null;
@@ -127,6 +129,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     warrantyExpiresAt: normaliseIsoDate(input.warrantyExpiresAt),
     purchasePrice: normalisePurchasePrice(input.purchasePrice),
     depreciationMonths: normaliseDepreciationMonths(input.depreciationMonths),
+    currentValue: normaliseCurrentValue(input.currentValue),
     trackingMode,
     quantity,
     unit,
@@ -151,8 +154,8 @@ export function buildInsert(
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
                mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
-               acquired_at, warranty_expires_at, purchase_price, depreciation_months)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+               acquired_at, warranty_expires_at, purchase_price, depreciation_months, current_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -185,6 +188,7 @@ export function buildInsert(
         r.warrantyExpiresAt,
         r.purchasePrice,
         r.depreciationMonths,
+        r.currentValue,
       ],
     },
     // Seed the item's primary placement in the per-location ledger (Phase 25). The

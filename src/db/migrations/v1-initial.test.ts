@@ -5,6 +5,7 @@ import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
 import { v2WarrantyIndex } from './v2-warranty-index';
 import { v3ActiveLocationIndex } from './v3-active-location-index';
+import { v4Revaluations } from './v4-revaluations';
 import { captureSchemaSnapshot } from './__fixtures__/schema-snapshot';
 import goldenSnapshot from './__fixtures__/schema-baseline.snapshot.json';
 
@@ -34,16 +35,18 @@ describe('schema baseline lock', () => {
     await driver.close();
   });
 
-  it('registers the consolidated baseline plus the v2 and v3 forward index steps', () => {
-    expect(migrations).toHaveLength(3);
+  it('registers the consolidated baseline plus the v2–v4 forward steps', () => {
+    expect(migrations).toHaveLength(4);
     expect(migrations[0]).toBe(v1Initial);
     expect(migrations[1]).toBe(v2WarrantyIndex);
     expect(migrations[2]).toBe(v3ActiveLocationIndex);
+    expect(migrations[3]).toBe(v4Revaluations);
     expect(v1Initial.version).toBe(1);
     expect(v2WarrantyIndex.version).toBe(2);
     expect(v3ActiveLocationIndex.version).toBe(3);
+    expect(v4Revaluations.version).toBe(4);
     // The build's target is simply the highest registered version.
-    expect(TARGET_SCHEMA_VERSION).toBe(3);
+    expect(TARGET_SCHEMA_VERSION).toBe(4);
   });
 
   it('reproduces the golden schema shape byte-for-byte (zero unintended drift)', async () => {
@@ -67,11 +70,11 @@ describe('schema baseline lock', () => {
   it('boots a fresh database cleanly to the target user_version', async () => {
     const report = await runMigrations(driver, migrations);
     expect(report.from).toBe(0);
-    expect(report.to).toBe(3);
-    expect(report.applied).toEqual([1, 2, 3]);
+    expect(report.to).toBe(4);
+    expect(report.applied).toEqual([1, 2, 3, 4]);
 
     const row = await driver.queryOne<{ user_version: number | bigint }>('PRAGMA user_version;');
-    expect(Number(row?.user_version)).toBe(3);
+    expect(Number(row?.user_version)).toBe(4);
   });
 
   it('creates the partial warranty index on the v2 forward step', async () => {
@@ -124,11 +127,25 @@ describe('schema baseline lock', () => {
     }
   });
 
+  it('creates the revaluations table + current_value column on the v4 forward step', async () => {
+    await runMigrations(driver, migrations);
+
+    const table = await driver.queryOne<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'revaluations';",
+    );
+    expect(table?.name).toBe('revaluations');
+
+    const column = await driver.queryOne<{ name: string }>(
+      "SELECT name FROM pragma_table_info('items') WHERE name = 'current_value';",
+    );
+    expect(column?.name).toBe('current_value');
+  });
+
   it('refuses a database whose version is ahead of the target', async () => {
-    // A database left ahead of the highest registered version (target 3) — e.g. a
+    // A database left ahead of the highest registered version (target 4) — e.g. a
     // pre-squash baseline stranded on a former forward chain — must be refused loudly
     // (SCHEMA_TOO_NEW → the boot rescue screen offers a reset), never silently no-opped.
-    await driver.execute('PRAGMA user_version = 5;');
+    await driver.execute('PRAGMA user_version = 6;');
     await expect(runMigrations(driver, migrations)).rejects.toMatchObject({
       code: 'SCHEMA_TOO_NEW',
     });

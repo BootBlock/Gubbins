@@ -130,9 +130,11 @@ export class ReportRepository extends BaseRepository {
       category_name: string | null;
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
       `SELECT i.category_id AS category_id, c.name AS category_name, i.quantity AS quantity, i.unit_cost AS unit_cost,
+              i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
          FROM items i
          LEFT JOIN categories c ON c.id = i.category_id
@@ -142,6 +144,7 @@ export class ReportRepository extends BaseRepository {
     const itemValuations: ItemValuationRow[] = itemRows.map((r) => ({
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      currentValue: r.current_value,
       preferredSupplierCost: r.preferred_supplier_cost,
     }));
     const categoryRows: ValuationRow[] = itemRows.map((r) => ({
@@ -149,18 +152,21 @@ export class ReportRepository extends BaseRepository {
       groupName: r.category_name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      currentValue: r.current_value,
       preferredSupplierCost: r.preferred_supplier_cost,
     }));
 
-    // Per-location: the `item_stock` ledger (where stock actually sits), costed by the item.
+    // Per-location: the `item_stock` ledger (where stock actually sits), valued by the item.
     const stockRows = await this.driver.query<{
       location_id: string;
       location_name: string | null;
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       preferred_supplier_cost: number | null;
     }>(
       `SELECT s.location_id AS location_id, l.name AS location_name, s.quantity AS quantity, i.unit_cost AS unit_cost,
+              i.current_value AS current_value,
               ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost
          FROM item_stock s
          JOIN items i ON i.id = s.item_id
@@ -172,6 +178,7 @@ export class ReportRepository extends BaseRepository {
       groupName: r.location_name,
       quantity: r.quantity,
       unitCost: r.unit_cost,
+      currentValue: r.current_value,
       preferredSupplierCost: r.preferred_supplier_cost,
     }));
 
@@ -201,6 +208,7 @@ export class ReportRepository extends BaseRepository {
       condition: string | null;
       quantity: number;
       unit_cost: number | null;
+      current_value: number | null;
       purchase_price: number | null;
       acquired_at: string | null;
       warranty_expires_at: string | null;
@@ -209,7 +217,8 @@ export class ReportRepository extends BaseRepository {
       thumbnail_blob: Uint8Array | null;
     }>(
       `SELECT items.id AS id, items.name AS name, items.serial_no AS serial_no, items.condition AS condition,
-              items.quantity AS quantity, items.unit_cost AS unit_cost, items.purchase_price AS purchase_price,
+              items.quantity AS quantity, items.unit_cost AS unit_cost, items.current_value AS current_value,
+              items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
               items.location_id AS location_id,
               ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
@@ -234,6 +243,8 @@ export class ReportRepository extends BaseRepository {
       warrantyExpiresAt: r.warranty_expires_at,
       purchasePrice: r.purchase_price,
       unitCost: r.unit_cost,
+      // Feature-gap G9: the manual current value wins over the replacement cost in `toLine`.
+      currentValuePerUnit: r.current_value,
       preferredSupplierCost: r.preferred_supplier_cost,
       locationId: r.location_id,
       thumbnail: r.thumbnail_blob ?? null,

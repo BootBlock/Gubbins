@@ -13,6 +13,7 @@
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { effectiveUnitCost as resolveCostPrecedence } from '@/features/inventory/supplier-cost';
+import { effectiveUnitValue } from '@/features/inventory/valuation';
 
 // --- Effective unit cost (the single swap-point for cost precedence) -----------
 
@@ -83,6 +84,11 @@ export interface ValuationRow {
   readonly quantity: number;
   readonly unitCost: number | null;
   readonly preferredSupplierCost?: number | null;
+  /**
+   * Manual current / market value per unit (feature-gap G9); when set it **wins** over the
+   * replacement cost so an appreciating asset is valued at today's worth. Absent/null → cost.
+   */
+  readonly currentValue?: number | null;
 }
 
 /** Fallback label for a row with no category/location group. */
@@ -97,9 +103,10 @@ export function groupValuation(rows: readonly ValuationRow[]): ValueGroup[] {
   const map = new Map<string, ValueGroup>();
   for (const row of rows) {
     const key = row.groupId ?? ' ungrouped';
-    const cost = effectiveUnitCost(row);
+    // Manual current value (G9) wins over the replacement cost when set.
+    const unitValue = effectiveUnitValue(row.currentValue, effectiveUnitCost(row));
     const qty = Math.max(0, row.quantity);
-    const value = qty * cost;
+    const value = qty * unitValue;
     const existing = map.get(key);
     if (existing) {
       map.set(key, { ...existing, value: existing.value + value, quantity: existing.quantity + qty });
@@ -121,6 +128,8 @@ export interface ItemValuationRow {
   readonly quantity: number;
   readonly unitCost: number | null;
   readonly preferredSupplierCost?: number | null;
+  /** Manual current / market value per unit (feature-gap G9); wins over the cost when set. */
+  readonly currentValue?: number | null;
 }
 
 /** Headline totals across every valued item (overall value, units, unpriced count). */
@@ -134,9 +143,10 @@ export function summariseValuation(items: readonly ItemValuationRow[]): {
   let unpricedItemCount = 0;
   for (const item of items) {
     const qty = Math.max(0, item.quantity);
-    const cost = effectiveUnitCost(item);
+    // Manual current value (G9) wins over the replacement cost when set.
+    const unitValue = effectiveUnitValue(item.currentValue, effectiveUnitCost(item));
     totalQuantity += qty;
-    if (cost > 0) totalValue += qty * cost;
+    if (unitValue > 0) totalValue += qty * unitValue;
     else unpricedItemCount += 1;
   }
   return { totalValue, totalQuantity, unpricedItemCount };

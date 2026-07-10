@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import { historyStatement } from './history';
 import {
+  normaliseCurrentValue,
   normaliseExpiry,
   normaliseIsoDate,
   normalisePurchasePrice,
@@ -321,6 +322,13 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.depreciationMonths !== undefined) {
       sets.push('depreciation_months = ?');
       params.push(normaliseDepreciationMonths(input.depreciationMonths));
+    }
+    if (input.currentValue !== undefined) {
+      // Manual current value (feature-gap G9). This path sets/clears the live column only —
+      // a recorded revaluation (which also appends the log point) goes through
+      // `recordRevaluation`. Kept here for clearing (null) and import/round-trip.
+      sets.push('current_value = ?');
+      params.push(normaliseCurrentValue(input.currentValue));
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here

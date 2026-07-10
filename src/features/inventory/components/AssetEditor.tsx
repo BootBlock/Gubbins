@@ -18,6 +18,7 @@ import { useFormatters } from '@/lib/useFormatters';
 import { warrantyStatus, currentValue, type WarrantyStatus } from '../asset-lifecycle';
 import { WARRANTY_STATUS_COLOR_CLASS } from './inventory-ui';
 import { useUpdateItem } from '../mutations';
+import { RevaluationEditor } from './RevaluationEditor';
 
 /** Verbose, sentence-style badge copy for each warranty state (this editor's own phrasing). */
 const WARRANTY_LABEL: Record<WarrantyStatus, string> = {
@@ -98,11 +99,12 @@ export function AssetEditor({ item }: { item: Item }) {
         </p>
       ) : null}
 
-      {/* Current book value (only shown when a purchase price is set) */}
+      {/* Depreciated book value (only shown when a purchase price is set). Distinct from the
+          manual current / market value below (RevaluationEditor), which can appreciate. */}
       {bookValue !== null ? (
         <p className="flex items-center gap-1.5 text-sm font-medium text-foreground [&_svg]:size-4">
           <CostIcon />
-          Current value: <Money value={bookValue} formatters={fmt} />
+          Book value: <Money value={bookValue} formatters={fmt} />
           {item.purchasePrice != null && item.purchasePrice !== bookValue ? (
             <span className="font-normal text-muted-foreground">
               · purchased at <Money value={item.purchasePrice} formatters={fmt} />
@@ -190,6 +192,9 @@ export function AssetEditor({ item }: { item: Item }) {
           {dirty ? 'Save asset details' : 'Saved'}
         </Button>
       </div>
+
+      {/* Manual current / market value + revaluation log (feature-gap G9). */}
+      <RevaluationEditor item={item} />
     </div>
   );
 }

@@ -96,3 +96,16 @@ export function normaliseDepreciationMonths(value: number | null | undefined): n
   }
   return Math.trunc(value);
 }
+
+/**
+ * Validate an optional manual current / market value (feature-gap G9, v4): null clears it
+ * (valuation reverts to the depreciated replacement cost); otherwise it must be a finite,
+ * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK.
+ */
+export function normaliseCurrentValue(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Current value must be a non-negative number.');
+  }
+  return value;
+}

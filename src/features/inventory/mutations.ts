@@ -24,6 +24,7 @@ import {
   type GaugeAdjustment,
   type Item,
   type Page,
+  type RecordRevaluationInput,
   type ScrapeApplyInput,
   type UpdateItemInput,
   type UpdateLocationInput,
@@ -151,6 +152,27 @@ export function useApplyScrape() {
     onSettled: (_d, _e, { id }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+    },
+  });
+}
+
+/**
+ * Record a manual revaluation of an item (feature-gap G9) — append a value point to the
+ * revaluation log and set the item's live `current_value`. Invalidation-based: the write
+ * touches the item, its revaluation log and the Activity Ledger together, so a targeted
+ * refresh of those slices is simpler than an optimistic patch. Invalidating `items()` also
+ * refreshes the valuation reports/schedule that now value through the manual current value.
+ */
+export function useRecordRevaluation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: RecordRevaluationInput }) =>
+      getItemRepository().recordRevaluation(id, input),
+    onSettled: (_d, _e, { id }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemRevaluations(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });

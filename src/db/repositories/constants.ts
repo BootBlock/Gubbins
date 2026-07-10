@@ -132,6 +132,8 @@ export const HISTORY_ACTIONS = [
   'SOLD', // stock sold to a buyer (records a sale price → the sales/margin report)
   'WRITTEN_OFF', // stock written off as lost/damaged/expired (no proceeds, optional reason)
   'RETURNED_TO_SUPPLIER', // received stock refunded back to a supplier (inverse of RECEIVED)
+  // Feature-gap G9 — a manual current/market revaluation was recorded (append-only value log).
+  'REVALUED', // the item's manual current value was (re)set, independent of depreciation
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 
