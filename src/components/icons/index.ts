@@ -110,6 +110,7 @@ export {
   Receipt as SaleIcon,
   PackageX as WriteOffIcon,
   BookmarkCheck as ReserveIcon,
+  Heart as WishlistIcon,
   FileUp as ImportIcon,
   // Project budgeting (Phase 58, §4)
   Wallet as BudgetIcon,

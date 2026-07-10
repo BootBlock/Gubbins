@@ -1,5 +1,5 @@
 {
-  "userVersion": 5,
+  "userVersion": 6,
   "objects": [
     {
       "type": "index",
@@ -530,6 +530,12 @@
       "sql": "CREATE TABLE tombstones (\n          table_name TEXT    NOT NULL,\n          id         TEXT    NOT NULL,\n          deleted_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          PRIMARY KEY (table_name, id)\n        ) STRICT"
     },
     {
+      "type": "table",
+      "name": "wishlist",
+      "tbl_name": "wishlist",
+      "sql": "CREATE TABLE wishlist (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          name         TEXT    NOT NULL,\n          note         TEXT,                           -- optional free-text context\n          url          TEXT,                           -- optional http(s) link (app-sanitised)\n          target_price REAL    CHECK (target_price IS NULL OR target_price >= 0),\n          priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
       "type": "trigger",
       "name": "items_fts_ad",
       "tbl_name": "items",
@@ -768,6 +774,12 @@
       "name": "trg_tags_updated_at",
       "tbl_name": "tags",
       "sql": "CREATE TRIGGER trg_tags_updated_at\n    AFTER UPDATE ON tags\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tags SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_wishlist_updated_at",
+      "tbl_name": "wishlist",
+      "sql": "CREATE TRIGGER trg_wishlist_updated_at\n        AFTER UPDATE ON wishlist\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE wishlist SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n        END"
     }
   ],
   "tables": {
@@ -4380,6 +4392,84 @@
         {
           "seq": 1,
           "name": "sqlite_autoindex_tombstones_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "wishlist": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "url",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "target_price",
+          "type": "REAL",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "priority",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'NONE'",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_wishlist_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

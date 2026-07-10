@@ -26,6 +26,7 @@ import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
 import { TombstoneRepository } from './tombstone';
+import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
@@ -44,6 +45,7 @@ export { CheckoutRepository } from './CheckoutRepository';
 export { AssetBookingRepository } from './AssetBookingRepository';
 export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';
+export { WishlistRepository } from './WishlistRepository';
 export {
   TombstoneRepository,
   tombstoneStatement,
@@ -91,6 +93,7 @@ let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
 let suggestionRepository: SuggestionRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
+let wishlistRepository: WishlistRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -180,4 +183,9 @@ export function getSuggestionRepository(): SuggestionRepository {
 export function getTombstoneRepository(): TombstoneRepository {
   tombstoneRepository ??= new TombstoneRepository(getDatabaseDriver(), productionOptions);
   return tombstoneRepository;
+}
+
+export function getWishlistRepository(): WishlistRepository {
+  wishlistRepository ??= new WishlistRepository(getDatabaseDriver(), productionOptions);
+  return wishlistRepository;
 }

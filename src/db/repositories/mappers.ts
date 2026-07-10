@@ -58,8 +58,11 @@ import type {
   ItemRelationView,
   Tag,
   TagRow,
+  WishlistEntry,
+  WishlistRow,
 } from './types';
 import type { RelationKind } from '@/features/inventory/item-relations';
+import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
 
 function parseJson(value: string | null): Record<string, unknown> | null {
   if (value == null) return null;
@@ -217,6 +220,23 @@ export function rowToRevaluation(row: RevaluationRow): Revaluation {
     value: row.value,
     revaluedAt: row.revalued_at,
     note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Map a raw wishlist row (feature-gap G8). `priority` is normalised through the seam (the DB has
+ * no CHECK on it, so a stale/unknown value softens to `NONE` rather than leaking out untyped).
+ */
+export function rowToWishlistEntry(row: WishlistRow): WishlistEntry {
+  return {
+    id: row.id,
+    name: row.name,
+    note: row.note,
+    url: row.url,
+    targetPrice: row.target_price,
+    priority: normaliseWishlistPriority(row.priority),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
