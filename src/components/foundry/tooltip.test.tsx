@@ -70,6 +70,25 @@ describe('Tooltip', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  it('does not open on the deferred focus a touch tap fires on release (the reported bug)', async () => {
+    render(
+      <Tooltip content="Should not pop on a touch tap.">
+        <button type="button">Customise</button>
+      </Tooltip>,
+    );
+    const button = screen.getByRole('button', { name: 'Customise' });
+    const trigger = button.parentElement!;
+    // A touch tap: press then release, then the browser-deferred focus. Touch fires focus on
+    // *release* — a tick or two after pointer-down — so a guard cleared on the next tick would
+    // already be gone by the time it lands and the bubble would pop on a plain tap. The wait
+    // here lets any such next-tick clear run, proving the fix still suppresses the open.
+    fireEvent.pointerDown(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(button, { pointerType: 'touch', clientX: 0, clientY: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fireEvent.focus(trigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   it('shows on keyboard focus and links the trigger via aria-describedby', async () => {
     render(
       <Tooltip content="Helpful text.">
