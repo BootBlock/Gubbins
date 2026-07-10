@@ -129,6 +129,25 @@ interface PreferencesStore {
    * JS-driven, so — unlike the mode/accent/OLED axes — it is not projected onto `<html>`).
    */
   readonly backgroundEffect: BackgroundEffect;
+  /**
+   * Holographic foil item cards (Appearance flair): dresses the item-card hover sheen as a
+   * shifting rainbow **trading-card foil** that tracks the pointer, going beyond the plain
+   * single-hue specular glare. **On by default** as part of the maximal "I have a headache"
+   * animation level — like the pointer tilt it rides on, it only takes visual effect at that top
+   * tier (and on a fine pointer, honouring reduced motion), so a calmer level sees nothing change.
+   * Projected onto `<html>` as `data-holo-cards`; the CSS in `styles/index.css` gates it.
+   */
+  readonly holographicCards: boolean;
+  /**
+   * Collector-card gamification (Appearance flair): treats each inventory card like a collectible
+   * trading card, giving it a decorative **rarity** tier (Common → Legendary) drawn from how
+   * valuable its stock is — a rarity-tinted frame and a corner gem. **On by default** as part of
+   * the maximal "I have a headache" animation level, and — like the holographic foil — only shown
+   * at that top tier. Purely cosmetic and redundant with the item's real value (WCAG 1.4.1); the
+   * tier maths is the pure {@link import('@/features/inventory/rarity').itemRarity} seam. Projected
+   * onto `<html>` as `data-gamify-cards`; the CSS gates the frame/badge.
+   */
+  readonly gamifyCards: boolean;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
@@ -293,6 +312,10 @@ interface PreferencesStore {
   setStarfieldVariant: (variant: StarfieldVariant) => void;
   /** Choose the app-wide animated background effect (none / rain / snow). */
   setBackgroundEffect: (effect: BackgroundEffect) => void;
+  /** Turn the holographic-foil item-card style on/off. */
+  setHolographicCards: (enabled: boolean) => void;
+  /** Turn the collector-card rarity gamification on/off. */
+  setGamifyCards: (enabled: boolean) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
@@ -348,6 +371,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       animationLevel: DEFAULT_ANIMATION_LEVEL,
       starfieldVariant: DEFAULT_STARFIELD_VARIANT,
       backgroundEffect: DEFAULT_BACKGROUND_EFFECT,
+      // On by default — part of the maximal "I have a headache" tier, and only rendered there.
+      holographicCards: true,
+      gamifyCards: true,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
@@ -391,6 +417,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
       // Normalise so a stale/unknown persisted value can never reach the canvas engine.
       setBackgroundEffect: (effect) => set({ backgroundEffect: normaliseBackgroundEffect(effect) }),
+      setHolographicCards: (holographicCards) => set({ holographicCards }),
+      setGamifyCards: (gamifyCards) => set({ gamifyCards }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.

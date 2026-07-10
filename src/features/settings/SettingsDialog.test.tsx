@@ -108,6 +108,8 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       animationLevel: 'balanced',
       starfieldVariant: 'cosmic',
       backgroundEffect: 'none',
+      holographicCards: true,
+      gamifyCards: true,
     });
     const root = document.documentElement;
     root.classList.remove('dark');
@@ -117,6 +119,8 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     delete root.dataset.reduceEffects;
     delete root.dataset.animLevel;
     delete root.dataset.starfield;
+    delete root.dataset.holoCards;
+    delete root.dataset.gamifyCards;
   });
 
   it('mode, colour, OLED and high-contrast controls land on <html>', () => {
@@ -163,6 +167,30 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByTestId('setting-starfield'));
     fireEvent.click(screen.getByRole('option', { name: 'Aurora' }));
     expect(root.dataset.starfield).toBe('aurora');
+  });
+
+  it('holographic-foil and collector-card switches toggle their <html> flags', () => {
+    render(
+      <>
+        <ThemeHost />
+        <SettingsDialog open onClose={() => {}} />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    const root = document.documentElement;
+
+    // Both default on, so the flags are present after the sync hook applies the store.
+    expect(root.dataset.holoCards).toBe('');
+    expect(root.dataset.gamifyCards).toBe('');
+
+    // Switching each Off clears its presence-only flag (the CSS then shows the plain card).
+    fireEvent.click(screen.getByTestId('setting-holographic-cards'));
+    fireEvent.click(screen.getByRole('option', { name: 'Off' }));
+    expect(root.dataset.holoCards).toBeUndefined();
+
+    fireEvent.click(screen.getByTestId('setting-gamify-cards'));
+    fireEvent.click(screen.getByRole('option', { name: 'Off' }));
+    expect(root.dataset.gamifyCards).toBeUndefined();
   });
 
   it('background-effect control persists the chosen weather layer to the store', () => {

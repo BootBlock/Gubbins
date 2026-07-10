@@ -12,8 +12,8 @@ import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oau
 completeGoogleAuthRedirect();
 
 // Project the persisted appearance (mode + accent + OLED + high-contrast + animation level +
-// starfield variant) onto the document before first paint (no flash). The store hydrates
-// synchronously from localStorage, so this reflects the saved choice.
+// starfield variant + holographic/collector-card flair) onto the document before first paint
+// (no flash). The store hydrates synchronously from localStorage, so this reflects the saved choice.
 {
   const s = usePreferencesStore.getState();
   applyAppearance({
@@ -23,6 +23,8 @@ completeGoogleAuthRedirect();
     highContrast: s.highContrast,
     animationLevel: s.animationLevel,
     starfieldVariant: s.starfieldVariant,
+    holographicCards: s.holographicCards,
+    gamifyCards: s.gamifyCards,
   });
 }
 
