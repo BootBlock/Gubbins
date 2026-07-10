@@ -108,14 +108,23 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TABLE categories (
-          id                    TEXT    PRIMARY KEY NOT NULL,
-          name                  TEXT    NOT NULL,
+          id                      TEXT    PRIMARY KEY NOT NULL,
+          name                    TEXT    NOT NULL,
           -- Optional category template default (backlog T1): soft-prefills a new item's
           -- tracking mode in the create form. Nullable (no default); constrained to the
           -- TRACKING_MODES SSOT exactly as items.tracking_mode is.
-          default_tracking_mode TEXT,
-          updated_at            INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList}))
+          default_tracking_mode   TEXT,
+          -- Optional category template defaults (backlog T2): soft-prefill a new item's
+          -- lifecycle facets on the create form. Both nullable (no default).
+          --  · default_condition       — mirrors items.condition (CONDITIONS SSOT).
+          --  · default_warranty_months — a warranty *window* in whole months; the create
+          --    form turns it into an expiry date (acquired-on + N months) at submit.
+          default_condition       TEXT,
+          default_warranty_months INTEGER,
+          updated_at              INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN (${trackingModeList})),
+          CHECK (default_condition IS NULL OR default_condition IN (${conditionList})),
+          CHECK (default_warranty_months IS NULL OR default_warranty_months > 0)
         ) STRICT;
       `,
     },

@@ -335,7 +335,7 @@
       "type": "table",
       "name": "categories",
       "tbl_name": "categories",
-      "sql": "CREATE TABLE categories (\n          id                    TEXT    PRIMARY KEY NOT NULL,\n          name                  TEXT    NOT NULL,\n          -- Optional category template default (backlog T1): soft-prefills a new item's\n          -- tracking mode in the create form. Nullable (no default); constrained to the\n          -- TRACKING_MODES SSOT exactly as items.tracking_mode is.\n          default_tracking_mode TEXT,\n          updated_at            INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED'))\n        ) STRICT"
+      "sql": "CREATE TABLE categories (\n          id                      TEXT    PRIMARY KEY NOT NULL,\n          name                    TEXT    NOT NULL,\n          -- Optional category template default (backlog T1): soft-prefills a new item's\n          -- tracking mode in the create form. Nullable (no default); constrained to the\n          -- TRACKING_MODES SSOT exactly as items.tracking_mode is.\n          default_tracking_mode   TEXT,\n          -- Optional category template defaults (backlog T2): soft-prefill a new item's\n          -- lifecycle facets on the create form. Both nullable (no default).\n          --  · default_condition       — mirrors items.condition (CONDITIONS SSOT).\n          --  · default_warranty_months — a warranty *window* in whole months; the create\n          --    form turns it into an expiry date (acquired-on + N months) at submit.\n          default_condition       TEXT,\n          default_warranty_months INTEGER,\n          updated_at              INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (default_tracking_mode IS NULL OR default_tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED')),\n          CHECK (default_condition IS NULL OR default_condition IN ('MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION')),\n          CHECK (default_warranty_months IS NULL OR default_warranty_months > 0)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1098,6 +1098,22 @@
         },
         {
           "cid": 3,
+          "name": "default_condition",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "default_warranty_months",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,

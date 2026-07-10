@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   warrantyStatus,
   currentValue,
+  warrantyExpiryFromWindow,
   WARRANTY_EXPIRING_SOON_DAYS,
   type AssetLifecycleItem,
 } from './asset-lifecycle';
@@ -28,6 +29,41 @@ function item(overrides: Partial<AssetLifecycleItem> = {}): AssetLifecycleItem {
 function ms(date: string): number {
   return Date.parse(date);
 }
+
+// ---------------------------------------------------------------------------
+// warrantyExpiryFromWindow (backlog T2 — category-default warranty window)
+// ---------------------------------------------------------------------------
+
+describe('warrantyExpiryFromWindow', () => {
+  const now = ms('2026-07-10');
+
+  it('measures the window from the acquired date when one is set', () => {
+    expect(warrantyExpiryFromWindow('2026-01-15', 24, now)).toBe('2028-01-15');
+    expect(warrantyExpiryFromWindow('2026-01-15', 12, now)).toBe('2027-01-15');
+  });
+
+  it('measures the window from today when no acquired date is set', () => {
+    expect(warrantyExpiryFromWindow(null, 12, now)).toBe('2027-07-10');
+    expect(warrantyExpiryFromWindow('   ', 6, now)).toBe('2027-01-10');
+  });
+
+  it('clamps the day to the last of a shorter target month', () => {
+    // 31 Jan + 1 month has no 31 Feb — it clamps to the last day of February.
+    expect(warrantyExpiryFromWindow('2026-01-31', 1, now)).toBe('2026-02-28');
+    // Leap year: Feb 2028 has 29 days.
+    expect(warrantyExpiryFromWindow('2028-01-31', 1, now)).toBe('2028-02-29');
+  });
+
+  it('returns null for a non-positive or invalid window', () => {
+    expect(warrantyExpiryFromWindow('2026-01-15', 0, now)).toBeNull();
+    expect(warrantyExpiryFromWindow('2026-01-15', -3, now)).toBeNull();
+    expect(warrantyExpiryFromWindow('2026-01-15', Number.NaN, now)).toBeNull();
+  });
+
+  it('falls back to today when the acquired date is unparseable', () => {
+    expect(warrantyExpiryFromWindow('not-a-date', 12, now)).toBe('2027-07-10');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // warrantyStatus

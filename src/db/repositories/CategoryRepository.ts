@@ -49,7 +49,8 @@ export class CategoryRepository extends BaseRepository {
   async list(params: PageParams = {}): Promise<Page<CategoryWithFieldCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<CategoryCountRow>(
-      `SELECT c.id, c.name, c.default_tracking_mode, c.updated_at, COUNT(f.id) AS field_count
+      `SELECT c.id, c.name, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
+              c.updated_at, COUNT(f.id) AS field_count
        FROM categories c
        LEFT JOIN category_fields f ON f.category_id = c.id
        GROUP BY c.id
@@ -71,11 +72,17 @@ export class CategoryRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', 'A category must have a name.');
     }
     const id = crypto.randomUUID();
-    await this.driver.execute('INSERT INTO categories (id, name, default_tracking_mode) VALUES (?, ?, ?);', [
-      id,
-      name,
-      input.defaultTrackingMode ?? null,
-    ]);
+    await this.driver.execute(
+      `INSERT INTO categories (id, name, default_tracking_mode, default_condition, default_warranty_months)
+       VALUES (?, ?, ?, ?, ?);`,
+      [
+        id,
+        name,
+        input.defaultTrackingMode ?? null,
+        input.defaultCondition ?? null,
+        input.defaultWarrantyMonths ?? null,
+      ],
+    );
     return (await this.getById(id))!;
   }
 
@@ -83,8 +90,8 @@ export class CategoryRepository extends BaseRepository {
     this.assertWritable();
     await this.requireCategory(id);
     // Plain LWW columns (no history action): assemble only the provided fields so an update
-    // touching just one leaves the rest untouched. `default_tracking_mode` is a category
-    // template default (backlog T1); null clears it.
+    // touching just one leaves the rest untouched. The `default_*` columns are category
+    // template defaults (backlog T1/T2); passing null clears one.
     const sets: string[] = [];
     const params: SqlValue[] = [];
     if (input.name !== undefined) {
@@ -98,6 +105,14 @@ export class CategoryRepository extends BaseRepository {
     if (input.defaultTrackingMode !== undefined) {
       sets.push('default_tracking_mode = ?');
       params.push(input.defaultTrackingMode);
+    }
+    if (input.defaultCondition !== undefined) {
+      sets.push('default_condition = ?');
+      params.push(input.defaultCondition);
+    }
+    if (input.defaultWarrantyMonths !== undefined) {
+      sets.push('default_warranty_months = ?');
+      params.push(input.defaultWarrantyMonths);
     }
     if (sets.length > 0) {
       params.push(id);

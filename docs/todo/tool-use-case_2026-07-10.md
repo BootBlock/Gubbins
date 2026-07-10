@@ -55,11 +55,28 @@ musical instruments) pleasant; it is **not** tool-specific code.
   `trackingModeTouched` ref flips true on any manual Tracking change, so a category (re)selection
   never re-stomps a mode the user picked. No editor UI yet (that's T3).
 
-- **T2 — Category default facets (condition / warranty / maintenance).** Extend the template to the
-  Phase-9 lifecycle facets: a default `condition`, a default maintenance schedule
-  (`MAINTENANCE_BASES` + interval), optionally a default warranty window. Same soft-prefill
-  semantics as T1. This is what turns "new Tool" into "serialised + Good + 12-month calibration"
-  in one category pick. Reuses the existing lifecycle form fields — no new inputs, just defaulted.
+- **T2 — Category default facets (condition + warranty window). ✅ Shipped 2026-07-10.** Extended
+  the template to two lifecycle facets, folded into the v1 baseline (golden snapshot regenerated),
+  threaded through `Category`/`CategoryRow`/`Create`/`UpdateCategoryInput`, the row→DTO mapper and
+  `CategoryRepository` create/update/list (plain LWW columns; each pinned to its SSOT by a CHECK —
+  `default_condition` mirrors `items.condition` / `CONDITIONS`, `default_warranty_months > 0`):
+  - **Default condition** — a clean T1-shape soft-prefill of the existing Condition select on the
+    create form's Lifecycle tab (own `conditionTouched` dirty-check, never re-stomps a manual pick).
+  - **Default warranty window** — a whole-month duration. The create form had **no** warranty input
+    (warranty lives only in the post-create `AssetEditor` as an absolute date), so T2 adds a new
+    defaulted **"Warranty (months)"** lifecycle field; at submit the pure
+    `warrantyExpiryFromWindow(acquiredAt, months, now)` seam turns it into `warrantyExpiresAt`
+    (measured from *Acquired date*, else today; calendar-month arithmetic, day-clamped, UTC).
+  No editor UI yet (that is T3).
+
+- **T2a — Category default maintenance schedule (deferred from T2).** A default
+  `MAINTENANCE_BASES` basis + interval on a category, *applied* after item create as a
+  `maintenance_schedules` row (not a form soft-prefill — maintenance is a separate entity created
+  post-item via `MaintenanceRepository.create`, so it needs a new step in the create flow, not just
+  a defaulted input). Deferred from T2 deliberately: it is structurally heavier than the condition/
+  warranty soft-prefills. Columns to add mirror T2 (`default_maintenance_basis` +
+  `default_maintenance_interval_days` / `_usage`, folded into the v1 baseline). Do alongside or
+  after T3 so the editor can surface it too.
 
 - **T3 — Template editor UI.** Surface the T1/T2 defaults in the existing
   [CategoryManagerDialog](../../src/features/inventory/components/CategoryManagerDialog.tsx) /
@@ -125,4 +142,5 @@ up these rough edges. B1 is a genuine data-loss bug; the rest are enhancements. 
 
 ## Suggested order
 
-~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → `T2` → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `B4` / `T4` / `B5` by appetite.
+~~`B1` (bug)~~ ✅ → ~~`T1`~~ ✅ → ~~`T2`~~ ✅ → ~~`B2`~~ ✅ → `T3` → `B3` → then reassess `T2a` / `B4` /
+`T4` / `B5` by appetite.

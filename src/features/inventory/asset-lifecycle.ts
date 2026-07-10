@@ -60,6 +60,43 @@ export function warrantyStatus(item: AssetLifecycleItem, now: number): WarrantyS
 }
 
 /**
+ * Turn a warranty *window* (a whole number of months) into an absolute expiry date
+ * (`YYYY-MM-DD`), the shape `items.warranty_expires_at` stores. Used by the create form to
+ * apply a category-template default warranty window (backlog T2): the window is measured
+ * from the item's acquisition date when one is set, else from `now` (treating the item as
+ * just acquired), so a "12-month warranty" category default lands a concrete expiry date.
+ *
+ * Calendar-month arithmetic (not a fixed 30-day approximation): `+ N months` advances the
+ * month, clamping the day to the last of the target month for short months (e.g. 31 Jan
+ * + 1 month → 28/29 Feb). All maths is done in UTC to match `warrantyStatus`'s date parsing
+ * and avoid a local-timezone off-by-one. Returns `null` for a non-positive/invalid window.
+ */
+export function warrantyExpiryFromWindow(
+  acquiredAt: string | null,
+  months: number,
+  now: number,
+): string | null {
+  if (!Number.isFinite(months) || months <= 0) return null;
+  const wholeMonths = Math.trunc(months);
+
+  // Base date: the acquisition date (parsed as UTC midnight, like `warrantyStatus`) when set
+  // and valid, else today. A blank/garbled acquired date falls back to `now`.
+  const acquiredMs = acquiredAt && acquiredAt.trim() ? Date.parse(acquiredAt) : NaN;
+  const base = new Date(Number.isFinite(acquiredMs) ? acquiredMs : now);
+
+  const day = base.getUTCDate();
+  // Anchor on day 1 of the target month so a JS day-overflow can't roll into the next month,
+  // then clamp the day to that month's length.
+  const target = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + wholeMonths, 1));
+  const daysInTargetMonth = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  target.setUTCDate(Math.min(day, daysInTargetMonth));
+
+  return target.toISOString().slice(0, 10);
+}
+
+/**
  * Compute the current book value of an item under straight-line depreciation.
  *
  * Returns `null` when no `purchase_price` is set (the widget is hidden).
