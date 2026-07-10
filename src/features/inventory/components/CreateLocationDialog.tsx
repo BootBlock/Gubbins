@@ -61,8 +61,11 @@ export function CreateLocationDialog({
   // reused; each leaf carries the metadata below). Parse once for both the submit guard and the
   // live "what this will create" preview.
   const { ancestors, leaves } = useMemo(() => parseLocationBranch(name), [name]);
+  // Fanning the leaf out into several siblings means there's no single location to make the
+  // default, so the Default toggle is unavailable while that's the case.
+  const multipleLeaves = leaves.length > 1;
   // Only show the preview when it says more than the plain single-name create already conveys.
-  const showPreview = ancestors.length > 0 || leaves.length > 1;
+  const showPreview = ancestors.length > 0 || multipleLeaves;
 
   const submit = () => {
     if (leaves.length === 0) return;
@@ -77,7 +80,8 @@ export function CreateLocationDialog({
         color,
         kind,
         capacity: capacityNum,
-        isDefault,
+        // Only a single location can be the default, so a multi-sibling create never sets it.
+        isDefault: multipleLeaves ? false : isDefault,
       },
       {
         onSuccess: (created) => {
@@ -104,15 +108,19 @@ export function CreateLocationDialog({
       initialFocusRef={nameRef}
     >
       <div className="space-y-4">
-        <FormField label="Name" hint={HINT_NAME_CREATE}>
-          <Input
-            ref={nameRef}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="e.g. Workshop/Cabinet A/Drawer 3, or Garage/Box 1, Box 2, Box 3"
-            className={locationColorTextClass(color)}
-          />
+        {/* The live preview sits *outside* FormField's `<label>`: FormField uses implicit label
+            association, so any text inside it would fold into the Name control's accessible name. */}
+        <div>
+          <FormField label="Name" hint={HINT_NAME_CREATE}>
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              placeholder="e.g. Workshop/Cabinet A/Drawer 3, or Garage/Box 1, Box 2, Box 3"
+              className={locationColorTextClass(color)}
+            />
+          </FormField>
           {showPreview ? (
             <p className="mt-field-gap-compact text-xs text-muted-foreground">
               Creates{' '}
@@ -132,7 +140,7 @@ export function CreateLocationDialog({
               {leaves.length > 1 ? ' as siblings' : null}. Existing levels are reused, not duplicated.
             </p>
           ) : null}
-        </FormField>
+        </div>
 
         <div className="relative">
           <span id={parentLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
@@ -189,16 +197,31 @@ export function CreateLocationDialog({
           />
         </FormField>
 
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={isDefault}
-            onChange={(e) => setIsDefault(e.target.checked)}
-            className="size-4 accent-primary"
-          />
-          Use as the default location for new items
-          <InfoHint content={HINT_DEFAULT} />
-        </label>
+        <div>
+          <label
+            className={`flex items-center gap-2 text-sm ${
+              multipleLeaves ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer'
+            }`}
+          >
+            <input
+              type="checkbox"
+              // A multi-sibling create has no single default, so the box is unchecked + disabled;
+              // the underlying preference is kept, so removing the extra siblings restores it.
+              checked={isDefault && !multipleLeaves}
+              disabled={multipleLeaves}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Use as the default location for new items
+            <InfoHint content={HINT_DEFAULT} />
+          </label>
+          {multipleLeaves ? (
+            <p className="mt-field-gap-compact text-xs text-muted-foreground">
+              Only a single location can be the default, so this is unavailable while you're adding several at
+              once.
+            </p>
+          ) : null}
+        </div>
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
