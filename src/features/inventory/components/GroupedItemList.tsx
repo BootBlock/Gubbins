@@ -42,6 +42,8 @@ interface SharedSectionProps {
   readonly locations: readonly LocationWithCount[];
   readonly locationName: (id: string) => string;
   readonly locationColorClass?: (id: string) => string | undefined;
+  /** Resolve a location id to its card/row edge-tint class (visual-flair F10), if coloured. */
+  readonly locationTintClass?: (id: string) => string | undefined;
   readonly selection?: ItemSelection;
   readonly selectedIds?: ReadonlySet<string>;
   /** Configurable card-field config (backlog E1); each section fetches its own custom values. */
@@ -210,6 +212,7 @@ function SectionItems({
   locations,
   locationName,
   locationColorClass,
+  locationTintClass,
   selection,
   selectedIds,
   cardFieldsConfig,
@@ -303,6 +306,7 @@ function SectionItems({
               locations={locations}
               locationName={locationName(item.locationId)}
               locationColorClass={locationColorClass?.(item.locationId)}
+              locationTintClass={locationTintClass?.(item.locationId)}
               selection={selection}
               selected={selectedIds?.has(item.id) ?? false}
               {...cardFieldProps(cardFields, item)}
@@ -314,6 +318,7 @@ function SectionItems({
               locations={locations}
               locationName={locationName(item.locationId)}
               locationColorClass={locationColorClass?.(item.locationId)}
+              locationTintClass={locationTintClass?.(item.locationId)}
               selection={selection}
               selected={selectedIds?.has(item.id) ?? false}
               {...cardFieldProps(cardFields, item)}

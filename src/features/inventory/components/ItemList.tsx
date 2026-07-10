@@ -32,6 +32,7 @@ export function ItemList({
   selectedLocationId,
   locationName,
   locationColorClass,
+  locationTintClass,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
@@ -55,6 +56,8 @@ export function ItemList({
   locationName: (id: string) => string;
   /** Resolve a location id to its Tailwind text-colour class (its swatch), if any. */
   locationColorClass?: (id: string) => string | undefined;
+  /** Resolve a location id to its card/row edge-tint class (visual-flair F10), if coloured. */
+  locationTintClass?: (id: string) => string | undefined;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
@@ -198,6 +201,7 @@ export function ItemList({
                         locations={locations}
                         locationName={locationName(item.locationId)}
                         locationColorClass={locationColorClass?.(item.locationId)}
+                        locationTintClass={locationTintClass?.(item.locationId)}
                         selection={selection}
                         selected={selected}
                         {...cardFieldProps(cardFields, item)}
@@ -209,6 +213,7 @@ export function ItemList({
                         locations={locations}
                         locationName={locationName(item.locationId)}
                         locationColorClass={locationColorClass?.(item.locationId)}
+                        locationTintClass={locationTintClass?.(item.locationId)}
                         selection={selection}
                         selected={selected}
                         {...cardFieldProps(cardFields, item)}

@@ -62,7 +62,7 @@ import { GroupedItemList } from './components/GroupedItemList';
 import { useCardFieldsConfig } from './components/useCardFieldsConfig';
 import type { CardFieldsListContext } from './components/card-fields-render';
 import { useItemFieldValues } from './categories';
-import { locationColorTextClass } from './location-color';
+import { locationColorTextClass, locationColorTintClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { InventoryFacetBar } from './components/InventoryFacetBar';
@@ -336,6 +336,10 @@ function InventoryWorkspace() {
     return map;
   }, [flat.data]);
   const locationColorClass = (id: string) => locationColorTextClass(locationColors.get(id));
+  // The location's optional swatch as a card/row edge-tint class (visual-flair F10), so an item
+  // reads as belonging to its location at a glance — resolved from the same `locationColors` map
+  // as the label tint above, never a second colour scheme.
+  const locationTintClass = (id: string) => locationColorTintClass(locationColors.get(id));
 
   const flatItems = useMemo(() => active.data?.pages.flatMap((p) => p.rows) ?? [], [active.data]);
   // Absolute index of the first resident item: non-zero once `maxPages` has trimmed
@@ -824,6 +828,7 @@ function InventoryWorkspace() {
                     locations={flatLocations}
                     locationName={locationName}
                     locationColorClass={locationColorClass}
+                    locationTintClass={locationTintClass}
                     selection={selection}
                     selectedIds={selectedIds}
                     cardFieldsConfig={cardFieldsConfig}
@@ -846,6 +851,7 @@ function InventoryWorkspace() {
                   selectedLocationId={selectedLocationId}
                   locationName={locationName}
                   locationColorClass={locationColorClass}
+                  locationTintClass={locationTintClass}
                   hasNextPage={active.hasNextPage}
                   isFetchingNextPage={active.isFetchingNextPage}
                   fetchNextPage={() => void active.fetchNextPage()}
