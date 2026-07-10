@@ -53,6 +53,7 @@ export const SYNC_TABLES = [
   'stock_batches', // FK → items, locations (per-batch ledger, the SSOT below item_stock; ordered after it so its recompute trigger has the final word on item_stock.quantity → items.quantity)
   'item_aliases', // FK → items
   'revaluations', // FK → items (feature-gap G9 — append-only manual current-value log; LWW leaf; ordered after items so its FK never trips on an UPSERT batch)
+  'item_relations', // FK → items ×2 (feature-gap G6 — "works with"/accessory/spare-for cross-links; LWW leaf, deterministic id; ordered after items so its FKs never trip on an UPSERT batch)
   'item_field_values', // FK → items, category_fields
   'item_images', // FK → items
   'item_attachments', // FK → items

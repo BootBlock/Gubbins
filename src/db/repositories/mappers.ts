@@ -53,9 +53,13 @@ import type {
   SupplierPartPriceHistoryRow,
   Revaluation,
   RevaluationRow,
+  ItemRelation,
+  ItemRelationRow,
+  ItemRelationView,
   Tag,
   TagRow,
 } from './types';
+import type { RelationKind } from '@/features/inventory/item-relations';
 
 function parseJson(value: string | null): Record<string, unknown> | null {
   if (value == null) return null;
@@ -215,6 +219,41 @@ export function rowToRevaluation(row: RevaluationRow): Revaluation {
     note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Map a raw item-relation row (feature-gap G6). `kind` is preserved verbatim (cast to
+ * {@link RelationKind}) rather than validated here: the DB has no CHECK, so a kind minted by a
+ * newer peer round-trips intact, and the display seam (`describeItemRelations`) filters any the
+ * running build doesn't understand.
+ */
+export function rowToItemRelation(row: ItemRelationRow): ItemRelation {
+  return {
+    id: row.id,
+    fromItemId: row.from_item_id,
+    toItemId: row.to_item_id,
+    kind: row.kind as RelationKind,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** A relation row joined with the other item's display fields (see {@link ItemRelationView}). */
+interface ItemRelationViewRow extends ItemRelationRow {
+  readonly other_item_id: string;
+  readonly other_item_name: string;
+  readonly other_item_serial_no: number | null;
+}
+
+/** Map a joined relation row into the {@link ItemRelationView} the item-detail surface renders. */
+export function rowToItemRelationView(row: ItemRelationViewRow): ItemRelationView {
+  return {
+    ...rowToItemRelation(row),
+    otherItemId: row.other_item_id,
+    otherItemName: row.other_item_name,
+    otherItemSerialNo: row.other_item_serial_no,
   };
 }
 

@@ -1,5 +1,5 @@
 {
-  "userVersion": 4,
+  "userVersion": 5,
   "objects": [
     {
       "type": "index",
@@ -102,6 +102,18 @@
       "name": "idx_item_images_item_id",
       "tbl_name": "item_images",
       "sql": "CREATE INDEX idx_item_images_item_id ON item_images(item_id, position)"
+    },
+    {
+      "type": "index",
+      "name": "idx_item_relations_from",
+      "tbl_name": "item_relations",
+      "sql": "CREATE INDEX idx_item_relations_from ON item_relations(from_item_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_item_relations_to",
+      "tbl_name": "item_relations",
+      "sql": "CREATE INDEX idx_item_relations_to ON item_relations(to_item_id)"
     },
     {
       "type": "index",
@@ -369,6 +381,12 @@
     },
     {
       "type": "table",
+      "name": "item_relations",
+      "tbl_name": "item_relations",
+      "sql": "CREATE TABLE item_relations (\n          id           TEXT    PRIMARY KEY NOT NULL,   -- canonical \"from|to|kind\" (deterministic)\n          from_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          to_item_id   TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          kind         TEXT    NOT NULL,               -- WORKS_WITH | ACCESSORY_FOR | SPARE_FOR (app-enforced)\n          note         TEXT,                           -- optional free-text context for the link\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (from_item_id <> to_item_id)\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "item_stock",
       "tbl_name": "item_stock",
       "sql": "CREATE TABLE item_stock (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id TEXT    NOT NULL REFERENCES locations(id),\n          quantity    INTEGER NOT NULL DEFAULT 0,\n          created_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity >= 0),\n          UNIQUE (item_id, location_id)\n        ) STRICT"
@@ -600,6 +618,12 @@
       "name": "trg_item_images_updated_at",
       "tbl_name": "item_images",
       "sql": "CREATE TRIGGER trg_item_images_updated_at\n    AFTER UPDATE ON item_images\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_images SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_item_relations_updated_at",
+      "tbl_name": "item_relations",
+      "sql": "CREATE TRIGGER trg_item_relations_updated_at\n        AFTER UPDATE ON item_relations\n        FOR EACH ROW\n        WHEN NEW.updated_at = OLD.updated_at\n        BEGIN\n          UPDATE item_relations SET updated_at = (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)) WHERE id = NEW.id;\n        END"
     },
     {
       "type": "trigger",
@@ -1862,6 +1886,111 @@
         {
           "seq": 1,
           "name": "sqlite_autoindex_item_images_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "item_relations": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "from_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "to_item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "items",
+          "from": "to_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "items",
+          "from": "from_item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 1,
+          "name": "idx_item_relations_from",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 0,
+          "name": "idx_item_relations_to",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_item_relations_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

@@ -75,7 +75,8 @@ memory note.
   `field:value` / `cap:key>n` syntax. Extends the existing parser (§5.1); produce the AST, never
   hand-build SQL.
 
-- [ ] **G6 — Related-items cross-links ("works with" / accessory / spare-for).** *Low / niche.* A
+- [x] **G6 — Related-items cross-links ("works with" / accessory / spare-for).** ✅ **Shipped
+  2026-07-10.** *Low / niche.* A
   synced M:N relation between items, surfaced on the item detail — distinct from **variants** (same
   product) and **kits** (assemblies). Follow the `item_tags` M:N + LWW-leaf sync pattern.
   Maker/collection value; only if wanted.
@@ -102,6 +103,30 @@ memory note.
   we keep it **manual** (live-price scraping needs a keyed cloud API; see non-goals).
 
 ## Shipped (tick + date as they land)
+
+- **G6 — Related-items cross-links ("works with" / accessory / spare-for)** — shipped 2026-07-10.
+  A synced many-to-many relation *between items*, distinct from variants (same product) and kits
+  (assemblies), surfaced on a new **Related** tab in the ItemDetailDialog. New v5 migration adds an
+  `item_relations` join table — an LWW leaf (own `updated_at` + auto-stamp trigger) with a
+  **deterministic primary key** (`from|to|kind` canonical triple, minted by `itemRelationId`), so two
+  devices independently adding the same logical relation converge by ordinary LWW rather than
+  colliding on a UNIQUE business key (no bespoke reconcile handling needed, unlike `item_aliases`).
+  Both endpoints are `REFERENCES items(id) ON DELETE CASCADE` + a `from <> to` CHECK; `kind` is free
+  TEXT (no CHECK, app-enforced by `normaliseRelationKind`) so a future kind syncs forward. Added to
+  `SYNC_TABLES` + reconcile `FK_REFS` (both item FKs, non-null) and the golden baseline snapshot was
+  regenerated (user_version 5). New pure `features/inventory/item-relations.ts` seam owns all the
+  non-trivial logic — kind normalisation, pair canonicalisation (symmetric `WORKS_WITH` orders its
+  endpoints), the deterministic id, dedupe, and the **reciprocal** label resolution ("Accessory for"
+  ⇄ "Has accessory", "Spare for" ⇄ "Has spare") — dependency-free and exhaustively unit-tested. A
+  small `withRelations` ItemRepository mixin (`addRelation`/`listRelations`/`removeRelation`) is thin
+  SQL glue: add is idempotent (deterministic id) and validated via `planRelation`; remove DELETEs +
+  tombstones only an id that existed (no stray peer-delete). `RelationsEditor` (Foundry
+  `SelectField`/`Button`/`Input`/`InfoHint`, design tokens + a11y) lets you add/remove reviewable,
+  reciprocal links. `/code-review` (high): 2 cleanup findings fixed, no correctness bugs. 102 new
+  tests (pure seam + repo + two-device sync round-trip incl. reciprocity, deterministic-id
+  convergence, tombstone propagation, and the FK guard); verified end-to-end in the built app (vite
+  preview, real OPFS sqlite-wasm): fresh-boot applies v5, a relation adds, shows reciprocally,
+  persists across reload and removes cleanly with no console errors.
 
 - **G2 — On-device receipt / label OCR prefill** — shipped 2026-07-10. New pure
   `features/inventory/ocr/receipt-ocr.ts` seam (`parseReceiptText` → currency-aware price with

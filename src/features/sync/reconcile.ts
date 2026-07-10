@@ -363,6 +363,14 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
     // above — drop an incoming revaluation whose item did not survive the merge (ON DELETE
     // CASCADE, NOT NULL).
     revaluations: [{ col: 'item_id', parent: 'items', nullable: false }],
+    // Related-items cross-links (feature-gap G6). BOTH endpoints are ON DELETE CASCADE / NOT NULL,
+    // so an incoming relation whose either item did not survive the merge is dropped (mirrors the
+    // item-child cascade above). Its deterministic id means concurrent identical adds merge by LWW,
+    // so no bespoke collision handling is needed (contrast item_aliases' text-collision resolver).
+    item_relations: [
+      { col: 'from_item_id', parent: 'items', nullable: false },
+      { col: 'to_item_id', parent: 'items', nullable: false },
+    ],
     // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
     // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
     supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
