@@ -25,7 +25,7 @@ import {
   Spinner,
   Surface,
 } from '@/components/foundry';
-import { BookingIcon, CheckoutIcon } from '@/components/icons';
+import { BookingIcon, CheckoutIcon, InfoIcon, SuccessIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
@@ -404,12 +404,44 @@ export function BookingsScreen() {
         )}
 
         {!isLoading && !isError && bookings.length === 0 && (
-          <Surface className="flex flex-col items-center gap-3 p-12 text-center">
-            <BookingIcon className="size-10 text-muted-foreground" />
+          <Surface className="flex flex-col items-center gap-4 p-8 text-center sm:p-12">
+            <BookingIcon className="size-10 text-muted-foreground" aria-hidden />
             <p className="font-medium">No bookings yet</p>
-            <p className="text-sm text-muted-foreground">
-              Reserve a serialised or single-unit asset for a date range using the form above.
-            </p>
+
+            <div className="flex max-w-prose flex-col gap-3 text-left text-sm text-muted-foreground">
+              <p>
+                A <span className="font-medium text-foreground">booking</span> reserves one specific asset — a
+                serialised or single-unit item such as the 3D printer or a particular camera — for a whole-day
+                date range. It’s a calendar hold on that one unit, not a change to your stock: while it’s
+                booked, nobody else can reserve the same unit for overlapping dates, so there’s no
+                double-booking. When the day comes, turn the booking into a checkout to hand the asset over.
+              </p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <SuccessIcon className="size-4 text-glyph-success" aria-hidden />
+                    Reach for a booking when
+                  </span>
+                  <span>
+                    you want to promise a shared, one-of-a-kind piece of equipment to someone ahead of time —
+                    planning around a shoot, an event, or a loan.
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <InfoIcon className="size-4 text-glyph-neutral" aria-hidden />
+                    You can skip it when
+                  </span>
+                  <span>
+                    you’re dealing with everyday consumables or bulk stock (screws, cable, filament). For
+                    those, reserve a quantity against a project or simply check items out.
+                  </span>
+                </div>
+              </div>
+
+              <p>Ready to start? Reserve an asset using the form above.</p>
+            </div>
           </Surface>
         )}
 
