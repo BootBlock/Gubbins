@@ -69,6 +69,25 @@ describe('SupplierPartRepository (Phase 60)', () => {
     expect(list[0]?.isPreferred).toBe(true);
   });
 
+  it('batch-lists parts for several items keyed by item id (issue #37)', async () => {
+    const second = await items.create({ name: 'Capacitor', locationId: UNASSIGNED_LOCATION_ID });
+    const third = await items.create({ name: 'Diode', locationId: UNASSIGNED_LOCATION_ID });
+    await repo.create(itemId, { supplierName: 'RS' });
+    await repo.create(itemId, { supplierName: 'Mouser', isPreferred: true });
+    await repo.create(second.id, { supplierName: 'DigiKey' });
+    // `third` has no supplier parts and must be simply absent from the map.
+
+    const byItem = await repo.listForItems([itemId, second.id, third.id]);
+    expect(byItem.get(itemId)?.map((p) => p.supplierName)).toEqual(['Mouser', 'RS']);
+    expect(byItem.get(second.id)?.map((p) => p.supplierName)).toEqual(['DigiKey']);
+    expect(byItem.has(third.id)).toBe(false);
+  });
+
+  it('batch-lists nothing for an empty id set (issue #37)', async () => {
+    const byItem = await repo.listForItems([]);
+    expect(byItem.size).toBe(0);
+  });
+
   it('updates fields and clears a nullable field with explicit null', async () => {
     const sp = await repo.create(itemId, { supplierName: 'RS', orderCode: 'ABC', unitCost: 1.5 });
     const updated = await repo.update(sp.id, { unitCost: 2, orderCode: null });

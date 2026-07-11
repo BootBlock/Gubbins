@@ -334,6 +334,40 @@ describe('ReportRepository', () => {
       expect(row.preferredSupplier!.minOrderQty).toBe(5);
     });
 
+    it('threads the preferred supplier price-breaks through (issue #37)', async () => {
+      const item = await items.create({ name: 'Resistor', quantity: 0, reorderPoint: 250 });
+      await supplierParts.create(item.id, {
+        supplierName: 'DigiKey',
+        unitCost: 0.1,
+        isPreferred: true,
+        priceBreaks: [
+          { qty: 100, unitCost: 0.08 },
+          { qty: 1000, unitCost: 0.05 },
+        ],
+      });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      const row = rows.find((r) => r.itemId === item.id)!;
+      expect(row.preferredSupplier!.priceBreaks).toEqual([
+        { qty: 100, unitCost: 0.08 },
+        { qty: 1000, unitCost: 0.05 },
+      ]);
+    });
+
+    it('costs the reorder plan line at its order quantity via price-breaks (issue #37)', async () => {
+      const item = await items.create({ name: 'Resistor', quantity: 0, reorderPoint: 250 });
+      await supplierParts.create(item.id, {
+        supplierName: 'DigiKey',
+        unitCost: 0.1,
+        isPreferred: true,
+        priceBreaks: [{ qty: 100, unitCost: 0.08 }],
+      });
+      const plan = await reports.reorderPlan({ qtyThreshold: 5 });
+      const line = plan.flatMap((g) => g.lines).find((l) => l.itemId === item.id)!;
+      // Order quantity 250 clears the 100+ break → 0.08, not the flat 0.10.
+      expect(line.orderQty).toBe(250);
+      expect(line.unitCost).toBe(0.08);
+    });
+
     it('returns null preferredSupplier when no supplier part is marked preferred', async () => {
       const item = await items.create({ name: 'NoPreferred', quantity: 0 });
       await supplierParts.create(item.id, { supplierName: 'Some Supplier', unitCost: 1 });

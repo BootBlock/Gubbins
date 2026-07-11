@@ -22,8 +22,8 @@ import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
-import { useInventoryItems, useLocations } from '@/features/inventory/queries';
-import { effectiveUnitCost } from '@/features/inventory/supplier-cost';
+import { useInventoryItems, useLocations, useSupplierPartsForItems } from '@/features/inventory/queries';
+import { preferredSupplierPart } from '@/features/inventory/supplier-cost';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
 import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
@@ -299,6 +299,14 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
 
+  // The pickable items, and their supplier parts loaded in one batch so the line editor can
+  // apply each item's quantity price-breaks (issue #37) without an N+1 fan-out.
+  const pickableItems = useMemo(
+    () => (itemsQuery.data?.pages ?? []).flatMap((p) => p.rows),
+    [itemsQuery.data],
+  );
+  const supplierPartsQuery = useSupplierPartsForItems(pickableItems.map((i) => i.id));
+
   const addLine = useAddPurchaseOrderLine();
   const removeLine = useRemovePurchaseOrderLine();
   const receiveLine = useReceivePurchaseOrderLine();
@@ -320,17 +328,21 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const prevReceivedRef = useRef<number | null>(null);
 
   const itemOptions = useMemo<LineItemOption[]>(() => {
-    const pages = itemsQuery.data?.pages ?? [];
-    return pages
-      .flatMap((p) => p.rows)
-      .map((item) => ({
+    const bySupplier = supplierPartsQuery.data;
+    return pickableItems.map((item) => {
+      // The preferred supplier part supplies the flat cost, currency and price-breaks; the
+      // dialog applies the item's manual override precedence and the quantity break itself.
+      const preferred = preferredSupplierPart(bySupplier?.get(item.id) ?? []);
+      return {
         id: item.id,
         name: item.name,
-        // Phase-60 cost precedence: with no supplier parts loaded here this is the manual
-        // override; a priced preferred supplier would refine it on the item detail.
-        defaultUnitCost: effectiveUnitCost(item, []),
-      }));
-  }, [itemsQuery.data]);
+        manualUnitCost: item.unitCost,
+        supplierUnitCost: preferred?.unitCost ?? null,
+        priceBreaks: preferred?.priceBreaks ?? [],
+        currency: preferred?.currency ?? null,
+      };
+    });
+  }, [pickableItems, supplierPartsQuery.data]);
 
   const locationOptions = useMemo<LocationOption[]>(() => {
     const rows = locationsQuery.data?.rows ?? [];

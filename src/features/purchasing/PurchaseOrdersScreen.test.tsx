@@ -77,6 +77,7 @@ vi.mock('./wishlist-queries', () => ({
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [] } }),
   useLocations: () => ({ data: { rows: [] } }),
+  useSupplierPartsForItems: () => ({ data: new Map() }),
 }));
 
 vi.mock('@/lib/useFormatters', () => ({

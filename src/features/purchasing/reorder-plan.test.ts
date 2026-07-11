@@ -210,6 +210,52 @@ describe('buildReorderPlan', () => {
     expect(line.itemName).toBe('LED');
   });
 
+  it('costs the line at the computed order quantity using price-breaks (issue #37)', () => {
+    const rows: ReorderShortfallRow[] = [
+      {
+        itemId: 'i1',
+        itemName: 'Resistor',
+        shortfall: 250,
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierName: 'DigiKey',
+          unitCost: 0.1,
+          priceBreaks: [
+            { qty: 100, unitCost: 0.08 },
+            { qty: 1000, unitCost: 0.05 },
+          ],
+        },
+      },
+    ];
+    const plan = buildReorderPlan(rows);
+    const line = plan[0]!.lines[0]!;
+    // orderQty 250 → the 100+ break applies (0.08), not the flat 0.1 or the 1000+ break.
+    expect(line.orderQty).toBe(250);
+    expect(line.unitCost).toBe(0.08);
+  });
+
+  it('rounds up to a pack that crosses a price-break threshold before costing (issue #37)', () => {
+    const rows: ReorderShortfallRow[] = [
+      {
+        itemId: 'i1',
+        itemName: 'Capacitor',
+        shortfall: 95,
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierName: 'Mouser',
+          unitCost: 0.1,
+          packQty: 100,
+          priceBreaks: [{ qty: 100, unitCost: 0.07 }],
+        },
+      },
+    ];
+    const plan = buildReorderPlan(rows);
+    const line = plan[0]!.lines[0]!;
+    // Pack rounding lifts 95 → 100, which reaches the 100+ break.
+    expect(line.orderQty).toBe(100);
+    expect(line.unitCost).toBe(0.07);
+  });
+
   it('carries onOrder onto the line (display of already-incoming stock), defaulting to 0', () => {
     const rows: ReorderShortfallRow[] = [
       {
