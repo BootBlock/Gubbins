@@ -23,21 +23,30 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 ## Features
 
 **Inventory**
-- Track anything: items with categories, custom attributes, quantities, photos, and attachments (files or URLs).
+- Track anything: items with categories, custom fields, weighted **capabilities**, quantities, photos, and attachments (files or URLs).
 - Hierarchical, colour-coded locations with descriptions and per-location item counts.
 - Per-location stock ledger — quantities tracked independently at each location, with transfers between them.
 - Batch / lot tracking beneath each location, with expiry dates and FEFO (first-expiry-first-out) consumption.
-- Discrete, serialised, and batch-tracked item modes, plus single-level variants.
-- Check items in/out — returning to their original location and lot — with a full audit trail.
-- Cycle counting and reconciliation: discrete, serialised, per-location, and per-batch.
-- Configurable low-stock thresholds with at-a-glance gauges.
-- Per-item activity log of every change.
+- Discrete, serialised, and batch-tracked item modes.
+- Parent/child **variants & SKUs** (sizes, colours, or values of one part) and **kits & bundles** with a live "how many can I build?" count.
+- Tag items, link datasheets and other attachments, and **archive** items you no longer track (restorable).
+- Configurable low-stock thresholds with at-a-glance gauges, and a per-item activity log of every change.
+
+**Asset lifecycle**
+- **Warranty** tracking with derived status, plus depreciation and replacement-value estimates.
+- Time- and usage-based **maintenance & servicing** schedules; usage telemetry accrues checkout-hours automatically; per-location scheduling.
+- **Cycle counting** and reconciliation (discrete, serialised, per-location, and per-batch), including a guided audit-day walk.
+
+**People, loans & bookings**
+- **Contacts** — the people and suppliers you borrow from, lend to, or buy from.
+- Check items **out to a contact** and back in — returning to their original location and lot — with overdue tracking and a full audit trail.
+- **Bookings** — reserve items for a contact over a date range, with overlap detection.
 
 **Search**
 - Full-text search powered by SQLite FTS5 (prefix, stemming, fuzzy matching).
 - Visual query builder plus a hybrid text syntax (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses).
 - Capability-based search with best-match ranking.
-- Save and recall named searches.
+- Save and recall named searches, including a favourites filter.
 
 **Scanning & labels**
 - Barcode/QR scanning via the native BarcodeDetector, with an off-thread `@zxing` WASM fallback.
@@ -45,19 +54,27 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Continuous scan mode with batch actions (move-all, check-out-all).
 - Per-item deep-link QR codes and printable batch QR label sheets (A4).
 
-**Projects & procurement**
-- Projects with bills of materials (BOM) and component reservations.
-- In-transit quantity tracking with partial / split line receipts.
+**Purchasing & projects**
+- **Projects** with bills of materials (BOM), component reservations, and budgets.
+- **Purchase orders** to your suppliers with in-transit quantity tracking and partial / split line receipts.
 - Project-scoped export vault sub-folders.
 
-**Maintenance**
-- Time-based and usage-based maintenance schedules.
-- Automatic usage telemetry that accrues checkout-hours.
-- Per-location maintenance scheduling.
+**Reports & insights**
+- Valuation by category and location, stock-movement trends, and dead-stock detection.
+- Spend and **sales & margin** analytics, ABC analysis, inventory turnover, stock aging, and valuation over time.
+- Data-hygiene quality checks that surface incomplete records; export any report as CSV.
+- A printable **insurance / estate schedule** (room-by-room replacement values) and a branded, printable **parts catalogue**.
+
+**Sales & disposals**
+- Record items **sold or written off**, feeding the sales & margin report.
+
+**Alerts, activity & agenda**
+- A global **Activity** ledger of every change; an **Alerts** feed of everything needing attention (low stock, expiries, overdue loans); and an **Upcoming** agenda unifying everything due — booking returns, loan due-backs, servicing, and warranty expiries.
 
 **Supplier data scraping** (companion browser extension)
-- Scrape datasheets and parameters from component suppliers.
-- Parsers for DigiKey, Mouser, Farnell, LCSC, RS, Adafruit, and SparkFun.
+- Scrape datasheets and parameters from component suppliers and retailers.
+- Parsers for DigiKey, Mouser, Farnell, LCSC, RS, Adafruit, SparkFun, and Amazon, plus a generic metadata fallback.
+- Barcode → product lookup and one-click price refresh.
 - Detailed error taxonomy plus CAPTCHA / challenge-page detection.
 
 **Data, sync & resilience**
@@ -71,9 +88,10 @@ A **local-first, offline-capable Progressive Web App** for tracking *anything* �
 - Optional Home Assistant / query bridge: ask a voice assistant where your items are — or push your whole dataset straight to it (see [below](#home-assistant--external-query-bridge-optional)).
 
 **Interface & accessibility**
-- Modular UI — hide pages and cross-cutting capabilities you don't use (Projects, Purchase orders, Bookings, Maintenance, Scanner, Batches, and more) for a leaner app, per-device. Start from a curated preset in the skippable first-run chooser or fine-tune every module on the **Modules** screen; the underlying features stay fully functional and your data is untouched, so anything can be switched back on at any time. Turning a module off removes it everywhere — nav menu, dashboard tiles and widgets, command palette, item-detail tabs, and the Alerts/Upcoming feeds — with dependent features cascaded and confirmed.
+- Modular UI — hide pages and cross-cutting capabilities you don't use (Projects, Purchase orders, Contacts, Bookings, Reports, Maintenance, Scanner, Batches, Kits, Variants, Sales, and more) for a leaner app, per-device. Start from a curated preset in the skippable first-run chooser or fine-tune every module on the **Modules** screen; the underlying features stay fully functional and your data is untouched, so anything can be switched back on at any time. Turning a module off removes it everywhere — nav menu, dashboard tiles and widgets, command palette, item-detail tabs, and the Alerts/Upcoming feeds — with dependent features cascaded and confirmed.
 - Customisable drag-and-drop dashboard widget board, plus an About screen with a lightweight cinematic starfield.
-- Dark / light / system-auto theming, plus currency and locale formatting (base currency guessed on first run).
+- Multi-language UI (English and German today) with per-key fallback to English, driven by your chosen locale.
+- Dark / light / system-auto theming with selectable accent colours, OLED and high-contrast switches, plus currency and locale formatting (base currency guessed on first run).
 - Installable PWA with an offline indicator.
 - Kiosk / tablet mode with screen wake-lock.
 - Accessibility throughout: focus trapping, ARIA tree navigation, skip links, live regions, accessible form errors, and reduced-motion support.
