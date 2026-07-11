@@ -7,6 +7,8 @@ want. Nothing is deleted; hidden features keep all their data and can come back 
 **Where to find it:** the **Modules** screen (from Settings, the first-run chooser, or the "module
 hidden" prompt).
 
+![The Modules screen: presets and the full list of pages and capabilities](images/modules.png)
+
 ## Two kinds of module
 
 - **Pages** — whole screens: Projects, Purchase orders, Contacts, Bookings, Reports, and more.

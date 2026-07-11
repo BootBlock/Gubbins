@@ -240,6 +240,16 @@ try {
   console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// The Modules manager (populated purely from the feature registry — no seed data needed).
+try {
+  await page.goto(`${BASE}modules`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(700);
+  await shot('modules', page.locator('#main-content'), { settle: 400 });
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ modules.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // Settings → Appearance (light, then dark).
 await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
 await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 8000 });
