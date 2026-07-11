@@ -54,4 +54,11 @@ describe('custom-field helpers (Phase 71)', () => {
     expect(operatorLabelFor('HAS_CAPABILITY', 'capability')).toBe('has capability');
     expect(operatorLabelFor('CONTAINS', 'customfield')).toBe('contains');
   });
+
+  it('offers only EQUALS (read as "is") for the boolean favourite field (issue #23)', () => {
+    expect(kindOfField('favourite')).toBe('boolean');
+    expect(operatorsForKind('boolean')).toEqual(['EQUALS']);
+    expect(operatorLabelFor('EQUALS', 'boolean')).toBe('is');
+    expect(operatorLabelFor('EQUALS', 'number')).toBe('equals');
+  });
 });

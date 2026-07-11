@@ -61,6 +61,28 @@ describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
     ]);
   });
 
+  it('translates the boolean favourite flag (issue #23) to an is_favourite = 0/1 match', () => {
+    expect(parseASTtoSQL(and({ field: 'favourite', operator: 'EQUALS', value: true }))).toEqual([
+      '(items.is_favourite = ?)',
+      [1],
+    ]);
+    expect(parseASTtoSQL(and({ field: 'favourite', operator: 'EQUALS', value: false }))).toEqual([
+      '(items.is_favourite = ?)',
+      [0],
+    ]);
+    // The text-query path may hand it a word; it coerces the same way.
+    expect(parseASTtoSQL(and({ field: 'favourite', operator: 'EQUALS', value: 'yes' }))).toEqual([
+      '(items.is_favourite = ?)',
+      [1],
+    ]);
+  });
+
+  it('rejects an ordering comparison on the boolean favourite field', () => {
+    expect(() => parseASTtoSQL(and({ field: 'favourite', operator: 'GREATER_THAN', value: 1 }))).toThrow(
+      SearchAstError,
+    );
+  });
+
   it('routes free-text CONTAINS through the FTS5 index, scoped to the column', () => {
     const [sql, params] = parseASTtoSQL(
       and({ field: 'description', operator: 'CONTAINS', value: 'voltage reg' }),
@@ -322,6 +344,13 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
 
   it('matches a free-text CONTAINS via FTS5', async () => {
     expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(['mcu']);
+  });
+
+  it('filters by the boolean favourite flag against the real engine (issue #23)', async () => {
+    // Star the regulator; the MCU stays a non-favourite.
+    await driver.execute("UPDATE items SET is_favourite = 1 WHERE id = 'reg';");
+    expect(await run(and({ field: 'favourite', operator: 'EQUALS', value: true }))).toEqual(['reg']);
+    expect(await run(and({ field: 'favourite', operator: 'EQUALS', value: false }))).toEqual(['mcu']);
   });
 
   it('matches a numeric capability comparison', async () => {

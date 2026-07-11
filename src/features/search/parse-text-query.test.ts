@@ -147,6 +147,41 @@ describe('parseTextQuery — numeric field (quantity)', () => {
   });
 });
 
+describe('parseTextQuery — boolean field (favourite, issue #23)', () => {
+  it('favourite:yes → EQUALS true', () => {
+    expect(singleCondition('favourite:yes')).toEqual({
+      field: 'favourite',
+      operator: 'EQUALS',
+      value: true,
+    });
+  });
+
+  it('favourite:no → EQUALS false', () => {
+    expect(singleCondition('favourite:no')).toEqual({ field: 'favourite', operator: 'EQUALS', value: false });
+  });
+
+  it('accepts true/false/1/0/on/off and the = separator', () => {
+    for (const q of ['favourite:true', 'favourite:1', 'favourite:on', 'favourite=yes']) {
+      expect(singleCondition(q)).toMatchObject({ field: 'favourite', operator: 'EQUALS', value: true });
+    }
+    for (const q of ['favourite:false', 'favourite:0', 'favourite:off']) {
+      expect(singleCondition(q)).toMatchObject({ field: 'favourite', operator: 'EQUALS', value: false });
+    }
+  });
+
+  it('accepts the favorite (US) and fav aliases, canonicalising to favourite', () => {
+    expect(singleCondition('favorite:yes')).toMatchObject({ field: 'favourite', value: true });
+    expect(singleCondition('fav:no')).toMatchObject({ field: 'favourite', value: false });
+  });
+
+  it('rejects a non-boolean value and a >/< comparison', () => {
+    for (const q of ['favourite:maybe', 'favourite>1']) {
+      const result = parseTextQuery(q);
+      expect(result.ok).toBe(false);
+    }
+  });
+});
+
 describe('parseTextQuery — capabilities', () => {
   it('cap:<key> with no operator → HAS_CAPABILITY', () => {
     expect(singleCondition('cap:rohs')).toEqual({
