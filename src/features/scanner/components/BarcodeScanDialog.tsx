@@ -54,7 +54,6 @@ function BarcodeScanDialogInner({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   // Latched once a barcode is captured, so a decoder that emits several codes in the same
   // frame (before the parent unmounts us) hands back only the first — no double capture.
   const capturedRef = useRef(false);
@@ -76,14 +75,20 @@ function BarcodeScanDialogInner({
   const closeRef = useRef(close);
   closeRef.current = close;
 
-  // Open the camera once on mount; prime audio from this user gesture (§6.5). Move focus to
-  // the close button so the overlay is keyboard-dismissable the moment it appears.
+  // Open the camera once on mount; prime audio from this user gesture (§6.5). Park focus on the
+  // aria-labelled container so a screen reader announces the dialog (not the Close button), and
+  // restore focus to whatever opened it (the "Scan" button) on close — the same contract Foundry
+  // Modal gives, which this raw-portal takeover must reproduce itself.
   useEffect(() => {
     feedback.current.prime();
     dispatch({ type: 'OPEN' });
-    closeButtonRef.current?.focus();
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    containerRef.current?.focus();
     const fb = feedback.current;
-    return () => fb.dispose();
+    return () => {
+      fb.dispose();
+      previouslyFocused?.focus?.();
+    };
   }, []);
 
   // Register on the shared modal stack so this full-screen takeover behaves as the topmost
@@ -171,7 +176,6 @@ function BarcodeScanDialogInner({
         <ScanIcon className="size-5" aria-hidden />
         <span className="font-semibold">Scan barcode</span>
         <Button
-          ref={closeButtonRef}
           variant="ghost"
           size="icon"
           onClick={close}

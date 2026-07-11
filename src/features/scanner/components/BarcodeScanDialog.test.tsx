@@ -58,4 +58,21 @@ describe('BarcodeScanDialog', () => {
     render(<BarcodeScanDialog open={false} onClose={vi.fn()} onCapture={vi.fn()} />);
     expect(screen.queryByTestId('barcode-scan-dialog')).toBeNull();
   });
+
+  it('restores focus to the opener when it closes', () => {
+    // The "Scan" button that opens the dialog holds focus beforehand; on close a keyboard user
+    // must land back on it, not on <body> (parity with Foundry Modal's focus contract).
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const { rerender } = render(<BarcodeScanDialog open onClose={vi.fn()} onCapture={vi.fn()} />);
+    // Focus has moved into the dialog (its aria-labelled container), off the opener.
+    expect(document.activeElement).not.toBe(opener);
+
+    rerender(<BarcodeScanDialog open={false} onClose={vi.fn()} onCapture={vi.fn()} />);
+    expect(document.activeElement).toBe(opener);
+
+    opener.remove();
+  });
 });
