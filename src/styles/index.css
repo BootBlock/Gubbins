@@ -2307,9 +2307,14 @@
     break-after: avoid;
   }
 
+  /* Recolour every printed border to a light grey. The `--border` token is a near-transparent
+   * white in dark mode (invisible on white paper), so the row/header rules below must include
+   * `tr` — the catalogue's row and header-separator borders sit on the `<tr>`, not the cells,
+   * and would otherwise print invisibly. */
   .schedule-table th,
   .schedule-table td,
   .schedule-photo,
+  .catalogue-table tr,
   .catalogue-table th,
   .catalogue-table td {
     border-color: #ccc !important;
