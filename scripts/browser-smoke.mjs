@@ -4,7 +4,7 @@
  * Drives the preinstalled Edge via Playwright against http://localhost:5173/Gubbins/
  * — a real cross-origin-isolated context, so OPFS + SharedArrayBuffer + the SQLite
  * worker actually run. Exercises the Phase 2 flows: cross-origin isolation, item
- * creation (Bulk + Consumable Gauge), quantity adjustment, the density toggle, and
+ * creation (Bulk + Consumable Gauge), quantity adjustment, the item view mode, and
  * nested location creation; plus the Phase 3 flows: category + custom-field schemas,
  * serialised auto-clone, freeform tagging, and the real image pipeline (canvas→WebP
  * compression → raw OPFS file → thumbnail); plus the Phase 4 flows: create a project,
@@ -621,12 +621,24 @@ try {
       void card;
     });
 
-    await step('toggles Data-Heavy ↔ Visual-Heavy density', async () => {
-      await page.getByRole('radio', { name: 'Data' }).click();
+    await step('switches the item view mode (Card ↔ Data) via the More → View submenu', async () => {
+      // The view mode lives in the header's "More" overflow behind a nested **View** submenu
+      // (a Foundry MenuSub); its rows are `menuitemradio`s labelled Card / Data / Table, and
+      // the trigger names its active mode ("View: Card"). Selecting a row closes the whole
+      // menu, so each interaction reopens it.
+      await openMoreMenu();
+      await page.getByRole('menuitem', { name: /^View:/ }).click();
+      await page.getByRole('menuitemradio', { name: 'Data' }).click();
       await page.waitForTimeout(300);
-      const dataChecked = await page.getByRole('radio', { name: 'Data' }).getAttribute('aria-checked');
-      if (dataChecked !== 'true') throw new Error('Data density not selected');
-      await page.getByRole('radio', { name: 'Visual' }).click();
+
+      // Reopen and confirm the active mode is now exposed to assistive tech as aria-checked.
+      await openMoreMenu();
+      await page.getByRole('menuitem', { name: /^View:/ }).click();
+      const dataChecked = await page
+        .getByRole('menuitemradio', { name: 'Data' })
+        .getAttribute('aria-checked');
+      if (dataChecked !== 'true') throw new Error('Data view mode not selected');
+      await page.getByRole('menuitemradio', { name: 'Card' }).click();
       await page.waitForTimeout(300);
     });
 
@@ -739,10 +751,13 @@ try {
       await dialog.getByRole('button', { name: 'Create item' }).click();
       await dialog.waitFor({ state: 'hidden', timeout: 5000 });
 
-      // Visual density renders the item as a card whose <h3> title is a safe, non-interactive
+      // Card view renders the item as a card whose <h3> title is a safe, non-interactive
       // drag handle — a press begun on a control (± stepper, action button) is deliberately
-      // suppressed by the interactive-origin guard, so we grab the heading.
-      await page.getByRole('radio', { name: 'Visual' }).click();
+      // suppressed by the interactive-origin guard, so we grab the heading. Force Card view via
+      // the More → View submenu (its `menuitemradio` rows; selecting one closes the menu).
+      await openMoreMenu();
+      await page.getByRole('menuitem', { name: /^View:/ }).click();
+      await page.getByRole('menuitemradio', { name: 'Card' }).click();
       const handle = page.getByRole('heading', { name: dragItemName });
       await handle.waitFor({ state: 'visible', timeout: 5000 });
 

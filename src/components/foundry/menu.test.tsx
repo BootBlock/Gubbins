@@ -225,6 +225,30 @@ describe('MenuSub — nested submenu (issue #31)', () => {
     fireEvent.pointerEnter(screen.getByRole('menuitem', { name: 'View' }), { pointerType: 'mouse' });
     expect(screen.getByRole('menuitem', { name: 'Rows' })).toBeTruthy();
   });
+
+  it('ArrowDown roams a flyout of menuitemradio rows (the widened submenu roam)', () => {
+    render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuSub label="View">
+          <MenuAction onSelect={() => {}} selectionRole="radio" selected>
+            Card
+          </MenuAction>
+          <MenuAction onSelect={() => {}} selectionRole="radio">
+            Data
+          </MenuAction>
+        </MenuSub>
+      </Menu>,
+    );
+    open();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+    const card = screen.getByRole('menuitemradio', { name: 'Card' });
+    const data = screen.getByRole('menuitemradio', { name: 'Data' });
+    // Opening the flyout lands focus on its first radio; ArrowDown must reach the second one
+    // (a `menuitem`-only submenu roam would strand both radios).
+    expect(document.activeElement).toBe(card);
+    fireEvent.keyDown(card.closest('[role="menu"]')!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(data);
+  });
 });
 
 describe('Menu — selected-icon rendering', () => {
@@ -248,5 +272,93 @@ describe('Menu — selected-icon rendering', () => {
       </Menu>,
     );
     expect(screen.queryByTestId('row-icon')).toBeNull();
+  });
+});
+
+describe('MenuAction — selectable rows expose their state to assistive tech', () => {
+  it('a plain command row stays a menuitem with no aria-checked', () => {
+    render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}}>Export</MenuAction>
+      </Menu>,
+    );
+    open();
+    const row = screen.getByRole('menuitem', { name: 'Export' });
+    expect(row.getAttribute('aria-checked')).toBeNull();
+  });
+
+  it('selectionRole="radio" makes a menuitemradio whose aria-checked reflects `selected`', () => {
+    const { rerender } = render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} selectionRole="radio" selected>
+          Card
+        </MenuAction>
+      </Menu>,
+    );
+    open();
+    expect(screen.getByRole('menuitemradio', { name: 'Card' }).getAttribute('aria-checked')).toBe('true');
+
+    rerender(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} selectionRole="radio">
+          Card
+        </MenuAction>
+      </Menu>,
+    );
+    expect(screen.getByRole('menuitemradio', { name: 'Card' }).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('selectionRole="checkbox" makes a menuitemcheckbox whose aria-checked reflects `selected`', () => {
+    const { rerender } = render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} selectionRole="checkbox">
+          Select items
+        </MenuAction>
+      </Menu>,
+    );
+    open();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Select items' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+
+    rerender(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}} selectionRole="checkbox" selected>
+          Select items
+        </MenuAction>
+      </Menu>,
+    );
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Select items' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+  });
+
+  it('ArrowDown roams across mixed menuitem / menuitemradio / menuitemcheckbox rows', () => {
+    render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}}>Plain</MenuAction>
+        <MenuAction onSelect={() => {}} selectionRole="radio" selected>
+          Radio
+        </MenuAction>
+        <MenuAction onSelect={() => {}} selectionRole="checkbox">
+          Check
+        </MenuAction>
+      </Menu>,
+    );
+    open();
+    const plain = screen.getByRole('menuitem', { name: 'Plain' });
+    const radio = screen.getByRole('menuitemradio', { name: 'Radio' });
+    const check = screen.getByRole('menuitemcheckbox', { name: 'Check' });
+    const menu = screen.getByRole('menu');
+
+    // Open lands on the first row; ArrowDown must step through the radio and checkbox rows
+    // (a `menuitem`-only roam would skip them), then wrap back to the first.
+    expect(document.activeElement).toBe(plain);
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(radio);
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(check);
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(plain);
   });
 });
