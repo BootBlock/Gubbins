@@ -107,6 +107,25 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+describe('ScannerOverlay — "What can I scan?" explainer', () => {
+  it('opens the explainer from the header help button and describes both code kinds', async () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    // Closed by default — no explainer copy on screen.
+    expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'What can I scan?' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'What can I scan?' });
+    // Both accepted code kinds and the on-device boundary are spelled out.
+    expect(dialog).toHaveTextContent('Gubbins labels');
+    expect(dialog).toHaveTextContent('Product barcodes');
+    expect(dialog).toHaveTextContent(/doesn.t look products up on the web/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+  });
+});
+
 describe('ScannerOverlay — Discrete card ± quantity', () => {
   it('shows the ± stepper for an active DISCRETE item and adjusts by the right delta', async () => {
     await scan(baseItem);
