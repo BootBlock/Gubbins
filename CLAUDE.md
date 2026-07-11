@@ -220,3 +220,12 @@ rule applied to issue handling.
 If any step can't be completed cleanly (the fix is larger than the issue implies, review surfaces
 something structural, `main` conflicts non-trivially), stop and surface it rather than forcing the
 workflow through — an issue URL authorises *this* workflow, not an unbounded change.
+
+### Multi-line text goes through a file, not inline quoting
+
+Multi-line commit messages, PR bodies, and issue/PR comments must be passed via a **file**, not
+inline shell quoting: write the text to a file, then `git commit -F <file>` and
+`gh … --body-file <file>`. Inline quoting for multi-line text is error-prone — a wrong here-string
+delimiter can silently wrap the whole message in stray characters, and by the time it reaches a
+pushed commit or a posted comment it is expensive or impossible to fix cleanly. A file sidesteps all
+shell-quoting rules regardless of which shell runs the command.
