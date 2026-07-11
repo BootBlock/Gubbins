@@ -349,6 +349,39 @@ export interface BomImportSummary {
 }
 
 /**
+ * Import parsed BOM lines into an existing project: each line is auto-matched to a
+ * local item by MPN, then alias (§4), and added — matched lines link to the item
+ * (inheriting its cost snapshot), unmatched lines stay as manual rows. Returns how
+ * many were added and how many auto-matched. The shared engine behind
+ * {@link useImportBom} (import into an existing project) and
+ * {@link useCreateProjectFromBom} (import as a brand-new project), so both entry
+ * points auto-match identically.
+ */
+async function importBomLinesInto(
+  projectId: string,
+  lines: readonly ParsedBomLine[],
+): Promise<BomImportSummary> {
+  const items = getItemRepository();
+  const projects = getProjectRepository();
+  let added = 0;
+  let matched = 0;
+  for (const line of lines) {
+    const match = line.mpn ? await items.findByMatchKey(line.mpn) : undefined;
+    if (match) matched += 1;
+    await projects.addLine(projectId, {
+      itemId: match?.id ?? null,
+      designator: line.designator,
+      mpn: line.mpn,
+      manufacturer: line.manufacturer,
+      description: line.description,
+      requiredQty: line.requiredQty,
+    });
+    added += 1;
+  }
+  return { added, matched };
+}
+
+/**
  * Import parsed BOM lines into a project: each line is auto-matched to a local item
  * by MPN, then alias (§4), and added — matched lines link to the item (inheriting
  * its cost snapshot), unmatched lines stay as manual rows. Returns how many were
@@ -357,27 +390,43 @@ export interface BomImportSummary {
 export function useImportBom(projectId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (lines: readonly ParsedBomLine[]): Promise<BomImportSummary> => {
-      const items = getItemRepository();
-      const projects = getProjectRepository();
-      let added = 0;
-      let matched = 0;
-      for (const line of lines) {
-        const match = line.mpn ? await items.findByMatchKey(line.mpn) : undefined;
-        if (match) matched += 1;
-        await projects.addLine(projectId, {
-          itemId: match?.id ?? null,
-          designator: line.designator,
-          mpn: line.mpn,
-          manufacturer: line.manufacturer,
-          description: line.description,
-          requiredQty: line.requiredQty,
-        });
-        added += 1;
-      }
-      return { added, matched };
-    },
+    mutationFn: (lines: readonly ParsedBomLine[]): Promise<BomImportSummary> =>
+      importBomLinesInto(projectId, lines),
     onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+/** The new project's id alongside the {@link BomImportSummary} for its imported lines. */
+export interface CreateProjectFromBomResult extends BomImportSummary {
+  readonly projectId: string;
+}
+
+/**
+ * Create a brand-new project from an imported order / BOM (spec §4): the project is
+ * created first, then the parsed lines are imported into it through the same
+ * MPN/alias auto-match path as {@link useImportBom}. Returns the new project's id so
+ * the caller can select it, plus the line-import summary. Turns a loose CSV/KiCad
+ * order into a standalone planning project in one step, reusing the existing project
+ * and BOM write paths (no new SQL).
+ */
+export function useCreateProjectFromBom() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      project,
+      lines,
+    }: {
+      project: CreateProjectInput;
+      lines: readonly ParsedBomLine[];
+    }): Promise<CreateProjectFromBomResult> => {
+      const created = await getProjectRepository().create(project);
+      const summary = await importBomLinesInto(created.id, lines);
+      return { projectId: created.id, ...summary };
+    },
+    onSettled: (data) => {
+      void client.invalidateQueries({ queryKey: projectKeys.list() });
+      if (data) invalidateProject(client, data.projectId);
+    },
   });
 }
 
