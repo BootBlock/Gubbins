@@ -330,6 +330,11 @@ interface PreferencesStore {
   readonly cataloguePageNumbers: boolean;
   /** Repeat the organisation name / title in the top margin of every printed catalogue page. */
   readonly catalogueRunningHeader: boolean;
+  /**
+   * Preview the catalogue on screen as a white, black-ink printed page (regardless of the app
+   * theme) — so a dark-mode user can see what the printout will look like. On-screen only.
+   */
+  readonly cataloguePaperPreview: boolean;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   setMode: (mode: Mode) => void;
@@ -402,6 +407,8 @@ interface PreferencesStore {
   setCataloguePageNumbers: (show: boolean) => void;
   /** Toggle the repeated running header (org name / title) on every catalogue page. */
   setCatalogueRunningHeader: (show: boolean) => void;
+  /** Toggle the on-screen white-paper preview of the catalogue. */
+  setCataloguePaperPreview: (on: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -458,6 +465,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       catalogueShowGeneratedDate: true,
       cataloguePageNumbers: true,
       catalogueRunningHeader: true,
+      cataloguePaperPreview: false,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
@@ -535,6 +543,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setCatalogueShowGeneratedDate: (show) => set({ catalogueShowGeneratedDate: show }),
       setCataloguePageNumbers: (show) => set({ cataloguePageNumbers: show }),
       setCatalogueRunningHeader: (show) => set({ catalogueRunningHeader: show }),
+      setCataloguePaperPreview: (on) => set({ cataloguePaperPreview: on }),
     }),
     {
       name: 'gubbins:preferences',
