@@ -308,6 +308,31 @@ describe('applyAppearance', () => {
   });
 });
 
+describe('usePreferencesStore — animation level ↔ background effect', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({ animationLevel: 'balanced', backgroundEffect: 'none' });
+  });
+
+  it('turns Snow on by default when the "I have a headache" preset is chosen', () => {
+    usePreferencesStore.setState({ animationLevel: 'balanced', backgroundEffect: 'none' });
+    usePreferencesStore.getState().setAnimationLevel('headache');
+    expect(usePreferencesStore.getState().animationLevel).toBe('headache');
+    expect(usePreferencesStore.getState().backgroundEffect).toBe('snow');
+  });
+
+  it('preserves an explicitly-chosen background effect when switching to headache', () => {
+    usePreferencesStore.setState({ animationLevel: 'balanced', backgroundEffect: 'rain' });
+    usePreferencesStore.getState().setAnimationLevel('headache');
+    expect(usePreferencesStore.getState().backgroundEffect).toBe('rain');
+  });
+
+  it('leaves the background effect untouched for the calmer levels', () => {
+    usePreferencesStore.setState({ animationLevel: 'headache', backgroundEffect: 'none' });
+    usePreferencesStore.getState().setAnimationLevel('calm');
+    expect(usePreferencesStore.getState().backgroundEffect).toBe('none');
+  });
+});
+
 describe('usePreferencesStore — Phase 12 window preferences', () => {
   afterEach(() => {
     usePreferencesStore.setState({

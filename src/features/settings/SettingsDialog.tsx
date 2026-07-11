@@ -307,8 +307,9 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               '- **Snow** — gently drifting snow.\n\n' +
               'The effect is drawn efficiently on the GPU and pauses when the tab is in the ' +
               'background. It follows the **Animation level** above: it holds still at *Calm*, and ' +
-              'switches off entirely at *Off* or *I have a headache* (and whenever your system ' +
-              'prefers reduced motion).'
+              'switches off entirely at *Minimal* or *Off* (and whenever your system prefers ' +
+              'reduced motion). Choosing **I have a headache** — the maximal “everything on” ' +
+              'level — turns **Snow** on for you by default; change it here any time.'
             }
           >
             <Select

@@ -361,7 +361,11 @@ interface PreferencesStore {
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
   setHighContrast: (enabled: boolean) => void;
-  /** Set how visually animated the interface is (full → balanced → calm → off → headache). */
+  /**
+   * Set how visually animated the interface is. Choosing the maximal `headache` preset also brings
+   * the ambient Snow background effect on by default (when no effect is chosen yet), as part of its
+   * "everything on" bundle.
+   */
   setAnimationLevel: (level: AnimationLevel) => void;
   /** Choose the About-screen starfield variant (visual-flair F11). */
   setStarfieldVariant: (variant: StarfieldVariant) => void;
@@ -500,7 +504,18 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setOledDark: (oledDark) => set({ oledDark }),
       setHighContrast: (highContrast) => set({ highContrast }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam / gate.
-      setAnimationLevel: (level) => set({ animationLevel: normaliseAnimationLevel(level) }),
+      setAnimationLevel: (level) =>
+        set((state) => {
+          const animationLevel = normaliseAnimationLevel(level);
+          // The maximal "I have a headache" preset is "everything on", so it brings the ambient
+          // Snow weather layer on by default — but only when no effect is chosen yet (`none`), so
+          // an explicit Rain/Snow/None choice the user made is preserved.
+          const backgroundEffect =
+            animationLevel === 'headache' && state.backgroundEffect === 'none'
+              ? 'snow'
+              : state.backgroundEffect;
+          return { animationLevel, backgroundEffect };
+        }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
       // Normalise so a stale/unknown persisted value can never reach the canvas engine.
