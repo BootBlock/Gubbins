@@ -1,0 +1,42 @@
+# Current value & revaluation
+
+Not everything loses value. Collectibles, quality tools, instruments and property can **hold or
+gain** worth over time — and an insurance replacement figure needs *today's* value, not a
+depreciated one. Gubbins lets you set a manual **current value** and keep a history of how it's
+changed.
+
+**Where to find it:** the **Lifecycle** tab of an item's details.
+
+## Why a manual value
+
+By default, Gubbins derives an item's worth from its purchase price minus
+[[depreciation|Warranty-and-Depreciation]] — a *book value* that only ever falls. That's wrong
+for anything that appreciates. Setting a **current value** overrides that with a figure you
+control, which can move in either direction.
+
+> **ℹ️ Note**
+> When an item has a manual current value, that figure wins over the depreciated book value
+> everywhere it matters — the valuation [[reports|Reports-Overview]] and the
+> [[insurance schedule|Insurance-and-Estate-Schedule]] both use today's value. The depreciated
+> figure is still shown, relabelled **Book value**, so you can see both.
+
+## Revaluation history
+
+Each time you update the value, Gubbins keeps an **append-only revaluation log** — a dated entry
+with the amount and an optional note — and shows the trend as a small sparkline. So you can see
+how a collectible has appreciated over the years, not just its latest number.
+
+> **💡 Tip**
+> Add a note to each revaluation (*"valued by dealer"*, *"comparable sold at auction"*) so the
+> history explains itself later. It's a running record of provenance as well as value.
+
+> **ℹ️ Note**
+> Current value stays **manual** and offline — Gubbins never fetches live market prices (that
+> would need a cloud service and a key, against its local-first, secret-free design). You decide
+> when and to what a value changes.
+
+## Related pages
+
+- **[[Warranty & depreciation|Warranty-and-Depreciation]]** — the book-value side.
+- **[[Insurance & estate schedule|Insurance-and-Estate-Schedule]]** — where current value is used.
+- **[[Reports overview|Reports-Overview]]** — valuation over time.

@@ -178,6 +178,41 @@ English copy; other languages (currently `de.json`) are override catalogs.
   Untranslated keys fall back to English, so nothing breaks — but "add the string, skip the
   translation" is not acceptable for a catalog key.
 
+## The wiki must reflect user-facing changes (mandatory)
+
+Gubbins has a user-facing **wiki** — staged in-repo under [docs/wiki](docs/wiki) and published
+to the `BootBlock/Gubbins.wiki` repo. It documents every feature, concept, option and setting
+for end users (plus the Bridge / Home Assistant integration surface). The taxonomy, page map and
+house style live in [docs/todo/wiki_2026-07-11.md](docs/todo/wiki_2026-07-11.md) — the single
+source of truth for what the wiki covers.
+
+**The rule — the same discipline as design tokens and i18n:** when a change **adds, removes or
+alters anything a user sees or configures** — a feature, screen, capability, setting, option,
+concept, or a piece of behaviour the wiki describes — the corresponding wiki page(s) under
+`docs/wiki/` **must** be updated in the *same* change. A feature is not "done" until the wiki
+reflects it.
+
+- **New feature/screen/capability/setting** → add or update the relevant page, and add it to the
+  page map in `docs/todo/wiki_2026-07-11.md` if it's a new topic. Where a screenshot would help,
+  regenerate it (see below) rather than describing the UI in prose alone.
+- **Changed behaviour, labels or options** → update the affected page(s) so the copy still
+  matches the app; refresh any screenshot that now shows stale UI.
+- **Removed feature** → remove or revise the page and its sidebar entry so the wiki never
+  documents something that no longer exists.
+- **Screenshots are generated, not hand-taken.** Run `node scripts/wiki-screenshots.mjs` against
+  a running dev server (`npm run dev`) to (re)capture the cropped images into `docs/wiki/images/`.
+  All sample data must stay **synthetic** (invented names, `example.com`) per the
+  [public-repository hygiene](#public-repository-hygiene-mandatory) rule — never seed a screenshot
+  with real people or data. Add a new capture step to that script when a new page needs an image.
+- **House style:** every page follows the conventions in the plan doc — a one-line summary, a
+  "where to find it" pointer, cropped screenshots with alt text, `> **💡 Tip** / **ℹ️ Note** /
+  **⚠️ Heads-up**` box-outs where they genuinely help, and `[[Page-Name]]` cross-links. Keep it
+  plain, user-facing and neutral — **no internal process, plumbing or agent detail** (the wiki is
+  world-readable, exactly like the repo).
+
+If a change is purely internal (refactor, tests, build) with **no** user-visible surface, the
+wiki needs no update — the trigger is a change to what the user sees or does, not to the code.
+
 ## Actioning a GitHub issue (workflow)
 
 When the maintainer gives you a Gubbins issue URL —
