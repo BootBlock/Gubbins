@@ -14,6 +14,9 @@ vi.mock('../projects', () => ({
   useAddItemToProject: () => ({ mutate, isPending: false }),
   useProjects: () => ({ data: { rows: projectsData.rows }, isLoading: false }),
 }));
+// Router: the empty-state "Go to projects" button navigates, so stub useNavigate.
+const navigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
 
 function makeProject(overrides: Partial<ProjectWithCount> = {}): ProjectWithCount {
   return {
@@ -46,6 +49,7 @@ function renderDialog() {
 
 beforeEach(() => {
   mutate.mockClear();
+  navigate.mockClear();
   projectsData.rows = [makeProject(), makeProject({ id: 'p2', name: 'Guitar pedal', status: 'ACTIVE' })];
 });
 
@@ -80,5 +84,13 @@ describe('AddItemToProjectDialog', () => {
     expect(screen.getByText(/no projects yet/i)).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add to project' })).toBeNull();
+  });
+
+  it('navigates to the projects list (and closes) from the empty-state button', async () => {
+    projectsData.rows = [];
+    const { onClose, user } = renderDialog();
+    await user.click(screen.getByRole('button', { name: /Go to projects/ }));
+    expect(navigate).toHaveBeenCalledWith({ to: '/projects' });
+    expect(onClose).toHaveBeenCalled();
   });
 });

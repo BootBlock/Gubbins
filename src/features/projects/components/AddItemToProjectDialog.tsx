@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,6 +29,7 @@ export function AddItemToProjectDialog({
   onClose: () => void;
 }) {
   const t = useT();
+  const navigate = useNavigate();
   const projectsQuery = useProjects();
   const addToProject = useAddItemToProject();
   const { show } = useToast();
@@ -59,6 +61,13 @@ export function AddItemToProjectDialog({
   const close = () => {
     reset();
     onClose();
+  };
+
+  // From the empty state, send the user to the projects list so they can create one — closing
+  // this dialog first so it isn't left open behind the navigation.
+  const goToProjects = () => {
+    close();
+    void navigate({ to: '/projects' });
   };
 
   const onSubmit = (values: FormValues) => {
@@ -110,9 +119,13 @@ export function AddItemToProjectDialog({
           <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
             {t('inventory.addToProject.empty')}
           </p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={close}>
               {t('inventory.addToProject.close')}
+            </Button>
+            <Button type="button" onClick={goToProjects}>
+              <ProjectIcon />
+              {t('inventory.addToProject.goToProjects')}
             </Button>
           </div>
         </div>
