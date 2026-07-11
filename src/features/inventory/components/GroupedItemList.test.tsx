@@ -33,6 +33,10 @@ vi.mock('./ItemCard', () => ({
 vi.mock('./ItemRow', () => ({
   ItemRow: ({ item }: { item: { id: string } }) => <div data-testid="stub-row">{item.id}</div>,
 }));
+vi.mock('./ItemTable', () => ({
+  ItemTableHeader: () => <div data-testid="stub-table-header" />,
+  ItemTableRow: ({ item }: { item: { id: string } }) => <div data-testid="stub-table-row">{item.id}</div>,
+}));
 // Each section fetches its own on-screen custom-field values (E1); the default config shows
 // no custom field, so the query is disabled — stub it so no QueryClient is needed here.
 vi.mock('../categories', () => ({
@@ -148,6 +152,17 @@ describe('GroupedItemList', () => {
     render(<GroupedItemList tree={TREE} {...PROPS} density="data" />);
     const section = screen.getByText('parent-a');
     expect(within(section.parentElement as HTMLElement).getAllByTestId('stub-row').length).toBeGreaterThan(0);
+  });
+
+  it('renders a spreadsheet table (header + table rows) in table density', () => {
+    render(<GroupedItemList tree={TREE} {...PROPS} density="table" />);
+    // The open "Workshop" section shows a table header and its items as table rows.
+    expect(screen.getAllByTestId('stub-table-header').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('stub-table-row').map((el) => el.textContent)).toEqual(
+      expect.arrayContaining(['parent-a', 'parent-b']),
+    );
+    expect(screen.queryByTestId('stub-row')).toBeNull();
+    expect(screen.queryByTestId('stub-card')).toBeNull();
   });
 
   it('wraps each top-level section in a scroll-reveal (armed pending entrance) without gating its content', () => {

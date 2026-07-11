@@ -1,15 +1,13 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Item, LocationWithCount } from '@/db/repositories';
-import { useFormatters } from '@/lib/useFormatters';
 import { useHighlightTarget } from '@/lib/highlight';
-import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
+import { isUnlimited } from '../unlimited';
 import { useItemDragSource } from '../item-drag';
 import { DEFAULT_VISIBLE_CARD_FIELD_IDS, type CardCustomField } from '../card-fields';
-import { GaugeRing } from './GaugeBar';
-import { QuantityStepper } from './QuantityStepper';
 import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
+import { ItemStockValue } from './ItemStockValue';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldSummary } from './ItemCardFields';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
@@ -58,7 +56,6 @@ export const ItemRow = memo(function ItemRow({
   /** This item's stored custom-field values (fieldId → raw value), if loaded. */
   customValues?: ReadonlyMap<string, string>;
 }) {
-  const fmt = useFormatters();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   const fields = useResolvedCardFields(item, {
     order: fieldOrder,
@@ -115,30 +112,7 @@ export const ItemRow = memo(function ItemRow({
       {isUnlimited(item) ? <UnlimitedBadge className="hidden sm:inline-flex" /> : null}
 
       <div className="flex w-40 items-center justify-end gap-2">
-        {isUnlimited(item) ? (
-          <span
-            className="text-lg font-semibold text-glyph-scan"
-            aria-label="Unlimited supply"
-            title="Unlimited supply"
-          >
-            {UNLIMITED_GLYPH}
-          </span>
-        ) : item.gauge ? (
-          <>
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {fmt.measure(item.gauge.currentNetValue, item.gauge.unitOfMeasure)}
-            </span>
-            <GaugeRing gauge={item.gauge} size={32} />
-          </>
-        ) : item.trackingMode === 'SERIALISED' ? (
-          <span className="text-xs text-muted-foreground">1 unit</span>
-        ) : item.trackingMode === 'UNTRACKED' ? (
-          <span className="text-xs text-muted-foreground">Not counted</span>
-        ) : item.isActive ? (
-          <QuantityStepper id={item.id} quantity={item.quantity} />
-        ) : (
-          <span className="text-sm font-semibold tabular-nums">{fmt.quantity(item.quantity)}</span>
-        )}
+        <ItemStockValue item={item} />
       </div>
 
       <ItemActions ref={actionsRef} item={item} locations={locations} compact />

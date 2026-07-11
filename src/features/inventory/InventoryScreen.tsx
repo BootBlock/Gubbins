@@ -14,6 +14,7 @@ import {
   DuplicateTabIcon,
   EditIcon,
   ExportIcon,
+  GroupByIcon,
   ImportIcon,
   InfoIcon,
   MoreIcon,
@@ -22,6 +23,7 @@ import {
   ScanIcon,
   SearchIcon,
   SelectIcon,
+  TableViewIcon,
   VisualDensityIcon,
 } from '@/components/icons';
 import {
@@ -29,6 +31,7 @@ import {
   Menu,
   MenuAction,
   MenuSeparator,
+  MenuSub,
   PageContainer,
   PageHeader,
   SplitButton,
@@ -80,15 +83,16 @@ import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
 /**
- * The "View" rows in the inventory "More" menu — the Data-Heavy ↔ Visual-Heavy
- * density axis (how each item is *drawn*; orthogonal to {@link GROUP_MODES}, which
- * governs how items are *arranged*). Only two fixed values, so unlike `GROUP_MODES`
- * this isn't designed to grow — kept as a plain local array rather than a shared SSOT.
+ * The rows in the inventory "More" menu's **View** submenu — the density axis (how each item
+ * is *drawn*; orthogonal to {@link GROUP_MODES}, which governs how items are *arranged*):
+ * Visual cards, dense Data rows, or a spreadsheet Table. Kept as a plain local array (the
+ * whole set is enumerated here and in the store's `LayoutDensity` union).
  */
 const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof VisualDensityIcon }> =
   [
     { value: 'visual', label: 'Visual', icon: VisualDensityIcon },
     { value: 'data', label: 'Data', icon: DataDensityIcon },
+    { value: 'table', label: 'Table', icon: TableViewIcon },
   ];
 
 /**
@@ -120,6 +124,9 @@ function InventoryWorkspace() {
   const setDensity = useLayoutStore((s) => s.setDensity);
   const grouping = useLayoutStore((s) => s.grouping);
   const setGrouping = useLayoutStore((s) => s.setGrouping);
+  // The current View / Group-by choices, so each submenu trigger names and glyphs its active mode.
+  const activeDensity = DENSITY_MODES.find((m) => m.value === density) ?? DENSITY_MODES[0]!;
+  const activeGrouping = GROUP_MODES.find((m) => m.value === grouping) ?? GROUP_MODES[0]!;
   // The opt-out compact per-location summary card (device-local view preference).
   const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
   const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
@@ -398,9 +405,9 @@ function InventoryWorkspace() {
   const listEntrance = densityChanged
     ? vtEnabled
       ? ''
-      : density === 'data'
-        ? 'animate-slide-in-right'
-        : 'animate-slide-in-left'
+      : density === 'visual'
+        ? 'animate-slide-in-left'
+        : 'animate-slide-in-right'
     : 'animate-swap-in';
   // Re-key (and so replay the entrance) when the *arrangement* changes: switching between
   // flat and grouped swaps the whole region. Grouped mode keeps a density-stable key so a
@@ -562,28 +569,33 @@ function InventoryWorkspace() {
                 Visual search
               </MenuAction>
               <MenuSeparator />
-              {/* View (the Data-Heavy ↔ Visual-Heavy density axis — how each item is *drawn*)
-                  and Group by (how the list is *arranged*) sit together as the two arrangement
-                  axes, each rendered off its own SSOT so a future mode needs no menu rework. */}
-              {DENSITY_MODES.map((mode) => (
-                <MenuAction
-                  key={mode.value}
-                  icon={<mode.icon />}
-                  onSelect={() => withViewTransition(() => setDensity(mode.value))}
-                  selected={density === mode.value}
-                >
-                  View: {mode.label}
-                </MenuAction>
-              ))}
-              {GROUP_MODES.map((mode) => (
-                <MenuAction
-                  key={mode.value}
-                  onSelect={() => setGrouping(mode.value)}
-                  selected={grouping === mode.value}
-                >
-                  Group by: {mode.label}
-                </MenuAction>
-              ))}
+              {/* View (the density axis — how each item is *drawn*: Visual / Data / Table) and
+                  Group by (how the list is *arranged*) are the two arrangement axes. Each is a
+                  nested submenu holding its own modes — rendered off its SSOT array so a future
+                  mode needs no menu rework — with the trigger showing the current choice. */}
+              <MenuSub icon={<activeDensity.icon />} label={`View: ${activeDensity.label}`}>
+                {DENSITY_MODES.map((mode) => (
+                  <MenuAction
+                    key={mode.value}
+                    icon={<mode.icon />}
+                    onSelect={() => withViewTransition(() => setDensity(mode.value))}
+                    selected={density === mode.value}
+                  >
+                    {mode.label}
+                  </MenuAction>
+                ))}
+              </MenuSub>
+              <MenuSub icon={<GroupByIcon />} label={`Group by: ${activeGrouping.label}`}>
+                {GROUP_MODES.map((mode) => (
+                  <MenuAction
+                    key={mode.value}
+                    onSelect={() => setGrouping(mode.value)}
+                    selected={grouping === mode.value}
+                  >
+                    {mode.label}
+                  </MenuAction>
+                ))}
+              </MenuSub>
               <MenuSeparator />
               <MenuAction
                 icon={<InfoIcon />}

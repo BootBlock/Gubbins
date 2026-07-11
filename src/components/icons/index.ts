@@ -124,9 +124,12 @@ export {
   ReceiptText as ExpenseIcon,
   FolderTree as BudgetCategoryIcon,
 
-  // Layout density (Data-Heavy ↔ Visual-Heavy, §3)
+  // Layout density (Visual-Heavy ↔ Data-Heavy ↔ Table, §3)
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,
+  Table as TableViewIcon,
+  // Grouping axis (how the list is arranged, §3)
+  Layers as GroupByIcon,
 
   // Multi-select & batch label printing (Phase 49, §6)
   ListChecks as SelectIcon,

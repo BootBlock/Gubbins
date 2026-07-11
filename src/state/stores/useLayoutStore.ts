@@ -15,10 +15,13 @@ import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
 import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
 
 /**
- * - `data` — dense, tabular layouts (the "Data-Heavy" view).
+ * How each inventory item is *drawn* (the "View" axis; orthogonal to {@link GroupingMode}).
+ *
  * - `visual` — large image cards, ample whitespace (the "Visual-Heavy" view).
+ * - `data` — dense, one-per-line rows optimised for scanning many records (the "Data-Heavy" view).
+ * - `table` — a spreadsheet-style grid: aligned columns under a sticky header, one row per item.
  */
-export type LayoutDensity = 'data' | 'visual';
+export type LayoutDensity = 'data' | 'visual' | 'table';
 
 /**
  * How the inventory grid *arranges* items — an axis orthogonal to {@link LayoutDensity}

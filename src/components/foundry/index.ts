@@ -71,10 +71,12 @@ export {
   MenuExternalLink,
   MenuAction,
   MenuSeparator,
+  MenuSub,
   type MenuProps,
   type MenuLinkProps,
   type MenuExternalLinkProps,
   type MenuActionProps,
+  type MenuSubProps,
 } from './menu';
 export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-region';
 export { liveRegionAttrs, type LiveRegionAttrs } from './aria-live';

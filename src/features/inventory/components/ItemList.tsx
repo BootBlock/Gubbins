@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/foundry';
 import { PackageIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
@@ -8,6 +9,8 @@ import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-em
 import { listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
+import { ItemTableHeader, ItemTableRow } from './ItemTable';
+import { tableFieldColumns, tableGridColumns } from './item-table-columns';
 import { SubLocationNav } from './SubLocationNav';
 import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
@@ -15,7 +18,7 @@ import type { ItemSelection } from './inventory-ui';
 const VISUAL_CARD_MIN_WIDTH = 280;
 
 /** Estimated row height per density — also the height of a not-yet-resident placeholder. */
-const ROW_HEIGHT = { data: 60, visual: 232 } as const;
+const ROW_HEIGHT = { data: 60, visual: 232, table: 48 } as const;
 
 /**
  * Virtualised item list (spec §2.1, §3). Pages from `useInventoryItems` are
@@ -94,6 +97,20 @@ export function ItemList({
   >;
 }) {
   const { columns, scrollRef: parentRef, setScrollEl } = useColumns(density);
+  const isTable = density === 'table';
+
+  // The table view's columns are the configured card fields (backlog E1) with Name + Stock
+  // bookending them; the header and every row share one `grid-template-columns` so they align.
+  const selecting = selection != null;
+  const tableColumns = useMemo(
+    () => tableFieldColumns(cardFields.order, cardFields.customFields),
+    [cardFields.order, cardFields.customFields],
+  );
+  const tableColumnIds = useMemo(() => tableColumns.map((c) => c.id), [tableColumns]);
+  const tableGrid = useMemo(
+    () => tableGridColumns(tableColumns.length, selecting),
+    [tableColumns.length, selecting],
+  );
 
   // Absolute row count: the virtualizer indexes the full loaded-so-far span, so a
   // trimmed-off front page never shifts the rows the user is looking at.
@@ -159,13 +176,20 @@ export function ItemList({
   // (`Surface interactive` → `hover:shadow-primary/10`) and highlight-flash ring need before the
   // clip — `px-1` (4px) cropped them into hard vertical edges at the sides. `px-4` + a matching
   // `pb-4` give the soft accent glow room to fall off; `pt-2` already covers the top.
-  return (
+  const scroller = (
     <div
       ref={setScrollEl}
       data-testid="item-list-scroll"
-      className="min-h-0 flex-1 overflow-auto px-4 pb-4 pt-2"
+      // The Table view keeps its header above (a sibling) rather than scrolling with the body,
+      // so its scroll box drops the top padding the card/row views use for hover-glow room.
+      role={isTable ? 'presentation' : undefined}
+      className={cn('min-h-0 flex-1 overflow-auto px-4 pb-4', isTable ? 'pt-0' : 'pt-2')}
     >
-      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+      <div
+        role={isTable ? 'presentation' : undefined}
+        className="relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
         {virtualRows.map((virtualRow) => {
           const { start, end, resident } = resolveListRow(
             virtualRow.index,
@@ -174,52 +198,75 @@ export function ItemList({
             items.length,
           );
           const rowItems = resident ? items.slice(start, end) : [];
+          const firstItem = rowItems[0];
           return (
             <div
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
+              role={isTable ? 'presentation' : undefined}
               className="absolute left-0 top-0 w-full"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               {resident ? (
-                <div
-                  className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
-                  style={
-                    density === 'data'
-                      ? undefined
-                      : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
-                  }
-                >
-                  {rowItems.map((item) => {
-                    const selected = selectedIds?.has(item.id) ?? false;
-                    return density === 'data' ? (
-                      <ItemRow
-                        key={item.id}
-                        item={item}
-                        locations={locations}
-                        locationName={locationName(item.locationId)}
-                        locationColorClass={locationColorClass?.(item.locationId)}
-                        locationTintClass={locationTintClass?.(item.locationId)}
-                        selection={selection}
-                        selected={selected}
-                        {...cardFieldProps(cardFields, item)}
-                      />
-                    ) : (
-                      <ItemCard
-                        key={item.id}
-                        item={item}
-                        locations={locations}
-                        locationName={locationName(item.locationId)}
-                        locationColorClass={locationColorClass?.(item.locationId)}
-                        locationTintClass={locationTintClass?.(item.locationId)}
-                        selection={selection}
-                        selected={selected}
-                        {...cardFieldProps(cardFields, item)}
-                      />
-                    );
-                  })}
-                </div>
+                isTable ? (
+                  firstItem ? (
+                    <ItemTableRow
+                      item={firstItem}
+                      locations={locations}
+                      locationName={locationName(firstItem.locationId)}
+                      locationColorClass={locationColorClass?.(firstItem.locationId)}
+                      locationTintClass={locationTintClass?.(firstItem.locationId)}
+                      selection={selection}
+                      selected={selectedIds?.has(firstItem.id) ?? false}
+                      gridTemplate={tableGrid}
+                      columnIds={tableColumnIds}
+                      // Header is row 1; the virtual row's absolute index sits at index + 2.
+                      ariaRowIndex={virtualRow.index + 2}
+                      categoryName={cardFields.categoryName(firstItem.categoryId)}
+                      customFields={cardFields.customFields}
+                      customValues={cardFields.values?.get(firstItem.id)}
+                    />
+                  ) : null
+                ) : (
+                  <div
+                    className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
+                    style={
+                      density === 'data'
+                        ? undefined
+                        : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+                    }
+                  >
+                    {rowItems.map((item) => {
+                      const selected = selectedIds?.has(item.id) ?? false;
+                      return density === 'data' ? (
+                        <ItemRow
+                          key={item.id}
+                          item={item}
+                          locations={locations}
+                          locationName={locationName(item.locationId)}
+                          locationColorClass={locationColorClass?.(item.locationId)}
+                          locationTintClass={locationTintClass?.(item.locationId)}
+                          selection={selection}
+                          selected={selected}
+                          {...cardFieldProps(cardFields, item)}
+                        />
+                      ) : (
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          locations={locations}
+                          locationName={locationName(item.locationId)}
+                          locationColorClass={locationColorClass?.(item.locationId)}
+                          locationTintClass={locationTintClass?.(item.locationId)}
+                          selection={selection}
+                          selected={selected}
+                          {...cardFieldProps(cardFields, item)}
+                        />
+                      );
+                    })}
+                  </div>
+                )
               ) : (
                 // A row whose page was trimmed off the front and is being refilled.
                 <div style={{ height: ROW_HEIGHT[density] }} aria-hidden />
@@ -235,6 +282,29 @@ export function ItemList({
       ) : null}
     </div>
   );
+
+  if (isTable) {
+    // A spreadsheet table: a fixed header of column labels above the virtualised, scrolling body.
+    // The intermediate scroll/relative/absolute wrappers are `role="presentation"` so the rows
+    // (`role="row"`) re-parent to this `role="table"` for assistive tech.
+    return (
+      <div
+        role="table"
+        aria-label="Inventory items"
+        // Absolute row span (header + every virtual row), matching the absolute `aria-rowindex`
+        // each row carries — so a front-trimmed page at 100k+ scale doesn't under-count.
+        aria-rowcount={rowCount + 1}
+        className="flex min-h-0 flex-1 flex-col px-4"
+      >
+        <ItemTableHeader columns={tableColumns} selecting={selecting} gridTemplate={tableGrid} />
+        <div role="presentation" className="-mx-4 min-h-0 flex-1">
+          {scroller}
+        </div>
+      </div>
+    );
+  }
+
+  return scroller;
 }
 
 /**
@@ -266,7 +336,8 @@ function useColumns(density: LayoutDensity): {
   }, []);
 
   useLayoutEffect(() => {
-    if (density === 'data') {
+    // Data and Table are one item per row; only Visual packs multiple cards per virtual row.
+    if (density !== 'visual') {
       setColumns(1);
       return;
     }
