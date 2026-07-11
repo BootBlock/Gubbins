@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, InfoHint, Input, Modal, Money, SelectField } from '@/components/foundry';
 import type { CreatePurchaseOrderLineInput, PriceBreak } from '@/db/repositories';
 import { effectiveUnitCostForQty } from '@/features/inventory/supplier-cost';
@@ -69,6 +69,23 @@ export function PurchaseOrderLineDialog({
   // the item's effective cost for the quantity; once true we stop overwriting their value.
   const [costEdited, setCostEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The parent keeps this dialog permanently mounted and only toggles `open`, so its state
+  // would otherwise persist across opens (leaving the last line's item/qty/cost populated).
+  // Reset to a fresh form on the closed→open edge — tracked via a ref so it fires only on
+  // open, not on every render while open (mirrors the edge-detection in PurchaseOrdersScreen).
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setItemId('');
+      setDescription('');
+      setOrderedQty('1');
+      setUnitCost('');
+      setCostEdited(false);
+      setError(null);
+    }
+    wasOpenRef.current = open;
+  }, [open]);
 
   const chosen = useMemo(() => items.find((i) => i.id === itemId), [items, itemId]);
 
