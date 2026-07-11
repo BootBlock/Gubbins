@@ -85,12 +85,14 @@ import type { LabelItem } from './labels/label-sheet';
 /**
  * The rows in the inventory "More" menu's **View** submenu — the density axis (how each item
  * is *drawn*; orthogonal to {@link GROUP_MODES}, which governs how items are *arranged*):
- * Visual cards, dense Data rows, or a spreadsheet Table. Kept as a plain local array (the
- * whole set is enumerated here and in the store's `LayoutDensity` union).
+ * Card, dense Data rows, or a spreadsheet Table. Kept as a plain local array (the whole set is
+ * enumerated here and in the store's `LayoutDensity` union). The stored value stays `visual`
+ * (the `LayoutDensity` key); only the user-facing label reads "Card", which describes what's
+ * shown more plainly.
  */
 const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof VisualDensityIcon }> =
   [
-    { value: 'visual', label: 'Visual', icon: VisualDensityIcon },
+    { value: 'visual', label: 'Card', icon: VisualDensityIcon },
     { value: 'data', label: 'Data', icon: DataDensityIcon },
     { value: 'table', label: 'Table', icon: TableViewIcon },
   ];
@@ -569,7 +571,7 @@ function InventoryWorkspace() {
                 Visual search
               </MenuAction>
               <MenuSeparator />
-              {/* View (the density axis — how each item is *drawn*: Visual / Data / Table) and
+              {/* View (the density axis — how each item is *drawn*: Card / Data / Table) and
                   Group by (how the list is *arranged*) are the two arrangement axes. Each is a
                   nested submenu holding its own modes — rendered off its SSOT array so a future
                   mode needs no menu rework — with the trigger showing the current choice. */}
