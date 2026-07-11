@@ -48,6 +48,20 @@
   "about.licence.disclaimer.emphasis": "entirely at your own risk",
   "about.licence.disclaimer.post": "; the developers accept no responsibility or liability for any loss, damage, data loss, or other issues arising from its use.",
 
+  "notFound.title": "Page not found",
+  "notFound.heading": "We couldn't find that page",
+  "notFound.attempted": "You tried to open:",
+  "notFound.explanation": "The address may be mistyped, the page may have moved, or a saved link may be out of date.",
+  "notFound.suggestions.title": "Did you mean…?",
+  "notFound.actions.dashboard": "Go to dashboard",
+
+  "routeError.title": "Something went wrong",
+  "routeError.heading": "This page couldn't load",
+  "routeError.explanation": "An unexpected error stopped this page from loading. You can try again, or head back to the dashboard.",
+  "routeError.details": "Technical details",
+  "routeError.actions.retry": "Try again",
+  "routeError.actions.dashboard": "Go to dashboard",
+
   "dashboard.hero.repoLabel": "Open the Gubbins GitHub repository (opens in a new tab)",
   "dashboard.hero.tagline": "Local-first inventory · your dashboard",
   "dashboard.attention.live.one": "{count} item need attention",
