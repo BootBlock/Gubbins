@@ -31,17 +31,20 @@ export function FavouriteStar({ className }: { className?: string }) {
 }
 
 /**
- * The Visual-card favourite watermark: a large gold star anchored to the card's bottom-right
- * corner and translated so half of it hangs off both the bottom and the right edge, clipped back
- * to the card by an `overflow-hidden` layer that matches the card's rounding. Painted behind the
- * card's content (a negative-z layer within the card's stacking context) at 25% opacity, so it
- * reads as a faint watermark rather than competing with the item's details. Decoration only —
- * `aria-hidden`; the card supplies the accessible "Favourite" label separately.
+ * The Visual-card favourite watermark: a large neutral (greyscale) star anchored to the card's
+ * bottom-right corner and translated so it hangs 30% off both the bottom and the right edge —
+ * pulled up/left from a half-off position so a little more of the star reads inside the card —
+ * clipped back to the card by an `overflow-hidden` layer that matches the card's rounding. Painted
+ * behind the card's content (a negative-z layer within the card's stacking context) at ~16%
+ * opacity, so it reads as a faint watermark rather than competing with the item's details.
+ * Deliberately greyscale (the neutral `muted-foreground` token, not the gold favourite tint) so it
+ * stays a background texture; the small inline stars keep the gold. Decoration only — `aria-hidden`;
+ * the card supplies the accessible "Favourite" label separately.
  */
 export function FavouriteCardWatermark() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl">
-      <FavouriteIcon className="absolute bottom-0 right-0 size-32 translate-x-1/2 translate-y-1/2 fill-current text-glyph-favourite opacity-25" />
+      <FavouriteIcon className="absolute bottom-0 right-0 size-32 translate-x-[30%] translate-y-[30%] fill-current text-muted-foreground opacity-[0.16]" />
     </div>
   );
 }

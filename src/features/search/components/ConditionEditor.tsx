@@ -27,6 +27,7 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
   const isCapability = isCapabilityField(condition.field);
   const isCustom = isCustomField(condition.field);
   const kind = kindOfField(condition.field);
+  const isBoolean = kind === 'boolean';
   const operators = operatorsForKind(kind);
   const showValue = condition.operator !== 'HAS_CAPABILITY';
   const numericValue =
@@ -51,8 +52,11 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
       });
       return;
     }
-    const op = operatorsForKind(kindOfField(next))[0];
-    dispatch({ type: 'updateCondition', path, patch: { field: next, operator: op, value: '' } });
+    const nextKind = kindOfField(next);
+    const op = operatorsForKind(nextKind)[0];
+    // A boolean field carries a real boolean value (defaulting to Yes); every other kind starts blank.
+    const value = nextKind === 'boolean' ? true : '';
+    dispatch({ type: 'updateCondition', path, patch: { field: next, operator: op, value } });
   };
 
   const onOperatorChange = (op: FilterOperator) => {
@@ -125,7 +129,20 @@ export function ConditionEditor({ condition, path }: { condition: FilterConditio
         options={operators.map((op) => ({ value: op, label: operatorLabelFor(op, kind) }))}
       />
 
-      {showValue ? (
+      {showValue && isBoolean ? (
+        <Select
+          aria-label="Value"
+          value={condition.value === true || condition.value === 'true' ? 'true' : 'false'}
+          onChange={(value) =>
+            dispatch({ type: 'updateCondition', path, patch: { value: value === 'true' } })
+          }
+          className="h-9 w-32"
+          options={[
+            { value: 'true', label: 'Yes' },
+            { value: 'false', label: 'No' },
+          ]}
+        />
+      ) : showValue ? (
         <Input
           aria-label="Value"
           value={typeof condition.value === 'boolean' ? '' : String(condition.value)}

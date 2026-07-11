@@ -43,7 +43,7 @@ import {
   type LogicalOperator,
   type SearchAST,
 } from '@/db/search/ast';
-import { SearchAstError, parseASTtoSQL } from '@/db/search/parseASTtoSQL';
+import { SearchAstError, parseASTtoSQL, parseBooleanValue } from '@/db/search/parseASTtoSQL';
 import { toCapabilityField, toCustomField } from './fields';
 
 export type ParseTextQueryResult = { ok: true; ast: SearchAST } | { ok: false; error: string };
@@ -59,7 +59,7 @@ class TextQueryError extends Error {
   }
 }
 
-type FieldKind = 'text' | 'numeric';
+type FieldKind = 'text' | 'numeric' | 'boolean';
 
 /**
  * Alias → canonical scalar field. The canonical names mirror the §5.1 `ITEM_FIELDS`
@@ -87,6 +87,11 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   width: { field: 'width', kind: 'numeric' },
   height: { field: 'height', kind: 'numeric' },
   depth: { field: 'depth', kind: 'numeric' },
+  // "Favourite" pin (issue #23) — a yes/no flag, e.g. `favourite:yes` (US spelling `favorite:`
+  // and the short `fav:` both accepted).
+  favourite: { field: 'favourite', kind: 'boolean' },
+  favorite: { field: 'favourite', kind: 'boolean' },
+  fav: { field: 'favourite', kind: 'boolean' },
 };
 
 const CAPABILITY_ALIASES = new Set(['cap', 'capability']);
@@ -303,9 +308,26 @@ function parseTerm(token: string): TermResult {
       : { condition: { field: 'name', operator: 'CONTAINS', value } };
   }
 
+  if (meta.kind === 'boolean') return parseBooleanTerm(meta.field, sep, rest);
   return meta.kind === 'numeric'
     ? parseNumericTerm(meta.field, sep, rest)
     : parseTextTerm(meta.field, sep, rest);
+}
+
+function parseBooleanTerm(field: string, sep: string, rawValue: string): TermResult {
+  if (sep === '>' || sep === '<') {
+    return {
+      error: `The "${field}" field is yes/no, so it can't be compared with ${sep}; use ${field}:yes or ${field}:no.`,
+    };
+  }
+  const value = unquote(rawValue);
+  if (value.length === 0) {
+    return { error: `Search term "${field}${sep}" is missing a value (try ${field}:yes).` };
+  }
+  // Canonicalise through the shared yes/no vocabulary the SQL layer coerces with (no drift).
+  const parsed = parseBooleanValue(value);
+  if (parsed === null) return { error: `The "${field}" filter needs yes or no, got "${value}".` };
+  return { condition: { field, operator: 'EQUALS', value: parsed } };
 }
 
 function parseTextTerm(field: string, sep: string, rawValue: string): TermResult {

@@ -7,7 +7,7 @@
  */
 import type { FilterOperator } from '@/db/search/ast';
 
-export type BuilderFieldKind = 'text' | 'number' | 'capability' | 'customfield';
+export type BuilderFieldKind = 'text' | 'number' | 'boolean' | 'capability' | 'customfield';
 
 export interface BuilderField {
   /** The AST field identifier (for capability this is just the marker `capability`). */
@@ -28,6 +28,7 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'width', label: 'Width (mm)', kind: 'number' },
   { value: 'height', label: 'Height (mm)', kind: 'number' },
   { value: 'depth', label: 'Depth (mm)', kind: 'number' },
+  { value: 'favourite', label: 'Favourite', kind: 'boolean' },
   { value: 'capability', label: 'Capability', kind: 'capability' },
   { value: 'customfield', label: 'Custom field', kind: 'customfield' },
 ];
@@ -48,6 +49,8 @@ export const OPERATOR_LABELS: Readonly<Record<FilterOperator, string>> = {
  */
 export function operatorLabelFor(operator: FilterOperator, kind: BuilderFieldKind): string {
   if (operator === 'HAS_CAPABILITY' && kind === 'customfield') return 'has any value';
+  // A boolean field reads "Favourite is Yes", not "Favourite equals Yes".
+  if (operator === 'EQUALS' && kind === 'boolean') return 'is';
   return OPERATOR_LABELS[operator];
 }
 
@@ -58,6 +61,8 @@ export function operatorsForKind(kind: BuilderFieldKind): FilterOperator[] {
       return ['CONTAINS', 'EQUALS'];
     case 'number':
       return ['GREATER_THAN', 'LESS_THAN', 'EQUALS'];
+    case 'boolean':
+      return ['EQUALS'];
     case 'capability':
       return ['HAS_CAPABILITY', 'EQUALS', 'GREATER_THAN', 'LESS_THAN'];
     case 'customfield':

@@ -53,7 +53,7 @@ const CAPABILITY_PREFIX = 'capability:';
  */
 const CUSTOM_FIELD_PREFIX = 'field:';
 
-type FieldKind = 'fts-text' | 'id-text' | 'numeric';
+type FieldKind = 'fts-text' | 'id-text' | 'numeric' | 'boolean';
 
 /**
  * The known scalar item fields the Builder may filter on, mapped to their real
@@ -80,6 +80,9 @@ const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>>
   width: { column: 'items.width', kind: 'numeric' },
   height: { column: 'items.height', kind: 'numeric' },
   depth: { column: 'items.depth', kind: 'numeric' },
+  // "Favourite" pin (issue #23) — a boolean flag, matched with EQUALS only, e.g.
+  // `favourite:yes` for the starred items (or `favourite:no` for the rest).
+  favourite: { column: 'items.is_favourite', kind: 'boolean' },
 };
 
 interface Fragment {
@@ -194,6 +197,10 @@ function translateItemField(column: string, kind: FieldKind, condition: FilterCo
       };
     }
     case 'EQUALS': {
+      if (kind === 'boolean') {
+        // A 0/1 flag column — match the stored integer, coercing the AST value to a strict boolean.
+        return { sql: `${column} = ?`, params: [toBoolean(value, condition.field) ? 1 : 0] };
+      }
       if (kind === 'numeric') {
         return { sql: `${column} = ?`, params: [toNumber(value, condition.field)] };
       }
@@ -315,6 +322,31 @@ function translateCustomField(name: string, condition: FilterCondition): Fragmen
 
 function unsupported(operator: string, field: string): SearchAstError {
   return new SearchAstError(`Operator ${operator} is not supported for field "${field}".`);
+}
+
+/**
+ * Interpret an AST value as a strict boolean, or `null` when it isn't a recognised yes/no. Accepts a
+ * real boolean, `1`/`0`, and the usual truthy/falsy words (`true`/`false`, `yes`/`no`, `y`/`n`,
+ * `on`/`off`) case-insensitively. Exported so the text-query parser ({@link parse-text-query})
+ * canonicalises `favourite:yes` through the **same** vocabulary the SQL layer coerces with — one
+ * definition, no drift between the two layers.
+ */
+export function parseBooleanValue(value: string | number | boolean): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const v = value.trim().toLowerCase();
+  if (['true', 'yes', 'y', '1', 'on'].includes(v)) return true;
+  if (['false', 'no', 'n', '0', 'off'].includes(v)) return false;
+  return null;
+}
+
+/** Coerce an AST value to a strict boolean, or throw a typed error. */
+function toBoolean(value: string | number | boolean, field: string): boolean {
+  const parsed = parseBooleanValue(value);
+  if (parsed === null) {
+    throw new SearchAstError(`Field "${field}" needs a yes/no value, received "${String(value)}".`);
+  }
+  return parsed;
 }
 
 /** Coerce an AST value to a finite number, or throw a typed error. */
