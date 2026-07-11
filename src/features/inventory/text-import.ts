@@ -20,10 +20,12 @@
  *   - `'html'`     — an HTML `<table>`.
  *   - `'lines'`    — free-form, one item per line, with best-effort extraction of a
  *                    quantity and SKU from common shorthand ("Resistor 10k x50",
- *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). An
- *                    **Amazon ASIN or listing URL** in the line is recognised as the SKU
- *                    and a **currency-marked unit price** (£/$/€/¥) as the unit cost, so a
- *                    pasted Amazon invoice / order lands as items with their ASIN + price.
+ *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). A
+ *                    labelled **weight** (`w:` / `weight:`) is read too — a bare number as
+ *                    grams, or with a unit suffix (`2.5kg`, `16oz`, `1.1lb`). An **Amazon ASIN
+ *                    or listing URL** in the line is recognised as the SKU and a
+ *                    **currency-marked unit price** (£/$/€/¥) as the unit cost, so a pasted
+ *                    Amazon invoice / order lands as items with their ASIN + price.
  *
  * Kept free of React and the DOM for instant unit-test execution.
  */
@@ -45,6 +47,7 @@ import {
 } from './catalog-import';
 import { findAsin } from './asin';
 import { mapMigration, type MigrationSourceId } from './importers/migrations';
+import { toGrams, type WeightUnit } from '@/lib/weight';
 import type { CategoryField, Item } from '@/db/repositories/types';
 
 // Re-export the shared format model so existing importers (ImportDataDialog) keep a single
@@ -83,6 +86,12 @@ export interface FreeformItem {
   readonly trackingMode?: string;
   /** A currency-marked unit price recovered from the line (e.g. `£12.99`), when present. */
   readonly unitCost?: number;
+  /**
+   * Labelled weight in canonical **grams** (`weight:` / `w:`), when present. A bare number is
+   * read as grams; a unit suffix (`kg` / `g` / `oz` / `lb`, or their long forms) converts to
+   * grams, e.g. `w: 2.5kg` → 2500. Absent when the line labels no weight.
+   */
+  readonly weight?: number;
 }
 
 /** Parse a non-negative integer, or `null` if the text is not a clean integer. */
@@ -92,7 +101,49 @@ function toCount(text: string): number | null {
 }
 
 /** The logical fields an inline `key: value` label can target. */
-type LabelField = 'sku' | 'manufacturer' | 'location' | 'trackingMode' | 'quantity';
+type LabelField = 'sku' | 'manufacturer' | 'location' | 'trackingMode' | 'quantity' | 'weight';
+
+/**
+ * Recognised weight-unit words for a free-form `weight:` / `w:` value, mapped to the canonical
+ * {@link WeightUnit}. A bare number (no suffix) is read as grams — the canonical storage unit —
+ * so `w:500` is 500 g and `w:2.5kg` is 2500 g.
+ */
+const WEIGHT_UNIT_WORDS: Readonly<Record<string, WeightUnit>> = {
+  g: 'g',
+  gram: 'g',
+  grams: 'g',
+  kg: 'kg',
+  kgs: 'kg',
+  kilo: 'kg',
+  kilos: 'kg',
+  kilogram: 'kg',
+  kilograms: 'kg',
+  oz: 'oz',
+  ounce: 'oz',
+  ounces: 'oz',
+  lb: 'lb',
+  lbs: 'lb',
+  pound: 'lb',
+  pounds: 'lb',
+};
+
+/**
+ * Parse a free-form weight value into canonical **grams**, or `null` when it is not a weight.
+ * Accepts a leading number (locale-aware via `decimalSeparator`) with an optional unit suffix —
+ * `500`, `2.5kg`, `16 oz`, `1.1 lb`, `750 grams`. A bare number is grams; an unrecognised unit
+ * word yields `null` (so stray text is never stored as a weight). Trailing text after the
+ * number+unit is ignored.
+ */
+function parseWeightToGrams(value: string, decimalSeparator: string): number | null {
+  const m = value.trim().match(/^(\d[\d.,]*\d|\d)\s*([a-z]+)?/i);
+  if (!m) return null;
+  const num = parseLocaleAmount(m[1]!, decimalSeparator);
+  if (num === null || num < 0) return null;
+  const unitWord = (m[2] ?? '').toLowerCase();
+  const unit = unitWord === '' ? 'g' : WEIGHT_UNIT_WORDS[unitWord];
+  if (unit === undefined) return null;
+  return toGrams(num, unit);
+}
 
 /**
  * Recognised inline labels, matched anywhere in a line as `key: value` (also `=` or
@@ -103,11 +154,11 @@ type LabelField = 'sku' | 'manufacturer' | 'location' | 'trackingMode' | 'quanti
  * shorthand is not swallowed.
  *
  * Longest alternatives are listed first, and every keyword must be followed by a
- * separator, so `q:` never shadows `quantity:` and a word like "Manual" (no colon)
- * is never mistaken for `manu:`.
+ * separator, so `q:` never shadows `quantity:`, `weight:` is never shortened to the `w`
+ * keyword, and a word like "Manual" (no colon) is never mistaken for `manu:`.
  */
 const LABEL_SCAN =
-  /\b(manufacturer|manu|location|loc|tracking|track|quantity|qty|sku|mpn|p\/n|pn|part\s*(?:no\.?|number)?|count|amount|q)\s*[:=#]/gi;
+  /\b(weight|manufacturer|manu|location|loc|tracking|track|quantity|qty|sku|mpn|p\/n|pn|part\s*(?:no\.?|number)?|count|amount|q|w)\s*[:=#]/gi;
 
 /** Map a matched label keyword to its logical {@link LabelField}. */
 function labelFieldOf(keyword: string): LabelField {
@@ -116,6 +167,7 @@ function labelFieldOf(keyword: string): LabelField {
   if (k === 'location' || k === 'loc') return 'location';
   if (k === 'tracking' || k === 'track') return 'trackingMode';
   if (k === 'quantity' || k === 'qty' || k === 'q' || k === 'count' || k === 'amount') return 'quantity';
+  if (k === 'weight' || k === 'w') return 'weight';
   return 'sku'; // sku / mpn / pn / p/n / part…
 }
 
@@ -158,6 +210,8 @@ interface LabelledFields {
   readonly location: string | null;
   readonly trackingMode: string | null;
   readonly quantity: number | null;
+  /** Labelled weight in canonical grams, or `null` when none is labelled. */
+  readonly weight: number | null;
 }
 
 /**
@@ -166,10 +220,18 @@ interface LabelledFields {
  * field holds the first labelled occurrence (first wins). Fields with no label are
  * `null`.
  */
-function extractLabelledFields(input: string): LabelledFields {
+function extractLabelledFields(input: string, decimalSeparator = '.'): LabelledFields {
   const matches = [...input.matchAll(LABEL_SCAN)];
   if (matches.length === 0) {
-    return { head: input, sku: null, manufacturer: null, location: null, trackingMode: null, quantity: null };
+    return {
+      head: input,
+      sku: null,
+      manufacturer: null,
+      location: null,
+      trackingMode: null,
+      quantity: null,
+      weight: null,
+    };
   }
 
   let sku: string | null = null;
@@ -177,6 +239,7 @@ function extractLabelledFields(input: string): LabelledFields {
   let location: string | null = null;
   let trackingMode: string | null = null;
   let quantity: number | null = null;
+  let weight: number | null = null;
 
   for (let i = 0; i < matches.length; i += 1) {
     const m = matches[i]!;
@@ -201,13 +264,16 @@ function extractLabelledFields(input: string): LabelledFields {
       case 'quantity':
         if (quantity === null) quantity = toCount(value.match(/\d+/)?.[0] ?? '');
         break;
+      case 'weight':
+        if (weight === null) weight = parseWeightToGrams(value, decimalSeparator);
+        break;
     }
   }
 
   // The head is everything before the first label; drop a dangling opener (e.g. the
   // "(" in "Widget (qty: 5)") so the name does not keep a stray bracket.
   const head = input.slice(0, matches[0]!.index).replace(/[([{]\s*$/, '');
-  return { head, sku, manufacturer, location, trackingMode, quantity };
+  return { head, sku, manufacturer, location, trackingMode, quantity, weight };
 }
 
 /** Pull a shorthand quantity out of the head text, or `null` when none is present. */
@@ -271,8 +337,8 @@ function extractCurrencyPrice(
 
 /**
  * Best-effort parse of a single free-form line into a {@link FreeformItem}. Returns
- * `null` for a blank line. Inline labels (`sku:`, `manu:`, `loc:`, `track:`, `q:`) are
- * extracted first — so a number inside a part code is never mistaken for a quantity —
+ * `null` for a blank line. Inline labels (`sku:`, `manu:`, `loc:`, `track:`, `q:`, `w:`/`weight:`)
+ * are extracted first — so a number inside a part code is never mistaken for a quantity —
  * then, from the remaining head text and in order: an **Amazon ASIN / listing URL** as the
  * SKU (unless a `sku:` label already won), a **currency-marked unit price** as the unit
  * cost, and finally a quantity shorthand. Each is stripped so it never leaks into the item
@@ -285,7 +351,7 @@ export function parseFreeformLine(line: string, decimalSeparator = '.'): Freefor
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
 
-  const labelled = extractLabelledFields(trimmed);
+  const labelled = extractLabelledFields(trimmed, decimalSeparator);
   let head = labelled.head;
 
   // An Amazon ASIN or listing URL fills the SKU when the line did not label one — Amazon
@@ -318,6 +384,7 @@ export function parseFreeformLine(line: string, decimalSeparator = '.'): Freefor
     ...(labelled.location !== null ? { location: labelled.location } : {}),
     ...(labelled.trackingMode !== null ? { trackingMode: labelled.trackingMode } : {}),
     ...(unitCost !== undefined ? { unitCost } : {}),
+    ...(labelled.weight !== null ? { weight: labelled.weight } : {}),
   };
 
   const name = cleanName(rest);
@@ -356,6 +423,7 @@ const LINES_HEADER: readonly string[] = [
   'location',
   'tracking',
   'unitCost',
+  'weight',
 ];
 const LINES_COLUMNS: readonly string[] = [
   'Name',
@@ -365,6 +433,7 @@ const LINES_COLUMNS: readonly string[] = [
   'Location',
   'Tracking',
   'Unit cost',
+  'Weight (g)',
 ];
 const LINES_MAPPING: ColumnMapping = [
   'name',
@@ -374,6 +443,7 @@ const LINES_MAPPING: ColumnMapping = [
   'locationId',
   'trackingMode',
   'unitCost',
+  'weight',
 ];
 
 /** The normalised, parse-ready form of an import: a header + data-row matrix. */
@@ -460,6 +530,7 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
       item.location ?? '',
       item.trackingMode ?? '',
       item.unitCost !== undefined ? String(item.unitCost) : '',
+      item.weight !== undefined ? String(item.weight) : '',
     ]);
     return {
       format,
