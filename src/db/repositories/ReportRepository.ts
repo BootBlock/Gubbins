@@ -14,6 +14,7 @@
  * fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
+import { parsePriceBreaks } from './mappers';
 import type { SqlValue } from '@/db/rpc/driver';
 import {
   LOW_STOCK_GAUGE_PERCENT,
@@ -601,6 +602,7 @@ export class ReportRepository extends BaseRepository {
       unit_cost: number | null;
       pack_qty: number | null;
       min_order_qty: number | null;
+      price_breaks: string | null;
     }>(
       // Only DISCRETE items with countable shortfall (CONSUMABLE_GAUGE has no countable
       // top-up unit); SERIALISED singles and abstract variant parents are excluded as in
@@ -618,7 +620,8 @@ export class ReportRepository extends BaseRepository {
               sp.supplier_name,
               sp.unit_cost,
               sp.pack_qty,
-              sp.min_order_qty
+              sp.min_order_qty,
+              sp.price_breaks
          FROM items i
          LEFT JOIN supplier_parts sp
                 ON sp.item_id = i.id AND sp.is_preferred = 1
@@ -648,6 +651,9 @@ export class ReportRepository extends BaseRepository {
               unitCost: r.unit_cost,
               packQty: r.pack_qty,
               minOrderQty: r.min_order_qty,
+              // Threaded through so the plan can cost each line at its computed order quantity
+              // when the preferred supplier offers a volume price-break (issue #37).
+              priceBreaks: parsePriceBreaks(r.price_breaks),
             }
           : null,
       };

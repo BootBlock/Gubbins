@@ -9,6 +9,8 @@
  * No DB, no clock — fully unit-testable in isolation. The repository layer feeds it;
  * the UI consumes it; `PurchaseOrderRepository.createDraftFromReorderPlan` writes it.
  */
+import type { PriceBreak } from '@/db/repositories';
+import { unitCostForQty } from '@/features/inventory/supplier-cost';
 
 /** Minimal supplier-part data needed to compute order quantities. */
 export interface ReorderSupplierPart {
@@ -17,6 +19,8 @@ export interface ReorderSupplierPart {
   readonly unitCost?: number | null;
   readonly packQty?: number | null;
   readonly minOrderQty?: number | null;
+  /** Quantity price-breaks, ascending by qty; the plan costs each line at its order quantity. */
+  readonly priceBreaks?: readonly PriceBreak[] | null;
 }
 
 /** One row from the low-stock shortfall feed, enriched with its preferred supplier. */
@@ -148,7 +152,11 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
       supplierPartId: sp?.supplierPartId ?? null,
       orderQty,
       onOrder: row.onOrder ?? 0,
-      unitCost: sp?.unitCost ?? null,
+      // Cost the line at the quantity being ordered so a volume price-break is reflected in
+      // the drafted PO (issue #37); with no breaks this is just the flat unit cost.
+      unitCost: sp
+        ? unitCostForQty({ unitCost: sp.unitCost ?? null, priceBreaks: sp.priceBreaks ?? [] }, orderQty)
+        : null,
     });
   }
 

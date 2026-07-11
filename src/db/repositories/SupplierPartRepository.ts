@@ -110,6 +110,31 @@ export class SupplierPartRepository extends BaseRepository {
     return rows.map(rowToSupplierPart);
   }
 
+  /**
+   * Every supplier part for a set of items, in one round-trip — the batch companion to
+   * {@link listForItem} used by the Purchase-Order line editor so it can apply each item's
+   * quantity price-breaks without an N+1 fan-out (issue #37). Resolves to a `Map` keyed by
+   * item id (an item with no supplier parts is simply absent); an empty input queries nothing.
+   * Within each item's list the ordering matches {@link listForItem} (preferred first).
+   */
+  async listForItems(itemIds: readonly string[]): Promise<Map<string, SupplierPart[]>> {
+    const byItem = new Map<string, SupplierPart[]>();
+    if (itemIds.length === 0) return byItem;
+    const placeholders = itemIds.map(() => '?').join(', ');
+    const rows = await this.driver.query<SupplierPartRow>(
+      `SELECT * FROM supplier_parts WHERE item_id IN (${placeholders})
+       ORDER BY is_preferred DESC, supplier_name COLLATE NOCASE ASC, order_code COLLATE NOCASE ASC;`,
+      [...itemIds],
+    );
+    for (const row of rows) {
+      const part = rowToSupplierPart(row);
+      const list = byItem.get(part.itemId);
+      if (list) list.push(part);
+      else byItem.set(part.itemId, [part]);
+    }
+    return byItem;
+  }
+
   /** The preferred supplier part for an item, if one is marked. */
   async getPreferred(itemId: string): Promise<SupplierPart | undefined> {
     const row = await this.driver.queryOne<SupplierPartRow>(

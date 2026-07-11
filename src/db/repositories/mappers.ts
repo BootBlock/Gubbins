@@ -165,7 +165,7 @@ export function rowToItem(row: ItemRow): Item {
  * Defensive: any malformed entry (non-object, non-finite/negative numbers) is dropped rather
  * than surfaced, so a corrupt or future-shaped value never reaches the UI as `NaN`.
  */
-function parsePriceBreaks(value: string | null): PriceBreak[] {
+export function parsePriceBreaks(value: string | null): PriceBreak[] {
   if (value == null) return [];
   let parsed: unknown;
   try {

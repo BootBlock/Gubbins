@@ -96,6 +96,10 @@ export const inventoryKeys = {
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
   // invalidation refreshes it by prefix.
   itemSupplierParts: (itemId: string) => [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
+  // Issue #37 — supplier parts for a set of on-screen items in one round-trip (the PO line
+  // editor's price-break lookup); under items() so any supplier-part write refreshes it by prefix.
+  itemsSupplierParts: (itemIds: readonly string[]) =>
+    [...inventoryKeys.items(), 'supplier-parts-batch', itemIds] as const,
   // Phase 81 — a supplier part's recorded cost-over-time points; under item() so the
   // existing supplier-part invalidation (which invalidates item()) refreshes it by prefix.
   supplierPartPriceHistory: (itemId: string, supplierPartId: string) =>
@@ -168,6 +172,22 @@ export function useItemSupplierParts(itemId: string | undefined) {
     queryKey: inventoryKeys.itemSupplierParts(itemId ?? ''),
     queryFn: () => getSupplierPartRepository().listForItem(itemId!),
     enabled: Boolean(itemId),
+  });
+}
+
+/**
+ * Supplier parts for a whole set of items in a single round-trip (issue #37) — the Purchase-Order
+ * line editor reads its pickable items' supplier pricing once (to apply quantity price-breaks)
+ * rather than N+1 times. The item ids are sorted into the cache key so a re-ordered but otherwise
+ * identical set hits the same entry. Resolves to a `Map` keyed by item id (a key is absent when the
+ * item has no supplier parts); disabled for an empty set.
+ */
+export function useSupplierPartsForItems(itemIds: readonly string[]) {
+  const sortedIds = [...itemIds].sort();
+  return useQuery({
+    queryKey: inventoryKeys.itemsSupplierParts(sortedIds),
+    queryFn: () => getSupplierPartRepository().listForItems(sortedIds),
+    enabled: sortedIds.length > 0,
   });
 }
 
