@@ -30,29 +30,32 @@ Common fields at creation:
 
 ## Editing an item
 
-Selecting an item opens its details, organised into tabs so a simple item stays simple while a
-complex one has room to grow. Depending on which [[modules|Modular-UI]] you have enabled, an
-item can carry:
+Opening an item's **Edit details…** shows everything about it, organised into a rail of tabs so
+a simple item stays simple while a complex one has room to grow.
 
-- **A photo** — snap or upload one; it's compressed and stored on your device.
-- **A category** — group similar items (see the category manager in Inventory).
-- **A location** — where it lives, and how its [[stock is split across locations|Locations-and-Stock]].
-- **Notes** — free text.
-- **Condition** — a structured grade (Mint / Good / Needs Repair / Out for Calibration); see
-  [[Condition grading|Condition-Grading]].
-- **[[Custom fields & capabilities|Custom-Fields-and-Capabilities]]** — your own fields, and
-  weighted "capabilities" you can search on.
-- **[[Tags, attachments & related items|Tags-Attachments-and-Related-Items]]** — labels,
-  linked datasheets/files, and cross-links to items that work with this one.
-- **Lifecycle** — [[warranty & depreciation|Warranty-and-Depreciation]],
-  [[current value & revaluation|Current-Value-and-Revaluation]],
-  [[maintenance|Maintenance-and-Servicing]], and
-  [[test/calibration records|Test-and-Calibration-Records]] for serialised units.
+![The item detail dialog, with its tab rail](images/item-detail.png)
+
+The tabs you see depend on which [[modules|Modular-UI]] you have enabled:
+
+| Tab | Holds |
+| --- | --- |
+| **Details** | Name, description, notes, part number (MPN), manufacturer, barcode, unit cost, category, weight and dimensions. |
+| **Supplier & ops** | [[Supplier parts & prices|Supplier-Parts-and-Price-History]] and reorder points. |
+| **Lifecycle** | [[Warranty & depreciation|Warranty-and-Depreciation]], [[current value|Current-Value-and-Revaluation]], [[maintenance|Maintenance-and-Servicing]], [[test records|Test-and-Calibration-Records]], and [[variants|Variants-and-SKUs]]. |
+| **Kit** | Define the item as a [[kit of other items|Kits-and-Bundles]]. |
+| **Related** | [[Cross-links to other items|Tags-Attachments-and-Related-Items]] (works with, accessory, spare-for). |
+| **Substitutions** | [[Interchangeable stand-ins|Tags-Attachments-and-Related-Items]] for this item. |
+| **Media & docs** | Photos and linked [[datasheets/attachments|Tags-Attachments-and-Related-Items]]. |
+| **Classification** | [[Tags, capabilities and custom fields|Custom-Fields-and-Capabilities]]. |
+| **Activity** | This item's [[change history|Activity-Log]]. |
 
 > **ℹ️ Note**
 > You'll only see tabs for capabilities you've enabled. If an item is missing something
 > described here, the relevant module may be switched off on the [[Modular UI|Modular-UI]]
 > screen — turning it back on restores the tab and any data it held.
+
+Also set on an item: **Condition** — a structured grade (Mint / Good / Needs Repair / Out for
+Calibration); see [[Condition grading|Condition-Grading]].
 
 ## Adjusting stock
 

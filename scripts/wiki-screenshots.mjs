@@ -195,6 +195,51 @@ try {
   console.warn(`  ✗ search-visual-builder.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// ── Inventory detail & views ─────────────────────────────────────────────────
+// A consumable item's card, to show the gauge (crop of the PLA filament card).
+await gotoInventory();
+const gaugeCard = page
+  .locator('#main-content')
+  .getByRole('heading', { name: 'PLA Filament — Galaxy Black' })
+  .locator('xpath=ancestor::div[contains(@class,"select-none")][1]');
+await shot('item-card-gauge', gaugeCard.first());
+
+// The tabbed item-detail dialog (reused across many feature pages): open a card's More menu
+// and choose "Edit details…".
+try {
+  const drillCard = page
+    .locator('#main-content')
+    .getByRole('heading', { name: 'Cordless Drill' })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]');
+  await drillCard.first().getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Edit details' }).click();
+  await shot('item-detail', page.getByRole('dialog').first(), { settle: 600 });
+  await page.keyboard.press('Escape').catch(() => {});
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ item-detail.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// The Table (spreadsheet) view — More → View → Table.
+try {
+  await gotoInventory();
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitem', { name: /^View:/ }).click();
+  await page.getByRole('menuitemradio', { name: 'Table' }).click();
+  await page.waitForTimeout(500);
+  await shot('inventory-table', null, {
+    settle: 400,
+    clip: { x: 0, y: 48, width: VIEWPORT.width, height: 620 },
+  });
+  // Restore Card view for any later shots.
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitem', { name: /^View:/ }).click();
+  await page.getByRole('menuitemradio', { name: 'Card' }).click();
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // Settings → Appearance (light, then dark).
 await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
 await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 8000 });
