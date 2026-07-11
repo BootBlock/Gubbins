@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
   Button,
   buttonVariants,
@@ -23,26 +23,43 @@ import { useFormatters } from '@/lib/useFormatters';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { logoToDataUrl } from './catalogue-branding';
+import { buildCataloguePageStyle } from './catalogue-print';
 import {
   CONDITION_COLOR_CLASS,
   CONDITION_LABELS,
   WARRANTY_STATUS_COLOR_CLASS,
   WARRANTY_STATUS_LABEL,
 } from '@/features/inventory/components/inventory-ui';
+import { Thumbnail } from '@/features/inventory/components/Thumbnail';
+import { qrSvg } from '@/features/scanner/qr-code';
+import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { useLocations } from '@/features/inventory/queries';
 import { useProjects } from '@/features/projects/projects';
 import { flattenLocationHierarchy } from './insurance-schedule';
 import {
   CATALOGUE_FIELDS,
+  CATALOGUE_GROUP_BY,
+  CATALOGUE_SORT_BY,
   DEFAULT_CATALOGUE_FIELDS,
+  DEFAULT_CATALOGUE_GROUP_BY,
+  DEFAULT_CATALOGUE_SORT_BY,
   type CatalogueFieldKey,
   type CatalogueGroup,
+  type CatalogueGroupBy,
   type CatalogueLine,
   type CatalogueScope,
+  type CatalogueSortBy,
   type PartsCatalogue,
 } from './parts-catalogue';
 import { usePartsCatalogue } from './queries';
 import { useCatalogueLaunch } from './useCatalogueLaunch';
+
+/** Render context threaded to {@link renderField} — the formatters plus the per-item QR SVGs. */
+interface RenderCtx {
+  readonly f: Formatters;
+  /** Pre-rendered QR SVG per line id when the QR column is on, else null. */
+  readonly qrByLine: ReadonlyMap<string, string> | null;
+}
 
 /** Which family of items the catalogue is built from — the reader's top-level scope choice. */
 type ScopeKind = 'all' | 'location' | 'project' | 'selection';
@@ -82,6 +99,17 @@ const FOOTER_HINT =
   'A line printed at the foot of the catalogue — e.g. a confidentiality or copyright notice. Leave blank for no footer.';
 const SHOW_DATE_HINT =
   'Prints the date the catalogue was generated. **Keep it on** for a dated stock-take or audit record; **turn it off** for a timeless reference sheet you do not want to look out of date.';
+const GROUP_BY_HINT =
+  'How to divide the catalogue into sections:\n\n' +
+  '- **Location** — by where stock sits (and its sub-locations), so a picker can walk the shelves.\n' +
+  '- **Category** — by product type, the usual layout for a parts or price list.\n' +
+  '- **No grouping** — one flat list, best for a short catalogue or a single selection.';
+const SORT_BY_HINT =
+  'How items are ordered *within* each section — by **name** (A–Z), by **value** (most valuable first, for a valuation) or by **quantity** (most stock first).';
+const PAGE_NUMBERS_HINT =
+  'Prints "Page X of Y" at the foot of each page — worth having on a long, multi-page catalogue so pages can be kept in order. Needs a recent browser; older ones simply omit it.';
+const RUNNING_HEADER_HINT =
+  'Repeats your company name (or the title) at the top of **every** printed page, so each page is identifiable on its own once the catalogue is unstapled. Leave it off for a single-page print.';
 
 /**
  * The parts-catalogue screen (issue #22): a printable, column-configurable list of items scoped
@@ -113,8 +141,19 @@ export function CatalogueScreen() {
   const setCatalogueFooter = usePreferencesStore((s) => s.setCatalogueFooter);
   const setCatalogueLogo = usePreferencesStore((s) => s.setCatalogueLogo);
   const setCatalogueShowGeneratedDate = usePreferencesStore((s) => s.setCatalogueShowGeneratedDate);
+  // Print-page furniture (persisted): repeat the letterhead + page numbers on every printed page.
+  const pageNumbers = usePreferencesStore((s) => s.cataloguePageNumbers);
+  const runningHeader = usePreferencesStore((s) => s.catalogueRunningHeader);
+  const setCataloguePageNumbers = usePreferencesStore((s) => s.setCataloguePageNumbers);
+  const setCatalogueRunningHeader = usePreferencesStore((s) => s.setCatalogueRunningHeader);
+  // The QR column deep-links back to each item; resolve the base URL the same way printed labels do.
+  const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
   const [logoError, setLogoError] = useState('');
+
+  // How the catalogue is laid out — session view choices (like the scope + column picks).
+  const [groupBy, setGroupBy] = useState<CatalogueGroupBy>(DEFAULT_CATALOGUE_GROUP_BY);
+  const [sortBy, setSortBy] = useState<CatalogueSortBy>(DEFAULT_CATALOGUE_SORT_BY);
 
   const onPickLogo = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -191,11 +230,43 @@ export function CatalogueScreen() {
             ? { kind: 'items', itemIds: selectionIds }
             : null;
 
-  const catalogue = usePartsCatalogue(scope);
+  const catalogue = usePartsCatalogue(scope, { includePhotos: fields.has('photo'), groupBy, sortBy });
   const selectedFields = CATALOGUE_FIELDS.filter((field) => fields.has(field.key));
   // Per-group subtotals and the grand total are only meaningful — and only shown — when the
   // costed "Line value" column is on and at least one item is actually priced.
   const showTotals = fields.has('lineValue') && (catalogue.data?.hasValue ?? false);
+
+  // Resolve the deep-link base URL once (as printed labels do), then pre-render one QR SVG per
+  // item — but only when the QR column is on, so a plain catalogue never pays for QR encoding.
+  const baseUrl = useMemo(
+    () =>
+      resolveLabelBaseUrl(
+        labelBaseUrl,
+        typeof window === 'undefined' ? null : window.location.origin,
+        import.meta.env.BASE_URL,
+      ),
+    [labelBaseUrl],
+  );
+  const qrColumnOn = fields.has('qr');
+  const qrByLine = useMemo<ReadonlyMap<string, string> | null>(() => {
+    if (!qrColumnOn || !catalogue.data) return null;
+    const map = new Map<string, string>();
+    for (const group of catalogue.data.groups) {
+      for (const line of group.lines) {
+        map.set(line.id, qrSvg(buildItemQrUrl(line.id, baseUrl), { scale: 3, margin: 1 }));
+      }
+    }
+    return map;
+    // Keyed on the boolean (not the whole `fields` Set) so toggling an unrelated column never
+    // regenerates every QR.
+  }, [qrColumnOn, catalogue.data, baseUrl]);
+
+  // The @page running header + page-number CSS, injected as a <style> only when enabled.
+  const pageStyle = buildCataloguePageStyle({
+    pageNumbers,
+    runningHeader,
+    headerText: branding.orgName.trim() || branding.title.trim(),
+  });
 
   const toggleField = (key: CatalogueFieldKey) => {
     setFields((prev) => {
@@ -280,6 +351,25 @@ export function CatalogueScreen() {
                 </div>
               )
             ) : null}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <SelectField
+              label="Group by"
+              options={CATALOGUE_GROUP_BY}
+              value={groupBy}
+              onChange={(v) => setGroupBy(v as CatalogueGroupBy)}
+              hint={GROUP_BY_HINT}
+              data-testid="catalogue-group-by"
+            />
+            <SelectField
+              label="Sort items by"
+              options={CATALOGUE_SORT_BY}
+              value={sortBy}
+              onChange={(v) => setSortBy(v as CatalogueSortBy)}
+              hint={SORT_BY_HINT}
+              data-testid="catalogue-sort-by"
+            />
           </div>
 
           <fieldset>
@@ -409,6 +499,30 @@ export function CatalogueScreen() {
                 </label>
                 <InfoHint content={SHOW_DATE_HINT} />
               </div>
+
+              <div className="flex items-center gap-1.5 text-sm">
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={pageNumbers}
+                    onChange={(e) => setCataloguePageNumbers(e.target.checked)}
+                    data-testid="catalogue-page-numbers"
+                  />
+                  Print page numbers
+                </label>
+                <InfoHint content={PAGE_NUMBERS_HINT} />
+              </div>
+
+              <div className="flex items-center gap-1.5 text-sm">
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={runningHeader}
+                    onChange={(e) => setCatalogueRunningHeader(e.target.checked)}
+                    data-testid="catalogue-running-header"
+                  />
+                  Repeat the header on every page
+                </label>
+                <InfoHint content={RUNNING_HEADER_HINT} />
+              </div>
             </div>
           </details>
         </Surface>
@@ -440,6 +554,8 @@ export function CatalogueScreen() {
             fields={selectedFields}
             showTotals={showTotals}
             branding={branding}
+            qrByLine={qrByLine}
+            pageStyle={pageStyle}
             formatters={f}
           />
         )}
@@ -455,15 +571,21 @@ function CatalogueDocument({
   fields,
   showTotals,
   branding,
+  qrByLine,
+  pageStyle,
   formatters,
 }: {
   catalogue: PartsCatalogue;
   fields: readonly (typeof CATALOGUE_FIELDS)[number][];
   showTotals: boolean;
   branding: CatalogueBranding;
+  qrByLine: ReadonlyMap<string, string> | null;
+  /** `@page` running-header + page-number CSS to inject for print, or '' for none. */
+  pageStyle: string;
   formatters: Formatters;
 }) {
   const f = formatters;
+  const ctx: RenderCtx = { f, qrByLine };
   // Gate each letterhead element on *trimmed* content so a whitespace-only field prints nothing,
   // while still rendering exactly what the reader typed (their newlines/spacing are preserved).
   const showOrgName = branding.orgName.trim().length > 0;
@@ -471,6 +593,10 @@ function CatalogueDocument({
   const hasLetterhead = Boolean(branding.logo) || showOrgName || showOrgDetails;
   return (
     <>
+      {/* Print-only @page furniture (running header + page numbers). Injected as raw CSS; the
+          text is escaped in `buildCataloguePageStyle`, and a text child of <style> is not
+          re-parsed as HTML, so this cannot break out. */}
+      {pageStyle ? <style>{pageStyle}</style> : null}
       <header className="flex flex-col gap-3 border-b border-border pb-4">
         {hasLetterhead ? (
           <div className="flex items-start justify-between gap-4">
@@ -518,20 +644,25 @@ function CatalogueDocument({
 
       {catalogue.groups.map((group) => (
         <CatalogueGroupSection
-          key={group.locationId ?? 'unassigned'}
+          key={group.groupId ?? 'ungrouped'}
           group={group}
           fields={fields}
           showTotals={showTotals}
-          formatters={f}
+          ctx={ctx}
         />
       ))}
 
-      {showTotals ? (
-        <div className="flex items-center justify-between border-t-2 border-border pt-3 text-base font-semibold">
-          <span>Total value</span>
-          <Money value={catalogue.grandTotal} formatters={f} />
-        </div>
-      ) : null}
+      {/* Grand totals — the item count and total quantity always, plus the value when priced. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t-2 border-border pt-3 text-base font-semibold">
+        <span>Total</span>
+        <span className="flex flex-wrap items-center gap-x-3 tabular-nums">
+          <span>
+            {f.quantity(catalogue.itemCount)} {plural(catalogue.itemCount, 'item')}
+          </span>
+          <span data-testid="catalogue-total-quantity">{f.quantity(catalogue.totalQuantity)} in stock</span>
+          {showTotals ? <Money value={catalogue.grandTotal} formatters={f} /> : null}
+        </span>
+      </div>
 
       {branding.footer.trim().length > 0 ? (
         <footer
@@ -545,37 +676,42 @@ function CatalogueDocument({
   );
 }
 
-/** One location group: a heading (with its subtotal when totals are shown), then the item table. */
+/** One catalogue section: an optional heading (with its totals), then the item table. */
 function CatalogueGroupSection({
   group,
   fields,
   showTotals,
-  formatters,
+  ctx,
 }: {
   group: CatalogueGroup;
   fields: readonly (typeof CATALOGUE_FIELDS)[number][];
   showTotals: boolean;
-  formatters: Formatters;
+  ctx: RenderCtx;
 }) {
-  const f = formatters;
+  const f = ctx.f;
+  // The "No grouping" layout produces a single unheaded section.
+  const hasHeading = group.groupLabel.length > 0;
   return (
     <section className="flex flex-col gap-2">
-      <div className="catalogue-group-heading flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-1">
-        <h3 className="font-semibold">{group.locationPath}</h3>
-        <span className="text-sm text-muted-foreground">
-          {f.quantity(group.lines.length)} {plural(group.lines.length, 'item')}
-          {showTotals ? (
-            <>
-              {' · subtotal '}
-              <Money value={group.subtotal} formatters={f} className="font-medium text-foreground" />
-            </>
-          ) : null}
-        </span>
-      </div>
+      {hasHeading ? (
+        <div className="catalogue-group-heading flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-1">
+          <h3 className="font-semibold">{group.groupLabel}</h3>
+          <span className="text-sm text-muted-foreground">
+            {f.quantity(group.lines.length)} {plural(group.lines.length, 'item')} ·{' '}
+            {f.quantity(group.totalQuantity)} in stock
+            {showTotals ? (
+              <>
+                {' · subtotal '}
+                <Money value={group.subtotal} formatters={f} className="font-medium text-foreground" />
+              </>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto">
         <table className="catalogue-table w-full text-sm">
-          <caption className="sr-only">Items in {group.locationPath}</caption>
+          <caption className="sr-only">{hasHeading ? `Items in ${group.groupLabel}` : 'Items'}</caption>
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="py-2 pr-3 font-medium">
@@ -601,7 +737,7 @@ function CatalogueGroupSection({
                     key={field.key}
                     className={`py-2 pr-3 ${field.align === 'right' ? 'text-right tabular-nums' : ''}`}
                   >
-                    {renderField(line, field.key, f)}
+                    {renderField(line, field.key, ctx)}
                   </td>
                 ))}
               </tr>
@@ -619,10 +755,37 @@ function Blank() {
 }
 
 /** Render one line's value for a given column. Absent values become a consistent em-dash. */
-function renderField(line: CatalogueLine, key: CatalogueFieldKey, f: Formatters): ReactNode {
+function renderField(line: CatalogueLine, key: CatalogueFieldKey, ctx: RenderCtx): ReactNode {
+  const f = ctx.f;
   switch (key) {
+    case 'photo':
+      return line.thumbnail && line.thumbnail.byteLength > 0 ? (
+        <Thumbnail
+          bytes={line.thumbnail}
+          alt={line.name}
+          className="catalogue-photo size-12 rounded border border-border object-cover"
+        />
+      ) : (
+        <Blank />
+      );
+    case 'qr': {
+      const svg = ctx.qrByLine?.get(line.id);
+      // The QR SVG is generated locally from the item's deep-link (safe, not user HTML).
+      return svg ? (
+        <span
+          className="catalogue-qr inline-block size-16 [&_svg]:h-full [&_svg]:w-full"
+          aria-label={`QR code for ${line.name}`}
+          role="img"
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      ) : (
+        <Blank />
+      );
+    }
     case 'category':
       return line.category ?? <Blank />;
+    case 'description':
+      return line.description ?? <Blank />;
     case 'quantity':
       return `${f.quantity(line.quantity)}${line.unitOfMeasure ? ` ${line.unitOfMeasure}` : ''}`;
     case 'condition':

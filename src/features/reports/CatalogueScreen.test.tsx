@@ -62,15 +62,19 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
   data: {
     groups: [
       {
-        locationId: 'garage',
-        locationPath: 'Garage',
+        groupId: 'garage',
+        groupLabel: 'Garage',
         depth: 0,
         subtotal: 6,
+        totalQuantity: 3,
         lines: [
           {
             id: 'widget',
             name: 'Widget',
+            locationId: 'garage',
             category: 'Hardware',
+            description: 'A test widget',
+            thumbnail: null,
             quantity: 3,
             unitOfMeasure: null,
             condition: null,
@@ -89,6 +93,7 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
       },
     ],
     grandTotal: 6,
+    totalQuantity: 3,
     itemCount: 1,
     hasValue: true,
     generatedAt: Date.parse('2026-07-09T00:00:00Z'),
@@ -111,6 +116,9 @@ const BRANDING_DEFAULTS = {
   catalogueFooter: '',
   catalogueLogo: '',
   catalogueShowGeneratedDate: true,
+  cataloguePageNumbers: true,
+  catalogueRunningHeader: true,
+  labelBaseUrl: '',
 };
 
 afterEach(() => {
@@ -168,6 +176,34 @@ describe('CatalogueScreen', () => {
     usePreferencesStore.setState({ catalogueTitle: '   ' });
     render(<CatalogueScreen />);
     expect(screen.getByTestId('catalogue-title').textContent).toBe('Catalogue');
+  });
+
+  it('shows the total quantity in the grand totals', () => {
+    render(<CatalogueScreen />);
+    expect(screen.getByTestId('catalogue-total-quantity').textContent).toContain('3');
+  });
+
+  it('offers group-by and sort-by controls, and a Description column', () => {
+    render(<CatalogueScreen />);
+    expect(screen.getByTestId('catalogue-group-by')).toBeTruthy();
+    expect(screen.getByTestId('catalogue-sort-by')).toBeTruthy();
+
+    expect(screen.queryByRole('columnheader', { name: 'Description' })).toBeNull();
+    fireEvent.click(screen.getByTestId('catalogue-field-description'));
+    expect(screen.getByRole('columnheader', { name: 'Description' })).toBeTruthy();
+    expect(screen.getByText('A test widget')).toBeTruthy();
+  });
+
+  it('injects a page-number print style by default and drops it when turned off', () => {
+    const { unmount } = render(<CatalogueScreen />);
+    const hasPageStyle = () =>
+      [...document.querySelectorAll('style')].some((s) => s.textContent?.includes('counter(page)'));
+    expect(hasPageStyle()).toBe(true);
+    unmount();
+
+    usePreferencesStore.setState({ cataloguePageNumbers: false, catalogueRunningHeader: false });
+    render(<CatalogueScreen />);
+    expect(hasPageStyle()).toBe(false);
   });
 
   it('does not print a letterhead line for a whitespace-only company name', () => {

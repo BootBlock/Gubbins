@@ -35,7 +35,9 @@ export type CatalogueLocationInput = ScheduleLocationInput;
 
 /** The set of columns a reader can choose to print, beyond the always-present item name. */
 export type CatalogueFieldKey =
+  | 'photo'
   | 'category'
+  | 'description'
   | 'quantity'
   | 'condition'
   | 'serial'
@@ -47,7 +49,8 @@ export type CatalogueFieldKey =
   | 'purchasePrice'
   | 'acquired'
   | 'warranty'
-  | 'notes';
+  | 'notes'
+  | 'qr';
 
 /** Presentation metadata for one selectable catalogue column. */
 export interface CatalogueFieldDef {
@@ -58,6 +61,12 @@ export interface CatalogueFieldDef {
   readonly align: 'left' | 'right';
   /** True when the column shows a money value; a selected money column enables the totals. */
   readonly money?: boolean;
+  /**
+   * A "media" column (a photo or a scannable code) rather than text — rendered specially and
+   * excluded from the plain text-cell path. Repository data (thumbnails) is only fetched when a
+   * media column that needs it is on.
+   */
+  readonly media?: boolean;
   /** Rich-Markdown help: what the column shows and when a reader would want / not want it. */
   readonly help: string;
 }
@@ -70,10 +79,23 @@ export interface CatalogueFieldDef {
  */
 export const CATALOGUE_FIELDS: readonly CatalogueFieldDef[] = [
   {
+    key: 'photo',
+    label: 'Photo',
+    align: 'left',
+    media: true,
+    help: "The item's primary photo as a thumbnail. **Turn it on** for a visual, customer-facing catalogue so parts are recognisable at a glance; **leave it off** for a compact text list or to save ink. Only items with a photo show one.",
+  },
+  {
     key: 'category',
     label: 'Category',
     align: 'left',
     help: "The item's category. **Include it** to scan or group the catalogue by type; **leave it out** for a shorter, name-focused list.",
+  },
+  {
+    key: 'description',
+    label: 'Description',
+    align: 'left',
+    help: 'The item description. **Include it** on a customer or reference catalogue where the name alone is not enough; **leave it out** to keep a dense parts list narrow.',
   },
   {
     key: 'quantity',
@@ -150,6 +172,13 @@ export const CATALOGUE_FIELDS: readonly CatalogueFieldDef[] = [
     align: 'left',
     help: 'Free-text notes on the item. **Include** them when they carry handling or usage info; **leave out** if they are private or would clutter the print.',
   },
+  {
+    key: 'qr',
+    label: 'QR',
+    align: 'left',
+    media: true,
+    help: 'A QR code that opens the item in Gubbins when scanned — handy for a warehouse or workshop parts list so anyone can pull up an item from paper. **Leave it off** for a plain or customer-facing catalogue.',
+  },
 ];
 
 /** The columns shown before the reader customises them — a compact, costed default. */
@@ -164,6 +193,31 @@ export const DEFAULT_CATALOGUE_FIELDS: readonly CatalogueFieldKey[] = [
 export const CATALOGUE_MONEY_FIELDS: ReadonlySet<CatalogueFieldKey> = new Set(
   CATALOGUE_FIELDS.filter((f) => f.money).map((f) => f.key),
 );
+
+/** How the catalogue's sections are grouped. */
+export type CatalogueGroupBy = 'location' | 'category' | 'none';
+/** How lines are ordered within each section. */
+export type CatalogueSortBy = 'name' | 'value' | 'quantity';
+
+/** Selectable grouping options (value + label) for the config picker. */
+export const CATALOGUE_GROUP_BY: readonly { readonly value: CatalogueGroupBy; readonly label: string }[] = [
+  { value: 'location', label: 'Location' },
+  { value: 'category', label: 'Category' },
+  { value: 'none', label: 'No grouping' },
+];
+
+/** Selectable sort options (value + label) for the config picker. */
+export const CATALOGUE_SORT_BY: readonly { readonly value: CatalogueSortBy; readonly label: string }[] = [
+  { value: 'name', label: 'Name' },
+  { value: 'value', label: 'Value (high to low)' },
+  { value: 'quantity', label: 'Quantity (high to low)' },
+];
+
+export const DEFAULT_CATALOGUE_GROUP_BY: CatalogueGroupBy = 'location';
+export const DEFAULT_CATALOGUE_SORT_BY: CatalogueSortBy = 'name';
+
+/** Heading for the trailing bucket of items with no category (when grouping by category). */
+export const UNCATEGORISED_GROUP_LABEL = 'Uncategorised';
 
 /**
  * The catalogue **scope**: which items to include. `all` is the whole active catalogue;
@@ -189,6 +243,10 @@ export interface CatalogueItemInput extends ValuedUnit {
   readonly locationId: string | null;
   /** Category name, or null when uncategorised. */
   readonly category: string | null;
+  /** Free-text description, or null. */
+  readonly description: string | null;
+  /** Primary thumbnail bytes (opaque passthrough to the UI), or null when the item has no photo. */
+  readonly thumbnail: Uint8Array | null;
   /** On-hand quantity; the line value is `quantity × unit cost`. */
   readonly quantity: number;
   /** Unit of measure (e.g. `ml`) appended to the quantity, or null. */
@@ -217,7 +275,12 @@ export interface CatalogueItemInput extends ValuedUnit {
 export interface CatalogueLine {
   readonly id: string;
   readonly name: string;
+  /** Home location id (used to group by location; not itself displayed as a column). */
+  readonly locationId: string | null;
   readonly category: string | null;
+  readonly description: string | null;
+  /** Primary thumbnail bytes for the optional Photo column, or null. */
+  readonly thumbnail: Uint8Array | null;
   readonly quantity: number;
   readonly unitOfMeasure: string | null;
   readonly condition: Condition | null;
@@ -235,24 +298,28 @@ export interface CatalogueLine {
   readonly notes: string | null;
 }
 
-/** A location group with its lines and value subtotal (0 when nothing in it is priced). */
+/** A catalogue section (a location, a category, or the single "no grouping" bucket). */
 export interface CatalogueGroup {
-  /** The grouping location id, or null for the trailing "Unassigned" bucket. */
-  readonly locationId: string | null;
-  /** Full hierarchical path, e.g. `Garage › Shelf A`; the bare name for a root location. */
-  readonly locationPath: string;
-  /** Depth in the location tree (0 = root); drives the print indentation. */
+  /** Stable id of the section (location id, or `category:<name>`), or null for an unresolved/blank bucket. */
+  readonly groupId: string | null;
+  /** Heading text — a location path (`Garage › Shelf A`), a category name, or `''` for no grouping. */
+  readonly groupLabel: string;
+  /** Depth in the location tree (0 = root); 0 for category/none. Drives the print indentation. */
   readonly depth: number;
   readonly lines: readonly CatalogueLine[];
-  /** Sum of the group's line values (priced lines only). */
+  /** Sum of the section's line values (priced lines only). */
   readonly subtotal: number;
+  /** Sum of the section's on-hand quantities. */
+  readonly totalQuantity: number;
 }
 
-/** The whole catalogue: ordered location groups, a grand total and headline counts. */
+/** The whole catalogue: ordered sections, a grand total and headline counts. */
 export interface PartsCatalogue {
   readonly groups: readonly CatalogueGroup[];
-  /** Total line value across every group (priced lines only). */
+  /** Total line value across every section (priced lines only). */
   readonly grandTotal: number;
+  /** Total on-hand quantity across every section. */
+  readonly totalQuantity: number;
   /** Total number of lines (items) on the catalogue. */
   readonly itemCount: number;
   /** True when at least one line is priced — the screen shows totals only then. */
@@ -277,7 +344,10 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
   return {
     id: item.id,
     name: item.name,
+    locationId: item.locationId,
     category: item.category,
+    description: item.description,
+    thumbnail: item.thumbnail,
     quantity: item.quantity,
     unitOfMeasure: item.unitOfMeasure,
     condition: item.condition,
@@ -303,58 +373,131 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
   };
 }
 
+/** Options controlling how the catalogue is grouped and ordered. */
+export interface BuildCatalogueOptions {
+  /** How sections are grouped (default `location`). */
+  readonly groupBy?: CatalogueGroupBy;
+  /** How lines are ordered within a section (default `name`). */
+  readonly sortBy?: CatalogueSortBy;
+}
+
+/** Repository-level options: the {@link BuildCatalogueOptions} plus whether to fetch thumbnails. */
+export interface CataloguePartsOptions extends BuildCatalogueOptions {
+  /** Fetch each item's thumbnail BLOB — only needed when the Photo column is on. */
+  readonly includePhotos?: boolean;
+}
+
+/** Line comparator for the chosen sort — falls back to name (then id) for a stable order. */
+function lineComparator(sortBy: CatalogueSortBy): (a: CatalogueLine, b: CatalogueLine) => number {
+  const byName = (a: CatalogueLine, b: CatalogueLine) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
+  if (sortBy === 'value') return (a, b) => (b.lineValue ?? 0) - (a.lineValue ?? 0) || byName(a, b);
+  if (sortBy === 'quantity') return (a, b) => b.quantity - a.quantity || byName(a, b);
+  return byName;
+}
+
+/** Build one resolved section from its lines, applying the sort and rolling up its totals. */
+function makeGroup(
+  groupId: string | null,
+  groupLabel: string,
+  depth: number,
+  lines: CatalogueLine[],
+  compare: (a: CatalogueLine, b: CatalogueLine) => number,
+): CatalogueGroup {
+  const sorted = [...lines].sort(compare);
+  const subtotal = sorted.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+  const totalQuantity = sorted.reduce((sum, l) => sum + Math.max(0, l.quantity), 0);
+  return { groupId, groupLabel, depth, lines: sorted, subtotal, totalQuantity };
+}
+
 /**
- * Build the parts catalogue: group every item by its home location, order the groups by the
- * location hierarchy (depth-first, siblings alphabetical — shared with the insurance schedule),
- * and roll up a per-location value subtotal and an overall grand total.
+ * Build the parts catalogue: resolve each item to a line, group the lines by the chosen key
+ * (`location` — its home location, ordered by the hierarchy; `category` — its category name,
+ * alphabetical; or `none` — a single section), sort lines within each section, and roll up a
+ * per-section value subtotal + total quantity and the overall totals.
  *
- * Lines within a group are sorted by name (then id, for stability). Items whose location
- * cannot be resolved fall into a trailing "Unassigned" group. Only locations that actually
- * hold at least one item become a group. `now` is injected (for the warranty derivation and
- * the `generatedAt` stamp) so the result is deterministic.
+ * For `location`, items whose location cannot be resolved fall into a trailing "Unassigned"
+ * section; for `category`, uncategorised items fall into a trailing "Uncategorised" section.
+ * Only sections that hold at least one item are emitted. `now` is injected (for the warranty
+ * derivation and the `generatedAt` stamp) so the result is deterministic.
  */
 export function buildPartsCatalogue(
   items: readonly CatalogueItemInput[],
   locations: readonly CatalogueLocationInput[],
   now: number,
+  options: BuildCatalogueOptions = {},
 ): PartsCatalogue {
-  const linesByLocation = new Map<string | null, CatalogueLine[]>();
-  const known = new Set(locations.map((l) => l.id));
-  for (const item of items) {
-    const key = item.locationId != null && known.has(item.locationId) ? item.locationId : null;
-    const line = toLine(item, now);
-    const bucket = linesByLocation.get(key);
-    if (bucket) bucket.push(line);
-    else linesByLocation.set(key, [line]);
-  }
+  const groupBy = options.groupBy ?? DEFAULT_CATALOGUE_GROUP_BY;
+  const compare = lineComparator(options.sortBy ?? DEFAULT_CATALOGUE_SORT_BY);
+  const lines = items.map((item) => toLine(item, now));
 
-  const byName = (a: CatalogueLine, b: CatalogueLine) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
-
-  const makeGroup = (
-    locationId: string | null,
-    locationPath: string,
-    depth: number,
-    lines: CatalogueLine[],
-  ): CatalogueGroup => {
-    const sorted = [...lines].sort(byName);
-    const subtotal = sorted.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
-    return { locationId, locationPath, depth, lines: sorted, subtotal };
-  };
-
-  const groups: CatalogueGroup[] = [];
-  for (const loc of flattenLocationHierarchy(locations)) {
-    const lines = linesByLocation.get(loc.id);
-    if (lines && lines.length > 0) groups.push(makeGroup(loc.id, loc.path, loc.depth, lines));
-  }
-  // The unresolved bucket sorts last, at the root depth.
-  const unassigned = linesByLocation.get(null);
-  if (unassigned && unassigned.length > 0) {
-    groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned));
+  let groups: CatalogueGroup[];
+  if (groupBy === 'none') {
+    // A single unheaded section holding every line.
+    groups = lines.length > 0 ? [makeGroup(null, '', 0, lines, compare)] : [];
+  } else if (groupBy === 'category') {
+    groups = groupByCategory(lines, compare);
+  } else {
+    groups = groupByLocation(lines, locations, compare);
   }
 
   const grandTotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
+  const totalQuantity = groups.reduce((sum, g) => sum + g.totalQuantity, 0);
   const itemCount = groups.reduce((sum, g) => sum + g.lines.length, 0);
   const hasValue = groups.some((g) => g.lines.some((l) => l.lineValue != null));
-  return { groups, grandTotal, itemCount, hasValue, generatedAt: now };
+  return { groups, grandTotal, totalQuantity, itemCount, hasValue, generatedAt: now };
+}
+
+/** Group lines by home location, ordered by the location hierarchy (unresolved → trailing bucket). */
+function groupByLocation(
+  lines: readonly CatalogueLine[],
+  locations: readonly CatalogueLocationInput[],
+  compare: (a: CatalogueLine, b: CatalogueLine) => number,
+): CatalogueGroup[] {
+  const known = new Set(locations.map((l) => l.id));
+  const byLocation = new Map<string | null, CatalogueLine[]>();
+  for (const line of lines) {
+    const key = line.locationId != null && known.has(line.locationId) ? line.locationId : null;
+    const bucket = byLocation.get(key);
+    if (bucket) bucket.push(line);
+    else byLocation.set(key, [line]);
+  }
+
+  const groups: CatalogueGroup[] = [];
+  for (const loc of flattenLocationHierarchy(locations)) {
+    const bucket = byLocation.get(loc.id);
+    if (bucket && bucket.length > 0) groups.push(makeGroup(loc.id, loc.path, loc.depth, bucket, compare));
+  }
+  const unassigned = byLocation.get(null);
+  if (unassigned && unassigned.length > 0) {
+    groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned, compare));
+  }
+  return groups;
+}
+
+/** Group lines by category name (alphabetical), uncategorised items in a trailing bucket. */
+function groupByCategory(
+  lines: readonly CatalogueLine[],
+  compare: (a: CatalogueLine, b: CatalogueLine) => number,
+): CatalogueGroup[] {
+  const byCategory = new Map<string | null, CatalogueLine[]>();
+  for (const line of lines) {
+    const key = line.category && line.category.trim() ? line.category : null;
+    const bucket = byCategory.get(key);
+    if (bucket) bucket.push(line);
+    else byCategory.set(key, [line]);
+  }
+
+  const named = [...byCategory.keys()].filter((k): k is string => k !== null);
+  named.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  const groups: CatalogueGroup[] = [];
+  for (const name of named) {
+    groups.push(makeGroup(`category:${name}`, name, 0, byCategory.get(name)!, compare));
+  }
+  const uncategorised = byCategory.get(null);
+  if (uncategorised && uncategorised.length > 0) {
+    groups.push(makeGroup(null, UNCATEGORISED_GROUP_LABEL, 0, uncategorised, compare));
+  }
+  return groups;
 }

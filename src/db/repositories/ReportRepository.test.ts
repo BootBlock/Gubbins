@@ -794,8 +794,9 @@ describe('ReportRepository', () => {
       const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
       // The abstract parent and the soft-deleted item drop out; the real variant stays.
       expect(names).toEqual(['Anvil', 'Kit v2', 'Widget']);
-      expect(catalogue.groups.find((g) => g.locationId === shelf.id)?.subtotal).toBe(6);
+      expect(catalogue.groups.find((g) => g.groupId === shelf.id)?.subtotal).toBe(6);
       expect(catalogue.grandTotal).toBe(16);
+      expect(catalogue.totalQuantity).toBe(4); // 1 anvil + 3 widget (the new variant holds 0)
       expect(catalogue.hasValue).toBe(true);
     });
 
@@ -851,6 +852,43 @@ describe('ReportRepository', () => {
       expect(line.supplier).toBe('Parts Co');
       expect(line.unitCost).toBe(4);
       expect(line.lineValue).toBe(8);
+    });
+
+    it('carries the item description, and only fetches the thumbnail when photos are requested', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const item = await items.create({
+        name: 'Cap',
+        locationId: shelf.id,
+        description: 'A 10µF capacitor',
+        quantity: 1,
+      });
+      const images = new ImageRepository(driver);
+      await images.add({
+        itemId: item.id,
+        thumbnailBlob: new Uint8Array([9, 9]),
+        fullResOpfsPath: '/c.webp',
+      });
+
+      const noPhotos = await reports.partsCatalogue({ kind: 'items', itemIds: [item.id] });
+      expect(noPhotos.groups[0].lines[0].description).toBe('A 10µF capacitor');
+      expect(noPhotos.groups[0].lines[0].thumbnail).toBeNull(); // not fetched by default
+
+      const withPhotos = await reports.partsCatalogue(
+        { kind: 'items', itemIds: [item.id] },
+        { includePhotos: true },
+      );
+      expect(withPhotos.groups[0].lines[0].thumbnail).toBeInstanceOf(Uint8Array);
+    });
+
+    it('groups by category when asked', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const caps = await categories.create({ name: 'Capacitors' });
+      const res = await categories.create({ name: 'Resistors' });
+      await items.create({ name: 'Cap', locationId: shelf.id, categoryId: caps.id, quantity: 1 });
+      await items.create({ name: 'Res', locationId: shelf.id, categoryId: res.id, quantity: 1 });
+
+      const catalogue = await reports.partsCatalogue({ kind: 'all' }, { groupBy: 'category' });
+      expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Capacitors', 'Resistors']);
     });
   });
 });

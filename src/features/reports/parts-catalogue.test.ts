@@ -17,6 +17,8 @@ function item(overrides: Partial<CatalogueItemInput> & Pick<CatalogueItemInput, 
     name: overrides.id,
     locationId: null,
     category: null,
+    description: null,
+    thumbnail: null,
     quantity: 1,
     unitOfMeasure: null,
     condition: null,
@@ -53,9 +55,12 @@ describe('buildPartsCatalogue', () => {
     );
 
     // Attic (root, alphabetical) → Garage → Garage › Shelf A.
-    expect(catalogue.groups.map((g) => g.locationPath)).toEqual(['Attic', 'Garage', 'Garage › Shelf A']);
-    expect(catalogue.groups.find((g) => g.locationId === 'shelf-a')?.subtotal).toBe(6);
+    expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Attic', 'Garage', 'Garage › Shelf A']);
+    const shelf = catalogue.groups.find((g) => g.groupId === 'shelf-a')!;
+    expect(shelf.subtotal).toBe(6);
+    expect(shelf.totalQuantity).toBe(3);
     expect(catalogue.itemCount).toBe(3);
+    expect(catalogue.totalQuantity).toBe(6); // 3 + 1 + 2
     expect(catalogue.grandTotal).toBe(10 + 6 + 10); // box 10 + widget 6 + anvil 10
     expect(catalogue.hasValue).toBe(true);
     expect(catalogue.generatedAt).toBe(NOW);
@@ -108,8 +113,8 @@ describe('buildPartsCatalogue', () => {
       NOW,
     );
     const last = catalogue.groups.at(-1)!;
-    expect(last.locationPath).toBe(UNASSIGNED_GROUP_LABEL);
-    expect(last.locationId).toBeNull();
+    expect(last.groupLabel).toBe(UNASSIGNED_GROUP_LABEL);
+    expect(last.groupId).toBeNull();
     expect(last.lines.map((l) => l.id).sort()).toEqual(['ghost', 'nolocation']);
   });
 
@@ -123,7 +128,7 @@ describe('buildPartsCatalogue', () => {
       NOW,
     );
     expect(catalogue.groups).toHaveLength(1);
-    expect(catalogue.groups[0]!.locationId).toBe('garage');
+    expect(catalogue.groups[0]!.groupId).toBe('garage');
     expect(catalogue.groups[0]!.lines.map((l) => l.name)).toEqual(['Apple', 'Zebra']);
   });
 
@@ -132,6 +137,7 @@ describe('buildPartsCatalogue', () => {
     expect(catalogue).toEqual({
       groups: [],
       grandTotal: 0,
+      totalQuantity: 0,
       itemCount: 0,
       hasValue: false,
       generatedAt: NOW,
@@ -169,6 +175,59 @@ describe('buildPartsCatalogue', () => {
       purchasePrice: 0.01,
       notes: 'bulk reel',
     });
+  });
+
+  it('groups by category (alphabetical), uncategorised items trailing', () => {
+    const catalogue = buildPartsCatalogue(
+      [
+        item({ id: 'r1', category: 'Resistors', locationId: 'garage' }),
+        item({ id: 'c1', category: 'Capacitors', locationId: 'attic' }),
+        item({ id: 'x1', category: null, locationId: 'garage' }),
+      ],
+      LOCATIONS,
+      NOW,
+      { groupBy: 'category' },
+    );
+    expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Capacitors', 'Resistors', 'Uncategorised']);
+    expect(catalogue.groups[0]!.groupId).toBe('category:Capacitors');
+  });
+
+  it('supports a single unheaded section with "no grouping"', () => {
+    const catalogue = buildPartsCatalogue(
+      [
+        item({ id: 'b', name: 'Bolt', locationId: 'garage' }),
+        item({ id: 'a', name: 'Anvil', locationId: 'attic' }),
+      ],
+      LOCATIONS,
+      NOW,
+      { groupBy: 'none' },
+    );
+    expect(catalogue.groups).toHaveLength(1);
+    expect(catalogue.groups[0]!.groupLabel).toBe('');
+    expect(catalogue.groups[0]!.lines.map((l) => l.name)).toEqual(['Anvil', 'Bolt']);
+  });
+
+  it('sorts by value (high to low) and by quantity (high to low)', () => {
+    const items = [
+      item({ id: 'lo', name: 'Cheap', locationId: 'garage', quantity: 1, unitCost: 1 }),
+      item({ id: 'hi', name: 'Dear', locationId: 'garage', quantity: 10, unitCost: 5 }),
+    ];
+    const byValue = buildPartsCatalogue(items, LOCATIONS, NOW, { groupBy: 'none', sortBy: 'value' });
+    expect(byValue.groups[0]!.lines.map((l) => l.id)).toEqual(['hi', 'lo']); // 50 before 1
+    const byQty = buildPartsCatalogue(items, LOCATIONS, NOW, { groupBy: 'none', sortBy: 'quantity' });
+    expect(byQty.groups[0]!.lines.map((l) => l.id)).toEqual(['hi', 'lo']); // 10 before 1
+  });
+
+  it('carries the description and thumbnail through onto the line', () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const catalogue = buildPartsCatalogue(
+      [item({ id: 'a', locationId: 'garage', description: 'A 10k resistor', thumbnail: bytes })],
+      LOCATIONS,
+      NOW,
+    );
+    const line = catalogue.groups[0]!.lines[0]!;
+    expect(line.description).toBe('A 10k resistor');
+    expect(line.thumbnail).toBe(bytes);
   });
 });
 

@@ -2324,6 +2324,7 @@
   .schedule-table th,
   .schedule-table td,
   .schedule-photo,
+  .catalogue-photo,
   .catalogue-table tr,
   .catalogue-table th,
   .catalogue-table td {
@@ -2337,5 +2338,19 @@
   .catalogue-logo {
     max-height: 22mm;
     width: auto;
+  }
+
+  /* Item photo + QR cells: fixed, ink-friendly sizes so the media columns stay compact and
+   * the QR keeps a scannable quiet zone. The QR fills its box; the reset above leaves the
+   * black SVG modules intact on the white page. */
+  .catalogue-photo {
+    width: 14mm !important;
+    height: 14mm !important;
+    object-fit: cover;
+  }
+
+  .catalogue-qr {
+    width: 16mm !important;
+    height: 16mm !important;
   }
 }
