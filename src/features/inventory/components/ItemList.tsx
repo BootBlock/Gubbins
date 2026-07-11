@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/foundry';
 import { PackageIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
-import type { LayoutDensity } from '@/state/stores/useLayoutStore';
+import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-empty-state';
 import { listRowCount, resolveListRow } from '../list-window';
 import { ItemCard } from './ItemCard';
@@ -53,7 +53,7 @@ export function ItemList({
   /** Absolute index of the first resident item — non-zero once front pages are trimmed. */
   firstItemIndex: number;
   locations: readonly LocationWithCount[];
-  density: LayoutDensity;
+  density: ItemDensity;
   /** The location currently filtering the list, or `null` for "All locations". */
   selectedLocationId?: string | null;
   locationName: (id: string) => string;
@@ -322,7 +322,7 @@ export function ItemList({
  * Returns the merged `scrollRef` (for the virtualizer's `getScrollElement`) alongside the
  * `setScrollEl` callback ref the scroll container binds.
  */
-function useColumns(density: LayoutDensity): {
+function useColumns(density: ItemDensity): {
   columns: number;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   setScrollEl: (node: HTMLDivElement | null) => void;
