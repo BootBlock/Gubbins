@@ -16,6 +16,7 @@
 import { useState } from 'react';
 import {
   Button,
+  FormField,
   Input,
   LiveRegion,
   MAIN_CONTENT_ID,
@@ -166,6 +167,12 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
             data-testid="booking-asset"
             value={itemId}
             onChange={setItemId}
+            hintSize="md"
+            hint={
+              'Only **serialised** or **single-unit** assets can be booked — a specific, ' +
+              'identifiable unit (e.g. *the* 3D printer), not bulk stock.\n\n' +
+              'Items tracked by quantity don’t appear here; reserve those against a **project** instead.'
+            }
             options={[
               { value: '', label: 'Choose an asset…' },
               ...(assets.data?.map((a) => ({ value: a.id, label: a.name })) ?? []),
@@ -178,33 +185,52 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
           ) : null}
         </div>
 
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">Booked for (optional)</span>
-          <Input
-            list="booking-contact-suggestions"
-            value={contactName}
-            onChange={(e) => setContactName(e.target.value)}
-            placeholder="Type a name — new names are added automatically"
-          />
+        <div>
+          <FormField
+            label="Booked for (optional)"
+            hintSize="md"
+            hint={
+              'Who the asset is being held for. Start typing to pick an existing contact, or enter a ' +
+              '**new name** — it’s added to your contacts automatically.\n\n' +
+              'Leave blank if you’re only reserving the slot.'
+            }
+          >
+            <Input
+              list="booking-contact-suggestions"
+              value={contactName}
+              onChange={(e) => setContactName(e.target.value)}
+              placeholder="Type a name — new names are added automatically"
+            />
+          </FormField>
           <datalist id="booking-contact-suggestions">
             {contacts.data?.rows.map((c) => (
               <option key={c.id} value={c.name} />
             ))}
           </datalist>
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">From</span>
+        <FormField
+          label="From"
+          hint={
+            'The **first day** of the reservation. Bookings are whole-day holds, so the asset is ' +
+            'reserved from the start of this day.'
+          }
+        >
           <Input
             type="date"
             value={start}
             onChange={(e) => setStart(e.target.value)}
             data-testid="booking-start"
           />
-        </label>
+        </FormField>
 
-        <label className="block">
-          <span className="mb-field-gap block text-sm font-medium">To</span>
+        <FormField
+          label="To"
+          hint={
+            'The **last day** of the reservation, inclusive — must be on or after **From**. The asset ' +
+            'stays reserved through the end of this day.'
+          }
+        >
           <Input
             type="date"
             value={end}
@@ -212,17 +238,22 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
             onChange={(e) => setEnd(e.target.value)}
             data-testid="booking-end"
           />
-        </label>
+        </FormField>
       </div>
 
-      <label className="block">
-        <span className="mb-field-gap block text-sm font-medium">Note (optional)</span>
+      <FormField
+        label="Note (optional)"
+        hint={
+          'An optional reminder of **why** the asset is booked (e.g. a job, an event or a location). ' +
+          'Shown on the booking card so it’s easy to tell reservations apart.'
+        }
+      >
         <Input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="e.g. for the trade-show build"
         />
-      </label>
+      </FormField>
 
       <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
         {error ? (
@@ -428,8 +459,8 @@ export function BookingsScreen() {
                     planning around a shoot, an event, or a loan.
                   </span>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                <div className="flex flex-col gap-1 sm:text-right">
+                  <span className="flex items-center gap-1.5 font-medium text-foreground sm:flex-row-reverse">
                     <InfoIcon className="size-4 text-glyph-neutral" aria-hidden />
                     You can skip it when
                   </span>
