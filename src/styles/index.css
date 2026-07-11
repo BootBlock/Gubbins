@@ -2107,9 +2107,19 @@
  * dissolve be the sole entrance. `:active-view-transition-type()` matches only while that
  * transition runs, so the rise is untouched on a normal (non-transitioned) mount; browsers
  * without view-transition-types simply fall back to the (harmless, matched-timing) compose.
- * The density restyle carries no type, so its transitions never match this rule. */
+ * The density restyle carries no type, so its transitions never match this rule.
+ *
+ * Collapse the *duration* (keeping `animation-name: gubbins-rise` intact) rather than setting
+ * `animation: none`. Nulling the name is a trap: when the transition ends this selector stops
+ * matching, so the computed `animation-name` reverts none → gubbins-rise on the still-mounted
+ * <main>, and per the CSS Animations spec that restarts a *fresh* rise — the page, already
+ * cross-faded fully in, visibly re-fades and re-lifts a beat later ("the whole page refreshes").
+ * Collapsing the duration instead leaves the one-shot rise armed under the same name from mount:
+ * it completes instantly (holding its `both`-filled end state, so it's invisible under the
+ * dissolve) and is long finished by the time the selector releases — the same animation, never a
+ * second one, so it cannot replay. */
 :root:active-view-transition-type(gubbins-route) .animate-rise {
-  animation: none;
+  animation-duration: 0.01ms;
 }
 
 /*
