@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { useT } from '@/features/i18n';
 import { Starfield } from './Starfield';
+import { DiagnosticsCard } from './DiagnosticsCard';
 
 /**
  * Build date formatted once for display — mirrors the dashboard hero's version chip
@@ -109,6 +110,8 @@ export function AboutScreen() {
         <AboutSection icon={<InfoIcon />} title={t('about.ai.title')}>
           <p className="text-sm text-muted-foreground">{t('about.ai.body')}</p>
         </AboutSection>
+
+        <DiagnosticsCard />
 
         <AboutSection icon={<SecureIcon />} title={t('about.licence.title')}>
           <p className="text-sm text-muted-foreground">
