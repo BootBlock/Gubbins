@@ -27,7 +27,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          # Node 25 across all CI/build, matching the local dev toolchain so `npm ci`
+          # resolves the lockfile identically (see the Tests workflow for the rationale).
+          node-version: 25
           cache: npm
 
       - name: Install dependencies

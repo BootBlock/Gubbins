@@ -5,7 +5,8 @@ name: Tests
 # need a recent Node — the app's `:memory:` test driver and the bridge both use `node:sqlite`,
 # and Gubbins' schema needs `node:sqlite`'s FTS5 support (Node >= 22.16 or >= 24 — NOT any
 # v23.x build, FTS5 was never backported there). The bridge additionally runs TypeScript
-# directly via Node's built-in type-stripping — so both jobs pin Node 24.
+# directly via Node's built-in type-stripping — so all jobs pin Node 25, which satisfies the
+# requirement above and matches the local dev toolchain so the lockfile resolves identically.
 on:
   push:
     branches: [main]
@@ -27,8 +28,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           # `type-check` runs the app's `tsc -b`; ESLint's type-aware rules also drive the
-          # TypeScript program. Pin the same Node 24 the test jobs use for consistency.
-          node-version: 24
+          # TypeScript program. Pin the same Node 25 the test jobs use for consistency.
+          node-version: 25
           cache: npm
 
       - name: Install dependencies
@@ -56,7 +57,7 @@ jobs:
         with:
           # The app's `:memory:` test driver uses `node:sqlite` (Node >= 22.5), so the
           # test job needs a recent Node even though the shipped PWA runs in the browser.
-          node-version: 24
+          node-version: 25
           cache: npm
 
       - name: Install dependencies
@@ -79,7 +80,7 @@ jobs:
           # Node >= 24 (or >= 22.16 LTS) for unflagged type-stripping and node:sqlite
           # with FTS5 (the v23.x line never got FTS5). It has no deps of its own and
           # borrows the repo-root toolchain (Vitest/TypeScript).
-          node-version: 24
+          node-version: 25
           cache: npm
 
       - name: Install dependencies (repo-root toolchain)
