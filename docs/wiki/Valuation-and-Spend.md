@@ -5,6 +5,8 @@ money going?"*. Gubbins answers both.
 
 **Where to find it:** the **Reports** screen.
 
+![Inventory value, plus value by category and location](images/reports.png)
+
 ## Valuation
 
 The **valuation** report totals what your inventory is worth, broken down **by category** and

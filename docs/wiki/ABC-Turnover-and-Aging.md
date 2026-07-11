@@ -3,7 +3,9 @@
 Three related reports answer *"which items really matter, and which are just sitting there?"* —
 so you can focus attention (and money) where it counts.
 
-**Where to find it:** the **Reports** screen.
+**Where to find it:** the **Reports** screen (Advanced analytics).
+
+![ABC analysis, inventory turnover and stock aging](images/reports.png)
 
 ## ABC analysis
 

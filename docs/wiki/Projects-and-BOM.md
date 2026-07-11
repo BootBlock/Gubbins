@@ -6,6 +6,8 @@ need, and can I afford it?"*
 
 **Where to find it:** the **Projects** screen (in the menu, when the module is enabled).
 
+![A project showing its bill of materials, budget and shopping list](images/projects.png)
+
 ## The bill of materials
 
 A project's **BOM** lists the items it needs and how many of each. From that list, Gubbins works

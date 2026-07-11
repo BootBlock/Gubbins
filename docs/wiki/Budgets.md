@@ -5,6 +5,8 @@ know where you stand and get a clear signal when a build is heading over.
 
 **Where to find it:** on a **project** (Projects screen), when the module is enabled.
 
+![A project's budget, categories and recorded expenses](images/projects.png)
+
 ## Setting a budget
 
 Set a target amount for a project. As you record expenses against it, Gubbins compares spend to

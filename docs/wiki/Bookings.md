@@ -6,6 +6,8 @@ different days.
 
 **Where to find it:** the **Bookings** screen (in the menu, when the module is enabled).
 
+![The Bookings screen explaining when to reserve an asset](images/bookings.png)
+
 ## Reserving an item
 
 Create a booking for an item, choose the contact, and set a **start and end date**. The item is

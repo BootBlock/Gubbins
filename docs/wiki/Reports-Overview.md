@@ -6,6 +6,8 @@ data, and most can be exported.
 
 **Where to find it:** the **Reports** screen (in the menu, when the module is enabled).
 
+![The Reports screen: valuation, movement, ABC, turnover and aging](images/reports.png)
+
 ## What's in the suite
 
 | Report | Answers | Page |

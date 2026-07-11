@@ -74,25 +74,58 @@ if (await skip.isVisible().catch(() => false)) {
 }
 
 // ── Seed synthetic demo data (idempotent-ish: created once per fresh profile) ─
-async function addBulkItem(name, qty) {
+// A unit cost gives the valuation/spend reports something to show.
+async function addBulkItem(name, qty, cost) {
   await page.getByRole('button', { name: 'Add item' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add item' });
   await dialog.getByLabel('Name').fill(name);
   await chooseOption(dialog.getByLabel('Tracking'), 'Bulk');
   await dialog.getByLabel('Initial quantity').fill(String(qty));
+  if (cost) await dialog.getByLabel('Unit cost (optional)').fill(String(cost));
   await dialog.getByRole('button', { name: 'Create item' }).click();
   await dialog.waitFor({ state: 'hidden', timeout: 8000 });
   await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
 }
 
-async function addDiscreteItem(name) {
+async function addDiscreteItem(name, cost) {
   await page.getByRole('button', { name: 'Add item' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add item' });
   await dialog.getByLabel('Name').fill(name);
   // Tracking defaults to DISCRETE ("Bulk"-labelled family); leave it as-is for a plain unit.
+  if (cost) await dialog.getByLabel('Unit cost (optional)').fill(String(cost));
   await dialog.getByRole('button', { name: 'Create item' }).click();
   await dialog.waitFor({ state: 'hidden', timeout: 8000 });
   await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
+}
+
+async function addContact(name) {
+  await page.goto(`${BASE}contacts`, { waitUntil: 'domcontentloaded' });
+  const input = page.getByPlaceholder('Add a contact…');
+  await input.waitFor({ state: 'visible', timeout: 10000 });
+  await input.fill(name);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
+}
+
+async function addProject(name) {
+  await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Name').fill(name);
+  await dialog.getByRole('button', { name: 'Create project' }).click();
+  await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+  await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
+}
+
+async function addWish(name, price) {
+  await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
+  await page.getByText('Wishlist', { exact: true }).first().click();
+  await page.locator('[data-testid="wishlist-add"]').click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('[data-testid="wishlist-name"]').fill(name);
+  if (price) await dialog.locator('[data-testid="wishlist-target-price"]').fill(String(price));
+  await dialog.getByRole('button', { name: /Add to wishlist|Save/ }).click();
+  await dialog.waitFor({ state: 'hidden', timeout: 8000 });
 }
 
 async function addGaugeItem(name) {
@@ -135,11 +168,15 @@ if (!alreadySeeded) {
   await addLocation('Garage', { description: 'Main workshop and storage', colour: 'Teal' });
   await addLocation('Workshop Shelf A', { parent: 'Garage' });
   await addLocation('Kitchen', { description: 'Household consumables', colour: 'Amber' });
-  await addBulkItem('M3 × 10 Socket Screws', 250);
-  await addBulkItem('USB-C Cable 1m', 12);
-  await addDiscreteItem('Raspberry Pi 5 (8GB)');
-  await addDiscreteItem('Cordless Drill');
+  await addBulkItem('M3 × 10 Socket Screws', 250, 0.05);
+  await addBulkItem('USB-C Cable 1m', 12, 4.5);
+  await addDiscreteItem('Raspberry Pi 5 (8GB)', 65);
+  await addDiscreteItem('Cordless Drill', 45);
   await addGaugeItem('PLA Filament — Galaxy Black');
+  // Data for the people/purchasing/reports screens (all invented — public-repo hygiene).
+  await addContact('Alex Rivera');
+  await addProject('Workshop LED Sign');
+  await addWish('Cordless impact driver', 120);
 }
 
 // ── Captures ─────────────────────────────────────────────────────────────────
@@ -238,6 +275,41 @@ try {
 } catch (err) {
   failed += 1;
   console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// ── Data-dependent screens (need the seed above) ─────────────────────────────
+async function screenShot(name, path) {
+  try {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await shot(name, page.locator('#main-content'), { settle: 400 });
+  } catch (err) {
+    failed += 1;
+    console.warn(`  ✗ ${name}.png — ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+await screenShot('contacts', 'contacts');
+await screenShot('projects', 'projects');
+await screenShot('bookings', 'bookings');
+await screenShot('reports', 'reports');
+
+// The Purchase Orders screen — a top-region clip so the Orders/Reorder/Wishlist tab bar and
+// the New-order button (which sit above #main-content) are included, not just the empty list.
+try {
+  await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(700);
+  await shot('purchase-orders', null, {
+    settle: 400,
+    clip: { x: 0, y: 48, width: VIEWPORT.width, height: 420 },
+  });
+  // Then the Wishlist tab with the seeded entry.
+  await page.getByText('Wishlist', { exact: true }).first().click();
+  await page.waitForTimeout(600);
+  await shot('wishlist', null, { settle: 400, clip: { x: 0, y: 48, width: VIEWPORT.width, height: 480 } });
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ purchase-orders/wishlist.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // The Modules manager (populated purely from the feature registry — no seed data needed).

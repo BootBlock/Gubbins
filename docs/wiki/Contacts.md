@@ -6,6 +6,8 @@ together.
 
 **Where to find it:** the **Contacts** screen (in the menu, when the module is enabled).
 
+![The Contacts screen, with a contact and the on-loan overview](images/contacts.png)
+
 ## What a contact is for
 
 A contact is a lightweight record of a person or supplier. Once you have one, it becomes the

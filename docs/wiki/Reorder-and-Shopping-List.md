@@ -4,7 +4,9 @@ Gubbins turns *"what's running low"* into *"what to buy"* automatically. Set reo
 builds a **shopping list** of everything that needs restocking — the bridge between
 [[low stock|Low-Stock-and-Gauges]] and a [[purchase order|Purchase-Orders]].
 
-**Where to find it:** the **Purchase orders** screen, alongside the Orders and Wishlist tabs.
+**Where to find it:** the **Reorder / Shopping list** tab on the **Purchase orders** screen.
+
+![The Purchase orders screen and its Reorder / Shopping list tab](images/purchase-orders.png)
 
 ## Reorder points
 

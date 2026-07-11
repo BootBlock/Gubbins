@@ -6,6 +6,8 @@ on the shelf"*.
 
 **Where to find it:** the **Purchase orders** screen (in the menu, when the module is enabled).
 
+![The Purchase orders screen, with its Orders, Reorder and Wishlist tabs](images/purchase-orders.png)
+
 ## Creating an order
 
 Raise a PO against a supplier contact and add the items and quantities you're ordering. The

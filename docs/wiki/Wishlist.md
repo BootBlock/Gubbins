@@ -6,6 +6,8 @@ eye on, a tool you're saving for, or something to pick up next time.
 
 **Where to find it:** the **Wishlist** tab on the **Purchase orders** screen.
 
+![The Wishlist tab with an entry](images/wishlist.png)
+
 ## Adding to the wishlist
 
 Each wishlist entry stands alone — it doesn't reference an existing item. Give it:
