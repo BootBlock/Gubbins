@@ -43,7 +43,20 @@ export {
   type SupplierFieldStatus,
   type ExistingSupplierPart,
 } from './supplier-part-plan';
+export {
+  planPriceRefresh,
+  summarisePriceRefresh,
+  type RefreshCandidate,
+  type RefreshPlan,
+  type FetchableSupplier,
+  type SkippedSupplier,
+  type SkipReason,
+  type RefreshOutcome,
+  type RefreshPrice,
+  type RefreshSummary,
+} from './price-refresh';
 export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
+export { isAllowedSupplierUrl } from './parsers/suppliers';
 export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
 export { ProductLookupPanel } from './components/ProductLookupPanel';

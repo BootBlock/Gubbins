@@ -198,6 +198,7 @@ export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
     priceBreaks: parsePriceBreaks(row.price_breaks),
     url: row.url,
     isPreferred: row.is_preferred === 1,
+    isPriceSource: row.is_price_source === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
