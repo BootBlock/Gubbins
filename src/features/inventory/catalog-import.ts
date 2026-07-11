@@ -7,7 +7,7 @@
  * partitions rows into creates (no matching item found), updates (a match found
  * by the chosen key), and errors (invalid rows — never thrown, always collected).
  *
- * The CSV codec is re-used from {@link parseCsv} in `../projects/bom-import`
+ * The CSV codec is re-used from the shared {@link parseCsv} in `@/features/import/tabular`
  * (same RFC-4180-safe parser, no new dependency). The apply helper runs the plan
  * through the existing {@link ItemRepository} `create`/`update` public methods —
  * no new SQL, no new columns.
@@ -15,7 +15,7 @@
  * Kept free of React and the DOM for instant unit-test execution.
  */
 import { z } from 'zod';
-import { parseCsv } from '../projects/bom-import';
+import { parseCsv } from '@/features/import/tabular';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';

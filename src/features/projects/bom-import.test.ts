@@ -91,4 +91,57 @@ describe('parseBom — KiCad / generic column mapping', () => {
     const csv = ['Colour,Shape', 'red,round'].join('\n');
     expect(() => parseBom(csv)).toThrow(BomImportError);
   });
+
+  it('throws a BomImportError for a free-form (non-table) paste', () => {
+    expect(() => parseBom('just a note about some parts')).toThrow(BomImportError);
+  });
+});
+
+describe('parseBom — flexible source formats (shared engine)', () => {
+  it('parses a tab-separated BOM (spreadsheet paste)', () => {
+    const tsv = ['Reference\tValue\tQuantity\tMPN', 'R1\t10k\t2\tRC0805FR-0710KL'].join('\n');
+    const lines = parseBom(tsv);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'RC0805FR-0710KL', requiredQty: 2 });
+  });
+
+  it('parses a Markdown-table BOM', () => {
+    const md = [
+      '| Reference | Value | Quantity | MPN |',
+      '| --- | --- | --- | --- |',
+      '| U1 | NE555 | 1 | NE555P |',
+    ].join('\n');
+    const lines = parseBom(md);
+    expect(lines[0]).toMatchObject({ designator: 'U1', mpn: 'NE555P', description: 'NE555', requiredQty: 1 });
+  });
+
+  it('parses a JSON-array BOM', () => {
+    const json = JSON.stringify([{ Reference: 'C1', MPN: 'GRM188', Quantity: 5, Manufacturer: 'Murata' }]);
+    const lines = parseBom(json);
+    expect(lines[0]).toMatchObject({
+      designator: 'C1',
+      mpn: 'GRM188',
+      manufacturer: 'Murata',
+      requiredQty: 5,
+    });
+  });
+
+  it('parses an HTML-table BOM (e.g. copied from a web order)', () => {
+    const html =
+      '<table><tr><th>Reference</th><th>MPN</th><th>Quantity</th></tr>' +
+      '<tr><td>R1</td><td>RC0805FR-0710KL</td><td>3</td></tr></table>';
+    const lines = parseBom(html);
+    expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'RC0805FR-0710KL', requiredQty: 3 });
+  });
+
+  it('honours a forced format override', () => {
+    // Semicolon-separated data would otherwise not auto-detect as a single CSV column.
+    const ssv = ['Reference;MPN;Quantity', 'R1;ABC;4'].join('\n');
+    const lines = parseBom(ssv, { format: 'ssv' });
+    expect(lines[0]).toMatchObject({ designator: 'R1', mpn: 'ABC', requiredQty: 4 });
+  });
+
+  it('rejects a forced free-form format as having no table', () => {
+    expect(() => parseBom('R1,10k,2', { format: 'lines' })).toThrow(BomImportError);
+  });
 });

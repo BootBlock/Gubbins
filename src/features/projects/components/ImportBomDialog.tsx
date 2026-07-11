@@ -1,14 +1,29 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { plural } from '@/lib/plural';
-import { Banner, Button, FormField, Input, Modal, Textarea } from '@/components/foundry';
+import { Banner, Button, FormField, Input, Modal, Select, Textarea } from '@/components/foundry';
 import { UploadIcon } from '@/components/icons';
+import {
+  detectImportFormat,
+  IMPORT_FORMATS,
+  IMPORT_FORMAT_LABELS,
+  isTabularFormat,
+  type ImportFormat,
+} from '@/features/import/tabular';
 import { useCreateProjectFromBom, useImportBom } from '../projects';
 import { parseBom, BomImportError, type ParsedBomLine } from '../bom-import';
 
+/** The file types the BOM importer accepts (mirrors the recognised tabular formats). */
+const BOM_FILE_ACCEPT =
+  '.csv,.tsv,.tab,.txt,.json,.md,.markdown,.html,.htm,' +
+  'text/csv,text/tab-separated-values,text/plain,application/json,text/markdown,text/html';
+
 /**
- * CSV/KiCad BOM import (spec §4 BOM Ingress — Standard CSV/KiCad Import). The user
- * pastes or uploads a BOM; it is parsed with the native parser, previewed, then
- * imported with MPN/alias auto-match against local inventory.
+ * BOM ingress (spec §4). The user pastes or uploads a bill of materials in any recognised
+ * shape — CSV / TSV / semicolon-separated, JSON, a Markdown table, or an HTML table — and
+ * it is parsed (format auto-detected, or forced via "Interpret as"), previewed, then
+ * imported with MPN/alias auto-match against local inventory. The generic
+ * text→table extraction is the shared {@link module:features/import/tabular} engine (also
+ * used by the item importer), so both importers understand the same formats.
  *
  * Two modes share the same parse + preview UI:
  *  - **into an existing project** — pass `projectId`; the lines are added to it.
@@ -35,11 +50,14 @@ export function ImportBomDialog({
   const createFromBom = useCreateProjectFromBom();
   const fileRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const formatId = useId();
   const [name, setName] = useState('');
   // True once the user edits the name, so an uploaded filename only seeds a name the
   // user has not already chosen.
   const [nameTouched, setNameTouched] = useState(false);
   const [text, setText] = useState('');
+  // 'auto' → detect the source shape from the content; a format id forces that parser.
+  const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
   const [parsed, setParsed] = useState<ParsedBomLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
@@ -50,6 +68,7 @@ export function ImportBomDialog({
     setName('');
     setNameTouched(false);
     setText('');
+    setFormatOverride('auto');
     setParsed(null);
     setError(null);
     setSummary(null);
@@ -60,7 +79,9 @@ export function ImportBomDialog({
     onClose();
   };
 
-  const handleParse = (raw: string) => {
+  // Parse the given text under the given format choice, updating the preview / error. Both
+  // the text field and the format picker call this so a change to either re-parses live.
+  const runParse = (raw: string, override: ImportFormat | 'auto') => {
     setText(raw);
     setSummary(null);
     if (raw.trim().length === 0) {
@@ -69,7 +90,7 @@ export function ImportBomDialog({
       return;
     }
     try {
-      setParsed(parseBom(raw));
+      setParsed(parseBom(raw, override === 'auto' ? {} : { format: override }));
       setError(null);
     } catch (err) {
       setParsed(null);
@@ -84,8 +105,13 @@ export function ImportBomDialog({
       const base = file.name.replace(/\.[^.]+$/, '').trim();
       if (base.length > 0) setName(base);
     }
-    handleParse(await file.text());
+    runParse(await file.text(), formatOverride);
   };
+
+  // When auto-detecting, show which tabular shape was recognised (a `lines` result means
+  // "no table", which the error banner already explains, so it is not surfaced as a format).
+  const detectedFormat =
+    formatOverride === 'auto' && text.trim().length > 0 ? detectImportFormat(text) : null;
 
   const handleImport = () => {
     if (!parsed || parsed.length === 0) return;
@@ -137,7 +163,7 @@ export function ImportBomDialog({
       description={
         isNewProject
           ? 'Create a project from an order or bill of materials.'
-          : 'Paste or upload a CSV / KiCad bill of materials.'
+          : 'Paste or upload a bill of materials — CSV, TSV, JSON, Markdown or HTML.'
       }
       className="max-w-2xl"
       {...(isNewProject ? { initialFocusRef: nameRef } : {})}
@@ -160,28 +186,65 @@ export function ImportBomDialog({
           </FormField>
         ) : null}
 
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-            <UploadIcon />
-            Upload file
-          </Button>
-          <span className="text-xs text-muted-foreground">…or paste below</span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,.txt,text/csv,text/plain"
-            className="hidden"
-            onChange={(e) => void handleFile(e.target.files?.[0])}
-          />
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+              <UploadIcon />
+              Upload file
+            </Button>
+            <span className="text-xs text-muted-foreground">…or paste below</span>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={BOM_FILE_ACCEPT}
+              className="hidden"
+              onChange={(e) => void handleFile(e.target.files?.[0])}
+            />
+          </div>
+          <div className="ml-auto space-y-field-gap-compact">
+            <span
+              id={`${formatId}-label`}
+              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Interpret as
+            </span>
+            <Select
+              id={formatId}
+              aria-labelledby={`${formatId}-label`}
+              value={formatOverride}
+              onChange={(value) => {
+                const next = value as ImportFormat | 'auto';
+                setFormatOverride(next);
+                runParse(text, next);
+              }}
+              className="h-8 text-xs"
+              data-testid="bom-import-format"
+              options={[
+                { value: 'auto', label: 'Auto-detect' },
+                ...IMPORT_FORMATS.filter(isTabularFormat).map((f) => ({
+                  value: f,
+                  label: IMPORT_FORMAT_LABELS[f],
+                })),
+              ]}
+            />
+          </div>
         </div>
 
         <Textarea
           value={text}
-          onChange={(e) => handleParse(e.target.value)}
+          onChange={(e) => runParse(e.target.value, formatOverride)}
           placeholder={'Reference,Value,Quantity,MPN,Manufacturer\nR1,10k,2,RC0805FR-0710KL,Yageo'}
           className="h-40 font-mono"
-          aria-label="BOM CSV text"
+          aria-label="BOM text"
         />
+
+        <p className="text-xs text-muted-foreground">
+          Accepts CSV / TSV, JSON, a Markdown table or an HTML table — the format is detected automatically,
+          or choose it with “Interpret as”.
+          {detectedFormat && isTabularFormat(detectedFormat)
+            ? ` Detected: ${IMPORT_FORMAT_LABELS[detectedFormat]}.`
+            : ''}
+        </p>
 
         {error ? <Banner tone="danger">{error}</Banner> : null}
         {summary ? <Banner tone="success">{summary}</Banner> : null}

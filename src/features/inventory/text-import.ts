@@ -1,17 +1,23 @@
 /**
- * Generalised import engine (Phase: generalised import dialog).
+ * Generalised item-import engine (Phase: generalised import dialog).
  *
  * Turns arbitrary user input — a pasted/typed block of text, or the contents of an
  * uploaded file — into the same dry-run {@link CatalogImportPlan} the catalogue CSV
  * importer already produces, so a single "map → preview → apply" pipeline serves
  * every input method and every recognised shape of data.
  *
+ * The generic "text → header + data-row matrix" machinery — format detection, the
+ * RFC-4180 codec and the JSON / Markdown / HTML table parsers — lives in the shared,
+ * item-agnostic {@link module:features/import/tabular} engine (also used by the projects
+ * BOM importer). This module layers the **item-specific** parts on top: the column
+ * mapping to {@link CatalogField}s, custom-field auto-mapping, tool migrations, and the
+ * free-form **`lines`** shape (best-effort quantity / SKU / ASIN / price extraction).
+ *
  * Recognised source shapes (auto-detected, or forced via the dialog's "Interpret as"):
- *   - `'csv'`      — comma-separated values.
- *   - `'ssv'`      — semicolon-separated values (common European spreadsheet export).
- *   - `'tsv'`      — tab-separated values (a spreadsheet *paste*).
+ *   - `'csv'` / `'ssv'` / `'tsv'` — delimiter-separated values.
  *   - `'json'`     — an array of objects (or `{ items: [...] }`); keys become columns.
  *   - `'markdown'` — a GitHub-flavoured pipe table.
+ *   - `'html'`     — an HTML `<table>`.
  *   - `'lines'`    — free-form, one item per line, with best-effort extraction of a
  *                    quantity and SKU from common shorthand ("Resistor 10k x50",
  *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). An
@@ -19,14 +25,17 @@
  *                    and a **currency-marked unit price** (£/$/€/¥) as the unit cost, so a
  *                    pasted Amazon invoice / order lands as items with their ASIN + price.
  *
- * Tabular shapes reuse the proven RFC-4180 codec ({@link parseDelimited}) and the
- * shared plan builder ({@link buildImportPlanFromRows}); the free-form shape is
- * flattened into the same `name / quantity / sku` row matrix so it flows through the
- * identical validation and create-vs-update logic. No new write path, no new SQL.
- *
  * Kept free of React and the DOM for instant unit-test execution.
  */
-import { parseDelimited } from '../projects/bom-import';
+import {
+  detectImportFormat,
+  extractTableRows,
+  IMPORT_FORMATS,
+  IMPORT_FORMAT_LABELS,
+  isDelimitedFormat,
+  isTabularFormat,
+  type ImportFormat,
+} from '@/features/import/tabular';
 import {
   buildImportPlanFromRows,
   inferColumnMapping,
@@ -38,147 +47,17 @@ import { findAsin } from './asin';
 import { mapMigration, type MigrationSourceId } from './importers/migrations';
 import type { CategoryField, Item } from '@/db/repositories/types';
 
-// ---------------------------------------------------------------------------
-// Source-format model
-// ---------------------------------------------------------------------------
-
-/** The recognised shapes of import input. */
-export type ImportFormat = 'csv' | 'ssv' | 'tsv' | 'json' | 'markdown' | 'lines';
-
-/** All formats in the order the "Interpret as" picker should list them. */
-export const IMPORT_FORMATS: readonly ImportFormat[] = ['csv', 'ssv', 'tsv', 'json', 'markdown', 'lines'];
-
-/** Human-readable label for each format (used in the import dialog UI). */
-export const IMPORT_FORMAT_LABELS: Record<ImportFormat, string> = {
-  csv: 'Comma-separated (CSV)',
-  ssv: 'Semicolon-separated',
-  tsv: 'Tab-separated (TSV)',
-  json: 'JSON',
-  markdown: 'Markdown table',
-  lines: 'Line list (one item per line)',
+// Re-export the shared format model so existing importers (ImportDataDialog) keep a single
+// import site — the detection/codec/parsers moved to features/import/tabular, but the item
+// dialog still reaches them through this module.
+export {
+  detectImportFormat,
+  IMPORT_FORMATS,
+  IMPORT_FORMAT_LABELS,
+  isDelimitedFormat,
+  isTabularFormat,
+  type ImportFormat,
 };
-
-/** The single-character delimiter backing each delimiter-based format. */
-const DELIMITERS: Partial<Record<ImportFormat, string>> = {
-  csv: ',',
-  ssv: ';',
-  tsv: '\t',
-};
-
-/** Formats whose input is delimiter-separated (and so support a header toggle). */
-export function isDelimitedFormat(format: ImportFormat): boolean {
-  return format === 'csv' || format === 'ssv' || format === 'tsv';
-}
-
-/** Formats laid out as columns (mapping is meaningful — everything but a line list). */
-export function isTabularFormat(format: ImportFormat): boolean {
-  return format !== 'lines';
-}
-
-// ---------------------------------------------------------------------------
-// Format detection
-// ---------------------------------------------------------------------------
-
-/** How many leading lines to sample when sniffing a delimiter. */
-const DETECTION_SAMPLE_SIZE = 10;
-
-/** Split into non-empty lines, tolerant of CRLF / LF / lone-CR endings. */
-function nonEmptyLines(text: string): string[] {
-  return text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
-}
-
-/**
- * Is a delimiter used consistently across the sampled lines? A block is
- * "consistent" when every line contains the delimiter and they all split into the
- * same number (> 1) of columns — the signature of tabular data. Naive splitting
- * (ignoring quotes) is deliberate: it is only a sniff to choose the codec, and the
- * real parse re-reads the text with full RFC-4180 quoting.
- */
-function delimiterConsistency(
-  lines: readonly string[],
-  delimiter: string,
-): { consistent: boolean; columns: number } {
-  if (lines.length === 0) return { consistent: false, columns: 0 };
-  const columns = lines[0]!.split(delimiter).length;
-  const consistent = columns > 1 && lines.every((l) => l.split(delimiter).length === columns);
-  return { consistent, columns };
-}
-
-/**
- * Choose the best delimiter-based format for a block, or `null` when none is cleanly
- * tabular. The delimiter yielding the most consistent columns wins; ties fall to the
- * strongest paste signal (tab, then semicolon, then comma).
- */
-function detectDelimited(text: string): ImportFormat | null {
-  const lines = nonEmptyLines(text).slice(0, DETECTION_SAMPLE_SIZE);
-  if (lines.length === 0) return null;
-  const candidates: ReadonlyArray<readonly [ImportFormat, string]> = [
-    ['tsv', '\t'],
-    ['ssv', ';'],
-    ['csv', ','],
-  ];
-  let best: ImportFormat | null = null;
-  let bestColumns = 1;
-  for (const [format, delimiter] of candidates) {
-    const { consistent, columns } = delimiterConsistency(lines, delimiter);
-    if (consistent && columns > bestColumns) {
-      best = format;
-      bestColumns = columns;
-    }
-  }
-  return best;
-}
-
-/** Does the text parse as a JSON array/object we can turn into rows? */
-function looksLikeJson(text: string): boolean {
-  const trimmed = text.trim();
-  if (!(trimmed.startsWith('[') || trimmed.startsWith('{'))) return false;
-  try {
-    JSON.parse(trimmed);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** A Markdown table separator cell: dashes with optional alignment colons (`:--:`). */
-function isSeparatorCell(cell: string): boolean {
-  return /^:?-{1,}:?$/.test(cell.trim());
-}
-
-/** Split a Markdown table row into trimmed cells, dropping the pipe borders. */
-function markdownCells(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
-  return s.split('|').map((c) => c.trim());
-}
-
-/** Is this line a Markdown separator row (`|---|:--:|`)? */
-function isSeparatorRow(line: string): boolean {
-  const cells = markdownCells(line);
-  return cells.length > 0 && cells.every(isSeparatorCell);
-}
-
-/** Does the text contain a GitHub-flavoured Markdown table (header + `---` rule)? */
-function looksLikeMarkdownTable(text: string): boolean {
-  const pipeLines = nonEmptyLines(text).filter((l) => l.includes('|'));
-  if (pipeLines.length < 2) return false;
-  const sepIdx = pipeLines.findIndex(isSeparatorRow);
-  return sepIdx >= 1;
-}
-
-/**
- * Sniff the most likely {@link ImportFormat} for a block of text. Structured shapes
- * (JSON, Markdown tables) are recognised first; then the strongest consistent
- * delimiter; and anything else falls back to the forgiving line-list parser.
- */
-export function detectImportFormat(text: string): ImportFormat {
-  if (text.trim().length === 0) return 'lines';
-  if (looksLikeJson(text)) return 'json';
-  if (looksLikeMarkdownTable(text)) return 'markdown';
-  return detectDelimited(text) ?? 'lines';
-}
 
 // ---------------------------------------------------------------------------
 // Free-form line parsing
@@ -465,90 +344,6 @@ export function parseFreeformText(text: string, decimalSeparator = '.'): Freefor
 }
 
 // ---------------------------------------------------------------------------
-// Structured parsers (JSON, Markdown) → header + data-row matrix
-// ---------------------------------------------------------------------------
-
-/** A plain (non-array) object record. */
-type JsonRecord = Record<string, unknown>;
-
-/** Render one JSON value as a flat cell string. */
-function jsonCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value); // nested object/array — surfaced verbatim
-}
-
-/** Is a value a plain record (object, not array, not null)? */
-function isRecord(value: unknown): value is JsonRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
- * Coerce arbitrary parsed JSON into the array of elements we will treat as rows:
- * an array is used as-is; an object is unwrapped to its first array-valued property
- * (e.g. `{ items: [...] }`) or, failing that, treated as a single record.
- */
-function toJsonElements(data: unknown): unknown[] | null {
-  if (Array.isArray(data)) return data;
-  if (isRecord(data)) {
-    for (const value of Object.values(data)) {
-      if (Array.isArray(value)) return value;
-    }
-    return [data];
-  }
-  return null;
-}
-
-/** The union of object keys across records, in first-seen order. */
-function unionKeys(records: readonly JsonRecord[]): string[] {
-  const keys: string[] = [];
-  const seen = new Set<string>();
-  for (const rec of records) {
-    for (const key of Object.keys(rec)) {
-      if (!seen.has(key)) {
-        seen.add(key);
-        keys.push(key);
-      }
-    }
-  }
-  return keys;
-}
-
-/** Parse a JSON document into a header + data-row matrix, or `null` if unusable. */
-function parseJsonRows(text: string): { headerRow: string[]; dataRows: string[][] } | null {
-  let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  const elements = toJsonElements(data);
-  if (!elements) return null;
-
-  if (elements.every(isRecord)) {
-    const headerRow = unionKeys(elements);
-    const dataRows = elements.map((rec) => headerRow.map((key) => jsonCell(rec[key])));
-    return { headerRow, dataRows };
-  }
-  // Array of primitives (or mixed) — treat each element as an item name.
-  return { headerRow: ['name'], dataRows: elements.map((el) => [jsonCell(el)]) };
-}
-
-/** Parse a GitHub-flavoured Markdown table into a header + data-row matrix. */
-function parseMarkdownRows(text: string): { headerRow: string[]; dataRows: string[][] } | null {
-  const pipeLines = nonEmptyLines(text).filter((l) => l.includes('|'));
-  const sepIdx = pipeLines.findIndex(isSeparatorRow);
-  if (sepIdx < 1) return null;
-  const headerRow = markdownCells(pipeLines[sepIdx - 1]!);
-  const dataRows = pipeLines
-    .slice(sepIdx + 1)
-    .filter((l) => !isSeparatorRow(l))
-    .map(markdownCells);
-  return { headerRow, dataRows };
-}
-
-// ---------------------------------------------------------------------------
 // Extraction — text → row matrix + initial mapping
 // ---------------------------------------------------------------------------
 
@@ -619,18 +414,12 @@ export interface ExtractImportOptions {
   readonly decimalSeparator?: string;
 }
 
-/** Build a synthetic header row (`Column 1 … Column n`) for headerless input. */
-function syntheticHeaders(width: number): string[] {
-  return Array.from({ length: Math.max(width, 1) }, (_, i) => `Column ${i + 1}`);
-}
-
 /** Assemble a tabular extraction, inferring the initial mapping from the headers. */
 function tabularExtraction(
   format: ImportFormat,
   headerRow: readonly string[],
   dataRows: readonly string[][],
   customFields: readonly CategoryField[],
-  note?: string,
 ): ImportExtraction {
   return {
     format,
@@ -639,7 +428,6 @@ function tabularExtraction(
     mapping: inferColumnMapping(headerRow, customFields),
     columns: headerRow,
     isTabular: true,
-    ...(note ? { note } : {}),
   };
 }
 
@@ -651,14 +439,14 @@ function emptyExtraction(format: ImportFormat, note: string): ImportExtraction {
 /**
  * Normalise raw import text into a {@link ImportExtraction}: detect (or accept) the
  * format, parse it into a header + data-row matrix, and derive a concrete initial
- * column mapping. Tabular input keeps its headers and auto-infers the mapping; a
- * free-form line list is flattened to fixed `name / quantity / sku` columns. Never
- * throws — an unparseable structured format yields an empty extraction with a `note`.
+ * column mapping. Tabular input (delegated to the shared {@link extractTableRows}) keeps
+ * its headers and auto-infers the mapping; a free-form line list is flattened to fixed
+ * `name / quantity / sku …` columns. Never throws — an unparseable structured format
+ * yields an empty extraction with a `note`.
  */
 export function extractImport(text: string, options: ExtractImportOptions = {}): ImportExtraction {
   const customFields = options.customFields ?? [];
   const format = options.format ?? detectImportFormat(text);
-  const hasHeader = options.hasHeader ?? true;
 
   if (format === 'lines') {
     // A line list defaults each item to quantity 1 (a new item is unlikely to be
@@ -683,33 +471,13 @@ export function extractImport(text: string, options: ExtractImportOptions = {}):
     };
   }
 
-  if (format === 'json') {
-    const parsed = parseJsonRows(text);
-    if (!parsed) {
-      return emptyExtraction('json', 'That does not look like valid JSON (expected an array of objects).');
-    }
-    return tabularExtraction('json', parsed.headerRow, parsed.dataRows, customFields);
+  // Every other (tabular) shape flows through the shared extraction engine — one codec,
+  // one detector, one parser per structured format. A parse failure carries a `note`.
+  const table = extractTableRows(text, { format, hasHeader: options.hasHeader ?? true });
+  if (table.note) {
+    return emptyExtraction(format, table.note);
   }
-
-  if (format === 'markdown') {
-    const parsed = parseMarkdownRows(text);
-    if (!parsed) {
-      return emptyExtraction(
-        'markdown',
-        'No Markdown table found — needs a header row and a "| --- |" separator.',
-      );
-    }
-    return tabularExtraction('markdown', parsed.headerRow, parsed.dataRows, customFields);
-  }
-
-  // Delimited: csv / ssv / tsv.
-  const delimiter = DELIMITERS[format] ?? ',';
-  const allRows = parseDelimited(text, delimiter).filter((r) => r.some((c) => c.trim().length > 0));
-  if (hasHeader) {
-    return tabularExtraction(format, allRows[0] ?? [], allRows.slice(1), customFields);
-  }
-  const width = allRows.reduce((max, r) => Math.max(max, r.length), 0);
-  return tabularExtraction(format, syntheticHeaders(width), allRows, customFields);
+  return tabularExtraction(format, table.headerRow, table.dataRows, customFields);
 }
 
 // ---------------------------------------------------------------------------
