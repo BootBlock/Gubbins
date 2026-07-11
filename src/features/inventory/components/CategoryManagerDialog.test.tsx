@@ -462,12 +462,13 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
   });
 });
 
-describe('CategoryManagerDialog — the Tools starter affordance (T4)', () => {
-  const toolsButton = () => screen.queryByRole('button', { name: 'Add a Tools category' });
+describe('CategoryManagerDialog — the preset picker (importable categories)', () => {
+  const openPicker = () => fireEvent.click(screen.getByRole('button', { name: 'Add from a preset…' }));
 
-  it('seeds a Tools category with its T1/T2 defaults and both tool-ish fields, in order', async () => {
+  it('imports the Tools preset with its defaults and both fields, in order', async () => {
     renderDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a Tools category' }));
+    openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Tools preset' }));
 
     await waitFor(() =>
       expect(h.createCategoryAsync).toHaveBeenCalledWith({
@@ -488,18 +489,37 @@ describe('CategoryManagerDialog — the Tools starter affordance (T4)', () => {
     });
   });
 
-  it('hides the affordance when a Tools category already exists (idempotent — no duplicate)', () => {
+  it('imports the Battery preset requested in the feature (its Voltage field rides along)', async () => {
+    renderDialog();
+    openPicker();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Battery preset' }));
+
+    await waitFor(() => expect(h.createCategoryAsync).toHaveBeenCalledWith({ name: 'Battery' }));
+    await waitFor(() =>
+      expect(h.addFieldAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ name: 'Voltage (V)', fieldType: 'NUMBER' }),
+        }),
+      ),
+    );
+  });
+
+  it('marks an already-imported preset as Added and disables it (idempotent — no duplicate)', () => {
     cleanup();
     h.categoryRows = [category({ name: 'Tools' })];
     renderDialog();
-    expect(toolsButton()).not.toBeInTheDocument();
+    openPicker();
+    expect(screen.getByRole('button', { name: 'Tools preset already added' })).toBeDisabled();
+    // Battery is not present, so its card is still importable.
+    expect(screen.getByRole('button', { name: 'Add Battery preset' })).toBeEnabled();
   });
 
-  it('matches an existing Tools category case-insensitively', () => {
+  it('matches an existing preset category case-insensitively', () => {
     cleanup();
     h.categoryRows = [category({ name: '  tools  ' })];
     renderDialog();
-    expect(toolsButton()).not.toBeInTheDocument();
+    openPicker();
+    expect(screen.getByRole('button', { name: 'Tools preset already added' })).toBeInTheDocument();
   });
 });
 
