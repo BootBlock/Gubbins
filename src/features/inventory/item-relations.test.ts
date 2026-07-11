@@ -3,10 +3,12 @@ import {
   RELATION_KINDS,
   RELATION_LABELS,
   RELATION_OPTIONS,
+  SUBSTITUTION_KINDS,
   canonicaliseRelation,
   describeItemRelations,
   dedupeRelations,
   isRelationKind,
+  isSubstitutionKind,
   isSymmetricRelationKind,
   itemRelationId,
   normaliseRelationKind,
@@ -30,8 +32,8 @@ function stored(id: string, from: string, to: string, kind: RelationKind): Store
 }
 
 describe('relation kinds & labels', () => {
-  it('exposes exactly the three kinds, each with a label pair', () => {
-    expect([...RELATION_KINDS]).toEqual(['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR']);
+  it('exposes exactly the known kinds, each with a label pair', () => {
+    expect([...RELATION_KINDS]).toEqual(['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR', 'INTERCHANGEABLE_WITH']);
     for (const kind of RELATION_KINDS) {
       const label = RELATION_LABELS[kind];
       expect(label.forward.length).toBeGreaterThan(0);
@@ -39,15 +41,28 @@ describe('relation kinds & labels', () => {
     }
   });
 
-  it('marks only WORKS_WITH as symmetric (forward === reverse iff symmetric)', () => {
+  it('marks the symmetric kinds (forward === reverse iff symmetric)', () => {
     for (const kind of RELATION_KINDS) {
       const label = RELATION_LABELS[kind];
       expect(isSymmetricRelationKind(kind)).toBe(label.symmetric);
       expect(label.forward === label.reverse).toBe(label.symmetric);
     }
     expect(isSymmetricRelationKind('WORKS_WITH')).toBe(true);
+    expect(isSymmetricRelationKind('INTERCHANGEABLE_WITH')).toBe(true);
     expect(isSymmetricRelationKind('ACCESSORY_FOR')).toBe(false);
     expect(isSymmetricRelationKind('SPARE_FOR')).toBe(false);
+  });
+
+  it('partitions substitution kinds off the general related surface (issue #36)', () => {
+    expect([...SUBSTITUTION_KINDS]).toEqual(['INTERCHANGEABLE_WITH']);
+    expect(isSubstitutionKind('INTERCHANGEABLE_WITH')).toBe(true);
+    expect(isSubstitutionKind('WORKS_WITH')).toBe(false);
+    expect(isSubstitutionKind('ACCESSORY_FOR')).toBe(false);
+    expect(isSubstitutionKind('SPARE_FOR')).toBe(false);
+    // A substitution kind is a real relation kind — it just lives on a different tab.
+    for (const kind of SUBSTITUTION_KINDS) expect(isRelationKind(kind)).toBe(true);
+    // The general "Related" add-UI never offers a substitution kind (it has its own surface).
+    expect(RELATION_OPTIONS.some((o) => isSubstitutionKind(o.kind))).toBe(false);
   });
 });
 
@@ -247,6 +262,21 @@ describe('describeItemRelations', () => {
 
   it('returns an empty list when nothing touches the item', () => {
     expect(describeItemRelations(A, [stored('r', B, C, 'WORKS_WITH')])).toEqual([]);
+  });
+
+  it('restricts to the given kinds when a filter is supplied (issue #36 tab split)', () => {
+    const rows: StoredRelation[] = [
+      stored('r-works', A, B, 'WORKS_WITH'),
+      stored('r-sub', A, C, 'INTERCHANGEABLE_WITH'),
+    ];
+    // The "Related" surface excludes substitutions…
+    expect(describeItemRelations(A, rows, (k) => !isSubstitutionKind(k)).map((r) => r.id)).toEqual([
+      'r-works',
+    ]);
+    // …and the "Substitutions" surface shows only them.
+    expect(describeItemRelations(A, rows, isSubstitutionKind)).toMatchObject([
+      { id: 'r-sub', otherItemId: C, label: 'Interchangeable with', direction: 'symmetric' },
+    ]);
   });
 });
 

@@ -89,6 +89,8 @@ export {
   Link as LinkIcon,
   ExternalLink as ExternalLinkIcon,
   Unlink as UnlinkIcon,
+  // Substitutions (issue #36) — the two-way "swap / interchangeable" glyph.
+  ArrowLeftRight as SubstituteIcon,
   HardDriveDownload as LocalFileIcon,
   SlidersHorizontal as SettingsIcon,
   Check as CheckIcon,

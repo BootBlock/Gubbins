@@ -63,6 +63,7 @@ describe('buildTabs — feature gating (Phase 6)', () => {
       'lifecycle',
       'kit',
       'related',
+      'substitutions',
       'media',
       'classification',
       'activity',
