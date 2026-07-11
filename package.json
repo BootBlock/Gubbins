@@ -7,8 +7,16 @@
   "description": "Gubbins — a local-first, offline-capable PWA for tracking electronics, 3D-printing supplies, tools, and general inventory.",
   "license": "MIT",
   "author": "Joe Cox <BootBlock@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BootBlock/Gubbins.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BootBlock/Gubbins/issues"
+  },
+  "homepage": "https://bootblock.github.io/Gubbins/",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "prepare": "node -e \"try{require('node:child_process').execSync('git config core.hooksPath .githooks',{stdio:'ignore'})}catch{}\"",
