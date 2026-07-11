@@ -42,6 +42,9 @@ vi.mock('@/components/icons', async (importOriginal) => {
 vi.mock('./components/CreateProjectDialog', () => ({
   CreateProjectDialog: () => null,
 }));
+vi.mock('./components/ImportBomDialog', () => ({
+  ImportBomDialog: () => null,
+}));
 vi.mock('./components/ProjectDetail', () => ({
   ProjectDetail: () => <div data-testid="project-detail" />,
 }));

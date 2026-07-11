@@ -1,32 +1,54 @@
 import { useRef, useState } from 'react';
 import { plural } from '@/lib/plural';
-import { Banner, Button, Modal, Textarea } from '@/components/foundry';
+import { Banner, Button, FormField, Input, Modal, Textarea } from '@/components/foundry';
 import { UploadIcon } from '@/components/icons';
-import { useImportBom } from '../projects';
+import { useCreateProjectFromBom, useImportBom } from '../projects';
 import { parseBom, BomImportError, type ParsedBomLine } from '../bom-import';
 
 /**
  * CSV/KiCad BOM import (spec §4 BOM Ingress — Standard CSV/KiCad Import). The user
  * pastes or uploads a BOM; it is parsed with the native parser, previewed, then
  * imported with MPN/alias auto-match against local inventory.
+ *
+ * Two modes share the same parse + preview UI:
+ *  - **into an existing project** — pass `projectId`; the lines are added to it.
+ *  - **as a new project** — omit `projectId`; a name field appears and the import
+ *    creates a standalone project from the order/BOM, then selects it via
+ *    {@link onCreated}. Both modes reuse the same MPN auto-match path — no duplicated
+ *    parsing or matching logic.
  */
 export function ImportBomDialog({
   open,
   onClose,
   projectId,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
-  projectId: string;
+  /** Import into this existing project. Omit to create a new project from the BOM. */
+  projectId?: string;
+  /** Called with the new project's id after a successful new-project import. */
+  onCreated?: (projectId: string) => void;
 }) {
-  const importBom = useImportBom(projectId);
+  const isNewProject = projectId === undefined;
+  const importBom = useImportBom(projectId ?? '');
+  const createFromBom = useCreateProjectFromBom();
   const fileRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState('');
+  // True once the user edits the name, so an uploaded filename only seeds a name the
+  // user has not already chosen.
+  const [nameTouched, setNameTouched] = useState(false);
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState<ParsedBomLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
 
+  const pending = isNewProject ? createFromBom.isPending : importBom.isPending;
+
   const reset = () => {
+    setName('');
+    setNameTouched(false);
     setText('');
     setParsed(null);
     setError(null);
@@ -57,11 +79,40 @@ export function ImportBomDialog({
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
+    // Seed a new project's name from the file's base name, unless the user typed one.
+    if (isNewProject && !nameTouched) {
+      const base = file.name.replace(/\.[^.]+$/, '').trim();
+      if (base.length > 0) setName(base);
+    }
     handleParse(await file.text());
   };
 
   const handleImport = () => {
     if (!parsed || parsed.length === 0) return;
+
+    if (isNewProject) {
+      const trimmed = name.trim();
+      if (trimmed.length === 0) {
+        nameRef.current?.focus();
+        return;
+      }
+      setError(null);
+      createFromBom.mutate(
+        { project: { name: trimmed }, lines: parsed },
+        {
+          onSuccess: (result) => {
+            onCreated?.(result.projectId);
+            close();
+          },
+          onError: (err) => {
+            setError(err instanceof Error ? err.message : 'Could not create the project from this BOM.');
+          },
+        },
+      );
+      return;
+    }
+
+    setError(null);
     importBom.mutate(parsed, {
       onSuccess: (result) => {
         setSummary(
@@ -70,18 +121,45 @@ export function ImportBomDialog({
         setParsed(null);
         setText('');
       },
+      onError: (err) => {
+        setError(err instanceof Error ? err.message : 'Could not import this BOM.');
+      },
     });
   };
+
+  const nameMissing = isNewProject && name.trim().length === 0;
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Import BOM"
-      description="Paste or upload a CSV / KiCad bill of materials."
+      title={isNewProject ? 'New project from a BOM' : 'Import BOM'}
+      description={
+        isNewProject
+          ? 'Create a project from an order or bill of materials.'
+          : 'Paste or upload a CSV / KiCad bill of materials.'
+      }
       className="max-w-2xl"
+      {...(isNewProject ? { initialFocusRef: nameRef } : {})}
     >
       <div className="space-y-4">
+        {isNewProject ? (
+          <FormField
+            label="Project name"
+            hint="The parts below become this project's initial bill of materials."
+          >
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameTouched(true);
+              }}
+              placeholder="e.g. Bench power supply"
+            />
+          </FormField>
+        ) : null}
+
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
             <UploadIcon />
@@ -139,14 +217,14 @@ export function ImportBomDialog({
           </p>
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={close}>
-              Close
+              {isNewProject ? 'Cancel' : 'Close'}
             </Button>
             <Button
               type="button"
               onClick={handleImport}
-              disabled={!parsed || parsed.length === 0 || importBom.isPending}
+              disabled={!parsed || parsed.length === 0 || nameMissing || pending}
             >
-              Import {parsed?.length ?? 0}
+              {isNewProject ? `Create project (${parsed?.length ?? 0})` : `Import ${parsed?.length ?? 0}`}
             </Button>
           </div>
         </div>

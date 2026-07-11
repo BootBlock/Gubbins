@@ -8,12 +8,13 @@ import {
   Surface,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
-import { AddIcon, ProjectIcon } from '@/components/icons';
+import { AddIcon, ImportIcon, ProjectIcon } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { useProjects } from './projects';
 import { PROJECT_STATUS_LABELS } from './components/projects-ui';
 import { CreateProjectDialog } from './components/CreateProjectDialog';
+import { ImportBomDialog } from './components/ImportBomDialog';
 import { ProjectDetail } from './components/ProjectDetail';
 
 /**
@@ -24,6 +25,7 @@ export function ProjectsScreen() {
   const projects = useProjects();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const rows = useMemo(() => projects.data?.rows ?? [], [projects.data?.rows]);
 
@@ -49,10 +51,16 @@ export function ProjectsScreen() {
         icon={<ProjectIcon />}
         title="Projects"
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <AddIcon />
-            New project
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <ImportIcon />
+              Import BOM
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <AddIcon />
+              New project
+            </Button>
+          </>
         }
       />
 
@@ -136,6 +144,12 @@ export function ProjectsScreen() {
       <CreateProjectDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        onCreated={(id) => setSelectedId(id)}
+      />
+
+      <ImportBomDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
         onCreated={(id) => setSelectedId(id)}
       />
     </PageContainer>
