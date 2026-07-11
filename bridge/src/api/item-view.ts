@@ -125,6 +125,10 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   ['purchasePrice', { resolve: (c) => c.item.purchasePrice }],
   // Physical. Intrinsic weight in canonical grams (issue #25); null when unset.
   ['weight', { resolve: (c) => c.item.weight }],
+  // Intrinsic bounding-box dimensions in canonical millimetres (issue #30); null when unset.
+  ['width', { resolve: (c) => c.item.width }],
+  ['height', { resolve: (c) => c.item.height }],
+  ['depth', { resolve: (c) => c.item.depth }],
   // Perishable / traceability.
   ['expiryDate', { resolve: (c) => c.item.expiryDate }],
   ['batchNumber', { resolve: (c) => c.item.batchNumber }],

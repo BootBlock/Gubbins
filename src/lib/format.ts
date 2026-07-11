@@ -8,6 +8,7 @@
  * chosen currency and locale end-to-end (§3).
  */
 import { formatWeight, type WeightUnit } from './weight';
+import { formatDimension, type DimensionUnit } from './dimensions';
 
 /** The locked default locale (§1.2.1) — also the fallback for non-reactive callers. */
 export const DEFAULT_LOCALE = 'en-GB';
@@ -76,6 +77,13 @@ export interface Formatters {
    * built with — the stored grams are unchanged, only the presentation. See `lib/weight.ts`.
    */
   weight(grams: number): string;
+  /**
+   * A canonical **millimetre** dimension rendered in the user's chosen dimension unit (e.g.
+   * `1.25 m`); `—` for a non-finite value. The unit is the Tier-2 `dimensionUnit` preference
+   * this bundle was built with — the stored mm are unchanged, only the presentation. See
+   * `lib/dimensions.ts`.
+   */
+  dimension(mm: number): string;
   /** A UNIX-ms instant as a short date (e.g. `28 Jun 2026`). */
   date(ms: number): string;
   /** A UNIX-ms instant as a date *and* time (e.g. `28 Jun 2026, 14:30`). */
@@ -115,6 +123,7 @@ export function makeFormatters(
   locale: string = DEFAULT_LOCALE,
   currency: string = DEFAULT_CURRENCY,
   weightUnit: WeightUnit = 'g',
+  dimensionUnit: DimensionUnit = 'mm',
 ): Formatters {
   const number = new Intl.NumberFormat(locale);
   const currencyFormat = new Intl.NumberFormat(locale, { style: 'currency', currency });
@@ -211,6 +220,9 @@ export function makeFormatters(
     weight(grams) {
       return formatWeight(grams, weightUnit, locale);
     },
+    dimension(mm) {
+      return formatDimension(mm, dimensionUnit, locale);
+    },
     date(ms) {
       return dateFormat.format(new Date(ms));
     },
@@ -233,7 +245,7 @@ export function makeFormatters(
 }
 
 /**
- * Process-wide cache of {@link Formatters} bundles keyed by `locale|currency|weightUnit`. Every
+ * Process-wide cache of {@link Formatters} bundles keyed by `locale|currency|weightUnit|dimensionUnit`. Every
  * component formats through {@link useFormatters}, which memoises per component; this
  * shared cache goes one further and lets *all* of them reuse a single bundle (and its
  * heavyweight `Intl.*Format` objects) per preference pair, instead of one bundle per
@@ -243,16 +255,20 @@ export function makeFormatters(
  */
 const formattersCache = new Map<string, Formatters>();
 
-/** A shared {@link Formatters} bundle for `locale`/`currency`/`weightUnit`, built once and reused. */
+/**
+ * A shared {@link Formatters} bundle for `locale`/`currency`/`weightUnit`/`dimensionUnit`, built
+ * once and reused.
+ */
 export function getFormatters(
   locale: string = DEFAULT_LOCALE,
   currency: string = DEFAULT_CURRENCY,
   weightUnit: WeightUnit = 'g',
+  dimensionUnit: DimensionUnit = 'mm',
 ): Formatters {
-  const key = `${locale}|${currency}|${weightUnit}`;
+  const key = `${locale}|${currency}|${weightUnit}|${dimensionUnit}`;
   const cached = formattersCache.get(key);
   if (cached) return cached;
-  const bundle = makeFormatters(locale, currency, weightUnit);
+  const bundle = makeFormatters(locale, currency, weightUnit, dimensionUnit);
   formattersCache.set(key, bundle);
   return bundle;
 }

@@ -45,6 +45,10 @@ const CSV_COLUMNS = [
   'unitCost',
   // Intrinsic weight in canonical grams (issue #25); blank when unset.
   'weight',
+  // Intrinsic bounding-box dimensions in canonical millimetres (issue #30); blank when unset.
+  'width',
+  'height',
+  'depth',
 ] as const;
 
 /** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting). */
@@ -85,6 +89,10 @@ const CATALOG_CSV_COLUMNS = [
   'unitCost',
   // Canonical grams (issue #25); round-trips back through the `weight` import synonym.
   'weight',
+  // Canonical millimetres (issue #30); round-trip back through the dimension import synonyms.
+  'width',
+  'height',
+  'depth',
   'batchNumber',
   'lotNumber',
   'condition',

@@ -83,6 +83,10 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   qty: { field: 'quantity', kind: 'numeric' },
   // Intrinsic weight in canonical grams (issue #25), e.g. `weight>500` for over 500 g.
   weight: { field: 'weight', kind: 'numeric' },
+  // Intrinsic bounding-box dimensions in canonical millimetres (issue #30), e.g. `width>100`.
+  width: { field: 'width', kind: 'numeric' },
+  height: { field: 'height', kind: 'numeric' },
+  depth: { field: 'depth', kind: 'numeric' },
 };
 
 const CAPABILITY_ALIASES = new Set(['cap', 'capability']);

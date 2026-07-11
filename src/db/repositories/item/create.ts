@@ -22,6 +22,7 @@ import {
   normaliseText,
   normaliseUnitCost,
   normaliseWeight,
+  normaliseDimension,
 } from './normalise';
 
 /** Normalised column values produced by {@link resolveCreate}. */
@@ -49,6 +50,9 @@ export interface ResolvedCreate {
   readonly purchasePrice: number | null;
   readonly depreciationMonths: number | null;
   readonly weight: number | null;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly depth: number | null;
   readonly currentValue: number | null;
   readonly trackingMode: string;
   readonly quantity: number;
@@ -132,6 +136,9 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     purchasePrice: normalisePurchasePrice(input.purchasePrice),
     depreciationMonths: normaliseDepreciationMonths(input.depreciationMonths),
     weight: normaliseWeight(input.weight),
+    width: normaliseDimension(input.width, 'Width'),
+    height: normaliseDimension(input.height, 'Height'),
+    depth: normaliseDimension(input.depth, 'Depth'),
     currentValue: normaliseCurrentValue(input.currentValue),
     trackingMode,
     quantity,
@@ -157,8 +164,8 @@ export function buildInsert(
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
                mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
-               acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, current_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+               acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, width, height, depth, current_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -192,6 +199,9 @@ export function buildInsert(
         r.purchasePrice,
         r.depreciationMonths,
         r.weight,
+        r.width,
+        r.height,
+        r.depth,
         r.currentValue,
       ],
     },

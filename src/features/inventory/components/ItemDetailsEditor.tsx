@@ -12,6 +12,7 @@ import { ScanIcon } from '@/components/icons';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
+import { fromMm, toMm, type DimensionUnit } from '@/lib/dimensions';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
 import { useFeature } from '@/features/modules/useFeature';
 import { useCategories } from '../categories';
@@ -31,6 +32,34 @@ const isTrackingEditable = (mode: TrackingMode): boolean =>
 function weightToInput(grams: number | null, unit: WeightUnit): string {
   if (grams == null) return '';
   return String(Number(fromGrams(grams, unit).toFixed(6)));
+}
+
+/**
+ * Render a stored canonical-millimetre dimension as an input string in `unit` (blank when
+ * unset), with conversion floating-point noise trimmed — the dimension counterpart to
+ * {@link weightToInput}.
+ */
+function dimensionToInput(mm: number | null, unit: DimensionUnit): string {
+  if (mm == null) return '';
+  return String(Number(fromMm(mm, unit).toFixed(6)));
+}
+
+/**
+ * Derive one dimension field's draft state from its input string and stored value. `dirty`
+ * compares the input against the canonical display of the stored value so the mm↔unit
+ * conversion's floating-point noise never marks an untouched field dirty; `value` keeps the
+ * exact stored mm when untouched (so saving a *different* field never nudges it via the
+ * round-trip) and otherwise re-derives canonical mm from the entry (blank/invalid → null).
+ */
+function resolveDimension(
+  input: string,
+  stored: number | null,
+  unit: DimensionUnit,
+): { readonly dirty: boolean; readonly value: number | null } {
+  const entered = input.trim() === '' ? null : Number(input);
+  const next = entered !== null && Number.isFinite(entered) && entered >= 0 ? toMm(entered, unit) : null;
+  const dirty = input.trim() !== dimensionToInput(stored, unit);
+  return { dirty, value: dirty ? next : (stored ?? null) };
 }
 
 /** Rich help for the "Unlimited supply" modifier (Phase 82). */
@@ -57,6 +86,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const { data: categories } = useCategories();
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
   const weightUnit = usePreferencesStore((s) => s.weightUnit);
+  const dimensionUnit = usePreferencesStore((s) => s.dimensionUnit);
 
   const [name, setName] = useState(item.name);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>(item.trackingMode);
@@ -70,6 +100,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
   // Weight is entered/shown in the user's chosen unit; the stored value is canonical grams.
   const [weight, setWeight] = useState(() => weightToInput(item.weight, weightUnit));
+  // Dimensions are entered/shown in the user's chosen unit; stored values are canonical mm.
+  const [width, setWidth] = useState(() => dimensionToInput(item.width, dimensionUnit));
+  const [height, setHeight] = useState(() => dimensionToInput(item.height, dimensionUnit));
+  const [depth, setDepth] = useState(() => dimensionToInput(item.depth, dimensionUnit));
   // Camera barcode capture for the Barcode field (issue #8/#52): a "Scan" button beside the
   // field opens the shared scanner to fill the GTIN without typing. Gated by the same `scanner`
   // capability as the Add-item dialog — with it off the button is hidden; the field is still
@@ -91,7 +125,11 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setIsUnlimited(item.isUnlimited);
     // Also re-syncs when the weight *unit* preference changes, re-expressing the stored grams.
     setWeight(weightToInput(item.weight, weightUnit));
-  }, [item, weightUnit]);
+    // Likewise re-express the stored mm when the item or the dimension *unit* preference changes.
+    setWidth(dimensionToInput(item.width, dimensionUnit));
+    setHeight(dimensionToInput(item.height, dimensionUnit));
+    setDepth(dimensionToInput(item.depth, dimensionUnit));
+  }, [item, weightUnit, dimensionUnit]);
 
   // "Unlimited supply" is a DISCRETE-only modifier (Phase 82).
   const canBeUnlimited = item.trackingMode === 'DISCRETE';
@@ -107,6 +145,11 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   // Compare the input string against the canonical display of the stored value so the
   // grams↔unit conversion's floating-point noise never marks an untouched field dirty.
   const weightDirty = weight.trim() !== weightToInput(item.weight, weightUnit);
+  // Each dimension resolves its own dirty flag + canonical-mm value (same untouched-value
+  // discipline as weight, so re-saving another field never nudges a stored dimension).
+  const widthState = resolveDimension(width, item.width, dimensionUnit);
+  const heightState = resolveDimension(height, item.height, dimensionUnit);
+  const depthState = resolveDimension(depth, item.depth, dimensionUnit);
   // Serialised / Consumable-Gauge items can't be converted in place, so their mode is fixed
   // and never enters the draft; only the Bulk ↔ Untracked pair is editable here.
   const trackingEditable = isTrackingEditable(item.trackingMode);
@@ -123,6 +166,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     // weight keeps its exact stored value, so saving a *different* field never nudges it by
     // the grams↔unit conversion's floating-point error (e.g. re-saving 1600 g via ounces).
     weight: weightDirty ? nextWeight : (item.weight ?? null),
+    width: widthState.value,
+    height: heightState.value,
+    depth: depthState.value,
     categoryId: categoryId || null,
     // Only a DISCRETE item can carry the flag; ignore stale UI state for other modes.
     isUnlimited: canBeUnlimited ? isUnlimited : false,
@@ -137,6 +183,9 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.barcode !== (item.barcode ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
     weightDirty ||
+    widthState.dirty ||
+    heightState.dirty ||
+    depthState.dirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
     draft.isUnlimited !== item.isUnlimited;
   const valid = draft.name.length > 0;
@@ -280,6 +329,69 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             placeholder="—"
             aria-label={`Weight in ${weightUnit}`}
             data-testid="item-details-weight"
+          />
+        </FormField>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <FormField
+          label={`Width (${dimensionUnit})`}
+          hint={
+            'The item’s **width** for one unit, in your chosen dimension unit (change the unit in ' +
+            '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
+            'the same size. Leave blank if you don’t track it.'
+          }
+        >
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            value={width}
+            onChange={(e) => setWidth(e.target.value)}
+            placeholder="—"
+            aria-label={`Width in ${dimensionUnit}`}
+            data-testid="item-details-width"
+          />
+        </FormField>
+        <FormField
+          label={`Height (${dimensionUnit})`}
+          hint={
+            'The item’s **height** for one unit, in your chosen dimension unit (change the unit in ' +
+            '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
+            'the same size. Leave blank if you don’t track it.'
+          }
+        >
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            value={height}
+            onChange={(e) => setHeight(e.target.value)}
+            placeholder="—"
+            aria-label={`Height in ${dimensionUnit}`}
+            data-testid="item-details-height"
+          />
+        </FormField>
+        <FormField
+          label={`Depth (${dimensionUnit})`}
+          hint={
+            'The item’s **depth** for one unit, in your chosen dimension unit (change the unit in ' +
+            '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
+            'the same size. Leave blank if you don’t track it.'
+          }
+        >
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            value={depth}
+            onChange={(e) => setDepth(e.target.value)}
+            placeholder="—"
+            aria-label={`Depth in ${dimensionUnit}`}
+            data-testid="item-details-depth"
           />
         </FormField>
       </div>

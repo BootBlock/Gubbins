@@ -309,4 +309,21 @@ describe('ItemRepository', () => {
   it('rejects a negative weight (mirrors the DB CHECK)', async () => {
     await expect(items.create({ name: 'Antimatter', weight: -1 })).rejects.toThrow(/non-negative/i);
   });
+
+  it('round-trips the intrinsic dimensions (canonical mm) through create, update and clear', async () => {
+    const created = await items.create({ name: 'Storage box', width: 400, height: 300, depth: 250 });
+    expect([created.width, created.height, created.depth]).toEqual([400, 300, 250]);
+    // Absent on a plain item — additive, so no regression.
+    const plain = await items.create({ name: 'Dimensionless' });
+    expect([plain.width, plain.height, plain.depth]).toEqual([null, null, null]);
+
+    const updated = await items.update(created.id, { width: 420, depth: null });
+    expect([updated.width, updated.height, updated.depth]).toEqual([420, 300, null]);
+    const reread = await items.getById(created.id);
+    expect([reread?.width, reread?.height, reread?.depth]).toEqual([420, 300, null]);
+  });
+
+  it('rejects a negative dimension (mirrors the DB CHECK)', async () => {
+    await expect(items.create({ name: 'Impossible', height: -1 })).rejects.toThrow(/non-negative/i);
+  });
 });

@@ -110,6 +110,23 @@ export function normaliseWeight(value: number | null | undefined): number | null
 }
 
 /**
+ * Validate an optional intrinsic dimension (issue #30): null clears it; otherwise it must be a
+ * finite, non-negative number (canonical **millimetres**). Shared by width / height / depth,
+ * mirroring their identical `items.width/height/depth` DB CHECKs. `label` names the offending
+ * dimension in the error message.
+ */
+export function normaliseDimension(
+  value: number | null | undefined,
+  label: 'Width' | 'Height' | 'Depth',
+): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', `${label} must be a non-negative number.`);
+  }
+  return value;
+}
+
+/**
  * Validate an optional manual current / market value (feature-gap G9, v4): null clears it
  * (valuation reverts to the depreciated replacement cost); otherwise it must be a finite,
  * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK.
