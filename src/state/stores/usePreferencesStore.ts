@@ -326,6 +326,10 @@ interface PreferencesStore {
   readonly catalogueLogo: string;
   /** Whether the "Generated <date>" prefix prints on the metadata line (counts always show). */
   readonly catalogueShowGeneratedDate: boolean;
+  /** Print "Page X of Y" in the bottom margin of every catalogue page (modern browsers). */
+  readonly cataloguePageNumbers: boolean;
+  /** Repeat the organisation name / title in the top margin of every printed catalogue page. */
+  readonly catalogueRunningHeader: boolean;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   setMode: (mode: Mode) => void;
@@ -394,6 +398,10 @@ interface PreferencesStore {
   setCatalogueLogo: (logo: string) => void;
   /** Toggle whether the printed catalogue shows the "Generated <date>" prefix. */
   setCatalogueShowGeneratedDate: (show: boolean) => void;
+  /** Toggle printed "Page X of Y" page numbers on the catalogue. */
+  setCataloguePageNumbers: (show: boolean) => void;
+  /** Toggle the repeated running header (org name / title) on every catalogue page. */
+  setCatalogueRunningHeader: (show: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -448,6 +456,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       catalogueFooter: '',
       catalogueLogo: '',
       catalogueShowGeneratedDate: true,
+      cataloguePageNumbers: true,
+      catalogueRunningHeader: true,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
@@ -523,6 +533,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setCatalogueFooter: (catalogueFooter) => set({ catalogueFooter }),
       setCatalogueLogo: (logo) => set({ catalogueLogo: normaliseCatalogueLogo(logo) }),
       setCatalogueShowGeneratedDate: (show) => set({ catalogueShowGeneratedDate: show }),
+      setCataloguePageNumbers: (show) => set({ cataloguePageNumbers: show }),
+      setCatalogueRunningHeader: (show) => set({ catalogueRunningHeader: show }),
     }),
     {
       name: 'gubbins:preferences',

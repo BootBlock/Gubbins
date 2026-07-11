@@ -67,6 +67,7 @@ import {
   buildPartsCatalogue,
   type CatalogueItemInput,
   type CatalogueLocationInput,
+  type CataloguePartsOptions,
   type CatalogueScope,
   type PartsCatalogue,
 } from '@/features/reports/parts-catalogue';
@@ -286,19 +287,28 @@ export class ReportRepository extends BaseRepository {
    * every valuation. The columns the reader ultimately prints are a UI concern — every field
    * is resolved here.
    */
-  async partsCatalogue(scope: CatalogueScope, now: number = Date.now()): Promise<PartsCatalogue> {
+  async partsCatalogue(
+    scope: CatalogueScope,
+    options: CataloguePartsOptions = {},
+    now: number = Date.now(),
+  ): Promise<PartsCatalogue> {
     const filter = await this.catalogueScopeFilter(scope);
     // An empty ad-hoc selection resolves to nothing — short-circuit rather than emit an
     // `IN ()` (a syntax error) or fetch the whole catalogue.
     if (filter === null) {
-      return { groups: [], grandTotal: 0, itemCount: 0, hasValue: false, generatedAt: now };
+      return { groups: [], grandTotal: 0, totalQuantity: 0, itemCount: 0, hasValue: false, generatedAt: now };
     }
+
+    // The thumbnail BLOB is only fetched when the Photo column is on — an unneeded per-item
+    // BLOB would bloat the payload of a large, text-only catalogue.
+    const thumbnailSelect = options.includePhotos ? `${THUMBNAIL_SUBQUERY}` : `NULL AS thumbnail_blob`;
 
     const itemRows = await this.driver.query<{
       id: string;
       name: string;
       location_id: string;
       category_name: string | null;
+      description: string | null;
       quantity: number;
       unit_of_measure: string | null;
       condition: string | null;
@@ -312,9 +322,11 @@ export class ReportRepository extends BaseRepository {
       acquired_at: string | null;
       warranty_expires_at: string | null;
       notes: string | null;
+      thumbnail_blob: Uint8Array | null;
     }>(
       `SELECT items.id AS id, items.name AS name, items.location_id AS location_id,
               categories.name AS category_name,
+              items.description AS description,
               items.quantity AS quantity, items.unit_of_measure AS unit_of_measure,
               items.condition AS condition, items.serial_no AS serial_no,
               items.mpn AS mpn, items.manufacturer AS manufacturer,
@@ -323,7 +335,8 @@ export class ReportRepository extends BaseRepository {
               ${preferredSupplierCostSql('items.id')} AS preferred_supplier_cost,
               items.purchase_price AS purchase_price,
               items.acquired_at AS acquired_at, items.warranty_expires_at AS warranty_expires_at,
-              items.notes AS notes
+              items.notes AS notes,
+              ${thumbnailSelect}
          FROM items
          LEFT JOIN categories ON categories.id = items.category_id
         WHERE items.is_active = 1 AND ${notAVariantParent('items.id')}${filter.clause};`,
@@ -341,6 +354,8 @@ export class ReportRepository extends BaseRepository {
       name: r.name,
       locationId: r.location_id,
       category: r.category_name,
+      description: r.description,
+      thumbnail: r.thumbnail_blob ?? null,
       quantity: r.quantity,
       unitOfMeasure: r.unit_of_measure,
       condition: (r.condition as CatalogueItemInput['condition']) ?? null,
@@ -361,7 +376,10 @@ export class ReportRepository extends BaseRepository {
       parentId: r.parent_id,
     }));
 
-    return buildPartsCatalogue(items, locations, now);
+    return buildPartsCatalogue(items, locations, now, {
+      groupBy: options.groupBy,
+      sortBy: options.sortBy,
+    });
   }
 
   /**
