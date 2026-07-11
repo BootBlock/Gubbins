@@ -99,6 +99,29 @@ describe('export-data builders', () => {
     expect(md).toContain('| CREATED |'.trim());
   });
 
+  it('escapes backslashes so they cannot break out of YAML frontmatter or table cells', () => {
+    const history: ItemHistoryEntry[] = [
+      {
+        id: 'h1',
+        itemId: 'i1',
+        action: 'CREATED',
+        quantityDelta: null,
+        netValueDelta: null,
+        note: 'a\\|b',
+        metadata: null,
+        createdAt: 0,
+      },
+    ];
+    const vaultItems: VaultItem[] = [
+      { item: makeItem({ name: 'Widget\\' }), history, locationName: 'Box', categoryName: null },
+    ];
+    const md = Object.values(buildVaultFiles(vaultItems))[0]!;
+    // A trailing backslash is doubled, so the closing quote survives.
+    expect(md).toContain('name: "Widget\\\\"');
+    // The backslash is doubled before the pipe is escaped, so the cell stays intact.
+    expect(md).toContain('a\\\\\\|b');
+  });
+
   it('disambiguates colliding item names', () => {
     const vaultItems: VaultItem[] = [
       {
