@@ -375,6 +375,19 @@ describe('extractImport', () => {
       ['Sprocket', '9'],
     ]);
   });
+
+  it('parses an HTML table', () => {
+    const html =
+      '<table><tr><th>name</th><th>qty</th></tr>' +
+      '<tr><td>Widget</td><td>5</td></tr><tr><td>Sprocket</td><td>9</td></tr></table>';
+    const ex = extractImport(html);
+    expect(ex.format).toBe('html');
+    expect(ex.headerRow).toEqual(['name', 'qty']);
+    expect(ex.dataRows).toEqual([
+      ['Widget', '5'],
+      ['Sprocket', '9'],
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

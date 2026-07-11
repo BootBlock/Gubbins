@@ -1,0 +1,134 @@
+import { describe, it, expect } from 'vitest';
+import {
+  detectImportFormat,
+  extractTableRows,
+  isDelimitedFormat,
+  isTabularFormat,
+  parseCsv,
+  parseDelimited,
+  parseHtmlRows,
+  parseJsonRows,
+  parseMarkdownRows,
+  IMPORT_FORMATS,
+} from './tabular';
+
+describe('parseDelimited / parseCsv (RFC-4180-ish codec)', () => {
+  it('splits a simple CSV matrix', () => {
+    expect(parseCsv('a,b,c\n1,2,3')).toEqual([
+      ['a', 'b', 'c'],
+      ['1', '2', '3'],
+    ]);
+  });
+
+  it('honours quoted fields with embedded delimiters and escaped quotes', () => {
+    expect(parseCsv('"R1, R2",10k,3')).toEqual([['R1, R2', '10k', '3']]);
+    expect(parseCsv('"a ""b"" c",d')).toEqual([['a "b" c', 'd']]);
+  });
+
+  it('parses tab-separated input via a custom delimiter', () => {
+    expect(parseDelimited('a\tb\n1\t2', '\t')).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+  });
+});
+
+describe('format helpers', () => {
+  it('classifies delimited and tabular formats', () => {
+    expect(isDelimitedFormat('csv')).toBe(true);
+    expect(isDelimitedFormat('json')).toBe(false);
+    expect(isTabularFormat('lines')).toBe(false);
+    expect(isTabularFormat('html')).toBe(true);
+    expect(IMPORT_FORMATS).toContain('html');
+  });
+});
+
+describe('detectImportFormat', () => {
+  it('detects JSON', () => {
+    expect(detectImportFormat('[{"a":1}]')).toBe('json');
+  });
+  it('detects an HTML table before falling through to a delimiter', () => {
+    expect(detectImportFormat('<table><tr><td>a</td><td>b</td></tr></table>')).toBe('html');
+  });
+  it('detects a Markdown table', () => {
+    expect(detectImportFormat('| a | b |\n| --- | --- |\n| 1 | 2 |')).toBe('markdown');
+  });
+  it('detects TSV / CSV by consistent columns', () => {
+    expect(detectImportFormat('a\tb\n1\t2')).toBe('tsv');
+    expect(detectImportFormat('a,b\n1,2')).toBe('csv');
+  });
+  it('falls back to a line list when nothing is tabular', () => {
+    expect(detectImportFormat('just some free text\nanother line')).toBe('lines');
+  });
+});
+
+describe('parseHtmlRows', () => {
+  it('reads a th header + td rows, decoding entities and stripping tags', () => {
+    const html =
+      '<table><tr><th>Name</th><th>Qty</th></tr>' +
+      '<tr><td><b>R&amp;D board</b></td><td>2</td></tr>' +
+      '<tr><td>Fuse &lt;fast&gt;</td><td>10</td></tr></table>';
+    expect(parseHtmlRows(html)).toEqual({
+      headerRow: ['Name', 'Qty'],
+      dataRows: [
+        ['R&D board', '2'],
+        ['Fuse <fast>', '10'],
+      ],
+    });
+  });
+
+  it('returns null when there is no table row', () => {
+    expect(parseHtmlRows('<div>no table here</div>')).toBeNull();
+  });
+
+  it('ignores markup outside the first table', () => {
+    const html = '<p>intro</p><table><tr><td>a</td><td>b</td></tr></table>';
+    expect(parseHtmlRows(html)?.headerRow).toEqual(['a', 'b']);
+  });
+});
+
+describe('parseJsonRows / parseMarkdownRows', () => {
+  it('turns an array of objects into a header + rows', () => {
+    expect(parseJsonRows('[{"name":"R1","qty":2}]')).toEqual({
+      headerRow: ['name', 'qty'],
+      dataRows: [['R1', '2']],
+    });
+  });
+  it('parses a GitHub-flavoured Markdown table', () => {
+    expect(parseMarkdownRows('| Name | Qty |\n| --- | --- |\n| R1 | 2 |')).toEqual({
+      headerRow: ['Name', 'Qty'],
+      dataRows: [['R1', '2']],
+    });
+  });
+});
+
+describe('extractTableRows', () => {
+  it('extracts a delimited matrix and honours the header toggle', () => {
+    const withHeader = extractTableRows('a,b\n1,2\n3,4');
+    expect(withHeader.headerRow).toEqual(['a', 'b']);
+    expect(withHeader.dataRows).toEqual([
+      ['1', '2'],
+      ['3', '4'],
+    ]);
+
+    const headerless = extractTableRows('1,2\n3,4', { hasHeader: false });
+    expect(headerless.headerRow).toEqual(['Column 1', 'Column 2']);
+    expect(headerless.dataRows).toHaveLength(2);
+  });
+
+  it('extracts JSON, Markdown and HTML tables', () => {
+    expect(extractTableRows('[{"name":"R1"}]').format).toBe('json');
+    expect(extractTableRows('| a |\n| --- |\n| 1 |').format).toBe('markdown');
+    const html = extractTableRows(
+      '<table><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></table>',
+    );
+    expect(html.format).toBe('html');
+    expect(html.dataRows).toEqual([['1', '2']]);
+  });
+
+  it('returns a note (not a throw) for malformed structured input', () => {
+    expect(extractTableRows('{ not json', { format: 'json' }).note).toBeTruthy();
+    expect(extractTableRows('<div/>', { format: 'html' }).note).toBeTruthy();
+    expect(extractTableRows('free text', { format: 'lines' }).note).toBeTruthy();
+  });
+});

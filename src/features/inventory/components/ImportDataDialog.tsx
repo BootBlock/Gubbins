@@ -714,9 +714,9 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
         Paste or type your items
       </label>
       <p className="text-sm text-muted-foreground">
-        Paste tabular data from a spreadsheet, CSV/TSV, JSON, a Markdown table, or just one item per line with
-        shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>. Per line you can label
-        extra details: <span className="font-mono text-xs">sku:</span>,{' '}
+        Paste tabular data from a spreadsheet, CSV/TSV, JSON, a Markdown or HTML table, or just one item per
+        line with shorthand like <span className="font-mono text-xs">Resistor 10k x50</span>. Per line you can
+        label extra details: <span className="font-mono text-xs">sku:</span>,{' '}
         <span className="font-mono text-xs">manu:</span>, <span className="font-mono text-xs">q:</span>,{' '}
         <span className="font-mono text-xs">loc:</span> and <span className="font-mono text-xs">track:</span>{' '}
         (e.g. <span className="font-mono text-xs">Multimeter manu: Fluke loc: Bench track: serialised</span>).
@@ -774,8 +774,9 @@ function FileInputPanel({
       </label>
       <p className="text-sm text-muted-foreground">
         A <span className="font-mono text-xs">.csv</span>, <span className="font-mono text-xs">.tsv</span>,{' '}
-        <span className="font-mono text-xs">.json</span>, <span className="font-mono text-xs">.md</span>, or
-        plain <span className="font-mono text-xs">.txt</span> file — the format is detected from the contents.
+        <span className="font-mono text-xs">.json</span>, <span className="font-mono text-xs">.md</span>,{' '}
+        <span className="font-mono text-xs">.html</span>, or plain{' '}
+        <span className="font-mono text-xs">.txt</span> file — the format is detected from the contents.
       </p>
       <label
         htmlFor={inputId}
@@ -786,12 +787,12 @@ function FileInputPanel({
           {filename ? `Loaded: ${filename}` : 'Click to choose a file'}
         </span>
         <span className="text-xs text-muted-foreground">
-          {filename ? 'Choose another file to replace it' : 'CSV, TSV, JSON, Markdown or text (UTF-8)'}
+          {filename ? 'Choose another file to replace it' : 'CSV, TSV, JSON, Markdown, HTML or text (UTF-8)'}
         </span>
         <input
           id={inputId}
           type="file"
-          accept=".csv,.tsv,.tab,.txt,.json,.md,.markdown,text/csv,text/tab-separated-values,text/plain,application/json,text/markdown"
+          accept=".csv,.tsv,.tab,.txt,.json,.md,.markdown,.html,.htm,text/csv,text/tab-separated-values,text/plain,application/json,text/markdown,text/html"
           className="sr-only"
           onChange={handleChange}
           data-testid="catalog-import-file"

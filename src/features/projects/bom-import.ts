@@ -1,12 +1,30 @@
 /**
- * BOM import parsing (spec §4 "BOM Ingress" — Standard CSV/KiCad Import).
+ * BOM import parsing (spec §4 "BOM Ingress").
  *
- * A dependency-free, RFC-4180-ish CSV reader plus a column-mapping layer that
- * recognises the common KiCad and generic BOM export headers. Kept pure (no DB,
- * no React) so it unit-tests instantly and honours the §2.4.3 "prioritise native
- * APIs over NPM bloat" mandate. Auto-matching parsed lines to local items (by
- * MPN/alias) is performed by `ItemRepository.findByMatchKey` at import time.
+ * A column-mapping layer that recognises the common KiCad and generic BOM export
+ * headers and turns a parsed table into {@link ParsedBomLine}s. The generic "text →
+ * header + data-row matrix" work — format detection, the RFC-4180 codec and the
+ * JSON / Markdown / HTML table parsers — is delegated to the shared, item-agnostic
+ * {@link module:features/import/tabular} engine (the same one the item importer uses),
+ * so a BOM can arrive as CSV/TSV/SSV, a spreadsheet paste, JSON, a Markdown table, or
+ * an HTML table — not just comma-separated CSV.
+ *
+ * Kept pure (no DB, no React) so it unit-tests instantly and honours the §2.4.3
+ * "prioritise native APIs over NPM bloat" mandate. Auto-matching parsed lines to local
+ * items (by MPN/alias) is performed by `ItemRepository.findByMatchKey` at import time.
  */
+import {
+  detectImportFormat,
+  extractTableRows,
+  isTabularFormat,
+  parseCsv,
+  parseDelimited,
+  type ImportFormat,
+} from '@/features/import/tabular';
+
+// Re-export the shared codec from here so existing importers keep their import site
+// (the RFC-4180 reader moved to features/import/tabular; these are thin pass-throughs).
+export { parseCsv, parseDelimited };
 
 /** A row parsed from a BOM file, before matching against local inventory. */
 export interface ParsedBomLine {
@@ -23,82 +41,6 @@ export class BomImportError extends Error {
     super(message);
     this.name = 'BomImportError';
   }
-}
-
-/**
- * Parse delimiter-separated text into a matrix of string cells. Handles quoted
- * fields (with embedded delimiters, doubled-quote escapes and embedded newlines)
- * and CRLF/LF line endings. A trailing blank line is ignored; other rows are
- * preserved verbatim.
- *
- * The delimiter is a single character (`,` for CSV, `\t` for TSV). The same
- * RFC-4180 quoting rules apply regardless of delimiter, so this one codec serves
- * both the comma- and tab-separated import paths (Phase: generalised import).
- */
-export function parseDelimited(text: string, delimiter = ','): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  let started = false;
-
-  const pushField = () => {
-    row.push(field);
-    field = '';
-  };
-  const pushRow = () => {
-    pushField();
-    rows.push(row);
-    row = [];
-    started = false;
-  };
-
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    started = true;
-
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 1; // consume the escaped quote
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === delimiter) {
-      pushField();
-    } else if (ch === '\n') {
-      pushRow();
-    } else if (ch === '\r') {
-      // swallow; the following \n (if any) finalises the row
-    } else {
-      field += ch;
-    }
-  }
-
-  // Flush a final row unless the input ended exactly on a row break.
-  if (started || field.length > 0 || row.length > 0) {
-    pushRow();
-  }
-
-  return rows;
-}
-
-/**
- * Parse CSV text into a matrix of string cells — the comma-delimited
- * specialisation of {@link parseDelimited}. Kept as a named export because it is
- * the canonical CSV codec re-used across the codebase (BOM + catalog import).
- */
-export function parseCsv(text: string): string[][] {
-  return parseDelimited(text, ',');
 }
 
 /** Normalise a header cell to a comparison key: lowercase, alphanumeric only. */
@@ -146,35 +88,71 @@ function cell(row: readonly string[], index: number | undefined): string | null 
   return value.length > 0 ? value : null;
 }
 
+/** The error message shown when the input carries no columns a BOM can be built from. */
+const NO_COLUMNS_MESSAGE =
+  'No recognisable BOM columns found. Expected a header with Reference/MPN/Description (or similar).';
+
+/** Options for {@link parseBom}. */
+export interface ParseBomOptions {
+  /**
+   * Force a specific source format, bypassing auto-detection (mirrors the item importer's
+   * "Interpret as"). Only tabular formats make sense for a BOM; a free-form `'lines'`
+   * value is treated as "no table" and rejected with a clear error.
+   */
+  readonly format?: ImportFormat;
+  /**
+   * Whether the first row of a *delimited* source is a header row. Defaults to `true`
+   * (a BOM export always names its columns). Ignored for the structured formats.
+   */
+  readonly hasHeader?: boolean;
+}
+
 /**
- * Parse a CSV/KiCad BOM into structured lines. The first non-empty row is treated
- * as the header. Quantities default to 1 when missing or unparseable; the
- * description falls back to the Value column. Throws {@link BomImportError} when
- * the file is empty or carries no recognisable columns.
+ * Parse a bill of materials into structured lines. The source format is auto-detected
+ * (CSV/SSV/TSV, JSON, a Markdown table, or an HTML table) — or forced via
+ * `options.format` — and reduced to a header + data-row matrix by the shared
+ * {@link extractTableRows} engine; the first row is the header. Quantities default to 1
+ * when missing or unparseable; the description falls back to the Value column. Throws
+ * {@link BomImportError} when the file is empty, is not a recognisable table, or carries
+ * no columns a BOM line can be built from.
  */
-export function parseBom(text: string): ParsedBomLine[] {
+export function parseBom(text: string, options: ParseBomOptions = {}): ParsedBomLine[] {
   if (text.trim().length === 0) {
     throw new BomImportError('The BOM file is empty.');
   }
 
-  const rows = parseCsv(text).filter((r) => r.some((c) => c.trim().length > 0));
-  if (rows.length === 0) {
-    throw new BomImportError('The BOM file has no data rows.');
+  // A forced free-form format can never yield a BOM table.
+  if (options.format !== undefined && !isTabularFormat(options.format)) {
+    throw new BomImportError(NO_COLUMNS_MESSAGE);
   }
 
-  const header = rows[0]!;
-  const dataRows = rows.slice(1);
-  const columns = mapHeaders(header);
+  // Resolve the source format. A BOM is always a table, so when auto-detection is
+  // inconclusive ('lines') — which the naive delimiter sniff reports for a comma CSV whose
+  // quoted cells (e.g. a "R1, R2" designator) unbalance the column count — fall back to
+  // CSV, the historical default and the dominant KiCad/spreadsheet export.
+  const detected = options.format ?? detectImportFormat(text);
+  const format: ImportFormat = isTabularFormat(detected) ? detected : 'csv';
+
+  const extraction = extractTableRows(text, {
+    format,
+    ...(options.hasHeader !== undefined ? { hasHeader: options.hasHeader } : {}),
+  });
+
+  // A structured parse failed, or the text is a free-form list rather than a table:
+  // surface the classic "no recognisable columns" error so the guidance is BOM-specific.
+  if (extraction.note !== undefined || extraction.headerRow.length === 0) {
+    throw new BomImportError(NO_COLUMNS_MESSAGE);
+  }
+
+  const columns = mapHeaders(extraction.headerRow);
 
   // We need at least one identifying column to make a usable BOM line.
   if (columns.mpn === undefined && columns.description === undefined && columns.designator === undefined) {
-    throw new BomImportError(
-      'No recognisable BOM columns found. Expected a header with Reference/MPN/Description (or similar).',
-    );
+    throw new BomImportError(NO_COLUMNS_MESSAGE);
   }
 
   const lines: ParsedBomLine[] = [];
-  for (const row of dataRows) {
+  for (const row of extraction.dataRows) {
     const designator = cell(row, columns.designator);
     const mpn = cell(row, columns.mpn);
     const manufacturer = cell(row, columns.manufacturer);
