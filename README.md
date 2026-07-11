@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/icons/gubbins.svg" alt="Gubbins" width="128" height="128" />
+  <img src=".github/assets/gubbins-banner.png" alt="Gubbins — a local-first, offline-capable PWA for tracking anything you own" width="100%" />
 </p>
 
 # Gubbins
