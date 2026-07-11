@@ -8,9 +8,12 @@ import {
   SelectField,
   Textarea,
 } from '@/components/foundry';
+import { ScanIcon } from '@/components/icons';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
+import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
+import { useFeature } from '@/features/modules/useFeature';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
@@ -61,11 +64,18 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [notes, setNotes] = useState(item.notes ?? '');
   const [mpn, setMpn] = useState(item.mpn ?? '');
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? '');
+  const [barcode, setBarcode] = useState(item.barcode ?? '');
   const [unitCost, setUnitCost] = useState(item.unitCost?.toString() ?? '');
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
   const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
   // Weight is entered/shown in the user's chosen unit; the stored value is canonical grams.
   const [weight, setWeight] = useState(() => weightToInput(item.weight, weightUnit));
+  // Camera barcode capture for the Barcode field (issue #8/#52): a "Scan" button beside the
+  // field opens the shared scanner to fill the GTIN without typing. Gated by the same `scanner`
+  // capability as the Add-item dialog — with it off the button is hidden; the field is still
+  // typable. The dialog stacks on top of the editor.
+  const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
+  const scannerEnabled = useFeature('scanner');
 
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
@@ -75,6 +85,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setNotes(item.notes ?? '');
     setMpn(item.mpn ?? '');
     setManufacturer(item.manufacturer ?? '');
+    setBarcode(item.barcode ?? '');
     setUnitCost(item.unitCost?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
     setIsUnlimited(item.isUnlimited);
@@ -106,6 +117,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     notes: text(notes),
     mpn: text(mpn),
     manufacturer: text(manufacturer),
+    barcode: text(barcode),
     unitCost: Number.isFinite(nextUnitCost ?? 0) ? nextUnitCost : null,
     // Only re-derive grams from the input when the field was actually edited; an untouched
     // weight keeps its exact stored value, so saving a *different* field never nudges it by
@@ -122,6 +134,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.notes !== (item.notes ?? null) ||
     draft.mpn !== (item.mpn ?? null) ||
     draft.manufacturer !== (item.manufacturer ?? null) ||
+    draft.barcode !== (item.barcode ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
     weightDirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
@@ -179,6 +192,43 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
           suggestions={manufacturerSuggestions ?? []}
           placeholder="e.g. Texas Instruments"
         />
+      </div>
+
+      {/* The Scan button sits beside the field (issue #52) but *outside* the FormField's
+          `<label>` — so it never folds into the input's accessible name and clicking it can't
+          be mistaken for the label. `items-end` bottom-aligns it with the input (both h-10).
+          Mirrors the Add-item dialog's Barcode field exactly. */}
+      <div className="flex items-end gap-2">
+        <FormField
+          className="flex-1"
+          label="Barcode (optional)"
+          hintSize="lg"
+          hint={
+            'The **retail barcode** (GTIN) printed on the packaging — EAN-13, UPC-A, EAN-8 or ' +
+            'GTIN-14.\n\nScanning a product barcode fills this automatically. It is the item’s ' +
+            'own scannable code, distinct from the **MPN** above.\n\n> A future scan of the same ' +
+            'barcode jumps straight to this item.'
+          }
+        >
+          <Input
+            inputMode="numeric"
+            placeholder="e.g. 4006381333931"
+            value={barcode}
+            onChange={(e) => setBarcode(e.target.value)}
+            data-testid="item-details-barcode"
+          />
+        </FormField>
+        {scannerEnabled ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setBarcodeScanOpen(true)}
+            data-testid="item-details-barcode-scan"
+          >
+            <ScanIcon aria-hidden />
+            Scan
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -300,6 +350,15 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
           {dirty ? 'Save details' : 'Saved'}
         </Button>
       </div>
+
+      {/* Camera barcode capture (issue #52). The dialog renders through a portal, so its place
+          in the tree here is immaterial (it returns null while closed); a decoded barcode fills
+          the field directly — an explicit user action, so it overwrites. */}
+      <BarcodeScanDialog
+        open={barcodeScanOpen}
+        onClose={() => setBarcodeScanOpen(false)}
+        onCapture={setBarcode}
+      />
     </div>
   );
 }
