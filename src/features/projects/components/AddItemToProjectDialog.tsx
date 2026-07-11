@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, FormField, Input, Modal, SelectField, Spinner, useToast } from '@/components/foundry';
 import { ProjectIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { useAddItemToProject, useProjects } from '../projects';
 import { PROJECT_STATUS_LABELS } from './projects-ui';
 
@@ -14,12 +16,7 @@ import { PROJECT_STATUS_LABELS } from './projects-ui';
  * adding the item as a BOM line via the shared `addLine` write path ({@link useAddItemToProject}).
  * No new project is created here — a project must already exist.
  */
-const schema = z.object({
-  projectId: z.string().min(1, 'Choose a project.'),
-  requiredQty: z.string().optional(),
-});
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = { projectId: string; requiredQty?: string };
 
 export function AddItemToProjectDialog({
   item,
@@ -30,10 +27,23 @@ export function AddItemToProjectDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const t = useT();
   const projectsQuery = useProjects();
   const addToProject = useAddItemToProject();
   const { show } = useToast();
   const projects = projectsQuery.data?.rows ?? [];
+
+  // Built through the translator so the "choose a project" validation message is localised
+  // like every other string here; `t` is a stable reference per language, so the memo only
+  // rebuilds when the language changes.
+  const schema = useMemo(
+    () =>
+      z.object({
+        projectId: z.string().min(1, t('inventory.addToProject.projectError')),
+        requiredQty: z.string().optional(),
+      }),
+    [t],
+  );
 
   const {
     control,
@@ -67,16 +77,18 @@ export function AddItemToProjectDialog({
           show({
             tone: 'success',
             icon: <ProjectIcon />,
-            heading: 'Added to project',
-            message: `"${item.name}" was added to "${project.name}".`,
+            heading: t('inventory.addToProject.successHeading'),
+            message: t('inventory.addToProject.successMessage', {
+              vars: { item: item.name, project: project.name },
+            }),
           });
           close();
         },
         onError: () =>
           show({
             tone: 'danger',
-            heading: 'Add failed',
-            message: `"${item.name}" was not added to the project.`,
+            heading: t('inventory.addToProject.errorHeading'),
+            message: t('inventory.addToProject.errorMessage', { vars: { item: item.name } }),
           }),
       },
     );
@@ -86,8 +98,8 @@ export function AddItemToProjectDialog({
     <Modal
       open={open}
       onClose={close}
-      title="Add to project"
-      description={`Add "${item.name}" to an existing project as a required part.`}
+      title={t('inventory.addToProject.title')}
+      description={t('inventory.addToProject.description', { vars: { name: item.name } })}
     >
       {projectsQuery.isLoading ? (
         <div className="flex justify-center py-6">
@@ -96,11 +108,11 @@ export function AddItemToProjectDialog({
       ) : projects.length === 0 ? (
         <div className="space-y-4">
           <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            You have no projects yet. Create a project first, then add items to its bill of materials.
+            {t('inventory.addToProject.empty')}
           </p>
           <div className="flex justify-end">
             <Button type="button" variant="ghost" onClick={close}>
-              Close
+              {t('inventory.addToProject.close')}
             </Button>
           </div>
         </div>
@@ -111,12 +123,12 @@ export function AddItemToProjectDialog({
             name="projectId"
             render={({ field }) => (
               <SelectField
-                label="Project"
+                label={t('inventory.addToProject.projectLabel')}
                 value={field.value ?? ''}
                 onChange={field.onChange}
                 error={errors.projectId?.message}
                 options={[
-                  { value: '', label: '— Choose a project —' },
+                  { value: '', label: t('inventory.addToProject.projectPlaceholder') },
                   ...projects.map((project) => ({
                     value: project.id,
                     label: `${project.name} · ${PROJECT_STATUS_LABELS[project.status]}`,
@@ -126,17 +138,17 @@ export function AddItemToProjectDialog({
             )}
           />
 
-          <FormField label="Quantity" error={errors.requiredQty?.message}>
+          <FormField label={t('inventory.addToProject.quantityLabel')} error={errors.requiredQty?.message}>
             <Input type="number" min={1} step={1} {...register('requiredQty')} />
           </FormField>
 
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={close}>
-              Cancel
+              {t('inventory.addToProject.cancel')}
             </Button>
             <Button type="submit" disabled={addToProject.isPending}>
               {addToProject.isPending ? <Spinner /> : null}
-              Add to project
+              {t('inventory.addToProject.submit')}
             </Button>
           </div>
         </form>

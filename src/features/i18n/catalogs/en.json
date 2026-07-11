@@ -204,5 +204,21 @@
   "dashboard.widget.platform.sab": "SharedArrayBuffer",
   "dashboard.widget.platform.sabYes": "Available",
   "dashboard.widget.platform.sabNo": "Missing",
-  "dashboard.widget.platform.dbFile": "DB file"
+  "dashboard.widget.platform.dbFile": "DB file",
+
+  "inventory.itemActions.addToProject": "Add to project…",
+  "inventory.addToProject.title": "Add to project",
+  "inventory.addToProject.description": "Add “{name}” to an existing project as a required part.",
+  "inventory.addToProject.empty": "You have no projects yet. Create a project first, then add items to its bill of materials.",
+  "inventory.addToProject.projectLabel": "Project",
+  "inventory.addToProject.projectPlaceholder": "— Choose a project —",
+  "inventory.addToProject.projectError": "Choose a project.",
+  "inventory.addToProject.quantityLabel": "Quantity",
+  "inventory.addToProject.cancel": "Cancel",
+  "inventory.addToProject.close": "Close",
+  "inventory.addToProject.submit": "Add to project",
+  "inventory.addToProject.successHeading": "Added to project",
+  "inventory.addToProject.successMessage": "“{item}” was added to “{project}”.",
+  "inventory.addToProject.errorHeading": "Add failed",
+  "inventory.addToProject.errorMessage": "“{item}” was not added to the project."
 }

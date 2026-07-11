@@ -204,5 +204,21 @@
   "dashboard.widget.platform.sab": "SharedArrayBuffer",
   "dashboard.widget.platform.sabYes": "Verfügbar",
   "dashboard.widget.platform.sabNo": "Fehlt",
-  "dashboard.widget.platform.dbFile": "DB-Datei"
+  "dashboard.widget.platform.dbFile": "DB-Datei",
+
+  "inventory.itemActions.addToProject": "Zum Projekt hinzufügen…",
+  "inventory.addToProject.title": "Zum Projekt hinzufügen",
+  "inventory.addToProject.description": "„{name}“ zu einem bestehenden Projekt als benötigtes Teil hinzufügen.",
+  "inventory.addToProject.empty": "Sie haben noch keine Projekte. Erstellen Sie zuerst ein Projekt und fügen Sie dann Objekte zu seiner Stückliste hinzu.",
+  "inventory.addToProject.projectLabel": "Projekt",
+  "inventory.addToProject.projectPlaceholder": "— Projekt auswählen —",
+  "inventory.addToProject.projectError": "Wählen Sie ein Projekt.",
+  "inventory.addToProject.quantityLabel": "Menge",
+  "inventory.addToProject.cancel": "Abbrechen",
+  "inventory.addToProject.close": "Schließen",
+  "inventory.addToProject.submit": "Zum Projekt hinzufügen",
+  "inventory.addToProject.successHeading": "Zum Projekt hinzugefügt",
+  "inventory.addToProject.successMessage": "„{item}“ wurde zu „{project}“ hinzugefügt.",
+  "inventory.addToProject.errorHeading": "Hinzufügen fehlgeschlagen",
+  "inventory.addToProject.errorMessage": "„{item}“ wurde nicht zum Projekt hinzugefügt."
 }

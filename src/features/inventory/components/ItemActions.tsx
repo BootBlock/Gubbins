@@ -15,6 +15,7 @@ import {
 } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
+import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
 import { AddItemToProjectDialog } from '@/features/projects/components/AddItemToProjectDialog';
 import { SellDialog } from '@/features/sales/components/SellDialog';
@@ -76,6 +77,7 @@ export const ItemActions = forwardRef<
     compact?: boolean;
   }
 >(function ItemActions({ item, locations, compact = false }, ref) {
+  const t = useT();
   const [dialog, setDialog] = useState<ItemDialogKind | null>(null);
   useImperativeHandle(ref, () => ({ open: setDialog }), []);
   const softDelete = useSoftDeleteItem();
@@ -144,7 +146,7 @@ export const ItemActions = forwardRef<
             icon={<ProjectIcon className="text-muted-foreground" />}
             onSelect={() => setDialog('project')}
           >
-            Add to project…
+            {t('inventory.itemActions.addToProject')}
           </MenuAction>
         ) : null}
         {contactsEnabled && item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
