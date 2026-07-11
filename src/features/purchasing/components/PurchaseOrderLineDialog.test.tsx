@@ -158,6 +158,30 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
     expect(costInput().value).toBe('0.99');
   });
 
+  it('resets the form to defaults when the dialog is reopened', () => {
+    // The parent keeps this dialog mounted and only toggles `open`, so without an explicit
+    // reset the previous line's values would still be populated on the next open.
+    const { rerender } = renderDialog();
+    selectItem('Resistor 10k');
+    fireEvent.change(screen.getByTestId('po-line-description'), { target: { value: 'A note' } });
+    fireEvent.change(qtyInput(), { target: { value: '250' } });
+    fireEvent.change(costInput(), { target: { value: '0.99' } });
+    expect(costInput().value).toBe('0.99');
+    expect(screen.getByTestId('po-line-price-breaks')).toBeTruthy();
+
+    // Close, then reopen — the reset fires on the closed→open edge.
+    const props = { items: [withBreaks], isSaving: false, onSubmit, onClose };
+    rerender(<PurchaseOrderLineDialog open={false} {...props} />);
+    rerender(<PurchaseOrderLineDialog open {...props} />);
+
+    // Every field is back to its initial default, not the previous line's values.
+    expect((qtyInput() as HTMLInputElement).value).toBe('1');
+    expect(costInput().value).toBe('');
+    expect((screen.getByTestId('po-line-description') as HTMLInputElement).value).toBe('');
+    // The item is unlinked again, so its break tiers no longer show.
+    expect(screen.queryByTestId('po-line-price-breaks')).toBeNull();
+  });
+
   it('submits the resolved order quantity and unit cost', () => {
     renderDialog();
     selectItem('Resistor 10k');
