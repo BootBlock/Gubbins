@@ -11,8 +11,10 @@ import {
 } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useT, type MessageKey } from '@/features/i18n';
+import { getDiagnosticsRepository } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
-  gatherDiagnostics,
+  gatherEnvironment,
   formatDiagnosticsText,
   formatFieldValue,
   buildIssueUrl,
@@ -42,7 +44,23 @@ export function DiagnosticsCard() {
   const refresh = async () => {
     setBusy(true);
     try {
-      setData(await gatherDiagnostics());
+      // Environment (browser) and app facts (appearance prefs + entity counts + DB size) in
+      // parallel. The DB snapshot is best-effort — a failure leaves those rows "Unavailable"
+      // rather than aborting the whole capture.
+      const [environment, snapshot] = await Promise.all([
+        gatherEnvironment(),
+        getDiagnosticsRepository()
+          .snapshot()
+          .catch(() => null),
+      ]);
+      const { backgroundEffect, starfieldVariant } = usePreferencesStore.getState();
+      setData({
+        ...environment,
+        backgroundEffect,
+        starfieldVariant,
+        databaseBytes: snapshot?.databaseBytes,
+        counts: snapshot?.counts,
+      });
     } finally {
       setBusy(false);
     }

@@ -14,6 +14,7 @@ import { AttachmentRepository } from './AttachmentRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { CheckoutRepository } from './CheckoutRepository';
 import { ContactRepository } from './ContactRepository';
+import { DiagnosticsRepository } from './DiagnosticsRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
@@ -41,6 +42,11 @@ export { PurchaseOrderRepository } from './PurchaseOrderRepository';
 export { ReportRepository } from './ReportRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
+export {
+  DiagnosticsRepository,
+  type DiagnosticsSnapshot,
+  type DiagnosticCounts,
+} from './DiagnosticsRepository';
 export { CheckoutRepository, type CheckInOptions } from './CheckoutRepository';
 export { AssetBookingRepository } from './AssetBookingRepository';
 export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
@@ -88,6 +94,7 @@ let purchaseOrderRepository: PurchaseOrderRepository | null = null;
 let reportRepository: ReportRepository | null = null;
 let storageRepository: StorageRepository | null = null;
 let contactRepository: ContactRepository | null = null;
+let diagnosticsRepository: DiagnosticsRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
 let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
@@ -163,6 +170,11 @@ export function getContactRepository(): ContactRepository {
 export function getCheckoutRepository(): CheckoutRepository {
   checkoutRepository ??= new CheckoutRepository(getDatabaseDriver(), productionOptions);
   return checkoutRepository;
+}
+
+export function getDiagnosticsRepository(): DiagnosticsRepository {
+  diagnosticsRepository ??= new DiagnosticsRepository(getDatabaseDriver(), productionOptions);
+  return diagnosticsRepository;
 }
 
 export function getAssetBookingRepository(): AssetBookingRepository {

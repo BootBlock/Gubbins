@@ -1,12 +1,22 @@
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
+import {
+  BACKGROUND_EFFECTS,
+  STARFIELD_VARIANTS,
+  type BackgroundEffect,
+  type StarfieldVariant,
+} from '@/features/settings/theme-registry';
+import type { DiagnosticCounts } from '@/db/repositories/DiagnosticsRepository';
+
+export type { DiagnosticCounts } from '@/db/repositories/DiagnosticsRepository';
 
 /**
- * Environment diagnostics for the About screen's collapsible Diagnostics card.
+ * Diagnostics for the About screen's collapsible Diagnostics card.
  *
- * Everything here is *environmental* — browser, viewport, appearance preferences, storage
- * headroom — never inventory data or anything the user has entered. It is gathered on the
- * device only when the user presses Refresh (never automatically) and is only sent anywhere
- * if the user chooses to copy it or open a pre-filled GitHub issue.
+ * Two kinds of fact, all non-identifying: the *environment* (browser, viewport, appearance
+ * preferences, storage headroom) and a few *aggregate* app facts (decorative background choice,
+ * entity counts, database size). Never inventory contents or anything the user has entered. It is
+ * gathered on the device only when the user presses Refresh (never automatically) and is only sent
+ * anywhere if the user chooses to copy it or open a pre-filled GitHub issue.
  *
  * Values are captured raw/typed here; presentation (translated labels, localized words) lives
  * with the consumer. The one English formatter, {@link formatDiagnosticsText}, produces the
@@ -47,7 +57,21 @@ export interface Diagnostics {
   /** Estimated persisted storage used / quota, in bytes; `undefined` when the API is unavailable. */
   readonly storageUsage?: number;
   readonly storageQuota?: number;
+  /** The decorative background effect preference (`none` / `rain` / `snow`). */
+  readonly backgroundEffect: BackgroundEffect;
+  /** The decorative starfield variant preference. */
+  readonly starfieldVariant: StarfieldVariant;
+  /** True logical database size in bytes; `undefined` when it couldn't be read. */
+  readonly databaseBytes?: number;
+  /** Row counts of the top-level entities; `undefined` when they couldn't be read. */
+  readonly counts?: DiagnosticCounts;
 }
+
+/** The environment-only slice of {@link Diagnostics} — what the browser can report by itself. */
+export type EnvironmentDiagnostics = Omit<
+  Diagnostics,
+  'backgroundEffect' | 'starfieldVariant' | 'databaseBytes' | 'counts'
+>;
 
 /** The ordered set of fields shown in the card and written to the copy/issue payload. */
 export const DIAGNOSTIC_FIELD_ORDER = [
@@ -61,9 +85,18 @@ export const DIAGNOSTIC_FIELD_ORDER = [
   'screen',
   'colorScheme',
   'reducedMotion',
+  'background',
+  'starfield',
   'online',
   'displayMode',
+  'items',
+  'locations',
+  'projects',
+  'contacts',
+  'categories',
+  'tags',
   'storage',
+  'database',
 ] as const;
 
 export type DiagnosticFieldKey = (typeof DIAGNOSTIC_FIELD_ORDER)[number];
@@ -111,9 +144,18 @@ export const ENGLISH_DIAGNOSTIC_LABELS: Record<DiagnosticFieldKey, string> = {
   screen: 'Screen',
   colorScheme: 'Colour scheme',
   reducedMotion: 'Reduced motion',
+  background: 'Background effect',
+  starfield: 'Starfield',
   online: 'Network',
   displayMode: 'Display mode',
+  items: 'Items',
+  locations: 'Locations',
+  projects: 'Projects',
+  contacts: 'Contacts',
+  categories: 'Categories',
+  tags: 'Tags',
   storage: 'Storage used',
+  database: 'Database size',
 };
 
 /** Human-readable byte size (e.g. `45.2 MB`), base-1000 to match browser storage reporting. */
@@ -164,15 +206,31 @@ export function formatFieldValue(
       return d.colorScheme === 'dark' ? vocab.dark : vocab.light;
     case 'reducedMotion':
       return d.reducedMotion ? vocab.on : vocab.off;
+    case 'background':
+      // The setting's own English label (as shown in Settings); no i18n catalog entry to drift from.
+      return BACKGROUND_EFFECTS.find((e) => e.id === d.backgroundEffect)?.label ?? d.backgroundEffect;
+    case 'starfield':
+      return STARFIELD_VARIANTS.find((v) => v.id === d.starfieldVariant)?.label ?? d.starfieldVariant;
     case 'online':
       return d.online ? vocab.online : vocab.offline;
     case 'displayMode':
       return d.displayMode === 'standalone' ? vocab.installed : vocab.browserTab;
+    // The six entity-count keys are exactly the {@link DiagnosticCounts} keys, so one case
+    // serves them all — the field key indexes the counts record directly.
+    case 'items':
+    case 'locations':
+    case 'projects':
+    case 'contacts':
+    case 'categories':
+    case 'tags':
+      return d.counts ? String(d.counts[key]) : vocab.unavailable;
     case 'storage':
       if (d.storageUsage === undefined) return vocab.unavailable;
       return d.storageQuota
         ? `${formatBytes(d.storageUsage)} / ${formatBytes(d.storageQuota)}`
         : formatBytes(d.storageUsage);
+    case 'database':
+      return d.databaseBytes === undefined ? vocab.unavailable : formatBytes(d.databaseBytes);
   }
 }
 
@@ -231,9 +289,10 @@ function media(query: string): boolean {
 /**
  * Capture the current environment diagnostics from the running browser. Called only in response
  * to the user pressing Refresh. Every read is best-effort and guarded so a missing API degrades
- * to a sensible default rather than throwing.
+ * to a sensible default rather than throwing. The app-side facts (appearance preferences, entity
+ * counts, database size) are gathered separately by the caller and merged in.
  */
-export async function gatherDiagnostics(): Promise<Diagnostics> {
+export async function gatherEnvironment(): Promise<EnvironmentDiagnostics> {
   const nav = typeof navigator !== 'undefined' ? navigator : undefined;
   const win = typeof window !== 'undefined' ? window : undefined;
 

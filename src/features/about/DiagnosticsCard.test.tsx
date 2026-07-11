@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { DiagnosticsCard } from './DiagnosticsCard';
-import type { Diagnostics } from './diagnostics';
+import type { EnvironmentDiagnostics } from './diagnostics';
 
-const SAMPLE: Diagnostics = {
+const ENV: EnvironmentDiagnostics = {
   version: '2026.07.11',
   buildDate: '2026-07-11',
   userAgent: 'Mozilla/5.0 (Test) ExampleBrowser/1.0',
@@ -24,11 +24,21 @@ const SAMPLE: Diagnostics = {
   storageQuota: 2_000_000_000,
 };
 
-// The card reads the environment via `gatherDiagnostics`; pin it so the assertions are stable.
+const SNAPSHOT = {
+  databaseBytes: 3_500_000,
+  counts: { items: 42, locations: 7, projects: 3, contacts: 5, categories: 9, tags: 12 },
+};
+
+// The card reads the environment via `gatherEnvironment`; pin it so the assertions are stable.
 vi.mock('./diagnostics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./diagnostics')>();
-  return { ...actual, gatherDiagnostics: vi.fn(async () => SAMPLE) };
+  return { ...actual, gatherEnvironment: vi.fn(async () => ENV) };
 });
+
+// The app-side facts come from the DB via the diagnostics repository; pin the snapshot.
+vi.mock('@/db/repositories', () => ({
+  getDiagnosticsRepository: () => ({ snapshot: vi.fn(async () => SNAPSHOT) }),
+}));
 
 afterEach(cleanup);
 
@@ -61,6 +71,11 @@ describe('DiagnosticsCard', () => {
     await waitFor(() => expect(screen.getByText('Browser')).toBeInTheDocument());
     expect(screen.getByText('Mozilla/5.0 (Test) ExampleBrowser/1.0')).toBeInTheDocument();
     expect(screen.getByText('1280 × 720')).toBeInTheDocument();
+    // App-side facts: entity counts and the database size come from the repository snapshot.
+    expect(screen.getByText('Items')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.getByText('Database size')).toBeInTheDocument();
+    expect(screen.getByText('3.5 MB')).toBeInTheDocument();
   });
 
   it('copies the (unredacted) diagnostics to the clipboard', async () => {
