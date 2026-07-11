@@ -19,14 +19,30 @@
  * logical relation therefore mint the *same* id, so the syncable `item_relations` table merges
  * them by ordinary last-writer-wins on that id — no UNIQUE-business-key collision that would
  * otherwise need bespoke reconcile handling (contrast `item_aliases`). Symmetric relations
- * (`WORKS_WITH`) canonicalise their endpoint order, so A↔B and B↔A collapse to one row.
+ * (`WORKS_WITH`, `INTERCHANGEABLE_WITH`) canonicalise their endpoint order, so A↔B and B↔A
+ * collapse to one row.
  */
 
 /** The relation vocabulary (SSOT). Stored verbatim in `item_relations.kind` (free TEXT — see
- * the migration note; no DB CHECK, so a future kind syncs forward without a schema change). */
-export const RELATION_KINDS = ['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR'] as const;
+ * the migration note; no DB CHECK, so a future kind syncs forward without a schema change).
+ * `INTERCHANGEABLE_WITH` (issue #36 — substitutions) is a symmetric "these two are freely
+ * substitutable" link; it lives on its own surface (see {@link SUBSTITUTION_KINDS}). */
+export const RELATION_KINDS = ['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR', 'INTERCHANGEABLE_WITH'] as const;
 
 export type RelationKind = (typeof RELATION_KINDS)[number];
+
+/**
+ * Relation kinds that express **interchangeability** — an item that can be freely substituted for
+ * another (issue #36). These are presented on their own "Substitutions" tab and deliberately kept
+ * *out* of the general "Related" surface, so the two facets read as distinct. Mechanically they are
+ * ordinary symmetric, reciprocal relations; the partition is purely a presentation split.
+ */
+export const SUBSTITUTION_KINDS = ['INTERCHANGEABLE_WITH'] as const satisfies readonly RelationKind[];
+
+/** Is `kind` a substitution ("interchangeable with") relation rather than a general related-item link? */
+export function isSubstitutionKind(kind: RelationKind): boolean {
+  return (SUBSTITUTION_KINDS as readonly RelationKind[]).includes(kind);
+}
 
 /**
  * The reciprocal label pair for each kind. `forward` reads from the perspective of the relation's
@@ -43,6 +59,11 @@ export const RELATION_LABELS: Record<RelationKind, RelationLabel> = {
   WORKS_WITH: { forward: 'Works with', reverse: 'Works with', symmetric: true },
   ACCESSORY_FOR: { forward: 'Accessory for', reverse: 'Has accessory', symmetric: false },
   SPARE_FOR: { forward: 'Spare for', reverse: 'Has spare', symmetric: false },
+  INTERCHANGEABLE_WITH: {
+    forward: 'Interchangeable with',
+    reverse: 'Interchangeable with',
+    symmetric: true,
+  },
 };
 
 /** Type guard: is `value` one of the known relation kinds? */
@@ -198,6 +219,7 @@ const KIND_ORDER: Record<RelationKind, number> = {
   WORKS_WITH: 0,
   ACCESSORY_FOR: 1,
   SPARE_FOR: 2,
+  INTERCHANGEABLE_WITH: 3,
 };
 
 /** Directions sort forward → symmetric → reverse, so "Accessory for" precedes "Has accessory". */
@@ -212,14 +234,20 @@ const DIRECTION_ORDER: Record<RelationDirection, number> = {
  * drop any that don't touch it (defensive) and any whose kind is unknown, and sort deterministically
  * by (kind, direction, otherItemId) so the grouped list is stable. The UI groups the result by
  * `label`.
+ *
+ * `includeKind` optionally restricts the result to a subset of kinds — used to split the
+ * general "Related" surface from the dedicated "Substitutions" surface (issue #36) even though
+ * both read from the same stored relation set. Omitted, every kind is included.
  */
 export function describeItemRelations(
   itemId: string,
   relations: readonly StoredRelation[],
+  includeKind?: (kind: RelationKind) => boolean,
 ): ResolvedItemRelation[] {
   const resolved: ResolvedItemRelation[] = [];
   for (const relation of relations) {
     if (!isRelationKind(relation.kind)) continue;
+    if (includeKind && !includeKind(relation.kind)) continue;
     const view = resolveRelationForItem(itemId, relation);
     if (view === null) continue;
     resolved.push({ ...view, id: relation.id });
@@ -246,6 +274,9 @@ export interface RelationOption {
   readonly invert: boolean;
 }
 
+// The "Related" add-UI phrasings — the general cross-links only. `INTERCHANGEABLE_WITH`
+// (substitutions, issue #36) is deliberately absent: it has a single implicit phrasing offered on
+// its own "Substitutions" surface, so it needs no picker entry here.
 export const RELATION_OPTIONS: readonly RelationOption[] = [
   { value: 'works_with', label: 'Works with', kind: 'WORKS_WITH', invert: false },
   { value: 'accessory_for', label: 'Is an accessory for', kind: 'ACCESSORY_FOR', invert: false },

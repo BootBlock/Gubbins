@@ -16,6 +16,7 @@ import { useAddRelation, useRemoveRelation } from '../mutations';
 import {
   RELATION_OPTIONS,
   describeItemRelations,
+  isSubstitutionKind,
   relationOptionByValue,
   relationSpecFromOption,
 } from '../item-relations';
@@ -44,7 +45,11 @@ export function RelationsEditor({ item }: { item: Item }) {
   const [error, setError] = useState<string | null>(null);
 
   const views = useMemo(() => relations ?? [], [relations]);
-  const resolved = useMemo(() => describeItemRelations(item.id, views), [item.id, views]);
+  // Substitutions (issue #36) live on their own tab — keep them out of the general "Related" list.
+  const resolved = useMemo(
+    () => describeItemRelations(item.id, views, (kind) => !isSubstitutionKind(kind)),
+    [item.id, views],
+  );
   const viewById = useMemo(() => new Map(views.map((v) => [v.id, v])), [views]);
 
   // Group the resolved relations by their (already flipped) label, preserving the seam's order.

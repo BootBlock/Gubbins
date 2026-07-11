@@ -15,6 +15,7 @@ import {
   LocationOtherIcon,
   LowStockIcon,
   SettingsIcon,
+  SubstituteIcon,
   SupplierIcon,
   TagsIcon,
   TestRecordIcon,
@@ -38,6 +39,7 @@ import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { RelationsEditor } from './RelationsEditor';
+import { SubstitutionsEditor } from './SubstitutionsEditor';
 import { SupplierDataEditor } from './SupplierDataEditor';
 import { TagEditor } from './TagEditor';
 import { TestRecordsEditor } from './TestRecordsEditor';
@@ -232,6 +234,21 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           title: 'Related items',
           icon: <LinkIcon />,
           content: <RelationsEditor item={item} />,
+        },
+      ],
+    },
+    {
+      id: 'substitutions',
+      label: 'Substitutions',
+      icon: <SubstituteIcon />,
+      sections: [
+        {
+          // Interchangeable items — freely substitutable stand-ins usable in a project or list
+          // (issue #36). A symmetric, reciprocal link; distinct from "Related" cross-links, so it
+          // gets its own surface. Always available (a core relational facet, so ungated).
+          title: 'Substitutions',
+          icon: <SubstituteIcon />,
+          content: <SubstitutionsEditor item={item} />,
         },
       ],
     },
