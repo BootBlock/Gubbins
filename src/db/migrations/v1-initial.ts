@@ -877,9 +877,11 @@ export const v1Initial: Migration = {
           price_breaks  TEXT,
           url           TEXT,
           is_preferred  INTEGER NOT NULL DEFAULT 0,
+          is_price_source INTEGER NOT NULL DEFAULT 0,
           created_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (is_preferred IN (0, 1)),
+          CHECK (is_price_source IN (0, 1)),
           CHECK (unit_cost IS NULL OR unit_cost >= 0),
           CHECK (pack_qty IS NULL OR pack_qty > 0),
           CHECK (min_order_qty IS NULL OR min_order_qty > 0)

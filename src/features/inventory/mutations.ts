@@ -516,6 +516,22 @@ export function useSetPreferredSupplierPart() {
   });
 }
 
+/**
+ * Toggle an item's pinned **price source** (issue #28): `on` pins this supplier as the single
+ * source a refresh fetches (clearing any other); `off` clears the pin so a refresh again fetches
+ * every supplier and reports the cheapest. Independent of the preferred (valuation) star.
+ */
+export function useSetSupplierPriceSource() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, itemId, on }: { id: string; itemId: string; on: boolean }) =>
+      on
+        ? getSupplierPartRepository().setPriceSource(id)
+        : getSupplierPartRepository().clearPriceSource(itemId),
+    onSettled: (_d, _e, { itemId }) => invalidateSupplierParts(client, itemId),
+  });
+}
+
 export function useDeleteSupplierPart() {
   const client = useQueryClient();
   return useMutation({

@@ -1,15 +1,25 @@
 import { useState } from 'react';
 import { Button, InfoHint, Money } from '@/components/foundry';
-import { AddIcon, DeleteIcon, EditIcon, LinkIcon, NotPreferredIcon, PreferredIcon } from '@/components/icons';
+import {
+  AddIcon,
+  DeleteIcon,
+  EditIcon,
+  LinkIcon,
+  NotPreferredIcon,
+  PinIcon,
+  PreferredIcon,
+} from '@/components/icons';
 import type { CreateSupplierPartInput, Item, SupplierPart } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import {
   useCreateSupplierPart,
   useDeleteSupplierPart,
   useSetPreferredSupplierPart,
+  useSetSupplierPriceSource,
   useUpdateSupplierPart,
 } from '../mutations';
 import { useItemSupplierParts } from '../queries';
+import { RefreshPricesButton } from './RefreshPricesButton';
 import { SupplierPartFormDialog } from './SupplierPartFormDialog';
 import { SupplierPartPriceHistory } from './SupplierPartPriceHistory';
 
@@ -23,6 +33,7 @@ export function SupplierPartsTable({ item }: { item: Item }) {
   const create = useCreateSupplierPart();
   const update = useUpdateSupplierPart();
   const setPreferred = useSetPreferredSupplierPart();
+  const setPriceSource = useSetSupplierPriceSource();
   const remove = useDeleteSupplierPart();
   const fmt = useFormatters();
 
@@ -48,14 +59,24 @@ export function SupplierPartsTable({ item }: { item: Item }) {
             content={
               'Each supplier offering this part — its order code, unit cost and quantity ' +
               'price-breaks. **Star** the preferred supplier; its cost feeds valuation unless ' +
-              "you've set a manual unit cost on the item."
+              "you've set a manual unit cost on the item. **Pin** one as the price source and " +
+              '*Refresh prices* fetches just that supplier; unpinned, it fetches them all and ' +
+              'shows the cheapest.'
             }
           />
         </p>
-        <Button variant="outline" size="sm" onClick={() => setEditing('new')} data-testid="supplier-part-add">
-          <AddIcon />
-          Add supplier
-        </Button>
+        <div className="flex items-center gap-2">
+          <RefreshPricesButton item={item} parts={list} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditing('new')}
+            data-testid="supplier-part-add"
+          >
+            <AddIcon />
+            Add supplier
+          </Button>
+        </div>
       </div>
 
       {list.length === 0 ? (
@@ -67,17 +88,34 @@ export function SupplierPartsTable({ item }: { item: Item }) {
         >
           {list.map((part) => (
             <li key={part.id} className="flex items-start gap-3 p-3" data-testid="supplier-part-row">
-              <button
-                type="button"
-                onClick={() => setPreferred.mutate({ id: part.id, itemId: item.id })}
-                disabled={part.isPreferred}
-                aria-label={part.isPreferred ? 'Preferred supplier' : 'Make preferred'}
-                title={part.isPreferred ? 'Preferred supplier' : 'Make preferred'}
-                data-testid="supplier-part-prefer"
-                className="mt-0.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground disabled:cursor-default disabled:text-glyph-success disabled:hover:bg-transparent [&_svg]:size-4"
-              >
-                {part.isPreferred ? <PreferredIcon /> : <NotPreferredIcon />}
-              </button>
+              <div className="mt-0.5 flex flex-col items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setPreferred.mutate({ id: part.id, itemId: item.id })}
+                  disabled={part.isPreferred}
+                  aria-label={part.isPreferred ? 'Preferred supplier' : 'Make preferred'}
+                  title={part.isPreferred ? 'Preferred supplier' : 'Make preferred'}
+                  data-testid="supplier-part-prefer"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground disabled:cursor-default disabled:text-glyph-success disabled:hover:bg-transparent [&_svg]:size-4"
+                >
+                  {part.isPreferred ? <PreferredIcon /> : <NotPreferredIcon />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPriceSource.mutate({ id: part.id, itemId: item.id, on: !part.isPriceSource })
+                  }
+                  aria-pressed={part.isPriceSource}
+                  aria-label={part.isPriceSource ? 'Price source (select to unset)' : 'Set as price source'}
+                  title={part.isPriceSource ? 'Price source (select to unset)' : 'Set as price source'}
+                  data-testid="supplier-part-price-source"
+                  className={`rounded-md p-1 transition-colors hover:bg-secondary/60 [&_svg]:size-4 ${
+                    part.isPriceSource ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <PinIcon />
+                </button>
+              </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -85,6 +123,11 @@ export function SupplierPartsTable({ item }: { item: Item }) {
                   {part.isPreferred ? (
                     <span className="rounded-full bg-glyph-success/10 px-2 py-0.5 text-xs font-medium text-glyph-success">
                       Preferred
+                    </span>
+                  ) : null}
+                  {part.isPriceSource ? (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      Price source
                     </span>
                   ) : null}
                   {part.orderCode ? (

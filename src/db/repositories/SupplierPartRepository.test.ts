@@ -112,6 +112,38 @@ describe('SupplierPartRepository (Phase 60)', () => {
     expect((await repo.getById(a.id))?.isPreferred).toBe(false);
   });
 
+  it('enforces a single price-source winner per item via setPriceSource (issue #28)', async () => {
+    const a = await repo.create(itemId, { supplierName: 'A' });
+    const b = await repo.create(itemId, { supplierName: 'B' });
+
+    await repo.setPriceSource(a.id);
+    expect((await repo.getById(a.id))?.isPriceSource).toBe(true);
+
+    // Switching to another clears the previous source.
+    await repo.setPriceSource(b.id);
+    const list = await repo.listForItem(itemId);
+    expect(list.filter((p) => p.isPriceSource).map((p) => p.id)).toEqual([b.id]);
+    expect((await repo.getById(a.id))?.isPriceSource).toBe(false);
+  });
+
+  it('clears the pinned price source via clearPriceSource', async () => {
+    const a = await repo.create(itemId, { supplierName: 'A' });
+    await repo.setPriceSource(a.id);
+    await repo.clearPriceSource(itemId);
+    expect((await repo.getById(a.id))?.isPriceSource).toBe(false);
+  });
+
+  it('keeps price source independent of the preferred star', async () => {
+    const a = await repo.create(itemId, { supplierName: 'A', isPreferred: true });
+    const b = await repo.create(itemId, { supplierName: 'B' });
+    await repo.setPriceSource(b.id);
+    // Pinning B as the source must not disturb A's preferred flag, and vice versa.
+    expect((await repo.getById(a.id))?.isPreferred).toBe(true);
+    expect((await repo.getById(a.id))?.isPriceSource).toBe(false);
+    expect((await repo.getById(b.id))?.isPreferred).toBe(false);
+    expect((await repo.getById(b.id))?.isPriceSource).toBe(true);
+  });
+
   it('clears any existing preferred when creating a new preferred part', async () => {
     const a = await repo.create(itemId, { supplierName: 'A', isPreferred: true });
     await repo.create(itemId, { supplierName: 'B', isPreferred: true });

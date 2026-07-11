@@ -26,6 +26,8 @@ export interface SupplierPartRow {
   readonly price_breaks: string | null;
   readonly url: string | null;
   readonly is_preferred: number;
+  /** 1 when this supplier is the item's pinned price source (at most one per item). */
+  readonly is_price_source: number;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -44,6 +46,13 @@ export interface SupplierPart {
   readonly priceBreaks: readonly PriceBreak[];
   readonly url: string | null;
   readonly isPreferred: boolean;
+  /**
+   * Whether this supplier is the item's pinned **price source** — the single supplier a price
+   * refresh fetches when set (issue #28). At most one per item; independent of `isPreferred`
+   * (which drives valuation). When none is pinned, a refresh fetches every supplier and reports
+   * the cheapest. Toggled via {@link SupplierPartRepository.setPriceSource} / `clearPriceSource`.
+   */
+  readonly isPriceSource: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
 }

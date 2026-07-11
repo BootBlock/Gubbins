@@ -324,6 +324,37 @@ export class SupplierPartRepository extends BaseRepository {
     ]);
   }
 
+  /**
+   * Pin one supplier part as the item's single **price source** (issue #28): set it and clear
+   * every other price-source row for the same item, in one atomic transaction. Mirrors
+   * {@link setPreferred} but on the independent `is_price_source` flag — a price refresh fetches
+   * only this supplier while it is pinned. Re-stamping the cleared rows lets their LWW updated_at
+   * advance so the de-selection propagates on sync.
+   */
+  async setPriceSource(id: string): Promise<void> {
+    this.assertWritable();
+    const part = await this.require(id);
+    await this.driver.transaction([
+      {
+        sql: 'UPDATE supplier_parts SET is_price_source = 0 WHERE item_id = ? AND id <> ? AND is_price_source = 1;',
+        params: [part.itemId, id],
+      },
+      { sql: 'UPDATE supplier_parts SET is_price_source = 1 WHERE id = ?;', params: [id] },
+    ]);
+  }
+
+  /**
+   * Clear the item's pinned price source (issue #28), so a refresh again fetches every supplier
+   * and reports the cheapest. Clears whichever row (if any) is currently pinned for the item.
+   */
+  async clearPriceSource(itemId: string): Promise<void> {
+    this.assertWritable();
+    await this.driver.execute(
+      'UPDATE supplier_parts SET is_price_source = 0 WHERE item_id = ? AND is_price_source = 1;',
+      [itemId],
+    );
+  }
+
   /** Delete a supplier part. Bypasses the Hard Stop; tombstoned for sync (§7.2). */
   async delete(id: string): Promise<void> {
     await this.driver.transaction([
