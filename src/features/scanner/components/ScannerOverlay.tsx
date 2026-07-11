@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 
 import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
-import { Button, Input, LiveRegion, Select, Surface, Tooltip } from '@/components/foundry';
+import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
 import {
   AddIcon,
   CameraOffIcon,
@@ -10,7 +10,10 @@ import {
   CloseIcon,
   DiscreteIcon,
   EditIcon,
+  HelpIcon,
+  InfoIcon,
   MoveIcon,
+  QrCodeIcon,
   ScanIcon,
   SerialisedIcon,
 } from '@/components/icons';
@@ -103,6 +106,10 @@ function ScannerOverlayInner({
 
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  // The "What can I scan?" explainer — the scanner accepts several kinds of code (Gubbins
+  // item/location QR labels and retail EAN/UPC barcodes) and this is where that is spelled
+  // out, so the button is never a mystery. Closed by default; opened from the header.
+  const [helpOpen, setHelpOpen] = useState(false);
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
   // A recognised retail barcode that no item carries yet — offer to create one (point 1).
   const [gtinResult, setGtinResult] = useState<string | null>(null);
@@ -325,6 +332,18 @@ function ScannerOverlayInner({
             </ModeButton>
           </Tooltip>
         </div>
+        <Tooltip content="What can I scan?" triggerTabIndex={-1}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setHelpOpen(true)}
+            aria-label="What can I scan?"
+            aria-haspopup="dialog"
+            className="text-white hover:bg-white/10"
+          >
+            <HelpIcon />
+          </Button>
+        </Tooltip>
         <Button
           variant="ghost"
           size="icon"
@@ -349,6 +368,18 @@ function ScannerOverlayInner({
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <div className="size-56 rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]" />
           </div>
+        ) : null}
+
+        {/* Idle guidance: while the camera is live and nothing has been scanned, say plainly
+            what the frame is looking for — a Gubbins label or a shop barcode — so the scanner
+            never leaves the user guessing. The header's "?" opens the fuller explainer. */}
+        {state.status === 'STREAM_ACTIVE' ? (
+          <p
+            className="pointer-events-none absolute inset-x-0 top-[calc(50%+8rem)] px-6 text-center text-sm text-white/85"
+            data-testid="scanner-idle-hint"
+          >
+            Point at a Gubbins QR label or a product barcode
+          </p>
         ) : null}
 
         {state.status === 'ERROR_STATE' ? (
@@ -554,6 +585,43 @@ function ScannerOverlayInner({
           </Button>
         </div>
       </div>
+
+      {/* "What can I scan?" — the answer to the recurring question (issue #5): the scanner
+          reads Gubbins' own printed QR labels and ordinary retail barcodes, and it does the
+          matching on-device rather than looking products up online. A Foundry Modal so the
+          panel is focus-trapped, Escape-dismissable and announced. */}
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="What can I scan?">
+        <div className="space-y-4">
+          <ul className="space-y-4 text-sm">
+            <li className="flex gap-3">
+              <QrCodeIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>
+                <span className="font-medium">Gubbins labels</span> — the QR codes you print for your items
+                and locations. Scanning an item opens it to adjust, check out or move; scanning a location
+                jumps straight to it.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <SerialisedIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>
+                <span className="font-medium">Product barcodes</span> — a shop's EAN or UPC barcode. Gubbins
+                finds the item that already carries it, or offers to add a new item with the barcode saved to
+                it.
+              </span>
+            </li>
+          </ul>
+          <p className="flex gap-2 text-xs text-muted-foreground">
+            <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Codes are matched against your own inventory on this device — Gubbins doesn't look products up
+              on the web.
+            </span>
+          </p>
+          <Button onClick={() => setHelpOpen(false)} className="w-full">
+            Got it
+          </Button>
+        </div>
+      </Modal>
 
       {checkoutItem ? (
         <CheckoutDialog
