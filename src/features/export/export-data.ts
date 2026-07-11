@@ -384,12 +384,14 @@ export function buildProjectMasterNote(
 function yamlValue(value: string | number | boolean | null): string {
   if (value === null) return 'null';
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  // Always quote strings to keep the YAML safe regardless of content.
-  return `"${value.replace(/"/g, '\\"')}"`;
+  // Always quote strings to keep the YAML safe regardless of content. Escape the
+  // backslash first so a value ending in one can't consume the closing quote.
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  // Escape the backslash first so a value containing one can't defeat the pipe escaping.
+  return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
 /** Make a string safe as a single file/folder name segment. */

@@ -4123,9 +4123,10 @@ try {
           else if (urlPath === '/Gubbins') urlPath = '/';
           if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
 
-          let filePath = path.join(distDir, path.normalize(urlPath).replace(/^([/\\])+/, ''));
-          // Keep traversal inside dist/.
-          if (!filePath.startsWith(distDir)) {
+          // Resolve inside dist/ and confirm containment. The trailing-separator check
+          // rejects both traversal (`..`) and a sibling dir that merely shares the prefix.
+          let filePath = path.resolve(distDir, path.normalize(urlPath).replace(/^([/\\])+/, ''));
+          if (filePath !== distDir && !filePath.startsWith(distDir + path.sep)) {
             res.writeHead(403).end('forbidden');
             return;
           }
