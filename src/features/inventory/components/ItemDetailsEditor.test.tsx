@@ -17,6 +17,19 @@ vi.mock('../queries', () => ({
   useFieldSuggestions: () => ({ data: [] }),
 }));
 
+// The camera barcode-capture dialog (issue #8) owns the real getUserMedia/decoder plumbing,
+// covered by its own test. Here it is stubbed to a button that hands back a decoded barcode,
+// so this test can pin the *wiring*: the Scan trigger opens it, and a captured code fills the
+// Barcode field. When closed it renders nothing (matching the real component's `open` guard).
+vi.mock('@/features/scanner/components/BarcodeScanDialog', () => ({
+  BarcodeScanDialog: ({ open, onCapture }: { open: boolean; onCapture: (barcode: string) => void }) =>
+    open ? (
+      <button type="button" data-testid="mock-barcode-capture" onClick={() => onCapture('4006381333931')}>
+        capture
+      </button>
+    ) : null,
+}));
+
 afterEach(() => {
   cleanup();
   spies.update.mockReset();
@@ -34,6 +47,7 @@ const item: Item = {
   serialNo: null,
   mpn: 'NE555P',
   manufacturer: 'Texas Instruments',
+  barcode: null,
   unitCost: 0.4,
   expiryDate: null,
   batchNumber: null,
@@ -115,6 +129,42 @@ describe('ItemDetailsEditor', () => {
     expect(spies.update).toHaveBeenCalledTimes(1);
     expect(spies.update.mock.calls[0][0].input).toEqual(
       expect.objectContaining({ trackingMode: 'UNTRACKED' }),
+    );
+  });
+
+  it('saves a newly-entered barcode (issue #52)', () => {
+    render(<ItemDetailsEditor item={item} />);
+    fireEvent.change(screen.getByTestId('item-details-barcode'), {
+      target: { value: '4006381333931' },
+    });
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(
+      expect.objectContaining({ barcode: '4006381333931' }),
+    );
+  });
+
+  it('clears an existing barcode back to null when blanked', () => {
+    render(<ItemDetailsEditor item={{ ...item, barcode: '4006381333931' }} />);
+    expect((screen.getByTestId('item-details-barcode') as HTMLInputElement).value).toBe('4006381333931');
+    fireEvent.change(screen.getByTestId('item-details-barcode'), { target: { value: '  ' } });
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(expect.objectContaining({ barcode: null }));
+  });
+
+  it('fills the Barcode field from a camera scan', () => {
+    render(<ItemDetailsEditor item={item} />);
+    fireEvent.click(screen.getByTestId('item-details-barcode-scan'));
+    // The stubbed capture dialog hands back a decoded GTIN.
+    fireEvent.click(screen.getByTestId('mock-barcode-capture'));
+    expect((screen.getByTestId('item-details-barcode') as HTMLInputElement).value).toBe('4006381333931');
+
+    fireEvent.click(screen.getByTestId('item-details-save'));
+    expect(spies.update.mock.calls[0][0].input).toEqual(
+      expect.objectContaining({ barcode: '4006381333931' }),
     );
   });
 
