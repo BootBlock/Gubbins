@@ -16,7 +16,7 @@ import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
  */
 
 /** One resolved value as JSX. `location` is tinted with its swatch class when provided. */
-function FieldValue({
+export function FieldValue({
   field,
   locationColorClass,
 }: {

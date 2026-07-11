@@ -14,7 +14,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
-import { CheckIcon } from '@/components/icons';
+import { CheckIcon, ChevronRightIcon } from '@/components/icons';
 import { Button, type ButtonProps } from './button';
 import { useReducedMotion } from './useReducedMotion';
 
@@ -34,7 +34,24 @@ import { useReducedMotion } from './useReducedMotion';
 const GAP = 6;
 
 interface MenuContextValue {
+  /** Close the whole menu (root panel and any open submenu), returning focus to the trigger. */
   readonly close: () => void;
+  /**
+   * Submenu coordination (see {@link MenuSub}). The root owns the single open flyout so that
+   * only one shows at a time, an outside-click doesn't dismiss the whole menu when it lands
+   * inside a portaled submenu panel, and Escape peels off the open submenu before the root.
+   * A {@link MenuSub} rendered outside a {@link Menu} is inert (`null` context).
+   *
+   * A submenu announces it has opened with `escapeClose` (peels it off, restoring focus — for
+   * Escape) and `collapse` (closes it without stealing focus — used to fold a sibling when a
+   * new flyout opens). Doing the fold imperatively here, rather than via each submenu observing
+   * shared "which is open" state, avoids a stale-closure race on the opening commit.
+   */
+  readonly onSubmenuOpen: (id: string, escapeClose: () => void, collapse: () => void) => void;
+  readonly onSubmenuClose: (id: string) => void;
+  /** Register a portaled submenu panel so an inside-click isn't treated as an outside dismissal. */
+  readonly addSubPanel: (el: HTMLElement) => void;
+  readonly removeSubPanel: (el: HTMLElement) => void;
 }
 const MenuContext = createContext<MenuContextValue | null>(null);
 
@@ -73,8 +90,27 @@ export function Menu({
   const openIntent = useRef<'first' | 'last'>('first');
   const panelId = useId();
 
+  // Submenu coordination: the single open flyout (its Escape/collapse hooks) and the set of
+  // portaled submenu panels (so an inside-click isn't mistaken for an outside dismissal).
+  const openSubRef = useRef<{ id: string; escapeClose: () => void; collapse: () => void } | null>(null);
+  const subPanels = useRef<Set<HTMLElement>>(new Set());
+
+  const onSubmenuOpen = useCallback((id: string, escapeClose: () => void, collapse: () => void) => {
+    // A new flyout opened → fold the previous one (without stealing focus) before recording this.
+    if (openSubRef.current && openSubRef.current.id !== id) openSubRef.current.collapse();
+    openSubRef.current = { id, escapeClose, collapse };
+  }, []);
+  const onSubmenuClose = useCallback((id: string) => {
+    // Only forget it if it's still the recorded flyout — when folding straight into a sibling,
+    // the new one has already claimed the slot.
+    if (openSubRef.current?.id === id) openSubRef.current = null;
+  }, []);
+  const addSubPanel = useCallback((el: HTMLElement) => void subPanels.current.add(el), []);
+  const removeSubPanel = useCallback((el: HTMLElement) => void subPanels.current.delete(el), []);
+
   const close = useCallback(() => {
     setOpen(false);
+    openSubRef.current = null;
     triggerRef.current?.focus();
   }, []);
 
@@ -126,19 +162,25 @@ export function Menu({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      // Escape is a keyboard dismissal, so focus returns to the trigger (close()).
+      // Escape is a keyboard dismissal, so focus returns to the trigger (close()). When a
+      // submenu is open it peels off first — one Escape per open level — before the root.
       if (e.key === 'Escape') {
         e.stopPropagation();
-        close();
+        if (openSubRef.current) openSubRef.current.escapeClose();
+        else close();
       }
     };
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      // A press inside an open, portaled submenu panel is *inside* the menu even though the
+      // panel lives outside the root panel in the DOM — don't treat it as an outside dismissal.
+      for (const el of subPanels.current) if (el.contains(target)) return;
       // Intentionally setOpen(false), not close(): a click outside should let focus
       // follow the pointer to whatever was clicked — pulling it back to the trigger
       // would steal it. (Escape, above, deliberately does restore focus.)
       setOpen(false);
+      openSubRef.current = null;
     };
     document.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onPointerDown);
@@ -224,7 +266,11 @@ export function Menu({
                 !reducedMotion && 'animate-fade-in',
               )}
             >
-              <MenuContext.Provider value={{ close }}>{children}</MenuContext.Provider>
+              <MenuContext.Provider
+                value={{ close, onSubmenuOpen, onSubmenuClose, addSubPanel, removeSubPanel }}
+              >
+                {children}
+              </MenuContext.Provider>
             </div>,
             document.body,
           )
@@ -348,4 +394,254 @@ export function MenuAction({ icon, children, onSelect, disabled, selected, ...re
 /** A non-interactive divider between groups of menu rows. */
 export function MenuSeparator() {
   return <div role="separator" className="my-1 h-px bg-border" />;
+}
+
+/** Short delay before a hovered-away submenu closes, so a diagonal mouse path to its
+ *  portaled panel (which briefly leaves the trigger) doesn't dismiss it. */
+const SUBMENU_CLOSE_DELAY = 140;
+
+export interface MenuSubProps {
+  /** Leading glyph for the trigger row (shown when the submenu holds no checked child). */
+  readonly icon?: ReactNode;
+  /** The trigger row's label. */
+  readonly label: ReactNode;
+  /** Submenu rows — the same {@link MenuAction} / {@link MenuLink} / {@link MenuSeparator} set. */
+  readonly children: ReactNode;
+  /**
+   * Renders a leading check on the trigger row when the submenu's active choice lives inside it
+   * (e.g. the current view mode), so the collapsed row still reflects the selection at a glance.
+   */
+  readonly selected?: boolean;
+  readonly 'data-testid'?: string;
+}
+
+/**
+ * A nested submenu row: a trigger inside the parent menu that reveals a portaled flyout of
+ * its own {@link MenuAction} rows to the side. Used to group a set of related choices (a view
+ * mode, a grouping axis) behind one row instead of flattening them all into the parent.
+ *
+ * Behaviour (WAI-ARIA submenu): the trigger carries `aria-haspopup="menu"` / `aria-expanded`
+ * and a trailing chevron. It opens on hover, click, Enter/Space, or ArrowRight (which also
+ * moves focus into the flyout); ArrowLeft or Escape peels the flyout back off and returns
+ * focus to the trigger; selecting a row closes the whole menu. Only one sibling flyout is
+ * open at a time. The panel is portaled to `<body>`, positioned beside the trigger (flipping
+ * to the other side when it would overflow) and viewport-clamped, mirroring the root panel.
+ */
+export function MenuSub({ icon, label, children, selected, ...rest }: MenuSubProps) {
+  const ctx = useContext(MenuContext);
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const reducedMotion = useReducedMotion();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const triggerId = useId();
+  // Whether the open-effect should land focus on the first item (keyboard/click open) or
+  // leave it be (hover open shouldn't yank focus away from a mouse user).
+  const focusFirstRef = useRef(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const submenuItems = useCallback(
+    () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ??
+          [],
+      ),
+    [],
+  );
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const closeSelf = useCallback(
+    (restoreFocus: boolean) => {
+      cancelClose();
+      setOpen(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [cancelClose],
+  );
+
+  const openSelf = useCallback(
+    (focusFirst: boolean) => {
+      cancelClose();
+      focusFirstRef.current = focusFirst;
+      setOpen(true);
+    },
+    [cancelClose],
+  );
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), SUBMENU_CLOSE_DELAY);
+  }, [cancelClose]);
+
+  // Announce open/close to the root so it can enforce single-flyout exclusivity (folding any
+  // sibling that was open), route Escape, and treat clicks inside the portaled panel as inside
+  // the menu. `escapeClose` restores focus to the trigger (keyboard dismissal); `collapse`
+  // folds this flyout when a sibling opens, without stealing focus.
+  useEffect(() => {
+    if (!open) return;
+    ctx?.onSubmenuOpen(
+      id,
+      () => closeSelf(true),
+      () => closeSelf(false),
+    );
+    return () => ctx?.onSubmenuClose(id);
+  }, [open, id, ctx, closeSelf]);
+
+  useEffect(() => cancelClose, [cancelClose]);
+
+  // Register the portaled panel for the root's outside-click containment check.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!open || !el || !ctx) return;
+    ctx.addSubPanel(el);
+    return () => ctx.removeSubPanel(el);
+  }, [open, ctx]);
+
+  // Position the flyout beside the trigger, flipping to the other side when it would overflow.
+  useLayoutEffect(() => {
+    if (!open) {
+      setCoords(null);
+      return;
+    }
+    const position = () => {
+      const t = triggerRef.current?.getBoundingClientRect();
+      const panel = panelRef.current?.getBoundingClientRect();
+      if (!t || !panel) return;
+      // Prefer the right edge (with a hair of overlap); flip left if it would spill off-screen.
+      let left = t.right - 4;
+      if (left + panel.width > window.innerWidth - GAP) left = t.left - panel.width + 4;
+      // Nudge up so the first row sits level with the trigger (accounting for panel padding).
+      const top = t.top - 6;
+      setCoords({
+        top: Math.max(GAP, Math.min(top, window.innerHeight - panel.height - GAP)),
+        left: Math.max(GAP, Math.min(left, window.innerWidth - panel.width - GAP)),
+      });
+    };
+    position();
+    window.addEventListener('scroll', position, true);
+    window.addEventListener('resize', position);
+    return () => {
+      window.removeEventListener('scroll', position, true);
+      window.removeEventListener('resize', position);
+    };
+  }, [open]);
+
+  // On (keyboard/click) open, land focus on the first flyout item.
+  useEffect(() => {
+    if (!open || !focusFirstRef.current) return;
+    submenuItems()[0]?.focus();
+    focusFirstRef.current = false;
+  }, [open, submenuItems]);
+
+  const onTriggerKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      openSelf(true);
+    }
+    // ArrowUp/ArrowDown/Home/End are left to bubble to the root panel so they roam the
+    // parent rows as usual when the flyout is closed.
+  };
+
+  const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = submenuItems();
+    // ArrowLeft peels the flyout back off, returning to the trigger (Escape is handled by the
+    // root's capture listener, which routes to this submenu first). Stop these from also
+    // reaching the root panel's own key handler (events bubble the React tree, not the DOM).
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSelf(true);
+      return;
+    }
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      items[current >= items.length - 1 ? 0 : current + 1]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      items[current <= 0 ? items.length - 1 : current - 1]?.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      e.stopPropagation();
+      items[0]?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      e.stopPropagation();
+      items[items.length - 1]?.focus();
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        id={triggerId}
+        type="button"
+        role="menuitem"
+        tabIndex={-1}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        className={MENU_ITEM_CLASS}
+        onClick={() => (open ? closeSelf(true) : openSelf(true))}
+        onKeyDown={onTriggerKeyDown}
+        onPointerEnter={(e) => {
+          // Hover-open for pointers only (a touch tap is a click, handled above).
+          if (e.pointerType !== 'touch') openSelf(false);
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType !== 'touch') scheduleClose();
+        }}
+        {...rest}
+      >
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          {selected ? <CheckIcon /> : icon}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronRightIcon aria-hidden className="ml-1 shrink-0 text-muted-foreground" />
+      </button>
+
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              id={panelId}
+              role="menu"
+              aria-labelledby={triggerId}
+              tabIndex={-1}
+              onKeyDown={onPanelKeyDown}
+              onPointerEnter={cancelClose}
+              onPointerLeave={(e) => {
+                if (e.pointerType !== 'touch') scheduleClose();
+              }}
+              style={{
+                position: 'fixed',
+                top: coords?.top ?? 0,
+                left: coords?.left ?? 0,
+                visibility: coords ? 'visible' : 'hidden',
+              }}
+              className={cn(
+                'z-[71] flex min-w-44 max-w-[min(20rem,calc(100vw-1rem))] flex-col gap-0.5 rounded-xl border border-border bg-popover/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl',
+                !reducedMotion && 'animate-fade-in',
+              )}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
 }

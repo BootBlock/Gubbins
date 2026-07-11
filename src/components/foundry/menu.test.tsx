@@ -9,7 +9,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-import { Menu, MenuLink, MenuAction, MenuSeparator } from './menu';
+import { Menu, MenuLink, MenuAction, MenuSeparator, MenuSub } from './menu';
 
 afterEach(cleanup);
 
@@ -138,7 +138,96 @@ describe('Menu — accessible menu button (spec §2.4.1)', () => {
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Navigation' }));
   });
+});
 
+describe('MenuSub — nested submenu (issue #31)', () => {
+  function renderWithSub(onCards = vi.fn(), onRows = vi.fn()) {
+    render(
+      <Menu label="Navigation" trigger={<span>Menu</span>}>
+        <MenuAction onSelect={() => {}}>Top action</MenuAction>
+        <MenuSub label="View">
+          <MenuAction onSelect={onCards}>Cards</MenuAction>
+          <MenuAction onSelect={onRows}>Rows</MenuAction>
+        </MenuSub>
+        <MenuSub label="Group by">
+          <MenuAction onSelect={() => {}}>None</MenuAction>
+          <MenuAction onSelect={() => {}}>Location</MenuAction>
+        </MenuSub>
+      </Menu>,
+    );
+    open();
+  }
+
+  it('the submenu trigger advertises a nested menu popup, collapsed until opened', () => {
+    renderWithSub();
+    const trigger = screen.getByRole('menuitem', { name: 'View' });
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('menuitem', { name: 'Cards' })).toBeNull();
+  });
+
+  it('opens the flyout on click and moves focus to its first item', () => {
+    renderWithSub();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+    const cards = screen.getByRole('menuitem', { name: 'Cards' });
+    expect(cards).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'View' }).getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(cards);
+  });
+
+  it('ArrowRight opens the flyout; ArrowLeft closes it and returns focus to the trigger', () => {
+    renderWithSub();
+    const trigger = screen.getByRole('menuitem', { name: 'View' });
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    const cards = screen.getByRole('menuitem', { name: 'Cards' });
+    expect(document.activeElement).toBe(cards);
+    // ArrowLeft on the flyout peels it back off, focus returns to the trigger row.
+    fireEvent.keyDown(cards.closest('[role="menu"]')!, { key: 'ArrowLeft' });
+    expect(screen.queryByRole('menuitem', { name: 'Cards' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('selecting a flyout item runs its onSelect and closes the whole menu', () => {
+    const onCards = vi.fn();
+    renderWithSub(onCards);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cards' }));
+    expect(onCards).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('Escape peels off the open flyout first, then a second Escape closes the root menu', () => {
+    renderWithSub();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+    expect(screen.getByRole('menuitem', { name: 'Cards' })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // Flyout gone, root still open (its top action is still there).
+    expect(screen.queryByRole('menuitem', { name: 'Cards' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Top action' })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opening a sibling flyout closes the first (only one is open at a time)', () => {
+    renderWithSub();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+    expect(screen.getByRole('menuitem', { name: 'Cards' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Group by' }));
+    expect(screen.queryByRole('menuitem', { name: 'Cards' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Location' })).toBeTruthy();
+  });
+
+  it('hovering the trigger opens the flyout for pointer users', () => {
+    renderWithSub();
+    fireEvent.pointerEnter(screen.getByRole('menuitem', { name: 'View' }), { pointerType: 'mouse' });
+    expect(screen.getByRole('menuitem', { name: 'Rows' })).toBeTruthy();
+  });
+});
+
+describe('Menu — selected-icon rendering', () => {
   it('MenuAction renders its icon normally, but a check glyph in place of it when selected', () => {
     const { rerender } = render(
       <Menu label="Navigation" trigger={<span>Menu</span>}>

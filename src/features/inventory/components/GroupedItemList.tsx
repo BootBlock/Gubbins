@@ -16,6 +16,8 @@ import { useLocationSectionItems } from '../queries';
 import { LocationKindIcon } from './LocationKindIcon';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
+import { ItemTableHeader, ItemTableRow } from './ItemTable';
+import { tableFieldColumns, tableGridColumns } from './item-table-columns';
 import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
 import type { CardFieldsConfigBundle } from './useCardFieldsConfig';
 import type { ItemSelection } from './inventory-ui';
@@ -290,42 +292,55 @@ function SectionItems({
 
   return (
     <div className="pb-2 pl-6">
-      <div
-        className={density === 'data' ? 'flex flex-col gap-1.5' : 'grid gap-4'}
-        style={
-          density === 'data'
-            ? undefined
-            : { gridTemplateColumns: `repeat(auto-fill, minmax(${VISUAL_CARD_MIN_WIDTH}px, 1fr))` }
-        }
-      >
-        {items.map((item) =>
-          density === 'data' ? (
-            <ItemRow
-              key={item.id}
-              item={item}
-              locations={locations}
-              locationName={locationName(item.locationId)}
-              locationColorClass={locationColorClass?.(item.locationId)}
-              locationTintClass={locationTintClass?.(item.locationId)}
-              selection={selection}
-              selected={selectedIds?.has(item.id) ?? false}
-              {...cardFieldProps(cardFields, item)}
-            />
-          ) : (
-            <ItemCard
-              key={item.id}
-              item={item}
-              locations={locations}
-              locationName={locationName(item.locationId)}
-              locationColorClass={locationColorClass?.(item.locationId)}
-              locationTintClass={locationTintClass?.(item.locationId)}
-              selection={selection}
-              selected={selectedIds?.has(item.id) ?? false}
-              {...cardFieldProps(cardFields, item)}
-            />
-          ),
-        )}
-      </div>
+      {density === 'table' ? (
+        <SectionTable
+          items={items}
+          locations={locations}
+          locationName={locationName}
+          locationColorClass={locationColorClass}
+          locationTintClass={locationTintClass}
+          selection={selection}
+          selectedIds={selectedIds}
+          cardFields={cardFields}
+        />
+      ) : (
+        <div
+          className={density === 'data' ? 'flex flex-col gap-1.5' : 'grid gap-4'}
+          style={
+            density === 'data'
+              ? undefined
+              : { gridTemplateColumns: `repeat(auto-fill, minmax(${VISUAL_CARD_MIN_WIDTH}px, 1fr))` }
+          }
+        >
+          {items.map((item) =>
+            density === 'data' ? (
+              <ItemRow
+                key={item.id}
+                item={item}
+                locations={locations}
+                locationName={locationName(item.locationId)}
+                locationColorClass={locationColorClass?.(item.locationId)}
+                locationTintClass={locationTintClass?.(item.locationId)}
+                selection={selection}
+                selected={selectedIds?.has(item.id) ?? false}
+                {...cardFieldProps(cardFields, item)}
+              />
+            ) : (
+              <ItemCard
+                key={item.id}
+                item={item}
+                locations={locations}
+                locationName={locationName(item.locationId)}
+                locationColorClass={locationColorClass?.(item.locationId)}
+                locationTintClass={locationTintClass?.(item.locationId)}
+                selection={selection}
+                selected={selectedIds?.has(item.id) ?? false}
+                {...cardFieldProps(cardFields, item)}
+              />
+            ),
+          )}
+        </div>
+      )}
       {hasNextPage ? (
         <div className="flex justify-center pt-3">
           <Button
@@ -341,6 +356,68 @@ function SectionItems({
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A location section's items as a spreadsheet table — the grouped counterpart to the flat
+ * {@link ItemList}'s Table view. Each section is its own small, non-virtualised table (sections
+ * page in incrementally rather than virtualising), sharing the same column model and
+ * {@link ItemTableRow} so a Table-view row looks the same flat or grouped.
+ */
+function SectionTable({
+  items,
+  locations,
+  locationName,
+  locationColorClass,
+  locationTintClass,
+  selection,
+  selectedIds,
+  cardFields,
+}: {
+  readonly items: readonly Item[];
+  readonly locations: readonly LocationWithCount[];
+  readonly locationName: (id: string) => string;
+  readonly locationColorClass?: (id: string) => string | undefined;
+  readonly locationTintClass?: (id: string) => string | undefined;
+  readonly selection?: ItemSelection;
+  readonly selectedIds?: ReadonlySet<string>;
+  readonly cardFields: CardFieldsListContext;
+}) {
+  const selecting = selection != null;
+  const columns = useMemo(
+    () => tableFieldColumns(cardFields.order, cardFields.customFields),
+    [cardFields.order, cardFields.customFields],
+  );
+  const columnIds = useMemo(() => columns.map((c) => c.id), [columns]);
+  const gridTemplate = useMemo(
+    () => tableGridColumns(columns.length, selecting),
+    [columns.length, selecting],
+  );
+  return (
+    <div role="table" aria-label="Items in this location" aria-rowcount={items.length + 1}>
+      <ItemTableHeader columns={columns} selecting={selecting} gridTemplate={gridTemplate} />
+      <div role="rowgroup">
+        {items.map((item, i) => (
+          <ItemTableRow
+            key={item.id}
+            item={item}
+            locations={locations}
+            locationName={locationName(item.locationId)}
+            locationColorClass={locationColorClass?.(item.locationId)}
+            locationTintClass={locationTintClass?.(item.locationId)}
+            selection={selection}
+            selected={selectedIds?.has(item.id) ?? false}
+            gridTemplate={gridTemplate}
+            columnIds={columnIds}
+            ariaRowIndex={i + 2}
+            categoryName={cardFields.categoryName(item.categoryId)}
+            customFields={cardFields.customFields}
+            customValues={cardFields.values?.get(item.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
