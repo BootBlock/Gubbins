@@ -216,6 +216,7 @@
   "inventory.addToProject.quantityLabel": "Menge",
   "inventory.addToProject.cancel": "Abbrechen",
   "inventory.addToProject.close": "Schließen",
+  "inventory.addToProject.goToProjects": "Zu den Projekten",
   "inventory.addToProject.submit": "Zum Projekt hinzufügen",
   "inventory.addToProject.successHeading": "Zum Projekt hinzugefügt",
   "inventory.addToProject.successMessage": "„{item}“ wurde zu „{project}“ hinzugefügt.",

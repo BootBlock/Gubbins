@@ -168,6 +168,14 @@ function useDragSource(
   const sourceLocationId = item.sourceLocationId;
   const onPointerDown = useCallback(
     (event: ReactPointerEvent) => {
+      // Ignore a press that bubbled up from one of the card's own dialogs. Those dialogs (Move,
+      // details, Add to project, …) are React children of the drag source, so their pointer
+      // events bubble here through the React tree — but they render in a portal *outside* the
+      // source's DOM. A genuine press on the card body has its `target` inside `currentTarget`,
+      // whereas a press inside an open dialog does not; arming a drag from it would wrongly grab
+      // the card and force the global grabbing cursor across the dialog. Same guard the
+      // card-click shortcut uses (see `useCardClickAction`).
+      if (!event.currentTarget.contains(event.target as Node)) return;
       // Only the primary mouse button drags; secondary/middle keep their own behaviour.
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       // A press begun on a control (± stepper, select box, action button) belongs to that
