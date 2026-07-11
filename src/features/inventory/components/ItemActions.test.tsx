@@ -5,6 +5,9 @@ import type { Item } from '@/db/repositories';
 // The action row mounts every per-item dialog (closed); stub them to inert components so the
 // test exercises only the action buttons, not each dialog's own hooks.
 vi.mock('@/features/contacts/components/CheckoutDialog', () => ({ CheckoutDialog: () => null }));
+vi.mock('@/features/projects/components/AddItemToProjectDialog', () => ({
+  AddItemToProjectDialog: () => null,
+}));
 vi.mock('@/features/sales/components/SellDialog', () => ({ SellDialog: () => null }));
 vi.mock('@/features/sales/components/WriteOffDialog', () => ({ WriteOffDialog: () => null }));
 vi.mock('./GaugeAdjustDialog', () => ({ GaugeAdjustDialog: () => null }));
@@ -141,6 +144,29 @@ describe('ItemActions — record actions live in the overflow menu', () => {
     openMoreMenu();
     expect(screen.queryByRole('menuitem', { name: /Edit details/ })).not.toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Print label/ })).not.toBeNull();
+  });
+});
+
+describe('ItemActions — add-to-project gating (Projects module)', () => {
+  it('offers "Add to project" on an active item when Projects is on', () => {
+    render(<ItemActions item={item} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Add to project/ })).not.toBeNull();
+  });
+
+  it('hides "Add to project" when the Projects module is off', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<ItemActions item={item} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Add to project/ })).toBeNull();
+    // Move stays — it's unrelated to the Projects module, so the menu is never empty.
+    expect(screen.queryByRole('menuitem', { name: /Move/ })).not.toBeNull();
+  });
+
+  it('does not offer "Add to project" for a removed (inactive) item', () => {
+    render(<ItemActions item={{ ...item, isActive: false }} locations={[]} />);
+    openMoreMenu();
+    expect(screen.queryByRole('menuitem', { name: /Add to project/ })).toBeNull();
   });
 });
 

@@ -257,6 +257,21 @@ export function useAddBomLine(projectId: string) {
   });
 }
 
+/**
+ * Add an existing inventory item to a project chosen at submit time — the item-centric entry
+ * point (from the item card's actions) onto the very same `addLine` write path as
+ * {@link useAddBomLine}, but with the project supplied per-call rather than bound to the hook.
+ * Invalidates the chosen project's derived views (lines, costing, shopping list, budget).
+ */
+export function useAddItemToProject() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, input }: { projectId: string; input: CreateBomLineInput }) =>
+      getProjectRepository().addLine(projectId, input),
+    onSettled: (_data, _err, vars) => invalidateProject(client, vars.projectId),
+  });
+}
+
 export function useUpdateBomLine(projectId: string) {
   const client = useQueryClient();
   return useMutation({
