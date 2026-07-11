@@ -48,6 +48,20 @@
   "about.licence.disclaimer.emphasis": "vollständig auf eigenes Risiko",
   "about.licence.disclaimer.post": "; die Entwickler übernehmen keine Verantwortung oder Haftung für Verluste, Schäden, Datenverluste oder andere Probleme, die aus der Nutzung entstehen.",
 
+  "notFound.title": "Seite nicht gefunden",
+  "notFound.heading": "Diese Seite konnten wir nicht finden",
+  "notFound.attempted": "Sie wollten Folgendes öffnen:",
+  "notFound.explanation": "Die Adresse ist möglicherweise falsch geschrieben, die Seite wurde verschoben, oder ein gespeicherter Link ist veraltet.",
+  "notFound.suggestions.title": "Meinten Sie …?",
+  "notFound.actions.dashboard": "Zum Dashboard",
+
+  "routeError.title": "Etwas ist schiefgelaufen",
+  "routeError.heading": "Diese Seite konnte nicht geladen werden",
+  "routeError.explanation": "Ein unerwarteter Fehler hat das Laden dieser Seite verhindert. Sie können es erneut versuchen oder zum Dashboard zurückkehren.",
+  "routeError.details": "Technische Details",
+  "routeError.actions.retry": "Erneut versuchen",
+  "routeError.actions.dashboard": "Zum Dashboard",
+
   "dashboard.hero.repoLabel": "Das Gubbins-GitHub-Repository öffnen (wird in einem neuen Tab geöffnet)",
   "dashboard.hero.tagline": "Lokal-first-Inventar · Ihr Dashboard",
   "dashboard.attention.live.one": "{count} Objekt erfordert Aufmerksamkeit",

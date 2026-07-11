@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fuzzyMatch, rankFuzzy } from './fuzzy';
+import { fuzzyMatch, rankFuzzy, editDistance, similarity } from './fuzzy';
 
 describe('fuzzyMatch', () => {
   it('matches a case-insensitive subsequence and records positions', () => {
@@ -68,5 +68,39 @@ describe('rankFuzzy', () => {
     const items = ['abc', 'abd', 'abe'];
     const ranked = rankFuzzy(items, 'ab', (s) => s);
     expect(ranked.map((r) => r.item)).toEqual(items);
+  });
+});
+
+describe('editDistance', () => {
+  it('is zero for identical strings (case-insensitive)', () => {
+    expect(editDistance('inventory', 'inventory')).toBe(0);
+    expect(editDistance('Inventory', 'inventory')).toBe(0);
+  });
+
+  it('counts a transposition as two edits and a typo as one', () => {
+    expect(editDistance('inventroy', 'inventory')).toBe(2); // transposed pair
+    expect(editDistance('setttings', 'settings')).toBe(1); // one extra letter
+  });
+
+  it('equals the other string length when one side is empty', () => {
+    expect(editDistance('', 'reports')).toBe(7);
+    expect(editDistance('sync', '')).toBe(4);
+  });
+});
+
+describe('similarity', () => {
+  it('is 1 for identical strings and lower the further apart they are', () => {
+    expect(similarity('inventory', 'inventory')).toBe(1);
+    expect(similarity('inventroy', 'inventory')).toBeGreaterThan(0.7);
+    expect(similarity('xyz', 'inventory')).toBeLessThan(0.3);
+  });
+
+  it('treats two empty strings as identical', () => {
+    expect(similarity('', '')).toBe(1);
+  });
+
+  it('ranks a near-miss above an unrelated string for the same target', () => {
+    const target = 'reports';
+    expect(similarity('reprots', target)).toBeGreaterThan(similarity('bookings', target));
   });
 });

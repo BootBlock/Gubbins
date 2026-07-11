@@ -1,6 +1,8 @@
 import { createRouter } from '@tanstack/react-router';
 import { routeTree } from '@/routeTree.gen';
 import { resolveRouteViewTransitionTypes } from '@/components/foundry/view-transition';
+import { NotFoundScreen } from '@/features/not-found/NotFoundScreen';
+import { RouteErrorScreen } from '@/features/not-found/RouteErrorScreen';
 
 /**
  * The type-safe client-side router (spec §2.4.2). `routeTree` is generated from
@@ -30,6 +32,12 @@ export const router = createRouter({
   // pathname change (not an in-screen search/hash update). The cross-fade itself is styled on
   // the `::view-transition-*` pseudo-elements in `styles/index.css`.
   defaultViewTransition: { types: resolveRouteViewTransitionTypes },
+  // A URL that resolves to no route renders the styled 404 screen (issue #41) inside the normal
+  // app chrome, with fuzzy "did you mean…?" suggestions, rather than the router's bare fallback.
+  defaultNotFoundComponent: NotFoundScreen,
+  // An error thrown while a route loads renders the matching styled error screen. The top-level
+  // Safe Mode boundary still backstops a total render collapse; this handles the recoverable case.
+  defaultErrorComponent: RouteErrorScreen,
 });
 
 declare module '@tanstack/react-router' {

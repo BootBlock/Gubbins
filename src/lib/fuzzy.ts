@@ -111,3 +111,54 @@ export function rankFuzzy<T>(
   ranked.sort((a, b) => b.entry.match.score - a.entry.match.score || a.order - b.order);
   return ranked.map((r) => r.entry);
 }
+
+/**
+ * Case-insensitive Levenshtein edit distance — the minimum number of single-character
+ * insertions, deletions or substitutions to turn `a` into `b`.
+ *
+ * Complements {@link fuzzyMatch}: that scorer only fires when the query is an in-order
+ * *subsequence* of the target, so a transposed or mistyped word (`"inventroy"`,
+ * `"reprots"`) matches nothing at all. Edit distance sees those as one or two cheap edits,
+ * which is exactly the "did you mean…?" signal a mistyped URL needs. Uses a single rolling
+ * row (O(min length) memory); the inputs here are short route names, so the classic O(n·m)
+ * pass is more than fast enough.
+ */
+export function editDistance(a: string, b: string): number {
+  const s = a.toLowerCase();
+  const t = b.toLowerCase();
+  if (s === t) return 0;
+  if (s.length === 0) return t.length;
+  if (t.length === 0) return s.length;
+
+  // One row of the DP matrix, reused per source character. The indices below are all in
+  // range by construction (`0…t.length`), so the non-null assertions are safe — they only
+  // satisfy `noUncheckedIndexedAccess`, which widens every element access to `| undefined`.
+  let prev = Array.from({ length: t.length + 1 }, (_, i) => i);
+  let curr = new Array<number>(t.length + 1).fill(0);
+  for (let i = 1; i <= s.length; i++) {
+    curr[0] = i;
+    const sChar = s[i - 1];
+    for (let j = 1; j <= t.length; j++) {
+      const cost = sChar === t[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j]! + 1, // deletion
+        curr[j - 1]! + 1, // insertion
+        prev[j - 1]! + cost, // substitution (or match)
+      );
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[t.length]!;
+}
+
+/**
+ * Normalised edit-distance similarity in `[0, 1]` — `1` = identical, `0` = maximally
+ * different — derived from {@link editDistance} over the longer of the two strings. A
+ * length-independent score so a one-letter slip in a short word and in a long word are
+ * comparable, which lets a caller apply a single "close enough" threshold.
+ */
+export function similarity(a: string, b: string): number {
+  if (a.length === 0 && b.length === 0) return 1;
+  const longest = Math.max(a.length, b.length);
+  return 1 - editDistance(a, b) / longest;
+}
