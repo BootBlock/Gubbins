@@ -7,6 +7,7 @@ import {
   GaugeIcon,
   MoreIcon,
   MoveIcon,
+  ProjectIcon,
   QrCodeIcon,
   RestoreIcon,
   SaleIcon,
@@ -15,6 +16,7 @@ import {
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useFeature } from '@/features/modules/useFeature';
+import { AddItemToProjectDialog } from '@/features/projects/components/AddItemToProjectDialog';
 import { SellDialog } from '@/features/sales/components/SellDialog';
 import { WriteOffDialog } from '@/features/sales/components/WriteOffDialog';
 import { useRestoreItem, useSoftDeleteItem, useUpdateItem } from '../mutations';
@@ -24,7 +26,8 @@ import { MoveItemDialog } from './MoveItemDialog';
 import { QrCodeDialog } from './QrCodeDialog';
 
 /** Which of the item's dialogs to open — the shared vocabulary between a button and a card click. */
-export type ItemDialogKind = 'move' | 'gauge' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff';
+export type ItemDialogKind =
+  'move' | 'gauge' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff' | 'project';
 
 /**
  * Rich help behind the loan-out row for an **Untracked** item (B5). A loan needs a countable
@@ -82,6 +85,10 @@ export const ItemActions = forwardRef<
   // module (modular-ui-plan §4, Phase 6). Hidden when Contacts is off — the checkout
   // mutation and any existing loans stay intact, only the way in disappears.
   const contactsEnabled = useFeature('contacts');
+  // Adding an item to a project's bill of materials is a Projects-module capability, so the
+  // entry point is gated behind it (like loan → Contacts). Offered only for active items —
+  // a removed item isn't part of live inventory to plan a build around.
+  const projectsEnabled = useFeature('projects');
   // Selling / writing off draws stock permanently out of inventory; gated behind the Sales &
   // disposals module and offered only for finite DISCRETE stock (serialised assets are retired
   // via "Remove from inventory"; gauges/untracked carry no countable units to sell).
@@ -132,6 +139,14 @@ export const ItemActions = forwardRef<
         <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
           Move…
         </MenuAction>
+        {projectsEnabled && item.isActive ? (
+          <MenuAction
+            icon={<ProjectIcon className="text-muted-foreground" />}
+            onSelect={() => setDialog('project')}
+          >
+            Add to project…
+          </MenuAction>
+        ) : null}
         {contactsEnabled && item.isActive && item.trackingMode !== 'CONSUMABLE_GAUGE' ? (
           item.trackingMode === 'UNTRACKED' ? (
             // Untracked assets can't be loaned by design (`checkout` rejects them — no unit to
@@ -223,6 +238,9 @@ export const ItemActions = forwardRef<
         onClose={() => setDialog(null)}
       />
       <CheckoutDialog item={item} open={dialog === 'checkout'} onClose={() => setDialog(null)} />
+      {projectsEnabled ? (
+        <AddItemToProjectDialog item={item} open={dialog === 'project'} onClose={() => setDialog(null)} />
+      ) : null}
       {canSell ? (
         <>
           <SellDialog item={item} open={dialog === 'sell'} onClose={() => setDialog(null)} />
