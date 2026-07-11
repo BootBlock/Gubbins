@@ -64,14 +64,24 @@ const SHOW_HINT =
   '- **By location** — a location *and everything nested inside it*.\n' +
   "- **By project** — every item on a project's bill of materials.\n" +
   '- **Selected items** — the items you ticked in the inventory.';
-const LOCATION_HINT = 'Includes the chosen location **and every sub-location beneath it**.';
-const PROJECT_HINT = "Lists every item on this project's **bill of materials**.";
+const LOCATION_HINT =
+  'Includes the chosen location **and every sub-location beneath it** — so a catalogue for a room also covers its shelves and bins.';
+const PROJECT_HINT =
+  "Lists every item on this project's **bill of materials** — the parts the project needs, wherever they are stored.";
 const COLUMNS_HINT =
-  'The item **name** always prints. Turn on **Line value** to total each location and the whole catalogue.';
-const LOGO_HINT = 'Stored on this device only and shrunk automatically. Prints at the top of the catalogue.';
-const ORG_DETAILS_HINT = 'Address or contact details. **Line breaks are kept** as you type them.';
-const TITLE_HINT = 'Overrides the printed document title (the default is "Catalogue").';
-const FOOTER_HINT = 'Printed at the foot of the catalogue — e.g. a confidentiality or copyright line.';
+  'Pick the columns to print. The item **name** always shows, and each column has its own note on when it is worth including. Turn on **Line value** to total each location and the whole catalogue.';
+const LOGO_HINT =
+  'An optional graphic printed at the top of the catalogue. Stored on this device only and shrunk automatically. **Add one** for an on-brand, customer-ready print; skip it for an internal working list.';
+const ORG_NAME_HINT =
+  'Your company or organisation name, printed as the letterhead heading. **Set it** for an official or shared catalogue; leave it blank for a plain internal print.';
+const ORG_DETAILS_HINT =
+  'Address or contact details printed under the name. **Line breaks are kept** as you type them, so you can lay the address out over several lines. Handy on a catalogue you send out; unnecessary for your own use.';
+const TITLE_HINT =
+  'Overrides the printed document title (the default is "Catalogue"). **Rename it** to suit the audience — e.g. "Spare Parts List" or "Asset Register".';
+const FOOTER_HINT =
+  'A line printed at the foot of the catalogue — e.g. a confidentiality or copyright notice. Leave blank for no footer.';
+const SHOW_DATE_HINT =
+  'Prints the date the catalogue was generated. **Keep it on** for a dated stock-take or audit record; **turn it off** for a timeless reference sheet you do not want to look out of date.';
 
 /**
  * The parts-catalogue screen (issue #22): a printable, column-configurable list of items scoped
@@ -207,8 +217,9 @@ export function CatalogueScreen() {
           icon={<CatalogueIcon />}
           title="Catalogue"
           actions={
+            // The primary call-to-action on this screen — the standard CTA colour (like
+            // "Add item" on the Inventory screen) so the next action is obvious.
             <Button
-              variant="outline"
               onClick={() => window.print()}
               disabled={needsChoice || empty || catalogue.isLoading}
               data-testid="print-catalogue"
@@ -278,14 +289,19 @@ export function CatalogueScreen() {
             </legend>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
               {CATALOGUE_FIELDS.map((field) => (
-                <label key={field.key} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={fields.has(field.key)}
-                    onChange={() => toggleField(field.key)}
-                    data-testid={`catalogue-field-${field.key}`}
-                  />
-                  {field.label}
-                </label>
+                // The help badge sits *outside* the label so tapping it opens the tooltip
+                // rather than toggling the checkbox.
+                <div key={field.key} className="flex items-center gap-1.5 text-sm">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={fields.has(field.key)}
+                      onChange={() => toggleField(field.key)}
+                      data-testid={`catalogue-field-${field.key}`}
+                    />
+                    {field.label}
+                  </label>
+                  <InfoHint content={field.help} />
+                </div>
               ))}
             </div>
           </fieldset>
@@ -356,7 +372,7 @@ export function CatalogueScreen() {
                     data-testid="catalogue-branding-title"
                   />
                 </FormField>
-                <FormField label="Company name">
+                <FormField label="Company name" hint={ORG_NAME_HINT}>
                   <Input
                     value={branding.orgName}
                     onChange={(e) => setCatalogueOrgName(e.target.value)}
@@ -382,14 +398,17 @@ export function CatalogueScreen() {
                 />
               </FormField>
 
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={branding.showGeneratedDate}
-                  onChange={(e) => setCatalogueShowGeneratedDate(e.target.checked)}
-                  data-testid="catalogue-branding-show-date"
-                />
-                Show the generated date on the printed catalogue
-              </label>
+              <div className="flex items-center gap-1.5 text-sm">
+                <label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={branding.showGeneratedDate}
+                    onChange={(e) => setCatalogueShowGeneratedDate(e.target.checked)}
+                    data-testid="catalogue-branding-show-date"
+                  />
+                  Show the generated date on the printed catalogue
+                </label>
+                <InfoHint content={SHOW_DATE_HINT} />
+              </div>
             </div>
           </details>
         </Surface>
@@ -445,26 +464,30 @@ function CatalogueDocument({
   formatters: Formatters;
 }) {
   const f = formatters;
-  const hasLetterhead = Boolean(branding.logo || branding.orgName || branding.orgDetails);
+  // Gate each letterhead element on *trimmed* content so a whitespace-only field prints nothing,
+  // while still rendering exactly what the reader typed (their newlines/spacing are preserved).
+  const showOrgName = branding.orgName.trim().length > 0;
+  const showOrgDetails = branding.orgDetails.trim().length > 0;
+  const hasLetterhead = Boolean(branding.logo) || showOrgName || showOrgDetails;
   return (
     <>
       <header className="flex flex-col gap-3 border-b border-border pb-4">
         {hasLetterhead ? (
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-0.5">
-              {branding.orgName ? (
+              {showOrgName ? (
                 <p className="text-base font-semibold text-foreground" data-testid="catalogue-org-name">
                   {branding.orgName}
                 </p>
               ) : null}
-              {branding.orgDetails ? (
+              {showOrgDetails ? (
                 <p className="whitespace-pre-line text-sm text-muted-foreground">{branding.orgDetails}</p>
               ) : null}
             </div>
             {branding.logo ? (
               <img
                 src={branding.logo}
-                alt={branding.orgName ? `${branding.orgName} logo` : 'Catalogue logo'}
+                alt={showOrgName ? `${branding.orgName.trim()} logo` : 'Catalogue logo'}
                 className="catalogue-logo max-h-20 w-auto shrink-0 object-contain"
               />
             ) : null}
@@ -473,7 +496,7 @@ function CatalogueDocument({
 
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold" data-testid="catalogue-title">
-            {branding.title || 'Catalogue'}
+            {branding.title.trim() || 'Catalogue'}
           </h2>
           <p className="text-sm text-muted-foreground">
             {branding.showGeneratedDate ? <>Generated {f.date(catalogue.generatedAt)} · </> : null}
@@ -510,7 +533,7 @@ function CatalogueDocument({
         </div>
       ) : null}
 
-      {branding.footer ? (
+      {branding.footer.trim().length > 0 ? (
         <footer
           className="border-t border-border pt-3 text-xs text-muted-foreground"
           data-testid="catalogue-footer"
@@ -554,7 +577,7 @@ function CatalogueGroupSection({
         <table className="catalogue-table w-full text-sm">
           <caption className="sr-only">Items in {group.locationPath}</caption>
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="py-2 pr-3 font-medium">
                 Item
               </th>

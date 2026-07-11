@@ -157,10 +157,23 @@ describe('CatalogueScreen', () => {
     expect(screen.queryByRole('columnheader', { name: 'Line value' })).toBeNull();
   });
 
-  it('carries rich-Markdown help badges on its controls', () => {
+  it('carries a rich-Markdown help badge on every column and control', () => {
     render(<CatalogueScreen />);
-    // Show + Columns + the branding fields (logo/title/address/footer) all carry an InfoHint.
-    expect(screen.getAllByRole('img', { name: 'More information' }).length).toBeGreaterThanOrEqual(4);
+    // One badge per column (13) plus the scope/columns/branding controls — assert at least the
+    // 13 per-column badges are present so each column explains its print/don't-print trade-off.
+    expect(screen.getAllByRole('img', { name: 'More information' }).length).toBeGreaterThanOrEqual(13);
+  });
+
+  it('renders a title of only whitespace as the default "Catalogue"', () => {
+    usePreferencesStore.setState({ catalogueTitle: '   ' });
+    render(<CatalogueScreen />);
+    expect(screen.getByTestId('catalogue-title').textContent).toBe('Catalogue');
+  });
+
+  it('does not print a letterhead line for a whitespace-only company name', () => {
+    usePreferencesStore.setState({ catalogueOrgName: '   ' });
+    render(<CatalogueScreen />);
+    expect(screen.queryByTestId('catalogue-org-name')).toBeNull();
   });
 
   it('shows "No projects are in the system." in place of the project picker when none exist', () => {
@@ -190,5 +203,29 @@ describe('CatalogueScreen', () => {
     usePreferencesStore.setState({ catalogueShowGeneratedDate: false });
     render(<CatalogueScreen />);
     expect(document.body.textContent).not.toContain('Generated');
+  });
+});
+
+describe('catalogue letterhead preferences', () => {
+  it('store the letterhead text verbatim — a trailing space or a newline is never trimmed away', () => {
+    const store = usePreferencesStore.getState();
+    // A trailing space must survive (previously trimmed on every keystroke, so it could
+    // never be typed at the end of the field).
+    store.setCatalogueTitle('Spare Parts ');
+    expect(usePreferencesStore.getState().catalogueTitle).toBe('Spare Parts ');
+    // A multi-line address must keep its newlines (and any trailing one).
+    store.setCatalogueOrgDetails('12 Example Way\nExample Town\n');
+    expect(usePreferencesStore.getState().catalogueOrgDetails).toBe('12 Example Way\nExample Town\n');
+    store.setCatalogueOrgName(' Acme ');
+    expect(usePreferencesStore.getState().catalogueOrgName).toBe(' Acme ');
+    store.setCatalogueFooter('© Acme ');
+    expect(usePreferencesStore.getState().catalogueFooter).toBe('© Acme ');
+  });
+
+  it('still guards the logo to a data:image URL', () => {
+    usePreferencesStore.getState().setCatalogueLogo('not-an-image');
+    expect(usePreferencesStore.getState().catalogueLogo).toBe('');
+    usePreferencesStore.getState().setCatalogueLogo('data:image/webp;base64,AAAA');
+    expect(usePreferencesStore.getState().catalogueLogo).toBe('data:image/webp;base64,AAAA');
   });
 });

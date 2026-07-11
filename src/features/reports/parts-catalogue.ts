@@ -58,27 +58,98 @@ export interface CatalogueFieldDef {
   readonly align: 'left' | 'right';
   /** True when the column shows a money value; a selected money column enables the totals. */
   readonly money?: boolean;
+  /** Rich-Markdown help: what the column shows and when a reader would want / not want it. */
+  readonly help: string;
 }
 
 /**
  * The selectable columns, in display order. The item **name** is always the first column and
  * so is not listed here. `lineValue` (quantity × unit cost) is the column that turns the
  * catalogue into a costed parts list and drives the per-group subtotals and grand total.
+ * Each column's `help` explains the print/don't-print trade-off for the column picker.
  */
 export const CATALOGUE_FIELDS: readonly CatalogueFieldDef[] = [
-  { key: 'category', label: 'Category', align: 'left' },
-  { key: 'quantity', label: 'Qty', align: 'right' },
-  { key: 'condition', label: 'Condition', align: 'left' },
-  { key: 'serial', label: 'Serial', align: 'left' },
-  { key: 'mpn', label: 'MPN', align: 'left' },
-  { key: 'manufacturer', label: 'Manufacturer', align: 'left' },
-  { key: 'supplier', label: 'Supplier', align: 'left' },
-  { key: 'unitCost', label: 'Unit cost', align: 'right', money: true },
-  { key: 'lineValue', label: 'Line value', align: 'right', money: true },
-  { key: 'purchasePrice', label: 'Purchase price', align: 'right', money: true },
-  { key: 'acquired', label: 'Acquired', align: 'left' },
-  { key: 'warranty', label: 'Warranty', align: 'left' },
-  { key: 'notes', label: 'Notes', align: 'left' },
+  {
+    key: 'category',
+    label: 'Category',
+    align: 'left',
+    help: "The item's category. **Include it** to scan or group the catalogue by type; **leave it out** for a shorter, name-focused list.",
+  },
+  {
+    key: 'quantity',
+    label: 'Qty',
+    align: 'right',
+    help: 'How many are on hand, with the unit of measure. **Include it** for a stock-take or parts list; **leave it out** for a plain reference list where counts do not matter.',
+  },
+  {
+    key: 'condition',
+    label: 'Condition',
+    align: 'left',
+    help: 'The item condition (Mint / Good / …). Useful on a **resale or insurance** list; skip it for a simple parts list where condition is irrelevant.',
+  },
+  {
+    key: 'serial',
+    label: 'Serial',
+    align: 'left',
+    help: 'The serialised instance number. Handy for **asset tracking**; leave it off for bulk consumables that are not individually numbered.',
+  },
+  {
+    key: 'mpn',
+    label: 'MPN',
+    align: 'left',
+    help: 'Manufacturer part number. **Essential on a parts or order list** so a supplier can identify the exact part; unnecessary on a general inventory.',
+  },
+  {
+    key: 'manufacturer',
+    label: 'Manufacturer',
+    align: 'left',
+    help: 'Who makes the item. Useful alongside the MPN on a **procurement** list; often redundant on an internal inventory.',
+  },
+  {
+    key: 'supplier',
+    label: 'Supplier',
+    align: 'left',
+    help: 'Your preferred supplier for the item. **Include it** on a re-order or shopping list; leave it out of a catalogue meant for customers or insurers.',
+  },
+  {
+    key: 'unitCost',
+    label: 'Unit cost',
+    align: 'right',
+    money: true,
+    help: 'The effective cost per unit. **Include it** for a costed or quote list; **leave it out** of a customer-facing or asset list where you do not want prices shown.',
+  },
+  {
+    key: 'lineValue',
+    label: 'Line value',
+    align: 'right',
+    money: true,
+    help: 'Quantity × unit cost. Turning this on **adds per-location subtotals and a grand total** — ideal for a valuation. Leave it off for a plain list with no money.',
+  },
+  {
+    key: 'purchasePrice',
+    label: 'Purchase price',
+    align: 'right',
+    money: true,
+    help: 'What you originally paid per unit. Useful for **insurance or resale**, and distinct from the current unit cost — include it only when the original price matters.',
+  },
+  {
+    key: 'acquired',
+    label: 'Acquired',
+    align: 'left',
+    help: 'When the item was acquired. Relevant to **warranty or depreciation** views; drop it from a general parts list.',
+  },
+  {
+    key: 'warranty',
+    label: 'Warranty',
+    align: 'left',
+    help: 'Warranty status (in warranty / expiring / expired). Useful on an **asset or insurance** schedule; irrelevant to a consumables list.',
+  },
+  {
+    key: 'notes',
+    label: 'Notes',
+    align: 'left',
+    help: 'Free-text notes on the item. **Include** them when they carry handling or usage info; **leave out** if they are private or would clutter the print.',
+  },
 ];
 
 /** The columns shown before the reader customises them — a compact, costed default. */
