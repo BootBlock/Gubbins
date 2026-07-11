@@ -81,6 +81,7 @@ const BASE: Item = {
   condition: null,
   parentId: null,
   isUnlimited: false,
+  isFavourite: false,
   reorderPoint: null,
   reorderGaugePercent: null,
   reorderQty: null,
@@ -223,6 +224,20 @@ describe('ItemCard — content branches', () => {
     expect(screen.getByLabelText('Unlimited supply')).not.toBeNull();
     expect(screen.getByText('unlimited supply')).not.toBeNull();
     expect(screen.queryByTestId('quantity-stepper')).toBeNull();
+  });
+
+  it('shows the favourite watermark + an sr-only label only for a favourited item', () => {
+    const { container } = renderCard(makeItem({ isFavourite: true }));
+    // The decorative watermark is aria-hidden and clipped to the card corner.
+    expect(container.querySelector('[aria-hidden="true"].overflow-hidden')).not.toBeNull();
+    // Assistive tech still hears "Favourite" via the sr-only label.
+    expect(screen.getByText('Favourite', { selector: '.sr-only' })).toBeInTheDocument();
+
+    // A non-favourite card carries neither.
+    cleanup();
+    const { container: plain } = renderCard(makeItem({ isFavourite: false }));
+    expect(plain.querySelector('[aria-hidden="true"].overflow-hidden')).toBeNull();
+    expect(screen.queryByText('Favourite', { selector: '.sr-only' })).toBeNull();
   });
 
   it('renders a selection checkbox and marks the card selected when in select mode', () => {

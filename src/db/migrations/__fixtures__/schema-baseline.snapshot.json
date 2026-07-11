@@ -419,7 +419,7 @@
       "type": "table",
       "name": "items",
       "tbl_name": "items",
-      "sql": "CREATE TABLE items (\n          id                   TEXT    PRIMARY KEY NOT NULL,\n          name                 TEXT    NOT NULL,\n          description          TEXT,\n          notes                TEXT,\n          location_id          TEXT    NOT NULL REFERENCES locations(id),\n          category_id          TEXT    REFERENCES categories(id) ON DELETE SET NULL,\n          tracking_mode        TEXT    NOT NULL DEFAULT 'DISCRETE',\n          quantity             INTEGER NOT NULL DEFAULT 0,\n          unit_of_measure      TEXT,\n          gross_capacity       REAL,\n          tare_weight          REAL,\n          current_net_value    REAL,\n          operational_metadata TEXT,\n          is_active            INTEGER NOT NULL DEFAULT 1,\n          is_unlimited         INTEGER NOT NULL DEFAULT 0,\n          created_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), serial_no INTEGER, mpn TEXT, manufacturer TEXT, unit_cost REAL, barcode TEXT, expiry_date INTEGER, batch_number TEXT, lot_number TEXT, condition TEXT CHECK (condition IS NULL OR condition IN ('MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION')), parent_id TEXT REFERENCES items(id), reorder_point INTEGER, reorder_gauge_percent REAL, reorder_qty INTEGER, acquired_at TEXT, warranty_expires_at TEXT, purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0), depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0), weight REAL CHECK (weight IS NULL OR weight >= 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), current_value REAL CHECK (current_value IS NULL OR current_value >= 0),\n          CHECK (tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED')),\n          CHECK (is_active IN (0, 1)),\n          CHECK (quantity >= 0),\n          CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1),\n          -- \"Unlimited supply\" (Phase 82) is a DISCRETE-only modifier: an item whose\n          -- source is effectively infinite (tap water, mains air). The first CHECK keeps\n          -- it a strict boolean; the second is the invariant that it can only sit on a\n          -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.\n          CHECK (is_unlimited IN (0, 1)),\n          CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),\n          -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.\n          CHECK (\n            tracking_mode <> 'CONSUMABLE_GAUGE' OR (\n              unit_of_measure   IS NOT NULL AND\n              gross_capacity    IS NOT NULL AND gross_capacity > 0 AND\n              tare_weight       IS NOT NULL AND tare_weight >= 0 AND\n              current_net_value IS NOT NULL AND current_net_value >= 0\n            )\n          )\n        ) STRICT"
+      "sql": "CREATE TABLE items (\n          id                   TEXT    PRIMARY KEY NOT NULL,\n          name                 TEXT    NOT NULL,\n          description          TEXT,\n          notes                TEXT,\n          location_id          TEXT    NOT NULL REFERENCES locations(id),\n          category_id          TEXT    REFERENCES categories(id) ON DELETE SET NULL,\n          tracking_mode        TEXT    NOT NULL DEFAULT 'DISCRETE',\n          quantity             INTEGER NOT NULL DEFAULT 0,\n          unit_of_measure      TEXT,\n          gross_capacity       REAL,\n          tare_weight          REAL,\n          current_net_value    REAL,\n          operational_metadata TEXT,\n          is_active            INTEGER NOT NULL DEFAULT 1,\n          is_unlimited         INTEGER NOT NULL DEFAULT 0,\n          is_favourite         INTEGER NOT NULL DEFAULT 0,\n          created_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), serial_no INTEGER, mpn TEXT, manufacturer TEXT, unit_cost REAL, barcode TEXT, expiry_date INTEGER, batch_number TEXT, lot_number TEXT, condition TEXT CHECK (condition IS NULL OR condition IN ('MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION')), parent_id TEXT REFERENCES items(id), reorder_point INTEGER, reorder_gauge_percent REAL, reorder_qty INTEGER, acquired_at TEXT, warranty_expires_at TEXT, purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0), depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0), weight REAL CHECK (weight IS NULL OR weight >= 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), current_value REAL CHECK (current_value IS NULL OR current_value >= 0),\n          CHECK (tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED')),\n          CHECK (is_active IN (0, 1)),\n          CHECK (quantity >= 0),\n          CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1),\n          -- \"Unlimited supply\" (Phase 82) is a DISCRETE-only modifier: an item whose\n          -- source is effectively infinite (tap water, mains air). The first CHECK keeps\n          -- it a strict boolean; the second is the invariant that it can only sit on a\n          -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.\n          CHECK (is_unlimited IN (0, 1)),\n          CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),\n          -- \"Favourite\" (issue #23): a user-pinned item that sorts ahead of the rest of the\n          -- list. Applies to any item regardless of tracking mode, so — unlike is_unlimited —\n          -- it carries only the strict-boolean CHECK, no mode restriction.\n          CHECK (is_favourite IN (0, 1)),\n          -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.\n          CHECK (\n            tracking_mode <> 'CONSUMABLE_GAUGE' OR (\n              unit_of_measure   IS NOT NULL AND\n              gross_capacity    IS NOT NULL AND gross_capacity > 0 AND\n              tare_weight       IS NOT NULL AND tare_weight >= 0 AND\n              current_net_value IS NOT NULL AND current_net_value >= 0\n            )\n          )\n        ) STRICT"
     },
     {
       "type": "table",
@@ -2431,6 +2431,14 @@
         },
         {
           "cid": 15,
+          "name": "is_favourite",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 16,
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -2438,7 +2446,7 @@
           "pk": 0
         },
         {
-          "cid": 16,
+          "cid": 17,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -2446,7 +2454,7 @@
           "pk": 0
         },
         {
-          "cid": 17,
+          "cid": 18,
           "name": "serial_no",
           "type": "INTEGER",
           "notnull": 0,
@@ -2454,7 +2462,7 @@
           "pk": 0
         },
         {
-          "cid": 18,
+          "cid": 19,
           "name": "mpn",
           "type": "TEXT",
           "notnull": 0,
@@ -2462,7 +2470,7 @@
           "pk": 0
         },
         {
-          "cid": 19,
+          "cid": 20,
           "name": "manufacturer",
           "type": "TEXT",
           "notnull": 0,
@@ -2470,7 +2478,7 @@
           "pk": 0
         },
         {
-          "cid": 20,
+          "cid": 21,
           "name": "unit_cost",
           "type": "REAL",
           "notnull": 0,
@@ -2478,7 +2486,7 @@
           "pk": 0
         },
         {
-          "cid": 21,
+          "cid": 22,
           "name": "barcode",
           "type": "TEXT",
           "notnull": 0,
@@ -2486,7 +2494,7 @@
           "pk": 0
         },
         {
-          "cid": 22,
+          "cid": 23,
           "name": "expiry_date",
           "type": "INTEGER",
           "notnull": 0,
@@ -2494,7 +2502,7 @@
           "pk": 0
         },
         {
-          "cid": 23,
+          "cid": 24,
           "name": "batch_number",
           "type": "TEXT",
           "notnull": 0,
@@ -2502,7 +2510,7 @@
           "pk": 0
         },
         {
-          "cid": 24,
+          "cid": 25,
           "name": "lot_number",
           "type": "TEXT",
           "notnull": 0,
@@ -2510,7 +2518,7 @@
           "pk": 0
         },
         {
-          "cid": 25,
+          "cid": 26,
           "name": "condition",
           "type": "TEXT",
           "notnull": 0,
@@ -2518,7 +2526,7 @@
           "pk": 0
         },
         {
-          "cid": 26,
+          "cid": 27,
           "name": "parent_id",
           "type": "TEXT",
           "notnull": 0,
@@ -2526,7 +2534,7 @@
           "pk": 0
         },
         {
-          "cid": 27,
+          "cid": 28,
           "name": "reorder_point",
           "type": "INTEGER",
           "notnull": 0,
@@ -2534,7 +2542,7 @@
           "pk": 0
         },
         {
-          "cid": 28,
+          "cid": 29,
           "name": "reorder_gauge_percent",
           "type": "REAL",
           "notnull": 0,
@@ -2542,7 +2550,7 @@
           "pk": 0
         },
         {
-          "cid": 29,
+          "cid": 30,
           "name": "reorder_qty",
           "type": "INTEGER",
           "notnull": 0,
@@ -2550,7 +2558,7 @@
           "pk": 0
         },
         {
-          "cid": 30,
+          "cid": 31,
           "name": "acquired_at",
           "type": "TEXT",
           "notnull": 0,
@@ -2558,7 +2566,7 @@
           "pk": 0
         },
         {
-          "cid": 31,
+          "cid": 32,
           "name": "warranty_expires_at",
           "type": "TEXT",
           "notnull": 0,
@@ -2566,7 +2574,7 @@
           "pk": 0
         },
         {
-          "cid": 32,
+          "cid": 33,
           "name": "purchase_price",
           "type": "REAL",
           "notnull": 0,
@@ -2574,7 +2582,7 @@
           "pk": 0
         },
         {
-          "cid": 33,
+          "cid": 34,
           "name": "depreciation_months",
           "type": "INTEGER",
           "notnull": 0,
@@ -2582,7 +2590,7 @@
           "pk": 0
         },
         {
-          "cid": 34,
+          "cid": 35,
           "name": "weight",
           "type": "REAL",
           "notnull": 0,
@@ -2590,7 +2598,7 @@
           "pk": 0
         },
         {
-          "cid": 35,
+          "cid": 36,
           "name": "width",
           "type": "REAL",
           "notnull": 0,
@@ -2598,7 +2606,7 @@
           "pk": 0
         },
         {
-          "cid": 36,
+          "cid": 37,
           "name": "height",
           "type": "REAL",
           "notnull": 0,
@@ -2606,7 +2614,7 @@
           "pk": 0
         },
         {
-          "cid": 37,
+          "cid": 38,
           "name": "depth",
           "type": "REAL",
           "notnull": 0,
@@ -2614,7 +2622,7 @@
           "pk": 0
         },
         {
-          "cid": 38,
+          "cid": 39,
           "name": "current_value",
           "type": "REAL",
           "notnull": 0,

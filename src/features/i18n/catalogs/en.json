@@ -206,6 +206,9 @@
   "dashboard.widget.platform.sabNo": "Missing",
   "dashboard.widget.platform.dbFile": "DB file",
 
+  "inventory.itemActions.favourite": "Add to favourites",
+  "inventory.itemActions.unfavourite": "Remove from favourites",
+  "inventory.favourite.badge": "Favourite",
   "inventory.itemActions.addToProject": "Add to project…",
   "inventory.addToProject.title": "Add to project",
   "inventory.addToProject.description": "Add “{name}” to an existing project as a required part.",

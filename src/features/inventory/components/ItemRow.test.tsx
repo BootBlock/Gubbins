@@ -69,6 +69,7 @@ const BASE: Item = {
   condition: null,
   parentId: null,
   isUnlimited: false,
+  isFavourite: false,
   reorderPoint: null,
   reorderGaugePercent: null,
   reorderQty: null,
@@ -121,6 +122,15 @@ describe('ItemRow — content branches', () => {
     expect(root.classList.contains('cursor-grab')).toBe(false);
     expect(root.classList.contains('select-none')).toBe(true);
     expect(root.classList.contains('active:cursor-grabbing')).toBe(true);
+  });
+
+  it('shows a labelled favourite star beside the name only for a favourited item', () => {
+    renderRow(makeItem({ isFavourite: true }));
+    expect(screen.getByRole('img', { name: 'Favourite' })).not.toBeNull();
+
+    cleanup();
+    renderRow(makeItem({ isFavourite: false }));
+    expect(screen.queryByRole('img', { name: 'Favourite' })).toBeNull();
   });
 
   it('paints the per-location edge tint (F10) on the root only when a tint class is given', () => {

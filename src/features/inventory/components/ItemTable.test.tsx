@@ -48,6 +48,7 @@ const BASE: Item = {
   condition: null,
   parentId: null,
   isUnlimited: false,
+  isFavourite: false,
   reorderPoint: null,
   reorderGaugePercent: null,
   reorderQty: null,
@@ -160,6 +161,34 @@ describe('ItemTableRow', () => {
     // Active discrete item → the ± stepper stands in for the stock figure.
     expect(screen.getByTestId('quantity-stepper')).toBeInTheDocument();
     expect(screen.getByTestId('item-actions')).toBeInTheDocument();
+  });
+
+  it('shows a labelled favourite star in the name cell only for a favourited item', () => {
+    const { rerender } = render(
+      <ItemTableRow
+        item={makeItem({ isFavourite: true })}
+        locations={[]}
+        locationName="Workshop"
+        gridTemplate={tableGridColumns(cols.length, false)}
+        columnIds={cols}
+        ariaRowIndex={2}
+        categoryName={null}
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Favourite' })).toBeInTheDocument();
+
+    rerender(
+      <ItemTableRow
+        item={makeItem({ isFavourite: false })}
+        locations={[]}
+        locationName="Workshop"
+        gridTemplate={tableGridColumns(cols.length, false)}
+        columnIds={cols}
+        ariaRowIndex={2}
+        categoryName={null}
+      />,
+    );
+    expect(screen.queryByRole('img', { name: 'Favourite' })).toBeNull();
   });
 
   it('renders an em-dash for a configured field the item has no value for', () => {

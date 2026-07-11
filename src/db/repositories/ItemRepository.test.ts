@@ -49,6 +49,38 @@ describe('ItemRepository', () => {
     expect(firstTwo.hasMore).toBe(true);
   });
 
+  it('defaults items to not-favourite and toggles the pin without a history entry', async () => {
+    const item = await items.create({ name: 'Cordless drill' });
+    expect(item.isFavourite).toBe(false);
+
+    const starred = await items.update(item.id, { isFavourite: true });
+    expect(starred.isFavourite).toBe(true);
+
+    // Favouriting is a personal curation, not a change to the item — no ledger entry.
+    const history = await items.getHistory(item.id);
+    expect(history.rows.map((h) => h.action)).not.toContain('RENAMED');
+    expect(history.rows.every((h) => h.action === 'CREATED')).toBe(true);
+
+    const cleared = await items.update(item.id, { isFavourite: false });
+    expect(cleared.isFavourite).toBe(false);
+  });
+
+  it('sorts favourited items ahead of everything else, whatever the sort', async () => {
+    // Names are chosen so the favourite ("Zebra") would sort LAST alphabetically and the
+    // default name order would otherwise bury it — proving favourites lead regardless.
+    await items.create({ name: 'Apple' });
+    await items.create({ name: 'Mango' });
+    const zebra = await items.create({ name: 'Zebra' });
+    await items.update(zebra.id, { isFavourite: true });
+
+    const byName = await items.list();
+    expect(byName.rows.map((i) => i.name)).toEqual(['Zebra', 'Apple', 'Mango']);
+
+    // Even an explicit name-descending sort keeps the favourite pinned to the top.
+    const byNameDesc = await items.list({ sort: [{ field: 'name', direction: 'desc' }] });
+    expect(byNameDesc.rows[0]?.name).toBe('Zebra');
+  });
+
   it('filters by location and active state', async () => {
     const shelf = await locations.create({ name: 'Shelf' });
     await items.create({ name: 'On shelf', locationId: shelf.id });

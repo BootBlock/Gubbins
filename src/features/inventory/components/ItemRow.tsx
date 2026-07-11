@@ -10,6 +10,7 @@ import { ItemActions } from './ItemActions';
 import { ItemStockValue } from './ItemStockValue';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldSummary } from './ItemCardFields';
+import { FavouriteStar } from './FavouriteIndicator';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
 
@@ -102,7 +103,10 @@ export const ItemRow = memo(function ItemRow({
       ) : null}
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{item.name}</p>
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          {item.isFavourite ? <FavouriteStar /> : null}
+          <span className="min-w-0 truncate">{item.name}</span>
+        </p>
         {/* The user-configured fields (backlog E1) as a compact one-line summary; empties are
             dropped, so the row keeps its dense two-line height regardless of the field set. */}
         <CardFieldSummary fields={fields} locationColorClass={locationColorClass} />

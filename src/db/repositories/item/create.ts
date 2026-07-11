@@ -42,6 +42,8 @@ export interface ResolvedCreate {
   readonly condition: string | null;
   /** 0/1 for the STRICT INTEGER `is_unlimited` column (Phase 82). */
   readonly isUnlimited: number;
+  /** 0/1 for the STRICT INTEGER `is_favourite` column (issue #23). */
+  readonly isFavourite: number;
   readonly reorderPoint: number | null;
   readonly reorderGaugePercent: number | null;
   readonly reorderQty: number | null;
@@ -128,6 +130,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     lotNumber: normaliseText(input.lotNumber),
     condition: input.condition ?? null,
     isUnlimited: isUnlimited ? 1 : 0,
+    isFavourite: input.isFavourite === true ? 1 : 0,
     reorderPoint: normaliseReorderInt(input.reorderPoint),
     reorderGaugePercent: normaliseReorderPercent(input.reorderGaugePercent),
     reorderQty: normaliseReorderInt(input.reorderQty),
@@ -162,10 +165,10 @@ export function buildInsert(
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-               mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited,
+               mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited, is_favourite,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, width, height, depth, current_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -190,6 +193,7 @@ export function buildInsert(
         r.lotNumber,
         r.condition,
         r.isUnlimited,
+        r.isFavourite,
         r.reorderPoint,
         r.reorderGaugePercent,
         r.reorderQty,

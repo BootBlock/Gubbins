@@ -6,6 +6,7 @@ import { useItemDragSource } from '../item-drag';
 import type { CardCustomField } from '../card-fields';
 import { ItemActions } from './ItemActions';
 import { ItemStockValue } from './ItemStockValue';
+import { FavouriteStar } from './FavouriteIndicator';
 import { FieldValue } from './ItemCardFields';
 import { useCardClickAction } from './useCardClickAction';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
@@ -140,8 +141,9 @@ export const ItemTableRow = memo(function ItemTableRow({
         </span>
       ) : null}
 
-      <span role="cell" className="min-w-0 truncate text-sm font-medium">
-        {item.name}
+      <span role="cell" className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+        {item.isFavourite ? <FavouriteStar /> : null}
+        <span className="min-w-0 truncate">{item.name}</span>
       </span>
 
       {fields.map((field) => (
