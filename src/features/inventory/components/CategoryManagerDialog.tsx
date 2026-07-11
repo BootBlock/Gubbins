@@ -10,7 +10,7 @@ import {
   Tooltip,
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
-import { AddIcon, CloseIcon, DeleteIcon, InfoIcon, ToolsIcon } from '@/components/icons';
+import { AddIcon, CategoryIcon, CheckIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
 import {
   FIELD_TYPES,
   MAINTENANCE_BASES,
@@ -33,10 +33,10 @@ import {
 } from '../categories';
 import {
   applyCategoryStarterSeed,
+  CATEGORY_PRESETS,
   hasCategoryNamed,
-  TOOLS_STARTER_CATEGORY_NAME,
-  TOOLS_STARTER_SEED,
-} from '../tools-starter-seed';
+  type CategoryPreset,
+} from '../category-presets';
 import {
   ATTACHMENT_MODE_LABELS,
   conditionSelectOptions,
@@ -135,7 +135,7 @@ function CategoryManagerBody() {
             ))
           )}
         </ul>
-        <ToolsStarterButton existingNames={rows.map((c) => c.name)} onSeeded={(id) => setSelectedId(id)} />
+        <PresetPickerButton existingNames={rows.map((c) => c.name)} onImported={(id) => setSelectedId(id)} />
       </div>
 
       {/* Selected category detail */}
@@ -159,46 +159,153 @@ function CategoryManagerBody() {
 }
 
 /**
- * One-tap "Add a Tools category" affordance (backlog T4). A convenience/discoverability
- * shortcut that materialises the {@link TOOLS_STARTER_SEED} — a category pre-wired with
- * the T1/T2 facet defaults and a couple of tool-ish custom fields — through the ordinary
- * create-category / add-field mutation path (no bespoke repository method).
- *
- * Idempotent by construction: it hides itself once a category named "Tools" exists, so a
- * second tap can never create a duplicate.
+ * "Add from a preset" affordance (backlog T4, generalised). Opens the {@link PresetPickerDialog}
+ * — a library of ready-made schemas ({@link CATEGORY_PRESETS}) a user can import to give a set
+ * of items common custom fields in one step, instead of hand-assembling each field. Each import
+ * runs through the ordinary create-category / add-field mutation path (no bespoke repository
+ * method), so the result is a plain category whose fields propagate to every item using it.
  */
-function ToolsStarterButton({
+function PresetPickerButton({
   existingNames,
-  onSeeded,
+  onImported,
 }: {
   existingNames: readonly string[];
-  onSeeded: (categoryId: string) => void;
+  onImported: (categoryId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Tooltip
+        content="Import a ready-made category — such as **Battery** or **Food** — pre-filled with the custom fields that kind of item usually needs. You can tweak everything afterwards."
+        triggerTabIndex={-1}
+      >
+        <span className="block">
+          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setOpen(true)}>
+            <CategoryIcon />
+            Add from a preset…
+          </Button>
+        </span>
+      </Tooltip>
+      {/* Opened only on click, so this nested dialog always mounts after its parent (modal-stack seam). */}
+      <PresetPickerDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        existingNames={existingNames}
+        onImported={(id) => {
+          setOpen(false);
+          onImported(id);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * The preset library picker. Lists every {@link CATEGORY_PRESETS} entry as a card showing the
+ * category it creates and the custom fields it adds. Importing drives the ordinary create /
+ * add-field mutations; a preset whose category already exists (case-insensitive) is marked
+ * "Added" and disabled, so importing is idempotent and never makes a duplicate.
+ */
+function PresetPickerDialog({
+  open,
+  onClose,
+  existingNames,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  existingNames: readonly string[];
+  onImported: (categoryId: string) => void;
 }) {
   const createCategory = useCreateCategory();
   const addField = useAddCategoryField();
+  const [importingId, setImportingId] = useState<string | null>(null);
 
-  if (hasCategoryNamed(existingNames, TOOLS_STARTER_CATEGORY_NAME)) return null;
-
-  const pending = createCategory.isPending || addField.isPending;
-
-  const seed = () =>
-    void applyCategoryStarterSeed(TOOLS_STARTER_SEED, {
+  const importPreset = (preset: CategoryPreset) => {
+    setImportingId(preset.id);
+    void applyCategoryStarterSeed(preset.seed, {
       createCategory: (input) => createCategory.mutateAsync(input),
       addField: (categoryId, input) => addField.mutateAsync({ categoryId, input }),
-    }).then(onSeeded);
+    })
+      .then(onImported)
+      .finally(() => setImportingId(null));
+  };
 
   return (
-    <Tooltip
-      content="Create a ready-made **Tools** category — serialised tracking, a 12-month warranty window, and *Serial number* & *Calibration certificate* fields — that you can tweak afterwards."
-      triggerTabIndex={-1}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add a category from a preset"
+      description="Pick a ready-made category. Its custom fields are added to the category itself, so they appear on — and stay editable across — every item you assign to it."
+      className="max-w-xl"
+      scrollBody
     >
-      <span className="block">
-        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={seed} disabled={pending}>
-          <ToolsIcon />
-          Add a Tools category
-        </Button>
+      <ul className="space-y-2">
+        {CATEGORY_PRESETS.map((preset) => (
+          <li key={preset.id}>
+            <PresetCard
+              preset={preset}
+              added={hasCategoryNamed(existingNames, preset.name)}
+              importing={importingId === preset.id}
+              disabled={importingId !== null}
+              onImport={() => importPreset(preset)}
+            />
+          </li>
+        ))}
+      </ul>
+    </Modal>
+  );
+}
+
+function PresetCard({
+  preset,
+  added,
+  importing,
+  disabled,
+  onImport,
+}: {
+  preset: CategoryPreset;
+  added: boolean;
+  importing: boolean;
+  disabled: boolean;
+  onImport: () => void;
+}) {
+  const fieldCount = preset.seed.fields.length;
+  return (
+    <button
+      type="button"
+      onClick={onImport}
+      disabled={added || disabled}
+      aria-label={added ? `${preset.name} preset already added` : `Add ${preset.name} preset`}
+      className="flex w-full flex-col gap-2 rounded-xl border border-border bg-secondary/20 p-3 text-left transition-colors enabled:hover:border-primary/40 enabled:hover:bg-secondary/40 disabled:cursor-default disabled:opacity-70"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-sm font-semibold">{preset.name}</span>
+        {added ? (
+          <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-glyph-success [&_svg]:size-3.5">
+            <CheckIcon aria-hidden />
+            Added
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {importing ? 'Adding…' : `${fieldCount} field${fieldCount === 1 ? '' : 's'}`}
+          </span>
+        )}
+      </div>
+      <span className="text-xs text-muted-foreground">{preset.description}</span>
+      <span className="flex flex-wrap gap-1">
+        {preset.seed.fields.map((field) => (
+          <span
+            key={field.name}
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs"
+          >
+            {field.name}
+            <span className="text-muted-foreground">{FIELD_TYPE_LABELS[field.fieldType]}</span>
+          </span>
+        ))}
       </span>
-    </Tooltip>
+    </button>
   );
 }
 
