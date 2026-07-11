@@ -1,0 +1,55 @@
+name: Bug report
+description: Report something that isn't working correctly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in the details below so it
+        can be reproduced. Do not include any personal data, secrets, or tokens.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the problem, and what you expected instead.
+      placeholder: When I…, I expected…, but instead…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps that trigger the problem.
+      placeholder: |
+        1. Go to…
+        2. Click…
+        3. See…
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      multiple: true
+      options:
+        - Desktop browser
+        - Mobile / tablet browser
+        - Installed PWA
+        - Bridge / integration
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Browser / OS (and app version)
+      description: The app version is shown on the About screen.
+      placeholder: e.g. Edge 140 on Windows 11, app 2026.07.11
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots or console errors that help. Redact anything private first.
+    validations:
+      required: false

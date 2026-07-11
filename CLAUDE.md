@@ -215,6 +215,14 @@ rule applied to issue handling.
      This issue was actioned by an agent on behalf of @BootBlock.
      ```
 
+   **Then reconcile the issue's labels before closing.** The labels should describe what the
+   change *actually* turned out to be, not what was assumed when it was filed. Using only the
+   repo's existing label set, add any that now clearly apply (an area label such as `ui` /
+   `bridge` / `schema`, or `bug` vs `enhancement` if the nature shifted) and remove any that no
+   longer fit — `gh issue edit <id> --repo BootBlock/Gubbins --add-label <name> --remove-label
+   <name>`. Don't invent new labels as part of closing; if the right label genuinely doesn't
+   exist yet, note it rather than forcing a poor fit.
+
    Then `gh issue close <id> --repo BootBlock/Gubbins --reason completed`.
 
 If any step can't be completed cleanly (the fix is larger than the issue implies, review surfaces
