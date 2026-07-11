@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea to discuss
+    url: https://github.com/BootBlock/Gubbins/discussions
+    about: Ask a question or float an idea in Discussions rather than opening an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/BootBlock/Gubbins/security/advisories/new
+    about: Please report security issues privately here, not as a public issue.
