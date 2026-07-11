@@ -378,18 +378,6 @@ export function CatalogueScreen() {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 text-sm">
-            <label className="flex items-center gap-2">
-              <Checkbox
-                checked={paperPreview}
-                onChange={(e) => setCataloguePaperPreview(e.target.checked)}
-                data-testid="catalogue-paper-preview"
-              />
-              Preview on white paper
-            </label>
-            <InfoHint content={PAPER_PREVIEW_HINT} />
-          </div>
-
           <fieldset>
             <legend className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
               Columns
@@ -506,43 +494,59 @@ export function CatalogueScreen() {
                 />
               </FormField>
 
-              <div className="flex items-center gap-1.5 text-sm">
-                <label className="flex items-center gap-2">
-                  <Checkbox
-                    checked={branding.showGeneratedDate}
-                    onChange={(e) => setCatalogueShowGeneratedDate(e.target.checked)}
-                    data-testid="catalogue-branding-show-date"
-                  />
-                  Show the generated date on the printed catalogue
-                </label>
-                <InfoHint content={SHOW_DATE_HINT} />
-              </div>
+              {/* The three print switches share one wrapping row to save vertical space. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={branding.showGeneratedDate}
+                      onChange={(e) => setCatalogueShowGeneratedDate(e.target.checked)}
+                      data-testid="catalogue-branding-show-date"
+                    />
+                    Show date
+                  </label>
+                  <InfoHint content={SHOW_DATE_HINT} />
+                </div>
 
-              <div className="flex items-center gap-1.5 text-sm">
-                <label className="flex items-center gap-2">
-                  <Checkbox
-                    checked={pageNumbers}
-                    onChange={(e) => setCataloguePageNumbers(e.target.checked)}
-                    data-testid="catalogue-page-numbers"
-                  />
-                  Print page numbers
-                </label>
-                <InfoHint content={PAGE_NUMBERS_HINT} />
-              </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={pageNumbers}
+                      onChange={(e) => setCataloguePageNumbers(e.target.checked)}
+                      data-testid="catalogue-page-numbers"
+                    />
+                    Page numbers
+                  </label>
+                  <InfoHint content={PAGE_NUMBERS_HINT} />
+                </div>
 
-              <div className="flex items-center gap-1.5 text-sm">
-                <label className="flex items-center gap-2">
-                  <Checkbox
-                    checked={runningHeader}
-                    onChange={(e) => setCatalogueRunningHeader(e.target.checked)}
-                    data-testid="catalogue-running-header"
-                  />
-                  Repeat the header on every page
-                </label>
-                <InfoHint content={RUNNING_HEADER_HINT} />
+                <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={runningHeader}
+                      onChange={(e) => setCatalogueRunningHeader(e.target.checked)}
+                      data-testid="catalogue-running-header"
+                    />
+                    Running header
+                  </label>
+                  <InfoHint content={RUNNING_HEADER_HINT} />
+                </div>
               </div>
             </div>
           </details>
+
+          {/* Sits at the foot of the config panel, next to the preview it controls. */}
+          <div className="flex items-center gap-1.5 border-t border-border pt-4 text-sm">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={paperPreview}
+                onChange={(e) => setCataloguePaperPreview(e.target.checked)}
+                data-testid="catalogue-paper-preview"
+              />
+              Preview on white paper
+            </label>
+            <InfoHint content={PAPER_PREVIEW_HINT} />
+          </div>
         </Surface>
 
         {/* The document itself — optionally dressed as a white printed page for on-screen

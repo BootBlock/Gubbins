@@ -2364,9 +2364,10 @@
  * this deliberately emulates a fixed, theme-less medium, so the design tokens do not apply. */
 @media screen {
   .catalogue-paper {
-    margin-inline: auto;
-    max-width: 210mm;
-    padding: 14mm;
+    /* Fill the available width (like the normal preview) — no fixed page width, which made the
+     * sheet look narrow. A light, screen-appropriate inset keeps a "sheet" feel without eating
+     * horizontal space. */
+    padding: 1.5rem;
     border-radius: var(--radius-lg);
     background: #fff;
     color: #000;
