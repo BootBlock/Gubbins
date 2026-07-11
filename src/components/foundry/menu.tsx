@@ -33,6 +33,18 @@ import { useReducedMotion } from './useReducedMotion';
  */
 const GAP = 6;
 
+/**
+ * The rows keyboard roaming steps through: command rows (`menuitem`) plus the selectable
+ * rows a {@link MenuAction} can adopt (`menuitemradio` / `menuitemcheckbox`), each minus any
+ * disabled row. A plain `[role="menuitem"]` selector would silently skip the radio/checkbox
+ * rows, stranding them from ArrowUp/Down — so both the root panel and every submenu roam on
+ * all three roles.
+ */
+const ROAMABLE_ITEMS_SELECTOR =
+  '[role="menuitem"]:not([aria-disabled="true"]),' +
+  '[role="menuitemradio"]:not([aria-disabled="true"]),' +
+  '[role="menuitemcheckbox"]:not([aria-disabled="true"])';
+
 interface MenuContextValue {
   /** Close the whole menu (root panel and any open submenu), returning focus to the trigger. */
   readonly close: () => void;
@@ -115,11 +127,7 @@ export function Menu({
   }, []);
 
   const menuItems = useCallback(
-    () =>
-      Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ??
-          [],
-      ),
+    () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>(ROAMABLE_ITEMS_SELECTOR) ?? []),
     [],
   );
 
@@ -363,18 +371,41 @@ export interface MenuActionProps {
   readonly disabled?: boolean;
   /** Renders a leading check, for menu rows that toggle a mode on/off. */
   readonly selected?: boolean;
+  /**
+   * Promotes the row to a selectable choice so assistive tech is told its state, not just
+   * shown a check glyph: `'radio'` for one-of-many (a `menuitemradio` — a view mode, a
+   * grouping axis) and `'checkbox'` for an independent on/off (a `menuitemcheckbox`). Either
+   * exposes `aria-checked` reflecting {@link selected}. Omit for a plain command row, which
+   * stays a bare `menuitem` with no checked state (so existing call sites are unchanged).
+   */
+  readonly selectionRole?: 'radio' | 'checkbox';
   readonly 'data-testid'?: string;
 }
 
 /** A button menu row. Runs `onSelect` then closes the menu. */
-export function MenuAction({ icon, children, onSelect, disabled, selected, ...rest }: MenuActionProps) {
+export function MenuAction({
+  icon,
+  children,
+  onSelect,
+  disabled,
+  selected,
+  selectionRole,
+  ...rest
+}: MenuActionProps) {
   const ctx = useContext(MenuContext);
+  const role =
+    selectionRole === 'radio'
+      ? 'menuitemradio'
+      : selectionRole === 'checkbox'
+        ? 'menuitemcheckbox'
+        : 'menuitem';
   return (
     <button
       type="button"
-      role="menuitem"
+      role={role}
       tabIndex={-1}
       aria-disabled={disabled || undefined}
+      aria-checked={selectionRole ? Boolean(selected) : undefined}
       className={MENU_ITEM_CLASS}
       onClick={() => {
         if (disabled) return;
@@ -443,11 +474,7 @@ export function MenuSub({ icon, label, children, selected, ...rest }: MenuSubPro
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const submenuItems = useCallback(
-    () =>
-      Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ??
-          [],
-      ),
+    () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>(ROAMABLE_ITEMS_SELECTOR) ?? []),
     [],
   );
 

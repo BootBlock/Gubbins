@@ -108,9 +108,9 @@ const SHOW_REMOVED_HINT =
   `**restore** one. Leave it off to see only your active stock.`;
 
 /**
- * The inventory workspace (spec §5): location sidebar, a search/filter header with
- * the Data-Heavy ↔ Visual-Heavy toggle, the Phase 5 **Visual Builder** panel for
- * complex graphical queries, and the virtualised item list. The ephemeral search
+ * The inventory workspace (spec §5): location sidebar, a search/filter header whose
+ * **More** menu carries the Card / Data / Table view modes, the Phase 5 **Visual Builder**
+ * panel for complex graphical queries, and the virtualised item list. The ephemeral search
  * AST lives in a Tier-3 {@link SearchBuilderProvider} mounted with this screen.
  */
 export function InventoryScreen() {
@@ -567,6 +567,7 @@ function InventoryWorkspace() {
                 icon={<BuilderIcon />}
                 onSelect={() => setBuilderOpen((v) => !v)}
                 selected={builderOpen}
+                selectionRole="checkbox"
               >
                 Visual search
               </MenuAction>
@@ -582,6 +583,7 @@ function InventoryWorkspace() {
                     icon={<mode.icon />}
                     onSelect={() => withViewTransition(() => setDensity(mode.value))}
                     selected={density === mode.value}
+                    selectionRole="radio"
                   >
                     {mode.label}
                   </MenuAction>
@@ -593,6 +595,7 @@ function InventoryWorkspace() {
                     key={mode.value}
                     onSelect={() => setGrouping(mode.value)}
                     selected={grouping === mode.value}
+                    selectionRole="radio"
                   >
                     {mode.label}
                   </MenuAction>
@@ -603,6 +606,7 @@ function InventoryWorkspace() {
                 icon={<InfoIcon />}
                 onSelect={toggleLocationCard}
                 selected={showLocationCard}
+                selectionRole="checkbox"
                 data-testid="toggle-location-info"
               >
                 Location summary
@@ -635,6 +639,7 @@ function InventoryWorkspace() {
                 icon={<SelectIcon />}
                 onSelect={toggleSelecting}
                 selected={selecting}
+                selectionRole="checkbox"
                 data-testid="toggle-select"
               >
                 Select items
