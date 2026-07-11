@@ -29,6 +29,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     condition: null,
     parentId: null,
     isUnlimited: false,
+    isFavourite: false,
     reorderPoint: null,
     reorderGaugePercent: null,
     reorderQty: null,
