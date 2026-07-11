@@ -6,6 +6,8 @@ what, and when. It's your audit trail and your undo-history-of-record.
 **Where to find it:** the **Activity** screen (a global feed), and the **Activity** tab on any
 individual item.
 
+![The Activity ledger, newest first](images/activity.png)
+
 ## What gets recorded
 
 Just about every meaningful change is logged: creating and editing items, stock adjustments,

@@ -6,6 +6,8 @@ it.
 
 **Where to find it:** the **Upcoming** screen (in the menu, when the module is enabled).
 
+![The Upcoming agenda of everything due](images/upcoming.png)
+
 ## One agenda for everything due
 
 Rather than checking several places, Upcoming unifies every kind of deadline into one

@@ -293,6 +293,11 @@ await screenShot('contacts', 'contacts');
 await screenShot('projects', 'projects');
 await screenShot('bookings', 'bookings');
 await screenShot('reports', 'reports');
+await screenShot('activity', 'activity');
+await screenShot('alerts', 'alerts');
+await screenShot('upcoming', 'upcoming');
+await screenShot('sync', 'sync');
+await screenShot('home-assistant', 'home-assistant');
 
 // The Purchase Orders screen — a top-region clip so the Orders/Reorder/Wishlist tab bar and
 // the New-order button (which sit above #main-content) are included, not just the empty list.

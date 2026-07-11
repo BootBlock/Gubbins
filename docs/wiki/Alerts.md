@@ -6,6 +6,8 @@ expiring items, overdue loans, due servicing — so nothing important slips thro
 **Where to find it:** the **Alerts** screen (in the menu, when the module is enabled), and the
 attention widgets on the [[dashboard|Dashboard-and-Widgets]].
 
+![The Alerts feed of items needing attention](images/alerts.png)
+
 ## What shows up
 
 Alerts pulls together the things that are *wrong now or soon*:

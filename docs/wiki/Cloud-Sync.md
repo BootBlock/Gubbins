@@ -6,6 +6,8 @@ goes through *your* folder or *your* drive.
 
 **Where to find it:** the **Sync** screen (in the menu, when the module is enabled).
 
+![The Sync screen: connection providers, backup, and push-to-bridge](images/sync.png)
+
 ## Where sync happens
 
 Gubbins is **provider-agnostic**. You choose where the shared copy lives:

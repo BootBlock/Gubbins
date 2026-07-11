@@ -4,10 +4,22 @@ Connect Gubbins to **Home Assistant** and your inventory becomes part of your sm
 voice assistant *"where are my allen keys?"*, or surface stock levels as entities for automations
 and dashboards. This runs through the [[bridge|Bridge-Overview]].
 
+**Where to find it:** the **Home Assistant** screen (in the menu, when the module is enabled) —
+which includes a built-in, step-by-step setup guide.
+
+![The in-app Home Assistant setup guide](images/home-assistant.png)
+
+> **💡 Tip**
+> You don't have to piece this together yourself. The Home Assistant screen has a **guided,
+> step-by-step wizard** — Overview → Access token → Run the bridge → Feed it data → Install in HA
+> → Connect → Voice sentences → Try it — that adapts to your choices and gives copy-and-paste
+> commands. It's the easiest way in.
+
 > **ℹ️ Note**
 > This is an enthusiast feature that assumes you already run Home Assistant and the
-> [[bridge|Running-the-Bridge]]. The authoritative setup steps live in the bridge `README` and the
-> Home Assistant integration in the [Gubbins repository](https://github.com/BootBlock/Gubbins).
+> [[bridge|Running-the-Bridge]]. The in-app guide walks you through everything; the authoritative
+> reference lives in the bridge `README` in the
+> [Gubbins repository](https://github.com/BootBlock/Gubbins).
 
 ## What you can do
 
