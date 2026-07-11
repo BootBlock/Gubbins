@@ -169,6 +169,32 @@ await page.getByRole('button', { name: 'Add item' }).click();
 await shot('add-item-dialog', page.getByRole('dialog', { name: 'Add item' }));
 await page.keyboard.press('Escape').catch(() => {});
 
+// ── Search ───────────────────────────────────────────────────────────────────
+// Quick search: type a term and capture the top of the screen — the header, the search box
+// with the query, and the matching result. A clipped viewport region reads far better than
+// the full-height list panel (which is mostly empty when a query narrows to a few results).
+await gotoInventory();
+await page.getByLabel('Search items').fill('screw');
+await page.waitForTimeout(600);
+// Start a little below the top so the transient storage-permission banner isn't half-caught.
+await shot('search-quick', null, { settle: 400, clip: { x: 0, y: 48, width: VIEWPORT.width, height: 540 } });
+await page.getByLabel('Search items').fill('');
+
+// Visual builder: open it from the More menu and capture the panel (its NL box, text-query
+// box and the graphical condition group are all in one Surface headed "Visual search").
+// The menu row is a checkbox item (it toggles the panel), so it has the menuitemcheckbox role.
+try {
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Visual search' }).click();
+  const builder = page
+    .getByRole('heading', { name: 'Visual search' })
+    .locator('xpath=ancestor::div[contains(@class,"space-y-3")][1]');
+  await shot('search-visual-builder', builder.first(), { settle: 500 });
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ search-visual-builder.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // Settings → Appearance (light, then dark).
 await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
 await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 8000 });
