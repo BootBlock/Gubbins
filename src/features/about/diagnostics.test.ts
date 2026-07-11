@@ -4,7 +4,7 @@ import {
   formatFieldValue,
   formatDiagnosticsText,
   buildIssueUrl,
-  gatherDiagnostics,
+  gatherEnvironment,
   ENGLISH_DIAGNOSTIC_VOCAB,
   DIAGNOSTIC_FIELD_ORDER,
   type Diagnostics,
@@ -29,6 +29,10 @@ const SAMPLE: Diagnostics = {
   displayMode: 'standalone',
   storageUsage: 45_200_000,
   storageQuota: 2_000_000_000,
+  backgroundEffect: 'rain',
+  starfieldVariant: 'aurora',
+  databaseBytes: 3_500_000,
+  counts: { items: 42, locations: 7, projects: 3, contacts: 5, categories: 9, tags: 12 },
 };
 
 describe('formatBytes', () => {
@@ -59,6 +63,24 @@ describe('formatFieldValue', () => {
     expect(formatFieldValue('reducedMotion', SAMPLE, v, false)).toBe('On');
     expect(formatFieldValue('online', SAMPLE, v, false)).toBe('Offline');
     expect(formatFieldValue('displayMode', SAMPLE, v, false)).toBe('Installed (PWA)');
+  });
+
+  it('resolves appearance preferences to their setting label', () => {
+    expect(formatFieldValue('background', SAMPLE, v, false)).toBe('Rain');
+    expect(formatFieldValue('starfield', SAMPLE, v, false)).toBe('Aurora');
+  });
+
+  it('renders entity counts and the database size', () => {
+    expect(formatFieldValue('items', SAMPLE, v, false)).toBe('42');
+    expect(formatFieldValue('projects', SAMPLE, v, false)).toBe('3');
+    expect(formatFieldValue('tags', SAMPLE, v, false)).toBe('12');
+    expect(formatFieldValue('database', SAMPLE, v, false)).toBe('3.5 MB');
+  });
+
+  it('reports unavailable counts / database size rather than throwing', () => {
+    const bare = { ...SAMPLE, counts: undefined, databaseBytes: undefined };
+    expect(formatFieldValue('items', bare, v, false)).toBe('Unavailable');
+    expect(formatFieldValue('database', bare, v, false)).toBe('Unavailable');
   });
 
   it('shows the named time zone unredacted, and only the UTC offset when redacted', () => {
@@ -103,9 +125,9 @@ describe('buildIssueUrl', () => {
   });
 });
 
-describe('gatherDiagnostics', () => {
+describe('gatherEnvironment', () => {
   it('captures the running environment without throwing', async () => {
-    const d = await gatherDiagnostics();
+    const d = await gatherEnvironment();
     expect(typeof d.version).toBe('string');
     expect(typeof d.userAgent).toBe('string');
     expect(d.utcOffset).toMatch(/^UTC[+-]\d{2}:\d{2}$/);
