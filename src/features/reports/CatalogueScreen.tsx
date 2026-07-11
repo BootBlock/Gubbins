@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import {
   Button,
   buttonVariants,
@@ -110,6 +111,8 @@ const PAGE_NUMBERS_HINT =
   'Prints "Page X of Y" at the foot of each page — worth having on a long, multi-page catalogue so pages can be kept in order. Needs a recent browser; older ones simply omit it.';
 const RUNNING_HEADER_HINT =
   'Repeats your company name (or the title) at the top of **every** printed page, so each page is identifiable on its own once the catalogue is unstapled. Leave it off for a single-page print.';
+const PAPER_PREVIEW_HINT =
+  'Shows the catalogue on screen as a **white printed page with black ink**, regardless of your app theme. Handy in dark mode to preview what the printout or PDF will actually look like. Does not change the print itself.';
 
 /**
  * The parts-catalogue screen (issue #22): a printable, column-configurable list of items scoped
@@ -146,6 +149,9 @@ export function CatalogueScreen() {
   const runningHeader = usePreferencesStore((s) => s.catalogueRunningHeader);
   const setCataloguePageNumbers = usePreferencesStore((s) => s.setCataloguePageNumbers);
   const setCatalogueRunningHeader = usePreferencesStore((s) => s.setCatalogueRunningHeader);
+  // Paper-preview (persisted): show the on-screen document as a white printed page.
+  const paperPreview = usePreferencesStore((s) => s.cataloguePaperPreview);
+  const setCataloguePaperPreview = usePreferencesStore((s) => s.setCataloguePaperPreview);
   // The QR column deep-links back to each item; resolve the base URL the same way printed labels do.
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
@@ -372,6 +378,18 @@ export function CatalogueScreen() {
             />
           </div>
 
+          <div className="flex items-center gap-1.5 text-sm">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={paperPreview}
+                onChange={(e) => setCataloguePaperPreview(e.target.checked)}
+                data-testid="catalogue-paper-preview"
+              />
+              Preview on white paper
+            </label>
+            <InfoHint content={PAPER_PREVIEW_HINT} />
+          </div>
+
           <fieldset>
             <legend className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
               Columns
@@ -527,38 +545,44 @@ export function CatalogueScreen() {
           </details>
         </Surface>
 
-        {/* The document itself. */}
-        {needsChoice ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            {scopeKind === 'location'
-              ? 'Choose a location to build its catalogue.'
-              : scopeKind === 'project'
-                ? projectOptions.length > 0
-                  ? 'Choose a project to build its parts catalogue.'
-                  : 'Add a project to build a parts catalogue for it.'
-                : 'No items are selected.'}
-          </p>
-        ) : catalogue.isLoading ? (
-          <div className="grid place-items-center py-16">
-            <Spinner />
-          </div>
-        ) : catalogue.isError ? (
-          <p role="alert" className="py-16 text-center text-sm text-destructive">
-            The catalogue could not be loaded.
-          </p>
-        ) : empty ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">No items match this selection.</p>
-        ) : (
-          <CatalogueDocument
-            catalogue={catalogue.data!}
-            fields={selectedFields}
-            showTotals={showTotals}
-            branding={branding}
-            qrByLine={qrByLine}
-            pageStyle={pageStyle}
-            formatters={f}
-          />
-        )}
+        {/* The document itself — optionally dressed as a white printed page for on-screen
+            preview (the `catalogue-paper` hook is styled screen-only in `styles/index.css`). */}
+        <div
+          className={cn('flex flex-col gap-6', paperPreview && 'catalogue-paper')}
+          data-testid="catalogue-preview"
+        >
+          {needsChoice ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              {scopeKind === 'location'
+                ? 'Choose a location to build its catalogue.'
+                : scopeKind === 'project'
+                  ? projectOptions.length > 0
+                    ? 'Choose a project to build its parts catalogue.'
+                    : 'Add a project to build a parts catalogue for it.'
+                  : 'No items are selected.'}
+            </p>
+          ) : catalogue.isLoading ? (
+            <div className="grid place-items-center py-16">
+              <Spinner />
+            </div>
+          ) : catalogue.isError ? (
+            <p role="alert" className="py-16 text-center text-sm text-destructive">
+              The catalogue could not be loaded.
+            </p>
+          ) : empty ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">No items match this selection.</p>
+          ) : (
+            <CatalogueDocument
+              catalogue={catalogue.data!}
+              fields={selectedFields}
+              showTotals={showTotals}
+              branding={branding}
+              qrByLine={qrByLine}
+              pageStyle={pageStyle}
+              formatters={f}
+            />
+          )}
+        </div>
       </main>
     </PageContainer>
   );

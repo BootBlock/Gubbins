@@ -2354,3 +2354,32 @@
     height: 16mm !important;
   }
 }
+
+/* ── Paper preview: dress the on-screen catalogue document as the printed page ───────────
+ * A per-user toggle (`cataloguePaperPreview`) so a dark-mode reader can see what the printout
+ * will look like — a white sheet with black ink and light-grey borders — without leaving the
+ * app theme. Screen-only (print has its own `@media print` rules above), keyed off the
+ * `.catalogue-paper` hook the Catalogue screen puts on the document wrapper. The raw
+ * paper-white / ink-black / grey-border values are intentional and mirror the print block:
+ * this deliberately emulates a fixed, theme-less medium, so the design tokens do not apply. */
+@media screen {
+  .catalogue-paper {
+    margin-inline: auto;
+    max-width: 210mm;
+    padding: 14mm;
+    border-radius: var(--radius-lg);
+    background: #fff;
+    color: #000;
+    box-shadow: 0 8px 30px rgb(0 0 0 / 25%);
+  }
+
+  /* Flatten themed tints to black ink and recolour every border to the same light grey the
+   * printout uses, so the preview matches the page rather than the dark UI theme. `!important`
+   * beats the (non-important) `text-*` / `border-border` token utilities regardless of order —
+   * the same mechanism the `@media print` block relies on. */
+  .catalogue-paper * {
+    color: #000 !important;
+    background: transparent !important;
+    border-color: #ccc !important;
+  }
+}

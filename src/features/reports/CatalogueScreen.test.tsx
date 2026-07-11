@@ -118,6 +118,7 @@ const BRANDING_DEFAULTS = {
   catalogueShowGeneratedDate: true,
   cataloguePageNumbers: true,
   catalogueRunningHeader: true,
+  cataloguePaperPreview: false,
   labelBaseUrl: '',
 };
 
@@ -181,6 +182,15 @@ describe('CatalogueScreen', () => {
   it('shows the total quantity in the grand totals', () => {
     render(<CatalogueScreen />);
     expect(screen.getByTestId('catalogue-total-quantity').textContent).toContain('3');
+  });
+
+  it('dresses the preview as white paper when the toggle is on', () => {
+    render(<CatalogueScreen />);
+    // Off by default — the preview wrapper carries no paper class.
+    expect(screen.getByTestId('catalogue-preview').className).not.toContain('catalogue-paper');
+
+    fireEvent.click(screen.getByTestId('catalogue-paper-preview'));
+    expect(screen.getByTestId('catalogue-preview').className).toContain('catalogue-paper');
   });
 
   it('offers group-by and sort-by controls, and a Description column', () => {
