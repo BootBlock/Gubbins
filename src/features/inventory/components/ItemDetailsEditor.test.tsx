@@ -95,6 +95,19 @@ describe('ItemDetailsEditor', () => {
     expect(spies.update.mock.calls[0][0].input).toEqual(expect.objectContaining({ weight: 1600 }));
   });
 
+  it('saves entered dimensions as canonical millimetres (default unit is mm)', () => {
+    render(<ItemDetailsEditor item={item} />);
+    fireEvent.change(screen.getByTestId('item-details-width'), { target: { value: '400' } });
+    fireEvent.change(screen.getByTestId('item-details-height'), { target: { value: '300' } });
+    fireEvent.change(screen.getByTestId('item-details-depth'), { target: { value: '250' } });
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(
+      expect.objectContaining({ width: 400, height: 300, depth: 250 }),
+    );
+  });
+
   it('refuses to save a blank name', () => {
     render(<ItemDetailsEditor item={item} />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '   ' } });

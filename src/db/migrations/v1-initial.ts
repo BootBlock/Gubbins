@@ -951,6 +951,21 @@ export const v1Initial: Migration = {
     {
       sql: `ALTER TABLE items ADD COLUMN weight REAL CHECK (weight IS NULL OR weight >= 0);`,
     },
+    // --- Intrinsic physical dimensions (issue #30) -------------------------------
+    // An item's bounding box: width, height and depth, each stored canonically in
+    // MILLIMETRES (a REAL column apiece) so dimensions are directly comparable across
+    // items regardless of the unit the user reads them in — the display/entry unit is the
+    // `dimensionUnit` preference, applied only at the edges. Each is nullable (not tracked)
+    // and non-negative, mirroring the weight CHECK.
+    {
+      sql: `ALTER TABLE items ADD COLUMN width REAL CHECK (width IS NULL OR width >= 0);`,
+    },
+    {
+      sql: `ALTER TABLE items ADD COLUMN height REAL CHECK (height IS NULL OR height >= 0);`,
+    },
+    {
+      sql: `ALTER TABLE items ADD COLUMN depth REAL CHECK (depth IS NULL OR depth >= 0);`,
+    },
     // --- Folded former v2: asset bookings (Phase 78) ------------------------------
     {
       sql: `

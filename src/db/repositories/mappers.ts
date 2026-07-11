@@ -149,6 +149,10 @@ export function rowToItem(row: ItemRow): Item {
     depreciationMonths: row.depreciation_months,
     // Intrinsic mass in canonical grams (issue #25); null when no weight is recorded.
     weight: row.weight,
+    // Intrinsic bounding-box dimensions in canonical millimetres (issue #30); null when unset.
+    width: row.width,
+    height: row.height,
+    depth: row.depth,
     // Manual current / market value (feature-gap G9, v4); null for items never revalued.
     currentValue: row.current_value,
     isActive: row.is_active === 1,

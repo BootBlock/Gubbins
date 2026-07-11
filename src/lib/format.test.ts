@@ -115,6 +115,14 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.weight(Number.NaN)).toBe('—');
   });
 
+  it('renders a canonical millimetre dimension in the bundle dimension unit', () => {
+    // Default bundle is millimetres — the stored value shows verbatim.
+    expect(gb.dimension(250)).toBe('250 mm');
+    // A metre-unit bundle re-expresses the same stored mm (no conversion of the stored value).
+    expect(makeFormatters('en-GB', 'GBP', 'g', 'm').dimension(1250)).toBe('1.25 m');
+    expect(gb.dimension(Number.NaN)).toBe('—');
+  });
+
   it('formats a UNIX-ms instant as a short date', () => {
     // Midday UTC so no machine timezone offset can shift the rendered day.
     expect(gb.date(Date.UTC(2026, 5, 28, 12))).toBe('28 Jun 2026');

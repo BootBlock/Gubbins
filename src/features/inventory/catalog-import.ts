@@ -47,6 +47,9 @@ export type CatalogField =
   | 'manufacturer'
   | 'unitCost'
   | 'weight'
+  | 'width'
+  | 'height'
+  | 'depth'
   | 'batchNumber'
   | 'lotNumber'
   | 'condition'
@@ -68,6 +71,9 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'manufacturer',
   'unitCost',
   'weight',
+  'width',
+  'height',
+  'depth',
   'batchNumber',
   'lotNumber',
   'condition',
@@ -90,6 +96,9 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   manufacturer: 'Manufacturer',
   unitCost: 'Unit cost',
   weight: 'Weight (g)',
+  width: 'Width (mm)',
+  height: 'Height (mm)',
+  depth: 'Depth (mm)',
   batchNumber: 'Batch number',
   lotNumber: 'Lot number',
   condition: 'Condition',
@@ -170,6 +179,10 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['price', 'unitCost'],
   // Just the exact export header (grams). A looser synonym would shadow a custom "Weight" field.
   ['weight', 'weight'],
+  // The exact export headers (millimetres). Kept exact so a custom dimension field isn't shadowed.
+  ['width', 'width'],
+  ['height', 'height'],
+  ['depth', 'depth'],
   ['batchnumber', 'batchNumber'],
   ['batch', 'batchNumber'],
   ['lotnumber', 'lotNumber'],
@@ -250,6 +263,10 @@ const catalogRowSchema = z.object({
   unitCost: z.number().min(0, 'Unit cost cannot be negative.').optional().nullable(),
   // Intrinsic weight in canonical grams (issue #25).
   weight: z.number().min(0, 'Weight cannot be negative.').optional().nullable(),
+  // Intrinsic bounding-box dimensions in canonical millimetres (issue #30).
+  width: z.number().min(0, 'Width cannot be negative.').optional().nullable(),
+  height: z.number().min(0, 'Height cannot be negative.').optional().nullable(),
+  depth: z.number().min(0, 'Depth cannot be negative.').optional().nullable(),
   batchNumber: z.string().trim().optional().nullable(),
   lotNumber: z.string().trim().optional().nullable(),
   condition: conditionSchema,
@@ -347,6 +364,9 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRo
     manufacturer: raw.manufacturer,
     unitCost: parseOptionalNumber(raw.unitCost ?? null),
     weight: parseOptionalNumber(raw.weight ?? null),
+    width: parseOptionalNumber(raw.width ?? null),
+    height: parseOptionalNumber(raw.height ?? null),
+    depth: parseOptionalNumber(raw.depth ?? null),
     batchNumber: raw.batchNumber,
     lotNumber: raw.lotNumber,
     condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
@@ -418,6 +438,9 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
     manufacturer: data.manufacturer ?? null,
     unitCost: data.unitCost ?? null,
     weight: data.weight ?? null,
+    width: data.width ?? null,
+    height: data.height ?? null,
+    depth: data.depth ?? null,
     batchNumber: data.batchNumber ?? null,
     lotNumber: data.lotNumber ?? null,
     condition: data.condition ?? null,
@@ -448,6 +471,9 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.manufacturer !== undefined) Object.assign(result, { manufacturer: data.manufacturer });
   if (data.unitCost !== undefined) Object.assign(result, { unitCost: data.unitCost ?? null });
   if (data.weight !== undefined) Object.assign(result, { weight: data.weight ?? null });
+  if (data.width !== undefined) Object.assign(result, { width: data.width ?? null });
+  if (data.height !== undefined) Object.assign(result, { height: data.height ?? null });
+  if (data.depth !== undefined) Object.assign(result, { depth: data.depth ?? null });
   if (data.batchNumber !== undefined) Object.assign(result, { batchNumber: data.batchNumber });
   if (data.lotNumber !== undefined) Object.assign(result, { lotNumber: data.lotNumber });
   if (data.condition !== undefined) Object.assign(result, { condition: data.condition ?? null });

@@ -55,6 +55,8 @@ export type { OcrModel };
 import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
 import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib/weight';
 export type { WeightUnit };
+import { DEFAULT_DIMENSION_UNIT, normaliseDimensionUnit, type DimensionUnit } from '@/lib/dimensions';
+export type { DimensionUnit };
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -105,6 +107,12 @@ interface PreferencesStore {
    * stored number, exactly like {@link baseCurrency} / {@link locale}. Defaults to grams.
    */
   readonly weightUnit: WeightUnit;
+  /**
+   * The unit item dimensions (width / height / depth) are read and entered in (issue #30). Each
+   * dimension is stored canonically in **millimetres**; this is presentation only — changing it
+   * never rewrites the stored number, exactly like {@link weightUnit}. Defaults to millimetres.
+   */
+  readonly dimensionUnit: DimensionUnit;
   /** Light / dark / system — the base neutral palette (spec §2.1). */
   readonly mode: Mode;
   /** Brand accent colour, applied in either mode (accent-only recolour). */
@@ -347,6 +355,8 @@ interface PreferencesStore {
   setLocale: (locale: string) => void;
   /** Choose the unit weights are shown/entered in (stored weights stay in grams). */
   setWeightUnit: (unit: WeightUnit) => void;
+  /** Choose the unit dimensions are shown/entered in (stored dimensions stay in millimetres). */
+  setDimensionUnit: (unit: DimensionUnit) => void;
   setMode: (mode: Mode) => void;
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
@@ -428,6 +438,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       baseCurrency: guessBaseCurrency(),
       locale: 'en-GB',
       weightUnit: DEFAULT_WEIGHT_UNIT,
+      dimensionUnit: DEFAULT_DIMENSION_UNIT,
       mode: 'dark',
       accent: 'violet',
       oledDark: false,
@@ -481,6 +492,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setLocale: (locale) => set({ locale }),
       // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
       setWeightUnit: (unit) => set({ weightUnit: normaliseWeightUnit(unit) }),
+      // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
+      setDimensionUnit: (unit) => set({ dimensionUnit: normaliseDimensionUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setMode: (mode) => set({ mode: normaliseMode(mode) }),
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),

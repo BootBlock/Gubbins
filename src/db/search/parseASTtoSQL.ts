@@ -74,6 +74,12 @@ const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>>
   // `weight:>500` matches items over 500 g (the search value is always in grams, not the
   // user's display unit).
   weight: { column: 'items.weight', kind: 'numeric' },
+  // Intrinsic bounding-box dimensions in canonical millimetres (issue #30) — compared
+  // numerically like weight, so `width:>100` matches items wider than 100 mm (the search
+  // value is always in millimetres, not the user's display unit).
+  width: { column: 'items.width', kind: 'numeric' },
+  height: { column: 'items.height', kind: 'numeric' },
+  depth: { column: 'items.depth', kind: 'numeric' },
 };
 
 interface Fragment {

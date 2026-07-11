@@ -59,6 +59,12 @@ export interface ItemRow {
   readonly depreciation_months: number | null;
   /** Intrinsic mass in **grams** (canonical); null = no weight recorded (issue #25). */
   readonly weight: number | null;
+  /** Intrinsic width in **millimetres** (canonical); null = not recorded (issue #30). */
+  readonly width: number | null;
+  /** Intrinsic height in **millimetres** (canonical); null = not recorded (issue #30). */
+  readonly height: number | null;
+  /** Intrinsic depth in **millimetres** (canonical); null = not recorded (issue #30). */
+  readonly depth: number | null;
   /**
    * Manual current / market value **per unit**, in the base currency; null = none set (v4/G9).
    * Set by the newest {@link RevaluationRow} point and wins over the depreciated replacement
@@ -167,6 +173,16 @@ export interface Item {
    */
   readonly weight: number | null;
   /**
+   * Intrinsic bounding-box dimensions, each stored canonically in **millimetres** (issue #30);
+   * `null` when not recorded. Like {@link weight} they describe the physical article (not a
+   * per-instance lot), so they are copied by "Duplicate item". Presented in the user's
+   * `dimensionUnit` preference (mm are converted for display/entry only; the stored value
+   * never changes).
+   */
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly depth: number | null;
+  /**
    * Manual current / market value **per unit**, in the base currency (feature-gap G9);
    * `null` when none is set. Set by the newest recorded revaluation and — when present —
    * wins over the depreciated replacement cost in valuation (the insurance schedule + the
@@ -243,6 +259,12 @@ export interface CreateItemInput {
   readonly depreciationMonths?: number | null;
   /** Intrinsic mass in **grams** (canonical); omit/null for no weight (issue #25). */
   readonly weight?: number | null;
+  /** Intrinsic width in **millimetres** (canonical); omit/null for none (issue #30). */
+  readonly width?: number | null;
+  /** Intrinsic height in **millimetres** (canonical); omit/null for none (issue #30). */
+  readonly height?: number | null;
+  /** Intrinsic depth in **millimetres** (canonical); omit/null for none (issue #30). */
+  readonly depth?: number | null;
   /**
    * Manual current / market value per unit; omit/null for none (feature-gap G9). Seeds the
    * live value at creation without a revaluation log entry (a starting point, like
@@ -306,6 +328,12 @@ export interface UpdateItemInput {
   readonly depreciationMonths?: number | null;
   /** Intrinsic mass in **grams** (canonical); null clears it; omit to leave untouched (issue #25). */
   readonly weight?: number | null;
+  /** Intrinsic width in **millimetres** (canonical); null clears it; omit to leave untouched (issue #30). */
+  readonly width?: number | null;
+  /** Intrinsic height in **millimetres** (canonical); null clears it; omit to leave untouched (issue #30). */
+  readonly height?: number | null;
+  /** Intrinsic depth in **millimetres** (canonical); null clears it; omit to leave untouched (issue #30). */
+  readonly depth?: number | null;
   /**
    * Manual current / market value per unit (feature-gap G9); `null` clears it (reverting
    * valuation to the depreciated replacement cost). A non-null change here does **not**

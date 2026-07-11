@@ -72,6 +72,7 @@ import {
   STARFIELD_VARIANTS,
 } from './theme-registry';
 import { WEIGHT_UNIT_OPTIONS } from '@/lib/weight';
+import { DIMENSION_UNIT_OPTIONS } from '@/lib/dimensions';
 
 /** Starfield-variant choices for the Appearance `Select` (visual-flair F11), in registry order. */
 const STARFIELD_VARIANT_OPTIONS = STARFIELD_VARIANTS.map((v) => ({ value: v.id, label: v.label }));
@@ -414,6 +415,27 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 prefs.setWeightUnit(value as (typeof WEIGHT_UNIT_OPTIONS)[number]['value'])
               }
               options={WEIGHT_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Dimension unit"
+            description="The unit item width, height and depth are shown and entered in."
+            hint={
+              'The unit every item **dimension** (width, height and depth) is displayed and ' +
+              'entered in. Dimensions are stored independently of this, so changing it ' +
+              '**re-displays** the same sizes in the new unit — nothing is converted or lost. ' +
+              'Pick millimetres, centimetres, metres, inches or feet.'
+            }
+          >
+            <Select
+              aria-label="Dimension unit"
+              data-testid="setting-dimension-unit"
+              className="h-9 w-56"
+              value={prefs.dimensionUnit}
+              onChange={(value) =>
+                prefs.setDimensionUnit(value as (typeof DIMENSION_UNIT_OPTIONS)[number]['value'])
+              }
+              options={DIMENSION_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
             />
           </SettingRow>
           <SettingRow
