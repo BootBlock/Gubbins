@@ -15,13 +15,29 @@ import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
 import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
 
 /**
- * How each inventory item is *drawn* (the "View" axis; orthogonal to {@link GroupingMode}).
+ * The inventory "View" axis — how the collection is presented (orthogonal to {@link GroupingMode}).
+ * It spans two kinds of view: the **per-item** modes that draw one item each (see {@link ItemDensity})
+ * and the **whole-collection** visualisations that draw the inventory as a single picture:
  *
  * - `visual` — large image cards, ample whitespace (the "Visual-Heavy" view).
  * - `data` — dense, one-per-line rows optimised for scanning many records (the "Data-Heavy" view).
  * - `table` — a spreadsheet-style grid: aligned columns under a sticky header, one row per item.
+ * - `map` — a spatial map of the location hierarchy: nested tiles sized by how much stock sits in
+ *   each place and tinted by how full it is — a "where is my stuff / what's full" lens.
+ * - `treemap` — a value treemap: tiles whose area is proportional to the stock value they hold,
+ *   grouped by category (or by location under the grouping axis).
  */
-export type LayoutDensity = 'data' | 'visual' | 'table';
+export type LayoutDensity = 'data' | 'visual' | 'table' | 'map' | 'treemap';
+
+/**
+ * The subset of {@link LayoutDensity} that draws the inventory **item by item** — the modes the
+ * virtualised {@link ItemList} / grouped list actually render. The two whole-collection
+ * visualisations (`map`, `treemap`) are intercepted by the inventory screen and rendered by their
+ * own components, so the per-item render paths never receive them; typing their `density` prop as
+ * `ItemDensity` keeps that guarantee in the type system (e.g. the per-density row-height table stays
+ * exhaustive).
+ */
+export type ItemDensity = Exclude<LayoutDensity, 'map' | 'treemap'>;
 
 /**
  * How the inventory grid *arranges* items — an axis orthogonal to {@link LayoutDensity}

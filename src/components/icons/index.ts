@@ -128,6 +128,9 @@ export {
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,
   Table as TableViewIcon,
+  // Whole-collection visualisations (§3): a spatial location map + a value treemap.
+  Map as MapViewIcon,
+  Grid2x2 as TreemapViewIcon,
   // Grouping axis (how the list is arranged, §3)
   Layers as GroupByIcon,
 

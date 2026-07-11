@@ -17,6 +17,7 @@ import {
   GroupByIcon,
   ImportIcon,
   InfoIcon,
+  MapViewIcon,
   MoreIcon,
   PackageIcon,
   PrintIcon,
@@ -24,6 +25,7 @@ import {
   SearchIcon,
   SelectIcon,
   TableViewIcon,
+  TreemapViewIcon,
   VisualDensityIcon,
 } from '@/components/icons';
 import {
@@ -64,6 +66,8 @@ import { GROUP_MODES } from './grouping';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { GroupedItemList } from './components/GroupedItemList';
+import { LocationMapView } from './components/LocationMapView';
+import { ValueTreemapView } from './components/ValueTreemapView';
 import { useCardFieldsConfig } from './components/useCardFieldsConfig';
 import type { CardFieldsListContext } from './components/card-fields-render';
 import { useItemFieldValues } from './categories';
@@ -83,18 +87,20 @@ import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
 /**
- * The rows in the inventory "More" menu's **View** submenu — the density axis (how each item
- * is *drawn*; orthogonal to {@link GROUP_MODES}, which governs how items are *arranged*):
- * Card, dense Data rows, or a spreadsheet Table. Kept as a plain local array (the whole set is
- * enumerated here and in the store's `LayoutDensity` union). The stored value stays `visual`
- * (the `LayoutDensity` key); only the user-facing label reads "Card", which describes what's
- * shown more plainly.
+ * The rows in the inventory "More" menu's **View** submenu — the View axis (how the collection is
+ * presented; orthogonal to {@link GROUP_MODES}, which governs how items are *arranged*). The first
+ * three draw the inventory item-by-item — Card, dense Data rows, or a spreadsheet Table — and the
+ * last two are whole-collection visualisations: a spatial location Map and a value Treemap. Kept a
+ * plain local array (the whole set is enumerated here and in the store's `LayoutDensity` union); the
+ * per-item card view is still stored under the `visual` key, its label just reads "Card".
  */
 const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof VisualDensityIcon }> =
   [
     { value: 'visual', label: 'Card', icon: VisualDensityIcon },
     { value: 'data', label: 'Data', icon: DataDensityIcon },
     { value: 'table', label: 'Table', icon: TableViewIcon },
+    { value: 'map', label: 'Location map', icon: MapViewIcon },
+    { value: 'treemap', label: 'Value treemap', icon: TreemapViewIcon },
   ];
 
 /**
@@ -192,6 +198,10 @@ function InventoryWorkspace() {
   // organised by location, so while it's active we fall back to the flat list regardless
   // of the chosen grouping — the two supersede in that order.
   const grouped = grouping === 'location' && !astActive;
+  // The two whole-collection visualisations (Location map / Value treemap) replace the item list
+  // entirely and stand on their own aggregations, so the per-item filter/facet bars, the "shown"
+  // count and select mode don't apply — they're hidden while a visualisation is on screen.
+  const isVizMode = density === 'map' || density === 'treemap';
 
   // Debounce the quick-search box so each keystroke doesn't hit the worker.
   useEffect(() => {
@@ -324,7 +334,9 @@ function InventoryWorkspace() {
   // until known so every enabled chip shows with no count until then (no empty flash). Gated
   // off while the Visual Builder drives the results (astActive): the status chips are
   // superseded and disabled then, so the round-trip couldn't change anything the user can do.
-  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId, !astActive);
+  // Also gated off while a whole-collection visualisation is on screen: the filter bar these
+  // counts feed is hidden then (see `isVizMode`), so the per-location round-trip is wasted work.
+  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId, !astActive && !isVizMode);
   const statusCounts = useMemo(
     () =>
       applicableStatusesQuery.data
@@ -414,8 +426,15 @@ function InventoryWorkspace() {
   // Re-key (and so replay the entrance) when the *arrangement* changes: switching between
   // flat and grouped swaps the whole region. Grouped mode keeps a density-stable key so a
   // Data↔Visual restyle doesn't remount and lose the sections' expanded state, and it
-  // ignores the sidebar selection (every location is shown as its own section).
-  const listKey = grouped ? 'group-location' : `view-${density}-${selectedLocationId ?? 'all'}`;
+  // ignores the sidebar selection (every location is shown as its own section). The
+  // whole-collection visualisations own their own internal navigation (the map's drill-in root),
+  // so they too key off the density alone — folding the sidebar selection into their key would
+  // remount them (and reset that state) the moment a tile selects a location.
+  const listKey = grouped
+    ? 'group-location'
+    : isVizMode
+      ? `view-${density}`
+      : `view-${density}-${selectedLocationId ?? 'all'}`;
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   // Keep `onToggle`'s only external read (the location-name lookup) behind a ref so the
@@ -454,6 +473,16 @@ function InventoryWorkspace() {
       return !on;
     });
   };
+
+  // Open a location from the Location map: select it in the sidebar and drop into the card view so
+  // its items are immediately in front of the user (the map is a launcher into the list).
+  const browseLocation = useCallback(
+    (id: string) => {
+      setSelectedLocationId(id);
+      withViewTransition(() => setDensity('visual'));
+    },
+    [setDensity],
+  );
 
   // Duplicate the single selected item (enabled only when exactly one is selected). The clone
   // appears in the list on invalidation; the selection is cleared and the outcome announced.
@@ -693,7 +722,7 @@ function InventoryWorkspace() {
                 signature emphasized ease — mirroring the visual-search reveal below. `inert`
                 when hidden keeps it out of the tab order and accessibility tree; reduced-motion
                 users skip the transition via the global catch-all and get the end state. */}
-            {selectedLocation ? (
+            {selectedLocation && !isVizMode ? (
               <div
                 className="grid transition-[grid-template-rows,opacity] duration-300 ease-emphasized"
                 style={{
@@ -713,51 +742,57 @@ function InventoryWorkspace() {
               </div>
             ) : null}
 
-            <InventoryFilterBar
-              value={statusFilters}
-              onToggle={toggleStatusFilter}
-              onClear={clearStatusFilters}
-              applicable={applicableStatuses}
-              counts={statusCounts}
-              disabled={astActive}
-            />
+            {/* The filter/facet bars and the "shown" count belong to the item list; a
+                whole-collection visualisation (map/treemap) stands alone, so they're hidden then. */}
+            {!isVizMode ? (
+              <>
+                <InventoryFilterBar
+                  value={statusFilters}
+                  onToggle={toggleStatusFilter}
+                  onClear={clearStatusFilters}
+                  applicable={applicableStatuses}
+                  counts={statusCounts}
+                  disabled={astActive}
+                />
 
-            <InventoryFacetBar
-              categoryId={categoryId}
-              onCategoryChange={setCategoryId}
-              tagIds={tagIds}
-              onToggleTag={toggleTag}
-              disabled={astActive}
-            />
+                <InventoryFacetBar
+                  categoryId={categoryId}
+                  onCategoryChange={setCategoryId}
+                  tagIds={tagIds}
+                  onToggleTag={toggleTag}
+                  disabled={astActive}
+                />
 
-            <div className="flex items-center justify-between pb-3">
-              <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-                {grouped
-                  ? 'Grouped by location'
-                  : active.isSuccess
-                    ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
-                    : 'Loading…'}
-              </p>
-              {/* Only shown when it applies (removed items exist in view, or it's already on) —
-                  see `showRemovedToggle`. The help badge sits outside the label so a tap on the
-                  hint doesn't toggle the checkbox. */}
-              {showRemovedToggle ? (
-                <div className="flex items-center gap-1.5">
-                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={includeInactive}
-                      onChange={(e) => setIncludeInactive(e.target.checked)}
-                      className="size-3.5 accent-primary"
-                    />
-                    Show removed
-                  </label>
-                  <InfoHint content={SHOW_REMOVED_HINT} />
+                <div className="flex items-center justify-between pb-3">
+                  <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                    {grouped
+                      ? 'Grouped by location'
+                      : active.isSuccess
+                        ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
+                        : 'Loading…'}
+                  </p>
+                  {/* Only shown when it applies (removed items exist in view, or it's already on) —
+                      see `showRemovedToggle`. The help badge sits outside the label so a tap on the
+                      hint doesn't toggle the checkbox. */}
+                  {showRemovedToggle ? (
+                    <div className="flex items-center gap-1.5">
+                      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={includeInactive}
+                          onChange={(e) => setIncludeInactive(e.target.checked)}
+                          className="size-3.5 accent-primary"
+                        />
+                        Show removed
+                      </label>
+                      <InfoHint content={SHOW_REMOVED_HINT} />
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+              </>
+            ) : null}
 
-            {selecting ? (
+            {!isVizMode && selecting ? (
               <div
                 className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
                 data-testid="selection-bar"
@@ -850,7 +885,21 @@ function InventoryWorkspace() {
               (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
               list.) Reduced-motion is handled by the global catch-all. */}
             <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
-              {grouped ? (
+              {density === 'map' ? (
+                tree.data ? (
+                  <LocationMapView
+                    tree={tree.data}
+                    onSelectLocation={setSelectedLocationId}
+                    onBrowseLocation={browseLocation}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner />
+                  </div>
+                )
+              ) : density === 'treemap' ? (
+                <ValueTreemapView grouping={grouping} />
+              ) : grouped ? (
                 tree.data ? (
                   <GroupedItemList
                     tree={tree.data}

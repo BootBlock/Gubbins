@@ -9,7 +9,7 @@ import type {
   LocationWithCount,
   LowStockThresholds,
 } from '@/db/repositories';
-import type { LayoutDensity } from '@/state/stores/useLayoutStore';
+import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
 import { useItemFieldValues } from '../categories';
 import { useLocationSectionItems } from '../queries';
@@ -30,7 +30,7 @@ import type { ItemSelection } from './inventory-ui';
 const VISUAL_CARD_MIN_WIDTH = 280;
 
 interface SharedSectionProps {
-  readonly density: LayoutDensity;
+  readonly density: ItemDensity;
   /** Free-text search applied within each section (empty = no text filter). */
   readonly search: string;
   readonly includeInactive: boolean;
