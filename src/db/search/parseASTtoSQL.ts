@@ -70,6 +70,10 @@ const ITEM_FIELDS: Readonly<Record<string, { column: string; kind: FieldKind }>>
   category: { column: 'items.category_id', kind: 'id-text' },
   location: { column: 'items.location_id', kind: 'id-text' },
   quantity: { column: 'items.quantity', kind: 'numeric' },
+  // Intrinsic weight in canonical grams (issue #25) — compared numerically like quantity, so
+  // `weight:>500` matches items over 500 g (the search value is always in grams, not the
+  // user's display unit).
+  weight: { column: 'items.weight', kind: 'numeric' },
 };
 
 interface Fragment {

@@ -290,4 +290,23 @@ describe('ItemRepository', () => {
     expect(cleared.acquiredAt).toBeNull();
     expect(cleared.purchasePrice).toBeNull();
   });
+
+  it('round-trips the intrinsic weight (canonical grams) through create, update and clear', async () => {
+    const created = await items.create({ name: 'Cordless drill', weight: 1600 });
+    expect(created.weight).toBe(1600);
+    // Absent on a plain item — additive, so no regression.
+    const plain = await items.create({ name: 'Featherweight' });
+    expect(plain.weight).toBeNull();
+
+    const updated = await items.update(created.id, { weight: 1725 });
+    expect(updated.weight).toBe(1725);
+    expect((await items.getById(created.id))?.weight).toBe(1725);
+
+    const cleared = await items.update(created.id, { weight: null });
+    expect(cleared.weight).toBeNull();
+  });
+
+  it('rejects a negative weight (mirrors the DB CHECK)', async () => {
+    await expect(items.create({ name: 'Antimatter', weight: -1 })).rejects.toThrow(/non-negative/i);
+  });
 });

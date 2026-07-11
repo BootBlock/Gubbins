@@ -107,6 +107,14 @@ describe('makeFormatters — defaults (§1.2.1 en-GB / GBP)', () => {
     expect(gb.measure(45.5, 'ml')).toBe('45.5ml');
   });
 
+  it('renders a canonical gram weight in the bundle weight unit', () => {
+    // Default bundle is grams — the stored value shows verbatim.
+    expect(gb.weight(250)).toBe('250 g');
+    // A kg-unit bundle re-expresses the same stored grams (no conversion of the stored value).
+    expect(makeFormatters('en-GB', 'GBP', 'kg').weight(1250)).toBe('1.25 kg');
+    expect(gb.weight(Number.NaN)).toBe('—');
+  });
+
   it('formats a UNIX-ms instant as a short date', () => {
     // Midday UTC so no machine timezone offset can shift the rendered day.
     expect(gb.date(Date.UTC(2026, 5, 28, 12))).toBe('28 Jun 2026');

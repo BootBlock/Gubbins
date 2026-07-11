@@ -86,6 +86,15 @@ describe('ItemDetailsEditor', () => {
     });
   });
 
+  it('saves an entered weight as canonical grams (default unit is grams)', () => {
+    render(<ItemDetailsEditor item={item} />);
+    fireEvent.change(screen.getByTestId('item-details-weight'), { target: { value: '1600' } });
+    fireEvent.click(screen.getByTestId('item-details-save'));
+
+    expect(spies.update).toHaveBeenCalledTimes(1);
+    expect(spies.update.mock.calls[0][0].input).toEqual(expect.objectContaining({ weight: 1600 }));
+  });
+
   it('refuses to save a blank name', () => {
     render(<ItemDetailsEditor item={item} />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '   ' } });

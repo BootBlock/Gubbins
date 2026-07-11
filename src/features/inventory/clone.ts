@@ -19,8 +19,8 @@ export const CLONE_NAME_SUFFIX = ' (copy)';
  * Build a {@link CreateItemInput} seed from a source item.
  *
  * **Copied** (template identity): name (+ suffix), description, location, category, MPN,
- * manufacturer, unit cost, condition, reorder thresholds, depreciation months, tracking mode,
- * the unlimited-supply flag and — for gauges — the gauge shape (unit / capacity / tare).
+ * manufacturer, unit cost, condition, reorder thresholds, depreciation months, weight, tracking
+ * mode, the unlimited-supply flag and — for gauges — the gauge shape (unit / capacity / tare).
  *
  * **Stripped** (per-instance): serial number (auto-assigned afresh), batch/lot number, expiry
  * date, acquired-at, warranty-expiry, purchase price and free-text notes — these describe *this
@@ -51,6 +51,8 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
     reorderQty: source.reorderQty,
     // Useful-life depreciation is a template setting; the acquisition *date/price* are not copied.
     depreciationMonths: source.depreciationMonths,
+    // Intrinsic mass describes the article itself (not this lot), so it copies to the clone.
+    weight: source.weight,
     trackingMode: source.trackingMode,
   };
 

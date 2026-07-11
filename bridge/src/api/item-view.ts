@@ -123,6 +123,8 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   // Pricing.
   ['unitCost', { resolve: (c) => c.item.unitCost }],
   ['purchasePrice', { resolve: (c) => c.item.purchasePrice }],
+  // Physical. Intrinsic weight in canonical grams (issue #25); null when unset.
+  ['weight', { resolve: (c) => c.item.weight }],
   // Perishable / traceability.
   ['expiryDate', { resolve: (c) => c.item.expiryDate }],
   ['batchNumber', { resolve: (c) => c.item.batchNumber }],

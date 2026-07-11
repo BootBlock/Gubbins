@@ -354,7 +354,8 @@ describe('OData-style query options', () => {
 });
 
 describe('CSV export (GET /api/v1/items.csv)', () => {
-  const HEADER = 'id,name,description,notes,trackingMode,quantity,isUnlimited,mpn,manufacturer,unitCost';
+  const HEADER =
+    'id,name,description,notes,trackingMode,quantity,isUnlimited,mpn,manufacturer,unitCost,weight';
 
   async function csvLines(path: string): Promise<string[]> {
     const res = await get(path);

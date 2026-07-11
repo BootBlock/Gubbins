@@ -107,7 +107,7 @@ const fieldsParam: JsonValue = {
     '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
     'isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, ' +
     'trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, ' +
-    'expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
+    'weight, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
     'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
     'updatedAt, placements, capabilities.',
   schema: { type: 'string' },
@@ -194,7 +194,7 @@ const filterParam: JsonValue = {
     'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
     'SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with ' +
     'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, ' +
-    'category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
+    'weight, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
     'lambdas) are a 400. When present it is the sole row filter (location/category are ignored).',
   schema: { type: 'string' },
   example: "quantity gt 10 and contains(name,'bolt')",

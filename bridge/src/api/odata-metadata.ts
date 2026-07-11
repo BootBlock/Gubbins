@@ -41,6 +41,7 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('parentId', 'Edm.String'),
   p('unitCost', 'Edm.Decimal'),
   p('purchasePrice', 'Edm.Decimal'),
+  p('weight', 'Edm.Decimal'),
   p('expiryDate', 'Edm.Int64'),
   p('batchNumber', 'Edm.String'),
   p('lotNumber', 'Edm.String'),
