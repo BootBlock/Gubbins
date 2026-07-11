@@ -189,6 +189,47 @@ describe('parseFreeformLine', () => {
     });
   });
 
+  it('reads a labelled weight — a bare number as grams, a suffix as its unit', () => {
+    expect(parseFreeformLine('Cordless drill w: 1600')).toEqual({
+      name: 'Cordless drill',
+      quantity: 1,
+      sku: null,
+      weight: 1600,
+    });
+    expect(parseFreeformLine('Anvil weight: 2.5kg')).toEqual({
+      name: 'Anvil',
+      quantity: 1,
+      sku: null,
+      weight: 2500,
+    });
+  });
+
+  it('converts imperial weight units to grams', () => {
+    expect(parseFreeformLine('Bag of nails w:16oz')?.weight).toBeCloseTo(453.59237, 5);
+    expect(parseFreeformLine('Dumbbell weight: 1.1 lb')?.weight).toBeCloseTo(498.951607, 5);
+  });
+
+  it('does not label a weight without a separator, and ignores an unrecognised unit', () => {
+    // "weight 500g" has no `:`/`=`/`#` after the keyword, so it is left in the name.
+    expect(parseFreeformLine('Sensor weight 500g')).toEqual({
+      name: 'Sensor weight 500g',
+      quantity: 1,
+      sku: null,
+    });
+    // A number followed by junk-unit is not a weight (no weight key added).
+    expect(parseFreeformLine('Widget w: 5 bananas')).toEqual({ name: 'Widget', quantity: 1, sku: null });
+  });
+
+  it('combines a weight with a quantity and other labels', () => {
+    expect(parseFreeformLine('Bricks x40 w:2.3kg loc: Yard')).toEqual({
+      name: 'Bricks',
+      quantity: 40,
+      sku: null,
+      location: 'Yard',
+      weight: 2300,
+    });
+  });
+
   it('recognises a bare Amazon ASIN as the SKU and strips it from the name', () => {
     expect(parseFreeformLine('USB-C cable B0F3XF5ZKF x3')).toEqual({
       name: 'USB-C cable',
@@ -273,7 +314,7 @@ describe('parseFreeformText', () => {
 // ---------------------------------------------------------------------------
 
 describe('extractImport', () => {
-  it('flattens a line list into name / quantity / sku / manufacturer / location / tracking / unit-cost columns', () => {
+  it('flattens a line list into name / quantity / sku / manufacturer / location / tracking / unit-cost / weight columns', () => {
     const ex = extractImport('Resistor 10k x50\nArduino Uno');
     expect(ex.format).toBe('lines');
     expect(ex.isTabular).toBe(false);
@@ -285,22 +326,31 @@ describe('extractImport', () => {
       'Location',
       'Tracking',
       'Unit cost',
+      'Weight (g)',
     ]);
     // Explicit quantity kept; a bare name defaults to 1 (unlikely to be added with none).
     expect(ex.dataRows).toEqual([
-      ['Resistor 10k', '50', '', '', '', '', ''],
-      ['Arduino Uno', '1', '', '', '', '', ''],
+      ['Resistor 10k', '50', '', '', '', '', '', ''],
+      ['Arduino Uno', '1', '', '', '', '', '', ''],
     ]);
   });
 
   it('carries inline manufacturer / location / tracking into the line-list columns', () => {
     const ex = extractImport('Multimeter manu: Fluke loc: Bench track: serialised q: 2');
-    expect(ex.dataRows).toEqual([['Multimeter', '2', '', 'Fluke', 'Bench', 'serialised', '']]);
+    expect(ex.dataRows).toEqual([['Multimeter', '2', '', 'Fluke', 'Bench', 'serialised', '', '']]);
   });
 
   it('carries an ASIN and a currency price from a line into the SKU / unit-cost columns', () => {
     const ex = extractImport('Anker USB-C cable B0F3XF5ZKF £9.99 x2');
-    expect(ex.dataRows).toEqual([['Anker USB-C cable', '2', 'B0F3XF5ZKF', '', '', '', '9.99']]);
+    expect(ex.dataRows).toEqual([['Anker USB-C cable', '2', 'B0F3XF5ZKF', '', '', '', '9.99', '']]);
+  });
+
+  it('carries a labelled weight into the line-list weight column as canonical grams', () => {
+    const ex = extractImport('Anvil weight: 2.5kg\nHammer w: 900');
+    expect(ex.dataRows).toEqual([
+      ['Anvil', '1', '', '', '', '', '', '2500'],
+      ['Hammer', '1', '', '', '', '', '', '900'],
+    ]);
   });
 
   it('honours a comma decimal separator when parsing line-list prices', () => {
@@ -308,7 +358,7 @@ describe('extractImport', () => {
     // naive delimiter sniff can't tell a `,` decimal from a `,` delimiter — the dialog's
     // "Interpret as" override covers that case for eurozone pastes).
     const ex = extractImport('Kabel €5,99', { format: 'lines', decimalSeparator: ',' });
-    expect(ex.dataRows).toEqual([['Kabel', '1', '', '', '', '', '5.99']]);
+    expect(ex.dataRows).toEqual([['Kabel', '1', '', '', '', '', '5.99', '']]);
   });
 
   it('parses a TSV paste and infers the mapping from headers', () => {
@@ -411,6 +461,14 @@ describe('buildImportPlan + buildPreviewRows', () => {
       { sourceRow: 1, name: 'Resistor 10k', quantity: '50', sku: '', manufacturer: '', status: 'create' },
       { sourceRow: 2, name: 'Arduino Uno', quantity: '1', sku: '', manufacturer: '', status: 'create' },
     ]);
+  });
+
+  it('carries a free-form weight through to the created item as canonical grams', () => {
+    const ex = extractImport('Cordless drill w:1.6kg\nFeather widget');
+    const plan = buildImportPlan(ex, ex.mapping, []);
+    expect(plan.create[0]!.input.weight).toBe(1600);
+    // A line with no weight leaves it unset (null), never zero.
+    expect(plan.create[1]!.input.weight ?? null).toBeNull();
   });
 
   it('matches an existing item by name and marks it for update', () => {
