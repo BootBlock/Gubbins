@@ -53,6 +53,8 @@ import type { AlertKind } from '@/features/alerts/alerts';
 import { DEFAULT_OCR_MODEL, normaliseOcrModel, type OcrModel } from '@/features/inventory/ocr/ocr-engine';
 export type { OcrModel };
 import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
+import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib/weight';
+export type { WeightUnit };
 
 /**
  * Appearance preferences (spec §2.1). Two orthogonal axes plus two composable switches, derived
@@ -97,6 +99,12 @@ export type ScrapeNotificationMode = 'TOAST' | 'SILENT';
 interface PreferencesStore {
   readonly baseCurrency: string;
   readonly locale: string;
+  /**
+   * The unit weights are read and entered in (issue #25). An item's `weight` is stored
+   * canonically in **grams**; this is presentation only — changing it never rewrites the
+   * stored number, exactly like {@link baseCurrency} / {@link locale}. Defaults to grams.
+   */
+  readonly weightUnit: WeightUnit;
   /** Light / dark / system — the base neutral palette (spec §2.1). */
   readonly mode: Mode;
   /** Brand accent colour, applied in either mode (accent-only recolour). */
@@ -337,6 +345,8 @@ interface PreferencesStore {
   readonly cataloguePaperPreview: boolean;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
+  /** Choose the unit weights are shown/entered in (stored weights stay in grams). */
+  setWeightUnit: (unit: WeightUnit) => void;
   setMode: (mode: Mode) => void;
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
@@ -417,6 +427,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // First-run guess from the browser locale; the persisted value (if any) wins.
       baseCurrency: guessBaseCurrency(),
       locale: 'en-GB',
+      weightUnit: DEFAULT_WEIGHT_UNIT,
       mode: 'dark',
       accent: 'violet',
       oledDark: false,
@@ -468,6 +479,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       cataloguePaperPreview: false,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
+      // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
+      setWeightUnit: (unit) => set({ weightUnit: normaliseWeightUnit(unit) }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam.
       setMode: (mode) => set({ mode: normaliseMode(mode) }),
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),

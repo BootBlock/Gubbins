@@ -46,6 +46,7 @@ export type CatalogField =
   | 'mpn'
   | 'manufacturer'
   | 'unitCost'
+  | 'weight'
   | 'batchNumber'
   | 'lotNumber'
   | 'condition'
@@ -66,6 +67,7 @@ export const CATALOG_FIELDS: readonly CatalogField[] = [
   'mpn',
   'manufacturer',
   'unitCost',
+  'weight',
   'batchNumber',
   'lotNumber',
   'condition',
@@ -87,6 +89,7 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   mpn: 'Manufacturer part number',
   manufacturer: 'Manufacturer',
   unitCost: 'Unit cost',
+  weight: 'Weight (g)',
   batchNumber: 'Batch number',
   lotNumber: 'Lot number',
   condition: 'Condition',
@@ -165,6 +168,8 @@ const HEADER_SYNONYMS: ReadonlyArray<readonly [string, CatalogField]> = [
   ['unitcost', 'unitCost'],
   ['cost', 'unitCost'],
   ['price', 'unitCost'],
+  // Just the exact export header (grams). A looser synonym would shadow a custom "Weight" field.
+  ['weight', 'weight'],
   ['batchnumber', 'batchNumber'],
   ['batch', 'batchNumber'],
   ['lotnumber', 'lotNumber'],
@@ -243,6 +248,8 @@ const catalogRowSchema = z.object({
   mpn: z.string().trim().optional().nullable(),
   manufacturer: z.string().trim().optional().nullable(),
   unitCost: z.number().min(0, 'Unit cost cannot be negative.').optional().nullable(),
+  // Intrinsic weight in canonical grams (issue #25).
+  weight: z.number().min(0, 'Weight cannot be negative.').optional().nullable(),
   batchNumber: z.string().trim().optional().nullable(),
   lotNumber: z.string().trim().optional().nullable(),
   condition: conditionSchema,
@@ -339,6 +346,7 @@ function coerceRow(raw: Partial<Record<CatalogField, string | null>>): CatalogRo
     mpn: raw.mpn,
     manufacturer: raw.manufacturer,
     unitCost: parseOptionalNumber(raw.unitCost ?? null),
+    weight: parseOptionalNumber(raw.weight ?? null),
     batchNumber: raw.batchNumber,
     lotNumber: raw.lotNumber,
     condition: (raw.condition ?? undefined) as CatalogRowData['condition'],
@@ -409,6 +417,7 @@ function toCreateInput(data: CatalogRowData): CreateItemInput {
     mpn,
     manufacturer: data.manufacturer ?? null,
     unitCost: data.unitCost ?? null,
+    weight: data.weight ?? null,
     batchNumber: data.batchNumber ?? null,
     lotNumber: data.lotNumber ?? null,
     condition: data.condition ?? null,
@@ -438,6 +447,7 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (mpn !== undefined) Object.assign(result, { mpn: mpn ?? null });
   if (data.manufacturer !== undefined) Object.assign(result, { manufacturer: data.manufacturer });
   if (data.unitCost !== undefined) Object.assign(result, { unitCost: data.unitCost ?? null });
+  if (data.weight !== undefined) Object.assign(result, { weight: data.weight ?? null });
   if (data.batchNumber !== undefined) Object.assign(result, { batchNumber: data.batchNumber });
   if (data.lotNumber !== undefined) Object.assign(result, { lotNumber: data.lotNumber });
   if (data.condition !== undefined) Object.assign(result, { condition: data.condition ?? null });

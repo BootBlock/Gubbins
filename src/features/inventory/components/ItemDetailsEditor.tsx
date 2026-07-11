@@ -9,6 +9,8 @@ import {
   Textarea,
 } from '@/components/foundry';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
@@ -17,6 +19,16 @@ import { TRACKING_MODE_LABELS } from './inventory-ui';
 /** Whether this item's tracking mode is one that can be switched in place (Bulk ↔ Untracked). */
 const isTrackingEditable = (mode: TrackingMode): boolean =>
   (CONVERTIBLE_TRACKING_MODES as readonly TrackingMode[]).includes(mode);
+
+/**
+ * Render a stored canonical-gram weight as an input string in `unit` (blank when unset),
+ * with floating-point noise from the conversion trimmed off (so `1250 g` shows as `1.25`
+ * in kg, not `1.2500000001`).
+ */
+function weightToInput(grams: number | null, unit: WeightUnit): string {
+  if (grams == null) return '';
+  return String(Number(fromGrams(grams, unit).toFixed(6)));
+}
 
 /** Rich help for the "Unlimited supply" modifier (Phase 82). */
 const HINT_UNLIMITED =
@@ -41,6 +53,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const update = useUpdateItem();
   const { data: categories } = useCategories();
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
+  const weightUnit = usePreferencesStore((s) => s.weightUnit);
 
   const [name, setName] = useState(item.name);
   const [trackingMode, setTrackingMode] = useState<TrackingMode>(item.trackingMode);
@@ -51,6 +64,8 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [unitCost, setUnitCost] = useState(item.unitCost?.toString() ?? '');
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
   const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
+  // Weight is entered/shown in the user's chosen unit; the stored value is canonical grams.
+  const [weight, setWeight] = useState(() => weightToInput(item.weight, weightUnit));
 
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
@@ -63,13 +78,24 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setUnitCost(item.unitCost?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
     setIsUnlimited(item.isUnlimited);
-  }, [item]);
+    // Also re-syncs when the weight *unit* preference changes, re-expressing the stored grams.
+    setWeight(weightToInput(item.weight, weightUnit));
+  }, [item, weightUnit]);
 
   // "Unlimited supply" is a DISCRETE-only modifier (Phase 82).
   const canBeUnlimited = item.trackingMode === 'DISCRETE';
 
   const text = (raw: string): string | null => (raw.trim().length > 0 ? raw.trim() : null);
   const nextUnitCost = unitCost.trim() === '' ? null : Number(unitCost);
+  // Convert the entered weight (in `weightUnit`) back to canonical grams; blank/invalid → null.
+  const enteredWeight = weight.trim() === '' ? null : Number(weight);
+  const nextWeight =
+    enteredWeight !== null && Number.isFinite(enteredWeight) && enteredWeight >= 0
+      ? toGrams(enteredWeight, weightUnit)
+      : null;
+  // Compare the input string against the canonical display of the stored value so the
+  // grams↔unit conversion's floating-point noise never marks an untouched field dirty.
+  const weightDirty = weight.trim() !== weightToInput(item.weight, weightUnit);
   // Serialised / Consumable-Gauge items can't be converted in place, so their mode is fixed
   // and never enters the draft; only the Bulk ↔ Untracked pair is editable here.
   const trackingEditable = isTrackingEditable(item.trackingMode);
@@ -81,6 +107,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     mpn: text(mpn),
     manufacturer: text(manufacturer),
     unitCost: Number.isFinite(nextUnitCost ?? 0) ? nextUnitCost : null,
+    // Only re-derive grams from the input when the field was actually edited; an untouched
+    // weight keeps its exact stored value, so saving a *different* field never nudges it by
+    // the grams↔unit conversion's floating-point error (e.g. re-saving 1600 g via ounces).
+    weight: weightDirty ? nextWeight : (item.weight ?? null),
     categoryId: categoryId || null,
     // Only a DISCRETE item can carry the flag; ignore stale UI state for other modes.
     isUnlimited: canBeUnlimited ? isUnlimited : false,
@@ -93,6 +123,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.mpn !== (item.mpn ?? null) ||
     draft.manufacturer !== (item.manufacturer ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
+    weightDirty ||
     draft.categoryId !== (item.categoryId ?? null) ||
     draft.isUnlimited !== item.isUnlimited;
   const valid = draft.name.length > 0;
@@ -178,6 +209,29 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             ...(categories?.rows ?? []).map((cat) => ({ value: cat.id, label: cat.name })),
           ]}
         />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField
+          label={`Weight (${weightUnit})`}
+          hint={
+            'The item’s **weight** for one unit, in your chosen weight unit (change the unit in ' +
+            '**Settings**). Stored independently of the unit, so switching units just re-displays ' +
+            'the same weight. Leave blank if you don’t track it.'
+          }
+        >
+          <Input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="—"
+            aria-label={`Weight in ${weightUnit}`}
+            data-testid="item-details-weight"
+          />
+        </FormField>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

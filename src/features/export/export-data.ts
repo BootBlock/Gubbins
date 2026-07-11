@@ -43,6 +43,8 @@ const CSV_COLUMNS = [
   'mpn',
   'manufacturer',
   'unitCost',
+  // Intrinsic weight in canonical grams (issue #25); blank when unset.
+  'weight',
 ] as const;
 
 /** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting). */
@@ -81,6 +83,8 @@ const CATALOG_CSV_COLUMNS = [
   'trackingMode',
   'manufacturer',
   'unitCost',
+  // Canonical grams (issue #25); round-trips back through the `weight` import synonym.
+  'weight',
   'batchNumber',
   'lotNumber',
   'condition',

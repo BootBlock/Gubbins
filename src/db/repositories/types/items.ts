@@ -57,6 +57,8 @@ export interface ItemRow {
   readonly purchase_price: number | null;
   /** Useful life in months for straight-line depreciation; null = no depreciation (v24). */
   readonly depreciation_months: number | null;
+  /** Intrinsic mass in **grams** (canonical); null = no weight recorded (issue #25). */
+  readonly weight: number | null;
   /**
    * Manual current / market value **per unit**, in the base currency; null = none set (v4/G9).
    * Set by the newest {@link RevaluationRow} point and wins over the depreciated replacement
@@ -158,6 +160,13 @@ export interface Item {
   readonly purchasePrice: number | null;
   readonly depreciationMonths: number | null;
   /**
+   * Intrinsic mass, stored canonically in **grams** (issue #25); `null` when no weight is
+   * recorded. Applicable to any item — it describes the physical article, not a per-instance
+   * lot — so it is copied by "Duplicate item". Presented in the user's `weightUnit` preference
+   * (grams are converted for display/entry only; the stored value never changes).
+   */
+  readonly weight: number | null;
+  /**
    * Manual current / market value **per unit**, in the base currency (feature-gap G9);
    * `null` when none is set. Set by the newest recorded revaluation and — when present —
    * wins over the depreciated replacement cost in valuation (the insurance schedule + the
@@ -232,6 +241,8 @@ export interface CreateItemInput {
   readonly purchasePrice?: number | null;
   /** Useful life in months for straight-line depreciation; omit/null for no depreciation (§4, v24). */
   readonly depreciationMonths?: number | null;
+  /** Intrinsic mass in **grams** (canonical); omit/null for no weight (issue #25). */
+  readonly weight?: number | null;
   /**
    * Manual current / market value per unit; omit/null for none (feature-gap G9). Seeds the
    * live value at creation without a revaluation log entry (a starting point, like
@@ -293,6 +304,8 @@ export interface UpdateItemInput {
   readonly purchasePrice?: number | null;
   /** Useful life in months for straight-line depreciation; null clears it (§4, v24). */
   readonly depreciationMonths?: number | null;
+  /** Intrinsic mass in **grams** (canonical); null clears it; omit to leave untouched (issue #25). */
+  readonly weight?: number | null;
   /**
    * Manual current / market value per unit (feature-gap G9); `null` clears it (reverting
    * valuation to the depreciated replacement cost). A non-null change here does **not**

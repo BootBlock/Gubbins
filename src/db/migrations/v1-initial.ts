@@ -943,6 +943,14 @@ export const v1Initial: Migration = {
     {
       sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
     },
+    // --- Intrinsic physical weight (issue #25) -----------------------------------
+    // An item's mass, stored canonically in GRAMS (a single REAL column) so weights are
+    // directly comparable and summable across items regardless of the unit the user reads
+    // them in — the display/entry unit is the `weightUnit` preference, applied only at the
+    // edges. Nullable (no weight set); non-negative, mirroring the unit_cost CHECK.
+    {
+      sql: `ALTER TABLE items ADD COLUMN weight REAL CHECK (weight IS NULL OR weight >= 0);`,
+    },
     // --- Folded former v2: asset bookings (Phase 78) ------------------------------
     {
       sql: `

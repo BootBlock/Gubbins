@@ -11,8 +11,9 @@ import { getFormatters, type Formatters } from './format';
 export function useFormatters(): Formatters {
   const locale = usePreferencesStore((s) => s.locale);
   const currency = usePreferencesStore((s) => s.baseCurrency);
-  // `getFormatters` returns a stable, process-wide-cached bundle per `[locale, currency]`,
-  // so the reference is already stable across renders (and shared across every component) —
-  // no per-component `useMemo` needed.
-  return getFormatters(locale, currency);
+  const weightUnit = usePreferencesStore((s) => s.weightUnit);
+  // `getFormatters` returns a stable, process-wide-cached bundle per `[locale, currency,
+  // weightUnit]`, so the reference is already stable across renders (and shared across every
+  // component) — no per-component `useMemo` needed.
+  return getFormatters(locale, currency, weightUnit);
 }

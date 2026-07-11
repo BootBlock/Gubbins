@@ -98,6 +98,18 @@ export function normaliseDepreciationMonths(value: number | null | undefined): n
 }
 
 /**
+ * Validate an optional intrinsic weight (issue #25): null clears it; otherwise it must be a
+ * finite, non-negative number (canonical **grams**). Mirrors the `items.weight` DB CHECK.
+ */
+export function normaliseWeight(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DbError('SQLITE_CONSTRAINT', 'Weight must be a non-negative number.');
+  }
+  return value;
+}
+
+/**
  * Validate an optional manual current / market value (feature-gap G9, v4): null clears it
  * (valuation reverts to the depreciated replacement cost); otherwise it must be a finite,
  * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK.

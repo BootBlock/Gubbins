@@ -36,6 +36,7 @@ import {
   normaliseReorderPercent,
   normaliseText,
   normaliseUnitCost,
+  normaliseWeight,
 } from './normalise';
 import { buildInsert, resolveCreate } from './create';
 import { buildCategoryMaintenanceInsert, type CategoryMaintenanceDefault } from './maintenance-default';
@@ -370,6 +371,10 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.depreciationMonths !== undefined) {
       sets.push('depreciation_months = ?');
       params.push(normaliseDepreciationMonths(input.depreciationMonths));
+    }
+    if (input.weight !== undefined) {
+      sets.push('weight = ?');
+      params.push(normaliseWeight(input.weight));
     }
     if (input.currentValue !== undefined) {
       // Manual current value (feature-gap G9). This path sets/clears the live column only —

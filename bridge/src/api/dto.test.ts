@@ -36,6 +36,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     warrantyExpiresAt: null,
     purchasePrice: null,
     depreciationMonths: null,
+    weight: null,
     currentValue: null,
     isActive: true,
     createdAt: 0,

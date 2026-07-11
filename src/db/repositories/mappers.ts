@@ -147,6 +147,8 @@ export function rowToItem(row: ItemRow): Item {
     warrantyExpiresAt: row.warranty_expires_at,
     purchasePrice: row.purchase_price,
     depreciationMonths: row.depreciation_months,
+    // Intrinsic mass in canonical grams (issue #25); null when no weight is recorded.
+    weight: row.weight,
     // Manual current / market value (feature-gap G9, v4); null for items never revalued.
     currentValue: row.current_value,
     isActive: row.is_active === 1,

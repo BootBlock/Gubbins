@@ -71,6 +71,7 @@ import {
   MODE_OPTIONS,
   STARFIELD_VARIANTS,
 } from './theme-registry';
+import { WEIGHT_UNIT_OPTIONS } from '@/lib/weight';
 
 /** Starfield-variant choices for the Appearance `Select` (visual-flair F11), in registry order. */
 const STARFIELD_VARIANT_OPTIONS = STARFIELD_VARIANTS.map((v) => ({ value: v.id, label: v.label }));
@@ -394,6 +395,26 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 options={CURRENCY_OPTIONS.map((c) => ({ value: c.value, label: `${c.value} — ${c.label}` }))}
               />
             </div>
+          </SettingRow>
+          <SettingRow
+            label="Weight unit"
+            description="The unit item weights are shown and entered in."
+            hint={
+              'The unit every item **weight** is displayed and entered in. Weights are stored ' +
+              'independently of this, so changing it **re-displays** the same weights in the new ' +
+              'unit — nothing is converted or lost. Pick grams, kilograms, ounces or pounds.'
+            }
+          >
+            <Select
+              aria-label="Weight unit"
+              data-testid="setting-weight-unit"
+              className="h-9 w-56"
+              value={prefs.weightUnit}
+              onChange={(value) =>
+                prefs.setWeightUnit(value as (typeof WEIGHT_UNIT_OPTIONS)[number]['value'])
+              }
+              options={WEIGHT_UNIT_OPTIONS.map((u) => ({ value: u.value, label: u.label }))}
+            />
           </SettingRow>
           <SettingRow
             label={t('settings.language.label')}
