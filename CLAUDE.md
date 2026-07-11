@@ -61,6 +61,31 @@ they can.
   confirm it belongs in the repo; if it's a build artefact, local cache, or could contain
   real data, add it to `.gitignore` instead.
 
+## Agent attribution on GitHub content (mandatory)
+
+Anything **you** post or edit on GitHub on the maintainer's behalf must carry an attribution
+trailer disclosing that an agent wrote it for @BootBlock. This applies to **every** GitHub
+issue and pull-request **comment** *and* every issue/PR **description or body** you author or
+edit — not just issues you action end-to-end. Attribution is disclosure, not internal process,
+so it always stays (unlike the process/plumbing that must never leak — see
+[public-repository hygiene](#public-repository-hygiene-mandatory)).
+
+Append it as the **last lines**, after a `---` rule, wording the verb to match what you did:
+
+```markdown
+---
+This <issue|pull request> was <actioned|opened|updated> by an agent on behalf of @BootBlock.
+```
+
+- **Comment on an issue you actioned end-to-end** → keep the exact wording the issue workflow
+  uses: `This issue was actioned by an agent on behalf of @BootBlock.`
+- **Issue/PR you opened** → use `opened`; a **body you edited** → `updated`; a **pull request**
+  → `pull request` in place of `issue`.
+
+The only time to omit it is when GitHub gives you no body to sign (e.g. adding a label). If in
+doubt, include it. This does **not** apply to git commit messages — those carry the
+`Co-Authored-By` trailer instead.
+
 ## Design tokens are mandatory where one exists
 
 Every colour and motion value in the UI must come from a **design token**, never a raw
