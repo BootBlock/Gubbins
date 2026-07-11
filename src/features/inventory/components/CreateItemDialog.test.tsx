@@ -57,6 +57,19 @@ vi.mock('../queries', async (importOriginal) => ({
   useFieldSuggestions: () => ({ data: [] }),
 }));
 
+// The camera barcode-capture dialog (issue #8) owns the real getUserMedia/decoder plumbing,
+// covered by its own test. Here it is stubbed to a button that hands back a decoded barcode,
+// so this test can pin the *wiring*: the Scan trigger opens it, and a captured code fills the
+// Barcode field. When closed it renders nothing (matching the real component's `open` guard).
+vi.mock('@/features/scanner/components/BarcodeScanDialog', () => ({
+  BarcodeScanDialog: ({ open, onCapture }: { open: boolean; onCapture: (barcode: string) => void }) =>
+    open ? (
+      <button type="button" data-testid="mock-barcode-capture" onClick={() => onCapture('4006381333931')}>
+        capture
+      </button>
+    ) : null,
+}));
+
 // The scrape panel needs the companion extension plumbing — inert here.
 vi.mock('@/features/scraping', () => ({
   ScrapeSupplierPanel: () => null,
@@ -384,6 +397,24 @@ describe('CreateItemDialog', () => {
       name: 'Calibrated gauge',
       acquiredAt: '2026-01-15',
       warrantyExpiresAt: '2028-01-15',
+    });
+  });
+
+  it('fills the barcode field from a camera scan and submits it (issue #8)', async () => {
+    renderDialog();
+    // The Scan button sits beside the Barcode field; opening it hands back a decoded barcode.
+    fireEvent.click(screen.getByTestId('item-barcode-scan'));
+    fireEvent.click(screen.getByTestId('mock-barcode-capture'));
+
+    // The captured code fills the field (an explicit action, so it overwrites).
+    expect(screen.getByLabelText('Barcode (optional)')).toHaveValue('4006381333931');
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Scanned item' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
+    await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
+    expect(spies.createItem.mock.calls[0][0]).toMatchObject({
+      name: 'Scanned item',
+      barcode: '4006381333931',
     });
   });
 

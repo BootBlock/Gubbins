@@ -20,6 +20,8 @@ import { useFormatters } from '@/lib/useFormatters';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { OcrPrefillDialog, type OcrPrefill } from '@/features/inventory/ocr/OcrPrefillDialog';
+import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
+import { useFeature } from '@/features/modules/useFeature';
 import {
   IN_TRANSIT_LOCATION_ID,
   TRACKING_MODES,
@@ -312,6 +314,12 @@ export function CreateItemDialog({
   const [ocrOpen, setOcrOpen] = useState(false);
   const ocrEnabled = usePreferencesStore((s) => s.ocrEnabled);
   const showOcr = ocrEnabled && hasOcr();
+  // Camera barcode capture for the Barcode field (issue #8): a "Scan" button beside the field
+  // opens the shared scanner to fill the GTIN without typing. Gated by the same `scanner`
+  // capability as the main scanner entry point (Modular UI) — with it off, the button is hidden;
+  // the field can still be typed into. The dialog stacks on top of this form.
+  const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
+  const scannerEnabled = useFeature('scanner');
   const {
     control,
     register,
@@ -928,23 +936,40 @@ export function CreateItemDialog({
           )}
         />
       </div>
-      <FormField
-        label="Barcode (optional)"
-        hintSize="lg"
-        hint={
-          'The **retail barcode** (GTIN) printed on the packaging — EAN-13, UPC-A, EAN-8 or ' +
-          'GTIN-14.\n\nScanning a product barcode pre-fills this automatically. It is the item’s ' +
-          'own scannable code, distinct from the **MPN** above.\n\n> A future scan of the same ' +
-          'barcode jumps straight to this item.'
-        }
-      >
-        <Input
-          inputMode="numeric"
-          placeholder="e.g. 4006381333931"
-          data-testid="item-barcode"
-          {...register('barcode')}
-        />
-      </FormField>
+      {/* The Scan button sits beside the field (issue #8) but *outside* the FormField's
+          `<label>` — so it never folds into the input's accessible name and clicking it can't be
+          mistaken for the label. `items-end` bottom-aligns it with the input (both h-10). */}
+      <div className="flex items-end gap-2">
+        <FormField
+          className="flex-1"
+          label="Barcode (optional)"
+          hintSize="lg"
+          hint={
+            'The **retail barcode** (GTIN) printed on the packaging — EAN-13, UPC-A, EAN-8 or ' +
+            'GTIN-14.\n\nScanning a product barcode pre-fills this automatically. It is the item’s ' +
+            'own scannable code, distinct from the **MPN** above.\n\n> A future scan of the same ' +
+            'barcode jumps straight to this item.'
+          }
+        >
+          <Input
+            inputMode="numeric"
+            placeholder="e.g. 4006381333931"
+            data-testid="item-barcode"
+            {...register('barcode')}
+          />
+        </FormField>
+        {scannerEnabled ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setBarcodeScanOpen(true)}
+            data-testid="item-barcode-scan"
+          >
+            <ScanIcon aria-hidden />
+            Scan
+          </Button>
+        ) : null}
+      </div>
       {/* Keyless product enrichment (recommendation point 2): when the companion extension
             is present and a barcode is entered, look the product up (Open Food Facts) and fill
             any blank name/description/manufacturer. Feature-detected — hidden when absent. */}
@@ -1345,6 +1370,15 @@ export function CreateItemDialog({
       {/* On-device OCR scan (G2), stacked on top of this form. Mounted only while open so each
           scan starts fresh; on Apply it fills only the blank fields via `onOcrApply`. */}
       {ocrOpen ? <OcrPrefillDialog open onClose={() => setOcrOpen(false)} onApply={onOcrApply} /> : null}
+
+      {/* Camera barcode capture (issue #8), stacked on top of this form. A decoded barcode fills
+          the Barcode field directly (it *is* an explicit user action, so it overwrites); the
+          keyless product lookup below the field then reacts to the new value on its own. */}
+      <BarcodeScanDialog
+        open={barcodeScanOpen}
+        onClose={() => setBarcodeScanOpen(false)}
+        onCapture={(barcode) => setValue('barcode', barcode, { shouldDirty: true })}
+      />
     </>
   );
 }
