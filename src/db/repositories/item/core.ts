@@ -48,6 +48,13 @@ import type { LowStockThresholds } from '../types';
 /** The default ordering for a list read when the caller requests no explicit sort. */
 const DEFAULT_ITEM_ORDER = 'name COLLATE NOCASE ASC, serial_no ASC, created_at ASC';
 
+/**
+ * Favourited items (issue #23) always float to the top of the list, ahead of everything else,
+ * whatever ordering follows. Prepended to the resolved order so it leads both the default and
+ * any explicit user sort (`is_favourite` is 1 for a favourite, 0 otherwise → DESC puts 1 first).
+ */
+const FAVOURITE_FIRST_ORDER = 'items.is_favourite DESC';
+
 export interface ItemListFilters extends PageParams {
   readonly locationId?: string;
   readonly categoryId?: string;
@@ -116,7 +123,9 @@ export class ItemCoreRepository extends BaseRepository {
     // maintenance) evaluate against "now" when the read runs, keeping `now` out of the key.
     const [clause, params] = buildListFilter({ ...filters, now: filters.now ?? Date.now() });
     params.push(limit, offset);
-    const order = itemOrderByClause(filters.sort) ?? DEFAULT_ITEM_ORDER;
+    // Favourites lead the list ahead of everything else, then the caller's explicit sort (or
+    // the default name/serial/created order) breaks ties among them and among the rest.
+    const order = `${FAVOURITE_FIRST_ORDER}, ${itemOrderByClause(filters.sort) ?? DEFAULT_ITEM_ORDER}`;
     const rows = await this.driver.query<ItemRow>(
       `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items ${clause}
        ORDER BY ${order}
@@ -344,6 +353,13 @@ export class ItemCoreRepository extends BaseRepository {
       }
       sets.push('is_unlimited = ?');
       params.push(input.isUnlimited ? 1 : 0);
+    }
+    if (input.isFavourite !== undefined) {
+      // "Favourite" pin (issue #23): a personal curation that only reorders the list, not a
+      // change to what the item is. Applies to any tracking mode, so no CHECK to mirror; a
+      // plain LWW column with no HISTORY_ACTION (like is_unlimited).
+      sets.push('is_favourite = ?');
+      params.push(input.isFavourite ? 1 : 0);
     }
     if (input.reorderPoint !== undefined) {
       sets.push('reorder_point = ?');

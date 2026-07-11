@@ -138,6 +138,8 @@ export function rowToItem(row: ItemRow): Item {
     parentId: row.parent_id,
     // "Unlimited supply" modifier (Phase 82); DISCRETE-only infinite source.
     isUnlimited: row.is_unlimited === 1,
+    // "Favourite" pin (issue #23): starred items sort ahead of the rest of the list.
+    isFavourite: row.is_favourite === 1,
     // Per-item reorder policy (Phase 59); null = fall back to the global default.
     reorderPoint: row.reorder_point,
     reorderGaugePercent: row.reorder_gauge_percent,

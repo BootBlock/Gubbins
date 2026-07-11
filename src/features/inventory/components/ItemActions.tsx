@@ -4,6 +4,7 @@ import {
   CheckoutIcon,
   DeleteIcon,
   EditIcon,
+  FavouriteIcon,
   GaugeIcon,
   MoreIcon,
   MoveIcon,
@@ -11,6 +12,7 @@ import {
   QrCodeIcon,
   RestoreIcon,
   SaleIcon,
+  UnfavouriteIcon,
   WriteOffIcon,
 } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
@@ -131,6 +133,20 @@ export const ItemActions = forwardRef<
         triggerClassName={size}
         triggerProps={{ 'data-testid': 'item-actions-more' }}
       >
+        <MenuAction
+          icon={
+            item.isFavourite ? (
+              <UnfavouriteIcon className="text-glyph-favourite" />
+            ) : (
+              <FavouriteIcon className="text-glyph-favourite" />
+            )
+          }
+          onSelect={() => update.mutate({ id: item.id, input: { isFavourite: !item.isFavourite } })}
+          data-testid="item-actions-favourite"
+        >
+          {item.isFavourite ? t('inventory.itemActions.unfavourite') : t('inventory.itemActions.favourite')}
+        </MenuAction>
+        <MenuSeparator />
         <MenuAction icon={<EditIcon className="text-glyph-edit" />} onSelect={() => setDialog('details')}>
           Edit details…
         </MenuAction>

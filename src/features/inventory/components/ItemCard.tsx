@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Surface, usePointerTilt } from '@/components/foundry';
 import type { Item, LocationWithCount } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { useHighlightTarget } from '@/lib/highlight';
 import { UNLIMITED_GLYPH, isUnlimited } from '../unlimited';
 import { useItemDragSource } from '../item-drag';
@@ -14,6 +15,7 @@ import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldList } from './ItemCardFields';
+import { FavouriteCardWatermark } from './FavouriteIndicator';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import { itemRarity } from '../rarity';
 import type { ItemSelection } from './inventory-ui';
@@ -61,6 +63,7 @@ export const ItemCard = memo(function ItemCard({
   /** This item's stored custom-field values (fieldId → raw value), if loaded. */
   customValues?: ReadonlyMap<string, string>;
 }) {
+  const t = useT();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   const fields = useResolvedCardFields(item, {
     order: fieldOrder,
@@ -128,6 +131,14 @@ export const ItemCard = memo(function ItemCard({
         isHighlighted && 'animate-highlight',
       )}
     >
+      {/* Favourite flair (issue #23): a faint gold star hung 50% off the bottom-right corner,
+          clipped to the card. Decorative — the sr-only label below carries the state to AT. */}
+      {item.isFavourite ? (
+        <>
+          <FavouriteCardWatermark />
+          <span className="sr-only">{t('inventory.favourite.badge')}</span>
+        </>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           {selection ? (

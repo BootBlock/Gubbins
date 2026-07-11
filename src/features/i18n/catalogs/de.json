@@ -240,6 +240,9 @@
   "dashboard.widget.platform.sabNo": "Fehlt",
   "dashboard.widget.platform.dbFile": "DB-Datei",
 
+  "inventory.itemActions.favourite": "Zu Favoriten hinzufügen",
+  "inventory.itemActions.unfavourite": "Aus Favoriten entfernen",
+  "inventory.favourite.badge": "Favorit",
   "inventory.itemActions.addToProject": "Zum Projekt hinzufügen…",
   "inventory.addToProject.title": "Zum Projekt hinzufügen",
   "inventory.addToProject.description": "„{name}“ zu einem bestehenden Projekt als benötigtes Teil hinzufügen.",

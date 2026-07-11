@@ -207,6 +207,7 @@ export const v1Initial: Migration = {
           operational_metadata TEXT,
           is_active            INTEGER NOT NULL DEFAULT 1,
           is_unlimited         INTEGER NOT NULL DEFAULT 0,
+          is_favourite         INTEGER NOT NULL DEFAULT 0,
           created_at           INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at           INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (tracking_mode IN (${trackingModeList})),
@@ -219,6 +220,10 @@ export const v1Initial: Migration = {
           -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.
           CHECK (is_unlimited IN (0, 1)),
           CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),
+          -- "Favourite" (issue #23): a user-pinned item that sorts ahead of the rest of the
+          -- list. Applies to any item regardless of tracking mode, so — unlike is_unlimited —
+          -- it carries only the strict-boolean CHECK, no mode restriction.
+          CHECK (is_favourite IN (0, 1)),
           -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.
           CHECK (
             tracking_mode <> 'CONSUMABLE_GAUGE' OR (

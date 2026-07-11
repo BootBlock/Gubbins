@@ -43,6 +43,8 @@ export interface ItemRow {
    * for display and consumption never depletes it.
    */
   readonly is_unlimited: number;
+  /** "Favourite" pin (issue #23): 1 = the item sorts ahead of all others in the list. */
+  readonly is_favourite: number;
   /** Per-item DISCRETE quantity reorder floor; null = use the global default (v21). */
   readonly reorder_point: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null = use the global default (v21). */
@@ -138,6 +140,12 @@ export interface Item {
    * list, and consuming it is a ledger no-op (see the pure `unlimited.ts` seam).
    */
   readonly isUnlimited: boolean;
+  /**
+   * "Favourite" pin (issue #23): `true` = the user has starred this item, so it sorts ahead
+   * of every non-favourite in the inventory list and shows a favourite indicator in each view.
+   * Applies to any item regardless of tracking mode; defaults to `false`.
+   */
+  readonly isFavourite: boolean;
   /**
    * This item's **own** low-stock trigger (spec §4, Phase 59), overriding the global
    * default when set:
@@ -243,6 +251,8 @@ export interface CreateItemInput {
   readonly condition?: Condition | null;
   /** "Unlimited supply" modifier (Phase 82); DISCRETE-only, defaults to false. */
   readonly isUnlimited?: boolean;
+  /** "Favourite" pin (issue #23); defaults to false. */
+  readonly isFavourite?: boolean;
   /** Per-item DISCRETE quantity reorder floor; omit/null to use the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; omit/null to use the global default (§4, v21). */
@@ -312,6 +322,11 @@ export interface UpdateItemInput {
    * update (no history action) and lossless — it never rewrites `quantity`.
    */
   readonly isUnlimited?: boolean;
+  /**
+   * "Favourite" pin (issue #23). Toggling it is a plain LWW update (no history action) — a
+   * personal curation, not a change to what the item *is*. Omit to leave it untouched.
+   */
+  readonly isFavourite?: boolean;
   /** Per-item DISCRETE quantity reorder floor; null clears it back to the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null clears it back to the global default (§4, v21). */

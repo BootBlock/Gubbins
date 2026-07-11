@@ -48,6 +48,11 @@ export {
   Pencil as EditIcon,
   Star as PreferredIcon,
   StarOff as NotPreferredIcon,
+  // Favourite pin (issue #23): a filled star marks a favourited item and stars the toggle;
+  // StarOff is the "remove from favourites" affordance. Shares the Star glyph with the
+  // supplier "preferred" mark above — a distinct semantic role, same visual vocabulary.
+  Star as FavouriteIcon,
+  StarOff as UnfavouriteIcon,
   // Decorative rarity gem for the "Collector cards" gamification (Appearance flair).
   Gem as RarityIcon,
   FolderTree as MoveIcon,
