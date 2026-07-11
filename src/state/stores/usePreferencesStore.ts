@@ -512,12 +512,15 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dismissWipBanner: () => set({ wipBannerDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
-      // Letterhead text is stored trimmed; the logo is guarded to a `data:image/…` value so a
-      // corrupt persisted string can never reach the printed `<img>`.
-      setCatalogueTitle: (title) => set({ catalogueTitle: title.trim() }),
-      setCatalogueOrgName: (name) => set({ catalogueOrgName: name.trim() }),
-      setCatalogueOrgDetails: (details) => set({ catalogueOrgDetails: details.trim() }),
-      setCatalogueFooter: (footer) => set({ catalogueFooter: footer.trim() }),
+      // Letterhead text is stored verbatim — trimming here runs on every keystroke, which would
+      // eat a space or newline the moment it lands at the end of the field (so the user could
+      // never type a trailing space or a new address line). Any incidental leading/trailing
+      // whitespace is trimmed at the point of use instead. The logo is guarded to a
+      // `data:image/…` value so a corrupt persisted string can never reach the printed `<img>`.
+      setCatalogueTitle: (catalogueTitle) => set({ catalogueTitle }),
+      setCatalogueOrgName: (catalogueOrgName) => set({ catalogueOrgName }),
+      setCatalogueOrgDetails: (catalogueOrgDetails) => set({ catalogueOrgDetails }),
+      setCatalogueFooter: (catalogueFooter) => set({ catalogueFooter }),
       setCatalogueLogo: (logo) => set({ catalogueLogo: normaliseCatalogueLogo(logo) }),
       setCatalogueShowGeneratedDate: (show) => set({ catalogueShowGeneratedDate: show }),
     }),
