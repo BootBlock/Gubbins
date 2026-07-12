@@ -9,30 +9,17 @@
  */
 import { useState, useMemo } from 'react';
 import { Button, Input, Surface, Spinner, LiveRegion } from '@/components/foundry';
-import { DownloadIcon, LowStockIcon, TruckIcon, WarningIcon } from '@/components/icons';
+import { LowStockIcon, TruckIcon, WarningIcon } from '@/components/icons';
+import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
-import { buildReorderCsv } from './reorder-csv';
+import { buildReorderExport } from './reorder-export';
 import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup, type ReorderPlanLine } from './reorder-plan';
 import { useCreateDraftFromReorderPlan, useReorderPlan } from './queries';
 
 /** Clamp a user-entered order quantity to a sensible range. */
 function clampQty(value: number): number {
   return Math.max(1, Math.round(value));
-}
-
-/**
- * Download a CSV string as a file without a server round-trip. Uses the same pattern as
- * the existing Export Wizard (`src/features/export/export-data.ts`).
- */
-function downloadCsv(content: string, filename: string): void {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function ReorderTab() {
@@ -64,12 +51,6 @@ export function ReorderTab() {
       next.set(`${groupKey}::${itemId}`, value);
       return next;
     });
-  }
-
-  function handleExportCsv(): void {
-    const csv = buildReorderCsv(effectivePlan);
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadCsv(csv, `reorder-shopping-list-${stamp}.csv`);
   }
 
   function handleCreateDraft(group: ReorderPlanGroup): void {
@@ -117,10 +98,16 @@ export function ReorderTab() {
             <p className="text-sm text-muted-foreground">
               {totalLines} {plural(totalLines, 'item')} need{totalLines === 1 ? 's' : ''} reordering
             </p>
-            <Button variant="outline" onClick={handleExportCsv} data-testid="reorder-export-csv">
-              <DownloadIcon />
-              Export CSV
-            </Button>
+            <TabularExportMenu
+              build={(format) => buildReorderExport(effectivePlan, format)}
+              filename={(extension) =>
+                `reorder-shopping-list-${new Date().toISOString().slice(0, 10)}.${extension}`
+              }
+              triggerLabel="Export"
+              menuLabel="Export reorder list"
+              toastHeading="Reorder list exported"
+              testIdPrefix="reorder-export"
+            />
           </div>
 
           {effectivePlan.map((group) => (

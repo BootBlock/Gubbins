@@ -7,25 +7,13 @@
  */
 import type { ProjectBomLine } from '@/db/repositories';
 import {
-  toCsv,
-  toHtmlTable,
-  toMarkdownTable,
-  toTsv,
+  buildTabularExport,
   type TabularCell,
   type TabularColumn,
+  type TabularExportFormat,
+  type TabularExportResult,
 } from '@/features/export/tabular-export';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './components/projects-ui';
-
-/** The file formats a BOM can be exported to (issue #27). */
-export type BomExportFormat = 'csv' | 'tsv' | 'markdown' | 'html';
-
-export interface BomExportResult {
-  readonly content: string;
-  /** MIME type for the download `Blob`. */
-  readonly mimeType: string;
-  /** File-name extension (no dot). */
-  readonly extension: string;
-}
 
 /** Display name for a BOM line's part — mirrors the on-screen BOM table's fallback chain. */
 function partLabel(line: ProjectBomLine): string {
@@ -70,40 +58,18 @@ function documentTitle(projectName: string): string {
 }
 
 /**
- * Serialise a project's BOM to the chosen format, returning the file content alongside
- * the MIME type and extension the download side-effect needs.
+ * Serialise a project's BOM to the chosen format via the shared tabular exporter,
+ * returning the file content alongside the MIME type and extension the download needs.
  */
 export function buildBomExport(
   projectName: string,
   lines: readonly ProjectBomLine[],
-  format: BomExportFormat,
-): BomExportResult {
-  const columns = bomExportColumns();
-  switch (format) {
-    case 'csv':
-      return { content: toCsv(columns, lines), mimeType: 'text/csv;charset=utf-8', extension: 'csv' };
-    case 'tsv':
-      return {
-        content: toTsv(columns, lines),
-        mimeType: 'text/tab-separated-values;charset=utf-8',
-        extension: 'tsv',
-      };
-    case 'markdown':
-      return {
-        content: `# ${documentTitle(projectName)}\n\n${toMarkdownTable(columns, lines)}`,
-        mimeType: 'text/markdown;charset=utf-8',
-        extension: 'md',
-      };
-    case 'html':
-      return {
-        content: toHtmlTable(columns, lines, {
-          title: documentTitle(projectName),
-          caption: `${lines.length} line${lines.length === 1 ? '' : 's'}`,
-        }),
-        mimeType: 'text/html;charset=utf-8',
-        extension: 'html',
-      };
-  }
+  format: TabularExportFormat,
+): TabularExportResult {
+  return buildTabularExport(format, bomExportColumns(), lines, {
+    title: documentTitle(projectName),
+    caption: `${lines.length} line${lines.length === 1 ? '' : 's'}`,
+  });
 }
 
 /** A file-safe download name for a project's BOM export, e.g. `gubbins-bom-Robot_Arm-2026-07-12.csv`. */

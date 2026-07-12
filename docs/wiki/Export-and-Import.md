@@ -18,9 +18,10 @@ Get your data out in whichever form suits:
 Exports can be **scoped** — the whole inventory, a single item, or a
 [[project's|Projects-and-BOM]] sub-folder.
 
-A [[project's bill of materials|Projects-and-BOM]] also exports on its own, straight from the
-project — as **CSV**, **TSV**, a **Markdown** table, or a printable **HTML** page — for sharing,
-ordering or printing a parts list.
+A [[project's bill of materials|Projects-and-BOM]] and the
+[[reorder / shopping list|Reorder-and-Shopping-List]] each export on their own, straight from
+where you're working — as **CSV**, **TSV**, a **Markdown** table, or a printable **HTML** page —
+for sharing, ordering or printing a parts list.
 
 ## Importing
 

@@ -141,3 +141,57 @@ export function toHtmlTable<T>(
 </html>
 `;
 }
+
+/** The file formats the tabular serialisers can produce for a downloadable export. */
+export type TabularExportFormat = 'csv' | 'tsv' | 'markdown' | 'html';
+
+export interface TabularExportResult {
+  readonly content: string;
+  /** MIME type for the download `Blob`. */
+  readonly mimeType: string;
+  /** File-name extension (no dot). */
+  readonly extension: string;
+}
+
+export interface TabularDocumentMeta {
+  /** Heading for the Markdown document and `<title>` / `<h1>` of the HTML document. */
+  readonly title: string;
+  /** Optional sub-heading for the HTML document (e.g. a row count). */
+  readonly caption?: string;
+}
+
+/**
+ * Serialise a table to the chosen format, returning the file content alongside the MIME
+ * type and extension a download needs. The single place the four formats are dispatched —
+ * every "list → a file" export (project BOM, reorder shopping list, …) routes through here
+ * so the format set, MIME types and document framing stay consistent.
+ */
+export function buildTabularExport<T>(
+  format: TabularExportFormat,
+  columns: readonly TabularColumn<T>[],
+  rows: readonly T[],
+  meta: TabularDocumentMeta,
+): TabularExportResult {
+  switch (format) {
+    case 'csv':
+      return { content: toCsv(columns, rows), mimeType: 'text/csv;charset=utf-8', extension: 'csv' };
+    case 'tsv':
+      return {
+        content: toTsv(columns, rows),
+        mimeType: 'text/tab-separated-values;charset=utf-8',
+        extension: 'tsv',
+      };
+    case 'markdown':
+      return {
+        content: `# ${meta.title}\n\n${toMarkdownTable(columns, rows)}`,
+        mimeType: 'text/markdown;charset=utf-8',
+        extension: 'md',
+      };
+    case 'html':
+      return {
+        content: toHtmlTable(columns, rows, { title: meta.title, caption: meta.caption }),
+        mimeType: 'text/html;charset=utf-8',
+        extension: 'html',
+      };
+  }
+}
