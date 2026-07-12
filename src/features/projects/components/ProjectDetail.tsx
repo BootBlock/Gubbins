@@ -39,6 +39,7 @@ import {
 import { COSTING_MODE_LABELS, PROJECT_STATUS_LABELS } from './projects-ui';
 import { EditProjectDialog } from './EditProjectDialog';
 import { BomLineTable } from './BomLineTable';
+import { ExportBomMenu } from './ExportBomMenu';
 import { AddBomLineDialog } from './AddBomLineDialog';
 import { ImportBomDialog } from './ImportBomDialog';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
@@ -139,6 +140,7 @@ export function ProjectDetail({
             <ImportIcon />
             Import BOM
           </Button>
+          <ExportBomMenu projectName={project.data.name} lines={lineRows} />
           <Tooltip
             content="Consume this BOM into a finished assembly — a new container, a single object, or permanent consumption. This **completes** the project and cannot be undone automatically."
             triggerTabIndex={-1}

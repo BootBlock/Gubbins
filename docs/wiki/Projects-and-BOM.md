@@ -38,6 +38,23 @@ flows into your [[purchasing|Reorder-and-Shopping-List]].
 > A **project** is a one-off build with its own BOM and budget. A reusable assembly you make
 > repeatedly is better modelled as a **[[kit|Kits-and-Bundles]]**.
 
+## Exporting the BOM
+
+Use **Export BOM** (beside *Import BOM*) to save the bill of materials as a file — for sharing a
+parts list, ordering, or printing. Pick the form that suits:
+
+- **CSV** or **TSV** — a spreadsheet of every line, ready for Excel, Sheets or a supplier upload.
+- **Markdown table** — drops straight into notes, a README or a wiki.
+- **HTML** — a tidy, standalone page that opens in your browser and **prints** cleanly.
+
+Each line carries its part details (designator, MPN, manufacturer), the required / reserved /
+received quantities, its reservation and procurement status, and the unit and line cost — so the
+exported file is a complete snapshot of the build's parts.
+
+> **💡 Tip**
+> Choose **HTML** when you want a printout to take to the bench or the shop — it's laid out for
+> paper. Choose **CSV/TSV** when a supplier or spreadsheet needs to read the numbers back.
+
 ## Related pages
 
 - **[[Budgets]]** — setting and tracking a project's budget.

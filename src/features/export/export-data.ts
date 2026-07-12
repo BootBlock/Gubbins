@@ -5,6 +5,7 @@
  * to repository reads and the download/zip side-effects.
  */
 import type { Checkout, Contact, Item, ItemHistoryEntry } from '@/db/repositories';
+import { toCsv, type TabularCell, type TabularColumn } from './tabular-export';
 
 /** Schema version of the JSON backup payload (§2 "Versioned JSON File"). */
 export const BACKUP_FORMAT_VERSION = 1;
@@ -51,24 +52,20 @@ const CSV_COLUMNS = [
   'depth',
 ] as const;
 
-/** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting). */
-export function buildItemsCsv(items: readonly Item[]): string {
-  const header = CSV_COLUMNS.join(',');
-  const rows = items.map((item) =>
-    CSV_COLUMNS.map((col) => {
-      // An unlimited-supply item (Phase 82) has no finite count — leave its quantity cell
-      // blank (∞ has no numeric CSV representation); the `isUnlimited` column carries the truth.
-      if (col === 'quantity' && item.isUnlimited) return '';
-      return csvCell((item as unknown as Record<string, unknown>)[col]);
-    }).join(','),
-  );
-  return [header, ...rows].join('\r\n');
-}
+/** Item CSV columns as a {@link TabularColumn} spec for the shared serialiser. */
+const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map((col) => ({
+  header: col,
+  value: (item) => {
+    // An unlimited-supply item (Phase 82) has no finite count — leave its quantity cell
+    // blank (∞ has no numeric CSV representation); the `isUnlimited` column carries the truth.
+    if (col === 'quantity' && item.isUnlimited) return '';
+    return (item as unknown as Record<string, TabularCell>)[col];
+  },
+}));
 
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+/** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting via the shared serialiser). */
+export function buildItemsCsv(items: readonly Item[]): string {
+  return toCsv(ITEM_CSV_COLUMNS, items);
 }
 
 /**
@@ -139,16 +136,19 @@ export function buildCatalogCsv(
   valuesByItem: ReadonlyMap<string, Readonly<Record<string, string | null>>> = new Map(),
 ): string {
   const seen = new Set<string>();
-  const columns = customFields.filter((c) => (seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true)));
+  const custom = customFields.filter((c) => (seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true)));
 
-  const header = [...CATALOG_CSV_COLUMNS, ...columns.map((c) => c.header)].map((h) => csvCell(h)).join(',');
-  const rows = items.map((item) => {
-    const core = CATALOG_CSV_COLUMNS.map((col) => csvCell(catalogCsvValue(item, col)));
-    const values = valuesByItem.get(item.id);
-    const custom = columns.map((c) => csvCell(values?.[c.fieldId] ?? null));
-    return [...core, ...custom].join(',');
-  });
-  return [header, ...rows].join('\r\n');
+  const columns: readonly TabularColumn<Item>[] = [
+    ...CATALOG_CSV_COLUMNS.map((col) => ({
+      header: col,
+      value: (item: Item) => catalogCsvValue(item, col) as TabularCell,
+    })),
+    ...custom.map((c) => ({
+      header: c.header,
+      value: (item: Item) => valuesByItem.get(item.id)?.[c.fieldId] ?? null,
+    })),
+  ];
+  return toCsv(columns, items);
 }
 
 // --- Markdown / Obsidian vault (§4.5) ------------------------------------------
