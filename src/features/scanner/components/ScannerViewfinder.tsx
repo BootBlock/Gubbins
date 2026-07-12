@@ -25,6 +25,7 @@ export function ScannerViewfinder({
   hintTestId,
   error,
   onRetry,
+  reticleRef,
 }: {
   status: ScannerStatus;
   /** The directional guidance shown under the reticle ("Point at …"). */
@@ -35,14 +36,24 @@ export function ScannerViewfinder({
   error: string | null;
   /** Re-request the camera from the error card. */
   onRetry: () => void;
+  /**
+   * Ref to the framing-reticle box (issue #59): the decoder crops each frame to it, so a barcode
+   * framed in the box is large relative to the analysed pixels. Attached to the reticle only while
+   * the stream is live (the only time it is shown and the decoder runs).
+   */
+  reticleRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
     <>
       {status === 'STREAM_ACTIVE' ? (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4">
           {/* The framing reticle. `overflow-hidden` clips the sweep line at its edges; the huge
-              spread shadow dims everything outside it (box-shadow is not clipped by overflow). */}
-          <div className="relative size-[min(28rem,80vmin)] overflow-hidden rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]">
+              spread shadow dims everything outside it (box-shadow is not clipped by overflow). The
+              decoder crops each frame to this box's on-screen rectangle (issue #59). */}
+          <div
+            ref={reticleRef}
+            className="relative size-[min(28rem,80vmin)] overflow-hidden rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]"
+          >
             <div
               className="animate-scanline absolute inset-x-0 h-0.5 -translate-y-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
               aria-hidden

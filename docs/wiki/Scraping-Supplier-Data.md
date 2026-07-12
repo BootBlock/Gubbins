@@ -30,8 +30,8 @@ fills any empty fields — handy on a phone where you've just scanned a grocery 
   to `openfoodfacts.org` — nothing else about your inventory. It only ever does this when you tap
   **Look up**, never automatically.
 
-You can change your mind any time under **[[Settings → Notifications & files|Notifications-Settings]]
-→ Online product lookup** — turn it off to keep every lookup offline.
+You can change your mind any time under **[[Settings → Scanning & labels|Camera-Scanning]] → Product
+lookup → Online product lookup** — turn it off to keep every lookup offline.
 
 > **ℹ️ Note**
 > Open Food Facts covers groceries and consumables, so a hardware or electronics barcode often has
