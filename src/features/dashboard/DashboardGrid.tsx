@@ -463,7 +463,7 @@ function WidgetTile({
       <button
         ref={nodeRef}
         type="button"
-        onClick={openSettings}
+        onClick={() => openSettings(def.settingsTab)}
         style={cellStyle(x, y)}
         className={cn(PLACEMENT, 'block w-full cursor-pointer text-left')}
       >

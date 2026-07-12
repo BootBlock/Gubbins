@@ -465,7 +465,7 @@ export function DashboardNav() {
                         <button
                           type="button"
                           data-testid="nav-settings"
-                          onClick={openSettings}
+                          onClick={() => openSettings()}
                           className={tileClassName}
                         >
                           {surface}

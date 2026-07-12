@@ -152,7 +152,16 @@ const NAV_COUNT_HINTS: Record<NavCountRoute, string> = {
  *
  * Default-exported so it can be `React.lazy`-imported by its host.
  */
-export default function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function SettingsDialog({
+  open,
+  onClose,
+  initialTab,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Which rail tab to land on when the dialog first mounts (defaults to Appearance). */
+  initialTab?: string;
+}) {
   const t = useT();
   const prefs = usePreferencesStore();
   const [triageOpen, setTriageOpen] = useState(false);
@@ -1153,6 +1162,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
         railAriaLabel="Settings sections"
         idPrefix="settings"
         tabs={tabs}
+        initialTabId={initialTab}
         footer={
           <Button variant="secondary" data-testid="settings-close" onClick={onClose}>
             Close
