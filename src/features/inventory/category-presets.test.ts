@@ -24,8 +24,10 @@ describe('CATEGORY_PRESETS (importable preset library)', () => {
     });
     expect(TOOLS_STARTER_CATEGORY_NAME).toBe('Tools');
     expect(TOOLS_STARTER_SEED.fields).toEqual([
-      { name: 'Serial number', fieldType: 'TEXT', position: 0 },
-      { name: 'Calibration certificate', fieldType: 'URL', position: 1 },
+      { name: 'Manufacturer', fieldType: 'TEXT', position: 0 },
+      { name: 'Model number', fieldType: 'TEXT', position: 1 },
+      { name: 'Serial number', fieldType: 'TEXT', position: 2 },
+      { name: 'Calibration certificate', fieldType: 'URL', position: 3 },
     ]);
   });
 
@@ -89,6 +91,8 @@ describe('applyCategoryStarterSeed', () => {
     expect(id).toBe('cat-1');
     expect(calls).toEqual([
       'create:Tools',
+      'field:cat-1:Manufacturer',
+      'field:cat-1:Model number',
       'field:cat-1:Serial number',
       'field:cat-1:Calibration certificate',
     ]);
@@ -114,6 +118,8 @@ describe('applyCategoryStarterSeed', () => {
 
       const fields = await repo.listFields(id);
       expect(fields.map((f) => [f.name, f.fieldType])).toEqual([
+        ['Manufacturer', 'TEXT'],
+        ['Model number', 'TEXT'],
         ['Serial number', 'TEXT'],
         ['Calibration certificate', 'URL'],
       ]);
