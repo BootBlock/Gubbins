@@ -130,6 +130,7 @@ const ERROR_HINTS: Partial<Record<DbErrorCode, string>> = {
 };
 
 export function BootErrorScreen({ error }: { error: DbError }) {
+  const isSchemaTooNew = error.code === 'SCHEMA_TOO_NEW';
   return (
     <BootShell
       accent="danger"
@@ -137,6 +138,22 @@ export function BootErrorScreen({ error }: { error: DbError }) {
       title="Couldn't start the database"
       subtitle={ERROR_HINTS[error.code] ?? 'An unexpected error occurred while starting Gubbins.'}
     >
+      {isSchemaTooNew ? (
+        <div className="mb-4 rounded-xl border border-border bg-secondary/40 p-4 text-left text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Why is Gubbins asking to reset your data?</p>
+          <p className="mt-2">
+            Gubbins is still in early, rapid development (before version 1.0). As new features land, the shape
+            of the local database changes — and while it's this young, those changes aren't migrated
+            automatically. When one arrives, existing data can't be carried forward, so Gubbins has to start
+            fresh.
+          </p>
+          <p className="mt-2">
+            This is <span className="font-medium text-foreground">expected</span> before 1.0. Back up your
+            data below if you'd like to keep a copy, then reset to continue. Once Gubbins reaches 1.0, updates
+            will preserve your data.
+          </p>
+        </div>
+      ) : null}
       <p className="rounded-lg bg-secondary/50 p-3 font-mono text-xs break-words text-muted-foreground">
         {error.code}: {error.message}
       </p>

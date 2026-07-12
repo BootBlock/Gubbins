@@ -57,6 +57,18 @@ device (limited on iOS). See [[Reminder notifications|Reminder-Notifications]].
 It needs the [[Live camera scanning|Camera-Scanning]] capability enabled and camera permission.
 Printed [[labels|QR-Codes-and-Label-Printing]] work regardless.
 
+**After an update, Gubbins asks me to reset or purge my data. Why?**
+Gubbins is still in early, rapid development (before version **1.0**). As new features land, the
+shape of the local database changes — and while it's this young, those changes aren't migrated
+automatically. When an update needs a newer database than your device has, Gubbins can't carry your
+existing data forward, so it asks you to start fresh. **This is expected before 1.0**, not a bug or
+data corruption. On that screen you can back up your data first (download a raw `.sqlite` copy or a
+JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will preserve your data.
+
+> **⚠️ Heads-up**
+> Take a [[backup|Backup-and-Restore]] regularly while Gubbins is pre-1.0, so a schema reset never
+> costs you more than the changes since your last backup.
+
 > **💡 Tip**
 > Whatever the issue, a recent [[backup|Backup-and-Restore]] is the best safety net — take one
 > before big changes and you can always get back to a known-good state.
