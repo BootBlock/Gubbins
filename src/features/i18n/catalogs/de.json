@@ -21,6 +21,23 @@
   "settings.language.description": "Legt die Sprache der Oberfläche fest sowie die Formatierung von Datums- und Zahlenangaben.",
   "settings.language.hint": "Wählt die Sprache, in der die Oberfläche angezeigt wird, **und** wie Datum, Uhrzeit und Zahlen formatiert werden — z. B. `31.12.2026` statt `12/31/2026` sowie die Tausender-/Dezimaltrennzeichen.\n\nEine Sprache ohne vollständige Übersetzung zeigt nicht übersetzten Text auf Englisch an. Ihre Währung wird dadurch nicht geändert.",
 
+  "settings.pagination.section": "Listen",
+  "settings.pagination.paginate.label": "Lange Listen paginieren",
+  "settings.pagination.paginate.description": "Lange Listen in nummerierte Seiten mit einer Seitensteuerung aufteilen, statt einer einzigen durchgehend scrollenden Liste.",
+  "settings.pagination.paginate.hint": "Ändert, wie lange Listen in Gubbins angezeigt werden — die **Inventar**-Liste, der **Aktivitäts**-Verlauf und Ihre **Kontakte**.\n\n- **Aus** (Standard) — eine Liste, die beim Scrollen mehr nachlädt.\n- **An** — die Liste wird in **Seiten** fester Größe aufgeteilt, mit einer Seitensteuerung am Fuß zum Durchblättern.\n\nSo oder so ändert sich nichts an Ihren Daten — nur die Darstellung der Liste. Legen Sie die Seitengröße unten fest.",
+  "settings.pagination.size.label": "Einträge pro Seite",
+  "settings.pagination.size.description": "Wie viele Einträge jede Seite zeigt, wenn die Seitennummerierung aktiv ist ({min}–{max}).",
+  "settings.pagination.size.hint": "Die Anzahl der Einträge, die pro Seite angezeigt werden, wenn **Lange Listen paginieren** aktiv ist. Sie können sie auch über die Seitensteuerung am Fuß jeder paginierten Liste ändern — es ist dieselbe gemeinsame Einstellung.\n\nBereich {min}–{max}.",
+
+  "pagination.nav": "Seitennummerierung",
+  "pagination.previous": "Vorherige Seite",
+  "pagination.next": "Nächste Seite",
+  "pagination.page": "Seite {page}",
+  "pagination.pageCurrent": "Seite {page}, aktuelle Seite",
+  "pagination.pageOf": "Seite {page} von {pages}",
+  "pagination.summary": "{start}–{end} von {total}",
+  "pagination.perPage": "Pro Seite",
+
   "about.title": "Über",
   "about.app.title": "Über Gubbins",
   "about.app.intro.pre": "Gubbins ist eine lokal-first, offlinefähige App zum Nachverfolgen von",

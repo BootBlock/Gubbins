@@ -1,16 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Input,
   Modal,
   PageContainer,
   PageHeader,
+  Pagination,
   Spinner,
   Surface,
+  pageCount,
+  pageSliceBounds,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
 import { AddContactIcon, ContactsIcon, DeleteIcon } from '@/components/icons';
 import type { CheckoutWithNames, ContactWithCount } from '@/db/repositories';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { plural } from '@/lib/plural';
 import { CheckInDialog } from './components/CheckInDialog';
 import { RenewLoanDialog } from './components/RenewLoanDialog';
@@ -46,6 +51,21 @@ export function ContactsScreen() {
 
   const onLoan = open.data?.rows ?? [];
   const overdueCount = onLoan.filter((c) => c.isOverdue).length;
+
+  // App-wide list pagination (issue #20). The contacts dictionary is a plain client-side list
+  // (already capped at 100 rows), so it paginates by slicing the loaded rows — no extra query.
+  const paginated = usePreferencesStore((s) => s.paginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [contactsPage, setContactsPage] = useState(1);
+  const contactRows = contacts.data?.rows ?? [];
+  const contactPages = pageCount(contactRows.length, defaultPageSize);
+  const { start, end } = pageSliceBounds(contactsPage, defaultPageSize, contactRows.length);
+  const visibleContacts = paginated ? contactRows.slice(start, end) : contactRows;
+  // Clamp back into range if the list shrinks (a contact deleted) below the current page.
+  useEffect(() => {
+    if (paginated && contactPages > 0 && contactsPage > contactPages) setContactsPage(contactPages);
+  }, [paginated, contactPages, contactsPage]);
 
   const addContact = () => {
     if (newName.trim().length === 0) return;
@@ -150,30 +170,46 @@ export function ContactsScreen() {
 
           {contacts.isLoading ? (
             <Spinner />
-          ) : contacts.data && contacts.data.rows.length > 0 ? (
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {contacts.data.rows.map((c) => (
-                <Surface
-                  key={c.id}
-                  className="transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setEditingContact(c)}
-                    className="flex w-full items-center justify-between gap-2 rounded-[inherit] p-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          ) : contactRows.length > 0 ? (
+            <>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {visibleContacts.map((c) => (
+                  <Surface
+                    key={c.id}
+                    className="transition-all duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10"
                   >
-                    <span className="font-medium">{c.name}</span>
-                    {c.openCount > 0 ? (
-                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">
-                        {c.openCount} out
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </button>
-                </Surface>
-              ))}
-            </ul>
+                    <button
+                      type="button"
+                      onClick={() => setEditingContact(c)}
+                      className="flex w-full items-center justify-between gap-2 rounded-[inherit] p-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      {c.openCount > 0 ? (
+                        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">
+                          {c.openCount} out
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </button>
+                  </Surface>
+                ))}
+              </ul>
+              {paginated ? (
+                <Pagination
+                  page={contactsPage}
+                  pageCount={contactPages}
+                  onPageChange={setContactsPage}
+                  pageSize={defaultPageSize}
+                  onPageSizeChange={setDefaultPageSize}
+                  pageSizeOptions={PAGE_SIZE_PRESETS}
+                  minPageSize={PAGE_SIZE_BOUNDS.min}
+                  maxPageSize={PAGE_SIZE_BOUNDS.max}
+                  totalItems={contactRows.length}
+                  data-testid="contacts-pagination"
+                />
+              ) : null}
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">
               No contacts yet. They are also created automatically when you check an item out.

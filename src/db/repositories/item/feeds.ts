@@ -262,5 +262,26 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       );
       return this.toPage(rows.map(rowToActivityFeedEntry), limit, offset);
     }
+
+    /**
+     * Total number of {@link getHistoryFeed} rows for the same `actions` filter — powers the
+     * Activity feed's page count when the feed is shown paginated (issue #20). Mirrors the feed's
+     * `WHERE` exactly (same `action IN (…)` clause, same `items` join) so the count can never
+     * disagree with the pages it sizes; an explicit empty `actions` array is "match nothing" → 0.
+     */
+    async countHistoryFeed(filters: Pick<ActivityFeedFilters, 'actions'> = {}): Promise<number> {
+      const actions = filters.actions;
+      if (actions !== undefined && actions.length === 0) return 0;
+      const where =
+        actions && actions.length > 0 ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})` : '';
+      const row = await this.driver.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n
+         FROM item_history h
+         JOIN items i ON i.id = h.item_id
+         ${where};`,
+        [...(actions ?? [])],
+      );
+      return Number(row?.n ?? 0);
+    }
   };
 }

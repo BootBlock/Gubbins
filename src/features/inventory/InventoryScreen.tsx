@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { plural } from '@/lib/plural';
-import { Button, Input, LiveRegion, Spinner, MAIN_CONTENT_ID } from '@/components/foundry';
+import {
+  Button,
+  Input,
+  LiveRegion,
+  Pagination,
+  Spinner,
+  pageCount,
+  MAIN_CONTENT_ID,
+} from '@/components/foundry';
 import {
   AddIcon,
   BuilderIcon,
@@ -55,10 +63,12 @@ import {
   useApplicableStatuses,
   useInventoryItems,
   useItemCount,
+  useItemPage,
   useLocations,
   useLocationTree,
   type ItemQueryFilters,
 } from './queries';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { requestHighlight } from '@/lib/highlight';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
@@ -138,6 +148,14 @@ function InventoryWorkspace() {
   // The opt-out compact per-location summary card (device-local view preference).
   const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
   const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
+  // List pagination (issue #20) — an app-wide view preference. When on (and the flat list is
+  // showing), the list splits into fixed-size pages with a control at the foot instead of the
+  // default infinite scroll. The default page size is shared with Settings and editable inline.
+  const paginateLists = usePreferencesStore((s) => s.paginateLists);
+  const setPaginateLists = usePreferencesStore((s) => s.setPaginateLists);
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
+  const [page, setPage] = useState(1);
   // Live camera scanning is the `scanner` capability (modular-ui-plan §4, Phase 6): with it
   // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
   // stay regardless — and manually reachable flows are untouched.
@@ -202,6 +220,9 @@ function InventoryWorkspace() {
   // entirely and stand on their own aggregations, so the per-item filter/facet bars, the "shown"
   // count and select mode don't apply — they're hidden while a visualisation is on screen.
   const isVizMode = density === 'map' || density === 'treemap';
+  // Pagination replaces the standard flat Card/Data/Table list only — never the grouped view, the
+  // whole-collection visualisations, or a Visual-Builder result set (each is its own presentation).
+  const paginated = paginateLists && !grouped && !isVizMode && !astActive;
 
   // Debounce the quick-search box so each keystroke doesn't hit the worker.
   useEffect(() => {
@@ -299,9 +320,15 @@ function InventoryWorkspace() {
   const tree = useLocationTree();
   const flat = useLocations();
   const totalCount = useItemCount({ includeInactive });
-  const listItems = useInventoryItems(filters);
+  // In paginated mode the infinite list is suspended and the page read (below) drives the list, so
+  // the two never both run; otherwise the infinite list feeds the virtualised scroll as before.
+  const listItems = useInventoryItems(filters, undefined, !paginated);
   const astItems = useAstSearch(ast, astActive);
   const active = astActive ? astItems : listItems;
+  // Discrete-pagination reads (issue #20), gated off unless the flat list is paginated: one page of
+  // rows plus the filtered total that sizes the page count.
+  const pageItems = useItemPage(filters, page, defaultPageSize, paginated);
+  const pageTotalCount = useItemCount(filters, paginated);
 
   // "Show removed" reveals soft-deleted items (is_active = 0), so it only earns its place in the
   // header when the current view actually has removed items to reveal. Probe that by scoping to
@@ -369,10 +396,29 @@ function InventoryWorkspace() {
   // as the label tint above, never a second colour scheme.
   const locationTintClass = (id: string) => locationColorTintClass(locationColors.get(id));
 
-  const flatItems = useMemo(() => active.data?.pages.flatMap((p) => p.rows) ?? [], [active.data]);
-  // Absolute index of the first resident item: non-zero once `maxPages` has trimmed
-  // off the leading page(s), so the virtualised list can index in absolute space.
-  const firstItemIndex = active.data?.pages[0]?.offset ?? 0;
+  const flatItems = useMemo(
+    () => (paginated ? (pageItems.data?.rows ?? []) : (active.data?.pages.flatMap((p) => p.rows) ?? [])),
+    [paginated, pageItems.data, active.data],
+  );
+  // Absolute index of the first resident item: non-zero once `maxPages` has trimmed off the
+  // leading page(s), so the virtualised list can index in absolute space. A discrete page always
+  // starts at 0 (it holds exactly its own rows, not an absolute-indexed window).
+  const firstItemIndex = paginated ? 0 : (active.data?.pages[0]?.offset ?? 0);
+  // The query whose loading/success gates the list's spinner + "shown" line — the page read in
+  // paginated mode, the infinite/AST read otherwise.
+  const listStatus = paginated ? pageItems : active;
+  // Total pages for the control, from the filtered count (only fetched while paginating).
+  const totalPages = pageCount(pageTotalCount.data ?? 0, defaultPageSize);
+  // Snap back to page 1 whenever the query feeding the list changes (a filter or the page size), so
+  // a narrowing filter can't strand the user on an out-of-range page. `filters` is memoised, so its
+  // identity changes exactly when a filter dependency does.
+  useEffect(() => {
+    setPage(1);
+  }, [filters, defaultPageSize]);
+  // If the result set shrinks below the current page (e.g. items removed), clamp back into range.
+  useEffect(() => {
+    if (paginated && totalPages > 0 && page > totalPages) setPage(totalPages);
+  }, [paginated, totalPages, page]);
   const flatLocations = flat.data?.rows ?? [];
   // The selected location's live row (with its item count), for the compact summary card.
   const selectedLocation = useMemo(
@@ -640,6 +686,18 @@ function InventoryWorkspace() {
               >
                 Location summary
               </MenuAction>
+              {/* Paginate long lists (issue #20) — an app-wide view preference (mirrored in
+                  Settings). Splits the flat list into fixed-size pages; ignored while grouped or a
+                  whole-collection visualisation is on screen. */}
+              <MenuAction
+                icon={<DataDensityIcon />}
+                onSelect={() => setPaginateLists(!paginateLists)}
+                selected={paginateLists}
+                selectionRole="checkbox"
+                data-testid="toggle-paginate"
+              >
+                Paginate list
+              </MenuAction>
               <MenuSeparator />
               <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
                 Categories
@@ -772,7 +830,7 @@ function InventoryWorkspace() {
                   <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
                     {grouped
                       ? 'Grouped by location'
-                      : active.isSuccess
+                      : listStatus.isSuccess
                         ? `${flatItems.length} shown${astActive ? ' (visual search)' : ''}`
                         : 'Loading…'}
                   </p>
@@ -929,42 +987,65 @@ function InventoryWorkspace() {
                     <Spinner />
                   </div>
                 )
-              ) : active.isLoading ? (
+              ) : listStatus.isLoading ? (
                 <div className="flex flex-1 items-center justify-center">
                   <Spinner />
                 </div>
               ) : (
-                <ItemList
-                  items={flatItems}
-                  firstItemIndex={firstItemIndex}
-                  locations={flatLocations}
-                  density={density}
-                  selectedLocationId={selectedLocationId}
-                  locationName={locationName}
-                  locationColorClass={locationColorClass}
-                  locationTintClass={locationTintClass}
-                  hasNextPage={active.hasNextPage}
-                  isFetchingNextPage={active.isFetchingNextPage}
-                  fetchNextPage={() => void active.fetchNextPage()}
-                  hasPreviousPage={active.hasPreviousPage}
-                  isFetchingPreviousPage={active.isFetchingPreviousPage}
-                  fetchPreviousPage={() => void active.fetchPreviousPage()}
-                  childLocations={childLocations}
-                  onSelectLocation={setSelectedLocationId}
-                  selection={selection}
-                  selectedIds={selectedIds}
-                  cardFields={cardFields}
-                  emptyContext={
-                    astActive
-                      ? { visualSearch: true }
-                      : {
-                          search,
-                          statusFilterCount: statusFilters.size,
-                          categoryFilter: Boolean(categoryId),
-                          tagFilterCount: tagIds.length,
-                        }
-                  }
-                />
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ItemList
+                    items={flatItems}
+                    firstItemIndex={firstItemIndex}
+                    locations={flatLocations}
+                    density={density}
+                    selectedLocationId={selectedLocationId}
+                    locationName={locationName}
+                    locationColorClass={locationColorClass}
+                    locationTintClass={locationTintClass}
+                    // In paginated mode the list holds exactly one page, so the infinite-scroll
+                    // fetch triggers are disabled — the page control drives navigation instead.
+                    hasNextPage={!paginated && active.hasNextPage}
+                    isFetchingNextPage={!paginated && active.isFetchingNextPage}
+                    fetchNextPage={() => {
+                      if (!paginated) void active.fetchNextPage();
+                    }}
+                    hasPreviousPage={!paginated && active.hasPreviousPage}
+                    isFetchingPreviousPage={!paginated && active.isFetchingPreviousPage}
+                    fetchPreviousPage={() => {
+                      if (!paginated) void active.fetchPreviousPage();
+                    }}
+                    childLocations={childLocations}
+                    onSelectLocation={setSelectedLocationId}
+                    selection={selection}
+                    selectedIds={selectedIds}
+                    cardFields={cardFields}
+                    emptyContext={
+                      astActive
+                        ? { visualSearch: true }
+                        : {
+                            search,
+                            statusFilterCount: statusFilters.size,
+                            categoryFilter: Boolean(categoryId),
+                            tagFilterCount: tagIds.length,
+                          }
+                    }
+                  />
+                  {paginated ? (
+                    <Pagination
+                      page={page}
+                      pageCount={totalPages}
+                      onPageChange={setPage}
+                      pageSize={defaultPageSize}
+                      onPageSizeChange={setDefaultPageSize}
+                      pageSizeOptions={PAGE_SIZE_PRESETS}
+                      minPageSize={PAGE_SIZE_BOUNDS.min}
+                      maxPageSize={PAGE_SIZE_BOUNDS.max}
+                      totalItems={pageTotalCount.data ?? 0}
+                      className="px-4"
+                      data-testid="inventory-pagination"
+                    />
+                  ) : null}
+                </div>
               )}
             </div>
           </main>

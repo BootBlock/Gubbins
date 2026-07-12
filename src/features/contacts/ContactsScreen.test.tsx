@@ -71,6 +71,7 @@ vi.mock('./contacts', () => ({
 // ─── component under test ─────────────────────────────────────────────────────
 
 import { ContactsScreen } from './ContactsScreen';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,47 @@ describe('ContactsScreen — aria-live result-count regions (WCAG 4.1.3, Phase 6
     const region = screen.getByTestId('contacts-count-live');
     expect(region.textContent).toContain('1 contact');
     expect(region.textContent).not.toContain('1 contacts');
+  });
+});
+
+describe('ContactsScreen — list pagination (issue #20)', () => {
+  afterEach(() => {
+    // Reset the app-wide preference so it can't leak into the other describe blocks.
+    usePreferencesStore.setState({ paginateLists: false, defaultPageSize: 50 });
+  });
+
+  const twelveContacts = {
+    isLoading: false,
+    data: {
+      rows: Array.from({ length: 12 }, (_, i) =>
+        makeContact(`k${i}`, `Contact ${String(i + 1).padStart(2, '0')}`),
+      ),
+    },
+  };
+
+  it('does not paginate when the preference is off (all contacts shown, no control)', () => {
+    contactsState = twelveContacts;
+    render(<ContactsScreen />);
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
+    expect(screen.getByText('Contact 12')).toBeInTheDocument();
+  });
+
+  it('splits the dictionary into pages and steps between them when the preference is on', () => {
+    usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 5 });
+    contactsState = twelveContacts;
+    render(<ContactsScreen />);
+
+    // Page 1 shows the first five; the sixth is on a later page.
+    expect(screen.getByRole('navigation', { name: 'Pagination' })).toBeInTheDocument();
+    expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('1–5 of 12');
+    expect(screen.getByText('Contact 05')).toBeInTheDocument();
+    expect(screen.queryByText('Contact 06')).toBeNull();
+
+    // Next reveals the following page.
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('6–10 of 12');
+    expect(screen.getByText('Contact 06')).toBeInTheDocument();
+    expect(screen.queryByText('Contact 05')).toBeNull();
   });
 });
 

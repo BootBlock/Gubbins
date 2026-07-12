@@ -16,6 +16,7 @@ import {
   CriticalIcon,
   CustomiseIcon,
   DarkThemeIcon,
+  DataDensityIcon,
   DatasheetIcon,
   HomeIcon,
   InfoIcon,
@@ -54,12 +55,14 @@ import {
   LOW_STOCK_QTY_BOUNDS,
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
+  PAGE_SIZE_BOUNDS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
   clampBudgetWarnPercent,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPageSize,
   guessBaseCurrency,
   normaliseNavCountMetric,
   type NavCountRoute,
@@ -740,6 +743,44 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 </div>
               </SettingRow>
             ) : null}
+          </SettingsSection>
+
+          <SettingsSection icon={<DataDensityIcon />} title={t('settings.pagination.section')}>
+            <SettingRow
+              label={t('settings.pagination.paginate.label')}
+              description={t('settings.pagination.paginate.description')}
+              hintSize="md"
+              hint={t('settings.pagination.paginate.hint')}
+            >
+              <Select
+                aria-label={t('settings.pagination.paginate.label')}
+                data-testid="setting-paginate-lists"
+                className="h-9 w-40"
+                value={prefs.paginateLists ? 'on' : 'off'}
+                onChange={(value) => prefs.setPaginateLists(value === 'on')}
+                options={ON_OFF_OPTIONS}
+              />
+            </SettingRow>
+            <SettingRow
+              label={t('settings.pagination.size.label')}
+              description={t('settings.pagination.size.description', {
+                vars: { min: PAGE_SIZE_BOUNDS.min, max: PAGE_SIZE_BOUNDS.max },
+              })}
+              hint={t('settings.pagination.size.hint', {
+                vars: { min: PAGE_SIZE_BOUNDS.min, max: PAGE_SIZE_BOUNDS.max },
+              })}
+            >
+              <Input
+                aria-label={t('settings.pagination.size.label')}
+                data-testid="setting-page-size"
+                type="number"
+                min={PAGE_SIZE_BOUNDS.min}
+                max={PAGE_SIZE_BOUNDS.max}
+                className="h-9 w-24"
+                value={prefs.defaultPageSize}
+                onChange={(e) => prefs.setDefaultPageSize(clampPageSize(Number(e.target.value)))}
+              />
+            </SettingRow>
           </SettingsSection>
         </>
       ),

@@ -98,3 +98,53 @@ describe('ItemRepository.getHistoryFeed (Phase 80 global activity feed)', () => 
     expect(feed.hasMore).toBe(false);
   });
 });
+
+/**
+ * The feed's total-count companion (issue #20) — `countHistoryFeed` sizes the page count when
+ * the Activity feed is shown paginated. It must mirror `getHistoryFeed`'s `WHERE` exactly so a
+ * page count can never disagree with the pages it sizes.
+ */
+describe('ItemRepository.countHistoryFeed (issue #20 pagination)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('counts the whole feed when actions is omitted', async () => {
+    const a = await items.create({ name: 'Part A' });
+    await items.create({ name: 'Part B' });
+    await items.update(a.id, { name: 'Part A v2' });
+    // 2 CREATED + 1 RENAMED.
+    expect(await items.countHistoryFeed()).toBe(3);
+    expect(await items.countHistoryFeed({})).toBe(3);
+  });
+
+  it('counts only the requested actions, matching the feed', async () => {
+    const a = await items.create({ name: 'Part A' });
+    await items.create({ name: 'Part B' });
+    await items.update(a.id, { name: 'Part A v2' });
+    expect(await items.countHistoryFeed({ actions: ['RENAMED'] })).toBe(1);
+    expect(await items.countHistoryFeed({ actions: ['CREATED'] })).toBe(2);
+
+    // Agrees with the page it sizes.
+    const feed = await items.getHistoryFeed({ actions: ['CREATED'] });
+    expect(feed.rows).toHaveLength(await items.countHistoryFeed({ actions: ['CREATED'] }));
+  });
+
+  it('counts nothing for an explicit empty actions array (all kinds de-selected)', async () => {
+    await items.create({ name: 'Solo' });
+    expect(await items.countHistoryFeed({ actions: [] })).toBe(0);
+  });
+
+  it('is zero when nothing has happened', async () => {
+    expect(await items.countHistoryFeed()).toBe(0);
+  });
+});

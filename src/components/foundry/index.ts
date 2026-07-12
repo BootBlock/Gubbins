@@ -22,6 +22,16 @@ export {
   type AutocompleteFieldProps,
 } from './autocomplete';
 export { filterSuggestions } from './autocomplete-filter';
+export { Pagination, type PaginationProps } from './pagination';
+export {
+  pageCount,
+  clampPage,
+  pageSliceBounds,
+  pageOffset,
+  pageWindow,
+  type PageWindowItem,
+  type PageWindowOptions,
+} from './pagination-window';
 export { Money, type MoneyProps } from './money';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
 export { useCountUp, type CountUpOptions } from './useCountUp';

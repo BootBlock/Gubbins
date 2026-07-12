@@ -20,7 +20,9 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPageSize,
   DEFAULT_CARD_CLICK_ACTION,
+  DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_NAV_COUNT_METRICS,
   DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_WINDOW_MONTHS,
@@ -237,6 +239,20 @@ interface PreferencesStore {
   readonly lowStockGaugePercent: number;
   /** A project's budget indicator turns to a warning tone at/above this % of budget spent (§4). */
   readonly budgetWarnPercent: number;
+  /**
+   * Paginate long browse lists (issue #20). When on, the inventory list, the activity feed and
+   * the contacts dictionary split into fixed-size pages with a page control at the foot, instead
+   * of the default continuously-scrolling (virtualised) list. Off by default so nothing changes
+   * for users happy with infinite scroll; an app-wide view preference toggled from Settings or
+   * the inventory "More" menu.
+   */
+  readonly paginateLists: boolean;
+  /**
+   * The default number of items shown per page when {@link paginateLists} is on. Clamped to
+   * {@link import('@/features/settings/settings').PAGE_SIZE_BOUNDS}. The page control's own
+   * editable size picker writes back here, so this is the single shared page size across lists.
+   */
+  readonly defaultPageSize: number;
   /** Default "older than" window (months) for history pruning (§7.6.3 A). */
   readonly pruneWindowMonths: number;
   /** Default "older than" window (months) for image downgrading (§7.6.3 B). */
@@ -394,6 +410,10 @@ interface PreferencesStore {
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
   setBudgetWarnPercent: (percent: number) => void;
+  /** Turn list pagination on/off across the browse lists (issue #20). */
+  setPaginateLists: (enabled: boolean) => void;
+  /** Set the default items-per-page (clamped to the safe range). */
+  setDefaultPageSize: (size: number) => void;
   setPruneWindowMonths: (months: number) => void;
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
@@ -468,6 +488,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
       budgetWarnPercent: BUDGET_WARN_PERCENT,
+      paginateLists: false,
+      defaultPageSize: DEFAULT_ITEMS_PER_PAGE,
       pruneWindowMonths: DEFAULT_WINDOW_MONTHS,
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
@@ -551,6 +573,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setLowStockQtyThreshold: (qty) => set({ lowStockQtyThreshold: clampLowStockQty(qty) }),
       setLowStockGaugePercent: (percent) => set({ lowStockGaugePercent: clampLowStockGaugePercent(percent) }),
       setBudgetWarnPercent: (percent) => set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
+      setPaginateLists: (paginateLists) => set({ paginateLists }),
+      // Clamp so a stale/out-of-range persisted or typed value can never reach the page maths.
+      setDefaultPageSize: (size) => set({ defaultPageSize: clampPageSize(size) }),
       setPruneWindowMonths: (months) => set({ pruneWindowMonths: normaliseWindowMonths(months) }),
       setDowngradeWindowMonths: (months) => set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),

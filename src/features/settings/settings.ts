@@ -11,6 +11,7 @@ import {
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
+  MAX_PAGE_SIZE,
 } from '@/db/repositories/constants';
 import { DEFAULT_CURRENCY } from '@/lib/format';
 
@@ -279,6 +280,35 @@ export function normaliseCardClickAction(value: string): CardClickAction {
   return (CARD_CLICK_ACTION_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as CardClickAction)
     : DEFAULT_CARD_CLICK_ACTION;
+}
+
+/**
+ * List pagination (issue #20). When the user turns on "paginate long lists", the browse lists
+ * (inventory, the activity feed, the contacts dictionary) split into fixed-size pages instead of
+ * one continuously-scrolling list, with a page control at the foot. This preference is the
+ * **default page size** the control opens with; the control's own editable size picker writes
+ * back here, so there is a single shared value that persists everywhere.
+ *
+ * The ceiling is the repository's strict {@link MAX_PAGE_SIZE} (100): a single page maps to one
+ * `LIMIT/OFFSET` read, which the repositories clamp to that ceiling, so a larger page would
+ * silently return only 100 rows. The floor of 5 keeps a page from being uselessly small.
+ */
+export const PAGE_SIZE_BOUNDS = { min: 5, max: MAX_PAGE_SIZE } as const;
+
+/** Suggested page sizes offered by the editable size picker (the user may still type any value in range). */
+export const PAGE_SIZE_PRESETS = [10, 25, 50, 100] as const;
+
+/** The default items-per-page when nothing is stored — a comfortable middle preset. */
+export const DEFAULT_ITEMS_PER_PAGE = 50;
+
+/**
+ * Clamp an items-per-page value to {@link PAGE_SIZE_BOUNDS} (rounded to a whole number). A
+ * non-finite value (e.g. a half-typed or stale persisted entry) falls back to the default, so a
+ * bad value can never reach the page maths or a repository read.
+ */
+export function clampPageSize(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
+  return Math.min(PAGE_SIZE_BOUNDS.max, Math.max(PAGE_SIZE_BOUNDS.min, Math.round(value)));
 }
 
 /**
