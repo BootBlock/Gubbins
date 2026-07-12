@@ -71,6 +71,12 @@ export interface WidgetDefinition {
    */
   readonly onLinkClick?: () => void;
   /**
+   * When `to` is `/settings`, which Settings rail tab the dialog should land on (the Settings
+   * dialog special-cases `to: '/settings'` into a direct `openSettings` call rather than a
+   * routed `<Link>` — see `DashboardGrid`). Omit to land on the default first tab.
+   */
+  readonly settingsTab?: string;
+  /**
    * The Modular UI feature this widget belongs to (modular-ui-plan §4). When the feature
    * is not in the effective-enabled set the grid drops the widget from the board *and* the
    * "Customise" picker. A widget with no `feature` is always shown — either it's core
@@ -762,6 +768,9 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     titleKey: 'dashboard.widget.storage.title',
     icon: <StorageIcon />,
     to: '/settings',
+    // Land on "Data & storage" — the tab holding the manage/erase tools this tile's own
+    // "Manage storage & erase data →" copy promises, rather than the default Appearance tab.
+    settingsTab: 'storage',
     Component: StorageWidget,
   },
   {

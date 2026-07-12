@@ -18,13 +18,14 @@ const SettingsDialog = lazy(() => import('./SettingsDialog'));
  */
 export function SettingsDialogHost() {
   const open = useSettingsDialog((s) => s.open);
+  const initialTab = useSettingsDialog((s) => s.initialTab);
   const closeSettings = useSettingsDialog((s) => s.closeSettings);
 
   if (!open) return null;
 
   return (
     <Suspense fallback={null}>
-      <SettingsDialog open onClose={closeSettings} />
+      <SettingsDialog open onClose={closeSettings} initialTab={initialTab} />
     </Suspense>
   );
 }

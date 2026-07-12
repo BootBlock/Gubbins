@@ -47,6 +47,16 @@ vi.mock('./widgets', () => {
     // A tile targeting `/settings` — Settings is a dialog, so this must render as a button
     // that opens the dialog, never a `<Link>` (a link prefetch-opens it on hover).
     { id: 'sigma', title: 'Sigma', icon: null, to: '/settings', Component: () => <p>Sigma body</p> },
+    // Same shape as sigma, but carries a `settingsTab` (mirrors the Storage widget landing
+    // on the "Data & storage" rail tab instead of the default Appearance one — issue #63).
+    {
+      id: 'omega',
+      title: 'Omega',
+      icon: null,
+      to: '/settings',
+      settingsTab: 'storage',
+      Component: () => <p>Omega body</p>,
+    },
   ];
   return {
     DASHBOARD_WIDGETS: defs,
@@ -76,7 +86,7 @@ afterEach(() => {
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ dashboardLayout: [] });
   useDashboardCustomise.setState({ editing: false });
-  useSettingsDialog.setState({ open: false });
+  useSettingsDialog.setState({ open: false, initialTab: undefined });
 });
 
 /** The `<a>` wrapping a tile, or `null` when the tile isn't a live link. */
@@ -137,6 +147,15 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
     expect(useSettingsDialog.getState().open).toBe(false);
     fireEvent.click(button as HTMLButtonElement);
     expect(useSettingsDialog.getState().open).toBe(true);
+  });
+
+  it('opens Settings on a widget’s `settingsTab` when it declares one (issue #63)', () => {
+    render(<DashboardGrid />);
+    const button = screen.getByTestId('widget-omega').closest('button');
+    expect(useSettingsDialog.getState().initialTab).toBeUndefined();
+    fireEvent.click(button as HTMLButtonElement);
+    expect(useSettingsDialog.getState().open).toBe(true);
+    expect(useSettingsDialog.getState().initialTab).toBe('storage');
   });
 
   it('fires a widget’s onLinkClick (e.g. a one-shot destination intent) just before it navigates', () => {

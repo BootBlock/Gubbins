@@ -15,14 +15,17 @@ import { create } from 'zustand';
 
 interface SettingsDialogState {
   readonly open: boolean;
-  /** Open the Settings dialog over the current screen. */
-  readonly openSettings: () => void;
+  /** Which rail tab to land on next time the dialog opens (undefined = default first tab). */
+  readonly initialTab: string | undefined;
+  /** Open the Settings dialog over the current screen, optionally jumping to a rail tab. */
+  readonly openSettings: (tab?: string) => void;
   /** Close the Settings dialog. */
   readonly closeSettings: () => void;
 }
 
 export const useSettingsDialog = create<SettingsDialogState>((set) => ({
   open: false,
-  openSettings: () => set({ open: true }),
+  initialTab: undefined,
+  openSettings: (tab) => set({ open: true, initialTab: tab }),
   closeSettings: () => set({ open: false }),
 }));
