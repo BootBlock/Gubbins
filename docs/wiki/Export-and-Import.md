@@ -18,6 +18,10 @@ Get your data out in whichever form suits:
 Exports can be **scoped** — the whole inventory, a single item, or a
 [[project's|Projects-and-BOM]] sub-folder.
 
+A [[project's bill of materials|Projects-and-BOM]] also exports on its own, straight from the
+project — as **CSV**, **TSV**, a **Markdown** table, or a printable **HTML** page — for sharing,
+ordering or printing a parts list.
+
 ## Importing
 
 Bringing data *in* is just as flexible. Paste text or pick a file, and Gubbins detects the format

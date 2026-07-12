@@ -24,6 +24,7 @@ import {
 } from '@/db/repositories';
 import { getReportRepository } from '@/db/repositories';
 import { readImageBlob } from '@/features/images/opfs-images';
+import { download } from './download';
 import { summariseBudget } from '@/features/projects/budget';
 import {
   buildAbcCsv,
@@ -221,19 +222,10 @@ async function collectCheckouts(items: readonly Item[]): Promise<Checkout[]> {
   return all;
 }
 
-/**
- * Trigger a browser download for `blob` under `filename` — the single download side-effect
- * shared by every export path (the Export Wizard and the §3 Reports CSV export), so there is
- * never a parallel hand-rolled download.
- */
-export function download(blob: Blob, filename: string): void {
-  const href = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = href;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(href);
-}
+// The single download side-effect lives in `./download` so every export path — this
+// wizard, the §3 Reports CSV, and the project BOM export (issue #27) — shares one copy.
+// Re-exported so existing importers keep resolving `download` from `run-export`.
+export { download };
 
 function stamp(): string {
   return new Date().toISOString().slice(0, 10);
