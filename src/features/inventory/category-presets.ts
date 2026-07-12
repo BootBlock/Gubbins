@@ -187,6 +187,26 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  {
+    id: '3d-filament',
+    name: '3D Filament',
+    description: '3D-printer filament spools — material, diameter, colour and print settings.',
+    seed: {
+      category: { name: '3D Filament' },
+      fields: ordered([
+        {
+          name: 'Material',
+          fieldType: 'SELECT',
+          options: ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'Nylon', 'PVA', 'PC'],
+        },
+        { name: 'Diameter (mm)', fieldType: 'SELECT', options: ['1.75', '2.85'] },
+        { name: 'Colour', fieldType: 'TEXT' },
+        { name: 'Spool weight (g)', fieldType: 'NUMBER' },
+        { name: 'Print temperature (°C)', fieldType: 'NUMBER' },
+        { name: 'Bed temperature (°C)', fieldType: 'NUMBER' },
+      ]),
+    },
+  },
 ];
 
 /**
