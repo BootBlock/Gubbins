@@ -22,10 +22,12 @@
  *                    quantity and SKU from common shorthand ("Resistor 10k x50",
  *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). A
  *                    labelled **weight** (`w:` / `weight:`) is read too — a bare number as
- *                    grams, or with a unit suffix (`2.5kg`, `16oz`, `1.1lb`). An **Amazon ASIN
- *                    or listing URL** in the line is recognised as the SKU and a
+ *                    grams, or with a unit suffix (`2.5kg`, `16oz`, `1.1lb`). An **Amazon
+ *                    ASIN or listing URL** ({@link ./asin}), or another recognised
+ *                    supplier's order code / listing URL ({@link ./supplier-codes} — LCSC,
+ *                    DigiKey, RS Components, Farnell, Adafruit), is read as the SKU, and a
  *                    **currency-marked unit price** (£/$/€/¥) as the unit cost, so a pasted
- *                    Amazon invoice / order lands as items with their ASIN + price.
+ *                    invoice / order lands as items with their order code + price.
  *
  * Kept free of React and the DOM for instant unit-test execution.
  */
@@ -46,6 +48,7 @@ import {
   type ColumnMapping,
 } from './catalog-import';
 import { findAsin } from './asin';
+import { findSupplierCode } from './supplier-codes';
 import { mapMigration, type MigrationSourceId } from './importers/migrations';
 import { toGrams, type WeightUnit } from '@/lib/weight';
 import type { CategoryField, Item } from '@/db/repositories/types';
@@ -354,15 +357,22 @@ export function parseFreeformLine(line: string, decimalSeparator = '.'): Freefor
   const labelled = extractLabelledFields(trimmed, decimalSeparator);
   let head = labelled.head;
 
-  // An Amazon ASIN or listing URL fills the SKU when the line did not label one — Amazon
-  // is a supplier and the ASIN its part code (the importer's SKU→MPN slot). The token is
-  // stripped from the head either way, so the URL/id never becomes part of the item name
-  // even when an explicit `sku:` label takes the SKU slot.
+  // An Amazon ASIN / listing URL, or another recognised supplier's order code / listing
+  // URL (see `./supplier-codes`), fills the SKU when the line did not label one — each is
+  // a supplier and its code the item's part code (the importer's SKU→MPN slot). The token
+  // is stripped from the head either way, so the URL/id never becomes part of the item
+  // name even when an explicit `sku:` label takes the SKU slot.
   let sku = labelled.sku;
-  const found = findAsin(head);
-  if (found) {
-    if (sku === null) sku = found.asin;
-    head = head.replace(found.matchedText, ' ');
+  const asinFound = findAsin(head);
+  if (asinFound) {
+    if (sku === null) sku = asinFound.asin;
+    head = head.replace(asinFound.matchedText, ' ');
+  } else {
+    const supplierFound = findSupplierCode(head);
+    if (supplierFound) {
+      if (sku === null) sku = supplierFound.code;
+      head = head.replace(supplierFound.matchedText, ' ');
+    }
   }
 
   // A currency-marked price (e.g. an invoice line's unit price) becomes the unit cost.
