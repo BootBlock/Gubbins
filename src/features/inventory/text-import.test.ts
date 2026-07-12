@@ -254,6 +254,32 @@ describe('parseFreeformLine', () => {
     });
   });
 
+  it('recognises a bare LCSC part number as the SKU and strips it from the name', () => {
+    expect(parseFreeformLine('100nF cap C7461236 x50')).toEqual({
+      name: '100nF cap',
+      quantity: 50,
+      sku: 'C7461236',
+    });
+  });
+
+  it('recognises a DigiKey order code as the SKU', () => {
+    expect(parseFreeformLine('Resistor RMCF1206FT5K10CT-ND x10')).toEqual({
+      name: 'Resistor',
+      quantity: 10,
+      sku: 'RMCF1206FT5K10CT-ND',
+    });
+  });
+
+  it('recognises an RS Components listing URL as the SKU', () => {
+    expect(
+      parseFreeformLine('Resistor https://uk.rs-online.com/web/p/through-hole-resistors/1742708 x5'),
+    ).toEqual({
+      name: 'Resistor',
+      quantity: 5,
+      sku: '1742708',
+    });
+  });
+
   it('extracts a currency-marked unit price as the unit cost', () => {
     expect(parseFreeformLine('Anker charger £12.99')).toEqual({
       name: 'Anker charger',

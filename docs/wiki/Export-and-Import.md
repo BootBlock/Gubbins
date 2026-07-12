@@ -30,6 +30,10 @@ and walks you through a review before anything is written:
 
 - **CSV / TSV**, **JSON**, **Markdown**, or even **free-form lines** — Gubbins works out the
   columns and lets you map them.
+- Pasting **free-form lines**, Gubbins recognises a bare order code or listing URL from
+  several suppliers (Amazon, LCSC, DigiKey, RS Components, Farnell, Adafruit) and fills it
+  in as the item's SKU automatically — handy for turning an invoice or order confirmation
+  straight into items.
 
 > **💡 Tip**
 > The fastest way to start a big inventory is to paste a list you already have — a spreadsheet
