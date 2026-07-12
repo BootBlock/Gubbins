@@ -14,8 +14,12 @@ const spies = vi.hoisted(() => ({
   createSupplierPart: vi.fn(),
 }));
 
+// A mutable flag so a test can put the create mutation into its in-flight state and assert the
+// "Creating item…" progress feedback (issue #57). Reset between tests.
+const mockState = vi.hoisted(() => ({ createItemPending: false }));
+
 vi.mock('../mutations', () => ({
-  useCreateItem: () => ({ mutate: spies.createItem, isPending: false }),
+  useCreateItem: () => ({ mutate: spies.createItem, isPending: mockState.createItemPending }),
   useCreateSerialisedItems: () => ({ mutate: spies.createSerialised, isPending: false }),
   useApplyScrape: () => ({ mutate: spies.applyScrape, isPending: false }),
   useCreateLocation: () => ({ mutate: spies.createLocation, isPending: false }),
@@ -83,6 +87,7 @@ vi.mock('@/features/scraping', () => ({
 
 afterEach(() => {
   cleanup();
+  mockState.createItemPending = false;
   spies.createItem.mockReset();
   spies.createSerialised.mockReset();
   spies.createLocation.mockReset();
@@ -105,6 +110,23 @@ describe('CreateItemDialog', () => {
   it('lands initial focus in the Name field, ready to type', () => {
     renderDialog();
     expect(document.activeElement).toBe(screen.getByLabelText('Name'));
+  });
+
+  it('shows an announced "Creating item…" status while the create is in flight (issue #57)', () => {
+    // Not pending → no status label; the Create button is enabled.
+    renderDialog();
+    expect(itemDialog().queryByTestId('create-item-status')).toBeNull();
+    expect(itemDialog().getByRole('button', { name: 'Create item' })).toBeEnabled();
+    cleanup();
+
+    // In-flight → a politely-announced status label, and the Create button is disabled.
+    mockState.createItemPending = true;
+    renderDialog();
+    const status = itemDialog().getByTestId('create-item-status');
+    expect(status).toHaveTextContent('Creating item…');
+    expect(status).toHaveAttribute('role', 'status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(itemDialog().getByRole('button', { name: 'Create item' })).toBeDisabled();
   });
 
   it('submits description, notes and a custom per-item low-stock override', async () => {

@@ -11,6 +11,7 @@ import {
   Input,
   RailModal,
   SelectField,
+  Spinner,
   Textarea,
   useToast,
   type RailTab,
@@ -1332,6 +1333,20 @@ export function CreateItemDialog({
         initialFocusRef={nameRef}
         footer={
           <>
+            {/* Progress feedback while the create is in flight (issue #57): a disabled Create
+                button alone doesn't tell the user anything is happening. This status label sits
+                to the left of the buttons (mr-auto) and is announced politely to assistive tech. */}
+            {isPending ? (
+              <span
+                role="status"
+                aria-live="polite"
+                className="mr-auto flex items-center gap-2 text-sm text-muted-foreground"
+                data-testid="create-item-status"
+              >
+                <Spinner className="size-4" decorative />
+                Creating item…
+              </span>
+            ) : null}
             <Button type="button" variant="ghost" onClick={handleClose}>
               Cancel
             </Button>
