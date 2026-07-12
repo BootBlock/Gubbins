@@ -30,7 +30,6 @@ const SAMPLE: Diagnostics = {
   storageUsage: 45_200_000,
   storageQuota: 2_000_000_000,
   backgroundEffect: 'rain',
-  starfieldVariant: 'aurora',
   databaseBytes: 3_500_000,
   counts: { items: 42, locations: 7, projects: 3, contacts: 5, categories: 9, tags: 12 },
 };
@@ -65,9 +64,8 @@ describe('formatFieldValue', () => {
     expect(formatFieldValue('displayMode', SAMPLE, v, false)).toBe('Installed (PWA)');
   });
 
-  it('resolves appearance preferences to their setting label', () => {
+  it('resolves the background-effect preference to its setting label', () => {
     expect(formatFieldValue('background', SAMPLE, v, false)).toBe('Rain');
-    expect(formatFieldValue('starfield', SAMPLE, v, false)).toBe('Aurora');
   });
 
   it('renders entity counts and the database size', () => {

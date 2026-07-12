@@ -22,6 +22,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useBackdropStore } from '@/state/stores/useBackdropStore';
 import { useDecorationMotionReduced } from '@/components/foundry/decoration-motion';
 import { suppressesAmbient } from '@/features/settings/theme-registry';
 import { startPrecip, type PrecipController } from './precip-engine';
@@ -31,13 +32,16 @@ export function BackgroundEffects() {
   const reduced = useDecorationMotionReduced();
   // Minimal/Off switch ambient decorations off entirely (not just freeze them), like the starfield.
   const ambientOff = usePreferencesStore((s) => suppressesAmbient(s.animationLevel));
+  // Yield to a screen showing its own full-viewport backdrop (the About starfield) — the two
+  // full-screen effects otherwise fight for the same space.
+  const backdropActive = useBackdropStore((s) => s.backdropActive);
   // Theme-affecting prefs: a change re-reads the token colours (no pool reset).
   const mode = usePreferencesStore((s) => s.mode);
   const oledDark = usePreferencesStore((s) => s.oledDark);
   const highContrast = usePreferencesStore((s) => s.highContrast);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<PrecipController | null>(null);
-  const hidden = effect === 'none' || ambientOff;
+  const hidden = effect === 'none' || ambientOff || backdropActive;
 
   // Start/stop the engine when the chosen effect, the motion gate or the ambient cutoff changes.
   useEffect(() => {

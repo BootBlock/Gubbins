@@ -47,7 +47,6 @@ const APPEARANCE: Appearance = {
   oledDark: false,
   highContrast: false,
   animationLevel: 'headache',
-  starfieldVariant: 'cosmic',
   holographicCards: true,
   gamifyCards: true,
 };
@@ -293,15 +292,6 @@ describe('applyAppearance', () => {
     applyAppearance({ ...APPEARANCE, animationLevel: 'headache' }, root);
     expect(root.dataset.animLevel).toBeUndefined();
     expect(root.dataset.reduceEffects).toBeUndefined();
-  });
-
-  it('sets data-starfield for a variant and omits it for the cosmic default (F11)', () => {
-    const root = document.createElement('div');
-    applyAppearance({ ...APPEARANCE, starfieldVariant: 'aurora' }, root);
-    expect(root.dataset.starfield).toBe('aurora');
-    // The default look carries no attribute, so it falls back to the base --star* tokens.
-    applyAppearance({ ...APPEARANCE, starfieldVariant: 'cosmic' }, root);
-    expect(root.dataset.starfield).toBeUndefined();
   });
 
   it('sets/clears data-holo-cards + data-gamify-cards for the two card-flair switches', () => {

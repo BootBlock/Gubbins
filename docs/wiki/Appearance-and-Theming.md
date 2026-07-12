@@ -50,7 +50,6 @@ Gubbins has some gentle visual polish that you can dial up or down:
 
 - **Animation** — how animated the interface is, from calm to lively.
 - **Background effect** — an optional soft animated layer behind every screen.
-- **Starfield** — the look of the decorative sky on the [[About|Introduction]] screen.
 - **Holographic foil cards** / **Collector cards** — playful trading-card shimmer and rarity
   frames on item cards.
 

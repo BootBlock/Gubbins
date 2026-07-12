@@ -77,41 +77,40 @@ export function normaliseAccent(value: string): Accent {
 }
 
 /**
- * Starfield variant (visual-flair F11) — a purely decorative recolour of the About-screen
- * starfield ({@link import('../about/Starfield').Starfield}). Layered on the one existing
- * themeable starfield: each variant only re-points the `--star` / `--star-flare` tokens in
- * `styles/index.css` (keyed to `data-starfield="<id>"` on `<html>`), never a second field.
+ * Starfield variants — the purely decorative recolours of the About-screen starfield
+ * ({@link import('../about/Starfield').Starfield}). Each is a mood preset layered on the one
+ * themeable starfield: every id (except the base `cosmic`) keys a `data-starfield="<id>"` block in
+ * `styles/index.css` that re-points the `--star` / `--star-flare` tokens — no new geometry/motion.
  *
- * - `cosmic` — the shipped violet/cyan look (default; nothing regresses).
- * - `accent` — tracks the Colour axis: the flare is derived from the active `--highlight`
- *   accent token via `color-mix`, so it recolours with whatever accent is chosen.
- * - `aurora` — a cool green→teal mood preset.
- * - `ember` — a warm amber→rose mood preset.
+ * There is **no user-facing setting** for these (issue #61): the About screen picks one at random
+ * each time it opens, so the sky quietly varies without adding a preference to configure. The base
+ * `cosmic` look carries no attribute (the plain `--star*` tokens).
+ *
+ * - `cosmic` — the signature violet/cyan look (the base; no attribute).
+ * - `accent` — tracks the Colour axis: the flare is the active `--highlight` accent token (its dots
+ *   mix a little of it in), so it recolours with whatever accent is chosen.
+ * - `aurora` — a cool green→teal mood.
+ * - `ember` — a warm amber→rose mood.
  * - `mono` — an understated neutral sky (no coloured flare).
+ * - `nebula` — a magenta→purple mood.
+ * - `ocean` — a deep blue→cyan mood.
+ * - `sunset` — a warm orange→rose mood.
+ * - `gold` — a soft champagne-gold mood.
  */
 export const STARFIELD_VARIANTS = [
-  { id: 'cosmic', label: 'Cosmic' },
-  { id: 'accent', label: 'Accent' },
-  { id: 'aurora', label: 'Aurora' },
-  { id: 'ember', label: 'Ember' },
-  { id: 'mono', label: 'Mono' },
+  'cosmic',
+  'accent',
+  'aurora',
+  'ember',
+  'mono',
+  'nebula',
+  'ocean',
+  'sunset',
+  'gold',
 ] as const;
 
 /** A starfield variant id. */
-export type StarfieldVariant = (typeof STARFIELD_VARIANTS)[number]['id'];
-
-/** Every starfield variant id, for iteration / validation. */
-export const STARFIELD_VARIANT_IDS = STARFIELD_VARIANTS.map((v) => v.id) as StarfieldVariant[];
-
-/** The default starfield variant — the shipped cosmic look, so the baseline is unchanged. */
-export const DEFAULT_STARFIELD_VARIANT: StarfieldVariant = 'cosmic';
-
-/** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link StarfieldVariant}. */
-export function normaliseStarfieldVariant(value: string): StarfieldVariant {
-  return (STARFIELD_VARIANT_IDS as readonly string[]).includes(value)
-    ? (value as StarfieldVariant)
-    : DEFAULT_STARFIELD_VARIANT;
-}
+export type StarfieldVariant = (typeof STARFIELD_VARIANTS)[number];
 
 /**
  * Animation level — how visually animated the interface is (visual-flair; offered up-front on the

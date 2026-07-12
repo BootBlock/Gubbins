@@ -53,11 +53,10 @@ export function DiagnosticsCard() {
           .snapshot()
           .catch(() => null),
       ]);
-      const { backgroundEffect, starfieldVariant } = usePreferencesStore.getState();
+      const { backgroundEffect } = usePreferencesStore.getState();
       setData({
         ...environment,
         backgroundEffect,
-        starfieldVariant,
         databaseBytes: snapshot?.databaseBytes,
         counts: snapshot?.counts,
       });

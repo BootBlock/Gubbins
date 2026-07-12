@@ -13,13 +13,7 @@
  * pure (the OS preference is injected) so it is unit-testable without a `matchMedia` mock. The
  * appearance registry (`theme-registry.ts`) is the SSOT for the mode/accent ids.
  */
-import {
-  suppressesMotion,
-  type Accent,
-  type AnimationLevel,
-  type Mode,
-  type StarfieldVariant,
-} from './theme-registry';
+import { suppressesMotion, type Accent, type AnimationLevel, type Mode } from './theme-registry';
 
 /** The CSS class the palette toggles for dark mode (see styles/index.css). */
 export const DARK_CLASS = 'dark';
@@ -61,12 +55,6 @@ export interface Appearance {
    */
   readonly animationLevel: AnimationLevel;
   /**
-   * Starfield variant (visual-flair F11): which decorative recolour the About-screen starfield
-   * uses. Projected as `data-starfield` so the CSS variant blocks re-point the `--star` /
-   * `--star-flare` tokens; the `cosmic` default emits no attribute (the shipped look).
-   */
-  readonly starfieldVariant: StarfieldVariant;
-  /**
    * Holographic-foil item cards (Appearance flair): projected as the presence-only
    * `data-holo-cards` attribute (on = present). The CSS gates the foil to the maximal
    * `headache` tier + a fine pointer + full motion, so the attribute alone never forces it on.
@@ -102,10 +90,6 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   else delete root.dataset.animLevel;
   if (suppressesMotion(appearance.animationLevel)) root.dataset.reduceEffects = '';
   else delete root.dataset.reduceEffects;
-  // Visual-flair F11: the `cosmic` default is the plain `--star`/`--star-flare` tokens, so it
-  // carries no attribute; every other variant sets `data-starfield` for its CSS override block.
-  if (appearance.starfieldVariant !== 'cosmic') root.dataset.starfield = appearance.starfieldVariant;
-  else delete root.dataset.starfield;
   // Appearance flair: presence-only flags for the holographic foil + collector-card gamification.
   // The CSS scopes both to the maximal `headache` tier (and the foil to a fine pointer + full
   // motion), so setting the attribute is necessary but not sufficient — a calmer level shows neither.

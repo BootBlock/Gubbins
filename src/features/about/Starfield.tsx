@@ -1,4 +1,6 @@
-import { type CSSProperties, useMemo } from 'react';
+import { type CSSProperties, useEffect, useMemo } from 'react';
+import { STARFIELD_VARIANTS } from '@/features/settings/theme-registry';
+import { useBackdropStore } from '@/state/stores/useBackdropStore';
 
 /**
  * Decorative starfield for the About screen — a lightweight, compositor-only
@@ -12,6 +14,13 @@ import { type CSSProperties, useMemo } from 'react';
  * the `--star` / `--star-flare` tokens (dark dots on the light theme). Animations
  * are pure opacity/transform; the global reduced-motion rule freezes them to a
  * calm static sky (every element's base style is its visible resting state).
+ *
+ * The colour of the sky is chosen **at random each time the About screen opens**
+ * (issue #61) from the {@link STARFIELD_VARIANTS} moods — no user setting. The pick
+ * is projected as `data-starfield` on `<html>` (where the CSS variant blocks re-point
+ * the `--star*` tokens), removed again on unmount. While the starfield is on screen it
+ * also raises the {@link useBackdropStore} flag so the app-wide snow/rain weather layer
+ * yields — the two full-viewport effects would otherwise fight for the same backdrop.
  */
 const SMALL_STAR_COUNT = 48;
 const FLARE_COUNT = 4;
@@ -77,6 +86,30 @@ function glyphVars(star: Star): Record<string, string> {
 }
 
 export function Starfield() {
+  const setBackdropActive = useBackdropStore((s) => s.setBackdropActive);
+
+  // A fresh random mood per open (memoised so it holds steady across re-renders of a single visit).
+  const variant = useMemo(
+    () => STARFIELD_VARIANTS[Math.floor(Math.random() * STARFIELD_VARIANTS.length)],
+    [],
+  );
+
+  // Project the chosen mood onto <html> for the CSS variant blocks, and flag that a full-viewport
+  // backdrop is on screen so the weather layer yields. Both are undone on unmount (the base `cosmic`
+  // look carries no attribute), restoring whatever was there before.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previous = root.dataset.starfield;
+    if (variant === 'cosmic') delete root.dataset.starfield;
+    else root.dataset.starfield = variant;
+    setBackdropActive(true);
+    return () => {
+      if (previous === undefined) delete root.dataset.starfield;
+      else root.dataset.starfield = previous;
+      setBackdropActive(false);
+    };
+  }, [variant, setBackdropActive]);
+
   const { stars, flares } = useMemo(
     () => ({
       // driftDur ranges are ~15% shorter than a 16–44s / 30–55s baseline, i.e. a

@@ -125,7 +125,6 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       highContrast: false,
       fullWidth: false,
       animationLevel: 'balanced',
-      starfieldVariant: 'cosmic',
       backgroundEffect: 'none',
       holographicCards: true,
       gamifyCards: true,
@@ -137,7 +136,6 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     delete root.dataset.contrast;
     delete root.dataset.reduceEffects;
     delete root.dataset.animLevel;
-    delete root.dataset.starfield;
     delete root.dataset.holoCards;
     delete root.dataset.gamifyCards;
   });
@@ -180,12 +178,6 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Calm' }));
     expect(root.dataset.animLevel).toBe('calm');
     expect(root.dataset.reduceEffects).toBe('');
-
-    // Starfield variant (F11): a non-default variant sets data-starfield, which the CSS
-    // variant blocks key off to re-point the --star/--star-flare tokens.
-    fireEvent.click(screen.getByTestId('setting-starfield'));
-    fireEvent.click(screen.getByRole('option', { name: 'Aurora' }));
-    expect(root.dataset.starfield).toBe('aurora');
   });
 
   it('holographic-foil and collector-card switches toggle their <html> flags', () => {

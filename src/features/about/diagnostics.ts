@@ -1,10 +1,5 @@
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
-import {
-  BACKGROUND_EFFECTS,
-  STARFIELD_VARIANTS,
-  type BackgroundEffect,
-  type StarfieldVariant,
-} from '@/features/settings/theme-registry';
+import { BACKGROUND_EFFECTS, type BackgroundEffect } from '@/features/settings/theme-registry';
 import type { DiagnosticCounts } from '@/db/repositories/DiagnosticsRepository';
 
 export type { DiagnosticCounts } from '@/db/repositories/DiagnosticsRepository';
@@ -59,8 +54,6 @@ export interface Diagnostics {
   readonly storageQuota?: number;
   /** The decorative background effect preference (`none` / `rain` / `snow`). */
   readonly backgroundEffect: BackgroundEffect;
-  /** The decorative starfield variant preference. */
-  readonly starfieldVariant: StarfieldVariant;
   /** True logical database size in bytes; `undefined` when it couldn't be read. */
   readonly databaseBytes?: number;
   /** Row counts of the top-level entities; `undefined` when they couldn't be read. */
@@ -68,10 +61,7 @@ export interface Diagnostics {
 }
 
 /** The environment-only slice of {@link Diagnostics} — what the browser can report by itself. */
-export type EnvironmentDiagnostics = Omit<
-  Diagnostics,
-  'backgroundEffect' | 'starfieldVariant' | 'databaseBytes' | 'counts'
->;
+export type EnvironmentDiagnostics = Omit<Diagnostics, 'backgroundEffect' | 'databaseBytes' | 'counts'>;
 
 /** The ordered set of fields shown in the card and written to the copy/issue payload. */
 export const DIAGNOSTIC_FIELD_ORDER = [
@@ -86,7 +76,6 @@ export const DIAGNOSTIC_FIELD_ORDER = [
   'colorScheme',
   'reducedMotion',
   'background',
-  'starfield',
   'online',
   'displayMode',
   'items',
@@ -145,7 +134,6 @@ export const ENGLISH_DIAGNOSTIC_LABELS: Record<DiagnosticFieldKey, string> = {
   colorScheme: 'Colour scheme',
   reducedMotion: 'Reduced motion',
   background: 'Background effect',
-  starfield: 'Starfield',
   online: 'Network',
   displayMode: 'Display mode',
   items: 'Items',
@@ -209,8 +197,6 @@ export function formatFieldValue(
     case 'background':
       // The setting's own English label (as shown in Settings); no i18n catalog entry to drift from.
       return BACKGROUND_EFFECTS.find((e) => e.id === d.backgroundEffect)?.label ?? d.backgroundEffect;
-    case 'starfield':
-      return STARFIELD_VARIANTS.find((v) => v.id === d.starfieldVariant)?.label ?? d.starfieldVariant;
     case 'online':
       return d.online ? vocab.online : vocab.offline;
     case 'displayMode':

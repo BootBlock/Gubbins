@@ -71,19 +71,16 @@ export type { DimensionUnit };
 import {
   normaliseAccent,
   normaliseMode,
-  normaliseStarfieldVariant,
   normaliseAnimationLevel,
   normaliseBackgroundEffect,
-  DEFAULT_STARFIELD_VARIANT,
   DEFAULT_ANIMATION_LEVEL,
   DEFAULT_BACKGROUND_EFFECT,
   type Accent,
   type Mode,
-  type StarfieldVariant,
   type AnimationLevel,
   type BackgroundEffect,
 } from '@/features/settings/theme-registry';
-export type { Accent, Mode, StarfieldVariant, AnimationLevel, BackgroundEffect };
+export type { Accent, Mode, AnimationLevel, BackgroundEffect };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -141,13 +138,6 @@ interface PreferencesStore {
    * regardless. Offered up-front on the first-run wizard and in Settings → Appearance.
    */
   readonly animationLevel: AnimationLevel;
-  /**
-   * Starfield variant (visual-flair F11): the decorative recolour the About-screen starfield
-   * uses. **Defaults to `cosmic`** (the shipped violet/cyan look, so nothing regresses). Purely
-   * cosmetic — projected onto `<html>` as `data-starfield` by the apply seam, where the CSS
-   * variant blocks re-point the `--star` / `--star-flare` tokens. `accent` tracks the Colour axis.
-   */
-  readonly starfieldVariant: StarfieldVariant;
   /**
    * App-wide animated background effect (weather layer). **Defaults to `none`** so nothing is
    * painted or animated on the shipped baseline. Purely decorative — a single GPU-composited
@@ -401,8 +391,6 @@ interface PreferencesStore {
    * "everything on" bundle.
    */
   setAnimationLevel: (level: AnimationLevel) => void;
-  /** Choose the About-screen starfield variant (visual-flair F11). */
-  setStarfieldVariant: (variant: StarfieldVariant) => void;
   /** Choose the app-wide animated background effect (none / rain / snow). */
   setBackgroundEffect: (effect: BackgroundEffect) => void;
   /** Turn the holographic-foil item-card style on/off. */
@@ -489,7 +477,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
       highContrast: false,
       fullWidth: false,
       animationLevel: DEFAULT_ANIMATION_LEVEL,
-      starfieldVariant: DEFAULT_STARFIELD_VARIANT,
       backgroundEffect: DEFAULT_BACKGROUND_EFFECT,
       // On by default — part of the maximal "I have a headache" tier, and only rendered there.
       holographicCards: true,
@@ -561,8 +548,6 @@ export const usePreferencesStore = create<PreferencesStore>()(
               : state.backgroundEffect;
           return { animationLevel, backgroundEffect };
         }),
-      // Normalise so a stale/unknown persisted value can never reach the apply seam.
-      setStarfieldVariant: (variant) => set({ starfieldVariant: normaliseStarfieldVariant(variant) }),
       // Normalise so a stale/unknown persisted value can never reach the canvas engine.
       setBackgroundEffect: (effect) => set({ backgroundEffect: normaliseBackgroundEffect(effect) }),
       setHolographicCards: (holographicCards) => set({ holographicCards }),
