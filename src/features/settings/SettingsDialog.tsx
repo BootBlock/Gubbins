@@ -172,6 +172,7 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
   // "expiring soon" window and budget-warn rows drop individually (their section stays for
   // the always-present low-stock thresholds — no empty section shell).
   const scannerOn = useFeature('scanner');
+  const scrapingOn = useFeature('scraping');
   const perishablesOn = useFeature('perishables');
   const inventoryOn = useFeature('inventory');
   const projectsOn = useFeature('projects');
@@ -869,6 +870,38 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             </SettingsSection>
           ) : null}
 
+          {/* Barcode → product lookup (issue #59): the online-lookup opt-in lives here, beside the
+              scanner it belongs to, rather than under Notifications. Gated on the scraping feature —
+              a hidden capability leaves no orphaned setting behind. */}
+          {scrapingOn ? (
+            <SettingsSection icon={<PackageIcon />} title="Product lookup">
+              <SettingRow
+                label="Online product lookup"
+                description="Allow a barcode lookup to query the open Open Food Facts database over the internet when the companion extension isn’t installed."
+                hintSize="md"
+                hint={
+                  'When you add an item, Gubbins can fill its **name and brand** from a scanned **barcode**. ' +
+                  'If the companion browser extension is installed it fetches that for you; otherwise the app ' +
+                  'can query the open, free **Open Food Facts** database (`openfoodfacts.org`) **directly**.\n\n' +
+                  'That direct lookup sends **only the barcode number** over the internet, and only when you ' +
+                  'tap “Look up” — never automatically. Turn this **off** to keep every lookup offline (you ' +
+                  'can still fill details in by hand). You’ll be asked once before the first online lookup; ' +
+                  'this setting is that choice, changeable any time.'
+                }
+                stack
+              >
+                <Select
+                  aria-label="Online product lookup"
+                  data-testid="setting-online-product-lookup"
+                  className="h-9 w-40"
+                  value={prefs.allowOnlineProductLookup ? 'on' : 'off'}
+                  onChange={(value) => prefs.setAllowOnlineProductLookup(value === 'on')}
+                  options={ON_OFF_OPTIONS}
+                />
+              </SettingRow>
+            </SettingsSection>
+          ) : null}
+
           {/* G2: on-device receipt / label OCR prefill — opt-in, offline, keyless. Gated on
               the platform capability (Worker + WASM); the model downloads only once enabled. */}
           {hasOcr() ? (
@@ -970,29 +1003,6 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                   { value: 'TOAST', label: 'Show a toast' },
                   { value: 'SILENT', label: 'Silent' },
                 ]}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Online product lookup"
-              description="Allow a barcode lookup to query the open Open Food Facts database over the internet when the companion extension isn’t installed."
-              hint={
-                'When you add an item, Gubbins can fill its **name and brand** from a scanned **barcode**. ' +
-                'If the companion browser extension is installed it fetches that for you; otherwise the app ' +
-                'can query the open, free **Open Food Facts** database (`openfoodfacts.org`) **directly**.\n\n' +
-                'That direct lookup sends **only the barcode number** over the internet, and only when you ' +
-                'tap “Look up” — never automatically. Turn this **off** to keep every lookup offline (you ' +
-                'can still fill details in by hand). You’ll be asked once before the first online lookup; ' +
-                'this setting is that choice, changeable any time.'
-              }
-              stack
-            >
-              <Select
-                aria-label="Online product lookup"
-                data-testid="setting-online-product-lookup"
-                className="h-9 w-40"
-                value={prefs.allowOnlineProductLookup ? 'on' : 'off'}
-                onChange={(value) => prefs.setAllowOnlineProductLookup(value === 'on')}
-                options={ON_OFF_OPTIONS}
               />
             </SettingRow>
           </SettingsSection>

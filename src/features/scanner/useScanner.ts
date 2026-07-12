@@ -25,9 +25,11 @@ import type { ScannerAction, ScannerStatus } from './scanner-machine';
 import { createDecoder, type FrameDecoder, type ScannerEngine } from './barcode-decoder';
 import { DEFAULT_SCANNER_SYMBOLOGY, type ScannerSymbology } from './scanner-formats';
 import { initialCadence, nextCadence, DEFAULT_WASM_CADENCE } from './decode-cadence';
+import { elementRoiOf } from './roi';
 
 export function useScanner({
   videoRef,
+  roiRef,
   status,
   dispatch,
   onDecode,
@@ -35,6 +37,12 @@ export function useScanner({
   symbology = DEFAULT_SCANNER_SYMBOLOGY,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
+  /**
+   * The reticle box element the user aims into (issue #59): the decoder crops each frame to it, so
+   * a framed barcode is large relative to the analysed pixels on any viewport shape. When absent
+   * or unmeasurable the crop falls back to the cover-visible region, then the whole frame.
+   */
+  roiRef?: RefObject<HTMLElement | null>;
   status: ScannerStatus;
   dispatch: Dispatch<ScannerAction>;
   /** Called with each raw decoded string while the stream is active. */
@@ -57,6 +65,14 @@ export function useScanner({
   onEngineRef.current = onEngine;
   const symbologyRef = useRef(symbology);
   symbologyRef.current = symbology;
+  const roiRefRef = useRef(roiRef);
+  roiRefRef.current = roiRef;
+  // The ROI provider the decoder analyses each frame: the live reticle box when present, else the
+  // cover-visible region. Stable identity (reads the refs live), so the once-resolved decoder that
+  // captures it always sees the current reticle geometry.
+  const computeRoi = useRef((source: HTMLVideoElement) =>
+    elementRoiOf(source, roiRefRef.current?.current ?? null),
+  ).current;
 
   const stopStream = useCallback(() => {
     if (rafRef.current !== null) {
@@ -148,7 +164,7 @@ export function useScanner({
     const begin = async () => {
       let decoder = decoderRef.current;
       if (!decoder) {
-        decoder = await createDecoder(symbologyRef.current);
+        decoder = await createDecoder(symbologyRef.current, computeRoi);
         if (!active) {
           decoder.dispose();
           return;
@@ -168,7 +184,7 @@ export function useScanner({
         rafRef.current = null;
       }
     };
-  }, [status, videoRef]);
+  }, [status, videoRef, computeRoi]);
 
   // Stop the camera whenever we are not actively streaming.
   useEffect(() => {

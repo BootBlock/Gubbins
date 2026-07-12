@@ -28,6 +28,13 @@ import { DEFAULT_SCANNER_SYMBOLOGY, nativeFormatsFor, type ScannerSymbology } fr
 /** Which decoding engine backs the live scanner. `none` → manual entry only. */
 export type ScannerEngine = 'native' | 'wasm' | 'wasm-canvas' | 'none';
 
+/**
+ * Resolve the source-pixel {@link FrameRoi} to analyse for a frame, or `null` to decode the whole
+ * frame. Injected so the engines stay decoupled from where the crop comes from (the reticle box in
+ * production, {@link computeCoverRoi} by default, a fixed rect in tests).
+ */
+export type ComputeRoi = (source: HTMLVideoElement) => FrameRoi | null;
+
 export interface FrameDecoder {
   readonly engine: ScannerEngine;
   /** Decode any codes in the current video frame; `[]` when none found or on error. */
@@ -76,7 +83,7 @@ function makeVideoCropper(): (source: CanvasImageSource, roi: FrameRoi) => HTMLC
 }
 
 /** Wrap the native Barcode Detection API, or return null when unsupported. */
-function makeNativeDecoder(symbology: ScannerSymbology): FrameDecoder | null {
+function makeNativeDecoder(symbology: ScannerSymbology, computeRoi: ComputeRoi): FrameDecoder | null {
   if (!hasBarcodeDetector()) return null;
   try {
     const Ctor = (globalThis as unknown as { BarcodeDetector: BarcodeDetectorCtor }).BarcodeDetector;
@@ -86,9 +93,9 @@ function makeNativeDecoder(symbology: ScannerSymbology): FrameDecoder | null {
       engine: 'native',
       async detect(source) {
         try {
-          // Decode only the visible viewfinder region when the frame overflows the display
-          // (portrait phone + landscape camera); otherwise detect the raw frame unchanged.
-          const roi = computeCoverRoi(source);
+          // Decode only the reticle region (issue #59) — or the visible viewfinder region — when
+          // the crop is a real subset; otherwise detect the raw frame unchanged.
+          const roi = computeRoi(source);
           const input = roi ? (crop(source, roi) ?? source) : source;
           const codes = await detector.detect(input);
           return codes.map((c) => c.rawValue).filter((v) => v.length > 0);
@@ -315,15 +322,15 @@ export function makeCanvasWorkerDecoder(deps: CanvasWorkerDecoderDeps): FrameDec
  * then spawn the real Vite-bundled worker and capture frames with `createImageBitmap`. Returns
  * null when the path is unavailable, so {@link createDecoder} falls through.
  */
-function makeWorkerWasmDecoder(symbology: ScannerSymbology): FrameDecoder | null {
+function makeWorkerWasmDecoder(symbology: ScannerSymbology, computeRoi: ComputeRoi): FrameDecoder | null {
   if (!supportsWorkerDecode()) return null;
   try {
     return makeWorkerDecoder({
       spawnWorker: spawnDecodeWorker,
-      // Crop the captured bitmap to the visible viewfinder region when the frame overflows the
-      // display (issue #59), so the worker decodes where the barcode actually is.
+      // Crop the captured bitmap to the reticle / visible viewfinder region (issue #59), so the
+      // worker decodes where the barcode actually is rather than a near-full landscape frame.
       createBitmap: (source) => {
-        const roi = computeCoverRoi(source);
+        const roi = computeRoi(source);
         return roi ? createImageBitmap(source, roi.sx, roi.sy, roi.sw, roi.sh) : createImageBitmap(source);
       },
       symbology,
@@ -339,12 +346,15 @@ function makeWorkerWasmDecoder(symbology: ScannerSymbology): FrameDecoder | null
  * reused 2-D `<canvas>`. Returns null when unavailable, so {@link createDecoder} falls through
  * to manual entry.
  */
-function makeCanvasWorkerWasmDecoder(symbology: ScannerSymbology): FrameDecoder | null {
+function makeCanvasWorkerWasmDecoder(
+  symbology: ScannerSymbology,
+  computeRoi: ComputeRoi,
+): FrameDecoder | null {
   if (!supportsCanvasWorkerDecode()) return null;
   try {
     return makeCanvasWorkerDecoder({
       spawnWorker: spawnDecodeWorker,
-      captureFrame: makeCanvasCapture(),
+      captureFrame: makeCanvasCapture(computeRoi),
       symbology,
     });
   } catch {
@@ -368,14 +378,14 @@ function spawnDecodeWorker(): DecodeWorkerLike {
  * the frame) and read back its RGBA pixels. Returns `null` for an unsized frame or a browser
  * with no 2-D context, so the decoder simply skips it.
  */
-function makeCanvasCapture(): (source: HTMLVideoElement) => CapturedFrame | null {
+function makeCanvasCapture(computeRoi: ComputeRoi): (source: HTMLVideoElement) => CapturedFrame | null {
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   return (source) => {
     if (source.videoWidth === 0 || source.videoHeight === 0) return null;
-    // Capture only the visible viewfinder region when the frame overflows the display (issue
-    // #59); otherwise the whole frame. `sw`/`sh` are the analysed image's dimensions.
-    const roi = computeCoverRoi(source);
+    // Capture only the reticle / visible viewfinder region (issue #59); otherwise the whole
+    // frame. `sw`/`sh` are the analysed image's dimensions.
+    const roi = computeRoi(source);
     const sx = roi?.sx ?? 0;
     const sy = roi?.sy ?? 0;
     const width = roi?.sw ?? source.videoWidth;
@@ -399,14 +409,19 @@ function makeCanvasCapture(): (source: HTMLVideoElement) => CapturedFrame | null
  *
  * `symbology` (default: all four) scopes which formats every tier hints — a single-format scope
  * is the §6.6 single-format mode, cutting per-frame decode cost on the worker fallbacks.
+ *
+ * `computeRoi` (default {@link computeCoverRoi}) is the source-pixel crop every tier analyses —
+ * the reticle box in production (issue #59), so a framed barcode is large relative to the analysed
+ * pixels on any viewport shape.
  */
 export async function createDecoder(
   symbology: ScannerSymbology = DEFAULT_SCANNER_SYMBOLOGY,
+  computeRoi: ComputeRoi = computeCoverRoi,
 ): Promise<FrameDecoder> {
-  const native = makeNativeDecoder(symbology);
+  const native = makeNativeDecoder(symbology, computeRoi);
   if (native) return native;
-  const worker = makeWorkerWasmDecoder(symbology);
+  const worker = makeWorkerWasmDecoder(symbology, computeRoi);
   if (worker) return worker;
-  const canvasWorker = makeCanvasWorkerWasmDecoder(symbology);
+  const canvasWorker = makeCanvasWorkerWasmDecoder(symbology, computeRoi);
   return canvasWorker ?? NO_DECODER;
 }

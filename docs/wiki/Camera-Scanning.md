@@ -19,14 +19,14 @@ adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it.
 
 While the camera is live you'll see a large framing box with a moving sweep line and a
 **Scanning…** indicator, so it's always clear the camera is working and looking for a code.
-Gubbins reads the part of the picture inside your viewfinder, so a barcode that's clearly centred
-in the frame is read on its own terms — you no longer have to fill the whole screen with it. Hold
-the code roughly inside the box; good light and a steady hand still help most.
+Gubbins reads the picture **inside that box**, so a barcode framed in it is read on its own terms —
+you don't have to fill the whole screen with it, whether you're on a phone or a larger screen.
+Hold the code inside the box; good light and a steady hand still help most.
 
 > **💡 Tip**
-> If a code won't read, move it nearer so it fills more of the frame, steady your hand for a
-> moment, and make sure it's well lit. You can always type or paste the code into the box at the
-> bottom instead.
+> If a code won't read, centre it in the framing box and move it a little nearer so it fills the
+> box, steady your hand for a moment, and make sure it's well lit. You can always type or paste the
+> code into the box at the bottom instead.
 
 > **💡 Tip**
 > Add a product's barcode to its **Details** (there's a **Scan** button right on the field) so

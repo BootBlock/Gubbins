@@ -158,7 +158,7 @@ export function ProductLookupPanel({
           </p>
           <p className="text-sm text-muted-foreground">
             This happens only when you tap “Look up”, never automatically. You can change this any time in
-            Settings → Notifications &amp; files.
+            Settings → Scanning &amp; labels.
           </p>
           <div className="flex justify-end gap-2">
             <Button

@@ -53,6 +53,9 @@ function BarcodeScanDialogInner({
 }) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // The framing reticle: the decoder crops each frame to this box so a barcode framed in it reads
+  // without having to fill the screen (issue #59).
+  const reticleRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
   // Latched once a barcode is captured, so a decoder that emits several codes in the same
@@ -182,6 +185,7 @@ function BarcodeScanDialogInner({
 
   useScanner({
     videoRef,
+    roiRef: reticleRef,
     status: state.status,
     dispatch,
     onDecode: handleDecode,
@@ -238,6 +242,7 @@ function BarcodeScanDialogInner({
           hintTestId="barcode-scan-hint"
           error={state.error}
           onRetry={() => dispatch({ type: 'OPEN' })}
+          reticleRef={reticleRef}
         />
 
         {/* Website-link prompt: a scanned marketing QR is a link, not a barcode (issue #59).

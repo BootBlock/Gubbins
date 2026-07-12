@@ -65,6 +65,24 @@ describe('SettingsDialog — all features on (default)', () => {
   });
 });
 
+describe('SettingsDialog — Online product lookup placement (issue #59)', () => {
+  it('shows the Online product lookup setting under Scanning & labels', () => {
+    renderTab('Scanning & labels');
+    expect(screen.queryByTestId('setting-online-product-lookup')).not.toBeNull();
+  });
+
+  it('is no longer under Notifications & files', () => {
+    renderTab('Notifications & files');
+    expect(screen.queryByTestId('setting-online-product-lookup')).toBeNull();
+  });
+
+  it('drops the Product lookup section when supplier scraping is off', () => {
+    useModulesStore.getState().setFeatureIntent('scraping', false);
+    renderTab('Scanning & labels');
+    expect(screen.queryByTestId('setting-online-product-lookup')).toBeNull();
+  });
+});
+
 describe('SettingsDialog — Live camera scanning off', () => {
   it('drops the whole Scanner section, leaving Labels & QR codes intact', () => {
     useModulesStore.getState().setFeatureIntent('scanner', false);

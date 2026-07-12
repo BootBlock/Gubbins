@@ -92,6 +92,9 @@ function ScannerOverlayInner({
 }) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // The framing reticle: the decoder crops each frame to this box so a barcode framed in it is
+  // large relative to the analysed pixels on any viewport shape (issue #59).
+  const reticleRef = useRef<HTMLDivElement | null>(null);
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
   const queue = useScannerQueue();
   const checkout = useCheckoutItem();
@@ -209,6 +212,7 @@ function ScannerOverlayInner({
 
   useScanner({
     videoRef,
+    roiRef: reticleRef,
     status: state.status,
     dispatch,
     onDecode: (raw) => void handleDecode(raw),
@@ -380,6 +384,7 @@ function ScannerOverlayInner({
           hintTestId="scanner-idle-hint"
           error={state.error}
           onRetry={() => dispatch({ type: 'OPEN' })}
+          reticleRef={reticleRef}
         />
 
         {/* Discrete result card — act on one scanned item without leaving the scanner. */}
