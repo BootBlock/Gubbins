@@ -207,6 +207,156 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       ]),
     },
   },
+  {
+    id: 'fabric',
+    name: 'Fabric',
+    description: 'Sewing and craft fabric — material, width, colour and pattern.',
+    seed: {
+      category: { name: 'Fabric' },
+      fields: ordered([
+        {
+          name: 'Material',
+          fieldType: 'SELECT',
+          options: ['Cotton', 'Linen', 'Wool', 'Silk', 'Polyester', 'Fleece', 'Denim', 'Felt'],
+        },
+        { name: 'Width (cm)', fieldType: 'NUMBER' },
+        { name: 'Colour', fieldType: 'TEXT' },
+        { name: 'Pattern', fieldType: 'TEXT' },
+        { name: 'Stretch', fieldType: 'ON_OFF' },
+      ]),
+    },
+  },
+  {
+    id: 'hobby-paint',
+    name: 'Paint',
+    description: 'Hobby and craft paint — brand, colour, finish and type.',
+    seed: {
+      category: { name: 'Paint' },
+      fields: ordered([
+        { name: 'Brand', fieldType: 'TEXT' },
+        { name: 'Colour name', fieldType: 'TEXT' },
+        {
+          name: 'Type',
+          fieldType: 'SELECT',
+          options: ['Acrylic', 'Enamel', 'Lacquer', 'Watercolour', 'Oil', 'Spray'],
+        },
+        {
+          name: 'Finish',
+          fieldType: 'SELECT',
+          options: ['Matte', 'Satin', 'Gloss', 'Metallic', 'Fluorescent'],
+        },
+        { name: 'Volume (ml)', fieldType: 'NUMBER' },
+      ]),
+    },
+  },
+  {
+    id: 'adhesive',
+    name: 'Adhesive',
+    description: 'Glues, resins and tapes — type, cure time and shelf life.',
+    seed: {
+      category: { name: 'Adhesive' },
+      fields: ordered([
+        {
+          name: 'Type',
+          fieldType: 'SELECT',
+          options: ['Super glue', 'Epoxy', 'UV resin', 'Wood glue', 'Hot glue', 'Contact adhesive', 'Tape'],
+        },
+        { name: 'Cure time (min)', fieldType: 'NUMBER' },
+        { name: 'Expiry date', fieldType: 'DATE' },
+        { name: 'Opened', fieldType: 'ON_OFF' },
+      ]),
+    },
+  },
+  {
+    id: 'model-kit',
+    name: 'Model kit',
+    description: 'Scale model kits — manufacturer, scale, subject and build status.',
+    seed: {
+      category: { name: 'Model kit' },
+      fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        {
+          name: 'Scale',
+          fieldType: 'SELECT',
+          options: ['1:24', '1:32', '1:35', '1:48', '1:72', '1:144', '1:700', 'Other'],
+        },
+        { name: 'Subject', fieldType: 'TEXT' },
+        {
+          name: 'Build status',
+          fieldType: 'SELECT',
+          options: ['Unbuilt', 'In progress', 'Built', 'Painted'],
+        },
+      ]),
+    },
+  },
+  {
+    id: 'trading-card',
+    name: 'Trading card',
+    description: 'Collectible cards — set, rarity, condition and language.',
+    seed: {
+      category: { name: 'Trading card' },
+      fields: ordered([
+        { name: 'Set / expansion', fieldType: 'TEXT' },
+        { name: 'Card number', fieldType: 'TEXT' },
+        {
+          name: 'Rarity',
+          fieldType: 'SELECT',
+          options: ['Common', 'Uncommon', 'Rare', 'Holo rare', 'Ultra rare', 'Secret rare'],
+        },
+        {
+          name: 'Condition',
+          fieldType: 'SELECT',
+          options: ['Mint', 'Near mint', 'Excellent', 'Good', 'Played', 'Poor'],
+        },
+        { name: 'Language', fieldType: 'TEXT' },
+        { name: 'Graded', fieldType: 'ON_OFF' },
+      ]),
+    },
+  },
+  {
+    id: 'vinyl-record',
+    name: 'Vinyl record',
+    description: 'Records — artist, format, speed and condition.',
+    seed: {
+      category: { name: 'Vinyl record' },
+      fields: ordered([
+        { name: 'Artist', fieldType: 'TEXT' },
+        { name: 'Format', fieldType: 'SELECT', options: ['LP', 'EP', 'Single', 'Box set'] },
+        { name: 'Speed', fieldType: 'SELECT', options: ['33⅓ RPM', '45 RPM', '78 RPM'] },
+        {
+          name: 'Media condition',
+          fieldType: 'SELECT',
+          options: ['Mint', 'Near mint', 'Very good plus', 'Very good', 'Good', 'Poor'],
+        },
+        {
+          name: 'Sleeve condition',
+          fieldType: 'SELECT',
+          options: ['Mint', 'Near mint', 'Very good plus', 'Very good', 'Good', 'Poor'],
+        },
+        { name: 'Catalogue number', fieldType: 'TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'coin',
+    name: 'Coin',
+    description: 'Coins — country, year, denomination and grade.',
+    seed: {
+      category: { name: 'Coin' },
+      fields: ordered([
+        { name: 'Country', fieldType: 'TEXT' },
+        { name: 'Year', fieldType: 'NUMBER' },
+        { name: 'Denomination', fieldType: 'TEXT' },
+        { name: 'Mint mark', fieldType: 'TEXT' },
+        {
+          name: 'Metal',
+          fieldType: 'SELECT',
+          options: ['Gold', 'Silver', 'Copper', 'Bronze', 'Nickel', 'Cupronickel', 'Other'],
+        },
+        { name: 'Grade', fieldType: 'TEXT' },
+      ]),
+    },
+  },
 ];
 
 /**
