@@ -27,7 +27,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
 import type { ScannerEngine } from '../barcode-decoder';
-import { parseScannedCode } from '../scan-payload';
+import { isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
 import { useScanner } from '../useScanner';
@@ -141,7 +141,13 @@ function ScannerOverlayInner({
     async (raw: string) => {
       const code = parseScannedCode(raw);
       if (!code) {
-        setNotice('That code isn’t a Gubbins code or a recognised barcode.');
+        // A marketing QR resolves to a website link, not a Gubbins code or a barcode — name
+        // that plainly rather than a generic "unrecognised" (issue #59).
+        setNotice(
+          isStructuredQrPayload(raw)
+            ? 'That’s a website link, not a Gubbins code or a product barcode.'
+            : 'That code isn’t a Gubbins code or a recognised barcode.',
+        );
         return;
       }
       const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };

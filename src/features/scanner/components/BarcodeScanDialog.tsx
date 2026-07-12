@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Button, Input, LiveRegion } from '@/components/foundry';
+import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
 import { FOCUSABLE_SELECTOR, nextTrapIndex } from '@/components/foundry/focus-trap';
 import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
-import { CloseIcon, ScanIcon } from '@/components/icons';
+import { CloseIcon, ExternalLinkIcon, LinkIcon, ScanIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { ScannerEngine } from '../barcode-decoder';
 import { ScanFeedback } from '../feedback';
-import { parseScannedCode } from '../scan-payload';
+import { asOpenableLink, isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer } from '../scanner-machine';
 import { useScanner } from '../useScanner';
 import { ScannerViewfinder } from './ScannerViewfinder';
@@ -66,6 +66,10 @@ function BarcodeScanDialogInner({
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [engine, setEngine] = useState<ScannerEngine | null>(null);
+  // A scanned marketing QR resolves to a website link, not a product barcode (issue #59). We
+  // never drop its URL into the Barcode field; instead we pause and offer to open it, so the
+  // user stays in control of following an external link rather than being silently blocked.
+  const [linkPrompt, setLinkPrompt] = useState<string | null>(null);
 
   const close = useCallback(() => {
     dispatch({ type: 'CLOSE' });
@@ -134,6 +138,21 @@ function BarcodeScanDialogInner({
         setNotice('That’s a Gubbins label — scan the product’s own barcode instead.');
         return;
       }
+      // A marketing QR / website link (a `wa.me/…` code, a contact card, …) is not a product
+      // barcode (issue #59). Never capture its URL into the field. An openable http(s) link
+      // pauses the view and offers to open it; any other structured payload just says plainly it
+      // isn't a barcode (like the Gubbins-label branch — the live view keeps scanning).
+      if (!code && isStructuredQrPayload(raw)) {
+        const link = asOpenableLink(raw);
+        if (link) {
+          capturedRef.current = true; // stop the decode loop firing again behind the prompt
+          dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
+          setLinkPrompt(link);
+        } else {
+          setNotice('That code is a link or contact card, not a product barcode.');
+        }
+        return;
+      }
       // A valid retail barcode is normalised to its canonical GTIN; any other decoded
       // symbology (e.g. a Code 128 part label) is captured verbatim.
       const value = code?.kind === 'gtin' ? code.gtin : raw.trim();
@@ -145,6 +164,21 @@ function BarcodeScanDialogInner({
     },
     [beepEnabled, hapticsEnabled, onCapture, close],
   );
+
+  // Dismiss the website-link prompt and resume scanning (issue #59). The user chose not to
+  // follow the link, so the Barcode field is left untouched and the camera picks up again.
+  const dismissLink = useCallback(() => {
+    setLinkPrompt(null);
+    setNotice(null);
+    capturedRef.current = false;
+    dispatch({ type: 'RESUME_SCANNING' });
+  }, []);
+
+  // Open the scanned link in a new tab (fully isolated: no opener, no referrer), then resume.
+  const openLink = useCallback(() => {
+    if (linkPrompt) window.open(linkPrompt, '_blank', 'noopener,noreferrer');
+    dismissLink();
+  }, [linkPrompt, dismissLink]);
 
   useScanner({
     videoRef,
@@ -205,6 +239,35 @@ function BarcodeScanDialogInner({
           error={state.error}
           onRetry={() => dispatch({ type: 'OPEN' })}
         />
+
+        {/* Website-link prompt: a scanned marketing QR is a link, not a barcode (issue #59).
+            Show where it goes and let the user open it or dismiss — the code is never written
+            to the Barcode field. The URL is shown in full so the destination is vetted before
+            opening (a scanned link is untrusted). */}
+        {linkPrompt ? (
+          <div className="absolute inset-x-0 bottom-0 p-4">
+            <Surface className="space-y-3 p-4 text-foreground" data-testid="barcode-scan-link-prompt">
+              <p className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <LinkIcon className="size-4" aria-hidden />
+                Website link
+              </p>
+              <p className="text-sm text-muted-foreground">
+                That code is a website link, not a product barcode. Open it, or dismiss to keep scanning.
+              </p>
+              <p className="break-all font-mono text-sm" data-testid="barcode-scan-link-url">
+                {linkPrompt}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={openLink} data-testid="barcode-scan-link-open">
+                  <ExternalLinkIcon /> Open link
+                </Button>
+                <Button variant="outline" onClick={dismissLink} data-testid="barcode-scan-link-dismiss">
+                  Dismiss
+                </Button>
+              </div>
+            </Surface>
+          </div>
+        ) : null}
       </div>
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid. */}

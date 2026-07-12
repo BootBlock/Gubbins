@@ -178,6 +178,14 @@ interface PreferencesStore {
   readonly gamifyCards: boolean;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
+  /**
+   * Whether the user has agreed that a **barcode product lookup may contact an external service**
+   * (Open Food Facts) directly from the app when the companion extension isn't present (issue #59).
+   * Off by default — the app never reaches the network for a lookup until the user opts in via the
+   * one-time consent prompt; once granted it isn't asked again. The privileged extension path
+   * (when installed) is unaffected by this flag.
+   */
+  readonly allowOnlineProductLookup: boolean;
   /** Which barcode symbology the live scanner decodes (§6.6); `'all'` scans every supported code. */
   readonly scannerSymbology: ScannerSymbology;
   /**
@@ -403,6 +411,8 @@ interface PreferencesStore {
   setGamifyCards: (enabled: boolean) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
+  /** Record the user's consent (or withdrawal) for direct online barcode lookups (issue #59). */
+  setAllowOnlineProductLookup: (allowed: boolean) => void;
   setScannerSymbology: (symbology: ScannerSymbology) => void;
   setLabelTemplate: (template: LabelTemplate) => void;
   setLabelBaseUrl: (url: string) => void;
@@ -486,6 +496,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       gamifyCards: true,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
+      allowOnlineProductLookup: false,
       scannerSymbology: DEFAULT_SCANNER_SYMBOLOGY,
       labelTemplate: DEFAULT_LABEL_TEMPLATE,
       labelBaseUrl: '',
@@ -558,6 +569,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setGamifyCards: (gamifyCards) => set({ gamifyCards }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
+      setAllowOnlineProductLookup: (allowOnlineProductLookup) => set({ allowOnlineProductLookup }),
       // Normalise so a stale/out-of-range persisted value can never reach the decoder.
       setScannerSymbology: (symbology) => set({ scannerSymbology: normaliseSymbology(symbology) }),
       // Normalise so a stale/partial persisted template can never reach the renderer.

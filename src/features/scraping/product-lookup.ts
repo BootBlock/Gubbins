@@ -1,12 +1,13 @@
 /**
  * Keyless barcode → product enrichment (recommendation point 2) — the pure provider logic.
  *
- * The PWA cannot fetch an open product database directly (its CSP pins `connect-src` to
- * `'self'` + the Drive endpoint, and it must work offline), so — exactly as with the §9
- * supplier scrape — the privileged companion extension performs the network request and
- * bridges a typed payload back. This module holds the *pure* half the extension imports:
- * how to build the lookup URL and how to turn the fetched body into a
- * {@link ProductLookupResultPayload}, so both are unit-tested without a browser.
+ * Two callers perform the actual request; this module holds the *pure* half they share — how to
+ * build the lookup URL and how to turn the fetched body into a {@link ProductLookupResultPayload},
+ * so both are unit-tested without a browser. When the companion extension is present it performs
+ * the request (exactly as with the §9 supplier scrape) and bridges a typed payload back; when it
+ * isn't, the app queries Open Food Facts **directly** after the user opts in — see
+ * {@link import('./product-lookup-online').lookupProductOnline} (issue #59). The Open Food Facts
+ * origin is the only host the CSP `connect-src` allow-list adds for that direct path.
  *
  * **Provider: Open Food Facts.** A free, open, **key-less** product database — the only
  * source compatible with this public, secret-free, backend-less repo. Its coverage is

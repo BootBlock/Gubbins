@@ -22,6 +22,7 @@
  * canvas degrades to manual entry (`engine: 'none'`).
  */
 import { hasBarcodeDetector } from '@/lib/env/feature-detection';
+import { computeCoverRoi, type FrameRoi } from './roi';
 import { DEFAULT_SCANNER_SYMBOLOGY, nativeFormatsFor, type ScannerSymbology } from './scanner-formats';
 
 /** Which decoding engine backs the live scanner. `none` → manual entry only. */
@@ -53,17 +54,43 @@ const NO_DECODER: FrameDecoder = {
   dispose: () => {},
 };
 
+/**
+ * A reused 2-D canvas that crops a video frame to a {@link FrameRoi} for the native detector
+ * (issue #59) — so the detector sees only the visible viewfinder region, where a centred
+ * barcode is large relative to the analysed pixels. Returns `null` with no DOM/context, so the
+ * caller falls back to detecting the raw frame.
+ */
+function makeVideoCropper(): (source: CanvasImageSource, roi: FrameRoi) => HTMLCanvasElement | null {
+  let canvas: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+  return (source, roi) => {
+    if (typeof document === 'undefined') return null;
+    canvas ??= document.createElement('canvas');
+    if (canvas.width !== roi.sw) canvas.width = roi.sw;
+    if (canvas.height !== roi.sh) canvas.height = roi.sh;
+    ctx ??= canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(source, roi.sx, roi.sy, roi.sw, roi.sh, 0, 0, roi.sw, roi.sh);
+    return canvas;
+  };
+}
+
 /** Wrap the native Barcode Detection API, or return null when unsupported. */
 function makeNativeDecoder(symbology: ScannerSymbology): FrameDecoder | null {
   if (!hasBarcodeDetector()) return null;
   try {
     const Ctor = (globalThis as unknown as { BarcodeDetector: BarcodeDetectorCtor }).BarcodeDetector;
     const detector = new Ctor({ formats: nativeFormatsFor(symbology) });
+    const crop = makeVideoCropper();
     return {
       engine: 'native',
       async detect(source) {
         try {
-          const codes = await detector.detect(source);
+          // Decode only the visible viewfinder region when the frame overflows the display
+          // (portrait phone + landscape camera); otherwise detect the raw frame unchanged.
+          const roi = computeCoverRoi(source);
+          const input = roi ? (crop(source, roi) ?? source) : source;
+          const codes = await detector.detect(input);
           return codes.map((c) => c.rawValue).filter((v) => v.length > 0);
         } catch {
           return []; // transient detect failures are ignored; the loop continues
@@ -293,7 +320,12 @@ function makeWorkerWasmDecoder(symbology: ScannerSymbology): FrameDecoder | null
   try {
     return makeWorkerDecoder({
       spawnWorker: spawnDecodeWorker,
-      createBitmap: (source) => createImageBitmap(source),
+      // Crop the captured bitmap to the visible viewfinder region when the frame overflows the
+      // display (issue #59), so the worker decodes where the barcode actually is.
+      createBitmap: (source) => {
+        const roi = computeCoverRoi(source);
+        return roi ? createImageBitmap(source, roi.sx, roi.sy, roi.sw, roi.sh) : createImageBitmap(source);
+      },
       symbology,
     });
   } catch {
@@ -340,15 +372,20 @@ function makeCanvasCapture(): (source: HTMLVideoElement) => CapturedFrame | null
   let canvas: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   return (source) => {
-    const width = source.videoWidth;
-    const height = source.videoHeight;
-    if (width === 0 || height === 0) return null;
+    if (source.videoWidth === 0 || source.videoHeight === 0) return null;
+    // Capture only the visible viewfinder region when the frame overflows the display (issue
+    // #59); otherwise the whole frame. `sw`/`sh` are the analysed image's dimensions.
+    const roi = computeCoverRoi(source);
+    const sx = roi?.sx ?? 0;
+    const sy = roi?.sy ?? 0;
+    const width = roi?.sw ?? source.videoWidth;
+    const height = roi?.sh ?? source.videoHeight;
     if (!canvas) canvas = document.createElement('canvas');
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
     ctx ??= canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.drawImage(source, 0, 0);
+    ctx.drawImage(source, sx, sy, width, height, 0, 0, width, height);
     const { data } = ctx.getImageData(0, 0, width, height);
     return { rgba: data, width, height };
   };

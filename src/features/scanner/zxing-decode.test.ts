@@ -36,13 +36,17 @@ describe('createZxingDecode — shared fallback decode pipeline (spec §6.6)', (
 });
 
 describe('zxingFormatsFor — symbology → zxing BarcodeFormat hints (§6.6)', () => {
-  it("'all' hints exactly the four scanned formats", () => {
+  it("'all' hints the full default set — QR, 1-D part labels and the retail GTIN family", () => {
     expect(zxingFormatsFor('all')).toEqual([
       BarcodeFormat.QR_CODE,
       BarcodeFormat.CODE_128,
       BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
       BarcodeFormat.CODE_39,
     ]);
+    // Kept in step with the native format list so both tiers scan the same symbologies.
     expect(zxingFormatsFor('all')).toHaveLength(ALL_NATIVE_FORMATS.length);
   });
 

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  asOpenableLink,
   buildItemQrUrl,
   buildLocationQrUrl,
+  isStructuredQrPayload,
   isUuid,
   parseScannedCode,
   parseScannedItemId,
@@ -37,6 +39,41 @@ describe('scan-payload', () => {
     expect(parseScannedItemId('https://example.com/other')).toBeNull();
     expect(parseScannedItemId('')).toBeNull();
     expect(isUuid('not-a-uuid')).toBe(false);
+  });
+
+  describe('structured-QR detection (issue #59)', () => {
+    it('flags website links and structured URIs as not-a-barcode', () => {
+      expect(isStructuredQrPayload('https://wa.me/message/ABCDEFGHIJ?src=qr')).toBe(true);
+      expect(isStructuredQrPayload('http://example.com/promo')).toBe(true);
+      expect(isStructuredQrPayload('whatsapp://send?phone=123')).toBe(true);
+      expect(isStructuredQrPayload('mailto:hello@example.com')).toBe(true);
+      expect(isStructuredQrPayload('tel:+15551234567')).toBe(true);
+      expect(isStructuredQrPayload('WIFI:S:MyNet;T:WPA;P:secret;;')).toBe(true);
+      expect(isStructuredQrPayload('BEGIN:VCARD\nFN:Ada\nEND:VCARD')).toBe(true);
+      expect(isStructuredQrPayload('wa.me/message/ABCDEFGHIJ')).toBe(true); // scheme-less domain
+    });
+
+    it('does not flag genuine barcodes or plain part labels', () => {
+      expect(isStructuredQrPayload('4006381333931')).toBe(false); // EAN-13
+      expect(isStructuredQrPayload('ABC-123-XYZ')).toBe(false); // Code 128 part label
+      expect(isStructuredQrPayload('RES-4K7-0805')).toBe(false);
+      expect(isStructuredQrPayload('')).toBe(false);
+    });
+  });
+
+  describe('asOpenableLink (issue #59)', () => {
+    it('returns a safe http(s) URL, promoting a scheme-less domain to https', () => {
+      expect(asOpenableLink('https://wa.me/message/AB?src=qr')).toBe('https://wa.me/message/AB?src=qr');
+      expect(asOpenableLink('wa.me/message/AB')).toBe('https://wa.me/message/AB');
+    });
+
+    it('refuses non-http(s) schemes and non-links', () => {
+      expect(asOpenableLink('mailto:hello@example.com')).toBeNull();
+      expect(asOpenableLink('tel:+15551234567')).toBeNull();
+      expect(asOpenableLink('javascript:alert(1)')).toBeNull();
+      expect(asOpenableLink('4006381333931')).toBeNull();
+      expect(asOpenableLink('ABC-123')).toBeNull();
+    });
   });
 
   it('parses a location deep-link and namespaced token (Phase 73)', () => {

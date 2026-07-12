@@ -1,8 +1,9 @@
 /**
  * Scanner symbology selection (spec §6.6, §6.1 battery, §3 preferences).
  *
- * The §6.6 tiered decoder hints **four** symbologies by default (QR deep-links + the common
- * 1-D part labels). A user who only ever scans one kind of code can narrow the scanner to a
+ * The §6.6 tiered decoder hints QR deep-links, the common 1-D part labels and the full retail
+ * GTIN family by default (see {@link ALL_NATIVE_FORMATS}). A user who only ever scans one kind
+ * of code can narrow the scanner to a
  * **single symbology**: the native `BarcodeDetector` and the off-thread zxing worker then both
  * try just that one format, cutting per-frame decode cost (the zxing `MultiFormatReader` tries
  * every hinted format, so one format is ~4× cheaper than four) — finishing the Phase-31 perf
@@ -17,8 +18,23 @@
 /** A scan-scope choice: every symbology, or exactly one. Mirrors the native format strings. */
 export type ScannerSymbology = 'all' | 'qr_code' | 'code_128' | 'ean_13' | 'code_39';
 
-/** The four symbologies Gubbins scans, in canonical order (QR deep-links + 1-D part labels). */
-export const ALL_NATIVE_FORMATS = ['qr_code', 'code_128', 'ean_13', 'code_39'] as const;
+/**
+ * The symbologies Gubbins scans by default, in canonical order: QR deep-links, the common 1-D
+ * part labels (Code 128 / Code 39), and the **full retail GTIN family** — EAN-13, EAN-8, UPC-A
+ * and UPC-E. Hinting the whole GTIN family (not just EAN-13) means a small `ean_8` package code
+ * or a North-American `upc_a`/`upc_e` barcode is actually attempted rather than missed, which is
+ * a common reason a clearly-visible barcode "won't scan" (issue #59). `parseGtin` already
+ * validates every one of these widths, so the recognised set stays consistent end to end.
+ */
+export const ALL_NATIVE_FORMATS = [
+  'qr_code',
+  'code_128',
+  'ean_13',
+  'ean_8',
+  'upc_a',
+  'upc_e',
+  'code_39',
+] as const;
 
 /** The default scope: scan everything (the pre-Phase-34 behaviour — never a regression). */
 export const DEFAULT_SCANNER_SYMBOLOGY: ScannerSymbology = 'all';
