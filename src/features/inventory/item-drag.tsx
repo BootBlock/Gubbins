@@ -356,12 +356,9 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     }
     document.body.style.userSelect = 'none';
     document.body.classList.add(DRAGGING_CLASS);
-    if (s.pointerType === 'touch') {
-      window.addEventListener('touchmove', (e) => e.preventDefault(), {
-        passive: false,
-        signal: s.listeners.signal,
-      });
-    }
+    // The scroll-suppressing `touchmove` listener is bound up-front in `beginDrag` (see there),
+    // not here — a non-passive `touchmove` added only once the drag arms is bound too late for a
+    // real touch engine to honour, and the finger scrolls the list instead of dragging (#56).
     setPreviewItem(s.payload);
     const hit = resolveTarget(s.lastX, s.lastY);
     setActiveDropId(hit.acceptedId);
@@ -416,6 +413,16 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
     [endGesture],
   );
 
+  // Suppress the browser's native touch-scroll *only* once a drag has armed, so the finger drags
+  // the card instead of scrolling the list. Bound at pointer-down (touchstart) so the browser
+  // treats the gesture's `touchmove` as cancelable; a listener added later — when the long press
+  // fires — is honoured on desktop but not on real touch engines, which have already begun
+  // resolving the touch as a scroll by then (#56). Until the drag arms it does nothing, so a
+  // pre-arm move still scrolls normally.
+  const suppressTouchScroll = useCallback((event: TouchEvent) => {
+    if (stateRef.current?.active) event.preventDefault();
+  }, []);
+
   const beginDrag = useCallback(
     (payload: DragPayload, event: ReactPointerEvent) => {
       if (stateRef.current) return;
@@ -440,10 +447,13 @@ export function ItemDragProvider({ children }: { children: ReactNode }) {
       // Touch can't tell drag from scroll up front, so it arms on a stationary long press.
       // Mouse/pen arm on the first few pixels of movement, preserving plain clicks.
       if (event.pointerType === 'touch') {
+        // Bind the (non-passive) scroll-suppressor now, with the touch, so a later
+        // `preventDefault()` is actually honoured once the drag arms — see `suppressTouchScroll`.
+        window.addEventListener('touchmove', suppressTouchScroll, { passive: false, signal });
         stateRef.current.longPressTimer = window.setTimeout(activateDrag, TOUCH_LONG_PRESS_MS);
       }
     },
-    [activateDrag, onPointerCancel, onPointerMove, onPointerUp],
+    [activateDrag, onPointerCancel, onPointerMove, onPointerUp, suppressTouchScroll],
   );
 
   const registerDropTarget = useCallback((id: string, target: DropTarget) => {

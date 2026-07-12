@@ -31,7 +31,8 @@ beneath it. Select **All items** to clear the filter.
 
 > **💡 Tip**
 > You can **drag an item card onto a location** to move its stock there — a fast way to tidy up
-> after a reorganise.
+> after a reorganise. On a touchscreen, **press and hold** the card briefly until it lifts, then
+> drag it onto the location; a quick swipe still scrolls the list as usual.
 
 ## Stock is tracked per location
 

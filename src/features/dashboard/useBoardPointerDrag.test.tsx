@@ -57,6 +57,15 @@ function firePointer(
   });
 }
 
+/** Dispatch a cancelable `touchmove` on window and return it, so a test can read `defaultPrevented`. */
+function fireTouchMove(): Event {
+  const event = new Event('touchmove', { bubbles: true, cancelable: true });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+  return event;
+}
+
 /** Point every hit-test at the given element until restored. */
 function pointHitTestAt(el: Element | null) {
   document.elementFromPoint = vi.fn(() => el);
@@ -149,6 +158,23 @@ describe('useBoardPointerDrag', () => {
     firePointer(window, 'pointerup', { x: 40, y: 40, pointerType: 'touch' });
 
     expect(onDrop).toHaveBeenCalledWith('tile-1', 'cell-key');
+  });
+
+  it('suppresses native touch-scroll only once the long press has armed the drag (#56)', () => {
+    vi.useFakeTimers();
+    render(<Harness onDrop={vi.fn()} />);
+    const source = screen.getByTestId('source');
+    pointHitTestAt(screen.getByTestId('target'));
+
+    // The scroll-suppressor is bound with the touch (at pointer-down), but stays inert until the
+    // drag arms — so before the long press a touchmove is left alone and the board can still scroll.
+    firePointer(source, 'pointerdown', { x: 10, y: 10, pointerType: 'touch' });
+    expect(fireTouchMove().defaultPrevented).toBe(false);
+
+    // Once the stationary long press arms the drag, a touchmove is cancelled so the finger drags
+    // the tile instead of scrolling the board underneath it.
+    act(() => vi.advanceTimersByTime(250));
+    expect(fireTouchMove().defaultPrevented).toBe(true);
   });
 
   it('treats a touch that moves before the long press as a scroll, not a drag', () => {
