@@ -16,7 +16,6 @@ export function useApplyTheme(): void {
   const oledDark = usePreferencesStore((s) => s.oledDark);
   const highContrast = usePreferencesStore((s) => s.highContrast);
   const animationLevel = usePreferencesStore((s) => s.animationLevel);
-  const starfieldVariant = usePreferencesStore((s) => s.starfieldVariant);
   const holographicCards = usePreferencesStore((s) => s.holographicCards);
   const gamifyCards = usePreferencesStore((s) => s.gamifyCards);
   useEffect(() => {
@@ -26,7 +25,6 @@ export function useApplyTheme(): void {
       oledDark,
       highContrast,
       animationLevel,
-      starfieldVariant,
       holographicCards,
       gamifyCards,
     };
@@ -37,5 +35,5 @@ export function useApplyTheme(): void {
     const onChange = () => applyAppearance(appearance);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
-  }, [mode, accent, oledDark, highContrast, animationLevel, starfieldVariant, holographicCards, gamifyCards]);
+  }, [mode, accent, oledDark, highContrast, animationLevel, holographicCards, gamifyCards]);
 }

@@ -607,8 +607,9 @@
  * starfield (`features/about/Starfield.tsx` + the `.gubbins-star`/`.gubbins-flare` rules below):
  * each variant only re-points the decorative `--star` (small twinkling dots) and `--star-flare`
  * (the larger lens-flare glow + crossed streaks) tokens — no second field, no new geometry/motion.
- * The apply seam (`theme.ts`) sets `data-starfield="<id>"` on <html>; the default `cosmic` look
- * carries NO attribute (it is the base `:root` / `.dark` `--star*` tokens), so nothing regresses.
+ * The About screen (`features/about/Starfield.tsx`) sets `data-starfield="<id>"` on <html> for a
+ * randomly-chosen variant while it is open; the default `cosmic` look carries NO attribute (it is
+ * the base `:root` / `.dark` `--star*` tokens), so nothing regresses.
  *
  * Authored per mode exactly like the accents: a light block `[data-starfield='<id>']` and a dark
  * block `.dark[data-starfield='<id>']`. Both plain-attribute and `:root` are specificity (0,1,0),
@@ -662,6 +663,42 @@
 .dark[data-starfield='mono'] {
   --star: oklch(0.95 0 0);
   --star-flare: oklch(0.88 0 0);
+}
+
+[data-starfield='nebula'] {
+  --star: oklch(0.52 0.06 330);
+  --star-flare: oklch(0.55 0.19 328);
+}
+.dark[data-starfield='nebula'] {
+  --star: oklch(0.95 0.03 330);
+  --star-flare: oklch(0.82 0.16 328);
+}
+
+[data-starfield='ocean'] {
+  --star: oklch(0.53 0.06 240);
+  --star-flare: oklch(0.55 0.16 232);
+}
+.dark[data-starfield='ocean'] {
+  --star: oklch(0.95 0.03 240);
+  --star-flare: oklch(0.83 0.13 232);
+}
+
+[data-starfield='sunset'] {
+  --star: oklch(0.55 0.06 30);
+  --star-flare: oklch(0.6 0.17 25);
+}
+.dark[data-starfield='sunset'] {
+  --star: oklch(0.95 0.03 40);
+  --star-flare: oklch(0.83 0.15 28);
+}
+
+[data-starfield='gold'] {
+  --star: oklch(0.58 0.05 85);
+  --star-flare: oklch(0.66 0.13 85);
+}
+.dark[data-starfield='gold'] {
+  --star: oklch(0.95 0.03 90);
+  --star-flare: oklch(0.86 0.12 88);
 }
 
 /* Map the runtime CSS variables onto Tailwind's colour/utility scale so
