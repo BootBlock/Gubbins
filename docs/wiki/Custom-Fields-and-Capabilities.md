@@ -27,8 +27,10 @@ field:material=steel
 
 Rather than adding fields one at a time, the category manager's **Add from a preset** picker
 creates a ready-made category with a curated set of custom fields already attached — covering
-common cases like `Battery`, `Cable`, `Electronic component`, `Fastener` and `3D Filament`. Pick
-one, then rename, extend or trim its fields to match your own inventory.
+maker and hobbyist staples like `Battery`, `Cable`, `Electronic component`, `Fastener`,
+`3D Filament`, `Fabric`, `Paint`, `Adhesive` and `Model kit`, plus collector staples like
+`Book`, `Trading card`, `Vinyl record` and `Coin`. Pick one, then rename, extend or trim its
+fields to match your own inventory.
 
 ## Capabilities
 
