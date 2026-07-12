@@ -241,13 +241,19 @@ rule applied to issue handling.
 4. **Verify it works.** Typecheck (`npx tsc -b`) and run any tests the change touches; where the
    change has a runtime surface, drive it (the `verify` skill) rather than trusting types alone.
 5. **Code review before committing.** Run `/code-review high` on the diff and **fix every confirmed
-   finding** before proceeding. Re-verify after fixing. Commit inside the worktree once clean.
-6. **Checkpoint — pause here.** Before any outward-facing, hard-to-undo step, give the maintainer
-   a concise summary (what changed, review outcome, files touched), then **pause for the go-ahead
-   using the `AskUserQuestion` tool** — offer a clear approve/hold choice (e.g. "Land it" vs "Hold")
-   rather than asking for a freeform reply. Do not merge, push, or close the issue until the
-   maintainer approves via that prompt.
-7. **On approval, land it:** merge the worktree branch into `main` with `--no-ff`, then
+   finding** before proceeding. Re-verify after fixing. Format the changed files (`npm run format`,
+   or `npx prettier --write <files>`) so the pre-commit hook doesn't bounce the commit, then commit
+   inside the worktree once clean.
+6. **Land it — by default, don't pause for approval.** The maintainer (@BootBlock) has standing
+   authorization to land issue fixes: once the change is implemented, verified and review-clean,
+   **merge, push and go on to close it** without a separate go-ahead. Only **pause to ask** when
+   there is a genuine, specific question about *this* change — a real design or scope fork, a
+   destructive or ambiguous choice, or something that can't be completed cleanly (see the note at
+   the end of this list). A bare "shall I land it?" is **not** such a question: if the only choice
+   on offer is Land / Hold / Drop, just **land it**. When you *do* need to ask, use
+   `AskUserQuestion` for that specific decision — not as an approval gate — though a concise summary
+   of what changed is always welcome alongside the landing.
+7. **Landing mechanics:** merge the worktree branch into `main` with `--no-ff`, then
    `git push origin main` so the issue's referenced commits actually exist on GitHub. Clean up the
    worktree (remove the `node_modules` junction *before* `git worktree remove` — see
    `feedback-worktree-junction-cleanup`); leave other agents' worktrees alone.
@@ -255,6 +261,12 @@ rule applied to issue handling.
    was done and *why* in plain user-facing terms. **Before posting, self-audit the drafted comment
    against these rules — the comment is world-readable and permanent:**
 
+   - **Match your voice to who filed it — check the issue's author.** When the author is
+     **@BootBlock**, that's the project's developer and maintainer, not an end user: write
+     peer-to-peer. Don't thank them "for the report" and don't explain the feature back to them as
+     if introducing it — state plainly what changed and why. For an issue filed by anyone else, a
+     brief, neutral acknowledgement is fine. (The attribution trailer below stays regardless of who
+     filed it.)
    - **No personally identifiable information about anyone — third parties *or* the maintainer.**
      Never include a real private email address, a real name tied to a private account, phone
      numbers, internal hostnames or IP addresses, or any third party's data. Use the GitHub
