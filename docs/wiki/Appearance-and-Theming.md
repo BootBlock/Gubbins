@@ -36,6 +36,14 @@ light and dark mode.
 > Pure black and High contrast stack with any accent colour, so you can have, say, a
 > high-contrast dark theme with a teal accent.
 
+## Full width
+
+By default every screen sits in a centred column with margins either side, which keeps lines
+comfortable to read on a typical display. Turn **Full width** on and each screen stretches to
+fill the whole window instead — handy on a wide monitor, where you get more items across, wider
+tables and roomier detail views. It's **off** by default; switch it back any time for the
+calmer centred layout.
+
 ## Motion & decorative flair
 
 Gubbins has some gentle visual polish that you can dial up or down:

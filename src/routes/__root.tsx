@@ -6,6 +6,8 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
 import { FirstRunModules } from '@/features/modules/FirstRunModules';
 import { SettingsDialogHost } from '@/features/settings/SettingsDialogHost';
+import { cn } from '@/lib/utils';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /**
  * Root route layout (spec §2.4.2). Hosts the always-visible app chrome — the
@@ -26,6 +28,11 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
+  // Keep the storage-banner stack aligned with the page frame's width: it normally shares the
+  // `max-w-6xl` cap so the banners line up with the content beneath, and follows the same
+  // Full-width opt-out (issue #14) so they widen together rather than the banners staying in a
+  // narrow centred column while the page fills the viewport.
+  const fullWidth = usePreferencesStore((s) => s.fullWidth);
   // `isolate` makes this element the stacking context the fixed background-effects canvas belongs
   // to, so its `-z-10` paints *above* this element's opaque `bg-background` (a stacking context
   // paints negative-z-index children after its own background) yet still below all content. Without
@@ -36,7 +43,12 @@ function RootLayout() {
       {/* Decorative animated weather layer, behind all content (opt-in; renders nothing when off). */}
       <BackgroundEffects />
       <SkipLink />
-      <div className="print-hide mx-auto w-full max-w-6xl px-4 pt-4 empty:hidden">
+      <div
+        className={cn(
+          'print-hide mx-auto w-full px-4 pt-4 empty:hidden',
+          fullWidth ? 'max-w-none' : 'max-w-6xl',
+        )}
+      >
         <StorageBanners />
       </div>
       <Outlet />

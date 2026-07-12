@@ -262,6 +262,27 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             />
           </SettingRow>
           <SettingRow
+            label="Full width"
+            description="Let each screen fill the whole window width instead of a centred column."
+            hint={
+              'Drops the fixed **centred column** every screen normally sits in, so the content ' +
+              'stretches to fill the full width of the window.\n\n' +
+              'Handy on a **wide monitor**, where the default leaves generous margins either side — ' +
+              'turn this on to use that space for more items across, wider tables and roomier ' +
+              'detail views. Leave it **off** for the calmer, easier-to-read centred layout on ' +
+              'typical displays.'
+            }
+          >
+            <Select
+              aria-label="Full width"
+              data-testid="setting-full-width"
+              className="h-9 w-40"
+              value={prefs.fullWidth ? 'on' : 'off'}
+              onChange={(value) => prefs.setFullWidth(value === 'on')}
+              options={OFF_ON_OPTIONS}
+            />
+          </SettingRow>
+          <SettingRow
             label="Animation"
             description="How visually animated the interface is."
             hint={ANIMATION_LEVEL_HINT}
