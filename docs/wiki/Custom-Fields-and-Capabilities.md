@@ -23,6 +23,13 @@ field:material=steel
 > Because custom fields hang off a **category**, setting a category up once gives every item in
 > it the right fields automatically — no need to re-add them item by item.
 
+### Starting from a preset
+
+Rather than adding fields one at a time, the category manager's **Add from a preset** picker
+creates a ready-made category with a curated set of custom fields already attached — covering
+common cases like `Battery`, `Cable`, `Electronic component`, `Fastener` and `3D Filament`. Pick
+one, then rename, extend or trim its fields to match your own inventory.
+
 ## Capabilities
 
 A **capability** is a *weighted* attribute — a property an item **has**, optionally with a
