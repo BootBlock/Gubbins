@@ -227,11 +227,20 @@ export function useItemTestRecords(itemId: string | undefined) {
   });
 }
 
-/** Paginated, virtualisation-ready item list. */
-export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEFAULT_PAGE_SIZE) {
+/**
+ * Paginated, virtualisation-ready item list. `enabled` gates the query off (default on) so the
+ * inventory screen can suspend it while the list is shown in discrete-pagination mode (issue #20)
+ * — the {@link useItemPage} read drives the list then, and running both would be wasted work.
+ */
+export function useInventoryItems(
+  filters: ItemQueryFilters = {},
+  pageSize = DEFAULT_PAGE_SIZE,
+  enabled = true,
+) {
   return useInfiniteQuery({
     queryKey: inventoryKeys.itemList(filters),
     initialPageParam: 0,
+    enabled,
     queryFn: ({ pageParam }) => getItemRepository().list({ ...filters, limit: pageSize, offset: pageParam }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     // Bound the resident window so a deep scroll never retains every page's
@@ -246,6 +255,23 @@ export function useInventoryItems(filters: ItemQueryFilters = {}, pageSize = DEF
     // spinner and back. React reconciles the old→new rows by item id, so only genuinely
     // added/removed items animate in/out — no full-list flash. First load (no prior data)
     // still shows the spinner.
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * A single page of the item list (issue #20) — the discrete-pagination counterpart to the
+ * infinite-scroll {@link useInventoryItems}. Fetches exactly page `page` (1-based) at `pageSize`
+ * via one `LIMIT/OFFSET` read; the total that sizes the page count comes from the existing
+ * {@link useItemCount}. `keepPreviousData` holds the current page on screen while the next loads,
+ * so stepping between pages never blinks the list to a spinner. Gated off (`enabled: false`) while
+ * the list is in infinite-scroll mode, so the two read paths never both run.
+ */
+export function useItemPage(filters: ItemQueryFilters, page: number, pageSize: number, enabled = true) {
+  return useQuery({
+    queryKey: [...inventoryKeys.itemList(filters), 'page', page, pageSize],
+    queryFn: () => getItemRepository().list({ ...filters, limit: pageSize, offset: (page - 1) * pageSize }),
+    enabled,
     placeholderData: keepPreviousData,
   });
 }
@@ -271,11 +297,16 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
   });
 }
 
-/** Live count of items matching a filter (for headers / dashboard widgets). */
-export function useItemCount(filters: ItemQueryFilters = {}) {
+/**
+ * Live count of items matching a filter (for headers / dashboard widgets, and the page count in
+ * paginated mode — issue #20). `enabled` gates it off (default on) so a caller that only needs the
+ * count while paginating doesn't run it in infinite-scroll mode.
+ */
+export function useItemCount(filters: ItemQueryFilters = {}, enabled = true) {
   return useQuery({
     queryKey: [...inventoryKeys.itemList(filters), 'count'],
     queryFn: () => getItemRepository().count(filters),
+    enabled,
     // Hold the previous count while a new filter loads (mirrors the list above) so the
     // header/sidebar total doesn't blink to "Loading…" on a filter toggle.
     placeholderData: keepPreviousData,

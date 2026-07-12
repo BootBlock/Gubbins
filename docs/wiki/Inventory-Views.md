@@ -36,6 +36,26 @@ where you can compare rows at a glance.
 **Group by** clusters the list into sections — by location, category, or other axes — so a long
 inventory breaks into meaningful chunks instead of one endless list.
 
+## Pagination
+
+By default a long list loads more items as you scroll (an endless list). If you'd rather step
+through it in fixed **pages**, turn on **Paginate list** — a page control then appears at the foot
+of the list with **Previous / Next**, numbered pages, and an editable **per-page** box where you
+can pick a preset (10, 25, 50, 100) or type your own number.
+
+![The pagination control at the foot of the list](images/inventory-pagination.png)
+
+**Where to find it:** the **More** menu → **Paginate list**, or **Settings → Inventory → Lists**,
+where you can also set the default **Items per page**. The per-page box on the control changes the
+same shared setting, so whatever you pick sticks everywhere.
+
+> **ℹ️ Note**
+> Pagination is an app-wide preference: it applies to the Inventory list, the
+> [[Activity log|Activity-Log]] feed and your [[Contacts|Contacts]] dictionary alike. It only
+> changes how a list is presented — never your data, and never which items match your current
+> [[search|Search-Overview]] and filters. The page control only appears when there's more than one
+> page to show, and it doesn't apply to the grouped view or the location map / value treemap.
+
 ## Favourites filter
 
 Pin the items you reach for most as **favourites** (the gold star on a card) and use the

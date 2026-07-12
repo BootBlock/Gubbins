@@ -13,9 +13,12 @@ import {
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
+  clampPageSize,
   CURRENCY_OPTIONS,
   DEFAULT_CARD_CLICK_ACTION,
+  DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_WINDOW_MONTHS,
+  PAGE_SIZE_BOUNDS,
   EXPIRY_WINDOW_BOUNDS,
   guessBaseCurrency,
   LOW_STOCK_GAUGE_BOUNDS,
@@ -94,6 +97,24 @@ describe('clampLowStockQty', () => {
   it('falls back to the default threshold for non-finite input', () => {
     expect(clampLowStockQty(Number.NaN)).toBe(LOW_STOCK_QTY_THRESHOLD);
     expect(clampLowStockQty(Number.POSITIVE_INFINITY)).toBe(LOW_STOCK_QTY_THRESHOLD);
+  });
+});
+
+describe('clampPageSize', () => {
+  it('passes valid in-range values through, rounding to a whole number', () => {
+    expect(clampPageSize(25)).toBe(25);
+    expect(clampPageSize(49.6)).toBe(50);
+  });
+
+  it('clamps to the configured bounds (never above the repository page ceiling)', () => {
+    expect(clampPageSize(1)).toBe(PAGE_SIZE_BOUNDS.min);
+    expect(clampPageSize(-10)).toBe(PAGE_SIZE_BOUNDS.min);
+    expect(clampPageSize(9999)).toBe(PAGE_SIZE_BOUNDS.max);
+  });
+
+  it('falls back to the default page size for non-finite input', () => {
+    expect(clampPageSize(Number.NaN)).toBe(DEFAULT_ITEMS_PER_PAGE);
+    expect(clampPageSize(Number.POSITIVE_INFINITY)).toBe(DEFAULT_ITEMS_PER_PAGE);
   });
 });
 

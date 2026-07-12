@@ -21,6 +21,23 @@
   "settings.language.description": "Sets the interface language, and how dates and numbers are formatted.",
   "settings.language.hint": "Chooses the language the interface is shown in **and** how dates, times and numbers are formatted — e.g. `31/12/2026` vs `12/31/2026`, and the thousands/decimal separators.\n\nA language without a full translation shows any untranslated text in English. This does not change your currency.",
 
+  "settings.pagination.section": "Lists",
+  "settings.pagination.paginate.label": "Paginate long lists",
+  "settings.pagination.paginate.description": "Split long lists into numbered pages with a page control, instead of one continuously-scrolling list.",
+  "settings.pagination.paginate.hint": "Changes how long lists are shown across Gubbins — the **Inventory** list, the **Activity** feed and your **Contacts**.\n\n- **Off** (the default) — one list that loads more as you scroll.\n- **On** — the list is split into fixed-size **pages**, with a page control at the foot for stepping through them.\n\nEither way, nothing about your data changes — only how the list is presented. Set the page size below.",
+  "settings.pagination.size.label": "Items per page",
+  "settings.pagination.size.description": "How many items each page shows when pagination is on ({min}–{max}).",
+  "settings.pagination.size.hint": "The number of items shown on each page when **Paginate long lists** is on. You can also change it from the page control at the foot of any paginated list — it’s the same shared setting.\n\nRange {min}–{max}.",
+
+  "pagination.nav": "Pagination",
+  "pagination.previous": "Previous page",
+  "pagination.next": "Next page",
+  "pagination.page": "Page {page}",
+  "pagination.pageCurrent": "Page {page}, current page",
+  "pagination.pageOf": "Page {page} of {pages}",
+  "pagination.summary": "{start}–{end} of {total}",
+  "pagination.perPage": "Per page",
+
   "about.title": "About",
   "about.app.title": "About Gubbins",
   "about.app.intro.pre": "Gubbins is a local-first, offline-capable app for tracking",

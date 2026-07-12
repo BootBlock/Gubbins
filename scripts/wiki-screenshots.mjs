@@ -173,6 +173,10 @@ if (!alreadySeeded) {
   await addDiscreteItem('Raspberry Pi 5 (8GB)', 65);
   await addDiscreteItem('Cordless Drill', 45);
   await addGaugeItem('PLA Filament — Galaxy Black');
+  // A few more so a long list spans more than one page for the pagination shot.
+  await addDiscreteItem('Multimeter', 30);
+  await addBulkItem('Heat-shrink Assortment', 200, 0.02);
+  await addDiscreteItem('Label Printer', 55);
   // Data for the people/purchasing/reports screens (all invented — public-repo hygiene).
   await addContact('Alex Rivera');
   await addProject('Workshop LED Sign');
@@ -275,6 +279,26 @@ try {
 } catch (err) {
   failed += 1;
   console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// The pagination control (issue #20) — enable "Paginate list", set a small page size so the
+// seeded items span more than one page, and capture the control at the foot of the list. Toggled
+// back off afterwards so the persisted preference doesn't paginate the later shots (or a re-run).
+try {
+  await gotoInventory();
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Paginate list' }).click();
+  const perPage = page.getByRole('combobox', { name: 'Per page' });
+  await perPage.fill('5');
+  await perPage.blur();
+  await page.waitForTimeout(500);
+  await shot('inventory-pagination', page.getByTestId('inventory-pagination'), { settle: 400 });
+  // Restore infinite scroll so the preference doesn't leak into later captures.
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Paginate list' }).click();
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ inventory-pagination.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // ── Data-dependent screens (need the seed above) ─────────────────────────────
