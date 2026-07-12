@@ -85,6 +85,13 @@ describe('parseHtmlRows', () => {
     const html = '<p>intro</p><table><tr><td>a</td><td>b</td></tr></table>';
     expect(parseHtmlRows(html)?.headerRow).toEqual(['a', 'b']);
   });
+
+  it('fully strips nested/overlapping tags a single-pass regex would leave behind', () => {
+    const html =
+      '<table><tr><th>Name</th><th>Qty</th></tr>' +
+      '<tr><td><scr<script>ipt>alert(1)</td><td>b</td></tr></table>';
+    expect(parseHtmlRows(html)?.dataRows[0]?.[0]).not.toContain('<script');
+  });
 });
 
 describe('parseJsonRows / parseMarkdownRows', () => {

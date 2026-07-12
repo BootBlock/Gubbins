@@ -375,12 +375,26 @@ function decodeHtmlEntities(text: string): string {
   });
 }
 
+/**
+ * Strip all `<...>` tags, re-applying the removal until stable so a nested/overlapping
+ * payload (e.g. `<scr<script>ipt>`) can't leave a tag behind after a single pass.
+ */
+function stripHtmlTags(text: string): string {
+  let result = text;
+  let previous: string;
+  do {
+    previous = result;
+    result = result.replace(/<[^>]*>/g, '');
+  } while (result !== previous);
+  return result;
+}
+
 /** Reduce one HTML cell's inner markup to plain text (strip tags, decode, collapse space). */
 function htmlCellText(inner: string): string {
-  const withoutTags = inner
+  const withoutTags = stripHtmlTags(
     // <br> becomes a space so multi-line cells don't concatenate words.
-    .replace(/<br\s*\/?\s*>/gi, ' ')
-    .replace(/<[^>]*>/g, '');
+    inner.replace(/<br\s*\/?\s*>/gi, ' '),
+  );
   return decodeHtmlEntities(withoutTags).replace(/\s+/g, ' ').trim();
 }
 
