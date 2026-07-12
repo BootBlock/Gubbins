@@ -78,7 +78,14 @@ export function useScanner({
       return;
     }
     navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      // Ask for a higher-resolution frame than the browser's low default (often 480p): more
+      // pixels per bar gives a far better read on a poor camera and lets a barcode be held
+      // closer without going soft (issue #58). `ideal` is best-effort — it never rejects when
+      // the camera can't meet it, so this only ever helps.
+      .getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());

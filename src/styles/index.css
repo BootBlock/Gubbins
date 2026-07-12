@@ -1169,6 +1169,32 @@
 }
 
 /*
+ * Scanner "sweep" line (issue #58). A thin accent-tinted bar that travels top→bottom of the
+ * camera viewfinder reticle, giving the scanner a visible, continuous "I'm actively looking"
+ * heartbeat so a code that hasn't been read yet never reads as a frozen, dead screen. Purely
+ * decorative — the "Scanning…" status text carries the same meaning for anyone who can't see
+ * the motion, and the reduced-motion / "reduce effects" catch-alls clamp it to a static bar.
+ */
+@keyframes gubbins-scanline {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@utility animate-scanline {
+  animation: gubbins-scanline 2.4s ease-in-out infinite;
+}
+
+/*
  * Count-up "landing pop" (spec §3 "Micro-interactions & Delight"). The Foundry
  * `AnimatedNumber` ticker rolls a figure up to its new value, then plays this brief
  * scale bounce as it settles so the eye reads "this just updated" without a jarring

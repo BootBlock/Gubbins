@@ -16,6 +16,16 @@ codes**, and skips frames adaptively to stay smooth.
 Scan a code and Gubbins matches it to an item by its barcode, then lets you act on it — view it,
 adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it.
 
+While the camera is live you'll see a large framing box with a moving sweep line and a
+**Scanning…** indicator, so it's always clear the camera is working and looking for a code. Hold
+the code so it roughly fills the box — closer and larger reads far more reliably than small and
+far away, especially on a lower-quality camera.
+
+> **💡 Tip**
+> If a code won't read, move it nearer so it fills more of the frame, steady your hand for a
+> moment, and make sure it's well lit. You can always type or paste the code into the box at the
+> bottom instead.
+
 > **💡 Tip**
 > Add a product's barcode to its **Details** (there's a **Scan** button right on the field) so
 > future scans jump straight to it. A barcode Gubbins doesn't recognise can also trigger a

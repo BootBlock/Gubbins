@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
+import { Button, Input, LiveRegion } from '@/components/foundry';
 import { FOCUSABLE_SELECTOR, nextTrapIndex } from '@/components/foundry/focus-trap';
 import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
-import { CameraOffIcon, CloseIcon, ScanIcon } from '@/components/icons';
+import { CloseIcon, ScanIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { ScannerEngine } from '../barcode-decoder';
 import { ScanFeedback } from '../feedback';
 import { parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer } from '../scanner-machine';
 import { useScanner } from '../useScanner';
+import { ScannerViewfinder } from './ScannerViewfinder';
 
 /**
  * A focused camera dialog that captures a single **retail barcode** and hands it back
@@ -195,36 +196,15 @@ function BarcodeScanDialogInner({
           playsInline
           data-testid="barcode-scan-video"
         />
-        {state.status === 'STREAM_ACTIVE' ? (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="size-56 rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]" />
-          </div>
-        ) : null}
-
-        {/* Idle guidance: say plainly what the frame is looking for so the scanner never
-            leaves the user guessing. */}
-        {state.status === 'STREAM_ACTIVE' ? (
-          <p
-            className="pointer-events-none absolute inset-x-0 top-[calc(50%+8rem)] px-6 text-center text-sm text-white/85"
-            data-testid="barcode-scan-hint"
-          >
-            Point at the product’s barcode
-          </p>
-        ) : null}
-
-        {state.status === 'ERROR_STATE' ? (
-          <div className="absolute inset-0 grid place-items-center p-6">
-            <Surface className="max-w-sm space-y-3 p-6 text-center text-foreground">
-              <CameraOffIcon className="mx-auto size-8 text-muted-foreground" aria-hidden />
-              <p className="text-sm">{state.error}</p>
-              <Button onClick={() => dispatch({ type: 'OPEN' })}>Try the camera again</Button>
-            </Surface>
-          </div>
-        ) : null}
-
-        {state.status === 'REQUESTING_PERMISSIONS' ? (
-          <p className="absolute text-sm text-white/80">Requesting camera access…</p>
-        ) : null}
+        {/* The framing reticle, live "Scanning…" activity feedback and permission/error states —
+            shared with the full scanner overlay so both stay in step (issue #58). */}
+        <ScannerViewfinder
+          status={state.status}
+          hint="Point at the product’s barcode"
+          hintTestId="barcode-scan-hint"
+          error={state.error}
+          onRetry={() => dispatch({ type: 'OPEN' })}
+        />
       </div>
 
       {/* Manual entry — graceful fallback (§6.6) and always-available aid. */}
