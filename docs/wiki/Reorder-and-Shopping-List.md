@@ -27,6 +27,14 @@ buy now". From there you can turn items into a [[purchase order|Purchase-Orders]
 > The reorder / shopping list is **stock-driven** — it's about replenishing things you already
 > stock. For things you *don't* own yet but want to buy, use the **[[Wishlist]]** tab instead.
 
+## Exporting the list
+
+**Export** (above the list) saves the shopping list as a file — one row per item, grouped by
+supplier — in whichever form suits: **CSV** or **TSV** for a spreadsheet or an order portal, a
+**Markdown** table for notes, or a printable **HTML** page. Your per-supplier quantity tweaks are
+included, so the file matches exactly what you'd order. See [[Export & import|Export-and-Import]]
+for the same formats elsewhere in Gubbins.
+
 ## Related pages
 
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — the thresholds that drive reordering.

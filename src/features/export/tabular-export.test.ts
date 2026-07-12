@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildTabularExport,
   toCsv,
   toDelimited,
   toHtmlTable,
   toMarkdownTable,
   toTsv,
   type TabularColumn,
+  type TabularExportFormat,
 } from './tabular-export';
 
 interface Row {
@@ -102,5 +104,38 @@ describe('toHtmlTable', () => {
     const html = toHtmlTable(columns, rows);
     expect(html).toContain('<title>Export</title>');
     expect(html).not.toContain('class="caption"');
+  });
+});
+
+describe('buildTabularExport', () => {
+  const meta = { title: 'My list', caption: '2 rows' };
+
+  it('returns the right content, MIME type and extension per format', () => {
+    const cases: Record<TabularExportFormat, { mime: string; ext: string }> = {
+      csv: { mime: 'text/csv', ext: 'csv' },
+      tsv: { mime: 'text/tab-separated-values', ext: 'tsv' },
+      markdown: { mime: 'text/markdown', ext: 'md' },
+      html: { mime: 'text/html', ext: 'html' },
+    };
+    for (const [format, expected] of Object.entries(cases) as [
+      TabularExportFormat,
+      { mime: string; ext: string },
+    ][]) {
+      const result = buildTabularExport(format, columns, rows, meta);
+      expect(result.mimeType).toContain(expected.mime);
+      expect(result.extension).toBe(expected.ext);
+      expect(result.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('frames the Markdown document with the title heading and the delimited body matches toCsv', () => {
+    expect(buildTabularExport('markdown', columns, rows, meta).content).toContain('# My list\n\n');
+    expect(buildTabularExport('csv', columns, rows, meta).content).toBe(toCsv(columns, rows));
+  });
+
+  it('passes the title and caption into the HTML document', () => {
+    const html = buildTabularExport('html', columns, rows, meta).content;
+    expect(html).toContain('<title>My list</title>');
+    expect(html).toContain('<p class="caption">2 rows</p>');
   });
 });
