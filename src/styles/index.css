@@ -1799,9 +1799,12 @@
 }
 
 /* Tint the card's own 1px border to its rarity colour — a subtle collectible frame that composes
-   with Surface's shadow/blur (only the border *colour* changes, never the box). */
+   with Surface's shadow/blur (only the border *colour* changes, never the box). The full-width
+   restore keeps this a four-sided frame even though the card's border is otherwise reduced to its
+   left edge (`.gubbins-card-edge`, issue #54) — the collectible frame is a box by design. */
 :root[data-gamify-cards]:not([data-anim-level]) .gubbins-rarity {
   border-color: color-mix(in oklab, var(--rarity) 40%, var(--border));
+  border-width: 1px;
 }
 
 /* High-contrast mode restores the accessibility border (the bold neutral frame that mode relies
@@ -1855,6 +1858,27 @@
     color-mix(in oklab, var(--loc-tint) 5%, transparent) 3px,
     transparent 45%
   );
+}
+
+/*
+ * Item card — border on the left edge only (issue #54). The card's Surface paints a subtle 1px
+ * border on all four sides, but on the card that boxes in — and competes with — the per-location
+ * accent that runs down its left edge (`.gubbins-loc-tint` above). Drop the top/right/bottom
+ * borders so each card carries a single left border and the location colour reads as that edge; the
+ * card stays clearly delineated by its fill and drop-shadow. Applied only to the visual card, not
+ * the dense row or the table.
+ */
+.gubbins-card-edge {
+  border-top-width: 0;
+  border-right-width: 0;
+  border-bottom-width: 0;
+}
+
+/* High contrast keeps the full frame each card leans on to stand apart at maximal, uniform
+   contrast — the accessibility border is restored on all four sides (matching how this mode also
+   restores the neutral rarity frame, above). */
+[data-contrast='high'] .gubbins-card-edge {
+  border-width: 1px;
 }
 
 .loc-tint-rose {

@@ -121,6 +121,13 @@ export const ItemCard = memo(function ItemCard({
         // its tier. Inert (no visuals) unless the gamify toggle is on and the maximal animation
         // level is active — the CSS gates both the frame and the gem badge.
         rarity && 'gubbins-rarity',
+        // Border on the left edge only (issue #54): Surface paints a subtle border on all four
+        // sides, but on the card that competes with — and boxes in — the location accent that runs
+        // down the left edge (the F10 tint spine below). This class drops the top/right/bottom
+        // borders so each card carries a single left border, letting the location colour read as
+        // that edge. It restores the full frame under high contrast (an accessibility affordance)
+        // and for the collector-card rarity frame, so those keep their box — see `styles/index.css`.
+        'gubbins-card-edge',
         // Per-location accent tint (F10): a faint left-edge accent in this card's location swatch
         // so the grid reads location-clustered at a glance. A painted background layer (no border /
         // no pseudo — both taken by F5/F7), static, and undefined for an uncoloured location.
