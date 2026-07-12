@@ -465,7 +465,7 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
 describe('CategoryManagerDialog — the preset picker (importable categories)', () => {
   const openPicker = () => fireEvent.click(screen.getByRole('button', { name: 'Add from a preset…' }));
 
-  it('imports the Tools preset with its defaults and both fields, in order', async () => {
+  it('imports the Tools preset with its defaults and all fields, in order', async () => {
     renderDialog();
     openPicker();
     fireEvent.click(screen.getByRole('button', { name: 'Add Tools preset' }));
@@ -478,14 +478,22 @@ describe('CategoryManagerDialog — the preset picker (importable categories)', 
         defaultWarrantyMonths: 12,
       }),
     );
-    await waitFor(() => expect(h.addFieldAsync).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(h.addFieldAsync).toHaveBeenCalledTimes(4));
     expect(h.addFieldAsync).toHaveBeenNthCalledWith(1, {
       categoryId: 'cat-new',
-      input: { name: 'Serial number', fieldType: 'TEXT', position: 0 },
+      input: { name: 'Manufacturer', fieldType: 'TEXT', position: 0 },
     });
     expect(h.addFieldAsync).toHaveBeenNthCalledWith(2, {
       categoryId: 'cat-new',
-      input: { name: 'Calibration certificate', fieldType: 'URL', position: 1 },
+      input: { name: 'Model number', fieldType: 'TEXT', position: 1 },
+    });
+    expect(h.addFieldAsync).toHaveBeenNthCalledWith(3, {
+      categoryId: 'cat-new',
+      input: { name: 'Serial number', fieldType: 'TEXT', position: 2 },
+    });
+    expect(h.addFieldAsync).toHaveBeenNthCalledWith(4, {
+      categoryId: 'cat-new',
+      input: { name: 'Calibration certificate', fieldType: 'URL', position: 3 },
     });
   });
 

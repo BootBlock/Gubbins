@@ -65,6 +65,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         defaultWarrantyMonths: 12,
       },
       fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Model number', fieldType: 'TEXT' },
         { name: 'Serial number', fieldType: 'TEXT' },
         { name: 'Calibration certificate', fieldType: 'URL' },
       ]),
@@ -115,6 +117,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     seed: {
       category: { name: 'Electronic component' },
       fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
         { name: 'Manufacturer part number', fieldType: 'TEXT' },
         { name: 'Datasheet', fieldType: 'URL' },
         { name: 'Package / footprint', fieldType: 'TEXT' },
@@ -131,8 +134,11 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: { name: 'Book' },
       fields: ordered([
         { name: 'Author', fieldType: 'TEXT' },
+        { name: 'Publisher', fieldType: 'TEXT' },
+        { name: 'Genre', fieldType: 'TEXT' },
         { name: 'ISBN', fieldType: 'TEXT' },
         { name: 'Format', fieldType: 'SELECT', options: ['Hardback', 'Paperback', 'eBook', 'Audiobook'] },
+        { name: 'Read status', fieldType: 'SELECT', options: ['Unread', 'Reading', 'Read'] },
         { name: 'Rating', fieldType: 'RATING' },
       ]),
     },
@@ -164,6 +170,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
           options: ['USB-A', 'USB-C', 'Micro-USB', 'HDMI', 'DisplayPort', 'Ethernet', '3.5mm audio', 'Power'],
         },
         { name: 'Length (m)', fieldType: 'NUMBER' },
+        { name: 'Colour', fieldType: 'TEXT' },
         { name: 'Connector A', fieldType: 'TEXT' },
         { name: 'Connector B', fieldType: 'TEXT' },
       ]),
@@ -177,6 +184,11 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: { name: 'Fastener' },
       fields: ordered([
         { name: 'Type', fieldType: 'SELECT', options: ['Screw', 'Bolt', 'Nut', 'Washer', 'Rivet', 'Anchor'] },
+        {
+          name: 'Drive type',
+          fieldType: 'SELECT',
+          options: ['Phillips', 'Slotted', 'Pozi', 'Hex / Allen', 'Torx', 'Square'],
+        },
         { name: 'Thread size', fieldType: 'TEXT' },
         { name: 'Length (mm)', fieldType: 'NUMBER' },
         {
@@ -194,6 +206,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     seed: {
       category: { name: '3D Filament' },
       fields: ordered([
+        { name: 'Brand', fieldType: 'TEXT' },
         {
           name: 'Material',
           fieldType: 'SELECT',
@@ -275,6 +288,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: { name: 'Model kit' },
       fields: ordered([
         { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Kit number', fieldType: 'TEXT' },
         {
           name: 'Scale',
           fieldType: 'SELECT',
@@ -310,6 +324,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         },
         { name: 'Language', fieldType: 'TEXT' },
         { name: 'Graded', fieldType: 'ON_OFF' },
+        { name: 'Grade', fieldType: 'TEXT' },
       ]),
     },
   },
@@ -321,6 +336,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
       category: { name: 'Vinyl record' },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
+        { name: 'Label', fieldType: 'TEXT' },
         { name: 'Format', fieldType: 'SELECT', options: ['LP', 'EP', 'Single', 'Box set'] },
         { name: 'Speed', fieldType: 'SELECT', options: ['33⅓ RPM', '45 RPM', '78 RPM'] },
         {
