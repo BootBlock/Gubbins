@@ -105,6 +105,7 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
       accent: 'violet',
       oledDark: false,
       highContrast: false,
+      fullWidth: false,
       animationLevel: 'balanced',
       starfieldVariant: 'cosmic',
       backgroundEffect: 'none',
@@ -203,6 +204,18 @@ describe('SettingsDialog — appearance controls apply to the document', () => {
     fireEvent.click(screen.getByTestId('setting-background-effect'));
     fireEvent.click(screen.getByRole('option', { name: 'Snow' }));
     expect(usePreferencesStore.getState().backgroundEffect).toBe('snow');
+  });
+
+  it('full-width control persists the layout choice to the store (issue #14)', () => {
+    // A pure layout concern read by the shared PageContainer frame (not projected onto <html>),
+    // so — like the background effect — the control's job is simply to persist the choice.
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+
+    expect(usePreferencesStore.getState().fullWidth).toBe(false);
+    fireEvent.click(screen.getByTestId('setting-full-width'));
+    fireEvent.click(screen.getByRole('option', { name: 'On' }));
+    expect(usePreferencesStore.getState().fullWidth).toBe(true);
   });
 });
 

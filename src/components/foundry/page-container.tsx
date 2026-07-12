@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 export interface PageContainerProps {
   readonly children: ReactNode;
@@ -29,13 +30,19 @@ export interface PageContainerProps {
  * relaxed to a wider ceiling (and the side gutter widened), so the frame reclaims the room
  * it would otherwise leave as empty margin — see the `large-format:` variant in
  * `styles/index.css` and `lib/env/device.ts`. Standard phones and laptops are untouched.
+ *
+ * When the user turns on **Full width** (Settings → Appearance, issue #14) the centred `max-w`
+ * cap is dropped entirely — including the large-format ceiling — so every screen fills the
+ * viewport width; the horizontal padding is kept so content never touches the edge. Off by
+ * default (the centred column is the shipped look), read straight from the preferences store.
  */
 export function PageContainer({ children, fullHeight, className }: PageContainerProps) {
+  const fullWidth = usePreferencesStore((s) => s.fullWidth);
   return (
     <div
       className={cn(
-        'mx-auto flex w-full max-w-6xl flex-col px-4 pt-6',
-        'large-format:max-w-[90rem] large-format:px-8',
+        'mx-auto flex w-full flex-col px-4 pt-6 large-format:px-8',
+        fullWidth ? 'max-w-none' : 'max-w-6xl large-format:max-w-[90rem]',
         fullHeight ? 'h-dvh pb-6' : 'min-h-dvh gap-6 pb-16',
         className,
       )}

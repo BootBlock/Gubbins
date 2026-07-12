@@ -124,6 +124,14 @@ interface PreferencesStore {
   /** Accessibility high-contrast mode; boosts contrast + borders over the active mode/accent. */
   readonly highContrast: boolean;
   /**
+   * Full-width page layout (issue #14). When on, the shared page frame drops its centred
+   * `max-w` cap so every screen fills the available viewport width instead of sitting in a
+   * fixed-width column. **Off by default** — the centred column is the shipped look. Read
+   * directly from this store by the {@link import('@/components/foundry').PageContainer} frame
+   * (a pure layout concern, so — unlike the mode/accent axes — it is not projected onto `<html>`).
+   */
+  readonly fullWidth: boolean;
+  /**
    * Animation level: how visually animated the interface is, on a single graded scale
    * (`full` → `balanced` → `calm` → `off` → `headache`). **Defaults to `full`** (the shipped
    * experience). Supersedes the earlier binary "Reduce effects" switch; it is projected onto
@@ -377,6 +385,8 @@ interface PreferencesStore {
   setAccent: (accent: Accent) => void;
   setOledDark: (enabled: boolean) => void;
   setHighContrast: (enabled: boolean) => void;
+  /** Turn the full-width page layout on/off (issue #14). */
+  setFullWidth: (enabled: boolean) => void;
   /**
    * Set how visually animated the interface is. Choosing the maximal `headache` preset also brings
    * the ambient Snow background effect on by default (when no effect is chosen yet), as part of its
@@ -467,6 +477,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       accent: 'violet',
       oledDark: false,
       highContrast: false,
+      fullWidth: false,
       animationLevel: DEFAULT_ANIMATION_LEVEL,
       starfieldVariant: DEFAULT_STARFIELD_VARIANT,
       backgroundEffect: DEFAULT_BACKGROUND_EFFECT,
@@ -525,6 +536,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAccent: (accent) => set({ accent: normaliseAccent(accent) }),
       setOledDark: (oledDark) => set({ oledDark }),
       setHighContrast: (highContrast) => set({ highContrast }),
+      setFullWidth: (fullWidth) => set({ fullWidth }),
       // Normalise so a stale/unknown persisted value can never reach the apply seam / gate.
       setAnimationLevel: (level) =>
         set((state) => {
