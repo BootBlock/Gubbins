@@ -350,7 +350,7 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     kind: 'capability',
     label: 'Product & supplier lookup',
     description:
-      'Fill item and supplier details from a barcode or supplier page via the companion browser extension.',
+      'Fill item details from a barcode (online, or via the companion extension) and supplier prices from a supplier page.',
     Icon: ScrapeIcon,
     group: 'capabilities',
   },

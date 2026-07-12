@@ -176,6 +176,57 @@ export function parseScannedItemId(raw: string): string | null {
   return code?.kind === 'item' ? code.id : null;
 }
 
+/** A `scheme://…` URL (http, https, whatsapp, …) — the leading scheme of a full URL. */
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+/** URI schemes a QR code commonly carries that are structured payloads, not barcodes. */
+const NON_PRODUCT_URI_SCHEME_RE = /^(mailto|tel|sms|smsto|geo|wifi|matmsg|bitcoin|upi|otpauth|market):/i;
+/** Structured-QR block formats (contact / calendar / Wi-Fi) that begin with a keyword. */
+const STRUCTURED_QR_BLOCK_RE = /^(BEGIN:V(CARD|EVENT)|MECARD:|WIFI:)/i;
+/** A scheme-less bare domain with a path, e.g. `wa.me/message/…` or `www.example.com/x`. */
+const BARE_DOMAIN_PATH_RE = /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/\S*$/i;
+
+/**
+ * True when a decoded string is a **structured QR payload** — a website link, contact card,
+ * Wi-Fi/geo/tel URI, and the like — rather than a product barcode (issue #59). Retail
+ * packaging increasingly prints a marketing QR beside the barcode; decoding *that* must not be
+ * quietly dropped into the Barcode field. A plain alphanumeric part label (Code 128 / Code 39)
+ * is deliberately **not** flagged, so genuine linear codes still capture verbatim.
+ */
+export function isStructuredQrPayload(raw: string): boolean {
+  const text = raw.trim();
+  if (text.length === 0) return false;
+  if (URL_SCHEME_RE.test(text)) return true; // scheme://… (http, https, whatsapp, …)
+  if (NON_PRODUCT_URI_SCHEME_RE.test(text)) return true; // mailto:, tel:, wifi:, …
+  if (STRUCTURED_QR_BLOCK_RE.test(text)) return true; // vCard / vEvent / MECARD / WIFI
+  if (!/\s/.test(text) && BARE_DOMAIN_PATH_RE.test(text)) return true; // wa.me/… without a scheme
+  return false;
+}
+
+/**
+ * Resolve a decoded scan to an **openable `http(s)` link**, or `null` when it isn't one.
+ * Used by the barcode dialog to offer "open this link" for a marketing QR (issue #59) instead
+ * of capturing its URL as a barcode. Only `http:` / `https:` are returned — a `javascript:`,
+ * `data:`, `tel:` or other scheme is never openable — and a scheme-less bare domain
+ * (`wa.me/…`) is promoted to `https://`. Never throws.
+ */
+export function asOpenableLink(raw: string): string | null {
+  const text = raw.trim();
+  if (text.length === 0) return null;
+  // A full URL is taken as-is; a scheme-less bare domain (`wa.me/…`) is promoted to https; a
+  // whitespace-bearing or non-domain string is not a link at all.
+  let candidate: string | null;
+  if (URL_SCHEME_RE.test(text)) candidate = text;
+  else if (/\s/.test(text) || !BARE_DOMAIN_PATH_RE.test(text)) candidate = null;
+  else candidate = `https://${text}`;
+  if (candidate === null) return null;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A valid lower-cased UUID, or `null`. */
 function validId(value: string | null): string | null {
   return value && isUuid(value) ? value.toLowerCase() : null;

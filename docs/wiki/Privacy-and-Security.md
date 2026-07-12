@@ -23,6 +23,7 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | **[[Export & import|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
 | **[[Bridge|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only + token by default; read-only unless you allow writes |
 | **[[Scraping|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
+| **[[Product lookup|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |
 | **[[Camera scanning|Camera-Scanning]]** / **[[OCR|Receipt-and-Label-OCR]]** | Read codes / text | On-device only; no image leaves your device |
 
 ## Good habits

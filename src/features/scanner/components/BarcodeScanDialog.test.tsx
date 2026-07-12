@@ -54,6 +54,28 @@ describe('BarcodeScanDialog', () => {
     expect(screen.getByTestId('barcode-scan-notice')).toHaveTextContent(/Gubbins label/i);
   });
 
+  it('offers to open a scanned website link instead of capturing its URL (issue #59)', () => {
+    const onCapture = vi.fn();
+    render(<BarcodeScanDialog open onClose={vi.fn()} onCapture={onCapture} />);
+
+    // A marketing QR on the packaging decodes to a link — never a barcode.
+    enter('https://wa.me/message/ABCDEFGHIJ?src=qr');
+
+    // The URL is not dropped into the Barcode field; instead the user is offered to open it.
+    expect(onCapture).not.toHaveBeenCalled();
+    const prompt = screen.getByTestId('barcode-scan-link-prompt');
+    expect(prompt).toBeInTheDocument();
+    expect(screen.getByTestId('barcode-scan-link-url')).toHaveTextContent(
+      'https://wa.me/message/ABCDEFGHIJ?src=qr',
+    );
+    expect(screen.getByTestId('barcode-scan-link-open')).toBeInTheDocument();
+
+    // Dismissing clears the prompt and captures nothing.
+    fireEvent.click(screen.getByTestId('barcode-scan-link-dismiss'));
+    expect(screen.queryByTestId('barcode-scan-link-prompt')).toBeNull();
+    expect(onCapture).not.toHaveBeenCalled();
+  });
+
   it('renders nothing when closed', () => {
     render(<BarcodeScanDialog open={false} onClose={vi.fn()} onCapture={vi.fn()} />);
     expect(screen.queryByTestId('barcode-scan-dialog')).toBeNull();

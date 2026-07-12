@@ -10,16 +10,18 @@ scanning** capability is enabled ([[Modular UI|Modular-UI]]).
 
 Gubbins reads codes using your browser's built-in barcode detector where available, and falls
 back to an off-thread software decoder (WASM) where it isn't — so scanning works across a wide
-range of devices, including older ones. It handles common **barcode symbologies** and **QR
-codes**, and skips frames adaptively to stay smooth.
+range of devices, including older ones. It reads **QR codes** and the full family of common
+retail barcodes — EAN‑13, EAN‑8, UPC‑A, UPC‑E — plus Code 128 and Code 39 part labels, and skips
+frames adaptively to stay smooth.
 
 Scan a code and Gubbins matches it to an item by its barcode, then lets you act on it — view it,
 adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it.
 
 While the camera is live you'll see a large framing box with a moving sweep line and a
-**Scanning…** indicator, so it's always clear the camera is working and looking for a code. Hold
-the code so it roughly fills the box — closer and larger reads far more reliably than small and
-far away, especially on a lower-quality camera.
+**Scanning…** indicator, so it's always clear the camera is working and looking for a code.
+Gubbins reads the part of the picture inside your viewfinder, so a barcode that's clearly centred
+in the frame is read on its own terms — you no longer have to fill the whole screen with it. Hold
+the code roughly inside the box; good light and a steady hand still help most.
 
 > **💡 Tip**
 > If a code won't read, move it nearer so it fills more of the frame, steady your hand for a
@@ -30,6 +32,12 @@ far away, especially on a lower-quality camera.
 > Add a product's barcode to its **Details** (there's a **Scan** button right on the field) so
 > future scans jump straight to it. A barcode Gubbins doesn't recognise can also trigger a
 > [[product lookup|Scraping-Supplier-Data]].
+
+> **ℹ️ Note**
+> Some packaging carries a **marketing QR code** (a website link) next to the real barcode. If
+> you scan one into the **Barcode** field, Gubbins spots that it's a link rather than a barcode
+> and offers to **open it** — it's never quietly saved as the item's barcode. Point at the
+> product's own barcode to record that instead.
 
 > **ℹ️ Note**
 > The camera is only used while you're actively scanning, on your device — no image ever leaves

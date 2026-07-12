@@ -34,14 +34,23 @@ const ZXING_FORMAT: Record<Exclude<ScannerSymbology, 'all'>, BarcodeFormat> = {
 };
 
 /**
- * Map a {@link ScannerSymbology} to the zxing `POSSIBLE_FORMATS` hint list: all four for
- * `'all'`, otherwise the single chosen format. Restricting the `MultiFormatReader` to one
- * format is ~4× less per-frame work (it tries every hinted format) — the §6.6 single-format
- * perf win. Pure, so the format selection is unit-testable without a real barcode.
+ * Map a {@link ScannerSymbology} to the zxing `POSSIBLE_FORMATS` hint list: the full default
+ * set (QR + 1-D part labels + the retail GTIN family) for `'all'`, otherwise the single chosen
+ * format. Restricting the `MultiFormatReader` to one format is markedly less per-frame work (it
+ * tries every hinted format) — the §6.6 single-format perf win. Pure, so the format selection is
+ * unit-testable without a real barcode. Kept in step with {@link ALL_NATIVE_FORMATS}.
  */
 export function zxingFormatsFor(symbology: ScannerSymbology): BarcodeFormat[] {
   return symbology === 'all'
-    ? [BarcodeFormat.QR_CODE, BarcodeFormat.CODE_128, BarcodeFormat.EAN_13, BarcodeFormat.CODE_39]
+    ? [
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.CODE_39,
+      ]
     : [ZXING_FORMAT[symbology]];
 }
 

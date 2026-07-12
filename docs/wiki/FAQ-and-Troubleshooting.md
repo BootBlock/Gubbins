@@ -57,6 +57,17 @@ device (limited on iOS). See [[Reminder notifications|Reminder-Notifications]].
 It needs the [[Live camera scanning|Camera-Scanning]] capability enabled and camera permission.
 Printed [[labels|QR-Codes-and-Label-Printing]] work regardless.
 
+**A clear barcode won't scan.**
+Centre it in the framing box — Gubbins reads the part of the picture inside your viewfinder, so it
+needn't fill the whole screen. Good light and a steady hand help; if it still won't read, type or
+paste the number into the box at the bottom. Gubbins reads QR codes and the common retail barcodes
+(EAN‑13/8, UPC‑A/E) plus Code 128/39 part labels. See [[Camera scanning|Camera-Scanning]].
+
+**I scanned a barcode and got a website link.**
+That packaging had a **marketing QR code** (a link) as well as its barcode, and the camera picked
+up the QR. Gubbins won't save a link as a barcode — it offers to open it instead. Aim at the
+product's own barcode (the striped one) to record that.
+
 **After an update, Gubbins asks me to reset or purge my data. Why?**
 Gubbins is still in early, rapid development (before version **1.0**). As new features land, the
 shape of the local database changes — and while it's this young, those changes aren't migrated

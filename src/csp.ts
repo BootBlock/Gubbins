@@ -30,9 +30,11 @@ export const CSP_DIRECTIVES: ReadonlyArray<readonly [name: string, value: string
   ['font-src', "'self' data:"],
   ['worker-src', "'self' blob:"],
   // 'self' covers the local app + same-origin time source; the Google APIs origin is the
-  // Drive REST endpoint for the optional cloud-sync provider. The OAuth consent step is a
-  // top-level navigation, not a fetch, so it needs no allowance here.
-  ['connect-src', "'self' https://www.googleapis.com"],
+  // Drive REST endpoint for the optional cloud-sync provider. The Open Food Facts origin is the
+  // open, key-less product database an opt-in barcode lookup queries directly when the companion
+  // extension isn't present (issue #59) — reached only after the user consents, never on load.
+  // The OAuth consent step is a top-level navigation, not a fetch, so it needs no allowance here.
+  ['connect-src', "'self' https://www.googleapis.com https://world.openfoodfacts.org"],
   ['manifest-src', "'self'"],
   ['object-src', "'none'"],
   ['base-uri', "'self'"],

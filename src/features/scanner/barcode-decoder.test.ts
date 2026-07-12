@@ -105,7 +105,7 @@ describe('createDecoder — tiered engine selection (spec §6.6)', () => {
     expect(await decoder.detect(fakeVideo())).toEqual(['NATIVE-CODE']);
   });
 
-  it('hints all four symbologies to the native detector by default (§6.6)', async () => {
+  it('hints the full default symbology set to the native detector (§6.6, issue #59)', async () => {
     let formats: readonly string[] | undefined;
     g.BarcodeDetector = class {
       constructor(opts?: { formats?: readonly string[] }) {
@@ -114,7 +114,8 @@ describe('createDecoder — tiered engine selection (spec §6.6)', () => {
       detect = vi.fn().mockResolvedValue([]);
     };
     await createDecoder();
-    expect(formats).toEqual(['qr_code', 'code_128', 'ean_13', 'code_39']);
+    // QR + 1-D part labels + the whole retail GTIN family (EAN-13/EAN-8/UPC-A/UPC-E).
+    expect(formats).toEqual(['qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39']);
   });
 
   it('narrows the native detector to a single symbology when requested (§6.6 single-format)', async () => {

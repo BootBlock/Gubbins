@@ -15,6 +15,17 @@ is covered on the [[Reminder notifications|Reminder-Notifications]] page.
 You can also set how in-app confirmations behave — for example, whether an action shows a **toast**
 or stays **silent**.
 
+## Online product lookup
+
+**Online product lookup** controls whether a barcode [[product lookup|Scraping-Supplier-Data]] may
+reach the internet **directly** — querying the open Open Food Facts database — when the
+[[companion extension|Companion-Extension-Setup]] isn't installed.
+
+It's **off** until you allow it (you're asked once, the first time you look a barcode up). When on,
+a lookup sends **only the barcode number** to `openfoodfacts.org`, and only when you tap **Look
+up** — never automatically. Turn it off to keep every lookup offline; you can still fill product
+details in by hand.
+
 ## Attachments & files
 
 This is also where you decide what kind of **[[attachments|Tags-Attachments-and-Related-Items]]**

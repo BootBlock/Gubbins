@@ -972,6 +972,29 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
                 ]}
               />
             </SettingRow>
+            <SettingRow
+              label="Online product lookup"
+              description="Allow a barcode lookup to query the open Open Food Facts database over the internet when the companion extension isn’t installed."
+              hint={
+                'When you add an item, Gubbins can fill its **name and brand** from a scanned **barcode**. ' +
+                'If the companion browser extension is installed it fetches that for you; otherwise the app ' +
+                'can query the open, free **Open Food Facts** database (`openfoodfacts.org`) **directly**.\n\n' +
+                'That direct lookup sends **only the barcode number** over the internet, and only when you ' +
+                'tap “Look up” — never automatically. Turn this **off** to keep every lookup offline (you ' +
+                'can still fill details in by hand). You’ll be asked once before the first online lookup; ' +
+                'this setting is that choice, changeable any time.'
+              }
+              stack
+            >
+              <Select
+                aria-label="Online product lookup"
+                data-testid="setting-online-product-lookup"
+                className="h-9 w-40"
+                value={prefs.allowOnlineProductLookup ? 'on' : 'off'}
+                onChange={(value) => prefs.setAllowOnlineProductLookup(value === 'on')}
+                options={ON_OFF_OPTIONS}
+              />
+            </SettingRow>
           </SettingsSection>
 
           <SettingsSection icon={<DatasheetIcon />} title="Attachments &amp; datasheets">
