@@ -195,12 +195,10 @@ export function useBoardPointerDrag(opts: {
     }
     document.body.style.userSelect = 'none';
     document.body.classList.add(DRAGGING_CLASS);
-    if (s.pointerType === 'touch') {
-      window.addEventListener('touchmove', (e) => e.preventDefault(), {
-        passive: false,
-        signal: s.listeners.signal,
-      });
-    }
+    // The scroll-suppressing `touchmove` listener is bound up-front in `beginDrag`, not here — a
+    // non-passive `touchmove` added only once the drag arms is bound too late for a real touch
+    // engine to honour, and the finger scrolls the board instead of dragging (mirrors #56 in
+    // `item-drag.tsx`).
     setDraggingId(s.id);
     setPreviewLabel(s.label);
     positionPreview(s.lastX, s.lastY);
@@ -263,6 +261,13 @@ export function useBoardPointerDrag(opts: {
         if (!st || e.pointerId !== st.pointerId) return;
         endGesture();
       };
+      // Suppress the browser's native touch-scroll only once the drag has armed, so the finger
+      // drags the tile instead of scrolling the board. Bound at pointer-down (touchstart) so the
+      // gesture's `touchmove` stays cancelable; a listener added later — when the long press fires
+      // — is honoured on desktop but not on real touch engines (mirrors #56 in `item-drag.tsx`).
+      const suppressTouchScroll = (e: TouchEvent) => {
+        if (stateRef.current?.active) e.preventDefault();
+      };
 
       window.addEventListener('pointermove', onMove, { signal });
       window.addEventListener('pointerup', onUp, { signal });
@@ -270,6 +275,7 @@ export function useBoardPointerDrag(opts: {
       // Touch can't tell drag from scroll up front, so it arms on a stationary long press;
       // mouse/pen arm on the first few pixels of movement (preserving plain clicks).
       if (event.pointerType === 'touch') {
+        window.addEventListener('touchmove', suppressTouchScroll, { passive: false, signal });
         state.longPressTimer = window.setTimeout(activateDrag, TOUCH_LONG_PRESS_MS);
       }
     },
