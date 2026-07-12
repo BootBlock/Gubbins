@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
 import {
   AddIcon,
-  CameraOffIcon,
   CheckoutIcon,
   CloseIcon,
   DiscreteIcon,
@@ -32,6 +31,7 @@ import { parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
 import { useScanner } from '../useScanner';
+import { ScannerViewfinder } from './ScannerViewfinder';
 
 /**
  * The mobile scanner overlay (spec §6). A full-screen camera viewfinder governed by
@@ -364,37 +364,17 @@ function ScannerOverlayInner({
           playsInline
           data-testid="scanner-video"
         />
-        {state.status === 'STREAM_ACTIVE' ? (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center">
-            <div className="size-56 rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]" />
-          </div>
-        ) : null}
-
-        {/* Idle guidance: while the camera is live and nothing has been scanned, say plainly
-            what the frame is looking for — a Gubbins label or a shop barcode — so the scanner
-            never leaves the user guessing. The header's "?" opens the fuller explainer. */}
-        {state.status === 'STREAM_ACTIVE' ? (
-          <p
-            className="pointer-events-none absolute inset-x-0 top-[calc(50%+8rem)] px-6 text-center text-sm text-white/85"
-            data-testid="scanner-idle-hint"
-          >
-            Point at a Gubbins QR label or a product barcode
-          </p>
-        ) : null}
-
-        {state.status === 'ERROR_STATE' ? (
-          <div className="absolute inset-0 grid place-items-center p-6">
-            <Surface className="max-w-sm space-y-3 p-6 text-center text-foreground">
-              <CameraOffIcon className="mx-auto size-8 text-muted-foreground" />
-              <p className="text-sm">{state.error}</p>
-              <Button onClick={() => dispatch({ type: 'OPEN' })}>Try the camera again</Button>
-            </Surface>
-          </div>
-        ) : null}
-
-        {state.status === 'REQUESTING_PERMISSIONS' ? (
-          <p className="absolute text-sm text-white/80">Requesting camera access…</p>
-        ) : null}
+        {/* The framing reticle, live "Scanning…" activity feedback and permission/error states —
+            shared with the Add/Edit-item barcode dialog so both stay in step (issue #58). The
+            idle guidance says plainly what the frame is looking for; the header's "?" opens the
+            fuller explainer. */}
+        <ScannerViewfinder
+          status={state.status}
+          hint="Point at a Gubbins QR label or a product barcode"
+          hintTestId="scanner-idle-hint"
+          error={state.error}
+          onRetry={() => dispatch({ type: 'OPEN' })}
+        />
 
         {/* Discrete result card — act on one scanned item without leaving the scanner. */}
         {scanned ? (
