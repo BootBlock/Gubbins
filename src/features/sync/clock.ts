@@ -23,3 +23,41 @@ export function computeClockOffset(serverNow: number | null, localNow: number): 
 export function applyOffset(localTimestamp: number, offset: number): number {
   return localTimestamp + offset;
 }
+
+export interface OffsetMeasurement {
+  /** Offset to add to local timestamps to reach server time (0 when no server clock). */
+  readonly offset: number;
+  /** The server time that was read, or null when the source has no clock. */
+  readonly serverNow: number | null;
+  /** The freshest local reading (taken *after* the request), for use as "now". */
+  readonly localNow: number;
+}
+
+/**
+ * Measure the local→server clock offset with NTP-style midpoint compensation.
+ *
+ * A server timestamp is stamped roughly halfway through the request/response round-trip, so
+ * comparing it against a local reading taken *before* the request (as the engine used to) charges
+ * the entire round-trip latency to the offset — a 200 ms link reads as 200 ms of clock skew even
+ * when the clocks agree perfectly, which then mis-resolves Last-Write-Wins on that scale. Sampling
+ * the local clock either side of `readServerTime` and comparing the server stamp against the
+ * *midpoint* of those two readings cancels the symmetric part of the latency, leaving the genuine
+ * skew. This is the standard NTP estimator (assuming roughly symmetric outbound/return delay).
+ *
+ * Pure but for the injected `now` and `readServerTime`, so it is fully unit-testable.
+ */
+export async function measureClockOffset(
+  now: () => number,
+  readServerTime: () => Promise<number | null>,
+): Promise<OffsetMeasurement> {
+  const before = now();
+  const serverNow = await readServerTime();
+  const after = now();
+  // Round so the midpoint stays an integer epoch-ms like every other timestamp in the system.
+  const localMidpoint = Math.round((before + after) / 2);
+  return {
+    offset: computeClockOffset(serverNow, localMidpoint),
+    serverNow,
+    localNow: after,
+  };
+}

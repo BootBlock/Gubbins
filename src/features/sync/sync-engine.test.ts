@@ -47,6 +47,12 @@ async function makeDevice(): Promise<{
 
 const NO_QUOTA = { skipQuotaCheck: true } as const;
 
+/** Read a row's raw stored `updated_at` (the LWW column isn't on the mapped item type). */
+async function itemUpdatedAt(driver: MemoryDriver, id: string): Promise<number> {
+  const rows = await driver.query<{ updated_at: number }>('SELECT updated_at FROM items WHERE id = ?;', [id]);
+  return Number(rows[0]?.updated_at);
+}
+
 describe('runSync round-trip (§7.3)', () => {
   let a: Awaited<ReturnType<typeof makeDevice>>;
   let b: Awaited<ReturnType<typeof makeDevice>>;
@@ -572,6 +578,131 @@ describe('§7.3 NTP fallback time source (Phase 14)', () => {
     });
     expect(outcome.clockOffset).toBe(0);
     await driver.close();
+  });
+});
+
+describe('monotonic updated_at keeps an edit newer than the row it derived from (§7.3 LWW)', () => {
+  let a: Awaited<ReturnType<typeof makeDevice>>;
+  let b: Awaited<ReturnType<typeof makeDevice>>;
+  let provider: MemoryCloudProvider;
+
+  beforeEach(async () => {
+    a = await makeDevice();
+    b = await makeDevice();
+    provider = new MemoryCloudProvider();
+  });
+
+  afterEach(async () => {
+    await a.driver.close();
+    await b.driver.close();
+  });
+
+  it('bumps an edit strictly past the row even when the wall clock cannot advance it', async () => {
+    // The real defect: the wall clock is too coarse (~15.6ms on Windows) to distinguish an edit
+    // from the write it followed, so both share a millisecond and LWW — which breaks ties for the
+    // remote — silently discards the edit. Forcing the row's stamp into the future makes `now`
+    // provably unable to advance it, so this exercises the `MAX(now, OLD.updated_at + 1)` branch
+    // deterministically rather than racing the clock.
+    const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
+    const future = Date.now() + 1_000_000_000;
+    await a.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
+
+    await a.items.update(item.id, { name: 'ESP32-REV' });
+
+    expect(await itemUpdatedAt(a.driver, item.id)).toBe(future + 1);
+  });
+
+  it('a same-tick edit survives its own device’s sync and reaches the peer', async () => {
+    const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    // Pin B's pulled copy to a fixed stamp, then edit it: the edit must land strictly later than
+    // that stamp (via the monotonic trigger), regardless of what B's wall clock reads right now.
+    const pinned = Date.now() + 1_000_000_000;
+    await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [pinned, item.id]);
+    await b.items.update(item.id, { name: 'ESP32-REV-B' });
+    expect(await itemUpdatedAt(b.driver, item.id)).toBeGreaterThan(pinned);
+
+    // B pushes its edit; A pulls. A's own row is older, so A must adopt B's value — the exact
+    // round-trip that used to silently drop B's edit on a coarse clock.
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+    expect((await a.items.getById(item.id))?.name).toBe('ESP32-REV-B');
+  });
+});
+
+describe('server-time normalisation keeps LWW correct across skewed clocks (§7.3.1)', () => {
+  let a: Awaited<ReturnType<typeof makeDevice>>;
+  let b: Awaited<ReturnType<typeof makeDevice>>;
+
+  beforeEach(async () => {
+    a = await makeDevice();
+    b = await makeDevice();
+  });
+
+  afterEach(async () => {
+    await a.driver.close();
+    await b.driver.close();
+  });
+
+  const wireUpdatedAt = (provider: MemoryCloudProvider, id: string): number =>
+    Number(provider.peek()?.tables.items?.find((r) => r.id === id)?.updated_at);
+
+  const SERVER = 5_000_000_000_000;
+
+  it('pushes timestamps in server time, not the device’s own clock', async () => {
+    // A device with a slow clock must not stamp the wire with its slow local time — otherwise a
+    // peer picks the wrong LWW winner by the whole clock skew.
+    const LOCAL = 1_000_000_000_000; // 4000s behind the server
+    const provider = new MemoryCloudProvider({ clock: () => SERVER });
+    const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
+    const local = await itemUpdatedAt(a.driver, item.id);
+
+    await runSync(a.driver, provider, { ...NO_QUOTA, now: () => LOCAL });
+
+    // The row on the wire is the local stamp shifted by the measured offset (SERVER − LOCAL).
+    expect(wireUpdatedAt(provider, item.id)).toBe(local + (SERVER - LOCAL));
+  });
+
+  it('stores a pulled row back in the local frame, so the device’s own edits stay comparable', async () => {
+    const provider = new MemoryCloudProvider({ clock: () => SERVER });
+    const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
+    await runSync(a.driver, provider, { ...NO_QUOTA, now: () => SERVER }); // A at offset 0 → wire = server frame
+    const wire = wireUpdatedAt(provider, item.id);
+
+    // B's clock runs 1000ms slow (offset +1000). Its stored copy must be the wire value pulled
+    // back into B's frame, not the raw server stamp.
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => SERVER - 1000 });
+    expect(await itemUpdatedAt(b.driver, item.id)).toBe(wire - 1000);
+  });
+
+  it('the edit that is later in server time wins even when its device’s clock reads earlier', async () => {
+    // The exact failure normalisation fixes. B edits at server-time BASE+1000 on a fast clock
+    // (local BASE+3000); A edits later, at server-time BASE+2000, on a slow clock (local BASE+500).
+    // A must win. Comparing the raw local stamps (A BASE+500 vs B BASE+3000) would wrongly keep B —
+    // the pre-normalisation bug. BASE sits past the wall-clock stamp the initial publish leaves, so
+    // these forced edits are unambiguously the newer writes.
+    const BASE = 2_000_000_000_000;
+    let server = SERVER;
+    const provider = new MemoryCloudProvider({ clock: () => server });
+    const item = await a.items.create({ name: 'orig', locationId: UNASSIGNED_LOCATION_ID });
+    await runSync(a.driver, provider, { ...NO_QUOTA, now: () => SERVER }); // publish, offset 0
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => SERVER }); // B pulls, offset 0
+
+    // B's edit: local BASE+3000, pushed at offset −2000 → server-time BASE+1000.
+    await b.items.update(item.id, { name: 'B-earlier' });
+    await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [BASE + 3000, item.id]);
+    server = BASE + 1000;
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => BASE + 3000 });
+
+    // A's edit: local BASE+500, synced at offset +1500 → server-time BASE+2000 (later → A wins).
+    await a.items.update(item.id, { name: 'A-later-wins' });
+    await a.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [BASE + 500, item.id]);
+    server = BASE + 2000;
+    await runSync(a.driver, provider, { ...NO_QUOTA, now: () => BASE + 500 });
+
+    expect((await a.items.getById(item.id))?.name).toBe('A-later-wins');
   });
 });
 
