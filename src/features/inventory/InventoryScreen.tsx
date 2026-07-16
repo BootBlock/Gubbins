@@ -21,7 +21,9 @@ import {
   DataDensityIcon,
   DuplicateTabIcon,
   EditIcon,
+  ExitFullscreenIcon,
   ExportIcon,
+  FullscreenIcon,
   GroupByIcon,
   ImportIcon,
   InfoIcon,
@@ -70,6 +72,7 @@ import {
 } from './queries';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { requestHighlight } from '@/lib/highlight';
+import { useFullscreen } from '@/lib/useFullscreen';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
 import { GROUP_MODES } from './grouping';
@@ -153,6 +156,9 @@ function InventoryWorkspace() {
   // default infinite scroll. The default page size is shared with Settings and editable inline.
   const paginateLists = usePreferencesStore((s) => s.paginateLists);
   const setPaginateLists = usePreferencesStore((s) => s.setPaginateLists);
+  // Browser fullscreen toggle (issue #118) — stretches the app across the whole display for a
+  // distraction-free, data-dense view. `supported` guards browsers without the Fullscreen API.
+  const { supported: fullscreenSupported, isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   const [page, setPage] = useState(1);
@@ -698,6 +704,19 @@ function InventoryWorkspace() {
               >
                 Paginate list
               </MenuAction>
+              {/* Fullscreen (issue #118) — toggles the browser's fullscreen mode so the app fills
+                  the whole display. Only offered where the browser exposes the Fullscreen API. */}
+              {fullscreenSupported ? (
+                <MenuAction
+                  icon={isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+                  onSelect={toggleFullscreen}
+                  selected={isFullscreen}
+                  selectionRole="checkbox"
+                  data-testid="toggle-fullscreen"
+                >
+                  Fullscreen
+                </MenuAction>
+              ) : null}
               <MenuSeparator />
               <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
                 Categories
