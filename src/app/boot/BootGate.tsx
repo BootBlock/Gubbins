@@ -15,7 +15,7 @@ export function BootGate({ children }: { children: ReactNode }) {
     case 'starting':
       return <StartingScreen />;
     case 'unsupported':
-      return <UnsupportedScreen missing={state.missing} />;
+      return <UnsupportedScreen diagnosis={state.diagnosis} />;
     case 'multi-tab':
       return <MultiTabScreen whenReleased={state.whenReleased} />;
     case 'error':

@@ -17,6 +17,27 @@ and works across current mainstream browsers; some advanced features degrade gra
 browser doesn't support them (for example, [[notifications|Reminder-Notifications]] are limited on
 iOS).
 
+> **ℹ️ Note**
+> On your **first visit**, Gubbins may pause on a **“Preparing secure storage…”** screen for a
+> moment while it sets up its private storage. That's normal, happens only once, and the page
+> carries on by itself.
+
+If Gubbins can't start, it says *why* on that screen rather than simply blaming your browser —
+because usually the browser is fine and something else is withholding the storage it needs. The
+common causes, all of which the screen names along with what to try:
+
+- **The address isn't secure.** Gubbins needs `https://`, or a `localhost` address if you're
+  running it yourself. A plain `http://` network address (like `http://192.168.1.10`) won't do.
+- **Something is blocking its scripts** — a content blocker, privacy extension, antivirus, or a
+  workplace or school network.
+- **Site data is blocked** for the site. Gubbins keeps everything on your device, so “block all
+  cookies” and the strictest tracking-protection modes leave it nowhere to store your inventory.
+- **You're in a private or incognito window**, which restricts storage and background helpers.
+
+Only once all of those are ruled out does Gubbins conclude the browser itself is the problem. The
+screen also has a **Technical details** section worth including if you
+[[report a problem|FAQ-and-Troubleshooting]].
+
 ## Install it as an app (recommended)
 
 Gubbins is an **installable PWA**. Use your browser's *Install* option (often an icon in the

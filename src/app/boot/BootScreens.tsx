@@ -1,9 +1,11 @@
 import { useEffect, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { Surface, Button, Spinner } from '@/components/foundry';
-import { CriticalIcon, DuplicateTabIcon } from '@/components/icons';
+import { BlockedIcon, CriticalIcon, DuplicateTabIcon, StorageIcon, WarningIcon } from '@/components/icons';
 import { BrandMark } from '@/components/BrandMark';
 import { RescueActions } from '@/app/error/RescueActions';
+import { useT, type MessageKey } from '@/features/i18n';
+import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 import type { DbError, DbErrorCode } from '@/db/errors';
 
 type Accent = 'brand' | 'warning' | 'danger';
@@ -20,21 +22,29 @@ function BootShell({
   icon,
   title,
   subtitle,
+  testId,
   children,
 }: {
   accent: Accent;
   icon: ReactNode;
   title: string;
   subtitle?: string;
+  /** Stable hook for tests that must assert *which* boot screen is up, independent of its copy. */
+  testId?: string;
   children?: ReactNode;
 }) {
   return (
-    <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-background p-6">
+    <div
+      data-testid={testId}
+      className="relative grid min-h-dvh place-items-center overflow-hidden bg-background p-6"
+    >
       {/* Ambient gradient glow for depth. */}
       <div className="pointer-events-none absolute top-[-30%] left-1/2 size-[55rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
       <Surface className="relative w-full max-w-md p-8">
         <div className="flex flex-col items-center text-center">
+          {/* Decorative: every icon here only restates the heading below it. */}
           <span
+            aria-hidden="true"
             className={cn('grid size-14 place-items-center rounded-2xl [&_svg]:size-7', ACCENT_CLASS[accent])}
           >
             {icon}
@@ -65,28 +75,147 @@ export function StartingScreen() {
   );
 }
 
-export function UnsupportedScreen({ missing }: { missing: readonly string[] }) {
+interface CausePresentation {
+  readonly accent: Accent;
+  readonly icon: ReactNode;
+  readonly title: MessageKey;
+  readonly lede: MessageKey;
+  /** Things the user can actually do, most likely to help first. */
+  readonly steps: readonly MessageKey[];
+  /** Shown instead of {@link steps} where there is nothing to do but wait. */
+  readonly note?: MessageKey;
+}
+
+/**
+ * How each diagnosed cause presents itself (issue #105).
+ *
+ * Only `browser-unsupported` blames the browser and takes the `danger` accent; the rest are
+ * environmental, so they lead with what to change and stay at `warning`. `isolation-pending`
+ * is not a failure at all — it is the normal first visit, waiting on the service worker that
+ * supplies the COOP/COEP headers (§2.2.6) — so it reads as progress, not an error.
+ */
+const CAUSE_PRESENTATION: Record<SupportCause, CausePresentation> = {
+  'insecure-context': {
+    accent: 'warning',
+    icon: <CriticalIcon />,
+    title: 'boot.unsupported.insecure.title',
+    lede: 'boot.unsupported.insecure.lede',
+    steps: ['boot.unsupported.insecure.step1', 'boot.unsupported.insecure.step2'],
+  },
+  'scripts-blocked': {
+    accent: 'warning',
+    icon: <BlockedIcon />,
+    title: 'boot.unsupported.scripts.title',
+    lede: 'boot.unsupported.scripts.lede',
+    steps: [
+      'boot.unsupported.scripts.step1',
+      'boot.unsupported.scripts.step2',
+      'boot.unsupported.scripts.step3',
+    ],
+  },
+  'site-data-blocked': {
+    accent: 'warning',
+    icon: <StorageIcon />,
+    title: 'boot.unsupported.siteData.title',
+    lede: 'boot.unsupported.siteData.lede',
+    steps: [
+      'boot.unsupported.siteData.step1',
+      'boot.unsupported.siteData.step2',
+      'boot.unsupported.siteData.step3',
+    ],
+  },
+  'isolation-pending': {
+    accent: 'brand',
+    icon: <Spinner className="size-7 border-2" decorative />,
+    title: 'boot.unsupported.pending.title',
+    lede: 'boot.unsupported.pending.lede',
+    steps: [],
+    note: 'boot.unsupported.pending.note',
+  },
+  'isolation-blocked': {
+    accent: 'warning',
+    icon: <WarningIcon />,
+    title: 'boot.unsupported.isolation.title',
+    lede: 'boot.unsupported.isolation.lede',
+    steps: [
+      'boot.unsupported.isolation.step1',
+      'boot.unsupported.isolation.step2',
+      'boot.unsupported.isolation.step3',
+    ],
+  },
+  'browser-unsupported': {
+    accent: 'danger',
+    icon: <CriticalIcon />,
+    title: 'boot.unsupported.browser.title',
+    lede: 'boot.unsupported.browser.lede',
+    steps: ['boot.unsupported.browser.step1', 'boot.unsupported.browser.step2'],
+  },
+};
+
+/**
+ * Every reading behind the verdict, as flat `name: value` lines — deliberately untranslated
+ * (they are API identifiers, not prose) and copyable straight into a bug report.
+ */
+function technicalReport(diagnosis: SupportDiagnosis): string {
+  return [
+    `cause: ${diagnosis.cause}`,
+    ...Object.entries(diagnosis.signals).map(([signal, value]) => `${signal}: ${value}`),
+    `missing: ${diagnosis.missing.join(', ')}`,
+  ].join('\n');
+}
+
+/**
+ * Shown when Gubbins cannot claim the storage it needs (§2.2.6, §3).
+ *
+ * The name is historical: this is *not* automatically a "browser not supported" screen. A capable,
+ * up-to-date browser lands here whenever something in the environment withholds those capabilities —
+ * a blocked script, blocked site data, an insecure origin, or (on every first visit) the service
+ * worker still starting up. It leads with the diagnosed cause and what to do about it, and only
+ * blames the browser once {@link diagnoseSupport} has ruled everything else out.
+ */
+export function UnsupportedScreen({ diagnosis }: { diagnosis: SupportDiagnosis }) {
+  const t = useT();
+  const { accent, icon, title, lede, steps, note } = CAUSE_PRESENTATION[diagnosis.cause];
+
   return (
-    <BootShell
-      accent="danger"
-      icon={<CriticalIcon />}
-      title="Browser not supported"
-      subtitle="Gubbins needs modern, cross-origin-isolated storage to keep your data safe."
-    >
-      <div className="rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        <p className="text-muted-foreground">Missing platform capabilities:</p>
-        <ul className="mt-2 space-y-1.5">
-          {missing.map((capability) => (
-            <li key={capability} className="flex items-center gap-2">
-              <span className="size-1.5 shrink-0 rounded-full bg-destructive" />
-              {capability}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Try the latest Chrome, Edge, or Firefox. On iOS, add Gubbins to the Home Screen first.
-      </p>
+    <BootShell accent={accent} icon={icon} title={t(title)} subtitle={t(lede)} testId="boot-unsupported">
+      {steps.length > 0 ? (
+        <div className="rounded-xl border border-border bg-secondary/40 p-4 text-left text-sm">
+          <p className="font-medium">{t('boot.unsupported.whatToTry')}</p>
+          <ul className="mt-2 space-y-2 text-muted-foreground">
+            {steps.map((step) => (
+              <li key={step} className="flex gap-2.5">
+                <span
+                  aria-hidden="true"
+                  className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground"
+                />
+                <span>{t(step)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {note ? <p className="text-center text-sm text-muted-foreground">{t(note)}</p> : null}
+
+      <Button className="mt-4 w-full" onClick={() => location.reload()}>
+        {t('boot.unsupported.reload')}
+      </Button>
+
+      {/* Same disclosure the route-error screen uses for its own "Technical details". */}
+      <details className="mt-4 rounded-lg border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-muted-foreground select-none">
+          {t('boot.unsupported.details')}
+        </summary>
+        <div className="border-t border-border px-3 py-2">
+          <p className="text-xs text-muted-foreground">{t('boot.unsupported.detailsIntro')}</p>
+          {/* `whitespace-pre-wrap`, not a scroller: the `missing:` line is a long joined list, and
+              a user copying this for a bug report should see all of it without scrolling sideways. */}
+          <pre className="mt-2 font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">
+            {technicalReport(diagnosis)}
+          </pre>
+        </div>
+      </details>
     </BootShell>
   );
 }

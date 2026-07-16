@@ -40,6 +40,19 @@ card onto a location.
 
 ## Troubleshooting
 
+**Gubbins says my browser isn't supported — but my browser is up to date.**
+Then it very likely *is* supported, and something else is withholding the storage Gubbins needs.
+Read that screen: it works out the specific cause and says what to try. Usually it's an insecure
+`http://` address, a content blocker or privacy extension stopping one of Gubbins' scripts,
+blocked cookies/site data, or a private/incognito window — none of which mean your browser can't
+run Gubbins. Only when all of those are ruled out does the screen conclude it's the browser. See
+[[Supported browsers|Installing-Gubbins]] for the full list of causes.
+
+**Gubbins is stuck on "Preparing secure storage…".**
+That's the one-time setup Gubbins does on your first visit, and it normally finishes on its own in
+a moment. If it lingers, press **Reload**. If it then reports a different cause, follow the advice
+it gives — see [[Supported browsers|Installing-Gubbins]].
+
 **My data disappeared / the app is empty.**
 The most common cause is the browser clearing its storage for Gubbins. Restore from a
 [[backup|Backup-and-Restore]] or re-[[sync|Cloud-Sync]]. To prevent it, [[install the

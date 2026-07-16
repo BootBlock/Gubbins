@@ -59,8 +59,10 @@ describe('App composition (regression: GitHub Pages first-visit COI deadlock)', 
     render(<App />);
 
     // Confirm we are genuinely stuck on the boot gate's unsupported branch — the exact
-    // state a fresh GitHub Pages visit starts in before isolation is established.
-    expect(await screen.findByText('Browser not supported')).toBeInTheDocument();
+    // state a fresh GitHub Pages visit starts in before isolation is established. Asserted
+    // via the screen's testid, not its copy: which *cause* that screen diagnoses (and so
+    // what it says) depends on the environment, and is support-diagnosis.test.ts's business.
+    expect(await screen.findByTestId('boot-unsupported')).toBeInTheDocument();
 
     // PwaUpdatePrompt — the only thing that registers the service worker — must still
     // have mounted. If this ever fails, PwaUpdatePrompt has been nested back inside

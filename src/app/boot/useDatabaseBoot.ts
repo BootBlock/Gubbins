@@ -12,6 +12,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { checkCriticalSupport } from '@/lib/env/feature-detection';
+import { diagnoseCriticalSupport, type SupportDiagnosis } from '@/lib/env/support-diagnosis';
 import { acquireDatabaseTabLock } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -19,7 +20,7 @@ import { useStorageStore } from '@/state/stores/useStorageStore';
 
 export type BootState =
   | { readonly status: 'starting' }
-  | { readonly status: 'unsupported'; readonly missing: readonly string[] }
+  | { readonly status: 'unsupported'; readonly diagnosis: SupportDiagnosis }
   | { readonly status: 'multi-tab'; readonly whenReleased: Promise<void> }
   | { readonly status: 'ready'; readonly result: DbBootResult }
   | { readonly status: 'error'; readonly error: DbError };
@@ -48,10 +49,14 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     if (isMounted()) setState(next);
   };
 
-  // 1. Critical platform support.
+  // 1. Critical platform support. A failure here is usually *not* the browser's fault (a blocked
+  // script, blocked site data, or the header-injecting worker still starting up on a first visit),
+  // so work out which before the gate accuses it of anything — see support-diagnosis.ts. The probe
+  // can wait on the service worker, so the user stays on <StartingScreen> until it has an answer
+  // rather than seeing a verdict that changes a moment later.
   const support = checkCriticalSupport();
   if (!support.supported) {
-    commit({ status: 'unsupported', missing: support.missing });
+    commit({ status: 'unsupported', diagnosis: await diagnoseCriticalSupport(support.missing) });
     return;
   }
 

@@ -107,6 +107,43 @@
   "about.diagnostics.value.browserTab": "Browser-Tab",
   "about.diagnostics.value.unavailable": "Nicht verfügbar",
 
+  "boot.unsupported.whatToTry": "Das können Sie versuchen",
+  "boot.unsupported.reload": "Neu laden",
+  "boot.unsupported.details": "Technische Details",
+  "boot.unsupported.detailsIntro": "Hilfreich, wenn Sie das Problem melden — hier steht genau, was Gubbins auf diesem Gerät vorgefunden hat.",
+
+  "boot.unsupported.insecure.title": "Gubbins benötigt eine sichere Verbindung",
+  "boot.unsupported.insecure.lede": "Ihr Browser ist mit ziemlicher Sicherheit geeignet. Diese Seite wird nur nicht über eine sichere Verbindung geladen, deshalb verweigert der Browser den privaten Speicher, in dem Gubbins Ihre Daten ablegt.",
+  "boot.unsupported.insecure.step1": "Öffnen Sie Gubbins über „https://“ statt über „http://“.",
+  "boot.unsupported.insecure.step2": "Läuft es auf diesem Computer? Verwenden Sie eine Adresse, die mit „http://localhost“ oder „http://127.0.0.1“ beginnt — diesen vertrauen Browser. Eine Netzwerkadresse wie „http://192.168.1.10“ gilt nicht als sicher; um Gubbins von einem anderen Gerät im Netzwerk zu öffnen, ist daher https nötig.",
+
+  "boot.unsupported.scripts.title": "Etwas blockiert einen Teil von Gubbins",
+  "boot.unsupported.scripts.lede": "Dieser Browser wirkt völlig geeignet, aber eines der Skripte von Gubbins wurde nie ausgeführt — das bedeutet meist, dass etwas auf diesem Gerät es unterbindet, und nicht, dass mit dem Browser etwas nicht stimmt.",
+  "boot.unsupported.scripts.step1": "Erlauben Sie Skripte für diese Website in Ihrem Inhalts- oder Skriptblocker und laden Sie die Seite neu.",
+  "boot.unsupported.scripts.step2": "Um zu prüfen, ob eine Erweiterung dafür verantwortlich ist, öffnen Sie Gubbins in einem Fenster mit deaktivierten Erweiterungen.",
+  "boot.unsupported.scripts.step3": "Auch Antivirensoftware, ein VPN oder ein Firmen- oder Schulnetzwerk können Seiten filtern — das würde jeden Browser auf diesem Gerät betreffen.",
+
+  "boot.unsupported.siteData.title": "Gubbins darf hier nichts speichern",
+  "boot.unsupported.siteData.lede": "Ihr Browser unterstützt Gubbins, aber Websitedaten sind für diese Website blockiert. Gubbins bewahrt Ihr Inventar auf Ihrem eigenen Gerät auf — ohne diesen Speicher gibt es keinen Platz für Ihre Daten.",
+  "boot.unsupported.siteData.step1": "Erlauben Sie Cookies und Websitedaten für diese Website in den Einstellungen Ihres Browsers und laden Sie die Seite neu.",
+  "boot.unsupported.siteData.step2": "Auch „Alle Cookies blockieren“ und die strengsten Tracking-Schutz-Modi schalten den Speicher ab, den Gubbins braucht. Eine Ausnahme für diese Website genügt — keine andere Website ist betroffen.",
+  "boot.unsupported.siteData.step3": "Private Fenster und Inkognito-Fenster schränken den Speicher ebenfalls ein. Versuchen Sie es in einem normalen Fenster.",
+
+  "boot.unsupported.pending.title": "Sicherer Speicher wird vorbereitet…",
+  "boot.unsupported.pending.lede": "Gubbins richtet gerade den privaten Offline-Speicher ein, in dem Ihre Daten liegen. Das geschieht einmalig beim ersten Besuch, und die Seite macht von selbst weiter, sobald alles bereit ist.",
+  "boot.unsupported.pending.note": "Nach ein paar Augenblicken immer noch hier? Ein Neuladen bringt es meist zu Ende.",
+
+  "boot.unsupported.isolation.title": "Gubbins kann die Einrichtung des Speichers nicht abschließen",
+  "boot.unsupported.isolation.lede": "Ihr Browser wirkt geeignet, aber der Hintergrunddienst, der den privaten Speicher von Gubbins freischaltet, konnte nicht starten. Das deutet auf die Einstellungen dieses Browsers oder ein Add-on hin, nicht auf den Browser selbst.",
+  "boot.unsupported.isolation.step1": "Private Fenster und Inkognito-Fenster schalten Hintergrunddienste ab. Versuchen Sie es in einem normalen Fenster.",
+  "boot.unsupported.isolation.step2": "Ein Inhaltsblocker oder eine Datenschutz-Erweiterung könnte ihn blockieren — erlauben Sie diese Website und laden Sie neu.",
+  "boot.unsupported.isolation.step3": "Antivirensoftware, ein VPN oder ein Firmen- oder Schulnetzwerk können Seiten so verändern, dass dies verhindert wird.",
+
+  "boot.unsupported.browser.title": "Browser nicht unterstützt",
+  "boot.unsupported.browser.lede": "Alles andere auf diesem Gerät ist in Ordnung, es sieht also tatsächlich nach dem Browser aus: Ihm fehlt der private, sichere Speicher, den Gubbins braucht, um Ihre Daten zu schützen.",
+  "boot.unsupported.browser.step1": "Versuchen Sie es mit der neuesten Version von Chrome, Edge oder Firefox.",
+  "boot.unsupported.browser.step2": "Fügen Sie Gubbins auf iPhone oder iPad zuerst zum Home-Bildschirm hinzu und öffnen Sie es von dort.",
+
   "notFound.title": "Seite nicht gefunden",
   "notFound.heading": "Diese Seite konnten wir nicht finden",
   "notFound.attempted": "Sie wollten Folgendes öffnen:",
