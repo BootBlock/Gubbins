@@ -821,6 +821,7 @@ function InventoryWorkspace() {
                 <InventoryFacetBar
                   categoryId={categoryId}
                   onCategoryChange={setCategoryId}
+                  locationId={selectedLocationId}
                   tagIds={tagIds}
                   onToggleTag={toggleTag}
                   disabled={astActive}

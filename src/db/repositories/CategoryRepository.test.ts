@@ -5,6 +5,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { CategoryRepository } from './CategoryRepository';
 import { ItemRepository } from './ItemRepository';
+import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 
 describe('CategoryRepository', () => {
@@ -490,5 +491,79 @@ describe('CategoryRepository', () => {
 
   it('returns an empty map (no query) for no item ids', async () => {
     expect((await categories.getItemFieldValues([])).size).toBe(0);
+  });
+});
+
+/**
+ * The Category facet's "in use" set (issue #76): the inventory Category picker offers only
+ * categories that an active item currently uses (optionally within a location scope), so an
+ * emptied category drops out and a re-used one comes back — the declutter that keeps the picker
+ * honest, mirroring the status-chip applicability.
+ */
+describe('ItemRepository.categoriesInUse (issue #76)', () => {
+  let driver: MemoryDriver;
+  let categories: CategoryRepository;
+  let items: ItemRepository;
+  let locations: LocationRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    categories = new CategoryRepository(driver);
+    items = new ItemRepository(driver);
+    locations = new LocationRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('returns only categories used by at least one active item', async () => {
+    const used = await categories.create({ name: 'Batteries' });
+    await categories.create({ name: 'Unused' });
+    await items.create({ name: 'AA cell', categoryId: used.id });
+    await items.create({ name: 'Uncategorised' }); // contributes nothing (NULL category)
+
+    expect(await items.categoriesInUse()).toEqual([used.id]);
+  });
+
+  it('drops a category once its last item leaves, and brings it back on re-use', async () => {
+    const cat = await categories.create({ name: 'Batteries' });
+    const other = await categories.create({ name: 'Widgets' });
+    const item = await items.create({ name: 'AA cell', categoryId: cat.id });
+    expect(await items.categoriesInUse()).toEqual([cat.id]);
+
+    // Move the only item to another category → the old one is no longer in use.
+    await items.update(item.id, { categoryId: other.id });
+    expect(await items.categoriesInUse()).toEqual([other.id]);
+
+    // Clear the category entirely → nothing is in use.
+    await items.update(item.id, { categoryId: null });
+    expect(await items.categoriesInUse()).toEqual([]);
+
+    // Put it back → it reappears.
+    await items.update(item.id, { categoryId: cat.id });
+    expect(await items.categoriesInUse()).toEqual([cat.id]);
+  });
+
+  it('excludes categories whose only items are soft-deleted', async () => {
+    const cat = await categories.create({ name: 'Batteries' });
+    const item = await items.create({ name: 'AA cell', categoryId: cat.id });
+    await items.softDelete(item.id);
+    expect(await items.categoriesInUse()).toEqual([]);
+  });
+
+  it('scopes the in-use set to a location when one is given', async () => {
+    const shed = await locations.create({ name: 'Shed' });
+    const garage = await locations.create({ name: 'Garage' });
+    const shedCat = await categories.create({ name: 'ShedCat' });
+    const garageCat = await categories.create({ name: 'GarageCat' });
+    await items.create({ name: 'Shovel', categoryId: shedCat.id, locationId: shed.id });
+    await items.create({ name: 'Jack', categoryId: garageCat.id, locationId: garage.id });
+
+    expect(await items.categoriesInUse(shed.id)).toEqual([shedCat.id]);
+    expect(await items.categoriesInUse(garage.id)).toEqual([garageCat.id]);
+    // No scope → both categories are in use across the whole inventory.
+    expect((await items.categoriesInUse()).sort()).toEqual([garageCat.id, shedCat.id].sort());
   });
 });

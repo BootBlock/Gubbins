@@ -42,6 +42,9 @@ Search combines with the other ways to narrow the list:
 - **Status chips** — quick filters for things needing attention (low stock, expiring, overdue,
   maintenance due). See [[Alerts|Alerts]].
 - **Category and tag facets** — narrow to a category or [[tag|Tags-Attachments-and-Related-Items]].
+  The **Category** picker lists only categories that are actually in use in the current view, so a
+  category with no items simply doesn't appear — and it drops out (or comes back) live as you move
+  items between categories, without a reload.
 
 > **ℹ️ Note**
 > When the **Visual search** panel is driving the results, it takes over from the quick-search
