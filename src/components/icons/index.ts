@@ -18,6 +18,9 @@ export {
   TriangleAlert as WarningIcon,
   ShieldAlert as CriticalIcon,
   ShieldCheck as SecureIcon,
+  // Something external is stopping Gubbins working — a content blocker or filtering proxy
+  // that stripped one of its own scripts (see the boot support diagnosis).
+  ShieldOff as BlockedIcon,
   CircleAlert as AlertIcon,
   CircleCheck as SuccessIcon,
   CircleX as ErrorIcon,

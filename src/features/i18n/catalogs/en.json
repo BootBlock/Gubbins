@@ -107,6 +107,43 @@
   "about.diagnostics.value.browserTab": "Browser tab",
   "about.diagnostics.value.unavailable": "Unavailable",
 
+  "boot.unsupported.whatToTry": "What to try",
+  "boot.unsupported.reload": "Reload",
+  "boot.unsupported.details": "Technical details",
+  "boot.unsupported.detailsIntro": "Worth including if you report this — it records exactly what Gubbins found on this device.",
+
+  "boot.unsupported.insecure.title": "Gubbins needs a secure connection",
+  "boot.unsupported.insecure.lede": "Your browser is almost certainly capable. This page just isn’t on a secure connection, so the browser is withholding the private storage Gubbins keeps your data in.",
+  "boot.unsupported.insecure.step1": "Open Gubbins over “https://” rather than “http://”.",
+  "boot.unsupported.insecure.step2": "Running it on this computer? Use an address starting “http://localhost” or “http://127.0.0.1” — browsers trust those. A network address such as “http://192.168.1.10” does not count as secure, so opening Gubbins from another device on your network needs https.",
+
+  "boot.unsupported.scripts.title": "Something is blocking part of Gubbins",
+  "boot.unsupported.scripts.lede": "This browser looks perfectly capable, but one of Gubbins’ own scripts never ran — which usually means something on this device is stopping it, rather than anything being wrong with the browser.",
+  "boot.unsupported.scripts.step1": "Allow scripts for this site in your content or script blocker — then reload.",
+  "boot.unsupported.scripts.step2": "To check whether an extension is responsible, open Gubbins in a window with extensions turned off.",
+  "boot.unsupported.scripts.step3": "Antivirus software, a VPN, or a workplace or school network can filter pages too, and would affect every browser on this device.",
+
+  "boot.unsupported.siteData.title": "Gubbins isn’t allowed to store anything here",
+  "boot.unsupported.siteData.lede": "Your browser supports Gubbins, but site data is blocked for this site. Gubbins keeps your inventory on your own device, so without it there is nowhere to put your data.",
+  "boot.unsupported.siteData.step1": "Allow cookies and site data for this site in your browser’s settings, then reload.",
+  "boot.unsupported.siteData.step2": "“Block all cookies”, and the strictest tracking-protection modes, also switch off the storage Gubbins needs. An exception for this site is enough — no other site is affected.",
+  "boot.unsupported.siteData.step3": "Private and incognito windows restrict storage as well. Try an ordinary window.",
+
+  "boot.unsupported.pending.title": "Preparing secure storage…",
+  "boot.unsupported.pending.lede": "Gubbins is setting up the private, offline storage it keeps your data in. This happens once, on your first visit, and the page carries on by itself as soon as it’s ready.",
+  "boot.unsupported.pending.note": "Still here after a few moments? Reloading usually finishes the job.",
+
+  "boot.unsupported.isolation.title": "Gubbins can’t finish setting up storage",
+  "boot.unsupported.isolation.lede": "Your browser looks capable, but the background helper that unlocks Gubbins’ private storage couldn’t start. That points at this browser’s settings or an add-on rather than the browser itself.",
+  "boot.unsupported.isolation.step1": "Private and incognito windows switch background helpers off. Try an ordinary window.",
+  "boot.unsupported.isolation.step2": "A content blocker or privacy extension may be blocking it — allow this site, then reload.",
+  "boot.unsupported.isolation.step3": "Antivirus software, a VPN, or a workplace or school network can alter pages in a way that prevents this.",
+
+  "boot.unsupported.browser.title": "Browser not supported",
+  "boot.unsupported.browser.lede": "Everything else on this device checks out, so this really does look like the browser: it’s missing the private, secure storage Gubbins needs to keep your data safe.",
+  "boot.unsupported.browser.step1": "Try the latest Chrome, Edge, or Firefox.",
+  "boot.unsupported.browser.step2": "On iPhone or iPad, add Gubbins to your Home Screen first, then open it from there.",
+
   "notFound.title": "Page not found",
   "notFound.heading": "We couldn't find that page",
   "notFound.attempted": "You tried to open:",
