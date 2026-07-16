@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { computeClockOffset, applyOffset } from './clock';
+import { computeClockOffset, applyOffset, measureClockOffset } from './clock';
 import { resolveLww } from './lww';
 import { mergeDeltas, replayGaugeValue, reconcileGauge } from './delta-crdt';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
+import { shiftSnapshotTimestamps } from './snapshot';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
-import type { GaugeHistoryDelta } from './types';
+import { SYNC_FORMAT_VERSION, type GaugeHistoryDelta, type SyncSnapshot } from './types';
 
 describe('clock offset (§7.3)', () => {
   it('computes serverNow − localNow', () => {
@@ -18,6 +19,73 @@ describe('clock offset (§7.3)', () => {
   });
   it('applies the offset to a local timestamp', () => {
     expect(applyOffset(1_000, 300)).toBe(1_300);
+  });
+});
+
+describe('midpoint clock-offset measurement (§7.3.1)', () => {
+  /** A `now` that returns each queued reading in turn, so a round-trip can be simulated. */
+  function scriptedNow(readings: number[]): () => number {
+    let i = 0;
+    return () => readings[Math.min(i++, readings.length - 1)]!;
+  }
+
+  it('charges request latency to the midpoint, not the offset', async () => {
+    // Local clock reads 1000 before the request and 1200 after (a 200ms round-trip). The server
+    // stamps 1100 — exactly the midpoint — so the clocks actually agree and the offset must be 0,
+    // not the −? a before-only reading would have produced.
+    const m = await measureClockOffset(scriptedNow([1000, 1200]), async () => 1100);
+    expect(m.offset).toBe(0);
+    expect(m.serverNow).toBe(1100);
+    expect(m.localNow).toBe(1200); // the freshest reading is used as "now"
+  });
+
+  it('still detects genuine skew on top of latency', async () => {
+    // Same 200ms round-trip, but the server midpoint-equivalent is 1150 → a real +50ms skew.
+    const m = await measureClockOffset(scriptedNow([1000, 1200]), async () => 1150);
+    expect(m.offset).toBe(50);
+  });
+
+  it('reports a zero offset (and local now) when the source has no clock', async () => {
+    const m = await measureClockOffset(scriptedNow([1000, 1010]), async () => null);
+    expect(m).toEqual({ offset: 0, serverNow: null, localNow: 1010 });
+  });
+});
+
+describe('snapshot timestamp shift (§7.3.1 local⇄server frame)', () => {
+  const snap = (): SyncSnapshot => ({
+    formatVersion: SYNC_FORMAT_VERSION,
+    generatedAt: 0,
+    tables: {
+      items: [{ id: 'a', updated_at: 1000, created_at: 500 }],
+      locations: [{ id: 'l', updated_at: 2000 }],
+    },
+    tombstones: [{ tableName: 'items', id: 'z', deletedAt: 3000 }],
+    gaugeHistory: [{ id: 'g', itemId: 'a', netValueDelta: -5, createdAt: 700 }],
+    itemTags: [{ itemId: 'a', tagId: 't' }],
+    itemHistory: [{ id: 'h', item_id: 'a', created_at: 800 }],
+  });
+
+  it('shifts only updated_at and tombstone deletedAt, leaving other timestamps alone', () => {
+    const out = shiftSnapshotTimestamps(snap(), 100);
+    expect(out.tables.items![0]!.updated_at).toBe(1100);
+    expect(out.tables.locations![0]!.updated_at).toBe(2100);
+    expect(out.tombstones[0]!.deletedAt).toBe(3100);
+    // created_at, gauge/item-history and tag edges are resolved without LWW timestamps — untouched.
+    expect(out.tables.items![0]!.created_at).toBe(500);
+    expect(out.gaugeHistory[0]!.createdAt).toBe(700);
+    expect(out.itemHistory[0]!.created_at).toBe(800);
+  });
+
+  it('round-trips: +offset then −offset restores the original', () => {
+    const original = snap();
+    const restored = shiftSnapshotTimestamps(shiftSnapshotTimestamps(original, 250), -250);
+    expect(restored.tables.items![0]!.updated_at).toBe(1000);
+    expect(restored.tombstones[0]!.deletedAt).toBe(3000);
+  });
+
+  it('returns the snapshot unchanged for a zero offset (no server clock)', () => {
+    const original = snap();
+    expect(shiftSnapshotTimestamps(original, 0)).toBe(original);
   });
 });
 

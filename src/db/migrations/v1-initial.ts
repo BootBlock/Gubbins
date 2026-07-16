@@ -49,14 +49,28 @@ import { SQL_NOW_MS, type Migration } from './migration';
  * `ATTACHMENT_KINDS`, …) are reused exactly as the originals did, so the enum CHECKs
  * stay in lock-step with the application constants.
  *
- * Trigger semantics (unchanged from the original v1): on UPDATE the auto-stamp
- * trigger stamps `updated_at` to "now" **only when the caller left it unchanged**.
- * An UPDATE that sets `updated_at` explicitly (as the §7.3 sync engine does, applying
- * a remote Last-Write-Wins value) is passed through untouched — exactly the behaviour
- * LWW reconciliation needs.
+ * Trigger semantics: on UPDATE the auto-stamp trigger stamps `updated_at` **only when the
+ * caller left it unchanged**. An UPDATE that sets `updated_at` explicitly (as the §7.3 sync
+ * engine does, applying a remote Last-Write-Wins value) is passed through untouched — exactly
+ * the behaviour LWW reconciliation needs. The stamp is now `MAX(now, OLD.updated_at + 1)` so an
+ * edit is always strictly newer than the row it derived from even when the wall clock is too
+ * coarse to show it — see {@link updatedAtTrigger}. Every syncable table now uses that one
+ * helper (the six that formerly inlined an identical trigger were folded onto it), so the
+ * monotonic guarantee can never again be applied to some tables and missed on others.
  */
 
-/** Build the canonical auto-stamp trigger for a syncable table keyed by `id` (§7.1). */
+/**
+ * Build the canonical auto-stamp trigger for a syncable table keyed by `id` (§7.1).
+ *
+ * `MAX(now, OLD.updated_at + 1)` — never merely `now` — because the wall clock is too coarse
+ * to order an edit against the row it edited. `unixepoch('now','subsec')` reports milliseconds,
+ * but the underlying system clock ticks far more slowly (~15.6ms on Windows), so an edit made
+ * shortly after the row was written or pulled reads back the *same* millisecond. That makes the
+ * edit invisible to §7.3 Last-Write-Wins, which resolves an equal-timestamp pair in favour of
+ * the remote — silently discarding the edit on the very next sync. Forcing the stamp strictly
+ * past `OLD.updated_at` keeps an edit provably newer than what it derived from, whatever the
+ * clock's resolution, so causality survives even when wall time cannot express it.
+ */
 function updatedAtTrigger(table: string): string {
   return `
     CREATE TRIGGER trg_${table}_updated_at
@@ -64,7 +78,7 @@ function updatedAtTrigger(table: string): string {
     FOR EACH ROW
     WHEN NEW.updated_at = OLD.updated_at
     BEGIN
-      UPDATE ${table} SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
+      UPDATE ${table} SET updated_at = MAX((${SQL_NOW_MS}), OLD.updated_at + 1) WHERE id = NEW.id;
     END;
   `;
 }
@@ -658,15 +672,7 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_item_stock_location_id ON item_stock(location_id);`,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_item_stock_updated_at
-        AFTER UPDATE ON item_stock
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE item_stock SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('item_stock'),
     },
     {
       sql: `
@@ -748,15 +754,7 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_stock_batches_expiry ON stock_batches(expiry_date);`,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_stock_batches_updated_at
-        AFTER UPDATE ON stock_batches
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE stock_batches SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('stock_batches'),
     },
     {
       sql: `
@@ -1097,15 +1095,7 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_revaluations_item_id ON revaluations(item_id, revalued_at);`,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_revaluations_updated_at
-        AFTER UPDATE ON revaluations
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE revaluations SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('revaluations'),
     },
     // --- Folded former v5: related-items cross-links (feature-gap G6) --------------
     // A synced many-to-many relation between items, distinct from variants (items.parent_id)
@@ -1132,15 +1122,7 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_item_relations_to ON item_relations(to_item_id);`,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_item_relations_updated_at
-        AFTER UPDATE ON item_relations
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE item_relations SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('item_relations'),
     },
     // --- Folded former v6: manual "to-buy" / wishlist (feature-gap G8) -------------
     // A standalone dictionary table (no FK, like contacts/projects) of wanted-but-not-owned
@@ -1160,15 +1142,7 @@ export const v1Initial: Migration = {
       `,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_wishlist_updated_at
-        AFTER UPDATE ON wishlist
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE wishlist SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('wishlist'),
     },
     // --- Folded former v7: per-instance test / calibration / service records (G7) --
     // An append-only LWW child of items (structured pass/fail + reading log per serialised
@@ -1195,15 +1169,7 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_test_records_item_id ON test_records(item_id, performed_at);`,
     },
     {
-      sql: `
-        CREATE TRIGGER trg_test_records_updated_at
-        AFTER UPDATE ON test_records
-        FOR EACH ROW
-        WHEN NEW.updated_at = OLD.updated_at
-        BEGIN
-          UPDATE test_records SET updated_at = (${SQL_NOW_MS}) WHERE id = NEW.id;
-        END;
-      `,
+      sql: updatedAtTrigger('test_records'),
     },
   ],
 };

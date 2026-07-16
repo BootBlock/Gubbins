@@ -107,6 +107,39 @@ export async function buildLocalSnapshot(
   };
 }
 
+/**
+ * Shift every Last-Write-Wins timestamp in a snapshot by `delta` (§7.3.1).
+ *
+ * The local database always stores timestamps in the device's own clock frame, but the wire must
+ * carry them in the *server's* frame so every device's LWW comparisons share one timeline —
+ * otherwise a device whose clock is off by X pushes rows off by X, and peers pick the wrong winner
+ * by up to X. The engine bridges the two frames with this one function:
+ *   - on **push**, `delta = +offset` converts local → server time;
+ *   - on **fetch**, `delta = −offset` converts the remote back to this device's local frame,
+ *     so everything downstream (reconcile, applyPlan, the DB) works in one consistent frame.
+ *
+ * Only the fields LWW actually resolves on are shifted: each row's `updated_at` and each
+ * tombstone's `deleted_at`. `created_at`, the gauge/`item_history` ledgers (resolved by id-union
+ * and commutative delta sums, not by timestamp comparison) and the timestamp-less `item_tags`
+ * edges are deliberately left untouched — their ordering is cosmetic and frame-shifting them would
+ * be needless churn. A `delta` of 0 (a provider with no server clock, the common case) returns the
+ * snapshot unchanged, so those providers and their tests are entirely unaffected.
+ */
+export function shiftSnapshotTimestamps(snapshot: SyncSnapshot, delta: number): SyncSnapshot {
+  if (delta === 0) return snapshot;
+  const tables: Record<string, SqlRow[]> = {};
+  for (const [table, rows] of Object.entries(snapshot.tables)) {
+    tables[table] = rows.map((row) =>
+      'updated_at' in row ? { ...row, updated_at: Number(row.updated_at) + delta } : row,
+    );
+  }
+  return {
+    ...snapshot,
+    tables,
+    tombstones: snapshot.tombstones.map((t) => ({ ...t, deletedAt: t.deletedAt + delta })),
+  };
+}
+
 /** Read the M:N `item_tags` membership edges (Phase 11; no row id/timestamp). */
 async function readItemTags(driver: IDatabaseDriver): Promise<ItemTagEdge[]> {
   const rows = await driver.query<{ item_id: string; tag_id: string }>(

@@ -21,7 +21,7 @@ import { SYNC_TABLES, ITEM_HISTORY_TABLE, ITEM_TAGS_TABLE, itemTagEdgeId } from 
 import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
 import { decodeRowForTable } from './blob-codec';
-import { computeClockOffset } from './clock';
+import { measureClockOffset } from './clock';
 import type { CloudProvider } from './provider';
 import { reconcile } from './reconcile';
 import { buildSchemaDictionary } from './schema-dictionary';
@@ -30,6 +30,7 @@ import {
   buildCloneStatements,
   buildLocalSnapshot,
   historyInsertStatement,
+  shiftSnapshotTimestamps,
   tombstoneDeleteStatement,
 } from './snapshot';
 import type { SchemaDictionary, SyncSnapshot, SyncTable, Tombstone } from './types';
@@ -147,25 +148,34 @@ export async function runSync(
   }
 
   // --- §7.3.1 NTP offset guard --------------------------------------------------
-  const localNow = now();
   // Prefer the provider's own server time; fall back to the injected NTP-style source
   // (§7.3 "a lightweight reliable time server *or* the cloud provider's API header").
-  let serverNow = await provider.getServerTime();
-  if (serverNow === null && options.serverTime) serverNow = await options.serverTime();
-  const offset = computeClockOffset(serverNow, localNow);
+  // The clock is sampled either side of the round-trip so latency isn't mistaken for skew
+  // (see measureClockOffset) — otherwise a slow link mis-resolves LWW by its own latency.
+  const { offset, serverNow, localNow } = await measureClockOffset(now, async () => {
+    const primary = await provider.getServerTime();
+    if (primary !== null) return primary;
+    return options.serverTime ? await options.serverTime() : null;
+  });
   const effectiveNow = serverNow ?? localNow;
 
   const dictionary = await buildSchemaDictionary(driver, DICTIONARY_TABLES);
-  const remote = await provider.fetchSnapshot();
+  const rawRemote = await provider.fetchSnapshot();
 
-  // First publish: no remote yet — just push our state.
-  if (remote === null) {
+  // First publish: no remote yet — just push our state, normalised to server time.
+  if (rawRemote === null) {
     const snapshot = await buildLocalSnapshot(driver, effectiveNow);
-    await provider.pushSnapshot(snapshot);
+    await provider.pushSnapshot(shiftSnapshotTimestamps(snapshot, offset));
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
     return result('PUBLISHED', { prunedTombstones: pruned, clockOffset: offset });
   }
+
+  // The wire carries server-time timestamps (every device normalises on push); convert the
+  // remote back into *this* device's local clock frame once, up front, so reconcile, the TTL
+  // clone and everything written to the DB all operate in one consistent frame (§7.3.1). The
+  // pushed snapshot is converted back to server time at each push below.
+  const remote = shiftSnapshotTimestamps(rawRemote, -offset);
 
   const meta = await readSyncMeta(driver);
 
@@ -180,7 +190,7 @@ export async function runSync(
       meta.historyPrunedBefore,
     );
     const merged = await buildLocalSnapshot(driver, effectiveNow);
-    await provider.pushSnapshot(merged);
+    await provider.pushSnapshot(shiftSnapshotTimestamps(merged, offset));
     const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
     await writeSyncMeta(driver, effectiveNow, offset);
     return result('CLONED', { prunedTombstones: pruned, clockOffset: offset });
@@ -188,15 +198,18 @@ export async function runSync(
 
   // --- §7.3 normal delta reconciliation -----------------------------------------
   const local = await buildLocalSnapshot(driver, effectiveNow);
+  // `offset: 0` is deliberate: `remote` was already converted to this device's local frame
+  // above, and `local` is read straight from the DB (also local frame), so the two are
+  // directly comparable and reconcile must apply no further shift.
   const plan = reconcile(local, remote, {
-    offset,
+    offset: 0,
     dictionary,
     historyPrunedBefore: meta.historyPrunedBefore,
   });
   await applyPlan(driver, plan, dictionary);
 
   const merged = await buildLocalSnapshot(driver, effectiveNow);
-  await provider.pushSnapshot(merged);
+  await provider.pushSnapshot(shiftSnapshotTimestamps(merged, offset));
   const pruned = await pruneTombstones(driver, effectiveNow, ttlMs);
   await writeSyncMeta(driver, effectiveNow, offset);
 
