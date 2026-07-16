@@ -142,6 +142,10 @@ export {
   // Grouping axis (how the list is arranged, §3)
   Layers as GroupByIcon,
 
+  // Fullscreen toggle (issue #118) — enter fills the display; exit returns to windowed.
+  Maximize as FullscreenIcon,
+  Minimize as ExitFullscreenIcon,
+
   // Multi-select & batch label printing (Phase 49, §6)
   ListChecks as SelectIcon,
 

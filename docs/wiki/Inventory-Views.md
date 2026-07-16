@@ -56,6 +56,19 @@ same shared setting, so whatever you pick sticks everywhere.
 > [[search|Search-Overview]] and filters. The page control only appears when there's more than one
 > page to show, and it doesn't apply to the grouped view or the location map / value treemap.
 
+## Fullscreen
+
+Turn on **Fullscreen** to stretch Gubbins across your whole display, hiding the browser's own
+toolbars and tabs for a distraction-free, data-dense view. Choose it again to return to the normal
+windowed view — or just press **Escape**, which always leaves fullscreen.
+
+**Where to find it:** the **More** menu → **Fullscreen**. A tick beside it shows when fullscreen is
+active.
+
+> **ℹ️ Note**
+> Fullscreen is handled by your browser, so it's offered only where the browser supports it, and it
+> applies to the whole app, not just the Inventory screen. It changes nothing about your data.
+
 ## Favourites filter
 
 Pin the items you reach for most as **favourites** (the gold star on a card) and use the
