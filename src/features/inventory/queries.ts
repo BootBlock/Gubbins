@@ -76,6 +76,10 @@ export const inventoryKeys = {
   // Phase 3 — categories, custom fields, tags, images & attachments.
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
+  /** Category ids used by ≥1 active item in a (location-scoped) view — the Category facet
+   *  declutter (issue #76). Under items() so any item mutation refreshes it by prefix. */
+  categoriesInUse: (locationId: string | null) =>
+    [...inventoryKeys.items(), 'categories-in-use', locationId] as const,
   categoryFields: (categoryId: string) => [...inventoryKeys.categories(), 'fields', categoryId] as const,
   /** Every custom-field definition across all categories (the item-card field catalog, E1). */
   allCategoryFields: () => [...inventoryKeys.categories(), 'fields', 'all'] as const,

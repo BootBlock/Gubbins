@@ -4,11 +4,17 @@ import { useModulesStore } from '@/state/stores/useModulesStore';
 import { InventoryFacetBar } from './InventoryFacetBar';
 
 // Mutable category / tag dictionaries so each test can shape what the facets have to offer.
-const { catRows, tagRows } = vi.hoisted(() => ({
+// `inUse` is the id set the item-scoped `useCategoriesInUse` reports; `undefined` models the
+// pre-resolution state where the facet should show every category.
+const { catRows, tagRows, inUse } = vi.hoisted(() => ({
   catRows: { current: [] as { id: string; name: string }[] },
   tagRows: { current: [] as { id: string; name: string }[] },
+  inUse: { current: undefined as string[] | undefined },
 }));
-vi.mock('../categories', () => ({ useCategories: () => ({ data: { rows: catRows.current } }) }));
+vi.mock('../categories', () => ({
+  useCategories: () => ({ data: { rows: catRows.current } }),
+  useCategoriesInUse: () => ({ data: inUse.current }),
+}));
 vi.mock('../tags', () => ({ useTagDictionary: () => ({ data: { rows: tagRows.current } }) }));
 
 /**
@@ -24,6 +30,8 @@ describe('InventoryFacetBar', () => {
       { id: 'cat-1', name: 'Resistors' },
       { id: 'cat-2', name: 'Tools' },
     ];
+    // Both categories in use by default, so the existing selection assertions still hold.
+    inUse.current = ['cat-1', 'cat-2'];
     tagRows.current = [
       { id: 'tag-1', name: 'fragile' },
       { id: 'tag-2', name: 'electronics' },
@@ -41,6 +49,7 @@ describe('InventoryFacetBar', () => {
       <InventoryFacetBar
         categoryId={overrides.categoryId ?? null}
         onCategoryChange={onCategoryChange}
+        locationId={overrides.locationId ?? null}
         tagIds={overrides.tagIds ?? []}
         onToggleTag={onToggleTag}
         disabled={overrides.disabled}
@@ -104,5 +113,41 @@ describe('InventoryFacetBar', () => {
     tagRows.current = [];
     renderBar();
     expect(screen.queryByTestId('inventory-facet-bar')).not.toBeInTheDocument();
+  });
+
+  it('offers only categories in use, not the whole catalogue (issue #76)', () => {
+    // Both categories exist, but only Resistors has an item in the current view.
+    inUse.current = ['cat-1'];
+    renderBar();
+    fireEvent.click(screen.getByTestId('inventory-facet-category'));
+    expect(screen.getByRole('option', { name: 'Resistors' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Tools' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the currently-selected category even when it is no longer in use', () => {
+    // Tools is filtered on but its last item just moved away — it must stay offered so the
+    // active filter can be switched off, while an unused-and-unselected category stays hidden.
+    inUse.current = [];
+    renderBar({ categoryId: 'cat-2' });
+    fireEvent.click(screen.getByTestId('inventory-facet-category'));
+    expect(screen.getByRole('option', { name: 'Tools' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Resistors' })).not.toBeInTheDocument();
+  });
+
+  it('hides the category facet entirely when no category is in use and none is selected', () => {
+    inUse.current = [];
+    tagRows.current = []; // also drop the tags facet so the whole bar can collapse
+    renderBar();
+    expect(screen.queryByTestId('inventory-facet-category')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inventory-facet-bar')).not.toBeInTheDocument();
+  });
+
+  it('shows every category until the in-use set has resolved (no empty flash)', () => {
+    // Before the item-scoped query resolves, data is undefined — show all rather than flash empty.
+    inUse.current = undefined;
+    renderBar();
+    fireEvent.click(screen.getByTestId('inventory-facet-category'));
+    expect(screen.getByRole('option', { name: 'Resistors' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Tools' })).toBeInTheDocument();
   });
 });

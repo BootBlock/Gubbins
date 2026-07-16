@@ -5,9 +5,10 @@
  * the strict-pagination mandate (§2.1) targets the item lists. Writes use targeted
  * invalidation — schema edits are low-frequency and reshape derived counts.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getCategoryRepository,
+  getItemRepository,
   type CreateCategoryFieldInput,
   type CreateCategoryInput,
   type UpdateCategoryFieldInput,
@@ -19,6 +20,23 @@ export function useCategories() {
   return useQuery({
     queryKey: inventoryKeys.categoryList(),
     queryFn: () => getCategoryRepository().list({ limit: 100 }),
+  });
+}
+
+/**
+ * The category ids that at least one active item currently uses, scoped to `locationId`
+ * (null = the whole inventory) — the set the Category facet offers so it only lists
+ * categories in use, not every category ever defined (issue #76). Deliberately split from
+ * {@link useCategories}: names come from that (kept live by category CRUD), while this
+ * item-scoped membership query keys under `inventoryKeys.items()`, so any item edit — moving
+ * or removing the last item of a category — refreshes which categories the facet offers.
+ * `keepPreviousData` holds the last set on screen while a location change reloads it.
+ */
+export function useCategoriesInUse(locationId: string | null) {
+  return useQuery({
+    queryKey: inventoryKeys.categoriesInUse(locationId),
+    queryFn: () => getItemRepository().categoriesInUse(locationId),
+    placeholderData: keepPreviousData,
   });
 }
 

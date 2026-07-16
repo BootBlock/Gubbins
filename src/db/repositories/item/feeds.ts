@@ -119,6 +119,32 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     }
 
     /**
+     * The category ids that at least one **active** item currently uses — the set the
+     * inventory Category facet offers (issue #76). The facet is a declutter of the full
+     * category catalogue in exactly the way the status chips are: it should list only
+     * categories that would actually match something, not every category ever defined. A
+     * category with no items (never used, or emptied by moving/removing its last item) is
+     * dropped, and it reappears the moment an item is put back into it.
+     *
+     * When `locationId` is set the set is scoped to that location, mirroring the list's own
+     * `location_id = ?` scope (and {@link applicableStatuses}), so switching the sidebar
+     * selection recomputes it — a category counts as "in use" only within the currently-viewed
+     * location. Omit/null for the "All items" view (whole inventory). Uncategorised items
+     * (`category_id IS NULL`) contribute nothing. Order is not significant (the caller joins
+     * these ids against the named category catalogue), so the raw `DISTINCT` order is returned.
+     */
+    async categoriesInUse(locationId?: string | null): Promise<string[]> {
+      const scope = locationId ? ' AND location_id = ?' : '';
+      const params: SqlValue[] = locationId ? [locationId] : [];
+      const rows = await this.driver.query<{ category_id: string }>(
+        `SELECT DISTINCT category_id FROM items
+         WHERE is_active = 1 AND category_id IS NOT NULL${scope};`,
+        params,
+      );
+      return rows.map((r) => r.category_id);
+    }
+
+    /**
      * Active perishable items expiring on or before `before` (a UNIX-ms cutoff,
      * typically `now + N days`), soonest first — the §3 "Soon to Expire" widget feed.
      * Already-expired items are included (their expiry is in the past, ≤ cutoff).

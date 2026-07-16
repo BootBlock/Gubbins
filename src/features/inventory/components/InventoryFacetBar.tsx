@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Select } from '@/components/foundry';
 import { CategoryIcon, CloseIcon, TagIcon } from '@/components/icons';
 import { useFeature } from '@/features/modules/useFeature';
-import { useCategories } from '../categories';
+import { useCategories, useCategoriesInUse } from '../categories';
 import { useTagDictionary } from '../tags';
 
 /**
@@ -12,14 +12,26 @@ import { useTagDictionary } from '../tags';
  * and **Tags** (multi-select). Facets AND with the status filters, the location scope and the
  * search; within the tag facet the selected tags OR together (any tag matches).
  *
- * Category is core inventory and always offered (when any category exists); the Tags facet is
- * gated on the `tags-attachments` capability (Modular UI, §4). The tag multi-select uses the
- * token/pill pattern — a Foundry {@link Select} to add a tag plus a removable chip per active
- * tag — rather than a bespoke popover, so it stays on the existing primitives.
+ * Category is core inventory and offered whenever at least one category is *in use* by an item
+ * in the current view (see below); the Tags facet is gated on the `tags-attachments` capability
+ * (Modular UI, §4). The tag multi-select uses the token/pill pattern — a Foundry {@link Select}
+ * to add a tag plus a removable chip per active tag — rather than a bespoke popover, so it stays
+ * on the existing primitives.
+ *
+ * **The Category facet lists only categories in use, not the whole catalogue (issue #76).** Like
+ * the status chips, it declutters to what would actually match: a category is offered only when
+ * an active item in the current location scope uses it, so emptying a category (moving or removing
+ * its last item) drops it from the picker, and re-using it brings it back — live, without a
+ * reload. The currently-selected category always stays offered even if its last item just left,
+ * so an active filter can still be switched off. Category *names* come from {@link useCategories}
+ * (live on rename); which categories are *in use* comes from the item-scoped
+ * {@link useCategoriesInUse} (live on any item edit).
  */
 interface InventoryFacetBarProps {
   readonly categoryId: string | null;
   readonly onCategoryChange: (categoryId: string | null) => void;
+  /** The selected location, scoping "in use" to the same view the list shows (null = All items). */
+  readonly locationId: string | null;
   readonly tagIds: readonly string[];
   readonly onToggleTag: (tagId: string) => void;
   /** Disabled while the Visual Builder supersedes the quick filters (mirrors the search box). */
@@ -29,17 +41,32 @@ interface InventoryFacetBarProps {
 export function InventoryFacetBar({
   categoryId,
   onCategoryChange,
+  locationId,
   tagIds,
   onToggleTag,
   disabled,
 }: InventoryFacetBarProps) {
   const tagsEnabled = useFeature('tags-attachments');
   const categories = useCategories();
+  const categoriesInUse = useCategoriesInUse(locationId);
   const tagDictionary = useTagDictionary();
 
-  const categoryRows = useMemo(() => categories.data?.rows ?? [], [categories.data]);
+  const allCategoryRows = useMemo(() => categories.data?.rows ?? [], [categories.data]);
   const tagRows = useMemo(() => tagDictionary.data?.rows ?? [], [tagDictionary.data]);
   const tagName = useMemo(() => new Map(tagRows.map((t) => [t.id, t.name] as const)), [tagRows]);
+
+  // Offer only categories in use within the current view, keeping the active one so it can be
+  // cleared (issue #76). Until the in-use set is known, show every category (as the status bar
+  // shows every chip until applicability resolves) so the picker never flashes empty on first load.
+  const inUseKnown = categoriesInUse.data !== undefined;
+  const inUse = useMemo(() => new Set(categoriesInUse.data ?? []), [categoriesInUse.data]);
+  const categoryRows = useMemo(
+    () =>
+      inUseKnown
+        ? allCategoryRows.filter((cat) => inUse.has(cat.id) || cat.id === categoryId)
+        : allCategoryRows,
+    [allCategoryRows, inUse, inUseKnown, categoryId],
+  );
 
   const categoryOptions = useMemo(
     () => [
