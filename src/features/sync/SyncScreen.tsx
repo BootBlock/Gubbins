@@ -23,6 +23,7 @@ import {
   FolderSyncIcon,
   SyncIcon,
   VoiceIcon,
+  WarningIcon,
 } from '@/components/icons';
 import { hasFileSystemAccess } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,8 @@ import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
 import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
+import { useSyncConflictsStore } from './conflict-store';
+import { SyncConflictsDialog } from './SyncConflictsDialog';
 
 /**
  * The Cloud Sync & File System Access hub (spec §2 Initial Handshake, §7, Phase 7).
@@ -72,6 +75,9 @@ export function SyncScreen() {
   const [reconnectable, setReconnectable] = useState(false);
   const [googleReconnectable, setGoogleReconnectable] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [conflictsOpen, setConflictsOpen] = useState(false);
+  // Issue #72: device-local record of edits a sync overwrote — surfaced for review below.
+  const conflictCount = useSyncConflictsStore((s) => s.conflicts.length);
   // Push-to-bridge outcome shown inline beside the "Push now" button (rather than a
   // top-of-page banner far from where the user is looking).
   const [pushResult, setPushResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -198,6 +204,9 @@ export function SyncScreen() {
         setError(outcome.message ?? 'Sync was halted by the storage Hard Stop.');
       } else {
         auth.markSynced();
+        // Issue #72: record any of the user's edits this sync overwrote, so they can review
+        // and recover them from the Conflicts section below rather than losing them silently.
+        useSyncConflictsStore.getState().add(outcome.conflicts);
         await client.invalidateQueries();
       }
     } catch (err) {
@@ -397,6 +406,35 @@ export function SyncScreen() {
           </div>
         </section>
 
+        {/* Conflicts — surfaced only when a sync overwrote one of the user's own edits (#72). */}
+        {conflictCount > 0 ? (
+          <section className="space-y-3" data-testid="sync-conflicts-section">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Conflicts</h2>
+            <Banner
+              tone="warning"
+              icon={<WarningIcon />}
+              heading={
+                conflictCount === 1
+                  ? 'One of your edits was overwritten'
+                  : `${conflictCount} of your edits were overwritten`
+              }
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConflictsOpen(true)}
+                  data-testid="review-conflicts"
+                >
+                  Review…
+                </Button>
+              }
+            >
+              Another device changed the same thing at the same time, so newest-wins kept its version. Review
+              each one to keep the current version or restore yours.
+            </Banner>
+          </section>
+        ) : null}
+
         {/* Backup & restore */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -524,6 +562,15 @@ export function SyncScreen() {
         onRestored={(message) => {
           void client.invalidateQueries();
           setNotice(message);
+        }}
+      />
+
+      <SyncConflictsDialog
+        open={conflictsOpen}
+        onClose={() => setConflictsOpen(false)}
+        onRestored={() => {
+          void client.invalidateQueries();
+          setNotice('Your version was restored. It will sync to your other devices on the next sync.');
         }}
       />
     </PageContainer>

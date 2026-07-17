@@ -33,7 +33,7 @@ import {
   shiftSnapshotTimestamps,
   tombstoneDeleteStatement,
 } from './snapshot';
-import type { SchemaDictionary, SyncSnapshot, SyncTable, Tombstone } from './types';
+import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone } from './types';
 
 /** Tables read into the schema dictionary: the LWW set plus the unioned ledger. */
 const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
@@ -61,6 +61,12 @@ export interface SyncResult {
   readonly tagEdgesAdded: number;
   /** Phase 11: `item_tags` membership edges removed locally (peer unlinked). */
   readonly tagEdgesRemoved: number;
+  /**
+   * Issue #72: genuine same-row concurrent-edit collisions where a local edit made since the
+   * last sync lost to a remote change/deletion. Empty on the first publish / TTL clone (no
+   * prior common state). The UI persists these for review; they are not applied to the DB.
+   */
+  readonly conflicts: readonly SyncConflict[];
   /** Present when status is HARD_STOP. */
   readonly message?: string;
 }
@@ -201,10 +207,17 @@ export async function runSync(
   // `offset: 0` is deliberate: `remote` was already converted to this device's local frame
   // above, and `local` is read straight from the DB (also local frame), so the two are
   // directly comparable and reconcile must apply no further shift.
+  //
+  // Issue #72 conflict detection needs the last-sync watermark in that same local frame:
+  // `sync_meta.last_sync_timestamp` is stored in *server* time (every push normalises to it),
+  // so shift it back by the offset to compare against the local-frame row timestamps.
+  const conflictSince = meta.lastSyncTimestamp > 0 ? meta.lastSyncTimestamp - offset : undefined;
   const plan = reconcile(local, remote, {
     offset: 0,
     dictionary,
     historyPrunedBefore: meta.historyPrunedBefore,
+    conflictSince,
+    now: effectiveNow,
   });
   await applyPlan(driver, plan, dictionary);
 
@@ -223,6 +236,7 @@ export async function runSync(
     historyInserted: plan.historyInserts.length,
     tagEdgesAdded: plan.itemTagUpserts.length,
     tagEdgesRemoved: plan.itemTagDeletes.length,
+    conflicts: plan.conflicts,
   });
 }
 
@@ -337,6 +351,7 @@ function result(status: SyncResult['status'], partial: Partial<SyncResult>): Syn
     historyInserted: partial.historyInserted ?? 0,
     tagEdgesAdded: partial.tagEdgesAdded ?? 0,
     tagEdgesRemoved: partial.tagEdgesRemoved ?? 0,
+    conflicts: partial.conflicts ?? [],
     message: partial.message,
   };
 }

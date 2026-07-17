@@ -21,9 +21,32 @@ Each device reads and writes the shared copy, so your inventory follows you betw
 
 ## How conflicts are handled
 
-When two devices change things independently, Gubbins reconciles with **last-write-wins** — the
-most recent change to each piece of data prevails — so syncing is safe without you refereeing
+When two devices change things independently, Gubbins reconciles **per item, per field** — not as
+one big all-or-nothing overwrite. If you edit one thing on your phone while another device edits
+something *else*, both changes are kept. It's **only** when the *same* field of the *same* thing is
+changed on two devices before they sync that Gubbins has to pick one, and it does so with
+**last-write-wins** — the most recent change prevails — so syncing is safe without you refereeing
 every difference.
+
+### Reviewing overwritten edits
+
+Last-write-wins means one side's change to that same field is set aside. So you never lose that
+work silently, Gubbins **notices** when an edit *you* made since your last sync is overwritten this
+way and lists it for you.
+
+When it happens, a **Conflicts** section appears on the Sync screen. Open **Review…** to see each
+one side by side — your version next to the version that was kept — and choose:
+
+- **Keep current** — accept the version that won; the note is cleared.
+- **Use my version** — put *your* edit back. It syncs to your other devices on the next sync.
+
+The same applies if another device **deleted** something you'd just edited: it's listed so you can
+restore your version instead of losing it.
+
+> **ℹ️ Note**
+> This review list is **per device** — it shows the edits *this* device lost. Only genuine
+> same-field clashes appear; a device simply catching up on newer changes is not a conflict and is
+> never listed.
 
 > **💡 Tip**
 > The local-folder option is the most flexible: point it at any folder your existing cloud tool

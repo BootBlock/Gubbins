@@ -76,6 +76,47 @@ export interface GaugeResolution {
   readonly netValue: number;
 }
 
+/**
+ * A genuine concurrent-edit collision surfaced for user review (§7.3, issue #72).
+ *
+ * Row-level LWW resolves every field silently by newest-timestamp-wins; that is correct
+ * and lossless for the common case (only one side changed since the last sync). But when
+ * **both** sides edited the *same* row since the last common sync, LWW must discard the
+ * loser's work with no notice. This record captures that discarded local version so the UI
+ * can tell the user "your offline edit to X lost to a concurrent change" and offer to
+ * restore it — turning a silent overwrite into a reviewable, recoverable event.
+ *
+ * Detection is deliberately conservative (see `reconcile`): it fires only when the local
+ * row changed *after* the last successful sync (so a device merely catching up never
+ * reports a "conflict"), and only in the two data-losing directions — a remote row winning
+ * LWW over a newer-than-last-sync local edit (`kind: 'UPDATE'`), or a remote deletion
+ * winning over one (`kind: 'DELETE'`). Each device thus surfaces exactly the losses that
+ * happened to *its own* work; the peer that won reports nothing, so a single physical
+ * collision is never double-counted across the fleet.
+ *
+ * These records are device-local (not synced): they live in a persisted store, never in a
+ * snapshot.
+ */
+export interface SyncConflict {
+  /**
+   * Deterministic id — `${tableName}:${rowId}:${localUpdatedAt}` — so re-detecting the same
+   * discarded local version across repeated syncs de-duplicates rather than piling up.
+   */
+  readonly id: string;
+  readonly tableName: SyncTable;
+  readonly rowId: string;
+  /** `'UPDATE'` — a remote edit won LWW; `'DELETE'` — a remote deletion won over a local edit. */
+  readonly kind: 'UPDATE' | 'DELETE';
+  /** The discarded local row (the user's work that lost) — the version a restore re-applies. */
+  readonly localVersion: SqlRow;
+  /** The winning remote row for an `'UPDATE'`; `null` for a `'DELETE'` (the row was removed). */
+  readonly remoteVersion: SqlRow | null;
+  /** A human-friendly label for the row, captured at detect time (row name/title/… or a short id). */
+  readonly entityLabel: string;
+  /** When the collision was detected (the sync's effective clock), ms since epoch. */
+  readonly detectedAt: number;
+}
+
 /** §7.5.2 conflict log: an item whose target location was gone and got re-parented. */
 export interface ReparentLog {
   readonly itemId: string;
@@ -104,4 +145,11 @@ export interface ReconciliationPlan {
   readonly itemTagUpserts: readonly ItemTagEdge[];
   /** Phase 11: `item_tags` edges to remove locally + tombstone (membership deletions). */
   readonly itemTagDeletes: readonly ItemTagEdgeDelete[];
+  /**
+   * Issue #72: genuine same-row concurrent-edit collisions where a local edit made since
+   * the last sync lost to a remote change/deletion. Surfaced for user review — not applied
+   * to the DB (LWW already decided the stored value); the orchestrator carries them out in
+   * the {@link import('./sync-engine').SyncResult} so the UI can persist and present them.
+   */
+  readonly conflicts: readonly SyncConflict[];
 }
