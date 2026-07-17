@@ -1,14 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
-import type { FilterCondition, SearchAST } from '@/db/search/ast';
+import type { ASTGroupNode, FilterCondition, SearchAST } from '@/db/search/ast';
 import { NL_LOW_STOCK_FALLBACK_QTY, interpretNaturalLanguage, type NlContext } from './nl-query';
 
 /**
  * Feature-gap G5 — the rule-based, no-LLM natural-language → SearchAST layer. Every
- * test asserts the flat AND root group of leaf conditions it emits, and (via
+ * test asserts the AND root group of nodes it emits (leaf conditions for the structured
+ * intents, an OR/AND sub-tree for the residual multi-field text match), and (via
  * {@link expectTranslatable}) that the tree round-trips through the real
  * {@link parseASTtoSQL} — proving the output is always a tree the SQL translator accepts.
  */
+
+/** The item text fields a residual keyword now spans, in the emission order the code uses. */
+const TEXT_FIELDS = ['name', 'description', 'manufacturer'] as const;
+
+/**
+ * The OR group a single residual keyword lowers to: `<field> CONTAINS <value>` for every text
+ * field and every supplied spelling variant (fields outer, variants inner — the code's order).
+ */
+function keywordGroup(...values: string[]): ASTGroupNode {
+  return {
+    type: 'GROUP',
+    logicalOperator: 'OR',
+    conditions: TEXT_FIELDS.flatMap((field) =>
+      values.map((value): FilterCondition => ({ field, operator: 'CONTAINS', value })),
+    ),
+  };
+}
+
+/** The AND group several residual keywords lower to (each an in-any-field {@link keywordGroup}). */
+function textGroup(...keywords: string[][]): ASTGroupNode {
+  return {
+    type: 'GROUP',
+    logicalOperator: 'AND',
+    conditions: keywords.map((variants) => keywordGroup(...variants)),
+  };
+}
 
 const GARAGE = { id: 'loc-garage', name: 'Garage' };
 const SHELF_2 = { id: 'loc-shelf-2', name: 'Shelf 2' };
@@ -41,6 +68,13 @@ function singleCondition(phrase: string, context: NlContext = CONTEXT): FilterCo
   return conditions[0] as FilterCondition;
 }
 
+/** The single node of a one-intent phrase (may be a sub-tree, e.g. the residual text match). */
+function singleNode(phrase: string, context: NlContext = CONTEXT): SearchAST | FilterCondition {
+  const conditions = conditionsOf(phrase, context);
+  expect(conditions).toHaveLength(1);
+  return conditions[0]!;
+}
+
 /** Assert the AST is accepted by the single SQL translator (never throws). */
 function expectTranslatable(ast: SearchAST): void {
   expect(() => parseASTtoSQL(ast)).not.toThrow();
@@ -63,25 +97,52 @@ describe('interpretNaturalLanguage — empty / unrecognised', () => {
   });
 });
 
-describe('interpretNaturalLanguage — residual free text → name CONTAINS', () => {
-  it('maps leftover words to a single name CONTAINS', () => {
-    expect(singleCondition('screwdriver')).toEqual({
-      field: 'name',
-      operator: 'CONTAINS',
-      value: 'screwdriver',
-    });
+describe('interpretNaturalLanguage — residual free text → multi-field text match', () => {
+  it('maps a single leftover word to an OR across every text field', () => {
+    expect(singleNode('screwdriver')).toEqual(keywordGroup('screwdriver'));
   });
 
-  it('joins several leftover words into one name CONTAINS, stripping filler', () => {
-    expect(singleCondition('show me all blue widgets')).toEqual({
-      field: 'name',
-      operator: 'CONTAINS',
-      value: 'blue widgets',
-    });
+  it('ANDs several leftover words, each matchable in any text field, stripping filler', () => {
+    expect(singleNode('show me all blue widgets')).toEqual(textGroup(['blue'], ['widget']));
   });
 
   it('strips punctuation from the text value', () => {
-    expect(singleCondition('esp32!')).toEqual({ field: 'name', operator: 'CONTAINS', value: 'esp32' });
+    expect(singleNode('esp32!')).toEqual(keywordGroup('esp32'));
+  });
+
+  it('lowers every text field to a real FTS match, never a match-nothing "0"', () => {
+    // Guards against listing a field that is not FTS-scope-searchable: parseASTtoSQL silently
+    // degrades a CONTAINS on such a column to the literal "0" (matches nothing), so each field
+    // must resolve to an `items_fts MATCH` subquery instead.
+    const [sql] = parseASTtoSQL(singleNode('widget') as SearchAST);
+    expect((sql.match(/items_fts MATCH/g) ?? []).length).toBe(TEXT_FIELDS.length);
+    expect(sql).not.toMatch(/\b0\b/);
+  });
+
+  it('singularises plural keywords so the singular stem matches too', () => {
+    expect(singleNode('batteries')).toEqual(keywordGroup('battery'));
+    expect(singleNode('boxes')).toEqual(keywordGroup('box'));
+    expect(singleNode('screws')).toEqual(keywordGroup('screw'));
+  });
+
+  it('leaves the common non-plural -ss / -us endings untouched', () => {
+    expect(singleNode('glass')).toEqual(keywordGroup('glass'));
+    expect(singleNode('status')).toEqual(keywordGroup('status'));
+  });
+
+  it('expands British / American spelling variants', () => {
+    expect(singleNode('grey')).toEqual(keywordGroup('grey', 'gray'));
+    expect(singleNode('adaptor')).toEqual(keywordGroup('adaptor', 'adapter'));
+    expect(singleNode('aluminium')).toEqual(keywordGroup('aluminium', 'aluminum'));
+  });
+
+  it('singularises before expanding spelling variants ("adaptors" → adaptor + adapter)', () => {
+    expect(singleNode('adaptors')).toEqual(keywordGroup('adaptor', 'adapter'));
+  });
+
+  it('echoes the phrase the user typed, pre-normalisation', () => {
+    const result = interpretNaturalLanguage('blue widgets', CONTEXT);
+    expect(result.recognised).toEqual([{ kind: 'text', label: 'Matching “blue widgets”' }]);
   });
 });
 
@@ -191,12 +252,8 @@ describe('interpretNaturalLanguage — quantity comparisons', () => {
 
   it('leaves a comparison with no number as plain text', () => {
     // "more than" with nothing numeric after it isn't a quantity intent — the words fall
-    // through to the residual text search.
-    expect(singleCondition('more than widgets')).toEqual({
-      field: 'name',
-      operator: 'CONTAINS',
-      value: 'more than widgets',
-    });
+    // through to the residual multi-field text search ("widgets" singularised to "widget").
+    expect(singleNode('more than widgets')).toEqual(textGroup(['more'], ['than'], ['widget']));
   });
 });
 
@@ -242,11 +299,7 @@ describe('interpretNaturalLanguage — location phrases', () => {
   });
 
   it('leaves an unknown location as residual text', () => {
-    expect(singleCondition('in the attic')).toEqual({
-      field: 'name',
-      operator: 'CONTAINS',
-      value: 'attic',
-    });
+    expect(singleNode('in the attic')).toEqual(keywordGroup('attic'));
   });
 
   it('emits at most one location', () => {
@@ -268,11 +321,7 @@ describe('interpretNaturalLanguage — category mentions', () => {
   });
 
   it('does not treat an unknown word as a category', () => {
-    expect(singleCondition('capacitors')).toEqual({
-      field: 'name',
-      operator: 'CONTAINS',
-      value: 'capacitors',
-    });
+    expect(singleNode('capacitors')).toEqual(keywordGroup('capacitor'));
   });
 });
 
@@ -283,7 +332,7 @@ describe('interpretNaturalLanguage — combined intents', () => {
     expect(result.ast.conditions).toEqual([
       { field: 'quantity', operator: 'LESS_THAN', value: 5 },
       { field: 'location', operator: 'EQUALS', value: 'loc-garage' },
-      { field: 'name', operator: 'CONTAINS', value: 'screws' },
+      keywordGroup('screw'),
     ]);
     expect(result.recognised.map((r) => r.kind)).toEqual(['stock', 'location', 'text']);
   });
@@ -320,7 +369,7 @@ describe('interpretNaturalLanguage — robustness', () => {
     const result = interpretNaturalLanguage('low stock widgets', {});
     expect(result.ast.conditions).toEqual([
       { field: 'quantity', operator: 'LESS_THAN', value: NL_LOW_STOCK_FALLBACK_QTY },
-      { field: 'name', operator: 'CONTAINS', value: 'widgets' },
+      keywordGroup('widget'),
     ]);
   });
 
@@ -329,7 +378,7 @@ describe('interpretNaturalLanguage — robustness', () => {
       locations: [{ id: 'x', name: '   ' }],
       categories: [{ id: 'y', name: '' }],
     });
-    expect(result.ast.conditions).toEqual([{ field: 'name', operator: 'CONTAINS', value: 'widgets' }]);
+    expect(result.ast.conditions).toEqual([keywordGroup('widget')]);
   });
 
   it('every recognised part corresponds to a condition', () => {

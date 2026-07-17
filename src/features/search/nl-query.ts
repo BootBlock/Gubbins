@@ -23,7 +23,12 @@
  *   - **Location phrases** — "in the garage", "on shelf 2" → `location = <id>`, the
  *     phrase resolved against the caller-supplied location names (longest match wins).
  *   - **Category mentions** — a category name appearing in the phrase → `category = <id>`.
- *   - **Residual words** — whatever is left, minus filler words → `name CONTAINS …`.
+ *   - **Residual words** — whatever is left, minus filler words → a **multi-field** text
+ *     match: each leftover keyword is searched across the item's name, description and
+ *     manufacturer (OR), and the keywords are ANDed, so a vaguer description whose words
+ *     live in the *description* rather than the *name* still surfaces the item. Each keyword
+ *     is singularised and expanded with British/American spelling variants first, so
+ *     "batteries" / "grey" also find "battery" / "gray".
  *
  * The **time/loan attention statuses** (expiring, warranty, on-loan, overdue,
  * maintenance-due) are deliberately *out of scope* here: they are not item-column
@@ -134,6 +139,39 @@ const LOCATION_PREPOSITIONS = new Set(['in', 'at', 'on', 'inside', 'within', 'fr
 
 /** Determiners skipped between a location preposition and the location name. */
 const LOCATION_DETERMINERS = new Set(['the', 'my', 'a', 'our']);
+
+/**
+ * The item text columns a residual keyword is matched against — broadened from the old
+ * name-only search so plain-English words that live in an item's description or manufacturer
+ * surface it too. All three are FTS-scoped-searchable columns (in `FTS_ITEM_COLUMNS`)
+ * that {@link parseASTtoSQL} accepts a column-scoped `CONTAINS` against.
+ */
+const TEXT_SEARCH_FIELDS = ['name', 'description', 'manufacturer'] as const;
+
+/**
+ * A small, high-confidence set of British/American spelling variants (plus adapter/adaptor),
+ * expanded bidirectionally so a residual keyword also searches its alternate spelling. Kept
+ * deliberately narrow — genuine spelling equivalences only, never loose semantic synonyms —
+ * so recall broadens without pulling in unrelated items.
+ */
+const SPELLING_VARIANTS: Readonly<Record<string, readonly string[]>> = {
+  grey: ['gray'],
+  gray: ['grey'],
+  colour: ['color'],
+  color: ['colour'],
+  aluminium: ['aluminum'],
+  aluminum: ['aluminium'],
+  fibre: ['fiber'],
+  fiber: ['fibre'],
+  tyre: ['tire'],
+  tire: ['tyre'],
+  litre: ['liter'],
+  liter: ['litre'],
+  metre: ['meter'],
+  meter: ['metre'],
+  adapter: ['adaptor'],
+  adaptor: ['adapter'],
+};
 
 /** Spelled-out small numbers, so "more than ten" works alongside "more than 10". */
 const NUMBER_WORDS: Readonly<Record<string, number>> = {
@@ -295,9 +333,9 @@ export function interpretNaturalLanguage(phrase: string, context: NlContext = {}
   const consumed = tokens.map(() => false);
   const threshold = resolveLowStockThreshold(context.lowStockQtyThreshold);
 
-  // Ordered conditions + their echo labels. Matchers run in a fixed priority so the
-  // numeric forms ("5 in stock") claim their tokens before the bare stock-level phrases.
-  const parts: Array<{ kind: NlPartKind; condition: FilterCondition; label: string }> = [];
+  // Ordered nodes + their echo labels. Matchers run in a fixed priority so the numeric
+  // forms ("5 in stock") claim their tokens before the bare stock-level phrases.
+  const parts: PartSink = [];
 
   matchQuantityComparisons(tokens, consumed, parts);
   matchStockLevels(tokens, consumed, parts, threshold);
@@ -307,7 +345,7 @@ export function interpretNaturalLanguage(phrase: string, context: NlContext = {}
   const textPart = residualText(tokens, consumed);
   if (textPart) parts.push(textPart);
 
-  const conditions = parts.map((p) => p.condition);
+  const conditions = parts.map((p) => p.node);
   const ast: SearchAST =
     conditions.length === 0 ? emptyAst('AND') : { type: 'GROUP', logicalOperator: 'AND', conditions };
 
@@ -339,7 +377,9 @@ function resolveLowStockThreshold(pref: number | undefined): number {
     : NL_LOW_STOCK_FALLBACK_QTY;
 }
 
-type PartSink = Array<{ kind: NlPartKind; condition: FilterCondition; label: string }>;
+/** A recognised part contributes either a leaf condition or a whole AST sub-tree (the text match). */
+type PartNode = ASTGroupNode | FilterCondition;
+type PartSink = Array<{ kind: NlPartKind; node: PartNode; label: string }>;
 
 /** True when tokens `i..i+phrase.length` are all unconsumed and equal `phrase`. */
 function phraseAt(
@@ -382,7 +422,7 @@ function matchQuantityComparisons(tokens: readonly string[], consumed: boolean[]
       const n = consumed[numIndex] ? null : tokenNumber(tokens[numIndex]);
       if (n !== null) {
         const { condition, label } = before.build(n);
-        parts.push({ kind: 'quantity', condition, label });
+        parts.push({ kind: 'quantity', node: condition, label });
         let end = numIndex + 1;
         // Swallow a redundant metric restatement ("more than 100 in stock").
         const suffix = METRIC_SUFFIXES.find((s) => phraseAt(tokens, consumed, end, s));
@@ -398,7 +438,7 @@ function matchQuantityComparisons(tokens: readonly string[], consumed: boolean[]
       const after = AFTER_NUMBER.find((p) => phraseAt(tokens, consumed, i + 1, p.tokens));
       if (after) {
         const { condition, label } = after.build(n);
-        parts.push({ kind: 'quantity', condition, label });
+        parts.push({ kind: 'quantity', node: condition, label });
         consume(consumed, i, i + 1 + after.tokens.length);
       }
     }
@@ -417,7 +457,7 @@ function matchStockLevels(
     const phrase = STOCK_PHRASES.find((p) => phraseAt(tokens, consumed, i, p.tokens));
     if (!phrase) continue;
     const { condition, label } = phrase.build(threshold);
-    parts.push({ kind: 'stock', condition, label });
+    parts.push({ kind: 'stock', node: condition, label });
     consume(consumed, i, i + phrase.tokens.length);
   }
 }
@@ -453,7 +493,7 @@ function matchLocations(
     if (!match) continue;
     parts.push({
       kind: 'location',
-      condition: { field: 'location', operator: 'EQUALS', value: match.id },
+      node: { field: 'location', operator: 'EQUALS', value: match.id },
       label: `In ${match.name}`,
     });
     consume(consumed, i, nameStart + match.words);
@@ -477,7 +517,7 @@ function matchCategories(
     if (!match) continue;
     parts.push({
       kind: 'category',
-      condition: { field: 'category', operator: 'EQUALS', value: match.id },
+      node: { field: 'category', operator: 'EQUALS', value: match.id },
       label: `Category: ${match.name}`,
     });
     consume(consumed, i, i + match.words);
@@ -527,13 +567,23 @@ function longestNameMatch(
   return null;
 }
 
-/** Build the residual free-text `name CONTAINS` part from the unconsumed, non-filler tokens. */
+/**
+ * Build the residual free-text search from the unconsumed, non-filler tokens.
+ *
+ * Each leftover keyword is searched across **every** item text field ({@link
+ * TEXT_SEARCH_FIELDS}) rather than the name alone, so a vaguer phrase whose words live in
+ * an item's description or manufacturer still surfaces it. Keywords are **ANDed**
+ * (each must appear *somewhere*) while a single keyword may match in *any* field (**OR**) —
+ * high recall without flooding the alphabetically-ordered results. Each keyword is
+ * singularised and spelling-variant-expanded first. The result is a plain {@link SearchAST}
+ * sub-tree the single {@link parseASTtoSQL} translator accepts; no SQL is hand-built here.
+ */
 function residualText(
   tokens: readonly string[],
   consumed: readonly boolean[],
 ): {
   kind: NlPartKind;
-  condition: FilterCondition;
+  node: PartNode;
   label: string;
 } | null {
   // A preposition/determiner that didn't introduce a matched location is noise too.
@@ -542,12 +592,56 @@ function residualText(
       !consumed[i] && !FILLER_WORDS.has(t) && !LOCATION_PREPOSITIONS.has(t) && !LOCATION_DETERMINERS.has(t),
   );
   if (words.length === 0) return null;
-  const value = words.join(' ');
+
+  const perKeyword = words.map((word) => buildKeywordGroup(singularise(word)));
+  // One keyword needs no wrapping AND group; several are ANDed so every word must appear.
+  const node: PartNode =
+    perKeyword.length === 1
+      ? perKeyword[0]!
+      : { type: 'GROUP', logicalOperator: 'AND', conditions: perKeyword };
+
   return {
     kind: 'text',
-    condition: { field: 'name', operator: 'CONTAINS', value },
-    label: `Name contains “${value}”`,
+    node,
+    // Echo what the user typed (pre-normalisation) so the interpretation reads back clearly.
+    label: `Matching “${words.join(' ')}”`,
   };
+}
+
+/**
+ * Lower one residual keyword to an OR group of `<field> CONTAINS <variant>` leaves — one per
+ * text field, per spelling variant — i.e. "match this word in any field, in either spelling".
+ */
+function buildKeywordGroup(keyword: string): ASTGroupNode {
+  const variants = expandKeyword(keyword);
+  const conditions: FilterCondition[] = [];
+  for (const field of TEXT_SEARCH_FIELDS) {
+    for (const variant of variants) {
+      conditions.push({ field, operator: 'CONTAINS', value: variant });
+    }
+  }
+  return { type: 'GROUP', logicalOperator: 'OR', conditions };
+}
+
+/** A keyword plus any {@link SPELLING_VARIANTS} spellings of it (the keyword always first). */
+function expandKeyword(keyword: string): string[] {
+  const variants = SPELLING_VARIANTS[keyword];
+  return variants ? [keyword, ...variants] : [keyword];
+}
+
+/**
+ * Best-effort singularisation of a query keyword, so a plural the user types also matches the
+ * singular stored on an item (FTS prefix-matching already covers the reverse direction).
+ * Deliberately conservative — it leaves short words and the common non-plural `-ss` / `-us` /
+ * `-is` / `-ous` endings untouched, accepting the odd irregular word rather than over-stripping.
+ */
+function singularise(word: string): string {
+  if (word.length <= 4) return word;
+  if (word.endsWith('ies')) return `${word.slice(0, -3)}y`;
+  if (/(ches|shes|sses|xes|zes)$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith('ss') || word.endsWith('us') || word.endsWith('is') || word.endsWith('ous')) return word;
+  if (word.endsWith('s')) return word.slice(0, -1);
+  return word;
 }
 
 /** True when `parseASTtoSQL` accepts the tree (the single SQL translator is the gate). */
