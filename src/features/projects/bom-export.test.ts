@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { ProjectBomLine } from '@/db/repositories';
-import { buildBomExport, bomExportColumns, bomExportFilename } from './bom-export';
+import {
+  buildBomExport,
+  bomExportColumns,
+  bomExportFilename,
+  buildEdaBomExport,
+  edaBomColumns,
+  edaBomExportFilename,
+  groupEdaBom,
+} from './bom-export';
 
 function makeLine(overrides: Partial<ProjectBomLine> = {}): ProjectBomLine {
   return {
@@ -59,32 +67,32 @@ describe('bomExportColumns', () => {
 describe('buildBomExport', () => {
   const lines = [makeLine(), makeLine({ id: 'l2', description: 'Cap, 10µF', designator: 'C1' })];
 
-  it('builds a CSV with a header and one row per line', () => {
-    const { content, mimeType, extension } = buildBomExport('Bench PSU', lines, 'csv');
+  it('builds a CSV with a header and one row per line', async () => {
+    const { content, mimeType, extension } = await buildBomExport('Bench PSU', lines, 'csv');
     expect(mimeType).toContain('text/csv');
     expect(extension).toBe('csv');
-    const rowsOut = content.split('\r\n');
+    const rowsOut = (content as string).split('\r\n');
     expect(rowsOut[0]).toContain('Designator');
     expect(rowsOut).toHaveLength(3); // header + 2 lines
     // The comma-bearing part name is RFC-4180 quoted.
     expect(content).toContain('"Cap, 10µF"');
   });
 
-  it('builds a TSV', () => {
-    const { content, extension } = buildBomExport('Bench PSU', lines, 'tsv');
+  it('builds a TSV', async () => {
+    const { content, extension } = await buildBomExport('Bench PSU', lines, 'tsv');
     expect(extension).toBe('tsv');
-    expect(content.split('\r\n')[0]).toContain('\t');
+    expect((content as string).split('\r\n')[0]).toContain('\t');
   });
 
-  it('builds a Markdown document with a project heading and table', () => {
-    const { content, extension } = buildBomExport('Bench PSU', lines, 'markdown');
+  it('builds a Markdown document with a project heading and table', async () => {
+    const { content, extension } = await buildBomExport('Bench PSU', lines, 'markdown');
     expect(extension).toBe('md');
     expect(content).toContain('# Bench PSU — Bill of materials');
     expect(content).toContain('| Designator | Part |');
   });
 
-  it('builds a standalone HTML document with the project title and a line count', () => {
-    const { content, mimeType, extension } = buildBomExport('Bench PSU', lines, 'html');
+  it('builds a standalone HTML document with the project title and a line count', async () => {
+    const { content, mimeType, extension } = await buildBomExport('Bench PSU', lines, 'html');
     expect(mimeType).toContain('text/html');
     expect(extension).toBe('html');
     expect(content).toContain('<!doctype html>');
@@ -92,10 +100,75 @@ describe('buildBomExport', () => {
     expect(content).toContain('2 lines');
   });
 
-  it('singularises the HTML caption for a one-line BOM', () => {
-    const { content } = buildBomExport('Bench PSU', [makeLine()], 'html');
+  it('builds an Excel workbook as a non-empty zip byte array', async () => {
+    const { content, mimeType, extension } = await buildBomExport('Bench PSU', lines, 'xlsx');
+    expect(mimeType).toContain('spreadsheetml.sheet');
+    expect(extension).toBe('xlsx');
+    expect(content).toBeInstanceOf(Uint8Array);
+    expect((content as Uint8Array).length).toBeGreaterThan(0);
+  });
+
+  it('singularises the HTML caption for a one-line BOM', async () => {
+    const { content } = await buildBomExport('Bench PSU', [makeLine()], 'html');
     expect(content).toContain('1 line');
     expect(content).not.toContain('1 lines');
+  });
+});
+
+describe('groupEdaBom', () => {
+  it('merges lines sharing a part, collecting references and summing quantities', () => {
+    const rows = groupEdaBom([
+      makeLine({ id: 'a', designator: 'R1', description: '10k resistor', requiredQty: 1 }),
+      makeLine({ id: 'b', designator: 'R2', description: '10k resistor', requiredQty: 1 }),
+      makeLine({ id: 'c', designator: 'C1', description: 'Cap, 10µF', mpn: 'C0805', requiredQty: 2 }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ references: 'R1, R2', quantity: 2, value: '10k resistor' });
+    expect(rows[1]).toMatchObject({ references: 'C1', quantity: 2, value: 'Cap, 10µF' });
+  });
+
+  it('keeps distinct parts separate even when references are absent', () => {
+    const rows = groupEdaBom([
+      makeLine({ id: 'a', designator: null, description: 'Part A' }),
+      makeLine({ id: 'b', designator: null, description: 'Part B' }),
+    ]);
+    expect(rows.map((r) => r.value)).toEqual(['Part A', 'Part B']);
+    expect(rows[0]!.references).toBe('');
+  });
+});
+
+describe('edaBomColumns', () => {
+  it('exposes the EDA-conventional header set', () => {
+    expect(edaBomColumns().map((c) => c.header)).toEqual([
+      'References',
+      'Quantity',
+      'Value',
+      'MPN',
+      'Manufacturer',
+    ]);
+  });
+});
+
+describe('buildEdaBomExport', () => {
+  it('always builds a grouped CSV with the EDA headers', async () => {
+    const { content, mimeType, extension } = await buildEdaBomExport('Bench PSU', [
+      makeLine({ designator: 'R1' }),
+      makeLine({ id: 'l2', designator: 'R2' }),
+    ]);
+    expect(mimeType).toContain('text/csv');
+    expect(extension).toBe('csv');
+    const rowsOut = (content as string).split('\r\n');
+    expect(rowsOut[0]).toBe('References,Quantity,Value,MPN,Manufacturer');
+    // The two identical resistors collapse to a single grouped row.
+    expect(rowsOut).toHaveLength(2);
+    expect(rowsOut[1]).toContain('"R1, R2"');
+  });
+});
+
+describe('edaBomExportFilename', () => {
+  it('slugs the project name into an eda-bom file name', () => {
+    const name = edaBomExportFilename('Robot Arm!', 'csv', new Date('2026-07-12T10:00:00Z'));
+    expect(name).toBe('gubbins-eda-bom-Robot_Arm-2026-07-12.csv');
   });
 });
 

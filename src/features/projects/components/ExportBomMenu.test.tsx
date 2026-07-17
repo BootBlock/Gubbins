@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ToastProvider } from '@/components/foundry';
 import type { ProjectBomLine } from '@/db/repositories';
@@ -50,7 +50,7 @@ describe('ExportBomMenu', () => {
     await user.click(screen.getByTestId('export-bom'));
     await user.click(screen.getByTestId('export-bom-csv'));
 
-    expect(download).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
     const [blob, filename] = download.mock.calls[0]!;
     expect(blob).toBeInstanceOf(Blob);
     expect((blob as Blob).type).toContain('text/csv');
@@ -60,12 +60,25 @@ describe('ExportBomMenu', () => {
   it('offers every format and downloads a Markdown file with the right extension', async () => {
     const { user } = renderMenu([makeLine()]);
     await user.click(screen.getByTestId('export-bom'));
-    expect(screen.getByTestId('export-bom-tsv')).toBeInTheDocument();
-    expect(screen.getByTestId('export-bom-html')).toBeInTheDocument();
+    for (const format of ['tsv', 'xlsx', 'json', 'html', 'txt']) {
+      expect(screen.getByTestId(`export-bom-${format}`)).toBeInTheDocument();
+    }
     await user.click(screen.getByTestId('export-bom-markdown'));
 
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
     const [, filename] = download.mock.calls[0]!;
     expect(filename).toMatch(/\.md$/);
+  });
+
+  it('offers a grouped EDA BOM export that downloads a CSV', async () => {
+    const { user } = renderMenu([makeLine()]);
+    await user.click(screen.getByTestId('export-bom'));
+    await user.click(screen.getByTestId('export-bom-eda'));
+
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    const [blob, filename] = download.mock.calls[0]!;
+    expect((blob as Blob).type).toContain('text/csv');
+    expect(filename).toMatch(/^gubbins-eda-bom-Bench_PSU-\d{4}-\d{2}-\d{2}\.csv$/);
   });
 
   it('disables the trigger when the BOM is empty', () => {

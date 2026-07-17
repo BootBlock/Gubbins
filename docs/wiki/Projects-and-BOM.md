@@ -44,16 +44,25 @@ Use **Export BOM** (beside *Import BOM*) to save the bill of materials as a file
 parts list, ordering, or printing. Pick the form that suits:
 
 - **CSV** or **TSV** — a spreadsheet of every line, ready for Excel, Sheets or a supplier upload.
+- **Excel workbook (.xlsx)** — opens straight into Excel or Sheets with numbers kept as numbers.
+- **JSON** — the lines as structured data, for a script or another tool to read.
 - **Markdown table** — drops straight into notes, a README or a wiki.
 - **HTML** — a tidy, standalone page that opens in your browser and **prints** cleanly.
+- **Plain text** — a simple aligned table to paste anywhere.
 
 Each line carries its part details (designator, MPN, manufacturer), the required / reserved /
 received quantities, its reservation and procurement status, and the unit and line cost — so the
 exported file is a complete snapshot of the build's parts.
 
+The same menu also offers an **EDA BOM (grouped CSV)** — the layout electronics tools such as
+KiCad or Altium expect. Parts that share a value, MPN and manufacturer are merged into one row,
+their reference designators listed together (`R1, R2, R3`) and their quantities summed, so the file
+imports cleanly into a schematic or PCB tool's BOM.
+
 > **💡 Tip**
 > Choose **HTML** when you want a printout to take to the bench or the shop — it's laid out for
-> paper. Choose **CSV/TSV** when a supplier or spreadsheet needs to read the numbers back.
+> paper, **CSV/TSV** or **Excel** when a supplier or spreadsheet needs to read the numbers back, and
+> **EDA BOM** when you're feeding the parts list into an electronics design tool.
 
 ## Related pages
 

@@ -20,8 +20,11 @@ Exports can be **scoped** — the whole inventory, a single item, or a
 
 A [[project's bill of materials|Projects-and-BOM]] and the
 [[reorder / shopping list|Reorder-and-Shopping-List]] each export on their own, straight from
-where you're working — as **CSV**, **TSV**, a **Markdown** table, or a printable **HTML** page —
-for sharing, ordering or printing a parts list.
+where you're working — as **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**, a **Markdown**
+table, a printable **HTML** page, or **plain text** — for sharing, ordering or printing a parts
+list. The BOM adds a grouped **EDA BOM (CSV)** for electronics tools like KiCad. The spreadsheet
+formats load on demand the first time you use them, so they never slow the app down; once you've
+[[installed Gubbins|Installing-Gubbins]], they're cached for offline use too.
 
 ## Importing
 

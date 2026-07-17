@@ -1,13 +1,15 @@
 import type { ProjectBomLine } from '@/db/repositories';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
-import { buildBomExport, bomExportFilename } from '../bom-export';
+import { buildBomExport, bomExportFilename, buildEdaBomExport, edaBomExportFilename } from '../bom-export';
 
 /**
- * The "Export BOM" control (issue #27): the project's bill of materials as CSV, TSV,
- * Markdown or a printable HTML document. A thin adapter over the shared
- * {@link TabularExportMenu} — it supplies the BOM's serialisation and file name; the menu
- * owns the format list, the download side-effect and the success toast. Disabled while the
- * BOM is empty (there is nothing to export yet).
+ * The "Export BOM" control (issue #27; formats extended in issue #29): the project's bill of
+ * materials as CSV, TSV, an Excel workbook, JSON, Markdown, a printable HTML document or
+ * plain text — plus a grouped, EDA-oriented CSV (references collected, quantities summed) for
+ * import into an electronics BOM tool. A thin adapter over the shared {@link TabularExportMenu}
+ * — it supplies the BOM's serialisation and file names; the menu owns the format list, the
+ * download side-effect and the success toast. Disabled while the BOM is empty (there is
+ * nothing to export yet).
  */
 export function ExportBomMenu({
   projectName,
@@ -25,6 +27,14 @@ export function ExportBomMenu({
       toastHeading="BOM exported"
       disabled={lines.length === 0}
       testIdPrefix="export-bom"
+      extraActions={[
+        {
+          key: 'eda',
+          label: 'EDA BOM (grouped CSV)',
+          build: () => buildEdaBomExport(projectName, lines),
+          filename: (extension) => edaBomExportFilename(projectName, extension),
+        },
+      ]}
     />
   );
 }

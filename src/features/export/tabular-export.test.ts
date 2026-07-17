@@ -4,7 +4,9 @@ import {
   toCsv,
   toDelimited,
   toHtmlTable,
+  toJson,
   toMarkdownTable,
+  toTextTable,
   toTsv,
   type TabularColumn,
   type TabularExportFormat,
@@ -67,6 +69,40 @@ describe('toCsv / toDelimited', () => {
   });
 });
 
+describe('toJson', () => {
+  it('emits one object per row keyed by header, preserving value types', () => {
+    const json = toJson(columns, rows);
+    expect(JSON.parse(json)).toEqual([
+      { A: 'plain', B: 1 },
+      { A: 'has, comma', B: null },
+    ]);
+  });
+
+  it('is a pretty-printed array with a trailing newline', () => {
+    const json = toJson(columns, rows);
+    expect(json.endsWith('\n')).toBe(true);
+    expect(json).toContain('\n  {');
+  });
+});
+
+describe('toTextTable', () => {
+  it('pads each column to the widest of its header and values with a dashed divider', () => {
+    const txt = toTextTable(columns, rows);
+    const linesOut = txt.trimEnd().split('\n');
+    // Column A is widened to "has, comma" (10 chars), B to its 1-char header.
+    expect(linesOut[0]).toMatch(/^A +B$/);
+    expect(linesOut[1]).toBe('----------  -');
+    expect(linesOut[2]).toMatch(/^plain +1$/);
+    // A blank (null) cell leaves nothing after the value, so trailing padding is trimmed.
+    expect(linesOut[3]).toBe('has, comma');
+  });
+
+  it('flattens newlines so a multi-line cell stays on one row', () => {
+    const txt = toTextTable([{ header: 'x', value: (r: { x: string }) => r.x }], [{ x: 'a\nb' }]);
+    expect(txt.trimEnd().split('\n')).toEqual(['x', '---', 'a b']);
+  });
+});
+
 describe('toMarkdownTable', () => {
   it('emits a GFM table with a divider row and escapes pipes', () => {
     const md = toMarkdownTable([{ header: 'x', value: (r: { x: string }) => r.x }], [{ x: 'a|b' }]);
@@ -110,32 +146,56 @@ describe('toHtmlTable', () => {
 describe('buildTabularExport', () => {
   const meta = { title: 'My list', caption: '2 rows' };
 
-  it('returns the right content, MIME type and extension per format', () => {
+  it('returns the right content, MIME type and extension per format', async () => {
     const cases: Record<TabularExportFormat, { mime: string; ext: string }> = {
       csv: { mime: 'text/csv', ext: 'csv' },
       tsv: { mime: 'text/tab-separated-values', ext: 'tsv' },
+      json: { mime: 'application/json', ext: 'json' },
       markdown: { mime: 'text/markdown', ext: 'md' },
       html: { mime: 'text/html', ext: 'html' },
+      txt: { mime: 'text/plain', ext: 'txt' },
+      xlsx: { mime: 'spreadsheetml.sheet', ext: 'xlsx' },
     };
     for (const [format, expected] of Object.entries(cases) as [
       TabularExportFormat,
       { mime: string; ext: string },
     ][]) {
-      const result = buildTabularExport(format, columns, rows, meta);
+      const result = await buildTabularExport(format, columns, rows, meta);
       expect(result.mimeType).toContain(expected.mime);
       expect(result.extension).toBe(expected.ext);
       expect(result.content.length).toBeGreaterThan(0);
     }
   });
 
-  it('frames the Markdown document with the title heading and the delimited body matches toCsv', () => {
-    expect(buildTabularExport('markdown', columns, rows, meta).content).toContain('# My list\n\n');
-    expect(buildTabularExport('csv', columns, rows, meta).content).toBe(toCsv(columns, rows));
+  it('frames the Markdown document with the title heading and the delimited body matches toCsv', async () => {
+    expect((await buildTabularExport('markdown', columns, rows, meta)).content).toContain('# My list\n\n');
+    expect((await buildTabularExport('csv', columns, rows, meta)).content).toBe(toCsv(columns, rows));
   });
 
-  it('passes the title and caption into the HTML document', () => {
-    const html = buildTabularExport('html', columns, rows, meta).content;
+  it('frames the plain-text document with a title heading above the aligned table', async () => {
+    const txt = (await buildTabularExport('txt', columns, rows, meta)).content as string;
+    expect(txt).toContain('My list\n=======\n');
+    expect(txt).toContain('2 rows');
+    expect(txt).toContain(toTextTable(columns, rows));
+  });
+
+  it('serialises JSON that round-trips the rows', async () => {
+    const json = (await buildTabularExport('json', columns, rows, meta)).content as string;
+    expect(JSON.parse(json)).toHaveLength(2);
+  });
+
+  it('passes the title and caption into the HTML document', async () => {
+    const html = (await buildTabularExport('html', columns, rows, meta)).content;
     expect(html).toContain('<title>My list</title>');
     expect(html).toContain('<p class="caption">2 rows</p>');
+  });
+
+  it('produces a non-empty XLSX byte array (a PK zip) via the lazy module', async () => {
+    const result = await buildTabularExport('xlsx', columns, rows, meta);
+    expect(result.content).toBeInstanceOf(Uint8Array);
+    const bytes = result.content as Uint8Array;
+    // Every zip (and therefore every .xlsx) starts with the local-file-header magic "PK\x03\x04".
+    expect(bytes[0]).toBe(0x50);
+    expect(bytes[1]).toBe(0x4b);
   });
 });
