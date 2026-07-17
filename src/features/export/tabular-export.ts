@@ -57,6 +57,50 @@ export function toTsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[
   return toDelimited(columns, rows, '\t');
 }
 
+/**
+ * Serialise rows to a pretty-printed JSON array — one object per row keyed by column
+ * header, with the raw cell values preserved (numbers stay numbers, booleans stay
+ * booleans, null / undefined become `null`) so the file is faithful and machine-readable.
+ */
+export function toJson<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
+  const objects = rows.map((row) => {
+    const object: Record<string, string | number | boolean | null> = {};
+    for (const column of columns) {
+      const value = column.value(row);
+      object[column.header] = value === undefined ? null : value;
+    }
+    return object;
+  });
+  return JSON.stringify(objects, null, 2) + '\n';
+}
+
+/** Flatten any newline in a cell to a single space so a plain-text row stays on one line. */
+function singleLine(value: TabularCell): string {
+  return cellText(value).replace(/\r?\n/g, ' ');
+}
+
+/**
+ * Serialise rows to a fixed-width plain-text table: each column padded to the widest of its
+ * header and values, a dashed divider under the header, two spaces between columns. Useful
+ * for pasting into a monospaced context (a README, a terminal, a note).
+ */
+export function toTextTable<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
+  const headers = columns.map((c) => c.header);
+  const body = rows.map((row) => columns.map((c) => singleLine(c.value(row))));
+  // Fold each column's width rather than spreading every row into Math.max — a large list
+  // would otherwise blow the argument limit / call stack.
+  const widths = headers.map((header, i) =>
+    body.reduce((max, cells) => Math.max(max, cells[i]!.length), header.length),
+  );
+  const format = (cells: readonly string[]): string =>
+    cells
+      .map((cell, i) => cell.padEnd(widths[i]!))
+      .join('  ')
+      .replace(/\s+$/, '');
+  const divider = widths.map((width) => '-'.repeat(width)).join('  ');
+  return [format(headers), divider, ...body.map(format)].join('\n') + '\n';
+}
+
 /** Escape a Markdown-table cell: neutralise the pipe delimiter and collapse newlines. */
 function markdownCell(value: TabularCell): string {
   // Escape the backslash first so a value containing one can't defeat the pipe escaping,
@@ -142,11 +186,17 @@ export function toHtmlTable<T>(
 `;
 }
 
-/** The file formats the tabular serialisers can produce for a downloadable export. */
-export type TabularExportFormat = 'csv' | 'tsv' | 'markdown' | 'html';
+/**
+ * The file formats the tabular serialisers can produce for a downloadable export. The
+ * lightweight text formats are serialised inline; `xlsx` is produced by a lazily-imported
+ * module (see {@link buildTabularExport}) so its zip / OOXML weight never enters the eager
+ * bundle.
+ */
+export type TabularExportFormat = 'csv' | 'tsv' | 'json' | 'markdown' | 'html' | 'txt' | 'xlsx';
 
 export interface TabularExportResult {
-  readonly content: string;
+  /** The serialised file — a string for the text formats, bytes for the binary XLSX. */
+  readonly content: string | Uint8Array;
   /** MIME type for the download `Blob`. */
   readonly mimeType: string;
   /** File-name extension (no dot). */
@@ -160,18 +210,29 @@ export interface TabularDocumentMeta {
   readonly caption?: string;
 }
 
+/** Frame a plain-text document with a title heading (and optional caption) above its body. */
+function textDocument(meta: TabularDocumentMeta, body: string): string {
+  const heading = `${meta.title}\n${'='.repeat(meta.title.length)}\n`;
+  const caption = meta.caption ? `${meta.caption}\n` : '';
+  return `${heading}${caption}\n${body}`;
+}
+
 /**
  * Serialise a table to the chosen format, returning the file content alongside the MIME
- * type and extension a download needs. The single place the four formats are dispatched —
- * every "list → a file" export (project BOM, reorder shopping list, …) routes through here
- * so the format set, MIME types and document framing stay consistent.
+ * type and extension a download needs. The single place the formats are dispatched — every
+ * "list → a file" export (project BOM, reorder shopping list, …) routes through here so the
+ * format set, MIME types and document framing stay consistent.
+ *
+ * Async because the binary `xlsx` format is produced by a lazily-imported module (its zip /
+ * OOXML machinery is only pulled in — and, in an installed PWA, cached — the first time a
+ * spreadsheet is actually exported); the text formats resolve immediately.
  */
-export function buildTabularExport<T>(
+export async function buildTabularExport<T>(
   format: TabularExportFormat,
   columns: readonly TabularColumn<T>[],
   rows: readonly T[],
   meta: TabularDocumentMeta,
-): TabularExportResult {
+): Promise<TabularExportResult> {
   switch (format) {
     case 'csv':
       return { content: toCsv(columns, rows), mimeType: 'text/csv;charset=utf-8', extension: 'csv' };
@@ -180,6 +241,12 @@ export function buildTabularExport<T>(
         content: toTsv(columns, rows),
         mimeType: 'text/tab-separated-values;charset=utf-8',
         extension: 'tsv',
+      };
+    case 'json':
+      return {
+        content: toJson(columns, rows),
+        mimeType: 'application/json;charset=utf-8',
+        extension: 'json',
       };
     case 'markdown':
       return {
@@ -193,5 +260,19 @@ export function buildTabularExport<T>(
         mimeType: 'text/html;charset=utf-8',
         extension: 'html',
       };
+    case 'txt':
+      return {
+        content: textDocument(meta, toTextTable(columns, rows)),
+        mimeType: 'text/plain;charset=utf-8',
+        extension: 'txt',
+      };
+    case 'xlsx': {
+      const { toXlsx } = await import('./xlsx-export');
+      return {
+        content: toXlsx(columns, rows, meta),
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        extension: 'xlsx',
+      };
+    }
   }
 }

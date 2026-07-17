@@ -52,27 +52,28 @@ describe('reorderExportColumns', () => {
 });
 
 describe('buildReorderExport', () => {
-  it('builds a CSV whose header + rows match the flattened plan (RFC-4180 quoting)', () => {
-    const { content, mimeType, extension } = buildReorderExport([makeGroup()], 'csv');
+  it('builds a CSV whose header + rows match the flattened plan (RFC-4180 quoting)', async () => {
+    const { content, mimeType, extension } = await buildReorderExport([makeGroup()], 'csv');
     expect(mimeType).toContain('text/csv');
     expect(extension).toBe('csv');
-    const out = content.split('\r\n');
+    const out = (content as string).split('\r\n');
     expect(out[0]).toBe('supplier,item,orderQty,unitCost');
     expect(out[1]).toBe('Acme Parts,NE555 timer,10,0.25');
     // A comma-bearing item name is quoted; a null unit cost is blank.
     expect(out[2]).toBe('Acme Parts,"Cap, 10µF",2,');
   });
 
-  it('offers the other formats with a titled document and line count', () => {
-    expect(buildReorderExport([makeGroup()], 'tsv').content.split('\r\n')[0]).toContain('\t');
-    const md = buildReorderExport([makeGroup()], 'markdown').content;
+  it('offers the other formats with a titled document and line count', async () => {
+    const tsv = (await buildReorderExport([makeGroup()], 'tsv')).content as string;
+    expect(tsv.split('\r\n')[0]).toContain('\t');
+    const md = (await buildReorderExport([makeGroup()], 'markdown')).content;
     expect(md).toContain('# Reorder & shopping list');
-    const html = buildReorderExport([makeGroup()], 'html').content;
+    const html = (await buildReorderExport([makeGroup()], 'html')).content;
     expect(html).toContain('<title>Reorder &amp; shopping list</title>');
     expect(html).toContain('2 lines');
   });
 
-  it('is header-only for an empty plan', () => {
-    expect(buildReorderExport([], 'csv').content).toBe('supplier,item,orderQty,unitCost');
+  it('is header-only for an empty plan', async () => {
+    expect((await buildReorderExport([], 'csv')).content).toBe('supplier,item,orderQty,unitCost');
   });
 });

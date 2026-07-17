@@ -52,7 +52,7 @@ export function reorderExportColumns(): readonly TabularColumn<ReorderExportRow>
 export function buildReorderExport(
   groups: readonly ReorderPlanGroup[],
   format: TabularExportFormat,
-): TabularExportResult {
+): Promise<TabularExportResult> {
   const rows = flattenReorderPlan(groups);
   return buildTabularExport(format, reorderExportColumns(), rows, {
     title: 'Reorder & shopping list',

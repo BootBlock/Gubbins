@@ -30,10 +30,11 @@ buy now". From there you can turn items into a [[purchase order|Purchase-Orders]
 ## Exporting the list
 
 **Export** (above the list) saves the shopping list as a file — one row per item, grouped by
-supplier — in whichever form suits: **CSV** or **TSV** for a spreadsheet or an order portal, a
-**Markdown** table for notes, or a printable **HTML** page. Your per-supplier quantity tweaks are
-included, so the file matches exactly what you'd order. See [[Export & import|Export-and-Import]]
-for the same formats elsewhere in Gubbins.
+supplier — in whichever form suits: **CSV**, **TSV** or an **Excel workbook (.xlsx)** for a
+spreadsheet or an order portal, **JSON** for another tool, a **Markdown** table for notes, a
+printable **HTML** page, or **plain text**. Your per-supplier quantity tweaks are included, so the
+file matches exactly what you'd order. See [[Export & import|Export-and-Import]] for the same
+formats elsewhere in Gubbins.
 
 ## Related pages
 
