@@ -244,6 +244,53 @@ describe('CommandPalette', () => {
       const results = await screen.findAllByTestId('command-palette-result');
       expect(results).toHaveLength(2);
     });
+
+    it('jumps to the off-nav Catalogue sub-screen', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: '>catalogue' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens[0].textContent).toContain('Catalogue');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/catalogue' });
+    });
+
+    it('jumps to the off-nav Insurance schedule sub-screen', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: '>insurance' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens[0].textContent).toContain('Insurance schedule');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/insurance-schedule' });
+    });
+
+    it('hides the Reports sub-screens when the Reports module is off', () => {
+      useModulesStore.getState().setFeatureIntent('reports', false);
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: '>' } });
+      const labels = screen.getAllByTestId('command-palette-screen').map((s) => s.textContent);
+      expect(labels.some((l) => l?.includes('Reports'))).toBe(false);
+      expect(labels.some((l) => l?.includes('Catalogue'))).toBe(false);
+      expect(labels.some((l) => l?.includes('Insurance schedule'))).toBe(false);
+    });
+
+    it('always offers the Modules manager, even under the minimal preset', async () => {
+      // The Modules manager is ungated — it must stay jumpable even when every optional feature
+      // is off, since it is how they are turned back on.
+      useModulesStore.getState().applyPreset('minimal');
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: '>modules' } });
+      const screens = await screen.findAllByTestId('command-palette-screen');
+      expect(screens[0].textContent).toContain('Manage modules');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/modules' });
+    });
   });
 
   describe('quick actions (find → act)', () => {

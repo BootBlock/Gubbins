@@ -4,6 +4,7 @@ import type { MessageKey } from '@/features/i18n';
 import {
   AlertIcon,
   BookingIcon,
+  CatalogueIcon,
   CloudIcon,
   ContactsIcon,
   DueDateIcon,
@@ -11,6 +12,8 @@ import {
   HistoryIcon,
   HomeIcon,
   InfoIcon,
+  InsuranceScheduleIcon,
+  ModulesIcon,
   PackageIcon,
   ProjectIcon,
   ReportIcon,
@@ -29,10 +32,14 @@ import {
 /**
  * The literal route paths registered in the route tree (keeps `<Link to>` type-safe).
  *
- * Most entries have a matching {@link NAV_DESTINATIONS} row and Modular UI feature. The
- * Modules manager (`/modules`) is the deliberate exception: it is reached from Settings,
- * the first-run chooser and the "module hidden" interstitial — never the global nav — so
- * it is a valid `<Link to>` target here without a nav row or a `feature` annotation.
+ * Most entries have a matching {@link NAV_DESTINATIONS} row and Modular UI feature. A few are
+ * reachable screens that live *outside* the global nav, so they have no {@link NAV_DESTINATIONS}
+ * row — but they are still valid `<Link to>` / navigate targets and (per issue #80) jumpable from
+ * the command palette via {@link PALETTE_EXTRA_DESTINATIONS}:
+ * - `/catalogue` and `/insurance-schedule` are Reports sub-screens, reached from the Reports page
+ *   and gated by the same `reports` feature.
+ * - `/modules` is the Modules manager, reached from Settings, the first-run chooser and the
+ *   "module hidden" interstitial — never gated, since it is how hidden features are brought back.
  */
 export type AppRoutePath =
   | '/'
@@ -40,6 +47,8 @@ export type AppRoutePath =
   | '/projects'
   | '/purchase-orders'
   | '/reports'
+  | '/catalogue'
+  | '/insurance-schedule'
   | '/contacts'
   | '/bookings'
   | '/upcoming'
@@ -54,17 +63,28 @@ export type AppRoutePath =
 /** Visual grouping in the navigation menu — a light hierarchy, not separate routers. */
 export type NavGroup = 'primary' | 'manage' | 'system';
 
-export interface NavDestination {
+/**
+ * A screen the command palette's screen-jump can offer. Every {@link NavDestination} is one,
+ * plus the handful of {@link PALETTE_EXTRA_DESTINATIONS} that aren't in the global nav. The
+ * palette hides a destination whose {@link feature} is not in the effective-enabled set; a
+ * `feature` of `undefined` means "always reachable" (the Modules manager, which is itself how
+ * hidden features are turned back on, so it must never be gated away).
+ */
+export interface PaletteDestination {
   readonly to: AppRoutePath;
   /**
    * The English label — the stable identifier used for command-palette search text and as the
-   * i18n fallback. The *displayed* label is `t(messageKey)`, so a translated UI shows the
-   * localized text while this English string keeps searching/testing deterministic.
+   * i18n fallback (see {@link NavDestination.messageKey} for how the nav rows localise it).
    */
   readonly label: string;
+  readonly Icon: LucideIcon;
+  /** The Modular UI feature that gates this destination, or `undefined` when always reachable. */
+  readonly feature?: FeatureId;
+}
+
+export interface NavDestination extends PaletteDestination {
   /** i18n key for the displayed nav label (G4); its English value in `en.json` equals {@link label}. */
   readonly messageKey: MessageKey;
-  readonly Icon: LucideIcon;
   readonly group: NavGroup;
   /**
    * The Modular UI feature this destination belongs to (its `route` maps 1:1 to this
@@ -73,7 +93,8 @@ export interface NavDestination {
    * effective-enabled set. Core destinations (Dashboard/Inventory/Settings/About) carry it
    * too but are `alwaysOn`, so they never disappear. This annotation is asserted against
    * `FEATURE_REGISTRY` by a registry-integrity test, so the route↔feature pairing can't
-   * drift — the registry stays the SSOT for the mapping.
+   * drift — the registry stays the SSOT for the mapping. Required for nav rows (unlike the
+   * optional {@link PaletteDestination.feature} it narrows).
    */
   readonly feature: FeatureId;
 }
@@ -187,6 +208,41 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     group: 'system',
     feature: 'about',
   },
+];
+
+/**
+ * Screens the command palette can jump to that are **not** top-level nav destinations, so they
+ * have no {@link NAV_DESTINATIONS} row (issue #80 — every screen reachable from the palette):
+ *
+ * - **Catalogue** and **Insurance schedule** are Reports sub-screens, reached from the Reports
+ *   page and gated by the same `reports` feature — so they vanish from the palette exactly when
+ *   Reports is switched off in the module manager.
+ * - **Modules** is the module manager itself, reached from Settings / first-run. It carries no
+ *   feature gate (`feature` omitted), so it is always jumpable — it is the one screen that must
+ *   stay reachable even when everything else is turned off, since it is how they come back.
+ *
+ * These deliberately omit `messageKey`/`group`: they are not nav rows and the palette renders the
+ * English {@link PaletteDestination.label} directly, matching how it already lists nav screens.
+ */
+export const PALETTE_EXTRA_DESTINATIONS: readonly PaletteDestination[] = [
+  { to: '/catalogue', label: 'Catalogue', Icon: CatalogueIcon, feature: 'reports' },
+  {
+    to: '/insurance-schedule',
+    label: 'Insurance schedule',
+    Icon: InsuranceScheduleIcon,
+    feature: 'reports',
+  },
+  { to: '/modules', label: 'Manage modules', Icon: ModulesIcon },
+];
+
+/**
+ * Every screen the command palette's screen-jump can offer: the global nav destinations plus the
+ * off-nav {@link PALETTE_EXTRA_DESTINATIONS}. The palette filters this by the effective-enabled
+ * feature set (a destination with no `feature` is always kept).
+ */
+export const PALETTE_DESTINATIONS: readonly PaletteDestination[] = [
+  ...NAV_DESTINATIONS,
+  ...PALETTE_EXTRA_DESTINATIONS,
 ];
 
 /** The groups in display order, for rendering separators between them. */

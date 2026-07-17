@@ -9,7 +9,10 @@ menus — the fast, keyboard-first way to drive the app.
 
 Open the palette and start typing to:
 
-- **Jump to any screen** — Inventory, Reports, Contacts, Settings, and the rest.
+- **Jump to any screen** — type `>` to switch into screen-jump mode, then filter by name. It
+  reaches *every* screen, not just the ones on the navigation menu: Inventory, Reports, Contacts
+  and Settings, but also tucked-away views like the **Catalogue** and **Insurance schedule**
+  reports and the **Manage modules** screen.
 - **Search your items** — the same [[full-text search|Search-Overview]] as the inventory box,
   from wherever you are.
 - **Run common actions** quickly.

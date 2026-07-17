@@ -9,7 +9,8 @@
  *   navigates there — the inventory detail view is dialog state with no deep-linkable route,
  *   so "jump to item" lands the screen pre-filtered to it.
  * - **Screen jump** (`>` prefix): typing `>` turns the palette into a screen switcher over
- *   {@link NAV_DESTINATIONS}; picking one navigates straight to that route.
+ *   {@link PALETTE_DESTINATIONS} — every nav screen plus the off-nav ones (the Reports
+ *   sub-screens and the Modules manager); picking one navigates straight to that route.
  *
  * Both modes are ordered by the shared weighted {@link rankFuzzy} matcher, so the closest
  * hit floats to the top and the matched characters are highlighted. The whole feature is
@@ -39,7 +40,7 @@ import {
 } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { rankFuzzy } from '@/lib/fuzzy';
-import { NAV_DESTINATIONS, type NavDestination } from '@/components/nav/nav-destinations';
+import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/nav-destinations';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -86,7 +87,7 @@ export function CommandPalette() {
 
 /** A single row in the palette — either a screen destination or a matched item. */
 type PaletteEntry =
-  | { readonly kind: 'screen'; readonly dest: NavDestination; readonly positions: readonly number[] }
+  | { readonly kind: 'screen'; readonly dest: PaletteDestination; readonly positions: readonly number[] }
   | {
       readonly kind: 'item';
       readonly item: { readonly id: string; readonly name: string };
@@ -140,9 +141,12 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     if (isScreenMode) {
-      // Screen-jump only offers destinations whose feature is enabled; item search itself is
-      // core inventory and is never gated (§3, Phase 2).
-      const screens = NAV_DESTINATIONS.filter((d) => enabledFeatures.has(d.feature));
+      // Screen-jump only offers destinations whose feature is enabled (an entry with no feature —
+      // the Modules manager — is always kept); item search itself is core inventory and is never
+      // gated (§3, Phase 2).
+      const screens = PALETTE_DESTINATIONS.filter(
+        (d) => d.feature === undefined || enabledFeatures.has(d.feature),
+      );
       return rankFuzzy(screens, screenQuery, (d) => d.label).map(({ item, match }) => ({
         kind: 'screen' as const,
         dest: item,
