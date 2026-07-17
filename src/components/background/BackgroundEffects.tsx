@@ -24,6 +24,11 @@
  *   mix, applied automatically) so the drifting effect shows faintly through content surfaces
  *   (cards, item rows) — issue #75. The attribute tracks the real paint state (cleared whenever the
  *   layer is hidden), so cards stay solid when no effect is on screen.
+ * - **The weather touches the controls (issue #68).** A second, equally pointer-inert canvas sits
+ *   *above* the content (`z-40` — over cards and page chrome, under modals/toasts/popovers): snow
+ *   settles into slowly-growing mounds on control tops and rain splashes off them, driven by the
+ *   {@link trackSurfaces} per-column surface map. The overlay is pure motion, so it isn't rendered
+ *   at all when the decoration-motion gate asks for a static frame.
  */
 import { useEffect, useRef } from 'react';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -31,6 +36,7 @@ import { useBackdropStore } from '@/state/stores/useBackdropStore';
 import { useDecorationMotionReduced } from '@/components/foundry/decoration-motion';
 import { suppressesAmbient } from '@/features/settings/theme-registry';
 import { startPrecip, type PrecipController } from './precip-engine';
+import { trackSurfaces } from './surface-map';
 
 export function BackgroundEffects() {
   const effect = usePreferencesStore((s) => s.backgroundEffect);
@@ -45,6 +51,7 @@ export function BackgroundEffects() {
   const oledDark = usePreferencesStore((s) => s.oledDark);
   const highContrast = usePreferencesStore((s) => s.highContrast);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<PrecipController | null>(null);
   const hidden = effect === 'none' || ambientOff || backdropActive;
 
@@ -53,7 +60,12 @@ export function BackgroundEffects() {
     if (hidden) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const controller = startPrecip(canvas, { kind: effect, reduced });
+    // The interaction overlay (issue #68) only exists while motion is allowed. The surface
+    // tracker is passed as a factory: the engine creates it only when the interaction layer can
+    // actually run (both 2D contexts usable) and stops it with itself — so a degraded start
+    // (e.g. canvas blocked) never leaves DOM observers running unconsumed.
+    const overlay = reduced ? null : overlayRef.current;
+    const controller = startPrecip(canvas, { kind: effect, reduced, overlay, surfaces: trackSurfaces });
     controllerRef.current = controller;
     return () => {
       controller.stop();
@@ -89,11 +101,21 @@ export function BackgroundEffects() {
 
   if (hidden) return null;
   return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      data-testid="background-effects"
-      className="print-hide pointer-events-none fixed inset-0 -z-10 h-full w-full"
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        data-testid="background-effects"
+        className="print-hide pointer-events-none fixed inset-0 -z-10 h-full w-full"
+      />
+      {!reduced && (
+        <canvas
+          ref={overlayRef}
+          aria-hidden
+          data-testid="background-effects-overlay"
+          className="print-hide pointer-events-none fixed inset-0 z-40 h-full w-full"
+        />
+      )}
+    </>
   );
 }
