@@ -75,7 +75,7 @@ export function ItemDetailDialog({
 
   // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
   // ~5% of items that are collectors. Gated to match the card frame — shown only when the
-  // "Collector cards" toggle is on *and* the maximal ("I have a headache") animation level is
+  // "Collector cards" toggle is on *and* the maximal ("Total Gubbage") animation level is
   // active (the one tier `suppressesFlourish` does not suppress). Purely cosmetic; see `rarity.ts`.
   const rarity = itemRarity(item);
   const gamifyCards = usePreferencesStore((s) => s.gamifyCards);

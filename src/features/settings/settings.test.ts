@@ -402,7 +402,7 @@ describe('usePreferencesStore — animation level ↔ background effect', () => 
     usePreferencesStore.setState({ animationLevel: 'balanced', backgroundEffect: 'none' });
   });
 
-  it('turns Snow on by default when the "I have a headache" preset is chosen', () => {
+  it('turns Snow on by default when the "Total Gubbage" preset is chosen', () => {
     usePreferencesStore.setState({ animationLevel: 'balanced', backgroundEffect: 'none' });
     usePreferencesStore.getState().setAnimationLevel('headache');
     expect(usePreferencesStore.getState().animationLevel).toBe('headache');

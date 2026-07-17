@@ -1,6 +1,6 @@
 /**
  * Item "rarity" — the pure seam behind the **Collector cards** gamification (Settings →
- * Appearance). Purely decorative: when the toggle is on (and the maximal "I have a headache"
+ * Appearance). Purely decorative: when the toggle is on (and the maximal "Total Gubbage"
  * animation level is active), a *lucky few* inventory cards are dressed like a collectible trading
  * card, with a rarity gem and a tinted frame. It never changes any real data and feeds no report.
  *

@@ -322,7 +322,7 @@ export default function SettingsDialog({
               'The effect is drawn efficiently on the GPU and pauses when the tab is in the ' +
               'background. It follows the **Animation level** above: it holds still at *Calm*, and ' +
               'switches off entirely at *Minimal* or *Off* (and whenever your system prefers ' +
-              'reduced motion). Choosing **I have a headache** — the maximal “everything on” ' +
+              'reduced motion). Choosing **Total Gubbage** — the maximal “everything on” ' +
               'level — turns **Snow** on for you by default; change it here any time.'
             }
           >
@@ -342,7 +342,7 @@ export default function SettingsDialog({
               'Turns the sheen that plays across an item card as you hover it into a shifting ' +
               '**rainbow foil**, like light catching a holographic trading card — the glow and the ' +
               'edge sheen go prismatic and slide as you move the pointer.\n\n' +
-              'It’s part of the **I have a headache** animation level (the maximal one), so — like ' +
+              'It’s part of the **Total Gubbage** animation level (the maximal one), so — like ' +
               'the card tilt it rides on — it only appears at that level, on a mouse/trackpad, and ' +
               'never when your system prefers reduced motion. Purely decorative. Turn it off to keep ' +
               'the plain single-colour sheen.'
@@ -369,7 +369,7 @@ export default function SettingsDialog({
               'stable — the same item is always the same card, and the showier tiers are the rarer ' +
               'finds.\n\n' +
               'It’s purely for fun and never changes any real data or figure. Like the foil above, ' +
-              'it’s part of the **I have a headache** animation level and only appears at that ' +
+              'it’s part of the **Total Gubbage** animation level and only appears at that ' +
               'level. Turn it off any time.'
             }
           >

@@ -212,7 +212,7 @@
   /*
    * Collector-card rarity palette (the "Collector cards" Appearance gamification). Five tiers,
    * Common → Legendary, drawn from an item's stock value by the pure `rarity.ts` seam and used
-   * only to *decorate* the card (a tinted frame + a corner gem) at the maximal "I have a headache"
+   * only to *decorate* the card (a tinted frame + a corner gem) at the maximal "Total Gubbage"
    * animation level. A trading-card gradient of hue + saturation: neutral slate for Common, rising
    * through green / blue / violet to a warm gold for Legendary. On the near-white light surface
    * these sit darker/more saturated to stay legible; the .dark block lifts them. Purely decorative
@@ -1747,7 +1747,7 @@
  * It rides ON the F7 tilt glare (`.gubbins-tilt::after`) and the F5 spotlight comet
  * (`.gubbins-spotlight-border::before`), both of which are already hidden at any calmer animation
  * level (`:root[data-anim-level] …{display:none}` below), so the foil is automatically confined to
- * the maximal "I have a headache" tier — no extra level gate needed here. The active rules stay
+ * the maximal "Total Gubbage" tier — no extra level gate needed here. The active rules stay
  * inside the same `(pointer: fine) and (prefers-reduced-motion: no-preference)` guard as the tilt,
  * so touch / reduced-motion users see nothing, and high-contrast still drops the glare wash above.
  * Purely decorative; it never touches the focus ring, hover-lift or selection ring.
@@ -1910,7 +1910,7 @@
  * element carrying `data-rarity` folds the tier's `--rarity-<id>` token into one `--rarity` var the
  * frame and the badge tint themselves with; the badge sets its own, so it is self-contained.
  *
- * The **card frame** is gated to the maximal "I have a headache" tier via `:not([data-anim-level])`
+ * The **card frame** is gated to the maximal "Total Gubbage" tier via `:not([data-anim-level])`
  * (the level that sets no such attribute) AND-ed with `data-gamify-cards`, so a calmer level or the
  * toggle-off state shows nothing — and, being static (no motion), it needs no reduced-motion gate,
  * exactly like the per-location tint. The **dialog badge** is instead gated in JS at its call site

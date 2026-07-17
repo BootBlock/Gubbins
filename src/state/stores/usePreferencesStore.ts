@@ -161,7 +161,7 @@ interface PreferencesStore {
   /**
    * Holographic foil item cards (Appearance flair): dresses the item-card hover sheen as a
    * shifting rainbow **trading-card foil** that tracks the pointer, going beyond the plain
-   * single-hue specular glare. **On by default** as part of the maximal "I have a headache"
+   * single-hue specular glare. **On by default** as part of the maximal "Total Gubbage"
    * animation level — like the pointer tilt it rides on, it only takes visual effect at that top
    * tier (and on a fine pointer, honouring reduced motion), so a calmer level sees nothing change.
    * Projected onto `<html>` as `data-holo-cards`; the CSS in `styles/index.css` gates it.
@@ -173,7 +173,7 @@ interface PreferencesStore {
    * frame on the card, and a rarity gem in the item's detail dialog. Which items are collectors
    * (and their tier) is a stable hash of the item name, not its value, so it never churns — see the
    * pure {@link import('@/features/inventory/rarity').itemRarity} seam. **On by default** as part of
-   * the maximal "I have a headache" animation level, and — like the holographic foil — only shown at
+   * the maximal "Total Gubbage" animation level, and — like the holographic foil — only shown at
    * that top tier. Purely cosmetic. Projected onto `<html>` as `data-gamify-cards`; the CSS gates
    * the card frame (the dialog gem is gated in JS at its call site).
    */
@@ -580,7 +580,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       fullWidth: false,
       animationLevel: DEFAULT_ANIMATION_LEVEL,
       backgroundEffect: DEFAULT_BACKGROUND_EFFECT,
-      // On by default — part of the maximal "I have a headache" tier, and only rendered there.
+      // On by default — part of the maximal "Total Gubbage" tier, and only rendered there.
       holographicCards: true,
       gamifyCards: true,
       // Branding (issue #110) — off/neutral by default so the shipped look is unchanged until opted into.
@@ -653,7 +653,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAnimationLevel: (level) =>
         set((state) => {
           const animationLevel = normaliseAnimationLevel(level);
-          // The maximal "I have a headache" preset is "everything on", so it brings the ambient
+          // The maximal "Total Gubbage" preset is "everything on", so it brings the ambient
           // Snow weather layer on by default — but only when no effect is chosen yet (`none`), so
           // an explicit Rain/Snow/None choice the user made is preserved.
           const backgroundEffect =
