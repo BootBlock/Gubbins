@@ -1,10 +1,12 @@
 import { Suspense, lazy, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { CloseIcon } from '@/components/icons';
-import { emojiName } from './emoji-search';
 
 // The picker carries the emoji catalogue, so it is code-split behind a dynamic import and
-// only fetched the first time a user opens it.
+// only fetched the first time a user opens it. The trigger below deliberately imports
+// *nothing* from `emoji-data` / `emoji-search`, so the catalogue never rides into the eager
+// bundle this button lands in (the same discipline as the Lucide glyph picker) — the chosen
+// emoji character is self-descriptive, so no name lookup is needed to preview it.
 const EmojiPicker = lazy(() => import('./EmojiPicker').then((m) => ({ default: m.EmojiPicker })));
 
 export interface EmojiPickerButtonProps {
@@ -16,6 +18,12 @@ export interface EmojiPickerButtonProps {
   readonly placeholderGlyph?: string;
   /** Text shown in the trigger when nothing is chosen. */
   readonly placeholder?: string;
+  /**
+   * Caption shown in the trigger beside the chosen emoji. The emoji itself is the identity,
+   * so this is a short affordance rather than the emoji's name (which would need the
+   * catalogue). Defaults to "Change glyph".
+   */
+  readonly selectedLabel?: string;
   /** Accessible name for the trigger button (e.g. "Choose category glyph"). */
   readonly 'aria-label'?: string;
   /** Title of the picker dialog. */
@@ -40,6 +48,7 @@ export function EmojiPickerButton({
   onChange,
   placeholderGlyph = '🙂',
   placeholder = 'Choose a glyph',
+  selectedLabel = 'Change glyph',
   'aria-label': ariaLabel,
   title,
   clearable = false,
@@ -49,7 +58,6 @@ export function EmojiPickerButton({
   className,
 }: EmojiPickerButtonProps) {
   const [open, setOpen] = useState(false);
-  const name = emojiName(value);
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -61,11 +69,11 @@ export function EmojiPickerButton({
         onClick={() => setOpen(true)}
         className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-lg border border-border bg-input/40 px-3 text-left text-sm text-foreground shadow-sm outline-none transition-colors hover:bg-secondary/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className="grid size-5 shrink-0 place-items-center text-lg leading-none" aria-hidden>
+        <span className="grid size-6 shrink-0 place-items-center text-xl leading-none" aria-hidden>
           {value || placeholderGlyph}
         </span>
         <span className={cn('min-w-0 truncate', !value && 'text-muted-foreground')}>
-          {value ? (name ?? value) : placeholder}
+          {value ? selectedLabel : placeholder}
         </span>
       </button>
 
