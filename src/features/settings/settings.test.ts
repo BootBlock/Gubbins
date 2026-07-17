@@ -25,8 +25,10 @@ import {
   LOW_STOCK_QTY_BOUNDS,
   normaliseCardClickAction,
   normaliseVisualCardMetric,
+  normaliseVisualCardMetricFallback,
   normaliseWindowMonths,
   DEFAULT_VISUAL_CARD_METRIC,
+  DEFAULT_VISUAL_CARD_METRIC_FALLBACK,
   DEFAULT_NAV_COUNT_METRICS,
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
@@ -35,6 +37,7 @@ import {
   normaliseNavCountMetric,
   normaliseNavCountMetrics,
   VISUAL_CARD_METRIC_OPTIONS,
+  VISUAL_CARD_METRIC_FALLBACK_OPTIONS,
   WINDOW_MONTH_OPTIONS,
 } from './settings';
 import { DEFAULT_CARD_BADGE_CONTENT, DEFAULT_CARD_BADGE_FALLBACK } from '@/features/inventory/card-badge';
@@ -191,11 +194,30 @@ describe('normaliseVisualCardMetric', () => {
   it('accepts the metrics added in this phase', () => {
     expect(normaliseVisualCardMetric('lastUpdated')).toBe('lastUpdated');
     expect(normaliseVisualCardMetric('condition')).toBe('condition');
+    expect(normaliseVisualCardMetric('manufacturer')).toBe('manufacturer');
   });
 
   it('coerces an unknown/stale persisted value to the default', () => {
     expect(normaliseVisualCardMetric('turnover')).toBe(DEFAULT_VISUAL_CARD_METRIC);
     expect(normaliseVisualCardMetric('')).toBe(DEFAULT_VISUAL_CARD_METRIC);
+  });
+});
+
+describe('normaliseVisualCardMetricFallback', () => {
+  it('passes every offered fallback (the metrics plus "none") through unchanged', () => {
+    for (const { value } of VISUAL_CARD_METRIC_FALLBACK_OPTIONS) {
+      expect(normaliseVisualCardMetricFallback(value)).toBe(value);
+    }
+  });
+
+  it('accepts "none" — the shipped default (no fallback)', () => {
+    expect(normaliseVisualCardMetricFallback('none')).toBe('none');
+    expect(DEFAULT_VISUAL_CARD_METRIC_FALLBACK).toBe('none');
+  });
+
+  it('coerces an unknown/stale persisted value to the default', () => {
+    expect(normaliseVisualCardMetricFallback('turnover')).toBe(DEFAULT_VISUAL_CARD_METRIC_FALLBACK);
+    expect(normaliseVisualCardMetricFallback('')).toBe(DEFAULT_VISUAL_CARD_METRIC_FALLBACK);
   });
 });
 

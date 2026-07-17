@@ -175,6 +175,11 @@ export const ItemCard = memo(function ItemCard({
                 <span className="ml-1 text-muted-foreground">#{item.serialNo}</span>
               ) : null}
             </h3>
+            {/* The manufacturer/brand as a subtitle directly under the name (issue #107), when the
+                item has one — a quick identity cue distinct from the configurable field list below. */}
+            {item.manufacturer && item.manufacturer.trim() !== '' ? (
+              <p className="truncate text-xs text-muted-foreground">{item.manufacturer}</p>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">

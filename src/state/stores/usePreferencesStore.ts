@@ -25,15 +25,18 @@ import {
   DEFAULT_ITEMS_PER_PAGE,
   DEFAULT_NAV_COUNT_METRICS,
   DEFAULT_VISUAL_CARD_METRIC,
+  DEFAULT_VISUAL_CARD_METRIC_FALLBACK,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
   normaliseCardClickAction,
   normaliseNavCountMetric,
   normaliseVisualCardMetric,
+  normaliseVisualCardMetricFallback,
   normaliseWindowMonths,
   type CardClickAction,
   type NavCountRoute,
   type VisualCardMetric,
+  type VisualCardMetricFallback,
 } from '@/features/settings/settings';
 import {
   DEFAULT_SCANNER_SYMBOLOGY,
@@ -245,6 +248,15 @@ interface PreferencesStore {
    * defaults to the actionable stock-health status. See {@link VisualCardMetric}.
    */
   readonly visualCardMetric: VisualCardMetric;
+  /**
+   * The fallback for {@link visualCardMetric} when the chosen metric has nothing to show for a
+   * given item (issue #107) — e.g. "Manufacturer" primary with a "Stock health" fallback shows
+   * the maker where one is set and the reorder status everywhere else. The read side resolves it
+   * against the item via `resolveVisualCardMetric`. Defaults to `none` (the primary shows its own
+   * muted placeholder), so an upgrade changes nothing until the user opts in. See
+   * {@link VisualCardMetricFallback}.
+   */
+  readonly visualCardMetricFallback: VisualCardMetricFallback;
   /**
    * What a plain click on an item card/row body (outside its buttons) does (spec §3) — open
    * details, move, show the label, or nothing. A pointer-only shortcut that mirrors one of the
@@ -497,6 +509,8 @@ interface PreferencesStore {
   setScannerBeep: (enabled: boolean) => void;
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
+  /** Choose the Visual-card hero's fallback for items the chosen metric can't apply to (issue #107). */
+  setVisualCardMetricFallback: (metric: VisualCardMetricFallback) => void;
   setCardClickAction: (action: CardClickAction) => void;
   /** Choose what the item card/row badge slot shows (issue #117). */
   setCardBadgeContent: (content: CardBadgeContent) => void;
@@ -597,6 +611,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerBeep: true,
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
+      visualCardMetricFallback: DEFAULT_VISUAL_CARD_METRIC_FALLBACK,
       cardClickAction: DEFAULT_CARD_CLICK_ACTION,
       cardBadgeContent: DEFAULT_CARD_BADGE_CONTENT,
       cardBadgeFallback: DEFAULT_CARD_BADGE_FALLBACK,
@@ -687,6 +702,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setScannerHaptics: (scannerHaptics) => set({ scannerHaptics }),
       // Normalise so a stale/unknown persisted value can never reach the card renderer.
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
+      setVisualCardMetricFallback: (metric) =>
+        set({ visualCardMetricFallback: normaliseVisualCardMetricFallback(metric) }),
       // Normalise so a stale/unknown persisted value can never reach the card's click handler.
       setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
       // Normalise so a stale/unknown persisted value can never reach the badge renderer. The

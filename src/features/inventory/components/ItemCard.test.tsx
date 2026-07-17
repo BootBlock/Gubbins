@@ -187,6 +187,21 @@ describe('ItemCard — content branches', () => {
     expect(plain.firstElementChild!.classList.contains('gubbins-loc-tint')).toBe(false);
   });
 
+  it('shows the manufacturer as a subtitle under the name only when the item has one (issue #107)', () => {
+    const { container } = renderCard(makeItem({ manufacturer: 'Texas Instruments' }));
+    const heading = screen.getByRole('heading', { name: /NE555 timer/ });
+    const subtitle = heading.nextElementSibling;
+    expect(subtitle?.textContent).toBe('Texas Instruments');
+
+    // No manufacturer → no subtitle line (the heading has no following sibling in that block).
+    cleanup();
+    const { container: plain } = renderCard(makeItem({ manufacturer: null }));
+    expect(plain.textContent).not.toContain('Texas Instruments');
+    const plainHeading = screen.getByRole('heading', { name: /NE555 timer/ });
+    expect(plainHeading.nextElementSibling).toBeNull();
+    void container;
+  });
+
   it('appends the serial number to the heading when present', () => {
     renderCard(makeItem({ trackingMode: 'SERIALISED', serialNo: 7 }));
     expect(screen.getByRole('heading', { name: /NE555 timer #7/ })).not.toBeNull();

@@ -53,6 +53,7 @@ beforeEach(() => {
   // (the low-stock floor defaults to 5), plus GBP/en-GB so the Money symbol is stable.
   usePreferencesStore.setState({
     visualCardMetric: 'stockHealth',
+    visualCardMetricFallback: 'none',
     lowStockQtyThreshold: 5,
     lowStockGaugePercent: 20,
     baseCurrency: 'GBP',
@@ -152,5 +153,45 @@ describe('DiscreteCardMetric — condition branch', () => {
     const label = screen.getByText('Untracked');
     expect(label.className).toContain('text-muted-foreground');
     expect(screen.getByText('condition')).not.toBeNull();
+  });
+});
+
+describe('DiscreteCardMetric — manufacturer branch', () => {
+  beforeEach(() => usePreferencesStore.setState({ visualCardMetric: 'manufacturer' }));
+
+  it('renders the item manufacturer', () => {
+    render(<DiscreteCardMetric item={makeItem({ manufacturer: 'Texas Instruments' })} />);
+    expect(screen.getByText('Texas Instruments')).not.toBeNull();
+    expect(screen.getByText('manufacturer')).not.toBeNull();
+  });
+
+  it('shows a muted em-dash when the item has no manufacturer (and no fallback)', () => {
+    render(<DiscreteCardMetric item={makeItem({ manufacturer: null })} />);
+    const label = screen.getByText('—');
+    expect(label.className).toContain('text-muted-foreground');
+    expect(screen.getByText('manufacturer')).not.toBeNull();
+  });
+});
+
+describe('DiscreteCardMetric — hero fallback (issue #107)', () => {
+  beforeEach(() =>
+    usePreferencesStore.setState({
+      visualCardMetric: 'manufacturer',
+      visualCardMetricFallback: 'stockHealth',
+    }),
+  );
+
+  it('shows the manufacturer when one is set (the fallback is not used)', () => {
+    render(<DiscreteCardMetric item={makeItem({ manufacturer: 'ACME', quantity: 3 })} />);
+    expect(screen.getByText('ACME')).not.toBeNull();
+    // The stock-health fallback must not appear over a present manufacturer.
+    expect(screen.queryByText('Low stock')).toBeNull();
+  });
+
+  it('falls back to stock health when the manufacturer is unset', () => {
+    // qty 3 ≤ the 5 floor → the fallback renders the "Low stock" band, not an em-dash.
+    render(<DiscreteCardMetric item={makeItem({ manufacturer: null, quantity: 3 })} />);
+    expect(screen.getByText('Low stock')).not.toBeNull();
+    expect(screen.queryByText('manufacturer')).toBeNull();
   });
 });
