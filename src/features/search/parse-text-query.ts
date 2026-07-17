@@ -79,6 +79,9 @@ const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>
   gtin: { field: 'barcode', kind: 'text' },
   upc: { field: 'barcode', kind: 'text' },
   ean: { field: 'barcode', kind: 'text' },
+  serial: { field: 'serial', kind: 'text' },
+  serialnumber: { field: 'serial', kind: 'text' },
+  sn: { field: 'serial', kind: 'text' },
   quantity: { field: 'quantity', kind: 'numeric' },
   qty: { field: 'quantity', kind: 'numeric' },
   // Intrinsic weight in canonical grams (issue #25), e.g. `weight>500` for over 500 g.

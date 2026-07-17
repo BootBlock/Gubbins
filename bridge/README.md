@@ -250,7 +250,7 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 | --- | --- |
 | `/search` | `id, name, quantity, locationName, mpn, manufacturer` |
 | `/items` | the above + `isUnlimited, locationId, categoryId, trackingMode, isActive` (`ItemSummary`) |
-| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
+| `/items/{id}` | the `ItemSummary` fields + `description, categoryName, unitCost, condition, serialNumber, serialNo, parentId, expiryDate, batchNumber, lotNumber, createdAt, updatedAt, placements, capabilities` (`ItemDetail`) |
 
 > **Unlimited supply.** An item marked _unlimited_ (an effectively infinite source — tap water,
 > mains air) reports `isUnlimited: true` and its `quantity` as **`null`** (JSON has no `Infinity`);
@@ -258,7 +258,7 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 
 **Full field vocabulary** (nameable in `fields`, or in `include` when extended): `id`, `name`,
 `quantity`, `isUnlimited`, `locationId`, `locationName`, `categoryId`, `categoryName`, `mpn`, `manufacturer`,
-`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNo`, `parentId`,
+`trackingMode`, `isActive`, `description`, `notes`, `condition`, `serialNumber`, `serialNo`, `parentId`,
 `unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
 `warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
@@ -298,7 +298,7 @@ for a zero-dependency bridge). It adds **no dependency** and ships **nothing** t
 | `$orderby` | *(new)* | Sort — see below. |
 | `$filter` | *(new)* | Constrained boolean filter — see below. |
 | `$count` | *(new)* | `$count=true` adds the grand total as `pagination.total`. |
-| `$search` | *(new)* | Free-text (FTS) match across name/description/notes/mpn/manufacturer. |
+| `$search` | *(new)* | Free-text (FTS) match across name/description/notes/mpn/manufacturer/serial number. |
 
 Each `$`-prefixed option is an **alias** of its plain REST name and **wins** when both are given
 (`?$top=5&limit=9` ⇒ 5). `$select`/`$expand`/`$top` work on `/search`, `/items` and `/items/{id}`;
@@ -327,7 +327,7 @@ semantics and has no injection surface — it is **never** bespoke SQL). Support
 - the `contains(field, 'text')` function (free-text, FTS-backed)
 - boolean composition with `and`, `or`, and parentheses
 - literals: single-quoted strings (`''` escapes a quote), numbers, `true`/`false`
-- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `quantity`,
+- filterable fields: `name`, `description`, `notes`, `mpn`, `manufacturer`, `serialNumber`, `quantity`,
   `category`(`Id`), `location`(`Id`)
 
 Anything outside the subset (`ne`/`ge`/`le`, `not`, `startswith`/`endswith`, arithmetic, lambdas,
@@ -339,7 +339,7 @@ returns it as `pagination.total` alongside the page (it costs one extra `COUNT` 
 opt-in). For just the number, hit the dedicated `/items/$count` path instead.
 
 **`$search`** — a free-text match over the FTS5-indexed item columns (name, description, notes,
-mpn, manufacturer), the same backend the app's own search uses. It combines with `location` /
+mpn, manufacturer, serial number), the same backend the app's own search uses. It combines with `location` /
 `category`; it is ignored when `$filter` is set (which is then the sole filter).
 
 ```bash

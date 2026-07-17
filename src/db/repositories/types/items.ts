@@ -27,6 +27,12 @@ export interface ItemRow {
   readonly manufacturer: string | null;
   /** Retail barcode (GTIN — EAN/UPC), stored verbatim as printed; null if none. */
   readonly barcode: string | null;
+  /**
+   * Intrinsic serial number — the maker's unique per-unit identifier printed on the article
+   * (issue #90); null if none. Distinct from `serial_no`, which is only a SERIALISED-clone
+   * instance index. Stored verbatim and FTS-indexed for search.
+   */
+  readonly serial_number: string | null;
   /** Current replacement value per unit, in the base currency (v4). */
   readonly unit_cost: number | null;
   /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4, v8). */
@@ -121,6 +127,12 @@ export interface Item {
    * lookup-by-barcode and product enrichment. Distinct from `mpn` (the maker's code).
    */
   readonly barcode: string | null;
+  /**
+   * Intrinsic serial number — the maker's unique per-unit identifier printed on the article
+   * (issue #90); null if none. Distinct from {@link serialNo} (the SERIALISED-clone instance
+   * index): this is a free-text identity string that applies to any item and is searchable.
+   */
+  readonly serialNumber: string | null;
   /** Current replacement value per unit, in the base currency; null if unpriced. */
   readonly unitCost: number | null;
   /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4). */
@@ -241,6 +253,8 @@ export interface CreateItemInput {
   readonly manufacturer?: string | null;
   /** Retail barcode (GTIN — EAN/UPC); stored verbatim as printed. */
   readonly barcode?: string | null;
+  /** Intrinsic serial number — the maker's unique per-unit identifier (issue #90). */
+  readonly serialNumber?: string | null;
   /** Current replacement value per unit, in the base currency. */
   readonly unitCost?: number | null;
   /** Perishable expiry instant (UNIX-ms); omit/null for non-perishables (§4). */
@@ -311,6 +325,8 @@ export interface UpdateItemInput {
   readonly manufacturer?: string | null;
   /** Retail barcode (GTIN — EAN/UPC); null clears it. */
   readonly barcode?: string | null;
+  /** Intrinsic serial number (issue #90); null clears it; omit to leave untouched. */
+  readonly serialNumber?: string | null;
   readonly unitCost?: number | null;
   readonly expiryDate?: number | null;
   readonly batchNumber?: string | null;

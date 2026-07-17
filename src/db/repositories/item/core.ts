@@ -316,6 +316,10 @@ export class ItemCoreRepository extends BaseRepository {
       sets.push('barcode = ?');
       params.push(normaliseText(input.barcode));
     }
+    if (input.serialNumber !== undefined) {
+      sets.push('serial_number = ?');
+      params.push(normaliseText(input.serialNumber));
+    }
     if (input.unitCost !== undefined) {
       sets.push('unit_cost = ?');
       params.push(normaliseUnitCost(input.unitCost));

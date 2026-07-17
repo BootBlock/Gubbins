@@ -37,6 +37,7 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('description', 'Edm.String'),
   p('notes', 'Edm.String'),
   p('condition', 'Edm.String'),
+  p('serialNumber', 'Edm.String'),
   p('serialNo', 'Edm.Int64'),
   p('parentId', 'Edm.String'),
   p('unitCost', 'Edm.Decimal'),

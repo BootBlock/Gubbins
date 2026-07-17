@@ -91,6 +91,7 @@ const schema = z
     mpn: z.string().optional(),
     manufacturer: z.string().optional(),
     barcode: z.string().optional(),
+    serialNumber: z.string().optional(),
     unitCost: z.string().optional(),
     acquiredAt: z.string().optional(),
     expiryDate: z.string().optional(),
@@ -152,6 +153,7 @@ const FIELD_TAB: Record<string, CreateTabId> = {
   mpn: 'details',
   manufacturer: 'details',
   barcode: 'details',
+  serialNumber: 'details',
   unitCost: 'details',
   quantity: 'details',
   count: 'details',
@@ -343,6 +345,7 @@ export function CreateItemDialog({
       mpn: initialValues?.mpn ?? '',
       manufacturer: initialValues?.manufacturer ?? '',
       barcode: initialValues?.barcode ?? '',
+      serialNumber: '',
       unitCost: initialValues?.unitCost ?? '',
       acquiredAt: '',
       expiryDate: '',
@@ -589,6 +592,7 @@ export function CreateItemDialog({
       ...(values.mpn?.trim() ? { mpn: values.mpn.trim() } : {}),
       ...(values.manufacturer?.trim() ? { manufacturer: values.manufacturer.trim() } : {}),
       ...(values.barcode?.trim() ? { barcode: values.barcode.trim() } : {}),
+      ...(values.serialNumber?.trim() ? { serialNumber: values.serialNumber.trim() } : {}),
       ...(values.unitCost?.trim() ? { unitCost: Number(values.unitCost) } : {}),
       // Acquisition date (§4, v24) — an ISO `YYYY-MM-DD` string; pre-fillable from a scanned receipt.
       ...(values.acquiredAt?.trim() ? { acquiredAt: values.acquiredAt.trim() } : {}),
@@ -972,6 +976,16 @@ export function CreateItemDialog({
           </Button>
         ) : null}
       </div>
+      <FormField
+        label="Serial number (optional)"
+        hint={
+          'The **serial number** printed on this unit — the maker’s unique per-unit identifier ' +
+          '(e.g. an equipment or tool serial).\n\nDistinct from the **MPN** (which is the same for ' +
+          'every unit of a part) and from the **Barcode** (the retail GTIN). Searchable.'
+        }
+      >
+        <Input placeholder="e.g. SN-2024-0042" {...register('serialNumber')} />
+      </FormField>
       {/* Keyless product enrichment (recommendation point 2): when the companion extension
             is present and a barcode is entered, look the product up (Open Food Facts) and fill
             any blank name/description/manufacturer. Feature-detected — hidden when absent. */}

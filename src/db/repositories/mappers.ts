@@ -130,6 +130,7 @@ export function rowToItem(row: ItemRow): Item {
     mpn: row.mpn,
     manufacturer: row.manufacturer,
     barcode: row.barcode,
+    serialNumber: row.serial_number,
     unitCost: row.unit_cost,
     expiryDate: row.expiry_date,
     batchNumber: row.batch_number,

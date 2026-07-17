@@ -34,6 +34,8 @@ const FIELD_MAP: Readonly<Record<string, string>> = {
   notes: 'notes',
   mpn: 'mpn',
   manufacturer: 'manufacturer',
+  serialnumber: 'serial',
+  serial: 'serial',
   quantity: 'quantity',
   weight: 'weight',
   width: 'width',

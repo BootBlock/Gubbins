@@ -35,6 +35,7 @@ export interface ResolvedCreate {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   readonly barcode: string | null;
+  readonly serialNumber: string | null;
   readonly unitCost: number | null;
   readonly expiryDate: number | null;
   readonly batchNumber: string | null;
@@ -124,6 +125,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     mpn: normaliseText(input.mpn),
     manufacturer: normaliseText(input.manufacturer),
     barcode: normaliseText(input.barcode),
+    serialNumber: normaliseText(input.serialNumber),
     unitCost: normaliseUnitCost(input.unitCost),
     expiryDate: normaliseExpiry(input.expiryDate),
     batchNumber: normaliseText(input.batchNumber),
@@ -165,10 +167,10 @@ export function buildInsert(
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
                unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
-               mpn, manufacturer, barcode, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited, is_favourite,
+               mpn, manufacturer, barcode, serial_number, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited, is_favourite,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, width, height, depth, current_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -187,6 +189,7 @@ export function buildInsert(
         r.mpn,
         r.manufacturer,
         r.barcode,
+        r.serialNumber,
         r.unitCost,
         r.expiryDate,
         r.batchNumber,

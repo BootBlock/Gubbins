@@ -36,6 +36,7 @@ export async function loadItemDetail(driver: IDatabaseDriver, id: string): Promi
     categoryName: category?.name ?? null,
     unitCost: item.unitCost,
     condition: item.condition,
+    serialNumber: item.serialNumber,
     serialNo: item.serialNo,
     parentId: item.parentId,
     expiryDate: item.expiryDate,
