@@ -4,7 +4,7 @@
  * rect (happy-dom reports zero-size rects, so real geometry is injected per element).
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { buildSurfaceMap, trackSurfaces, COLUMN_WIDTH, NO_SURFACE } from './surface-map';
+import { buildSurfaceMap, resolveTopRadii, trackSurfaces, COLUMN_WIDTH, NO_SURFACE } from './surface-map';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -26,17 +26,14 @@ function mockRect(el: Element, left: number, top: number, width: number, height:
   } as DOMRect);
 }
 
+/** A square-cornered rect literal (the common case in these tests). */
+function rect(left: number, top: number, right: number) {
+  return { left, top, right, radiusLeft: 0, radiusRight: 0 };
+}
+
 describe('buildSurfaceMap', () => {
   it('records the topmost control edge per column (whatever is under cover stays clear)', () => {
-    const tops = buildSurfaceMap(
-      [
-        { left: 0, top: 100, right: 40 },
-        { left: 20, top: 50, right: 60 },
-      ],
-      80,
-      600,
-      4,
-    );
+    const tops = buildSurfaceMap([rect(0, 100, 40), rect(20, 50, 60)], 80, 600, 4);
     expect(tops.length).toBe(20);
     // Columns only the first rect covers keep its top…
     expect(tops[0]).toBe(100);
@@ -55,10 +52,10 @@ describe('buildSurfaceMap', () => {
   it('ignores rects whose top edge is outside the viewport', () => {
     const tops = buildSurfaceMap(
       [
-        { left: 0, top: -5, right: 40 }, // scrolled off the top — no visible edge to land on
-        { left: 0, top: 700, right: 40 }, // below the fold
-        { left: -60, top: 100, right: -10 }, // fully off-screen left
-        { left: 90, top: 100, right: 120 }, // fully off-screen right
+        rect(0, -5, 40), // scrolled off the top — no visible edge to land on
+        rect(0, 700, 40), // below the fold
+        rect(-60, 100, -10), // fully off-screen left
+        rect(90, 100, 120), // fully off-screen right
       ],
       80,
       600,
@@ -68,9 +65,62 @@ describe('buildSurfaceMap', () => {
   });
 
   it('clamps partially off-screen rects to the viewport columns', () => {
-    const tops = buildSurfaceMap([{ left: -20, top: 30, right: 1000 }], 80, 600, 4);
+    const tops = buildSurfaceMap([rect(-20, 30, 1000)], 80, 600, 4);
     expect(tops[0]).toBe(30);
     expect(tops[19]).toBe(30);
+  });
+
+  it('follows rounded top corners down their arc instead of shelving flatly across them', () => {
+    // A 16px-radius card corner: the surface the map reports must drop toward the card's edge.
+    const tops = buildSurfaceMap(
+      [{ left: 0, top: 100, right: 80, radiusLeft: 16, radiusRight: 16 }],
+      80,
+      600,
+      4,
+    );
+    // Flat middle: exactly the rect top.
+    expect(tops[10]).toBe(100);
+    // Inside the left corner the edge curves down: monotonically deeper toward the rim…
+    const c0 = tops[0]!; // column centre x=2 → deep on the arc
+    const c1 = tops[1]!; // x=6
+    const c2 = tops[2]!; // x=10
+    const c3 = tops[3]!; // x=14
+    expect(c0).toBeGreaterThan(c1);
+    expect(c1).toBeGreaterThan(c2);
+    expect(c2).toBeGreaterThan(c3);
+    expect(c3).toBeGreaterThanOrEqual(100);
+    // …with the outermost column well below the flat top (quarter-circle: 16 − √(16² − 14²) ≈ 8).
+    expect(c0 - 100).toBeGreaterThanOrEqual(7);
+    // The right corner mirrors it.
+    expect(tops[19]).toBe(c0);
+    expect(tops[18]).toBe(c1);
+  });
+});
+
+describe('resolveTopRadii', () => {
+  it("resolves a pill's oversized radii to the drawn height/2, per CSS overflow scaling", () => {
+    // rounded-full: all four corners huge; on an 80×26 chip the drawn radius is 13, not 26.
+    const [left, right] = resolveTopRadii(9999, 9999, 9999, 9999, 80, 26);
+    expect(left).toBeCloseTo(13);
+    expect(right).toBeCloseTo(13);
+  });
+
+  it('keeps a single large corner at full size when no side overflows', () => {
+    // One 100px top-left corner on a 120×200 box: CSS scales nothing down.
+    const [left, right] = resolveTopRadii(100, 0, 0, 0, 120, 200);
+    expect(left).toBe(100);
+    expect(right).toBe(0);
+  });
+
+  it('scales uniform radii down by the worst side (vertical here), like the browser does', () => {
+    // rounded-2xl (16) on an 80×24 element: the 24px sides carry 16+16 → factor 24/32 = 0.75.
+    const [left, right] = resolveTopRadii(16, 16, 16, 16, 80, 24);
+    expect(left).toBeCloseTo(12);
+    expect(right).toBeCloseTo(12);
+  });
+
+  it('returns square corners when the top radii are zero', () => {
+    expect(resolveTopRadii(0, 0, 20, 20, 80, 24)).toEqual([0, 0]);
   });
 });
 

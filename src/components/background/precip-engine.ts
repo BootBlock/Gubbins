@@ -54,8 +54,15 @@
  *  - **Snow settles.** A near flake whose fall crosses the top edge of a control lands there: the
  *    flake is consumed and a per-column depth field grows, building rounded **mounds** on control
  *    tops over time (capped, edge-aware so drifts never smear across gaps between controls).
+ *    Grounded in how snow actually behaves: a thin dusting is translucent and only turns opaque
+ *    as depth builds ({@link SETTLE.snow.alpha}), the surface map follows rounded corners' arcs
+ *    (see {@link import('./surface-map').buildSurfaceMap}), and deposits taper off steep faces
+ *    per snow's angle of repose ({@link SETTLE.snow.slopeMax}) — so drifts hug a card's corner
+ *    instead of shelving flatly across it.
  *  - **Rain splashes.** A near drop hitting a control top is consumed by a brief **splash** — an
  *    expanding ripple with a crown of kicked-up droplets — playing pre-rendered animation frames.
+ *    Splashes are low and wide: the surface is seen nearly edge-on (a strongly foreshortened
+ *    ripple ellipse), and a drop on a rigid surface throws a shallow crown, not a tall fountain.
  *
  * The same GPU discipline applies throughout: the collision test is one lookup into the tracker's
  * per-column {@link import('./surface-map')} table; splashes blit pre-rendered frame sprites; the
@@ -232,14 +239,27 @@ const SETTLE = {
     deposit: 1.1,
     /** …spread over neighbouring columns by distance (tiny lookup table, index = |offset|). */
     kernel: [1, 0.6, 0.25] as const,
-    /** A neighbour column takes deposit / joins a mound run only while its top is within this. */
-    edgeTolerance: 3,
     /** Mound height cap (css px): build-up visibly grows over time, then holds. */
     maxDepth: 9,
     /** Depth below which a column isn't worth drawing (css px). */
     minVisibleDepth: 0.4,
     /** Min seconds between mound-layer re-renders (per frame the layer is one cached blit). */
     renderInterval: 0.15,
+    /**
+     * Mound opacity by depth (thin → deep). Fresh snow is translucent while it's a dusting and
+     * only reads opaque once real depth builds — so a new drift fades in and thickens instead of
+     * popping in solid white. Applied per column (√-eased) via the run's fill gradient.
+     */
+    alpha: [0.25, 0.85] as const,
+    /** Crest-highlight opacity by depth (same √-eased ramp as the fill). */
+    crestAlpha: [0.15, 0.9] as const,
+    /**
+     * Deposits scale down with the local surface slope and stop entirely past `slopeMax`
+     * (rise/run ≈ 1.2 ≈ 50°): snow doesn't stick to steep faces — it slides off — which is what
+     * makes drifts taper naturally around a rounded corner instead of shelving across it. (Dry
+     * snow's angle of repose is ~35–40°; the extra headroom keeps gentle shoulders collecting.)
+     */
+    slopeMax: 1.2,
   },
   rain: {
     /** Only near drops (depth ≥ this) splash; far and deep-background drops don't interact. */
@@ -255,10 +275,32 @@ const SETTLE = {
   },
 } as const;
 
-/** Splash sprite geometry (css px): frame size and the y of the impact line within the frame. */
-const SPLASH_W = 34;
-const SPLASH_H = 18;
-const SPLASH_BASELINE = 13;
+/**
+ * The largest step (css px) between adjacent columns that still reads as one continuous drift
+ * surface — anything walkable at less than the {@link SETTLE.snow.slopeMax} repose cutoff.
+ * Shared by kernel spread, mound-run joining, and the slope model, so "same drift" means one
+ * thing everywhere.
+ */
+const SNOW_JOIN_STEP = SETTLE.snow.slopeMax * COLUMN_WIDTH;
+
+/**
+ * Adjacent-column steps beyond {@link SNOW_JOIN_STEP} but under this are treated as a steep face
+ * of the same surface (a corner's flank — snow sheds); steps beyond it are a discontinuity
+ * between different controls (a cliff), which says nothing about the column's own steepness.
+ */
+const SNOW_CLIFF_STEP = SNOW_JOIN_STEP * 3;
+
+/**
+ * Splash sprite geometry (css px): frame size and the y of the impact line within the frame.
+ * Deliberately low and wide: control tops are seen almost edge-on, so the ripple ellipse is
+ * strongly foreshortened, and a drop hitting a rigid surface throws a low, wide crown (thin
+ * radial lamella with droplets ejected at shallow angles) rather than a tall fountain.
+ */
+const SPLASH_W = 40;
+const SPLASH_H = 12;
+const SPLASH_BASELINE = 8;
+/** Vertical foreshortening of the ripple ellipse (ry : rx) for the near-edge-on viewpoint. */
+const SPLASH_FLATTEN = 0.16;
 
 /** Fallbacks if the token can't be read (kept close to the dark-theme values). */
 const FALLBACK_COLOR: Record<PrecipKind, string> = {
@@ -510,40 +552,43 @@ function buildSplashFrame(dpr: number, color: string, variant: number, q: number
     const cx = SPLASH_W / 2;
     const by = SPLASH_BASELINE;
     const fade = 1 - q;
-    // Expanding ripple ring, flattened into the surface plane.
+    // Expanding ripple ring, strongly foreshortened into the surface plane (near-edge-on view).
+    const rx = 2.5 + 13 * q;
     g.strokeStyle = colorWithAlpha(color, 0.12 + 0.5 * fade);
-    g.lineWidth = 1.7 - 0.9 * q;
+    g.lineWidth = 1.5 - 0.8 * q;
     g.beginPath();
-    g.ellipse(cx, by, 2.5 + 12 * q, 1 + 3.4 * q, 0, 0, Math.PI * 2);
+    g.ellipse(cx, by, rx, rx * SPLASH_FLATTEN, 0, 0, Math.PI * 2);
     g.stroke();
     // A second, trailing ripple once the first has spread.
     if (q > 0.3) {
       g.strokeStyle = colorWithAlpha(color, 0.3 * fade);
       g.lineWidth = 1;
       g.beginPath();
-      g.ellipse(cx, by, (2.5 + 12 * q) * 0.55, (1 + 3.4 * q) * 0.55, 0, 0, Math.PI * 2);
+      g.ellipse(cx, by, rx * 0.55, rx * SPLASH_FLATTEN * 0.55, 0, 0, Math.PI * 2);
       g.stroke();
     }
-    // Impact spike, brightest at the instant of the hit.
-    if (q < 0.45) {
-      const s = 1 - q / 0.45;
-      g.strokeStyle = colorWithAlpha(color, 0.55 * s);
-      g.lineWidth = 1.2;
+    // Impact spike, brightest at the instant of the hit — short: the crown stays low on a rigid
+    // surface, there is no tall fountain.
+    if (q < 0.4) {
+      const s = 1 - q / 0.4;
+      g.strokeStyle = colorWithAlpha(color, 0.5 * s);
+      g.lineWidth = 1.1;
       g.beginPath();
       g.moveTo(cx, by);
-      g.lineTo(cx, by - 6 * s - 1);
+      g.lineTo(cx, by - 3.2 * s - 0.8);
       g.stroke();
     }
-    // Crown droplets, kicked up and arcing back down over the animation.
+    // Crown droplets, ejected at shallow angles: they spread wide and stay low, arcing out and
+    // back down over the animation.
     const count = 4 + (variant % 2);
     const rise = Math.sin(Math.min(1, q * 1.15) * Math.PI);
-    g.fillStyle = colorWithAlpha(color, 0.7 * fade);
+    g.fillStyle = colorWithAlpha(color, 0.65 * fade);
     for (let i = 0; i < count; i++) {
       const fx = (i / (count - 1)) * 2 - 1;
-      const dx = fx * (5 + 11 * q);
-      const dy = -rise * (5.5 + ((i * 2 + variant) % 3));
+      const dx = fx * (6 + 12 * q);
+      const dy = -rise * (2.6 + ((i * 2 + variant) % 3) * 0.8);
       g.beginPath();
-      g.arc(cx + dx, by + dy, 0.9, 0, Math.PI * 2);
+      g.arc(cx + dx, by + dy, 0.75, 0, Math.PI * 2);
       g.fill();
     }
   }
@@ -800,21 +845,64 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
 
   /**
+   * What one neighbouring column says about how steep the surface is here, in rise/run:
+   *  - a step within {@link SNOW_JOIN_STEP} is the same drift surface → its actual gradient;
+   *  - a step in the flank band (≤ {@link SNOW_CLIFF_STEP}) is a steep face of this surface →
+   *    the repose cutoff (snow sheds);
+   *  - anything larger is a different control entirely (a cliff), and a rooftop edge beside a
+   *    cliff is still flat ground — the neighbour offers **no evidence** (-1).
+   */
+  function sideSlopeEvidence(here: number, neighbour: number): number {
+    if (neighbour === NO_SURFACE) return -1;
+    const step = Math.abs(here - neighbour);
+    if (step <= SNOW_JOIN_STEP) return step / COLUMN_WIDTH;
+    if (step <= SNOW_CLIFF_STEP) return SETTLE.snow.slopeMax;
+    return -1;
+  }
+
+  /**
+   * How well a column holds settling snow (0 = sheds everything, 1 = flat ground), from the
+   * angle-of-repose falloff over the local slope. Slope is judged from whichever neighbours
+   * offer evidence, taking the *gentler* side — snow rests wherever it is supported from at
+   * least one side, so a rooftop edge or the last column before a cliff still piles up while a
+   * mid-arc flank (steep on both sides) sheds.
+   */
+  function holdAt(c: number): number {
+    const here = topAt(c);
+    if (here === NO_SURFACE) return 0;
+    const left = sideSlopeEvidence(here, c > 0 ? topAt(c - 1) : NO_SURFACE);
+    const right = sideSlopeEvidence(here, c + 1 < surfTops.length ? topAt(c + 1) : NO_SURFACE);
+    let slope = 0;
+    if (left >= 0 && right >= 0) slope = Math.min(left, right);
+    else if (left >= 0) slope = left;
+    else if (right >= 0) slope = right;
+    return clamp(1 - slope / SETTLE.snow.slopeMax, 0, 1);
+  }
+
+  /**
    * Grow the settled-snow field around a landing column. The kernel spreads the deposit over
-   * neighbouring columns, but only while their own surface sits at (nearly) the same height —
-   * so mounds round off naturally yet never smear across the gap between two controls. Once a
+   * neighbouring columns, but only while they stay on the same drift surface (per-distance
+   * {@link SNOW_JOIN_STEP} allowance, so a corner arc's descent is included and the gap between
+   * two controls never is), and each column takes its own {@link holdAt} share — a sloped
+   * shoulder receives a tapered spread even when the flake struck the flat top beside it. Once a
    * mound has saturated at the depth cap, further landings change nothing and must not keep
    * re-dirtying the render cache.
+   *
+   * Returns whether the surface held the snow at all — false on a too-steep face, so the caller
+   * lets the flake slide off and keep falling instead of consuming it.
    */
-  function depositSnow(col: number, top: number): void {
+  function depositSnow(col: number, top: number): boolean {
     const t = SETTLE.snow;
+    if (holdAt(col) <= 0) return false;
     const reach = t.kernel.length - 1;
     let changed = false;
     for (let o = -reach; o <= reach; o++) {
       const c = col + o;
       if (c < 0 || c >= surfTops.length) continue;
-      if (Math.abs(topAt(c) - top) > t.edgeTolerance) continue;
-      const d = depthAt(c) + t.deposit * (t.kernel[Math.abs(o)] ?? 0);
+      if (Math.abs(topAt(c) - top) > SNOW_JOIN_STEP * Math.max(1, Math.abs(o))) continue;
+      const hold = holdAt(c);
+      if (hold <= 0) continue;
+      const d = depthAt(c) + t.deposit * hold * (t.kernel[Math.abs(o)] ?? 0);
       const capped = d > t.maxDepth ? t.maxDepth : d;
       if (capped !== depthAt(c)) {
         depths[c] = capped;
@@ -822,6 +910,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       }
     }
     if (changed) moundDirty = true;
+    return true;
   }
 
   /**
@@ -837,8 +926,12 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     if (top === NO_SURFACE) return;
     const line = kind === 'snow' ? top - depthAt(c) : top;
     if (prevY >= line || p.y < line) return;
-    if (kind === 'snow') depositSnow(c, top);
-    else spawnSplash(p.x, top, p.z);
+    if (kind === 'snow') {
+      // A too-steep face (a corner's flank) doesn't hold snow — the flake slides off and falls on.
+      if (!depositSnow(c, top)) return;
+    } else {
+      spawnSplash(p.x, top, p.z);
+    }
     spawn(p, false);
   }
 
@@ -874,13 +967,14 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         c++;
         continue;
       }
-      // Extend the run while the surface stays (nearly) level and holds visible snow.
+      // Extend the run while the surface stays continuous (same-drift steps, so a corner arc's
+      // descent belongs to its control's run) and holds visible snow.
       let end = c;
       while (
         end + 1 < n &&
         topAt(end + 1) !== NO_SURFACE &&
         depthAt(end + 1) >= t.minVisibleDepth &&
-        Math.abs(topAt(end + 1) - topAt(end)) <= t.edgeTolerance
+        Math.abs(topAt(end + 1) - topAt(end)) <= SNOW_JOIN_STEP
       ) {
         end++;
       }
@@ -911,6 +1005,63 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     g.lineTo(crestX(c1), crestY(c1));
   }
 
+  /** √-eased 0..1 ramp of a column's depth toward the cap (thin snow brightens fast, then eases). */
+  function depthRamp(c: number): number {
+    return Math.sqrt(clamp(depthAt(c) / SETTLE.snow.maxDepth, 0, 1));
+  }
+
+  /** Quantised {@link depthRamp}, so visually-identical alphas compare equal for stop dedup. */
+  function quantRamp(c: number): number {
+    return Math.round(depthRamp(c) * 24) / 24;
+  }
+
+  /**
+   * Build the fill and crest paints for one run in a single column sweep. Alpha tracks each
+   * column's depth — thin fresh snow is translucent and a drift only turns properly opaque as
+   * it deepens — but stops are emitted only where the quantised ramp *changes*, so a uniform or
+   * saturated run collapses to its two end stops instead of one stop (and one `color-mix`
+   * parse) per column. Built at mound-render time (a few times/s at most), never per frame.
+   */
+  function buildRunPaints(
+    c0: number,
+    c1: number,
+  ): { fill: string | CanvasGradient; crest: string | CanvasGradient } {
+    const t = SETTLE.snow;
+    if (c1 === c0) {
+      const ramp = depthRamp(c0);
+      return {
+        fill: colorWithAlpha(overlayColor, lerp(t.alpha[0], t.alpha[1], ramp)),
+        crest: colorWithAlpha(overlayColor, lerp(t.crestAlpha[0], t.crestAlpha[1], ramp)),
+      };
+    }
+    const g = moundCtx!;
+    const x0 = crestX(c0);
+    const x1 = crestX(c1);
+    const fill = g.createLinearGradient(x0, 0, x1, 0);
+    const crest = g.createLinearGradient(x0, 0, x1, 0);
+    const addStops = (c: number, ramp: number): void => {
+      const offset = (crestX(c) - x0) / (x1 - x0);
+      fill.addColorStop(offset, colorWithAlpha(overlayColor, lerp(t.alpha[0], t.alpha[1], ramp)));
+      crest.addColorStop(offset, colorWithAlpha(overlayColor, lerp(t.crestAlpha[0], t.crestAlpha[1], ramp)));
+    };
+    let prev = quantRamp(c0);
+    let plateauStart = c0;
+    addStops(c0, prev);
+    for (let c = c0 + 1; c <= c1; c++) {
+      const q = quantRamp(c);
+      if (q !== prev) {
+        // Close the plateau at its far edge so the gradient holds flat across it, then step.
+        if (plateauStart < c - 1) addStops(c - 1, prev);
+        addStops(c, q);
+        prev = q;
+        plateauStart = c;
+      } else if (c === c1) {
+        addStops(c, q);
+      }
+    }
+    return { fill, crest };
+  }
+
   /** Fill one contiguous mound: a smoothed crest over the run, tapering to the surface at both ends. */
   function drawMoundRun(c0: number, c1: number): void {
     const g = moundCtx!;
@@ -922,13 +1073,21 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     for (let c = c1; c >= c0; c--) g.lineTo(crestX(c), topAt(c));
     g.lineTo(c0 * COLUMN_WIDTH, topAt(c0));
     g.closePath();
-    g.fillStyle = colorWithAlpha(overlayColor, 0.95);
+    const paints = buildRunPaints(c0, c1);
+    g.fillStyle = paints.fill;
     g.fill();
-    // A crisp cap along the crest gives the drift a lit top edge. Stroked as its own open path —
-    // stroking the closed fill outline would also draw a hard line along the control's top edge.
+    // A soft cap along the crest gives the drift a lit top edge, fading in with depth like the
+    // fill. Stroked as its own open path — stroking the closed fill outline would also draw a
+    // hard line along the control's top edge.
     g.beginPath();
-    traceCrest(g, c0, c1);
-    g.strokeStyle = overlayColor;
+    if (c1 === c0) {
+      // A zero-length path draws nothing under butt caps; give a lone column its short cap.
+      g.moveTo(c0 * COLUMN_WIDTH, crestY(c0));
+      g.lineTo((c0 + 1) * COLUMN_WIDTH, crestY(c0));
+    } else {
+      traceCrest(g, c0, c1);
+    }
+    g.strokeStyle = paints.crest;
     g.lineWidth = 1;
     g.lineJoin = 'round';
     g.stroke();

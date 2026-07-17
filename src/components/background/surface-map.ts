@@ -77,11 +77,17 @@ const SURFACE_SELECTOR = `${CONTROL_SELECTOR}, [class*="bg-card"]`;
 const EXCLUDED_ANCESTOR_SELECTOR =
   '[role="dialog"], [role="alert"], [role="status"], [class*="bg-popover"], [aria-hidden="true"]';
 
-/** A control's landable extent: its top edge between `left` and `right` (all css px). */
+/**
+ * A control's landable extent: its top edge between `left` and `right`, with the top corner radii
+ * so the map can follow a rounded corner's arc instead of shelving flatly across it (all css px).
+ */
 export interface SurfaceRect {
   readonly left: number;
   readonly top: number;
   readonly right: number;
+  /** Top-left / top-right border radius (0 = square corner). */
+  readonly radiusLeft: number;
+  readonly radiusRight: number;
 }
 
 /** The current map plus a change counter (bumped only when the map's content changed). */
@@ -98,10 +104,30 @@ export interface SurfaceTracker {
   stop(): void;
 }
 
+/** The quarter-circle corner drop: edge y at horizontal distance `d` from the arc's centre. */
+function arcTop(top: number, radius: number, d: number): number {
+  return top + radius - Math.sqrt(Math.max(0, radius * radius - d * d));
+}
+
 /**
- * Fold `rects` into a per-column topmost-edge map. A rect only registers if its top edge is
- * actually inside the viewport — an element scrolled partly off the top has no visible top edge
- * to land on. Pure; the DOM never enters here.
+ * The visible top edge of `r` at horizontal position `x`, following the rounded top corners:
+ * inside a corner radius the edge is the quarter-circle arc {@link arcTop}, flat in between.
+ * This is what stops snow shelving horizontally across a card's rounded corner — the surface the
+ * map reports curves down exactly where the drawn corner does.
+ */
+function surfaceTopAt(r: SurfaceRect, x: number): number {
+  const fromLeft = x - r.left;
+  if (fromLeft < r.radiusLeft) return arcTop(r.top, r.radiusLeft, r.radiusLeft - fromLeft);
+  const fromRight = r.right - x;
+  if (fromRight < r.radiusRight) return arcTop(r.top, r.radiusRight, r.radiusRight - fromRight);
+  return r.top;
+}
+
+/**
+ * Fold `rects` into a per-column topmost-edge map, sampling each rect's corner-aware top profile
+ * at the column centre. A rect only registers if its top edge is actually inside the viewport —
+ * an element scrolled partly off the top has no visible top edge to land on. Pure; the DOM never
+ * enters here.
  */
 export function buildSurfaceMap(
   rects: readonly SurfaceRect[],
@@ -114,14 +140,79 @@ export function buildSurfaceMap(
   for (const r of rects) {
     if (r.top < 0 || r.top >= viewportHeight) continue;
     if (r.right <= 0 || r.left >= viewportWidth) continue;
-    const top = Math.round(r.top);
     const first = Math.max(0, Math.floor(r.left / columnWidth));
     const last = Math.min(cols - 1, Math.floor((r.right - 1) / columnWidth));
     for (let c = first; c <= last; c++) {
+      // Sample the profile at the column centre, clamped inside the rect for edge columns.
+      const x = Math.min(Math.max(c * columnWidth + columnWidth / 2, r.left), r.right - 0.01);
+      const top = Math.round(surfaceTopAt(r, x));
+      // A corner arc can dip below the fold even when the flat top is above it — keep the old
+      // guarantee that every recorded top is on-screen.
+      if (top >= viewportHeight) continue;
       if (top < (tops[c] ?? NO_SURFACE)) tops[c] = top;
     }
   }
   return tops;
+}
+
+/**
+ * Parse one computed border-radius longhand into a circular px radius. Percentages and
+ * elliptical two-value radii don't fit the circular-arc model, so they fall back to a square
+ * corner (the pre-arc behaviour) rather than mis-modelling the drawn edge.
+ */
+function parseRadiusPx(value: string): number {
+  const v = value.trim();
+  if (v.includes('%') || v.includes(' ')) return 0;
+  return parseFloat(v) || 0;
+}
+
+/**
+ * Resolve the *used* top corner radii the way CSS does: when the specified radii overflow the
+ * box, every radius scales down by the worst side's overflow factor (this is what turns a
+ * `rounded-full` pill's 9999px into height/2, and what lets a single 100px corner keep its full
+ * size on a tall box). Pure, exported for tests.
+ */
+export function resolveTopRadii(
+  topLeft: number,
+  topRight: number,
+  bottomLeft: number,
+  bottomRight: number,
+  width: number,
+  height: number,
+): [number, number] {
+  if (topLeft <= 0 && topRight <= 0) return [0, 0];
+  // Sides with a zero radius sum divide to Infinity and drop out of the min.
+  const f = Math.min(
+    1,
+    width / (topLeft + topRight),
+    width / (bottomLeft + bottomRight),
+    height / (topLeft + bottomLeft),
+    height / (topRight + bottomRight),
+  );
+  return [topLeft * f, topRight * f];
+}
+
+/**
+ * Parsed raw radius longhands per element, cached for the tracker's lifetime of the node —
+ * computed style resolution is the expensive part of the scan, and an element's specified radii
+ * essentially never change while it lives (a class toggle that re-rounds a control is the same
+ * attribute-level staleness the tracker already accepts elsewhere). The used radii still track
+ * the element's *current* size, because {@link resolveTopRadii} runs per rebuild.
+ */
+const rawRadiiCache = new WeakMap<Element, readonly [number, number, number, number]>();
+
+function rawTopRadii(el: Element): readonly [number, number, number, number] {
+  const cached = rawRadiiCache.get(el);
+  if (cached) return cached;
+  const cs = getComputedStyle(el);
+  const parsed: readonly [number, number, number, number] = [
+    parseRadiusPx(cs.borderTopLeftRadius),
+    parseRadiusPx(cs.borderTopRightRadius),
+    parseRadiusPx(cs.borderBottomLeftRadius),
+    parseRadiusPx(cs.borderBottomRightRadius),
+  ];
+  rawRadiiCache.set(el, parsed);
+  return parsed;
 }
 
 /**
@@ -150,7 +241,13 @@ function collectControlRects(root: ParentNode, viewportWidth: number, viewportHe
     const r = el.getBoundingClientRect();
     if (r.width < MIN_SURFACE_WIDTH || r.height < MIN_SURFACE_HEIGHT) continue;
     if (r.top < 0 || r.top >= viewportHeight || r.right <= 0 || r.left >= viewportWidth) continue;
-    rects.push({ left: r.left, top: r.top, right: r.right });
+    // Top corner radii, so the map can follow rounded corners. The raw longhands are cached per
+    // element (style resolution is the scan's expensive part); the CSS overflow scaling runs per
+    // rebuild against the current size, so a pill's 9999px resolves to height/2 as drawn. The
+    // read sits in the same write-free batch as the rect — one layout pass.
+    const [rawTL, rawTR, rawBL, rawBR] = rawTopRadii(el);
+    const [radiusLeft, radiusRight] = resolveTopRadii(rawTL, rawTR, rawBL, rawBR, r.width, r.height);
+    rects.push({ left: r.left, top: r.top, right: r.right, radiusLeft, radiusRight });
   }
   return rects;
 }
