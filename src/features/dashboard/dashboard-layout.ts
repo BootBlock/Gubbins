@@ -48,6 +48,25 @@ export function placedWidgets(layout: DashboardLayout): DashboardLayout {
     .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
 }
 
+/**
+ * View-mode "hide healthy cards" transform (issue #111): drop the widgets whose id is in
+ * `hideIds` and re-flow the survivors gaplessly row-major, so hiding an all-clear alert card
+ * closes the hole it would otherwise strand mid-grid. This is purely a *render* transform —
+ * the persisted layout (and every edit) still operates on the full set, so the hidden cards'
+ * real coordinates are never rewritten. Returns the same reference when `hideIds` is empty
+ * (the common no-op fast path, e.g. the option is off or the board is being customised).
+ */
+export function hideHealthyCards(layout: DashboardLayout, hideIds: ReadonlySet<string>): DashboardLayout {
+  if (hideIds.size === 0) return layout;
+  const survivors = placedWidgets(layout).filter((p) => !hideIds.has(p.id));
+  return survivors.map((p, i) => ({
+    id: p.id,
+    x: i % DASHBOARD_COLUMNS,
+    y: Math.floor(i / DASHBOARD_COLUMNS),
+    visible: true,
+  }));
+}
+
 /** The visible widget occupying cell `(x, y)`, if any. */
 export function occupantAt(layout: DashboardLayout, x: number, y: number): WidgetPlacement | undefined {
   return layout.find((p) => p.visible && p.x === x && p.y === y);
