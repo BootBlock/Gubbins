@@ -350,6 +350,16 @@ export const v1Initial: Migration = {
     { sql: `CREATE INDEX idx_item_tags_tag_id ON item_tags(tag_id);` },
     {
       sql: `
+        CREATE TABLE location_tags (
+          location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+          tag_id      TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+          PRIMARY KEY (location_id, tag_id)
+        ) STRICT;
+      `,
+    },
+    { sql: `CREATE INDEX idx_location_tags_tag_id ON location_tags(tag_id);` },
+    {
+      sql: `
         CREATE TABLE item_images (
           id                 TEXT    PRIMARY KEY NOT NULL,
           item_id            TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,

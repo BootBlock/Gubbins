@@ -46,6 +46,7 @@ export const ItemCard = memo(function ItemCard({
   categoryGlyph = null,
   customFields = EMPTY_CUSTOM_FIELDS,
   customValues,
+  tags,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -70,6 +71,8 @@ export const ItemCard = memo(function ItemCard({
   customFields?: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values (fieldId → raw value), if loaded. */
   customValues?: ReadonlyMap<string, string>;
+  /** This item's tag names (issue #84), if the Tags card field is shown and they've loaded. */
+  tags?: readonly string[];
 }) {
   const t = useT();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
@@ -79,6 +82,7 @@ export const ItemCard = memo(function ItemCard({
     categoryName,
     customFields,
     customValues,
+    tags,
   });
   // Drag-to-move (spec §4): unified pointer drag for mouse, pen and touch. `select-none` keeps
   // a press-drag from selecting the card's text; the control-origin guard lives in the hook.

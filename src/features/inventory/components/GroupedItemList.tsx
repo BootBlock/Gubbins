@@ -12,6 +12,7 @@ import type {
 import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
 import { useItemFieldValues } from '../categories';
+import { useItemsTags } from '../tags';
 import { useLocationSectionItems } from '../queries';
 import { LocationKindIcon } from './LocationKindIcon';
 import { ItemCard } from './ItemCard';
@@ -252,7 +253,12 @@ function SectionItems({
   // configuration. The context bundles the shared config with these per-section values.
   const itemIds = useMemo(() => items.map((i) => i.id), [items]);
   const fieldValues = useItemFieldValues(itemIds, cardFieldsConfig.hasCustomFields);
-  const cardFields: CardFieldsListContext = { ...cardFieldsConfig, values: fieldValues.data };
+  const tagValues = useItemsTags(itemIds, cardFieldsConfig.hasTagsField);
+  const cardFields: CardFieldsListContext = {
+    ...cardFieldsConfig,
+    values: fieldValues.data,
+    itemTags: tagValues.data,
+  };
 
   // Auto-load the next page when the sentinel scrolls into view, using the grouped list's
   // own scroll box as the observer root; the button remains a keyboard/explicit fallback.
@@ -415,6 +421,7 @@ function SectionTable({
             categoryName={cardFields.categoryName(item.categoryId)}
             customFields={cardFields.customFields}
             customValues={cardFields.values?.get(item.id)}
+            tags={cardFields.itemTags?.get(item.id)}
           />
         ))}
       </div>

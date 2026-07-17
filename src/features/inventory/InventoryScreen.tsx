@@ -86,6 +86,7 @@ import { ValueTreemapView } from './components/ValueTreemapView';
 import { useCardFieldsConfig } from './components/useCardFieldsConfig';
 import type { CardFieldsListContext } from './components/card-fields-render';
 import { useItemFieldValues } from './categories';
+import { useItemsTags } from './tags';
 import { locationColorTextClass, locationColorTintClass } from './location-color';
 import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
 import { InventoryFilterBar } from './components/InventoryFilterBar';
@@ -460,7 +461,12 @@ function InventoryWorkspace() {
   const cardFieldsConfig = useCardFieldsConfig();
   const residentItemIds = useMemo(() => flatItems.map((i) => i.id), [flatItems]);
   const cardFieldValues = useItemFieldValues(residentItemIds, cardFieldsConfig.hasCustomFields);
-  const cardFields: CardFieldsListContext = { ...cardFieldsConfig, values: cardFieldValues.data };
+  const cardFieldTags = useItemsTags(residentItemIds, cardFieldsConfig.hasTagsField);
+  const cardFields: CardFieldsListContext = {
+    ...cardFieldsConfig,
+    values: cardFieldValues.data,
+    itemTags: cardFieldTags.data,
+  };
 
   // Whether a status chip or a category/tag facet is currently narrowing the list. Used to
   // suppress the child-location drill-down (below) and to shape the empty banner's copy.

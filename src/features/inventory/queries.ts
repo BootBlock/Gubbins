@@ -90,6 +90,15 @@ export const inventoryKeys = {
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   tagList: () => [...inventoryKeys.tags(), 'list'] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
+  /** Tags for a set of on-screen items in one round-trip (the item-card Tags field, issue #84);
+   *  under items() so any item/tag write refreshes it by prefix. */
+  itemsTags: (itemIds: readonly string[]) => [...inventoryKeys.items(), 'tags-batch', itemIds] as const,
+  /** One location's assigned tags (issue #84); under locations() so a tag/location write
+   *  refreshes it by prefix. */
+  locationTags: (locationId: string) => [...inventoryKeys.locations(), locationId, 'tags'] as const,
+  /** The whole location→tags index that powers the sidebar tag filter (issue #84); under
+   *  locations() so a tag/location write refreshes it by prefix. */
+  locationTagIndex: () => [...inventoryKeys.locations(), 'tag-index'] as const,
   itemImages: (itemId: string) => [...inventoryKeys.item(itemId), 'images'] as const,
   itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
   // Phase 5 — weighted capabilities & Visual-Builder search.

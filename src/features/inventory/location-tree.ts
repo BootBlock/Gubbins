@@ -60,6 +60,42 @@ export function pruneArchivedTree<T extends { archivedAt?: number | null; childr
 }
 
 /**
+ * The set of ids covering every location in `matchIds` **plus all of their ancestors** — the
+ * rows a tag filter must keep visible so a matching location stays reachable in the tree with
+ * its parent context intact (issue #84). Walks each match up its parent chain; defensive against
+ * a broken/cyclic chain (a repeated id stops the walk).
+ */
+export function matchingWithAncestors(matchIds: ReadonlySet<string>, flat: readonly FlatNode[]): Set<string> {
+  const byId = new Map(flat.map((n) => [n.id, n] as const));
+  const keep = new Set<string>();
+  for (const id of matchIds) {
+    let current: FlatNode | undefined = byId.get(id);
+    while (current && !keep.has(current.id)) {
+      keep.add(current.id);
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+  }
+  return keep;
+}
+
+/**
+ * Prune a nested tree to only the nodes in `keep` (issue #84 — the tag-filtered location tree).
+ * Pair with {@link matchingWithAncestors} so a kept leaf always keeps its ancestor path. Pure and
+ * generic over any self-referential `{ id, children }` node.
+ */
+export function pruneTreeToIds<T extends { id: string; children: T[] }>(
+  nodes: readonly T[],
+  keep: ReadonlySet<string>,
+): T[] {
+  const out: T[] = [];
+  for (const node of nodes) {
+    if (!keep.has(node.id)) continue;
+    out.push({ ...node, children: pruneTreeToIds(node.children, keep) });
+  }
+  return out;
+}
+
+/**
  * The parent a freshly-added location should default to, given the current sidebar
  * selection. Adding *inside* a real, user-created location nests under it; but the
  * synthetic "All items" (a `null` selection) and the system-locked rows ("Unassigned",

@@ -1,13 +1,20 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { plural } from '@/lib/plural';
+import { cn } from '@/lib/utils';
 import { Button, LiveRegion, Modal, Spinner, Tooltip, useToast } from '@/components/foundry';
-import { AddIcon, DeleteIcon, PackageIcon } from '@/components/icons';
+import { AddIcon, DeleteIcon, PackageIcon, TagIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
-import { collectDescendantIds, pruneArchivedTree } from '../location-tree';
+import {
+  collectDescendantIds,
+  matchingWithAncestors,
+  pruneArchivedTree,
+  pruneTreeToIds,
+} from '../location-tree';
+import { useLocationTagIndex } from '../tags';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
 import { useArchiveLocation, useMoveItem, useUpdateLocation } from '../mutations';
@@ -64,6 +71,42 @@ export function LocationSidebar({
     [flat, showArchived],
   );
 
+  // Tag filter (issue #84): narrow the tree to locations carrying any of the selected tags,
+  // keeping their ancestors so the matches stay reachable in context — structurally the same
+  // filter layer as "Show archived" above. Stale selections (a tag renamed/removed off every
+  // location) are dropped so a filter can never strand the user on an empty tree.
+  const tagIndex = useLocationTagIndex();
+  const [activeTagIds, setActiveTagIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Stable per fetch (the `?? []` fallback would otherwise be a fresh array every render, churning
+  // the memo below); `tagIndex.data` is the query's cached, referentially-stable object.
+  const filterTags = useMemo(() => tagIndex.data?.tags ?? [], [tagIndex.data]);
+  const effectiveTagIds = useMemo(() => {
+    const available = new Set(filterTags.map((t) => t.id));
+    return new Set([...activeTagIds].filter((id) => available.has(id)));
+  }, [activeTagIds, filterTags]);
+  const toggleTagFilter = (id: string) =>
+    setActiveTagIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const { shownTree, shownFlat } = useMemo(() => {
+    if (effectiveTagIds.size === 0) return { shownTree: visibleTree, shownFlat: visibleFlat };
+    const byLocation = tagIndex.data?.byLocation;
+    const matches = new Set<string>();
+    for (const loc of visibleFlat) {
+      const tags = byLocation?.get(loc.id);
+      if (tags && [...effectiveTagIds].some((id) => tags.has(id))) matches.add(loc.id);
+    }
+    const keep = matchingWithAncestors(matches, visibleFlat);
+    return {
+      shownTree: pruneTreeToIds(visibleTree as LocationTreeNode[], keep),
+      shownFlat: visibleFlat.filter((l) => keep.has(l.id)),
+    };
+  }, [effectiveTagIds, tagIndex.data, visibleTree, visibleFlat]);
+
   // Keep the persisted expansion overrides bounded: drop entries for locations that no
   // longer exist (deleted since a prior session) so localStorage doesn't accumulate dead
   // ids over the app's lifetime. Pruned against the *full* flat list — not the archived-
@@ -97,7 +140,7 @@ export function LocationSidebar({
     requestDelete,
     setRowRef,
     onKeyDown,
-  } = useLocationSidebar({ tree: visibleTree, flat: visibleFlat, selectedId, onSelect });
+  } = useLocationSidebar({ tree: shownTree, flat: shownFlat, selectedId, onSelect });
 
   // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Gated on
   // the Label printing module (Modular UI): with it off, the per-location action disappears.
@@ -190,6 +233,40 @@ export function LocationSidebar({
         </Tooltip>
       </div>
 
+      {filterTags.length > 0 ? (
+        <div className="flex flex-wrap gap-1 px-1" role="group" aria-label="Filter locations by tag">
+          {filterTags.map((tag) => {
+            const active = effectiveTagIds.has(tag.id);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleTagFilter(tag.id)}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors [&_svg]:size-3',
+                  active
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-secondary text-muted-foreground hover:bg-secondary/70',
+                )}
+              >
+                <TagIcon aria-hidden />
+                {tag.name}
+              </button>
+            );
+          })}
+          {effectiveTagIds.size > 0 ? (
+            <button
+              type="button"
+              onClick={() => setActiveTagIds(new Set())}
+              className="px-1 text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* APG tree: a single keydown handler on the role="tree" container drives roving-tabindex navigation. */}
       <div
         role="tree"
@@ -210,8 +287,12 @@ export function LocationSidebar({
           onSelect={() => select(ALL_ITEMS_ID)}
           onFocus={() => setFocusedId(ALL_ITEMS_ID)}
         />
-        {renderNodes(visibleTree, 1)}
+        {renderNodes(shownTree, 1)}
       </div>
+
+      {effectiveTagIds.size > 0 && shownFlat.length === 0 ? (
+        <p className="px-1 text-xs text-muted-foreground">No locations carry the selected tags.</p>
+      ) : null}
 
       {archivedCount > 0 ? (
         <label className="flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">

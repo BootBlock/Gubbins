@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { cn } from '@/lib/utils';
 import { Money } from '@/components/foundry';
+import { TagIcon } from '@/components/icons';
 import type { ResolvedCardField } from '../card-fields';
 import { CONDITION_COLOR_CLASS, CONDITION_LABELS } from './inventory-ui';
 
@@ -30,6 +31,22 @@ export function FieldValue({
     case 'condition':
       return (
         <span className={CONDITION_COLOR_CLASS[value.condition]}>{CONDITION_LABELS[value.condition]}</span>
+      );
+    case 'tags':
+      // A wrapping row of chips (issue #84). `justify-end` keeps them right-aligned in the
+      // Visual card's value column; in the Data row summary they flow inline with the middots.
+      return (
+        <span className="flex flex-wrap justify-end gap-1">
+          {value.tags.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.65rem] font-medium leading-none text-primary [&_svg]:size-2.5"
+            >
+              <TagIcon aria-hidden />
+              {tag}
+            </span>
+          ))}
+        </span>
       );
     case 'empty':
       return <span className="text-muted-foreground/60">—</span>;

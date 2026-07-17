@@ -15,7 +15,7 @@ explanation.
 | **Kit** | An item defined as an assembly of other items. See [[Kits & bundles\|Kits-and-Bundles]]. |
 | **Capability** | A weighted, searchable attribute of an item. See [[Custom fields & capabilities\|Custom-Fields-and-Capabilities]]. |
 | **Custom field** | Your own labelled value on an item, usually per category. See [[Custom fields & capabilities\|Custom-Fields-and-Capabilities]]. |
-| **Tag** | A freeform label; an item can have many. See [[Tags, attachments & related\|Tags-Attachments-and-Related-Items]]. |
+| **Tag** | A freeform label shared across items and locations; a thing can have many. See [[Tags, attachments & related\|Tags-Attachments-and-Related-Items]]. |
 | **Condition** | A structured grade: Mint / Good / Needs Repair / Out for Calibration. See [[Condition grading\|Condition-Grading]]. |
 | **Reorder point** | The stock level at which to buy more. See [[Reorder & shopping list\|Reorder-and-Shopping-List]]. |
 | **Loan** | An item temporarily *out* with a contact. See [[Loans\|Loans-Check-Out-and-In]]. |

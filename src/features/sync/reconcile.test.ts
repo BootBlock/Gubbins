@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { reconcile } from './reconcile';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
-import type { GaugeHistoryDelta, ItemTagEdge, SyncSnapshot, Tombstone } from './types';
+import type { GaugeHistoryDelta, ItemTagEdge, LocationTagEdge, SyncSnapshot, Tombstone } from './types';
 
 // A permissive dictionary so sanitisation keeps the columns the tests assert on.
 const DICTIONARY = {
@@ -26,6 +26,7 @@ function snapshot(partial: {
   tombstones?: Tombstone[];
   gaugeHistory?: GaugeHistoryDelta[];
   itemTags?: ItemTagEdge[];
+  locationTags?: LocationTagEdge[];
   itemHistory?: SqlRow[];
 }): SyncSnapshot {
   return {
@@ -35,6 +36,7 @@ function snapshot(partial: {
     tombstones: partial.tombstones ?? [],
     gaugeHistory: partial.gaugeHistory ?? [],
     itemTags: partial.itemTags ?? [],
+    locationTags: partial.locationTags ?? [],
     itemHistory: partial.itemHistory ?? [],
   };
 }
@@ -345,6 +347,40 @@ describe('reconcile (§7.3 / §7.5)', () => {
       const plan = reconcile(local, remote, opts);
       expect(plan.itemTagUpserts).toHaveLength(0);
       expect(plan.itemTagDeletes).toHaveLength(0);
+    });
+  });
+
+  describe('issue #84 — M:N membership (location_tags, tombstone-wins union)', () => {
+    const location = { id: 'l1', name: 'Van', updated_at: 1 };
+    const tag = { id: 't1', name: 'mobile', updated_at: 1 };
+    const bothSides = { tables: { locations: [location], tags: [tag] } };
+
+    it('adds a remote-only location edge when both endpoints survive', () => {
+      const local = snapshot(bothSides);
+      const remote = snapshot({ ...bothSides, locationTags: [{ locationId: 'l1', tagId: 't1' }] });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.locationTagUpserts).toEqual([{ locationId: 'l1', tagId: 't1' }]);
+      expect(plan.locationTagDeletes).toHaveLength(0);
+    });
+
+    it('does not add a remote edge whose tag will not exist locally (FK-safe)', () => {
+      const local = snapshot({ tables: { locations: [location] } }); // no tags
+      const remote = snapshot({
+        tables: { locations: [location] },
+        locationTags: [{ locationId: 'l1', tagId: 'ghost' }],
+      });
+      expect(reconcile(local, remote, opts).locationTagUpserts).toHaveLength(0);
+    });
+
+    it('a peer tombstone removes a location edge we still hold', () => {
+      const local = snapshot({ ...bothSides, locationTags: [{ locationId: 'l1', tagId: 't1' }] });
+      const remote = snapshot({
+        ...bothSides,
+        tombstones: [{ tableName: 'location_tags', id: 'l1|t1', deletedAt: 42 }],
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.locationTagDeletes).toEqual([{ locationId: 'l1', tagId: 't1', deletedAt: 42 }]);
+      expect(plan.locationTagUpserts).toHaveLength(0);
     });
   });
 

@@ -226,6 +226,7 @@ export function ItemList({
                       categoryName={cardFields.categoryName(firstItem.categoryId)}
                       customFields={cardFields.customFields}
                       customValues={cardFields.values?.get(firstItem.id)}
+                      tags={cardFields.itemTags?.get(firstItem.id)}
                     />
                   ) : null
                 ) : (

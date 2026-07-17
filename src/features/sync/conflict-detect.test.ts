@@ -24,6 +24,7 @@ function snapshot(partial: {
     tombstones: partial.tombstones ?? [],
     gaugeHistory: partial.gaugeHistory ?? [],
     itemTags: partial.itemTags ?? [],
+    locationTags: [],
     itemHistory: partial.itemHistory ?? [],
   };
 }

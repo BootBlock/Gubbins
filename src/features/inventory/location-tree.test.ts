@@ -4,7 +4,9 @@ import {
   defaultLocationForNewItem,
   defaultParentForNewLocation,
   locationPath,
+  matchingWithAncestors,
   pruneArchivedTree,
+  pruneTreeToIds,
   type FlatNode,
   type FlatSystemNode,
 } from './location-tree';
@@ -133,5 +135,36 @@ describe('pruneArchivedTree', () => {
   it('is a no-op when nothing is archived', () => {
     const tree = [n('a', null, [n('a1', null)])];
     expect(pruneArchivedTree(tree)).toEqual(tree);
+  });
+});
+
+describe('matchingWithAncestors + pruneTreeToIds (tag filter, issue #84)', () => {
+  it('keeps a match and every ancestor up to the root', () => {
+    // drawer matches → keep drawer, cabinet, workshop; bench/garage excluded.
+    const keep = matchingWithAncestors(new Set(['drawer']), nodes);
+    expect(keep).toEqual(new Set(['drawer', 'cabinet', 'workshop']));
+  });
+
+  it('unions the ancestor paths of several matches', () => {
+    const keep = matchingWithAncestors(new Set(['bench', 'garage']), nodes);
+    expect(keep).toEqual(new Set(['bench', 'workshop', 'garage']));
+  });
+
+  it('prunes a nested tree to only the kept ids', () => {
+    const tree = [
+      {
+        id: 'workshop',
+        children: [
+          { id: 'cabinet', children: [{ id: 'drawer', children: [] }] },
+          { id: 'bench', children: [] },
+        ],
+      },
+      { id: 'garage', children: [] },
+    ];
+    const keep = matchingWithAncestors(new Set(['drawer']), nodes);
+    const pruned = pruneTreeToIds(tree, keep);
+    expect(pruned.map((n) => n.id)).toEqual(['workshop']);
+    expect(pruned[0]!.children.map((n) => n.id)).toEqual(['cabinet']);
+    expect(pruned[0]!.children[0]!.children.map((n) => n.id)).toEqual(['drawer']);
   });
 });

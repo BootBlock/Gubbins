@@ -62,6 +62,7 @@ describe('snapshot timestamp shift (§7.3.1 local⇄server frame)', () => {
     tombstones: [{ tableName: 'items', id: 'z', deletedAt: 3000 }],
     gaugeHistory: [{ id: 'g', itemId: 'a', netValueDelta: -5, createdAt: 700 }],
     itemTags: [{ itemId: 'a', tagId: 't' }],
+    locationTags: [],
     itemHistory: [{ id: 'h', item_id: 'a', created_at: 800 }],
   });
 

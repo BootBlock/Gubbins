@@ -29,6 +29,8 @@ export interface CardFieldsConfigBundle {
   readonly categoryGlyph: (categoryId: string | null) => string | null;
   /** Whether any *visible* field is a custom field — gates the per-window value fetch. */
   readonly hasCustomFields: boolean;
+  /** Whether the Tags field is visible (issue #84) — gates the per-window tags fetch. */
+  readonly hasTagsField: boolean;
 }
 
 /**
@@ -78,6 +80,7 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
   }, [categories.data]);
 
   const hasCustomFields = useMemo(() => order.some((id) => parseCustomCardFieldId(id) !== null), [order]);
+  const hasTagsField = useMemo(() => order.includes('tags'), [order]);
 
   // Plain closures (not memoised): they're called during the list's own render to produce a
   // string per item, and the card memo compares that string — not the function's identity.
@@ -89,5 +92,5 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
   const categoryGlyph = (categoryId: string | null): string | null =>
     categoryWatermarks && categoryId ? (categoryGlyphsById.get(categoryId) ?? null) : null;
 
-  return { order, customFields, categoryName, categoryGlyph, hasCustomFields };
+  return { order, customFields, categoryName, categoryGlyph, hasCustomFields, hasTagsField };
 }

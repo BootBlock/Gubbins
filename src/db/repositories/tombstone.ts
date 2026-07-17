@@ -31,12 +31,13 @@ import type { SqlStatement } from '../rpc/driver';
  * (datasheet pointers), and `projects` + `project_bom_lines`. They all carry an
  * `updated_at` + auto-stamp trigger, so they resolve by the same row-level LWW.
  *
- * The two tables WITHOUT an `updated_at` are deliberately *not* in this list — they are
+ * The tables WITHOUT an `updated_at` are deliberately *not* in this list — they are
  * reconciled by bespoke rules in the engine and read/written as dedicated snapshot
- * sections (see {@link ITEM_TAGS_TABLE} / {@link ITEM_HISTORY_TABLE}): the M:N
- * `item_tags` join resolves by **membership** (union minus {@link itemTagEdgeId} edge
- * tombstones), and the immutable `item_history` ledger by **union-by-id** (gated by the
- * §7.6.3-A prune watermark). Both are tombstone/auxiliary, not LWW.
+ * sections (see {@link ITEM_TAGS_TABLE} / {@link LOCATION_TAGS_TABLE} /
+ * {@link ITEM_HISTORY_TABLE}): the M:N `item_tags` and `location_tags` joins resolve by
+ * **membership** (union minus their edge tombstones — {@link itemTagEdgeId} /
+ * {@link locationTagEdgeId}), and the immutable `item_history` ledger by **union-by-id**
+ * (gated by the §7.6.3-A prune watermark). All are tombstone/auxiliary, not LWW.
  *
  * Order is dependency-safe (parents before children) so a batch of UPSERTs in this
  * order never trips a foreign key.
@@ -85,6 +86,14 @@ export type SyncTable = (typeof SYNC_TABLES)[number];
 export const ITEM_TAGS_TABLE = 'item_tags';
 
 /**
+ * The M:N `location_tags` join (composite PK `(location_id, tag_id)`, no `id`/`updated_at`).
+ * The location counterpart of {@link ITEM_TAGS_TABLE} (issue #84 — the same freeform `tags`
+ * dictionary applied to locations), reconciled by the identical **membership** rule and
+ * keyed by {@link locationTagEdgeId}.
+ */
+export const LOCATION_TAGS_TABLE = 'location_tags';
+
+/**
  * The append-only `item_history` Activity Ledger (immutable, no `updated_at`). Not in
  * {@link SYNC_TABLES} — it reconciles by **union-by-id** (Phase 11): the same immutable
  * event has the same UUID on every device, so a row is simply inserted where missing.
@@ -123,6 +132,33 @@ export function clearItemTagTombstoneStatement(itemId: string, tagId: string): S
   return {
     sql: 'DELETE FROM tombstones WHERE table_name = ? AND id = ?;',
     params: [ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId)],
+  };
+}
+
+/** Composite tombstone id for a `location_tags` edge (membership deletion, issue #84). */
+export function locationTagEdgeId(locationId: string, tagId: string): string {
+  return `${locationId}${EDGE_SEP}${tagId}`;
+}
+
+/** Split a {@link locationTagEdgeId} back into its `(locationId, tagId)` pair. */
+export function parseLocationTagEdgeId(id: string): { locationId: string; tagId: string } {
+  const sep = id.indexOf(EDGE_SEP);
+  return { locationId: id.slice(0, sep), tagId: id.slice(sep + 1) };
+}
+
+/** The INSERT-OR-REPLACE recording a `location_tags` edge deletion as a tombstone. */
+export function locationTagTombstoneStatement(locationId: string, tagId: string): SqlStatement {
+  return {
+    sql: 'INSERT OR REPLACE INTO tombstones (table_name, id) VALUES (?, ?);',
+    params: [LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, tagId)],
+  };
+}
+
+/** Clear any stale `location_tags` edge tombstone (run when an edge is re-linked locally). */
+export function clearLocationTagTombstoneStatement(locationId: string, tagId: string): SqlStatement {
+  return {
+    sql: 'DELETE FROM tombstones WHERE table_name = ? AND id = ?;',
+    params: [LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, tagId)],
   };
 }
 

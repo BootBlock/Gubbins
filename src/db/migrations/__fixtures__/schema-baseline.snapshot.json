@@ -219,6 +219,12 @@
     },
     {
       "type": "index",
+      "name": "idx_location_tags_tag_id",
+      "tbl_name": "location_tags",
+      "sql": "CREATE INDEX idx_location_tags_tag_id ON location_tags(tag_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_locations_parent_id",
       "tbl_name": "locations",
       "sql": "CREATE INDEX idx_locations_parent_id ON locations(parent_id)"
@@ -462,6 +468,12 @@
       "name": "kit_components",
       "tbl_name": "kit_components",
       "sql": "CREATE TABLE kit_components (\n          id                TEXT    PRIMARY KEY NOT NULL,\n          kit_item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          component_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          quantity          INTEGER NOT NULL DEFAULT 1,\n          sort              INTEGER NOT NULL DEFAULT 0,\n          created_at        INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at        INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity > 0),\n          CHECK (kit_item_id <> component_item_id),\n          UNIQUE (kit_item_id, component_item_id)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "location_tags",
+      "tbl_name": "location_tags",
+      "sql": "CREATE TABLE location_tags (\n          location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          tag_id      TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,\n          PRIMARY KEY (location_id, tag_id)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -3054,6 +3066,64 @@
           "name": "sqlite_autoindex_kit_components_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "location_tags": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "tag_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "tags",
+          "from": "tag_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "locations",
+          "from": "location_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_location_tags_tag_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_location_tags_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]

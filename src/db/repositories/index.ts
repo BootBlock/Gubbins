@@ -34,7 +34,7 @@ export { ItemRepository } from './ItemRepository';
 export { LocationRepository } from './LocationRepository';
 export { MaintenanceRepository } from './MaintenanceRepository';
 export { CategoryRepository } from './CategoryRepository';
-export { TagRepository } from './TagRepository';
+export { TagRepository, TagNameInUseError } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';
 export { ProjectRepository } from './ProjectRepository';
@@ -57,12 +57,17 @@ export {
   tombstoneStatement,
   SYNC_TABLES,
   ITEM_TAGS_TABLE,
+  LOCATION_TAGS_TABLE,
   ITEM_HISTORY_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   itemTagEdgeId,
   parseItemTagEdgeId,
   itemTagTombstoneStatement,
   clearItemTagTombstoneStatement,
+  locationTagEdgeId,
+  parseLocationTagEdgeId,
+  locationTagTombstoneStatement,
+  clearLocationTagTombstoneStatement,
 } from './tombstone';
 export type { Tombstone, SyncTable } from './tombstone';
 export type {

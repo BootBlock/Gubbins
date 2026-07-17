@@ -15,6 +15,7 @@ function snapshot(itemHistory: SyncSnapshot['itemHistory']): SyncSnapshot {
     tombstones: [],
     gaugeHistory: [],
     itemTags: [],
+    locationTags: [],
     itemHistory,
   };
 }

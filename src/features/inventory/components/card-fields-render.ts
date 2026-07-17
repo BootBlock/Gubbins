@@ -22,12 +22,14 @@ export interface CardFieldsInputs {
   readonly customFields: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values, if loaded. */
   readonly customValues: ReadonlyMap<string, string> | undefined;
+  /** This item's tag names (issue #84), if the Tags field is shown and they've loaded. */
+  readonly tags: readonly string[] | undefined;
 }
 
 /** Resolve an item's visible fields, binding the shared formatters (memoised per item/config). */
 export function useResolvedCardFields(item: Item, inputs: CardFieldsInputs): ResolvedCardField[] {
   const fmt = useFormatters();
-  const { order, locationName, categoryName, customFields, customValues } = inputs;
+  const { order, locationName, categoryName, customFields, customValues, tags } = inputs;
   return useMemo(
     () =>
       resolveCardFields(order, item, {
@@ -35,9 +37,10 @@ export function useResolvedCardFields(item: Item, inputs: CardFieldsInputs): Res
         categoryName,
         customFields,
         customValues,
+        tags,
         fmt: { quantity: fmt.quantity, relativeTime: fmt.relativeTime },
       }),
-    [order, item, locationName, categoryName, customFields, customValues, fmt],
+    [order, item, locationName, categoryName, customFields, customValues, tags, fmt],
   );
 }
 
@@ -54,6 +57,8 @@ export interface CardFieldsListContext {
   readonly categoryGlyph: (categoryId: string | null) => string | null;
   /** itemId → (fieldId → stored value) for the on-screen items, or undefined while loading. */
   readonly values: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
+  /** itemId → tag names for the on-screen items (issue #84), or undefined while loading. */
+  readonly itemTags: ReadonlyMap<string, readonly string[]> | undefined;
 }
 
 /** The per-item card-field props derived from a list context — spread onto `ItemCard`/`ItemRow`. */
@@ -63,6 +68,7 @@ export function cardFieldProps(ctx: CardFieldsListContext, item: Item) {
     categoryName: ctx.categoryName(item.categoryId),
     customFields: ctx.customFields,
     customValues: ctx.values?.get(item.id),
+    tags: ctx.itemTags?.get(item.id),
   };
 }
 

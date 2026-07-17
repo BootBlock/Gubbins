@@ -82,6 +82,7 @@ export const ItemTableRow = memo(function ItemTableRow({
   categoryName = null,
   customFields = EMPTY_CUSTOM_FIELDS,
   customValues,
+  tags,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -99,6 +100,8 @@ export const ItemTableRow = memo(function ItemTableRow({
   categoryName?: string | null;
   customFields?: ReadonlyMap<string, CardCustomField>;
   customValues?: ReadonlyMap<string, string>;
+  /** This item's tag names (issue #84), if the Tags column is shown and they've loaded. */
+  tags?: readonly string[];
 }) {
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   const fields = useResolvedCardFields(item, {
@@ -107,6 +110,7 @@ export const ItemTableRow = memo(function ItemTableRow({
     categoryName,
     customFields,
     customValues,
+    tags,
   });
   const dragProps = useItemDragSource(item);
   const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);

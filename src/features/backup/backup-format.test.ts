@@ -52,6 +52,7 @@ function makeSnapshot(): SyncSnapshot {
       { itemId: 'A', tagId: 't1' },
       { itemId: 'B', tagId: 't1' },
     ],
+    locationTags: [],
     itemHistory: [
       { id: 'h1', item_id: 'A' } as unknown as SqlRow,
       { id: 'h2', item_id: 'B' } as unknown as SqlRow,
