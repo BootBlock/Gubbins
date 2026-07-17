@@ -9,6 +9,7 @@ import type {
   ProjectStatus,
   ReservationStatus,
 } from '../constants';
+import type { ItemStockPlacement } from './stock';
 
 // --- Projects (spec §4 "Projects & BOMs", Phase 4) ------------------------------
 
@@ -80,6 +81,8 @@ export interface ProjectBomLineRow {
   readonly reserved_qty: number;
   /** Cumulative quantity received so far (§4 partial / split receipts, Phase 24). */
   readonly received_qty: number;
+  /** 1 once the line has been physically gathered in the picking pass (issue #121). */
+  readonly picked: number;
   readonly reservation_status: ReservationStatus;
   readonly procurement_status: ProcurementStatus;
   readonly unit_cost_snapshot: number | null;
@@ -103,6 +106,8 @@ export interface ProjectBomLine {
   readonly reservedQty: number;
   /** Cumulative quantity received so far (§4 partial / split receipts, Phase 24). */
   readonly receivedQty: number;
+  /** True once the line has been physically gathered in the picking pass (issue #121). */
+  readonly picked: boolean;
   readonly reservationStatus: ReservationStatus;
   readonly procurementStatus: ProcurementStatus;
   /** Point-in-time unit cost captured when the line was added (§4 BOM Costing). */
@@ -291,6 +296,22 @@ export interface InTransitLine {
   readonly requiredQty: number;
   /** Quantity already received in earlier instalments (§4 split receipts, Phase 24). */
   readonly receivedQty: number;
+}
+
+// --- Picking worksheet (issue #121, location-aware gather-and-tick) --------------
+
+/**
+ * One BOM line resolved into a picking-worksheet row: the line itself (carrying its
+ * `picked` flag and required quantity) plus the per-location breakdown of where its
+ * matched item's stock physically sits, drawn from the `item_stock` ledger and ordered
+ * busiest-location-first. Unmatched lines — or matched items with nothing on hand — carry
+ * an empty `placements`, so the worksheet still lists them to gather while showing there
+ * is no home location to walk to.
+ */
+export interface PickLine {
+  readonly line: ProjectBomLine;
+  /** Where the matched item's units sit, busiest location first; empty when none on hand. */
+  readonly placements: readonly ItemStockPlacement[];
 }
 
 // --- Assembly finalisation (spec §4 Composite Items & Assemblies) ----------------

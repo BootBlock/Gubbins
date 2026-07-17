@@ -38,6 +38,26 @@ flows into your [[purchasing|Reorder-and-Shopping-List]].
 > A **project** is a one-off build with its own BOM and budget. A reusable assembly you make
 > repeatedly is better modelled as a **[[kit|Kits-and-Bundles]]**.
 
+## Picking the parts
+
+When it's time to build, the **Picking** list turns the BOM into a walk-and-tick-off worksheet.
+For every line it shows **where to find it** — the exact locations its stock sits in, busiest
+first (for example *"3 in Garage · Shelf B, 2 in Loft bin 4"*) — drawn straight from your
+[[per-location stock|Locations-and-Stock]]. Gather each part, tick it off, and a progress bar
+tracks how much of the build you've collected.
+
+A line with no matching item, or a matched item you're out of, is still listed so nothing is
+forgotten — it just shows there's no shelf to walk to.
+
+Once **every** line is ticked, the worksheet surfaces a **Finalise** step: the natural moment to
+consume the gathered parts into the finished build (a new container location, a single assembled
+item, or simply used up).
+
+> **💡 Tip**
+> Picking is independent of reserving. **Reserve** to earmark stock ahead of time; **pick** to
+> mark it physically collected when you're actually at the shelf. A part can be reserved but not
+> yet picked, or picked without ever being reserved.
+
 ## Exporting the BOM
 
 Use **Export BOM** (beside *Import BOM*) to save the bill of materials as a file — for sharing a

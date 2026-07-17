@@ -44,6 +44,7 @@ import { AddBomLineDialog } from './AddBomLineDialog';
 import { ImportBomDialog } from './ImportBomDialog';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
 import { BudgetSection } from './BudgetSection';
+import { PickingSection } from './PickingSection';
 
 /** The selected project's workspace: BOM table, costing toggle and shopping list. */
 export function ProjectDetail({
@@ -212,6 +213,10 @@ export function ProjectDetail({
           <h3 className="mb-2 text-sm font-semibold">Bill of materials</h3>
           {lines.isLoading ? <Spinner /> : <BomLineTable projectId={projectId} lines={lineRows} />}
         </section>
+
+        {lineRows.length > 0 ? (
+          <PickingSection projectId={projectId} onFinalise={() => setFinaliseOpen(true)} />
+        ) : null}
 
         {openLoans.length > 0 ? (
           <section aria-label="Tools on loan to this project">

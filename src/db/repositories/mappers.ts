@@ -584,6 +584,7 @@ export function rowToBomLine(row: ProjectBomLineRow): ProjectBomLine {
     requiredQty: row.required_qty,
     reservedQty: row.reserved_qty,
     receivedQty: row.received_qty,
+    picked: row.picked === 1,
     reservationStatus: row.reservation_status,
     procurementStatus: row.procurement_status,
     unitCostSnapshot: row.unit_cost_snapshot,

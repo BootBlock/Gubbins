@@ -38,6 +38,7 @@ export const projectKeys = {
   lines: (id: string) => [...projectKeys.detail(id), 'lines'] as const,
   costing: (id: string) => [...projectKeys.detail(id), 'costing'] as const,
   shoppingList: (id: string) => [...projectKeys.detail(id), 'shopping-list'] as const,
+  pickList: (id: string) => [...projectKeys.detail(id), 'pick-list'] as const,
   budget: (id: string) => [...projectKeys.detail(id), 'budget'] as const,
   expenses: (id: string) => [...projectKeys.detail(id), 'expenses'] as const,
   budgetCategories: (id: string) => [...projectKeys.detail(id), 'budget-categories'] as const,
@@ -80,6 +81,20 @@ export function useShoppingList(projectId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.shoppingList(projectId ?? ''),
     queryFn: () => getProjectRepository().getShoppingList(projectId!),
+    enabled: Boolean(projectId),
+  });
+}
+
+/**
+ * The location-aware picking worksheet (issue #121): every BOM line paired with where its
+ * matched item's stock physically sits. Depends on both the BOM lines and the `item_stock`
+ * ledger, so it is invalidated by picking toggles and by any stock movement (receive,
+ * reservation, assembly) — see the writes below.
+ */
+export function usePickList(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectKeys.pickList(projectId ?? ''),
+    queryFn: () => getProjectRepository().listPickList(projectId!),
     enabled: Boolean(projectId),
   });
 }
@@ -286,6 +301,26 @@ export function useRemoveBomLine(projectId: string) {
   return useMutation({
     mutationFn: (lineId: string) => getProjectRepository().removeLine(lineId),
     onSettled: () => invalidateProject(client, projectId),
+  });
+}
+
+// --- picking (issue #121 location-aware gather-and-tick) -----------------------
+
+/**
+ * Tick a BOM line as physically gathered (or clear it) during the picking pass. Picking
+ * only flips the line's `picked` flag — it moves no stock and reshapes no cost, budget or
+ * shopping figure — so it refreshes just the worksheet and the BOM lines (which carry the
+ * flag), not the whole project detail or any inventory view.
+ */
+export function useSetPicked(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lineId, picked }: { lineId: string; picked: boolean }) =>
+      getProjectRepository().setPicked(lineId, picked),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: projectKeys.pickList(projectId) });
+      void client.invalidateQueries({ queryKey: projectKeys.lines(projectId) });
+    },
   });
 }
 

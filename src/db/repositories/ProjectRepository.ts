@@ -23,6 +23,7 @@ import { withProcurement } from './project/procurement';
 import { withCosting } from './project/costing';
 import { withBudget } from './project/budget';
 import { withAssembly } from './project/assembly';
+import { withPicking } from './project/picking';
 
 export type { AssemblyResult } from './project/assembly';
 
@@ -33,5 +34,5 @@ export type { AssemblyResult } from './project/assembly';
  * `BaseRepository`.
  */
 export class ProjectRepository extends withBomLines(
-  withProcurement(withCosting(withBudget(withAssembly(ProjectCoreRepository)))),
+  withProcurement(withCosting(withBudget(withAssembly(withPicking(ProjectCoreRepository))))),
 ) {}
