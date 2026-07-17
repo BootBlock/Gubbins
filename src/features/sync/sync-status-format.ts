@@ -56,6 +56,12 @@ export function describeSyncOutcome(result: SyncResult): string {
   if (result.rejectedCycles > 0) {
     sentences.push(`${count(result.rejectedCycles, 'location move')} skipped to avoid a loop.`);
   }
+  // Issue #72: a concurrent edit of yours was overwritten — flag it plainly so it can be reviewed.
+  if (result.conflicts.length > 0) {
+    sentences.push(
+      `${count(result.conflicts.length, 'of your edits was', 'of your edits were')} overwritten — review to keep or restore ${result.conflicts.length === 1 ? 'it' : 'them'}.`,
+    );
+  }
 
   return sentences.join(' ');
 }

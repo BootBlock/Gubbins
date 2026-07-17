@@ -20,6 +20,7 @@
 import { UNASSIGNED_LOCATION_ID, SYNC_TABLES, ITEM_HISTORY_TABLE, itemTagEdgeId } from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
+import { buildConflict, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge } from './delta-crdt';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
@@ -32,6 +33,7 @@ import type {
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
+  SyncConflict,
   SyncSnapshot,
   SyncTable,
   TableRow,
@@ -49,6 +51,16 @@ export interface ReconcileOptions {
    * reclaimed instead of re-downloading the pruned era from a peer. Defaults to 0.
    */
   readonly historyPrunedBefore?: number;
+  /**
+   * Issue #72: the **local-frame** instant of the last successful sync. A row edited on
+   * this device *after* this instant, that then loses LWW to a remote change or deletion,
+   * is a genuine concurrent collision — the user's offline work is being overwritten — and
+   * is surfaced as a {@link SyncConflict}. Left undefined (or ≤ 0) detection is off: the
+   * first-ever sync has no prior common state, so nothing there is "concurrent".
+   */
+  readonly conflictSince?: number;
+  /** Clock stamped onto detected conflicts (the sync's effective now). Defaults to `Date.now()`. */
+  readonly now?: number;
 }
 
 const EMPTY_PLAN: ReconciliationPlan = {
@@ -60,7 +72,30 @@ const EMPTY_PLAN: ReconciliationPlan = {
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
+  conflicts: [],
 };
+
+/**
+ * Metadata columns that carry no user intent, excluded when deciding whether a losing local
+ * row and the winning remote row genuinely *differ* — a re-stamped timestamp alone is churn,
+ * not a collision worth surfacing (issue #72).
+ */
+const CONFLICT_IGNORED_COLUMNS = new Set(['updated_at', 'created_at']);
+
+/**
+ * Do two rows of `table` differ in any LWW-authoritative column? (issue #72 collision test).
+ * Bookkeeping columns and the table's non-LWW columns (CRDT / trigger-derived — see
+ * {@link nonLwwColumns}) are ignored: a difference there is not a lost edit.
+ */
+function rowsDiffer(a: SqlRow, b: SqlRow, table: SyncTable): boolean {
+  const skip = nonLwwColumns(table);
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (CONFLICT_IGNORED_COLUMNS.has(key) || skip.has(key)) continue;
+    if (String(a[key] ?? '') !== String(b[key] ?? '')) return true;
+  }
+  return false;
+}
 
 function num(value: unknown): number {
   return typeof value === 'bigint' ? Number(value) : (value as number);
@@ -90,7 +125,14 @@ export function reconcile(
   const { offset, dictionary } = options;
 
   // --- per-table LWW + tombstone resolution (§7.3) ------------------------------
-  const { localUpserts, localDeletes } = resolveTableMerges(local, remote, dictionary, offset);
+  const { localUpserts, localDeletes, conflicts } = resolveTableMerges(
+    local,
+    remote,
+    dictionary,
+    offset,
+    options.conflictSince,
+    options.now ?? Date.now(),
+  );
 
   // --- §4/§7.5 alias-text collision resolution ----------------------------------
   resolveAliasCollisions(local, localUpserts, localDeletes, offset);
@@ -145,6 +187,7 @@ export function reconcile(
     historyInserts,
     itemTagUpserts,
     itemTagDeletes,
+    conflicts,
   };
 }
 
@@ -162,9 +205,14 @@ function resolveTableMerges(
   remote: SyncSnapshot,
   dictionary: SchemaDictionary,
   offset: number,
-): { localUpserts: TableRow[]; localDeletes: Tombstone[] } {
+  conflictSince: number | undefined,
+  now: number,
+): { localUpserts: TableRow[]; localDeletes: Tombstone[]; conflicts: SyncConflict[] } {
   const localUpserts: TableRow[] = [];
   const localDeletes: Tombstone[] = [];
+  const conflicts: SyncConflict[] = [];
+  // Detection is off until the device has a prior successful sync to reason from (§7.3 / #72).
+  const detecting = conflictSince !== undefined && conflictSince > 0;
 
   for (const table of SYNC_TABLES) {
     const localRows = rowsById(local.tables[table] ?? []);
@@ -181,19 +229,31 @@ function resolveTableMerges(
       const lUpd = l ? applyOffset(num(l.updated_at), offset) : undefined;
       const rUpd = r ? num(r.updated_at) : undefined;
       const rTomb = remoteTomb.get(id);
+      // A local edit made *after* the last sync that now loses is a genuine collision (#72).
+      const localEditedSinceSync = detecting && lUpd !== undefined && lUpd > conflictSince!;
 
       // Remote deleted this row.
       if (rTomb !== undefined) {
         // Local has a strictly-newer row → resurrect (keep local, drop tombstone).
         if (lUpd !== undefined && lUpd > rTomb) continue;
         // Otherwise the remote tombstone wins: delete locally + record it.
-        if (l !== undefined) localDeletes.push({ tableName: table, id, deletedAt: rTomb });
+        if (l !== undefined) {
+          localDeletes.push({ tableName: table, id, deletedAt: rTomb });
+          // Our newer-than-last-sync edit lost to a remote deletion — surface it (#72).
+          if (localEditedSinceSync) conflicts.push(buildConflict(table, l, null, now));
+        }
         continue;
       }
 
       if (l && r) {
         if (resolveLww(lUpd!, rUpd!) === 'REMOTE_WINS') {
-          localUpserts.push({ table, row: sanitiseRow(r, allowed) });
+          const winner = sanitiseRow(r, allowed);
+          localUpserts.push({ table, row: winner });
+          // A concurrent remote edit won over our newer-than-last-sync local edit (#72). Only
+          // when the winning content actually differs — an identical value is not a lost edit.
+          if (localEditedSinceSync && rowsDiffer(l, winner, table)) {
+            conflicts.push(buildConflict(table, l, winner, now));
+          }
         }
         // LOCAL_WINS → nothing to apply; the push half carries it.
       } else if (r && !l) {
@@ -207,7 +267,7 @@ function resolveTableMerges(
     }
   }
 
-  return { localUpserts, localDeletes };
+  return { localUpserts, localDeletes, conflicts };
 }
 
 /**

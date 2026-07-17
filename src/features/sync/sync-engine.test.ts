@@ -80,6 +80,48 @@ describe('runSync round-trip (§7.3)', () => {
     expect((await b.items.getById(item.id))?.name).toBe('ESP32');
   });
 
+  it('surfaces a genuine concurrent-edit collision for review (#72)', async () => {
+    // A creates a contact and publishes; B pulls it (both now share a sync baseline).
+    const contact = await a.contacts.create({ name: 'Original' });
+    await runSync(a.driver, provider, NO_QUOTA);
+    // B's first sync is stamped at t=1 so B's later edit is unambiguously "after last sync".
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+
+    // Both devices edit the SAME contact before syncing again (the offline-clash case).
+    await b.contacts.update(contact.id, { name: 'B edit' });
+    await a.contacts.update(contact.id, { name: 'A edit' });
+
+    // A syncs first (its edit becomes the remote); B then syncs and loses LWW.
+    await runSync(a.driver, provider, NO_QUOTA);
+    const bOutcome = await runSync(b.driver, provider, NO_QUOTA);
+
+    // LWW applied A's version locally on B…
+    expect((await b.contacts.getById(contact.id))?.name).toBe('A edit');
+    // …and B's overwritten edit is reported so the user can review/restore it.
+    expect(bOutcome.conflicts).toHaveLength(1);
+    expect(bOutcome.conflicts[0]).toMatchObject({
+      tableName: 'contacts',
+      rowId: contact.id,
+      kind: 'UPDATE',
+    });
+    expect(bOutcome.conflicts[0]!.localVersion.name).toBe('B edit');
+    expect(bOutcome.conflicts[0]!.remoteVersion?.name).toBe('A edit');
+  });
+
+  it('reports no conflict when a device merely catches up on a peer edit (#72)', async () => {
+    const contact = await a.contacts.create({ name: 'Original' });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+
+    // Only A edits; B made no competing change, so B pulling A's edit is not a conflict.
+    await a.contacts.update(contact.id, { name: 'A edit' });
+    await runSync(a.driver, provider, NO_QUOTA);
+    const bOutcome = await runSync(b.driver, provider, NO_QUOTA);
+
+    expect((await b.contacts.getById(contact.id))?.name).toBe('A edit');
+    expect(bOutcome.conflicts).toHaveLength(0);
+  });
+
   it('round-trips the per-location stock ledger to a peer (Phase 25)', async () => {
     const drawerA = await a.locations.create({ name: 'Drawer A' });
     const drawerB = await a.locations.create({ name: 'Drawer B' });

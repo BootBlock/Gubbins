@@ -15,6 +15,7 @@ function makeResult(overrides: Partial<SyncResult> = {}): SyncResult {
     historyInserted: 0,
     tagEdgesAdded: 0,
     tagEdgesRemoved: 0,
+    conflicts: [],
     ...overrides,
   };
 }
@@ -52,6 +53,25 @@ describe('describeSyncOutcome', () => {
     expect(withExtras).toContain('brought in 1 update');
     expect(withExtras).toContain('2 items moved to Unassigned');
     expect(withExtras).toContain('1 location move skipped to avoid a loop');
+  });
+
+  it('flags overwritten local edits for review (#72), with correct pluralisation', () => {
+    const c = (id: string) => ({
+      id,
+      tableName: 'contacts' as const,
+      rowId: id,
+      kind: 'UPDATE' as const,
+      localVersion: { id },
+      remoteVersion: { id },
+      entityLabel: id,
+      detectedAt: 1,
+    });
+    expect(describeSyncOutcome(makeResult({ conflicts: [c('a')] }))).toContain(
+      '1 of your edits was overwritten — review to keep or restore it.',
+    );
+    expect(describeSyncOutcome(makeResult({ conflicts: [c('a'), c('b')] }))).toContain(
+      '2 of your edits were overwritten — review to keep or restore them.',
+    );
   });
 
   it('passes a HARD_STOP message through', () => {
