@@ -48,6 +48,37 @@ describe('Foundry Toast', () => {
     }
   });
 
+  it('scales the auto-dismiss delay with the message length when no duration is given (#77)', async () => {
+    vi.useFakeTimers();
+    try {
+      // ~100 characters → well past the 5s floor, so it must survive 5s and dismiss later.
+      const longMessage = 'x'.repeat(100);
+      function LongTrigger() {
+        const { show } = useToast();
+        return <button onClick={() => show({ message: longMessage })}>fire</button>;
+      }
+      render(
+        <ToastProvider>
+          <LongTrigger />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText('fire'));
+      expect(screen.getByTestId('toast')).toBeInTheDocument();
+      // A fixed-5s toast would be gone by now; the length-scaled one is still up.
+      act(() => {
+        vi.advanceTimersByTime(5000 + TOAST_EXIT_MS);
+      });
+      expect(screen.getByTestId('toast')).toBeInTheDocument();
+      // Advance past its longer computed delay (100 chars ⇒ 10s) and let it unmount.
+      act(() => {
+        vi.advanceTimersByTime(5000 + TOAST_EXIT_MS);
+      });
+      expect(screen.queryByTestId('toast')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders an actionable button (§9.4.3 graceful degradation)', async () => {
     const onClick = vi.fn();
     function ActionTrigger() {

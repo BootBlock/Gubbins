@@ -15,6 +15,11 @@ is covered on the [[Reminder notifications|Reminder-Notifications]] page.
 You can also set how in-app confirmations behave — for example, whether an action shows a **toast**
 or stays **silent**.
 
+> **💡 Tip**
+> A toast stays on screen long enough to read: the more text it carries, the longer it lingers
+> before dismissing itself, so a wordy message won't vanish before you've read it. You can always
+> dismiss one early with its **✕**.
+
 > **ℹ️ Note**
 > The **Online product lookup** switch now lives with the scanner it belongs to, under
 > **[[Settings → Scanning & labels|Camera-Scanning]] → Product lookup**. See
