@@ -121,6 +121,8 @@ export interface CategoryFieldDto {
   readonly options: readonly string[] | null;
   readonly isRequired: boolean;
   readonly defaultValue: string | null;
+  /** Optional author's note about the field; null when none. */
+  readonly description: string | null;
   readonly position: number;
 }
 
@@ -199,6 +201,7 @@ export function toCategoryField(field: CategoryField): CategoryFieldDto {
     options: field.options,
     isRequired: field.isRequired,
     defaultValue: field.defaultValue,
+    description: field.description,
     position: field.position,
   };
 }

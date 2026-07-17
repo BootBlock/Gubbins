@@ -51,6 +51,7 @@ const field = (overrides: Partial<CategoryField> = {}): CategoryField => ({
   options: null,
   isRequired: true,
   defaultValue: null,
+  description: null,
   position: 0,
   updatedAt: 0,
   ...overrides,
@@ -178,7 +179,14 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
       expect(h.addField).toHaveBeenCalledWith(
         {
           categoryId: 'cat-1',
-          input: { name: 'Voltage', fieldType: 'TEXT', isRequired: true, defaultValue: null, options: null },
+          input: {
+            name: 'Voltage',
+            fieldType: 'TEXT',
+            isRequired: true,
+            defaultValue: null,
+            description: null,
+            options: null,
+          },
         },
         expect.anything(),
       ),
@@ -193,6 +201,35 @@ describe('CategoryManagerDialog — the add-field form assembles the input', () 
     await waitFor(() =>
       expect(h.addField).toHaveBeenCalledWith(
         expect.objectContaining({ input: expect.objectContaining({ defaultValue: '5V' }) }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('carries a typed description (trimmed), and a blank one becomes null', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Voltage' } });
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: '  Read from the label on the base.  ' },
+    });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({ description: 'Read from the label on the base.' }),
+        }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('sends a null description when the field is left blank', async () => {
+    fireEvent.change(screen.getByLabelText('Field name'), { target: { value: 'Voltage' } });
+    fireEvent.click(addFieldButton());
+
+    await waitFor(() =>
+      expect(h.addField).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ description: null }) }),
         expect.anything(),
       ),
     );

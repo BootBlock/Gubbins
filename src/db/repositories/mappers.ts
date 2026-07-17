@@ -394,6 +394,7 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
     options: parseStringArray(row.options),
     isRequired: row.is_required === 1,
     defaultValue: row.default_value,
+    description: row.description,
     position: row.position,
     updatedAt: row.updated_at,
   };

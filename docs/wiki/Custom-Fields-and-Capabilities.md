@@ -23,6 +23,14 @@ field:material=steel
 > Because custom fields hang off a **category**, setting a category up once gives every item in
 > it the right fields automatically — no need to re-add them item by item.
 
+### Adding a field note
+
+When you define a custom field you can give it an optional **Description** — a short note about
+what the field is for. If you fill it in, an **(i)** info badge appears next to that field on
+every item in the category; hovering or focusing it shows your note. It's the ideal place for a
+reminder such as *where to read the value from*, *which units to use*, or a link to a reference.
+The note supports Markdown, and leaving it blank simply hides the badge.
+
 ### Starting from a preset
 
 Rather than adding fields one at a time, the category manager's **Add from a preset** picker

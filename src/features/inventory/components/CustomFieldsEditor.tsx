@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import { Button, InfoHint, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
 import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon } from '@/components/icons';
 import { useItemFields, useSetItemFieldValues } from '../categories';
@@ -69,35 +69,36 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
         const { controlProps, errorId, hasError } = fieldAria(field.id, error);
         return (
           <div key={field.id} className="block">
-            {/* The error node lives *outside* the <label> so it is not folded into
-                the control's accessible name; it is associated via aria-describedby. */}
-            <label className="block">
-              <span
-                id={`${field.id}-label`}
-                className="mb-field-gap flex items-center gap-1.5 text-sm font-medium"
-              >
+            {/* The info badges and the error node live *outside* the label span so their
+                own accessible names ("More information", the alert text) are never folded
+                into the control's name: the control is named via aria-labelledby → the
+                span (which holds only the field name + required marker), and the error is
+                associated via aria-describedby. */}
+            <div className="mb-field-gap flex items-center gap-1.5 text-sm font-medium">
+              <span id={`${field.id}-label`} className="flex items-center gap-1.5">
                 {field.name}
                 {field.isRequired ? <span className="text-destructive">*</span> : null}
-                {!field.hasStoredValue && field.defaultValue ? (
-                  <Tooltip
-                    content={`Showing the category default (**${field.defaultValue}**) — not yet set for this item.`}
-                    openDelayMs={INFO_OPEN_DELAY_MS}
-                  >
-                    <span className="text-muted-foreground [&_svg]:size-3.5">
-                      <InfoIcon />
-                    </span>
-                  </Tooltip>
-                ) : null}
               </span>
-              <TypedFieldControl
-                fieldType={field.fieldType}
-                value={draft[field.id] ?? ''}
-                onChange={(v) => set(field.id, v)}
-                options={field.options}
-                controlProps={controlProps}
-                labelId={`${field.id}-label`}
-              />
-            </label>
+              {field.description ? <InfoHint content={field.description} /> : null}
+              {!field.hasStoredValue && field.defaultValue ? (
+                <Tooltip
+                  content={`Showing the category default (**${field.defaultValue}**) — not yet set for this item.`}
+                  openDelayMs={INFO_OPEN_DELAY_MS}
+                >
+                  <span className="text-muted-foreground [&_svg]:size-3.5">
+                    <InfoIcon />
+                  </span>
+                </Tooltip>
+              ) : null}
+            </div>
+            <TypedFieldControl
+              fieldType={field.fieldType}
+              value={draft[field.id] ?? ''}
+              onChange={(v) => set(field.id, v)}
+              options={field.options}
+              controlProps={controlProps}
+              labelId={`${field.id}-label`}
+            />
             {hasError ? (
               <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
                 {error}

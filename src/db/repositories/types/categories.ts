@@ -104,6 +104,7 @@ export interface CategoryFieldRow {
   readonly options: string | null;
   readonly is_required: number;
   readonly default_value: string | null;
+  readonly description: string | null;
   readonly position: number;
   readonly updated_at: number;
 }
@@ -118,6 +119,12 @@ export interface CategoryField {
   readonly isRequired: boolean;
   /** Value applied by lenient defaulting when an item has no stored value. */
   readonly defaultValue: string | null;
+  /**
+   * Optional author's note explaining what the field is for. When set, the item's
+   * custom-field control shows a rich-Markdown info hint carrying this text — a
+   * reminder of any field-specific guidance. Null when the field carries no note.
+   */
+  readonly description: string | null;
   readonly position: number;
   readonly updatedAt: number;
 }
@@ -128,6 +135,8 @@ export interface CreateCategoryFieldInput {
   readonly options?: string[] | null;
   readonly isRequired?: boolean;
   readonly defaultValue?: string | null;
+  /** Optional author's note about the field; omit/null for none. */
+  readonly description?: string | null;
   readonly position?: number;
 }
 
@@ -137,6 +146,8 @@ export interface UpdateCategoryFieldInput {
   readonly options?: string[] | null;
   readonly isRequired?: boolean;
   readonly defaultValue?: string | null;
+  /** Optional author's note about the field; null clears it. */
+  readonly description?: string | null;
   readonly position?: number;
 }
 

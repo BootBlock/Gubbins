@@ -7,6 +7,7 @@ import {
   InfoHint,
   Modal,
   SelectField,
+  Textarea,
   Tooltip,
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
@@ -588,6 +589,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [options, setOptions] = useState('');
   const [isRequired, setIsRequired] = useState(false);
   const [defaultValue, setDefaultValue] = useState('');
+  const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
@@ -600,6 +602,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           fieldType,
           isRequired,
           defaultValue: defaultValue.trim() || null,
+          description: description.trim() || null,
           options: fieldType === 'SELECT' ? parseChoices(options) : null,
         },
       },
@@ -609,6 +612,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           setName('');
           setOptions('');
           setDefaultValue('');
+          setDescription('');
           setIsRequired(false);
         },
       },
@@ -676,6 +680,18 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
           onChange={setDefaultValue}
           options={fieldType === 'SELECT' ? parseChoices(options) : null}
           ariaLabel="Default value"
+        />
+      </FormField>
+      <FormField
+        label="Description"
+        hint="An optional note about this field. When set, an **(i)** info badge appears beside the field on each item, showing this text — a handy place for guidance such as *where to read the value from* or *which units to use*. Supports Markdown."
+      >
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="e.g. Read from the label on the base — in volts."
+          aria-label="Description"
+          rows={2}
         />
       </FormField>
       <div className="flex items-center gap-1.5">

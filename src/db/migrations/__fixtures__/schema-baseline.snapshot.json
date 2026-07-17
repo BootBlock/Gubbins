@@ -353,7 +353,7 @@
       "type": "table",
       "name": "category_fields",
       "tbl_name": "category_fields",
-      "sql": "CREATE TABLE category_fields (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,\n          name          TEXT    NOT NULL,\n          field_type    TEXT    NOT NULL,\n          options       TEXT,                          -- JSON array for SELECT fields\n          is_required   INTEGER NOT NULL DEFAULT 0,\n          default_value TEXT,                          -- lenient-defaulting value (§4)\n          position      INTEGER NOT NULL DEFAULT 0,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT')),\n          CHECK (is_required IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE category_fields (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,\n          name          TEXT    NOT NULL,\n          field_type    TEXT    NOT NULL,\n          options       TEXT,                          -- JSON array for SELECT fields\n          is_required   INTEGER NOT NULL DEFAULT 0,\n          default_value TEXT,                          -- lenient-defaulting value (§4)\n          description   TEXT,                          -- optional help note shown on the item control\n          position      INTEGER NOT NULL DEFAULT 0,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT')),\n          CHECK (is_required IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1228,6 +1228,14 @@
         },
         {
           "cid": 7,
+          "name": "description",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
           "name": "position",
           "type": "INTEGER",
           "notnull": 1,
@@ -1235,7 +1243,7 @@
           "pk": 0
         },
         {
-          "cid": 8,
+          "cid": 9,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
