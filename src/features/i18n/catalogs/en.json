@@ -38,6 +38,10 @@
   "pagination.summary": "{start}–{end} of {total}",
   "pagination.perPage": "Per page",
 
+  "numberInput.srHint": "This field accepts calculations — for example, type 500/2 and press Enter to work out the value.",
+  "numberInput.help": "**This box does maths.** Type a calculation and press **Enter** (or click away) to work out the value.\n\n| You type | You get |\n| --- | --- |\n| `500/2` | `250` |\n| `12*3` | `36` |\n| `(2+3)*4` | `20` |\n| `200*15%` | `30` |\n\nSupports `+`, `−`, `×` (`*`), `÷` (`/`), `^` for powers, `%` (percent), and parentheses.",
+  "numberInput.result": "Calculated {result}",
+
   "about.title": "About",
   "about.app.title": "About Gubbins",
   "about.app.intro.pre": "Gubbins is a local-first, offline-capable app for tracking",

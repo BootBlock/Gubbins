@@ -37,14 +37,14 @@ describe('TypedFieldControl — text-like types', () => {
   it('renders a number input for NUMBER', () => {
     render(<TypedFieldControl fieldType="NUMBER" value="" onChange={vi.fn()} ariaLabel="Resistance" />);
     const input = screen.getByLabelText('Resistance');
-    expect(input).toHaveAttribute('type', 'number');
+    expect(input).toHaveAttribute('type', 'text');
     expect(input).not.toHaveAttribute('min');
   });
 
   it('renders a 1-5-constrained number input for RATING', () => {
     render(<TypedFieldControl fieldType="RATING" value="" onChange={vi.fn()} ariaLabel="Condition" />);
     const input = screen.getByLabelText('Condition');
-    expect(input).toHaveAttribute('type', 'number');
+    expect(input).toHaveAttribute('type', 'text');
     expect(input).toHaveAttribute('min', '1');
     expect(input).toHaveAttribute('max', '5');
   });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Button, Tooltip } from '@/components/foundry';
+import { Button, Tooltip, evaluateExpression, hasCalcExpression } from '@/components/foundry';
 import { AddIcon, SubtractIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAdjustQuantity } from '../mutations';
@@ -40,9 +40,20 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
 
   const commit = () => {
     setEditing(false);
-    const target = Number(draft);
-    // Ignore a blank/invalid/negative entry — leave the quantity untouched.
-    if (draft.trim() === '' || !Number.isFinite(target) || target < 0) return;
+    const trimmed = draft.trim();
+    if (trimmed === '') return;
+    // Accept a typed calculation (e.g. "24/2", "12+3") as well as a plain number — the same
+    // micro-calculator every number field offers (issue #93). An invalid sum is ignored.
+    let target: number;
+    if (hasCalcExpression(trimmed)) {
+      const result = evaluateExpression(trimmed);
+      if (!result.ok) return;
+      target = result.value;
+    } else {
+      target = Number(trimmed);
+    }
+    // Ignore an invalid/negative entry — leave the quantity untouched.
+    if (!Number.isFinite(target) || target < 0) return;
     const next = Math.floor(target);
     const delta = next - quantity;
     // A no-op (same value) is skipped, so the flash only plays on a real change — exactly
@@ -83,9 +94,8 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
       {editing ? (
         <input
           ref={inputRef}
-          type="number"
-          min={0}
-          step={1}
+          type="text"
+          inputMode="decimal"
           aria-label="Set quantity"
           data-testid="quantity-input"
           value={draft}

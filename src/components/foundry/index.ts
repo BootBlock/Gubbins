@@ -13,7 +13,14 @@ export { Banner, bannerVariants, type BannerProps } from './banner';
 export { Surface, type SurfaceProps } from './surface';
 export { ReorderList, type ReorderListProps, type ReorderListItem } from './reorder-list';
 export { Spinner, type SpinnerProps } from './spinner';
-export { Input, Textarea, Checkbox } from './input';
+export { Input, Textarea, Checkbox, type InputProps } from './input';
+export { NumberInput, type NumberInputProps } from './number-input';
+export {
+  evaluateExpression,
+  hasCalcExpression,
+  formatCalcResult,
+  type EvalResult,
+} from './evaluate-expression';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
 export {
   Autocomplete,

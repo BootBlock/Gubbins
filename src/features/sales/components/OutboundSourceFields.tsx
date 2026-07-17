@@ -139,6 +139,8 @@ export function OutboundSourceFields({ source, verb }: { source: OutboundSource;
         <span className="mb-field-gap block text-sm font-medium">Quantity</span>
         <Input
           type="number"
+          // Clamped-on-keystroke controlled field — opt out of the calculator (issue #93).
+          calc={false}
           min={1}
           max={maxQty}
           value={quantity}
