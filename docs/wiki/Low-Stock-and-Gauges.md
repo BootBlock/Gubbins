@@ -19,6 +19,10 @@ you can see how much is left in a spool or bottle.
 
 ![A consumable item's fill gauge](images/item-card-gauge.png)
 
+You keep that gauge up to date however suits the moment — record usage, weigh it in on a scale,
+top it up, or (when there's no scale to hand) just **Estimate** the level from *Full* to *Empty*.
+The gauge threshold below then flags it as low the same way, whichever method you used.
+
 ## Thresholds
 
 A **low-stock threshold** is the quantity at or below which an item counts as "low". You can set:

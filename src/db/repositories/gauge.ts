@@ -83,3 +83,47 @@ export function refillNote(appliedDelta: number, newNetValue: number, unit: stri
   const sign = appliedDelta > 0 ? '+' : '';
   return `Refilled ${sign}${appliedDelta}${unit} (now ${newNetValue}${unit})`;
 }
+
+/**
+ * The intuitive fill levels offered by the "Estimate" quick-set (issue #95). Rather
+ * than weighing a half-empty filament spool or guessing how much detergent is left,
+ * the user picks a level and the gauge snaps to that coefficient of its full
+ * capacity — enough precision to drive the low-stock gauge alert without a scale.
+ * Ordered full → empty (the slider runs the same way). The `percent` values are the
+ * single source of truth for the mapping; the UI renders their labels.
+ */
+export const GAUGE_LEVELS = [
+  { key: 'full', label: 'Full', percent: 100 },
+  { key: 'mostly', label: 'Mostly full', percent: 75 },
+  { key: 'half', label: 'Half', percent: 50 },
+  { key: 'low', label: 'Low', percent: 25 },
+  { key: 'empty', label: 'Empty', percent: 0 },
+] as const;
+export type GaugeLevelKey = (typeof GAUGE_LEVELS)[number]['key'];
+
+/**
+ * The net value a chosen fill level (`percent`, 0–100) maps to for a gauge of this
+ * capacity, clamped to the valid `[0, grossCapacity]` range (§4.1.1). `50` → half a
+ * full unit. Drives the "Estimate" quick-set (issue #95).
+ */
+export function estimateNetValue(percent: number, grossCapacity: number): number {
+  return clampNetValue((percent / 100) * grossCapacity, grossCapacity);
+}
+
+/**
+ * Convert a chosen fill level into the relative net-value delta the ledger stores
+ * (§4.1.2 / issue #95): the signed difference between the level's target net and the
+ * current net. Like every other gauge mode, only this delta reaches the database and
+ * Activity Log — the delta-CRDT integrity rule (§7.3).
+ */
+export function estimateDelta(percent: number, currentNetValue: number, grossCapacity: number): number {
+  return estimateNetValue(percent, grossCapacity) - currentNetValue;
+}
+
+/**
+ * Compose the estimate ledger note: the level chosen and the resulting net level,
+ * e.g. "Estimated Half (~50%, now 500g)".
+ */
+export function estimateNote(label: string, percent: number, newNetValue: number, unit: string): string {
+  return `Estimated ${label} (~${percent}%, now ${newNetValue}${unit})`;
+}
