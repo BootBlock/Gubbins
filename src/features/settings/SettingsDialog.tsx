@@ -515,6 +515,23 @@ export default function SettingsDialog({
                 options={ON_OFF_OPTIONS}
               />
             </SettingRow>
+            <SettingRow
+              label="Hide cards with nothing to report"
+              description="Hide alert cards that are all clear (e.g. Low stock when everything is in stock), so the dashboard shows only what needs attention."
+              hint={
+                'Hides a dashboard **alert card** whenever it has nothing to report — Low stock with everything in stock, Overdue with no late loans, Soon to expire with nothing due, Maintenance due when nothing is due, and Budget alerts when every project is on track.\n\n' +
+                'The informational cards (Inventory totals, Recent activity, and the system-status cards) are always shown — they have no “problem” to clear. A hidden card reappears the moment it has something to report, and **Customise** always shows every card so you can still arrange them.'
+              }
+            >
+              <Select
+                aria-label="Hide cards with nothing to report"
+                data-testid="setting-dashboard-hide-healthy"
+                className="h-9 w-40"
+                value={prefs.hideHealthyDashboardCards ? 'on' : 'off'}
+                onChange={(value) => prefs.setHideHealthyDashboardCards(value === 'on')}
+                options={OFF_ON_OPTIONS}
+              />
+            </SettingRow>
           </SettingsSection>
 
           {anyNavCountPicker ? (

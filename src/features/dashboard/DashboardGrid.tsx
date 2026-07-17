@@ -11,7 +11,7 @@
  * affordance: below `sm` the board collapses to a single-column flow in row-major
  * order, so the coordinate placement only engages on wider screens.
  */
-import { useMemo, type CSSProperties, type KeyboardEvent } from 'react';
+import { useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import {
@@ -24,6 +24,7 @@ import {
 } from '@/components/foundry';
 import { DragHandleIcon, HideIcon, ShowIcon, ResetIcon } from '@/components/icons';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useReorderFlip } from './useReorderFlip';
 import { useBoardPointerDrag, type DragSourceProps, type DropTargetProps } from './useBoardPointerDrag';
@@ -34,6 +35,7 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import {
   DASHBOARD_COLUMNS,
+  hideHealthyCards,
   moveWidget,
   nudgeWidget,
   occupantAt,
@@ -44,7 +46,7 @@ import {
   type NudgeDirection,
   type WidgetPlacement,
 } from './dashboard-layout';
-import { DASHBOARD_WIDGET_IDS, widgetById, type WidgetDefinition } from './widgets';
+import { DASHBOARD_WIDGET_IDS, useHealthyWidgetIds, widgetById, type WidgetDefinition } from './widgets';
 
 const ARROW_DIRECTIONS: Record<string, NudgeDirection> = {
   ArrowUp: 'up',
@@ -74,7 +76,33 @@ function parseCellKey(key: string | null): { x: number; y: number } | null {
   return Number.isNaN(x) || Number.isNaN(y) ? null : { x, y };
 }
 
+/** A shared frozen empty set for the common "nothing hidden" path (no per-render allocation). */
+const NO_HEALTHY: ReadonlySet<string> = new Set();
+
+/**
+ * The widget board. Thin wrapper over {@link DashboardBoard}: when "hide healthy cards"
+ * (issue #111) is on it mounts a probe that reports which alert cards are currently all-clear,
+ * and hands that set down; otherwise the board renders the full layout with nothing to probe.
+ */
 export function DashboardGrid() {
+  const hideHealthy = usePreferencesStore((s) => s.hideHealthyDashboardCards);
+  return hideHealthy ? (
+    <HideHealthyGate>{(healthy) => <DashboardBoard healthy={healthy} />}</HideHealthyGate>
+  ) : (
+    <DashboardBoard healthy={NO_HEALTHY} />
+  );
+}
+
+/**
+ * Runs the alert-widget "all clear" probe (only mounted while "hide healthy cards" is on, so
+ * the default board never pays for it) and hands the set of clear widget ids to the board.
+ */
+function HideHealthyGate({ children }: { children: (healthy: ReadonlySet<string>) => ReactNode }) {
+  const healthy = useHealthyWidgetIds();
+  return <>{children(healthy)}</>;
+}
+
+function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   const t = useT();
   const stored = useLayoutStore((s) => s.dashboardLayout);
   const setLayout = useLayoutStore((s) => s.setDashboardLayout);
@@ -109,7 +137,12 @@ export function DashboardGrid() {
     return { layout: onBoard as DashboardLayout, gated: gatedOut as DashboardLayout };
   }, [fullLayout, enabled]);
 
-  const placed = placedWidgets(layout);
+  // "Hide healthy cards" (issue #111) only bites in view mode — while customising, every card
+  // stays on the board so it can be arranged, so the healthy set is ignored then. The reflow
+  // repacks the surviving cards gaplessly; the persisted `layout` (and every edit below) is
+  // untouched, so a temporarily-hidden card keeps its real coordinates.
+  const renderLayout = hideHealthyCards(layout, editing ? NO_HEALTHY : healthy);
+  const placed = placedWidgets(renderLayout);
   const hidden = layout.filter((p) => !p.visible);
 
   // Glide each widget to its new cell when the board is rearranged (FLIP), on the signature

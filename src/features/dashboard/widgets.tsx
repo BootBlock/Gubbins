@@ -782,6 +782,54 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
   },
 ];
 
+/**
+ * Which "attention" cards are currently **all clear** (issue #111) — the exception trackers
+ * (low stock, soon to expire, overdue, maintenance due, budget alerts) whose empty state
+ * genuinely means "nothing to report". The informational cards (totals, recent activity,
+ * projects, in transit, system status) have no problem/clear semantic and so are never probed
+ * or hidden.
+ *
+ * For each tracker this mirrors that widget's own "empty" condition — an id is added only once
+ * its query has actually resolved to zero rows, so a card is never hidden while its data is
+ * still loading or errored (it stays shown until we can confirm there's nothing to report).
+ * react-query dedupes these against the widgets' own subscriptions, so no extra database
+ * round-trip is incurred.
+ *
+ * Only run while "hide healthy cards" is on (the grid mounts the probe conditionally), so the
+ * default board pays nothing for it. Keep each branch in step with its matching widget above.
+ */
+export function useHealthyWidgetIds(): ReadonlySet<string> {
+  const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
+  const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
+  const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
+  const warnPercent = usePreferencesStore((s) => s.budgetWarnPercent);
+
+  const lowStock = useLowStockItems({ qtyThreshold, gaugePercent });
+  const expiring = useExpiringItems(expirySoonWindowDays);
+  const openCheckouts = useOpenCheckouts();
+  const dueMaintenance = useDueMaintenance();
+  const alerts = useBudgetAlerts();
+
+  const healthy = new Set<string>();
+  // LowStockWidget: empty when no item is at/below its reorder point.
+  if (lowStock.data && lowStock.data.rows.length === 0) healthy.add('low-stock');
+  // ExpiringWidget: empty when nothing falls inside the "expiring soon" window.
+  if (expiring.data && expiring.data.rows.length === 0) healthy.add('expiring');
+  // OverdueWidget: clear when no open loan is actually late (merely-on-loan doesn't count).
+  if (openCheckouts.data && openCheckouts.data.rows.every((c) => !c.isOverdue)) healthy.add('overdue');
+  // MaintenanceWidget: empty when nothing is due for servicing.
+  if (dueMaintenance.data && dueMaintenance.data.rows.length === 0) healthy.add('maintenance');
+  // BudgetAlertsWidget: clear when no budgeted project is over or approaching its budget.
+  if (alerts.data) {
+    const flagged = alerts.data.filter((a) => {
+      const { over, warn } = projectBudgetHealth(a, warnPercent);
+      return over || warn;
+    });
+    if (flagged.length === 0) healthy.add('budget-alerts');
+  }
+  return healthy;
+}
+
 /** Stable registry id list — the input to `reconcileLayout`/`defaultLayout`. */
 export const DASHBOARD_WIDGET_IDS: readonly string[] = DASHBOARD_WIDGETS.map((w) => w.id);
 
