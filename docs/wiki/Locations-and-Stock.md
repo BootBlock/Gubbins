@@ -64,6 +64,29 @@ receiving to a shelf, or loading tools into a van.
 A location can be given a **capacity**, after which Gubbins shows a fullness gauge — handy for
 knowing when a shelf or bin is running out of room before you over-fill it.
 
+## Portable & mobile containers
+
+Not everything that holds items stays put. A **toolbox**, a **camera bag**, a **first-aid kit**
+or a **van** all travel around — and Gubbins handles them without any special "mobile" setting.
+The trick is that a location tracks *what is inside it*, not where it sits on a map, so a
+portable container is simply a **location** like any other:
+
+1. Make the container a location — nest it wherever it normally lives (e.g. *Garage → Camera bag*).
+2. Give it a matching **type** so it reads at a glance: **Box**, **Bag** or **Vehicle** all carry
+   their own icon.
+3. Store the items inside it, just as you would on a shelf.
+
+Because Gubbins records containment rather than a physical position, **picking the bag up and
+carrying it out of the door changes nothing** — its contents are still "in the bag". If you want
+to record that the whole container has moved home for good, drag it to a new parent in the tree;
+if you're lending it out with its contents, a [[loan|Loans-Check-Out-and-In]] can be made out to
+the container's location.
+
+> **💡 Tip**
+> A container is a great place to use **capacity** (below) — a first-aid kit or grab-bag with a
+> set number of slots shows its fullness gauge, so you can see at a glance whether it's fully
+> stocked before you head out.
+
 ## Going deeper: batches
 
 Beneath each location, stock can be split further into [[batches & lots|Batches-and-Lots]] —
