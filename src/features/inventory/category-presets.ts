@@ -15,6 +15,7 @@
  * brand names, URLs, or product-specific values.
  */
 import type { CreateCategoryFieldInput, CreateCategoryInput } from '@/db/repositories';
+import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
 
 /** A category-preset seed: the category (with its facet defaults) + its custom fields. */
 export interface CategoryStarterSeed {
@@ -25,8 +26,27 @@ export interface CategoryStarterSeed {
 }
 
 /**
+ * The picker's browse sections — a small, curated taxonomy that groups the preset library
+ * by the kind of inventory it serves. Ids are stable slugs (durable identifiers, never shown
+ * to the user); the picker resolves each to its translated label. Declared order is the
+ * order the sections list shows.
+ */
+export const PRESET_SECTION_IDS = [
+  'workshop',
+  'electronics',
+  'household',
+  'crafts',
+  'media',
+  'collectibles',
+] as const;
+
+/** One of the picker's browse sections. */
+export type PresetSectionId = (typeof PRESET_SECTION_IDS)[number];
+
+/**
  * A preset offered in the "Add from a preset" library: a {@link CategoryStarterSeed} plus
- * the presentation metadata the picker needs (a stable id and a one-line description).
+ * the presentation metadata the picker needs (a stable id, the section it browses under,
+ * and a one-line description).
  */
 export interface CategoryPreset {
   /** Stable slug — the picker key and a durable identifier, never shown to the user. */
@@ -35,6 +55,8 @@ export interface CategoryPreset {
   readonly name: string;
   /** One-line summary of what the preset is for, shown under its name in the picker. */
   readonly description: string;
+  /** The browse section the picker files this preset under. */
+  readonly sectionId: PresetSectionId;
   /** The seed materialised when the preset is imported. */
   readonly seed: CategoryStarterSeed;
 }
@@ -55,6 +77,7 @@ export const TOOLS_STARTER_CATEGORY_NAME = 'Tools';
 export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   {
     id: 'tools',
+    sectionId: 'workshop',
     name: TOOLS_STARTER_CATEGORY_NAME,
     description: 'Serialised, loanable equipment — tracked one-by-one with a calibration record.',
     seed: {
@@ -74,6 +97,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'battery',
+    sectionId: 'electronics',
     name: 'Battery',
     description: 'Cells and packs — voltage, chemistry, capacity and form factor.',
     seed: {
@@ -97,6 +121,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'food-pantry',
+    sectionId: 'household',
     name: 'Food',
     description: 'Pantry and perishables — expiry, storage and whether the packet is opened.',
     seed: {
@@ -112,6 +137,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'electronic-component',
+    sectionId: 'electronics',
     name: 'Electronic component',
     description: 'Parts for the bench — part number, datasheet, package and value.',
     seed: {
@@ -128,6 +154,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'book-media',
+    sectionId: 'media',
     name: 'Book',
     description: 'Books and reading — author, ISBN, format and a personal rating.',
     seed: {
@@ -145,6 +172,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'clothing',
+    sectionId: 'household',
     name: 'Clothing',
     description: 'Apparel — size, colour, material and brand.',
     seed: {
@@ -159,6 +187,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'cable',
+    sectionId: 'electronics',
     name: 'Cable',
     description: 'Leads and adaptors — connector types and length.',
     seed: {
@@ -178,6 +207,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'fastener',
+    sectionId: 'workshop',
     name: 'Fastener',
     description: 'Screws, bolts and fixings — type, thread, length and material.',
     seed: {
@@ -201,6 +231,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: '3d-filament',
+    sectionId: 'crafts',
     name: '3D Filament',
     description: '3D-printer filament spools — material, diameter, colour and print settings.',
     seed: {
@@ -222,6 +253,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'fabric',
+    sectionId: 'crafts',
     name: 'Fabric',
     description: 'Sewing and craft fabric — material, width, colour and pattern.',
     seed: {
@@ -241,6 +273,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'hobby-paint',
+    sectionId: 'crafts',
     name: 'Paint',
     description: 'Hobby and craft paint — brand, colour, finish and type.',
     seed: {
@@ -264,6 +297,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'adhesive',
+    sectionId: 'workshop',
     name: 'Adhesive',
     description: 'Glues, resins and tapes — type, cure time and shelf life.',
     seed: {
@@ -282,6 +316,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'model-kit',
+    sectionId: 'crafts',
     name: 'Model kit',
     description: 'Scale model kits — manufacturer, scale, subject and build status.',
     seed: {
@@ -305,6 +340,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'trading-card',
+    sectionId: 'collectibles',
     name: 'Trading card',
     description: 'Collectible cards — set, rarity, condition and language.',
     seed: {
@@ -330,6 +366,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'vinyl-record',
+    sectionId: 'media',
     name: 'Vinyl record',
     description: 'Records — artist, format, speed and condition.',
     seed: {
@@ -355,6 +392,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
   },
   {
     id: 'coin',
+    sectionId: 'collectibles',
     name: 'Coin',
     description: 'Coins — country, year, denomination and grade.',
     seed: {
@@ -389,6 +427,19 @@ export const TOOLS_STARTER_SEED: CategoryStarterSeed = CATEGORY_PRESETS[0]!.seed
 export function hasCategoryNamed(names: readonly string[], name: string): boolean {
   const target = name.trim().toLowerCase();
   return names.some((n) => n.trim().toLowerCase() === target);
+}
+
+/**
+ * Whether a preset matches the picker's search text — the shared term-AND-substring
+ * model (`@/lib/text-terms`, the same matcher the glyph picker filters with) applied
+ * to the preset's haystack: its name, description and field names. So "isbn" finds the
+ * Book preset via its ISBN field, "expiry" finds Food and Adhesive, and either word
+ * order works. An empty/whitespace query matches everything (the picker's browse
+ * state). Pure, so the matching rules are unit-testable without the UI.
+ */
+export function categoryPresetMatches(preset: CategoryPreset, query: string): boolean {
+  const hay = [preset.name, preset.description, ...preset.seed.fields.map((f) => f.name)].join(' ');
+  return includesAllTerms(hay, splitSearchTerms(query));
 }
 
 /** Mutation-path operations `applyCategoryStarterSeed` drives (kept abstract so it stays DB-free/testable). */

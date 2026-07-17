@@ -7,6 +7,7 @@
  * into a human-readable label and power the picker's free-text search. They are
  * deliberately free of any Lucide import so they stay cheap and unit-testable.
  */
+import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
 
 /**
  * Turn a PascalCase Lucide name into spaced words for display and search —
@@ -28,15 +29,13 @@ export function glyphSearchText(name: string): string {
 }
 
 /**
- * Filter glyph names by a free-text query. Whitespace splits the query into terms
- * that must *all* appear (AND), so `arrow down` narrows to down-arrows while either
- * word order works. An empty query returns the list unchanged (a fresh copy).
+ * Filter glyph names by a free-text query — the shared term-AND-substring model
+ * (`@/lib/text-terms`), so `arrow down` narrows to down-arrows while either word
+ * order works. An empty query returns the list unchanged (a fresh copy). The query
+ * is split once and reused across the ~1,700-name sweep.
  */
 export function filterGlyphNames(names: readonly string[], query: string): string[] {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const terms = splitSearchTerms(query);
   if (terms.length === 0) return [...names];
-  return names.filter((name) => {
-    const hay = glyphSearchText(name);
-    return terms.every((term) => hay.includes(term));
-  });
+  return names.filter((name) => includesAllTerms(glyphSearchText(name), terms));
 }

@@ -6,8 +6,10 @@ import { CategoryRepository } from '@/db/repositories/CategoryRepository';
 import { FIELD_TYPES } from '@/db/repositories';
 import {
   applyCategoryStarterSeed,
+  categoryPresetMatches,
   CATEGORY_PRESETS,
   hasCategoryNamed,
+  PRESET_SECTION_IDS,
   TOOLS_STARTER_CATEGORY_NAME,
   TOOLS_STARTER_SEED,
 } from './category-presets';
@@ -63,6 +65,54 @@ describe('CATEGORY_PRESETS (importable preset library)', () => {
         }
       });
     }
+  });
+});
+
+describe('preset sections (the picker taxonomy)', () => {
+  it('declares unique section ids', () => {
+    expect(new Set(PRESET_SECTION_IDS).size).toBe(PRESET_SECTION_IDS.length);
+  });
+
+  it('files every preset under a declared section, and leaves no section empty', () => {
+    for (const preset of CATEGORY_PRESETS) {
+      expect(PRESET_SECTION_IDS).toContain(preset.sectionId);
+    }
+    for (const sectionId of PRESET_SECTION_IDS) {
+      expect(
+        CATEGORY_PRESETS.some((p) => p.sectionId === sectionId),
+        `section "${sectionId}" must contain at least one preset`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe('categoryPresetMatches (the picker search filter)', () => {
+  const tools = CATEGORY_PRESETS.find((p) => p.id === 'tools')!;
+  const book = CATEGORY_PRESETS.find((p) => p.id === 'book-media')!;
+
+  it('matches everything on an empty or whitespace-only query (the browse state)', () => {
+    for (const preset of CATEGORY_PRESETS) {
+      expect(categoryPresetMatches(preset, '')).toBe(true);
+      expect(categoryPresetMatches(preset, '   ')).toBe(true);
+    }
+  });
+
+  it('matches the name case-insensitively', () => {
+    expect(categoryPresetMatches(tools, 'tOOls')).toBe(true);
+    expect(categoryPresetMatches(book, 'tools')).toBe(false);
+  });
+
+  it('matches the description and the field names', () => {
+    // "loanable" appears only in the Tools description; "ISBN" only in a Book field name.
+    expect(categoryPresetMatches(tools, 'loanable')).toBe(true);
+    expect(categoryPresetMatches(book, 'isbn')).toBe(true);
+    expect(categoryPresetMatches(tools, 'isbn')).toBe(false);
+  });
+
+  it('ANDs whitespace-separated terms, in either order', () => {
+    expect(categoryPresetMatches(book, 'author isbn')).toBe(true);
+    expect(categoryPresetMatches(book, 'isbn author')).toBe(true);
+    expect(categoryPresetMatches(book, 'isbn voltage')).toBe(false);
   });
 });
 
