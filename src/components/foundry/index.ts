@@ -33,6 +33,7 @@ export {
   type PageWindowOptions,
 } from './pagination-window';
 export { Money, type MoneyProps } from './money';
+export { MoneyInput, type MoneyInputProps } from './money-input';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
 export { useCountUp, type CountUpOptions } from './useCountUp';
 export { Reveal, type RevealProps } from './reveal';

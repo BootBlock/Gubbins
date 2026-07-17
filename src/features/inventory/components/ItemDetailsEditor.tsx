@@ -5,6 +5,7 @@ import {
   FormField,
   InfoHint,
   Input,
+  MoneyInput,
   SelectField,
   Textarea,
 } from '@/components/foundry';
@@ -289,14 +290,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             'leave it blank to use the preferred supplier from the **Supplier & ops** tab.'
           }
         >
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            value={unitCost}
-            onChange={(e) => setUnitCost(e.target.value)}
-            placeholder="0.00"
-          />
+          <MoneyInput value={unitCost} onValueChange={setUnitCost} placeholder="0.00" />
         </FormField>
         <SelectField
           label="Category"

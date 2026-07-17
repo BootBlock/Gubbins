@@ -9,6 +9,7 @@ import {
   FormField,
   InfoHint,
   Input,
+  MoneyInput,
   RailModal,
   SelectField,
   Spinner,
@@ -982,7 +983,19 @@ export function CreateItemDialog({
           'project costing.\n\n> Enter the price *per unit*, not the total for a pack.'
         }
       >
-        <Input type="number" min={0} step="any" placeholder="0.00" {...register('unitCost')} />
+        <Controller
+          control={control}
+          name="unitCost"
+          render={({ field }) => (
+            <MoneyInput
+              ref={field.ref}
+              value={field.value ?? ''}
+              onValueChange={field.onChange}
+              onBlur={field.onBlur}
+              placeholder="0.00"
+            />
+          )}
+        />
       </FormField>
 
       {trackingMode === 'DISCRETE' ? (
