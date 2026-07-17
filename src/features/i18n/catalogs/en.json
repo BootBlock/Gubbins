@@ -172,6 +172,15 @@
   "dashboard.version.check": "Check for app updates",
   "dashboard.version.tooltip": "**Check for updates**\n\nGubbins v{version}, released {date}.",
 
+  "pwa.update.heading": "A new version is ready",
+  "pwa.update.body.compatible": "Reload to get the latest update. Your saved data stays intact — finish anything in progress first, then reload when you’re ready.",
+  "pwa.update.body.unknown": "Reload to get the latest update. Finish anything in progress first, then reload when you’re ready.",
+  "pwa.update.body.reset": "This update changes how Gubbins stores data. Because it’s still pre-release (before 1.0), reloading will reset your saved inventory — back up or export it first if you want to keep it.",
+  "pwa.update.reload": "Reload now",
+  "pwa.update.reloading": "Reloading…",
+  "pwa.update.skip": "Skip this version",
+  "pwa.update.remindLater": "Remind me later",
+
   "dashboard.actions.moreAddItem": "More add-item actions",
   "dashboard.actions.addItem": "Add item",
   "dashboard.actions.import": "Import…",

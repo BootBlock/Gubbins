@@ -61,7 +61,29 @@ address bar, or a menu item) to add it to your device. Installed, Gubbins:
 ## Staying up to date
 
 As an installed app, Gubbins updates itself in the background and lets you know when a new version
-is ready, so you're always current without visiting a store.
+is ready with a small banner, so you're always current without visiting a store. The new version
+only takes over when **you** choose **Reload now** — nothing you're part-way through is lost by an
+update arriving.
+
+The banner tells you what the update means for your data before you reload:
+
+- **"Your saved data stays intact"** — a normal update. Reloading keeps everything.
+- **A reset warning** — while Gubbins is still pre-release (before 1.0), some updates change how
+  data is stored and **can't carry your existing data across**. When that's the case the banner
+  says so up front, so you can take a [[backup|Backup-and-Restore]] or
+  [[export|Export-and-Import]] first if you want to keep it. See
+  [[How your data is stored|How-Your-Data-Is-Stored]] for why this happens before 1.0.
+
+If you're not ready to update, you have two choices on the banner:
+
+- **Remind me later** — hides it for a while; it comes back so you don't forget.
+- **Skip this version** — sits out this particular version for good. The banner stays away until an
+  even newer version is released, then reappears so you can decide again.
+
+> **⚠️ Heads-up**
+> Skipping or postponing a reset-warning update doesn't remove the risk — it just delays it. Keep
+> your own [[backups|Backup-and-Restore]] until Gubbins reaches 1.0, after which updates will always
+> preserve your data.
 
 ## What next?
 
