@@ -42,6 +42,7 @@ import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/useP
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { ReminderSettings } from '@/features/alerts/ReminderSettings';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
+import { CARD_BADGE_OPTIONS } from '@/features/inventory/card-badge';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
 import { DatabaseMaintenance } from '@/features/maintenance';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
@@ -619,6 +620,47 @@ export default function SettingsDialog({
                 value={prefs.cardClickAction}
                 onChange={(value) => prefs.setCardClickAction(value as typeof prefs.cardClickAction)}
                 options={CARD_CLICK_ACTION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Item card badge"
+              description="The small badge in the top-right corner of each item card and row."
+              hintSize="md"
+              hint={
+                'Each item card and row shows one small badge in its **top-right corner** — by default the item’s tracking mode (Bulk / Serialised / …). Point it at something else instead:\n\n' +
+                '- **Tracking mode** — the tracking pill (the default).\n' +
+                '- **Unit price** — the cost of a single unit.\n' +
+                '- **Total value** — unit cost × quantity.\n' +
+                '- **Condition** — its tracked state (Mint / Good / …).\n' +
+                '- **Nothing** — leave the slot empty.\n\n' +
+                'If the chosen badge has nothing to show for an item — say **Unit price** on an item with no price — the **fallback** below is shown for that item instead.'
+              }
+            >
+              <Select
+                aria-label="Item card badge"
+                data-testid="setting-card-badge-content"
+                className="h-9 w-40"
+                value={prefs.cardBadgeContent}
+                onChange={(value) => prefs.setCardBadgeContent(value as typeof prefs.cardBadgeContent)}
+                options={CARD_BADGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Badge fallback"
+              description="What the badge shows for an item the chosen badge can’t apply to (e.g. an unpriced item)."
+              hintSize="md"
+              hint={
+                'When the **Item card badge** above has nothing to show for a particular item — an unpriced item under **Unit price**, or an item with no tracked condition under **Condition** — this is shown for that item instead.\n\n' +
+                'Leave it on **Nothing** to leave the slot empty in that case, or pick **Tracking mode** to fall back to the tracking pill.'
+              }
+            >
+              <Select
+                aria-label="Badge fallback"
+                data-testid="setting-card-badge-fallback"
+                className="h-9 w-40"
+                value={prefs.cardBadgeFallback}
+                onChange={(value) => prefs.setCardBadgeFallback(value as typeof prefs.cardBadgeFallback)}
+                options={CARD_BADGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               />
             </SettingRow>
           </SettingsSection>

@@ -80,6 +80,30 @@ Card view itself is configurable — which fields show, count pills, and more �
 **Settings → Dashboard / Inventory**. See [[Appearance & theming|Appearance-and-Theming]] and
 [[Dashboard & widgets|Dashboard-and-Widgets]].
 
+### The corner badge
+
+Every item card and row shows a small **badge in its top-right corner** — by default the item's
+[[tracking mode|Tracking-Modes]] (Bulk / Serialised / Consumable / Untracked). You can point that
+slot at something else instead:
+
+- **Tracking mode** — the tracking pill (the default).
+- **Unit price** — the cost of a single unit.
+- **Total value** — unit cost × quantity.
+- **Condition** — its tracked state (Mint / Good / …).
+- **Nothing** — leave the corner empty.
+
+Pick a **fallback** too. If the chosen badge has nothing to show for a particular item — say
+you've set **Unit price** but an item has no price — the fallback is shown for that one item
+instead. So "Unit price" with a "Tracking mode" fallback shows the price where you've entered one
+and the tracking pill everywhere else.
+
+**Where to find it:** **Settings → Inventory → Item cards → Item card badge** (and **Badge
+fallback**). It's a per-device preference and applies to both the Card and Data views.
+
+> **💡 Tip**
+> Set the badge to **Total value** with a **Nothing** fallback to see stock value at a glance while
+> browsing, without cluttering cards for items you haven't priced yet.
+
 > **ℹ️ Note**
 > The view density only changes how items are **drawn** — it never changes your data or which
 > items match your current [[search|Search-Overview]], location and status filters.

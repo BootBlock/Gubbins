@@ -47,6 +47,12 @@ import {
 } from '@/features/inventory/labels/label-template';
 import { DEFAULT_CARD_FIELDS, type CardFieldsConfig } from '@/features/inventory/card-fields';
 import {
+  DEFAULT_CARD_BADGE_CONTENT,
+  DEFAULT_CARD_BADGE_FALLBACK,
+  normaliseCardBadgeContent,
+  type CardBadgeContent,
+} from '@/features/inventory/card-badge';
+import {
   DEFAULT_REMINDER_KINDS,
   normaliseReminderKinds,
   type ReminderKinds,
@@ -214,6 +220,21 @@ interface PreferencesStore {
    * body inert). See {@link CardClickAction}.
    */
   readonly cardClickAction: CardClickAction;
+  /**
+   * What the item card/row's top-right badge slot shows (issue #117) — its tracking mode, unit
+   * price, total stock value, condition, or nothing. Shared across the Visual card and Data row.
+   * Persisted as the user's *intent*; the read side resolves it (with {@link cardBadgeFallback})
+   * against the item via `resolveCardBadge`, so a stale value can never reach the badge. Defaults
+   * to the tracking pill, i.e. the historic behaviour. See {@link CardBadgeContent}.
+   */
+  readonly cardBadgeContent: CardBadgeContent;
+  /**
+   * The fallback for {@link cardBadgeContent} when the chosen content has nothing to show for a
+   * given item (e.g. an unpriced item under "Unit price") — the same option set, resolved after
+   * the primary. Defaults to `none` (no fallback), so the shipped default is exactly "always
+   * show tracking". See {@link CardBadgeContent}.
+   */
+  readonly cardBadgeFallback: CardBadgeContent;
   /**
    * Which attributes each inventory item card/row shows, and in what order (backlog E1).
    * A device-local ordered list of `{ id, visible }` — built-in fields (`location`,
@@ -420,6 +441,10 @@ interface PreferencesStore {
   setScannerHaptics: (enabled: boolean) => void;
   setVisualCardMetric: (metric: VisualCardMetric) => void;
   setCardClickAction: (action: CardClickAction) => void;
+  /** Choose what the item card/row badge slot shows (issue #117). */
+  setCardBadgeContent: (content: CardBadgeContent) => void;
+  /** Choose the badge slot's fallback for items the chosen content can't apply to. */
+  setCardBadgeFallback: (content: CardBadgeContent) => void;
   /** Replace the item-card field configuration (order + visibility). */
   setCardFields: (fields: CardFieldsConfig) => void;
   /** Restore the shipped default card-field configuration. */
@@ -507,6 +532,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       scannerHaptics: true,
       visualCardMetric: DEFAULT_VISUAL_CARD_METRIC,
       cardClickAction: DEFAULT_CARD_CLICK_ACTION,
+      cardBadgeContent: DEFAULT_CARD_BADGE_CONTENT,
+      cardBadgeFallback: DEFAULT_CARD_BADGE_FALLBACK,
       cardFields: DEFAULT_CARD_FIELDS,
       navCountMetrics: DEFAULT_NAV_COUNT_METRICS,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
@@ -586,6 +613,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setVisualCardMetric: (metric) => set({ visualCardMetric: normaliseVisualCardMetric(metric) }),
       // Normalise so a stale/unknown persisted value can never reach the card's click handler.
       setCardClickAction: (action) => set({ cardClickAction: normaliseCardClickAction(action) }),
+      // Normalise so a stale/unknown persisted value can never reach the badge renderer. The
+      // fallback preference defaults to `none` (not `tracking`) when a bad value is coerced.
+      setCardBadgeContent: (content) => set({ cardBadgeContent: normaliseCardBadgeContent(content) }),
+      setCardBadgeFallback: (content) =>
+        set({ cardBadgeFallback: normaliseCardBadgeContent(content, DEFAULT_CARD_BADGE_FALLBACK) }),
       // Persisted verbatim as the user's *intent*; the read layer reconciles it against the
       // live custom-field catalog (`normaliseCardFields`), so no store-side normalisation.
       setCardFields: (cardFields) => set({ cardFields }),
