@@ -48,6 +48,13 @@ Sets how **opaque** the app's surfaces — item cards, dashboard widgets and pan
 > contrast** (on the Appearance tab) keeps every surface solid whatever you pick here — so
 > legibility always comes first.
 
+> **ℹ️ Note**
+> If you leave this on **Solid** but switch on a [[Appearance & theming|Appearance-and-Theming]]
+> **background effect** (snow or rain), surfaces turn softly translucent on their own while the
+> effect is running, so the drift shows faintly through — then return to solid when you turn it
+> off. Choosing **Soft** or **Sheer** already shows the background through, so those are left as
+> you set them.
+
 ## Related pages
 
 - **[[Appearance & theming|Appearance-and-Theming]]** — mode, preset accents, contrast and motion.

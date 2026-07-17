@@ -634,6 +634,20 @@
 }
 
 /*
+ * Auto-translucent cards under a live background effect (issue #75). While the weather layer
+ * (rain/snow) is actually painting, `BackgroundEffects` sets `data-bg-effect` on <html>; we re-mix
+ * `--card` to 90% — the same `soft` surface-style mix — so the drifting effect shows faintly through
+ * content surfaces (cards, item rows, dashboard tiles — everything deriving from `--card`) without
+ * any manual setting. Only when the user hasn't already picked a translucent surface style
+ * (`:not([data-surface])` — `soft` is already 90%, `sheer` more so, so those win and show through
+ * anyway) and never in high contrast (legibility wins, matching the surface-style guard). A static
+ * colour change with no motion, so it needs no reduced-motion gate.
+ */
+:root[data-bg-effect]:not([data-surface]):not([data-contrast='high']) {
+  --card: color-mix(in oklab, var(--card-base) 90%, transparent);
+}
+
+/*
  * Branding — the custom-accent HUE SLIDER (Settings → Branding). A native range input restyled so it
  * reads as part of the design system: a fixed **spectrum track** (the hue axis is the control's own
  * content, exactly like the accent-swatch row "reads as a spectrum") and a **token-themed thumb** that
