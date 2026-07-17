@@ -323,6 +323,26 @@ describe('CategoryRepository', () => {
     expect(fields.map((f) => f.name)).toEqual(['Rated voltage']);
   });
 
+  it('persists and clears a field description', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    const field = await categories.addField(cat.id, {
+      name: 'Voltage',
+      fieldType: 'NUMBER',
+      description: 'Read from the label on the base — in volts.',
+    });
+    expect(field.description).toBe('Read from the label on the base — in volts.');
+
+    // A field added with no description has a null one.
+    const bare = await categories.addField(cat.id, { name: 'Package', fieldType: 'TEXT' });
+    expect(bare.description).toBeNull();
+
+    // The description can be edited and cleared independently.
+    const edited = await categories.updateField(field.id, { description: 'Different note.' });
+    expect(edited.description).toBe('Different note.');
+    const cleared = await categories.updateField(field.id, { description: null });
+    expect(cleared.description).toBeNull();
+  });
+
   it('rejects a SELECT field with no options', async () => {
     const cat = await categories.create({ name: 'Caps' });
     await expect(

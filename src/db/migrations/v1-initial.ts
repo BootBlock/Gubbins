@@ -292,6 +292,7 @@ export const v1Initial: Migration = {
           options       TEXT,                          -- JSON array for SELECT fields
           is_required   INTEGER NOT NULL DEFAULT 0,
           default_value TEXT,                          -- lenient-defaulting value (§4)
+          description   TEXT,                          -- optional help note shown on the item control
           position      INTEGER NOT NULL DEFAULT 0,
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (field_type IN (${fieldTypeList})),

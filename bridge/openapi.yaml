@@ -2043,6 +2043,7 @@ components:
       - "options"
       - "isRequired"
       - "defaultValue"
+      - "description"
       - "position"
       properties:
         id:
@@ -2063,6 +2064,10 @@ components:
         defaultValue:
           type: "string"
           nullable: true
+        description:
+          type: "string"
+          nullable: true
+          example: "Read from the label on the base."
         position:
           type: "integer"
     CategorySummary:

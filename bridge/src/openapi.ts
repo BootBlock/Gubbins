@@ -1053,7 +1053,16 @@ export const openapiDocument: JsonValue = {
       },
       CategoryField: {
         type: 'object',
-        required: ['id', 'name', 'fieldType', 'options', 'isRequired', 'defaultValue', 'position'],
+        required: [
+          'id',
+          'name',
+          'fieldType',
+          'options',
+          'isRequired',
+          'defaultValue',
+          'description',
+          'position',
+        ],
         properties: {
           id: { type: 'string' },
           name: { type: 'string', example: 'Voltage' },
@@ -1061,6 +1070,7 @@ export const openapiDocument: JsonValue = {
           options: { type: 'array', items: { type: 'string' }, nullable: true },
           isRequired: { type: 'boolean' },
           defaultValue: { type: 'string', nullable: true },
+          description: { type: 'string', nullable: true, example: 'Read from the label on the base.' },
           position: { type: 'integer' },
         },
       },

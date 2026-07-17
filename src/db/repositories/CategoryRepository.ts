@@ -213,8 +213,8 @@ export class CategoryRepository extends BaseRepository {
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO category_fields
-         (id, category_id, name, field_type, options, is_required, default_value, position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+         (id, category_id, name, field_type, options, is_required, default_value, description, position)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         categoryId,
@@ -223,6 +223,7 @@ export class CategoryRepository extends BaseRepository {
         options,
         input.isRequired ? 1 : 0,
         input.defaultValue ?? null,
+        input.description ?? null,
         input.position ?? 0,
       ],
     );
@@ -259,6 +260,10 @@ export class CategoryRepository extends BaseRepository {
     if (input.defaultValue !== undefined) {
       sets.push('default_value = ?');
       params.push(input.defaultValue);
+    }
+    if (input.description !== undefined) {
+      sets.push('description = ?');
+      params.push(input.description);
     }
     if (input.position !== undefined) {
       sets.push('position = ?');
