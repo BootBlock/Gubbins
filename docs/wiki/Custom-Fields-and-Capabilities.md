@@ -36,9 +36,15 @@ The note supports Markdown, and leaving it blank simply hides the badge.
 Rather than adding fields one at a time, the category manager's **Add from a preset** picker
 creates a ready-made category with a curated set of custom fields already attached — covering
 maker and hobbyist staples like `Battery`, `Cable`, `Electronic component`, `Fastener`,
-`3D Filament`, `Fabric`, `Paint`, `Adhesive` and `Model kit`, plus collector staples like
-`Book`, `Trading card`, `Vinyl record` and `Coin`. Pick one, then rename, extend or trim its
-fields to match your own inventory.
+`3D Filament`, `Fabric`, `Paint`, `Adhesive` and `Model kit`, plus a large library of collector
+staples spanning cards and coins (`Trading card`, `Baseball cards`, `Magic: The Gathering cards`,
+`Coin`, `Banknote`), media (`Book`, `Vinyl record`, `DVDs`, `Blu-rays`, `Video games (physical)`,
+`Vintage movie posters`), timepieces and jewellery (`Luxury watches`, `Mechanical wrist watches`,
+`Handbags`, `Gold & silver bullion`), toys and figures (`Action figures`, `Funko Pop figures`,
+`LEGO sets`, `Die-cast model cars`, `Warhammer & tabletop gaming miniatures`), and antiques and
+curios (`Antique furniture`, `Porcelain & fine ceramics`, `Vintage cameras`, `Fountain pens`,
+`Stamps`, `Postcards`) — among many others. Pick one, then rename, extend or trim its fields to
+match your own inventory.
 
 The picker is organised for browsing: sections down the left-hand side — **Workshop**,
 **Electronics**, **Household**, **Crafts & hobbies**, **Media** and **Collectibles**, plus
