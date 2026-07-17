@@ -13,6 +13,7 @@ import {
 } from '@/components/foundry';
 import {
   AppearanceIcon,
+  BrandingIcon,
   CriticalIcon,
   CustomiseIcon,
   DarkThemeIcon,
@@ -68,7 +69,15 @@ import {
   normaliseNavCountMetric,
   type NavCountRoute,
 } from './settings';
-import { ACCENTS, ANIMATION_LEVELS, BACKGROUND_EFFECTS, MODE_OPTIONS } from './theme-registry';
+import {
+  ACCENTS,
+  ANIMATION_LEVELS,
+  BACKGROUND_EFFECTS,
+  CUSTOM_ACCENT_HUE_BOUNDS,
+  MODE_OPTIONS,
+  SURFACE_STYLES,
+  clampAccentHue,
+} from './theme-registry';
 import { WEIGHT_UNIT_OPTIONS } from '@/lib/weight';
 import { DIMENSION_UNIT_OPTIONS } from '@/lib/dimensions';
 
@@ -87,6 +96,9 @@ const ANIMATION_LEVEL_HINT =
 
 /** Background-effect choices for the Appearance `Select` (none / rain / snow), in registry order. */
 const BACKGROUND_EFFECT_OPTIONS = BACKGROUND_EFFECTS.map((e) => ({ value: e.id, label: e.label }));
+
+/** Surface-style choices for the Branding `Select` (solid / soft / sheer), in registry order. */
+const SURFACE_STYLE_OPTIONS = SURFACE_STYLES.map((s) => ({ value: s.id, label: s.label }));
 
 /** On/off pair for the many boolean-preference {@link Select}s (On listed first). */
 const ON_OFF_OPTIONS = [
@@ -453,6 +465,86 @@ export default function SettingsDialog({
               value={prefs.locale}
               onChange={(value) => prefs.setLocale(value)}
               options={LOCALE_OPTIONS.map((l) => ({ value: l.value, label: l.label }))}
+            />
+          </SettingRow>
+        </SettingsSection>
+      ),
+    },
+    {
+      id: 'branding',
+      label: 'Branding',
+      icon: <BrandingIcon />,
+      content: (
+        <SettingsSection icon={<BrandingIcon />} title="Branding">
+          <SettingRow
+            label="Custom accent colour"
+            description="Dial in any colour for the accent, beyond the presets on the Appearance tab."
+            hintSize="md"
+            hint={
+              'Lets you pick **any** accent colour — the exact brand colour for buttons, links, focus ' +
+              'rings and the “look here” highlight — instead of one of the fixed swatches on the ' +
+              '**Appearance** tab.\n\n' +
+              'Turn it **on** and a hue slider appears; the accent updates live as you drag. The ' +
+              'lightness is tuned automatically so the colour stays legible in both light and dark ' +
+              'mode, exactly like the presets. Turn it **off** to go back to your chosen preset colour.'
+            }
+          >
+            <Select
+              aria-label="Custom accent colour"
+              data-testid="setting-custom-accent"
+              className="h-9 w-40"
+              value={prefs.customAccentEnabled ? 'on' : 'off'}
+              onChange={(value) => prefs.setCustomAccentEnabled(value === 'on')}
+              options={ON_OFF_OPTIONS}
+            />
+          </SettingRow>
+          {prefs.customAccentEnabled ? (
+            <SettingRow
+              stack
+              fill
+              label="Accent hue"
+              description="Drag to choose the accent colour; the app updates as you go."
+            >
+              <HueSlider hue={prefs.customAccentHue} onChange={prefs.setCustomAccentHue} />
+            </SettingRow>
+          ) : null}
+          <SettingRow
+            stack
+            fill
+            label="Brand tagline"
+            description="A short label shown next to the Gubbins name in the header and on the home screen."
+            hintSize="md"
+            hint={
+              'A short piece of text — an organisation or family name, a site, a slogan — shown in a ' +
+              'muted tone **next to the Gubbins wordmark** in the top-left of every screen and on the ' +
+              'home screen, so your copy feels like *yours*.\n\n' +
+              'The **Gubbins** name itself can’t be changed; this sits alongside it (e.g. ' +
+              '“Gubbins · Acme Widgets”). Leave it blank to show just “Gubbins”.'
+            }
+          >
+            <BrandTaglineControl />
+          </SettingRow>
+          <SettingRow
+            label="Surface style"
+            description="How see-through cards and panels are, letting the background show through."
+            hintSize="md"
+            hint={
+              'Sets how **opaque the app’s surfaces** — item cards, dashboard widgets and panels — are:\n\n' +
+              '- **Solid** — fully opaque (the default; the shipped look).\n' +
+              '- **Soft** — a subtle translucency, so a hint of the background shows through.\n' +
+              '- **Sheer** — a more pronounced translucency, letting the mode and accent tint read ' +
+              'clearly through the surface.\n\n' +
+              'Menus, dialogs and pop-ups always stay solid so they’re easy to read, and **High ' +
+              'contrast** (on the Appearance tab) keeps every surface solid whatever you pick here.'
+            }
+          >
+            <Select
+              aria-label="Surface style"
+              data-testid="setting-surface-style"
+              className="h-9 w-40"
+              value={prefs.surfaceStyle}
+              onChange={(value) => prefs.setSurfaceStyle(value as typeof prefs.surfaceStyle)}
+              options={SURFACE_STYLE_OPTIONS}
             />
           </SettingRow>
         </SettingsSection>
@@ -1282,6 +1374,65 @@ function LabelBaseUrlControl() {
       <p className="break-all text-xs text-muted-foreground" data-testid="label-base-url-preview">
         {usingDefault ? 'Using this device’s address — codes link to ' : 'Codes link to '}
         <span className="font-medium text-foreground">{example}</span>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The custom-accent **hue slider** (Branding). A native range input (fully accessible — arrow keys,
+ * AT value announcements) restyled via the `.gubbins-hue-slider` class in `styles/index.css`, with a
+ * live preview swatch. The swatch simply paints `bg-primary`: while the custom accent is enabled the
+ * apply seam sets `--primary` inline on `<html>`, so the swatch reflects the exact live accent in the
+ * current mode as the user drags — no duplicate colour maths. The hue is clamped/wrapped on the way in.
+ */
+function HueSlider({ hue, onChange }: { readonly hue: number; readonly onChange: (hue: number) => void }) {
+  const value = clampAccentHue(hue);
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden="true"
+        data-testid="custom-accent-swatch"
+        className="size-9 shrink-0 rounded-full bg-primary shadow-sm ring-1 ring-inset ring-foreground/15"
+      />
+      <input
+        type="range"
+        aria-label="Accent hue"
+        aria-valuetext={`${value}°`}
+        data-testid="setting-custom-accent-hue"
+        min={CUSTOM_ACCENT_HUE_BOUNDS.min}
+        max={CUSTOM_ACCENT_HUE_BOUNDS.max}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="gubbins-hue-slider w-full max-w-xs cursor-pointer"
+      />
+      <span className="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground">{value}°</span>
+    </div>
+  );
+}
+
+/**
+ * The **brand tagline** control (Branding). A short free-text label shown beside the fixed "Gubbins"
+ * wordmark. Stored verbatim (no keystroke trimming, so a trailing space can be typed); the preview
+ * and the render sites trim at the point of use. Length-capped so it can't crowd the header.
+ */
+function BrandTaglineControl() {
+  const stored = usePreferencesStore((s) => s.brandTagline);
+  const setBrandTagline = usePreferencesStore((s) => s.setBrandTagline);
+  const trimmed = stored.trim();
+  return (
+    <div className="flex w-72 max-w-full flex-col gap-1.5">
+      <Input
+        aria-label="Brand tagline"
+        data-testid="setting-brand-tagline"
+        maxLength={48}
+        placeholder="e.g. Acme Widgets"
+        value={stored}
+        onChange={(e) => setBrandTagline(e.target.value)}
+      />
+      <p className="text-xs text-muted-foreground" data-testid="brand-tagline-preview">
+        Shows as <span className="font-medium text-foreground">Gubbins{trimmed ? ` · ${trimmed}` : ''}</span>
       </p>
     </div>
   );

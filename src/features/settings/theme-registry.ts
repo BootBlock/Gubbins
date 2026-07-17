@@ -258,3 +258,104 @@ export function normaliseBackgroundEffect(value: string): BackgroundEffect {
     ? (value as BackgroundEffect)
     : DEFAULT_BACKGROUND_EFFECT;
 }
+
+/**
+ * Branding — **surface style** (Settings → Branding). Sets how opaque the app's content surfaces
+ * (item cards, dashboard widgets, panels — everything painted with the `--card` / `--card-elevated`
+ * tokens) are, so a user can "brand" their copy with a lighter, more translucent feel that lets the
+ * background mode/accent glow (and any weather layer) show through.
+ *
+ * Overlays (modals, menus, popovers, tooltips) are painted with the separate `--popover` token, so
+ * they always stay fully opaque and legible whatever this is set to. High contrast forces every
+ * surface solid regardless (the CSS `:not([data-contrast='high'])` guard), so this never fights the
+ * accessibility mode.
+ *
+ * - `solid` — fully opaque surfaces (the default; the shipped look is unchanged).
+ * - `soft` — a subtle translucency (~90%): a hint of the background shows through.
+ * - `sheer` — a more pronounced translucency (~72%): the mode/accent tint reads clearly through cards.
+ *
+ * The apply seam (`theme.ts`) projects the choice as `data-surface="<id>"` on `<html>` (the `solid`
+ * default carries no attribute); the `[data-surface]` blocks in `styles/index.css` re-mix the card
+ * tokens via `color-mix`, so the effect composes with mode, OLED and the accent for free.
+ */
+export const SURFACE_STYLES = [
+  { id: 'solid', label: 'Solid' },
+  { id: 'soft', label: 'Soft' },
+  { id: 'sheer', label: 'Sheer' },
+] as const;
+
+/** A surface-style id. */
+export type SurfaceStyle = (typeof SURFACE_STYLES)[number]['id'];
+
+/** Every surface-style id, for iteration / validation. */
+export const SURFACE_STYLE_IDS = SURFACE_STYLES.map((s) => s.id) as SurfaceStyle[];
+
+/** The default surface style — `solid`, so the shipped baseline is fully opaque. */
+export const DEFAULT_SURFACE_STYLE: SurfaceStyle = 'solid';
+
+/** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link SurfaceStyle} (default solid). */
+export function normaliseSurfaceStyle(value: string): SurfaceStyle {
+  return (SURFACE_STYLE_IDS as readonly string[]).includes(value)
+    ? (value as SurfaceStyle)
+    : DEFAULT_SURFACE_STYLE;
+}
+
+/**
+ * Branding — **custom accent hue** (Settings → Branding). The 14 preset {@link ACCENTS} cover the
+ * spectrum in fixed steps; this lets a user dial in *any* hue for the brand accent (buttons, links,
+ * focus rings, the highlight) so their copy isn't limited to the presets. It is stored as a plain hue
+ * angle (0–359°) and, when enabled, overrides the preset accent by projecting the brand tokens inline
+ * on `<html>` — see {@link customAccentVars}.
+ */
+export const CUSTOM_ACCENT_HUE_BOUNDS = { min: 0, max: 359 } as const;
+
+/** The default custom-accent hue — the app's signature violet (277°), so enabling it changes nothing until dialled. */
+export const DEFAULT_CUSTOM_ACCENT_HUE = 277;
+
+/** Clamp + round an arbitrary value to an integer hue within {@link CUSTOM_ACCENT_HUE_BOUNDS} (wraps via modulo). */
+export function clampAccentHue(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CUSTOM_ACCENT_HUE;
+  // Wrap into [0, 360) so a slider that runs a touch past either end stays a valid hue.
+  const wrapped = ((Math.round(value) % 360) + 360) % 360;
+  return wrapped;
+}
+
+/**
+ * The brand accent tokens for a custom {@link clampAccentHue hue}, for one mode. Mirrors the preset
+ * {@link ACCENTS} authoring: fixed perceptual lightness/chroma per mode (a touch lighter in dark mode)
+ * so every hue stays legible, with the `--highlight` a step lighter than `--primary`. The
+ * `--primary-foreground` is chosen per hue band — the intrinsically light hues (amber → cyan, roughly
+ * 33–245°) take dark text, every other hue takes near-white — exactly as the presets do, so a custom
+ * accent reads with the same contrast guarantees as a built-in one.
+ *
+ * Pure (no DOM): returns the four token values as a record so both the apply seam and the tests can
+ * use it. `isDark` selects the mode-tuned lightness.
+ */
+export function customAccentVars(
+  hue: number,
+  isDark: boolean,
+): {
+  readonly '--primary': string;
+  readonly '--primary-foreground': string;
+  readonly '--ring': string;
+  readonly '--highlight': string;
+} {
+  const h = clampAccentHue(hue);
+  // Light hues (amber → cyan) are bright enough that dark text reads better on them; the rest take
+  // near-white, matching the preset `--primary-foreground` bands in styles/index.css.
+  const lightBand = h >= 33 && h <= 245;
+  const foreground = lightBand ? `oklch(0.2 0.03 ${h})` : 'oklch(0.99 0 0)';
+  // Mode-tuned lightness/chroma (the highlight is a step lighter than the primary); the dark variant
+  // lifts a little so the accent stays vivid on a dark surface, exactly as the preset light/dark pairs
+  // do. Values are literals (not `primaryL + 0.06`) to avoid binary-float drift in the token string.
+  const primaryL = isDark ? 0.68 : 0.58;
+  const highlightL = isDark ? 0.74 : 0.64;
+  const chroma = isDark ? 0.18 : 0.17;
+  const primary = `oklch(${primaryL} ${chroma} ${h})`;
+  return {
+    '--primary': primary,
+    '--primary-foreground': foreground,
+    '--ring': primary,
+    '--highlight': `oklch(${highlightL} ${chroma} ${h})`,
+  };
+}

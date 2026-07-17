@@ -109,6 +109,8 @@ export {
 
   // Settings & preferences (Phase 12, §3)
   Palette as AppearanceIcon,
+  // Branding (issue #110) — the "make it your own" swatch-book glyph, distinct from the Appearance palette.
+  SwatchBook as BrandingIcon,
   Moon as DarkThemeIcon,
   Sun as LightThemeIcon,
   Monitor as SystemThemeIcon,

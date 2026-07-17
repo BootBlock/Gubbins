@@ -24,6 +24,8 @@ completeGoogleAuthRedirect();
     animationLevel: s.animationLevel,
     holographicCards: s.holographicCards,
     gamifyCards: s.gamifyCards,
+    customAccent: { enabled: s.customAccentEnabled, hue: s.customAccentHue },
+    surfaceStyle: s.surfaceStyle,
   });
 }
 

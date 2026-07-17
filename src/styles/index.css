@@ -36,7 +36,14 @@
   --background: oklch(0.99 0.003 280);
   --foreground: oklch(0.2 0.015 281);
 
-  --card: oklch(1 0 0);
+  /*
+   * `--card-base` is the opaque surface colour; `--card` derives from it. The Branding surface-style
+   * (`data-surface`) re-mixes `--card` from `--card-base` with a little transparency, so cards can go
+   * translucent without every mode/OLED block having to restate the colour. Overlays use `--popover`
+   * (untouched), so menus/modals stay opaque whatever the surface style.
+   */
+  --card-base: oklch(1 0 0);
+  --card: var(--card-base);
   --card-foreground: oklch(0.2 0.015 281);
 
   /*
@@ -226,7 +233,9 @@
   --background: oklch(0.16 0.012 281);
   --foreground: oklch(0.97 0.005 280);
 
-  --card: oklch(0.205 0.014 281);
+  /* See the light block: `--card` derives from `--card-base` so the surface-style can re-mix it. */
+  --card-base: oklch(0.205 0.014 281);
+  --card: var(--card-base);
   --card-foreground: oklch(0.97 0.005 280);
 
   /* Raised surface — sits clearly above the `secondary` (0.27) segmented-control track so
@@ -553,7 +562,8 @@
  */
 .dark[data-oled] {
   --background: oklch(0 0 0);
-  --card: oklch(0.14 0 0);
+  --card-base: oklch(0.14 0 0);
+  --card: var(--card-base);
   --card-foreground: oklch(0.97 0 0);
   --card-elevated: oklch(0.24 0 0);
   --popover: oklch(0.14 0 0);
@@ -600,6 +610,75 @@
   --muted-foreground: oklch(0.92 0 0);
   --border: oklch(1 0 0 / 55%);
   --input: oklch(1 0 0 / 60%);
+}
+
+/*
+ * Branding — SURFACE STYLE (issue #110). A `data-surface` switch on <html> that makes the app's
+ * content surfaces (item cards, dashboard widgets, panels — everything using `--card`) a little
+ * translucent, so the background mode/accent glow (and any weather layer) shows through for a
+ * lighter, "branded" feel. It re-mixes `--card` from the opaque `--card-base` each mode/OLED block
+ * sets, via `color-mix`, so it composes with mode + OLED for free — no per-context restating.
+ *
+ * The `solid` default carries no attribute (baseline unchanged). Overlays use `--popover` (left
+ * opaque), so menus, modals, popovers and tooltips never go see-through. High contrast is an
+ * accessibility mode, so the `:not([data-contrast='high'])` guard forces every surface solid there
+ * regardless of the surface style — legibility always wins. Being a static colour change (no motion),
+ * it needs no reduced-motion gate. `[data-surface]` is (0,2,0) and placed after the mode/OLED blocks,
+ * so it wins `--card` even when OLED is also on.
+ */
+[data-surface='soft']:not([data-contrast='high']) {
+  --card: color-mix(in oklab, var(--card-base) 90%, transparent);
+}
+[data-surface='sheer']:not([data-contrast='high']) {
+  --card: color-mix(in oklab, var(--card-base) 72%, transparent);
+}
+
+/*
+ * Branding — the custom-accent HUE SLIDER (Settings → Branding). A native range input restyled so it
+ * reads as part of the design system: a fixed **spectrum track** (the hue axis is the control's own
+ * content, exactly like the accent-swatch row "reads as a spectrum") and a **token-themed thumb** that
+ * shows the live `--primary`. Keyboard/AT behaviour is the native input's, untouched. The track hues
+ * are the one place a multi-stop gradient is the data, not decoration, so the literals are inherent.
+ */
+.gubbins-hue-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-image: linear-gradient(
+    to right,
+    oklch(0.72 0.17 0),
+    oklch(0.72 0.17 60),
+    oklch(0.72 0.17 120),
+    oklch(0.72 0.17 180),
+    oklch(0.72 0.17 240),
+    oklch(0.72 0.17 300),
+    oklch(0.72 0.17 360)
+  );
+}
+.gubbins-hue-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 9999px;
+  background: var(--primary);
+  border: 2px solid var(--background);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+}
+.gubbins-hue-slider::-moz-range-thumb {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid var(--background);
+  border-radius: 9999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+}
+.gubbins-hue-slider:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 40%, transparent);
 }
 
 /*

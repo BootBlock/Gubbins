@@ -18,6 +18,9 @@ export function useApplyTheme(): void {
   const animationLevel = usePreferencesStore((s) => s.animationLevel);
   const holographicCards = usePreferencesStore((s) => s.holographicCards);
   const gamifyCards = usePreferencesStore((s) => s.gamifyCards);
+  const customAccentEnabled = usePreferencesStore((s) => s.customAccentEnabled);
+  const customAccentHue = usePreferencesStore((s) => s.customAccentHue);
+  const surfaceStyle = usePreferencesStore((s) => s.surfaceStyle);
   useEffect(() => {
     const appearance = {
       mode,
@@ -27,13 +30,27 @@ export function useApplyTheme(): void {
       animationLevel,
       holographicCards,
       gamifyCards,
+      customAccent: { enabled: customAccentEnabled, hue: customAccentHue },
+      surfaceStyle,
     };
     applyAppearance(appearance);
-    // Only the 'system' mode tracks the OS; an explicit choice needs no listener.
+    // Only the 'system' mode tracks the OS; an explicit choice needs no listener. (A custom accent
+    // is mode-tuned, so this same listener re-applies its light/dark tokens when the OS flips.)
     if (mode !== 'system' || typeof matchMedia !== 'function') return;
     const media = matchMedia(PREFERS_DARK_QUERY);
     const onChange = () => applyAppearance(appearance);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
-  }, [mode, accent, oledDark, highContrast, animationLevel, holographicCards, gamifyCards]);
+  }, [
+    mode,
+    accent,
+    oledDark,
+    highContrast,
+    animationLevel,
+    holographicCards,
+    gamifyCards,
+    customAccentEnabled,
+    customAccentHue,
+    surfaceStyle,
+  ]);
 }

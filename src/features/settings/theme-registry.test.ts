@@ -20,6 +20,13 @@ import {
   suppressesAmbient,
   suppressesFlourish,
   suppressesMotion,
+  SURFACE_STYLES,
+  SURFACE_STYLE_IDS,
+  DEFAULT_SURFACE_STYLE,
+  normaliseSurfaceStyle,
+  DEFAULT_CUSTOM_ACCENT_HUE,
+  clampAccentHue,
+  customAccentVars,
 } from './theme-registry';
 
 describe('MODE_OPTIONS', () => {
@@ -174,5 +181,74 @@ describe('normaliseBackgroundEffect', () => {
   it('coerces an unknown/stale persisted value to the none default', () => {
     expect(normaliseBackgroundEffect('storm')).toBe(DEFAULT_BACKGROUND_EFFECT);
     expect(normaliseBackgroundEffect('')).toBe(DEFAULT_BACKGROUND_EFFECT);
+  });
+});
+
+describe('SURFACE_STYLES (Branding, issue #110)', () => {
+  it('offers solid, soft and sheer in registry order, each with a label', () => {
+    expect(SURFACE_STYLES.map((s) => s.id)).toEqual(['solid', 'soft', 'sheer']);
+    for (const s of SURFACE_STYLES) expect(s.label.length).toBeGreaterThan(0);
+  });
+
+  it('defaults to solid (baseline unchanged), and SURFACE_STYLE_IDS mirrors the registry', () => {
+    expect(DEFAULT_SURFACE_STYLE).toBe('solid');
+    expect(SURFACE_STYLE_IDS).toEqual(SURFACE_STYLES.map((s) => s.id));
+  });
+});
+
+describe('normaliseSurfaceStyle', () => {
+  it('passes every surface-style id through unchanged', () => {
+    for (const id of SURFACE_STYLE_IDS) expect(normaliseSurfaceStyle(id)).toBe(id);
+  });
+
+  it('coerces an unknown/stale persisted value to the solid default', () => {
+    expect(normaliseSurfaceStyle('glass')).toBe(DEFAULT_SURFACE_STYLE);
+    expect(normaliseSurfaceStyle('')).toBe(DEFAULT_SURFACE_STYLE);
+  });
+});
+
+describe('clampAccentHue (Branding custom accent)', () => {
+  it('rounds an in-range value to a whole degree', () => {
+    expect(clampAccentHue(120.4)).toBe(120);
+    expect(clampAccentHue(120.6)).toBe(121);
+  });
+
+  it('wraps a value past either end back into 0–359°', () => {
+    expect(clampAccentHue(360)).toBe(0);
+    expect(clampAccentHue(400)).toBe(40);
+    expect(clampAccentHue(-10)).toBe(350);
+    expect(clampAccentHue(-370)).toBe(350);
+  });
+
+  it('falls back to the default hue for a non-finite value', () => {
+    expect(clampAccentHue(Number.NaN)).toBe(DEFAULT_CUSTOM_ACCENT_HUE);
+    expect(clampAccentHue(Number.POSITIVE_INFINITY)).toBe(DEFAULT_CUSTOM_ACCENT_HUE);
+  });
+});
+
+describe('customAccentVars (Branding custom accent)', () => {
+  it('sets ring equal to primary and highlight a step lighter, tuned per mode', () => {
+    const light = customAccentVars(277, false);
+    expect(light['--primary']).toBe('oklch(0.58 0.17 277)');
+    expect(light['--ring']).toBe(light['--primary']);
+    expect(light['--highlight']).toBe('oklch(0.64 0.17 277)');
+
+    const dark = customAccentVars(277, true);
+    expect(dark['--primary']).toBe('oklch(0.68 0.18 277)');
+    expect(dark['--highlight']).toBe('oklch(0.74 0.18 277)');
+  });
+
+  it('uses dark text on the light hue band (33–245°) and near-white outside it', () => {
+    // Inside the band (a yellow/green): dark foreground for legibility.
+    expect(customAccentVars(120, false)['--primary-foreground']).toBe('oklch(0.2 0.03 120)');
+    expect(customAccentVars(33, false)['--primary-foreground']).toBe('oklch(0.2 0.03 33)');
+    expect(customAccentVars(245, false)['--primary-foreground']).toBe('oklch(0.2 0.03 245)');
+    // Outside the band (a red / a violet): near-white foreground.
+    expect(customAccentVars(10, false)['--primary-foreground']).toBe('oklch(0.99 0 0)');
+    expect(customAccentVars(300, false)['--primary-foreground']).toBe('oklch(0.99 0 0)');
+  });
+
+  it('clamps/wraps the hue before building the tokens', () => {
+    expect(customAccentVars(400, false)['--primary']).toBe('oklch(0.58 0.17 40)');
   });
 });
