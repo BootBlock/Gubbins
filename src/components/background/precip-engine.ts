@@ -1116,12 +1116,43 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     }
   }
 
+  /** Blit a horizontal css-x span [x0, x1) of the mound cache to the overlay, offset by `dy`. */
+  function blitMoundSpan(x0: number, x1: number, dy: number): void {
+    if (x1 <= x0 || !moundCanvas) return;
+    // Cache backing store is DPR-scaled; map css → source x by the exact ratio (full source height).
+    const sx = moundCanvas.width / cssWidth;
+    octx!.drawImage(moundCanvas, x0 * sx, 0, (x1 - x0) * sx, moundCanvas.height, x0, dy, x1 - x0, cssHeight);
+  }
+
+  /**
+   * Blit the cached mound layer, riding the hover lift of whichever control the pointer is over
+   * (issue #68 follow-up): the columns that control spans are drawn shifted by its live transform
+   * offset, the rest at rest — so a card's settled snow lifts and eases back with the card instead
+   * of hanging in mid-air. The map itself stays at the resting position (see {@link
+   * import('./surface-map').HoverFollow}), so this is the only place the lift is applied.
+   */
+  function blitMounds(): void {
+    const h = interact ? surfaces!.hoverFollow() : null;
+    const dy = h ? clamp(h.dy, -32, 32) : 0;
+    if (!h || Math.abs(dy) < 0.5) {
+      octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
+      return;
+    }
+    const x0 = clamp(h.c0 * COLUMN_WIDTH, 0, cssWidth);
+    const x1 = clamp((h.c1 + 1) * COLUMN_WIDTH, 0, cssWidth);
+    blitMoundSpan(0, x0, 0);
+    blitMoundSpan(x0, x1, dy);
+    blitMoundSpan(x1, cssWidth, 0);
+  }
+
   /** Paint the interaction overlay: the cached mound layer plus any in-flight splashes. */
   function drawOverlay(dt: number): void {
     if (moundDirty && elapsed - lastMoundRender >= SETTLE.snow.renderInterval) renderMounds();
     const hasMound = moundVisible && moundCanvas !== null;
     if (!hasMound && !anySplashActive()) {
       // Nothing to draw: clear once after the last visible frame, then skip the whole pass.
+      // (While snow is settled, `hasMound` keeps the overlay live every frame, so an in-progress
+      // hover lift is followed continuously by blitMounds rather than snapping.)
       if (!overlayClean) {
         octx!.clearRect(0, 0, cssWidth, cssHeight);
         overlayClean = true;
@@ -1130,7 +1161,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     }
     octx!.clearRect(0, 0, cssWidth, cssHeight);
     overlayClean = false;
-    if (hasMound) octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
+    if (hasMound) blitMounds();
     drawSplashes(dt);
     octx!.globalAlpha = 1;
   }

@@ -56,6 +56,10 @@ const REBUILD_MAX_LATENCY_MS = 600;
  *  toggles — attribute mutations are deliberately not observed, see {@link trackSurfaces}). */
 const PERIODIC_REBUILD_MS = 2000;
 
+/** How long the hover-follow poll keeps reading after a pointer transition (ms): long enough to
+ *  ride a control's ~200ms lift/release animation, after which it idles (see {@link trackSurfaces}). */
+const HOVER_FOLLOW_MS = 350;
+
 /** Upper bound on collected rects per rebuild, so a huge screen can't make the scan expensive. */
 const MAX_SURFACES = 400;
 
@@ -97,11 +101,46 @@ export interface SurfaceSnapshot {
   readonly generation: number;
 }
 
+/**
+ * The live vertical offset of the surface the pointer is over (issue #68 follow-up). A control's
+ * hover response is a compositor `transform` (e.g. an item card lifts a few px on hover) that
+ * fires no scroll/resize/mutation, so the *map* deliberately ignores it — the map records the
+ * un-transformed layout top, staying stable so the lift never knocks settled snow off. This is
+ * how the settled snow is told to ride along with the lift instead: the columns the hovered
+ * control spans, and its current transform offset `dy` (negative = lifted up). Polled off the
+ * particle loop; `null` when nothing landable is hovered.
+ */
+export interface HoverFollow {
+  /** First / last column (inclusive) the hovered control spans. */
+  readonly c0: number;
+  readonly c1: number;
+  /** The control's current transform translateY in css px (0 at rest, negative when lifted). */
+  readonly dy: number;
+}
+
 /** Live handle created by the engine (via its `surfaces` factory) and read every frame. */
 export interface SurfaceTracker {
   snapshot(): SurfaceSnapshot;
+  /** The surface currently under the pointer and its live lift, or null. See {@link HoverFollow}. */
+  hoverFollow(): HoverFollow | null;
   /** Detach every listener/observer (idempotent). */
   stop(): void;
+}
+
+/**
+ * The vertical translate component (css px) of an element's current transform — its hover lift.
+ * `DOMMatrixReadOnly.m42` is the composed translateY, so it captures the lift even when a tilt or
+ * other transform composes with it. Returns 0 for an untransformed element or where unsupported.
+ */
+function transformOffsetY(el: Element): number {
+  if (typeof getComputedStyle !== 'function') return 0;
+  const t = getComputedStyle(el).transform;
+  if (!t || t === 'none') return 0;
+  try {
+    return new DOMMatrixReadOnly(t).m42;
+  } catch {
+    return 0;
+  }
 }
 
 /** The quarter-circle corner drop: edge y at horizontal distance `d` from the arc's centre. */
@@ -227,8 +266,19 @@ function hasRestingCardSurface(el: Element): boolean {
   return false;
 }
 
-/** Collect the on-screen control rects the map is built from (viewport coordinates). */
-function collectControlRects(root: ParentNode, viewportWidth: number, viewportHeight: number): SurfaceRect[] {
+/**
+ * Collect the on-screen control rects the map is built from (viewport coordinates). The
+ * `hovered` element (if any) has its hover-lift transform subtracted back out, so the map records
+ * its resting layout top — the lift is applied separately as a render-time follow ({@link
+ * HoverFollow}) and must not perturb the persistent map (or a big lift would trip the reconcile
+ * move-tolerance and knock the control's settled snow off).
+ */
+function collectControlRects(
+  root: ParentNode,
+  viewportWidth: number,
+  viewportHeight: number,
+  hovered: Element | null,
+): SurfaceRect[] {
   const rects: SurfaceRect[] = [];
   const candidates = root.querySelectorAll(SURFACE_SELECTOR);
   for (const el of candidates) {
@@ -240,14 +290,16 @@ function collectControlRects(root: ParentNode, viewportWidth: number, viewportHe
     if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) continue;
     const r = el.getBoundingClientRect();
     if (r.width < MIN_SURFACE_WIDTH || r.height < MIN_SURFACE_HEIGHT) continue;
-    if (r.top < 0 || r.top >= viewportHeight || r.right <= 0 || r.left >= viewportWidth) continue;
+    // Undo the hover lift for the hovered control so the map holds its resting position.
+    const top = el === hovered ? r.top - transformOffsetY(el) : r.top;
+    if (top < 0 || top >= viewportHeight || r.right <= 0 || r.left >= viewportWidth) continue;
     // Top corner radii, so the map can follow rounded corners. The raw longhands are cached per
     // element (style resolution is the scan's expensive part); the CSS overflow scaling runs per
     // rebuild against the current size, so a pill's 9999px resolves to height/2 as drawn. The
     // read sits in the same write-free batch as the rect — one layout pass.
     const [rawTL, rawTR, rawBL, rawBR] = rawTopRadii(el);
     const [radiusLeft, radiusRight] = resolveTopRadii(rawTL, rawTR, rawBL, rawBR, r.width, r.height);
-    rects.push({ left: r.left, top: r.top, right: r.right, radiusLeft, radiusRight });
+    rects.push({ left: r.left, top, right: r.right, radiusLeft, radiusRight });
   }
   return rects;
 }
@@ -275,11 +327,34 @@ export function trackSurfaces(): SurfaceTracker {
   let firstRequestAt = 0;
   let stopped = false;
 
+  // ── Hover follow (issue #68 follow-up) ───────────────────────────────────────────────────
+  /** The control whose lift the poll is tracking (through hover *and* its release animation). */
+  let hoverEl: Element | null = null;
+  /** True while the pointer is actually over {@link hoverEl}; false once it has left (releasing). */
+  let hovering = false;
+  /** Its column span + live lift, recomputed by the poll; null when nothing landable is hovered. */
+  let hover: HoverFollow | null = null;
+  /** rAF handle for the poll that tracks the lift while a control is hovered (0 = not polling). */
+  let hoverRaf = 0;
+  /**
+   * Timestamp (ms) until which the poll keeps reading the hovered control. Each pointer
+   * transition (enter/leave/move onto a child) extends it by {@link HOVER_FOLLOW_MS} — long
+   * enough to ride the ~200ms lift/release animation — after which the poll idles and simply
+   * holds the last offset while the lift is static, so it is not a standing per-frame DOM read
+   * for the whole time the pointer merely rests on a control.
+   */
+  let hoverPollUntil = 0;
+
   function rebuild(): void {
     if (stopped || document.hidden) return;
+    // A control removed while its hover offset is being held (poll idle) has no other cleanup.
+    if (hoverEl && !hoverEl.isConnected) {
+      hoverEl = null;
+      hover = null;
+    }
     const w = typeof innerWidth === 'number' ? innerWidth : 0;
     const h = typeof innerHeight === 'number' ? innerHeight : 0;
-    const next = buildSurfaceMap(collectControlRects(root, w, h), w, h);
+    const next = buildSurfaceMap(collectControlRects(root, w, h, hoverEl), w, h);
     if (!mapsEqual(next, snap.tops)) {
       snap.tops = next;
       snap.generation++;
@@ -313,10 +388,84 @@ export function trackSurfaces(): SurfaceTracker {
     if (!document.hidden) request();
   }
 
+  /** The nearest landable control at/above `target`, or null (mirrors the collect-time filters). */
+  function landableAncestor(target: EventTarget | null): Element | null {
+    if (!(target instanceof Element)) return null;
+    const el = target.closest(SURFACE_SELECTOR);
+    if (!el || el.closest(EXCLUDED_ANCESTOR_SELECTOR)) return null;
+    if (!el.matches(CONTROL_SELECTOR) && !hasRestingCardSurface(el)) return null;
+    return el;
+  }
+
+  /**
+   * Recompute the hovered control's live lift, on its own rAF (a single-element read, off the
+   * particle loop). Runs each frame within the {@link hoverPollUntil} window after a pointer
+   * transition — capturing the lift/release animation and any mouse movement — then idles,
+   * holding the last offset while the control sits statically lifted (no per-frame read).
+   */
+  function pollHover(): void {
+    hoverRaf = 0;
+    if (stopped || !hoverEl) return;
+    if (!hoverEl.isConnected) {
+      hoverEl = null;
+      hover = null;
+      return;
+    }
+    const r = hoverEl.getBoundingClientRect();
+    const dy = transformOffsetY(hoverEl);
+    const c0 = Math.max(0, Math.floor(r.left / COLUMN_WIDTH));
+    const c1 = Math.max(c0, Math.floor((r.right - 1) / COLUMN_WIDTH));
+    hover = { c0, c1, dy };
+    if (!hovering && Math.abs(dy) < 0.25) {
+      // Released and fully back at rest — nothing left to follow.
+      hoverEl = null;
+      hover = null;
+      return;
+    }
+    if (Date.now() < hoverPollUntil) {
+      // Within the animation/movement window: keep following frame to frame.
+      if (typeof requestAnimationFrame === 'function') hoverRaf = requestAnimationFrame(pollHover);
+    } else if (!hovering) {
+      // Window elapsed after leaving but the lift never settled (unexpected) — clear rather than
+      // leave snow hanging lifted.
+      hoverEl = null;
+      hover = null;
+    }
+    // else: still hovering and the lift is static — idle, holding the current offset.
+  }
+
+  function startPoll(): void {
+    hoverPollUntil = Date.now() + HOVER_FOLLOW_MS;
+    if (!hoverRaf && typeof requestAnimationFrame === 'function') {
+      hoverRaf = requestAnimationFrame(pollHover);
+    }
+  }
+
+  function onPointerOver(e: Event): void {
+    const el = landableAncestor(e.target);
+    if (!el) return;
+    hoverEl = el;
+    hovering = true;
+    startPoll();
+  }
+
+  function onPointerOut(e: Event): void {
+    // Only react to the pointer actually leaving the tracked control (not moving between its
+    // children); the poll then follows the release animation back down to rest.
+    if (!hoverEl || hoverEl !== landableAncestor(e.target)) return;
+    const to = (e as PointerEvent).relatedTarget;
+    if (to instanceof Node && hoverEl.contains(to)) return;
+    hovering = false;
+    startPoll();
+  }
+
   // `scroll` does not bubble, but a capture listener still sees every inner container's scroll.
   addEventListener('scroll', request, { capture: true, passive: true });
   addEventListener('resize', request);
   document.addEventListener('visibilitychange', onVisibility);
+  // Pointer enter/leave over controls, delegated at the root (capture so it sees every target).
+  root.addEventListener('pointerover', onPointerOver, { capture: true, passive: true });
+  root.addEventListener('pointerout', onPointerOut, { capture: true, passive: true });
   const observer = typeof MutationObserver === 'function' ? new MutationObserver(request) : null;
   observer?.observe(document.body, { childList: true, subtree: true });
   const periodic = setInterval(request, PERIODIC_REBUILD_MS);
@@ -326,14 +475,23 @@ export function trackSurfaces(): SurfaceTracker {
     snapshot() {
       return snap;
     },
+    hoverFollow() {
+      return hover;
+    },
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = 0;
+      if (hoverRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(hoverRaf);
+      hoverRaf = 0;
+      hoverEl = null;
+      hover = null;
       clearInterval(periodic);
       removeEventListener('scroll', request, { capture: true });
       removeEventListener('resize', request);
       document.removeEventListener('visibilitychange', onVisibility);
+      root.removeEventListener('pointerover', onPointerOver, { capture: true });
+      root.removeEventListener('pointerout', onPointerOut, { capture: true });
       observer?.disconnect();
     },
   };

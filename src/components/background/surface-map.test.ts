@@ -161,6 +161,8 @@ describe('trackSurfaces', () => {
     expect(snap.tops[Math.floor(300 / COLUMN_WIDTH)]).toBe(NO_SURFACE);
     expect(snap.tops[Math.floor(450 / COLUMN_WIDTH)]).toBe(60);
     expect(snap.tops[Math.floor(650 / COLUMN_WIDTH)]).toBe(NO_SURFACE);
+    // Nothing is hovered, so there is no follow offset.
+    expect(tracker.hoverFollow()).toBeNull();
     expect(() => {
       tracker.stop();
       tracker.stop();
