@@ -63,7 +63,7 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
           <tbody className="divide-y divide-border">
             {report.lines.slice(0, 12).map((line) => (
               <tr key={line.id}>
-                <td className="max-w-0 truncate py-1.5 pr-3 font-medium">{line.name}</td>
+                <td className="w-full max-w-0 truncate py-1.5 pr-3 font-medium">{line.name}</td>
                 <td className="py-1.5 px-3 text-right tabular-nums">{formatRatio(line.turnover)}</td>
                 <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">
                   <Money value={line.cogs} formatters={formatters} />
