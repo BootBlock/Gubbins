@@ -55,6 +55,7 @@ import type { AlertKind } from '@/features/alerts/alerts';
 import { DEFAULT_OCR_MODEL, normaliseOcrModel, type OcrModel } from '@/features/inventory/ocr/ocr-engine';
 export type { OcrModel };
 import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
+import { DEFAULT_ANALYTICS_WINDOW, normaliseAnalyticsWindow } from '@/features/reports/analytics-windows';
 import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib/weight';
 export type { WeightUnit };
 import { DEFAULT_DIMENSION_UNIT, normaliseDimensionUnit, type DimensionUnit } from '@/lib/dimensions';
@@ -373,6 +374,17 @@ interface PreferencesStore {
    * theme) — so a dark-mode user can see what the printout will look like. On-screen only.
    */
   readonly cataloguePaperPreview: boolean;
+  /**
+   * Last-selected trailing window (days) for each Reports analytics section (issue #116). Each
+   * section — Advanced analytics, Spend analytics, Sales & disposals — remembers its own choice
+   * independently, so switching one doesn't move the others, and the pick survives a reload.
+   * Persisted as *intent* and reconciled through `normaliseAnalyticsWindow` on read, so a window
+   * no longer offered can never reach a query key or the segmented control. Default is the shared
+   * {@link DEFAULT_ANALYTICS_WINDOW} (a quarter).
+   */
+  readonly reportsAnalyticsWindow: number;
+  readonly reportsSpendWindow: number;
+  readonly reportsSalesWindow: number;
   setBaseCurrency: (currency: string) => void;
   setLocale: (locale: string) => void;
   /** Choose the unit weights are shown/entered in (stored weights stay in grams). */
@@ -461,6 +473,10 @@ interface PreferencesStore {
   setCatalogueRunningHeader: (show: boolean) => void;
   /** Toggle the on-screen white-paper preview of the catalogue. */
   setCataloguePaperPreview: (on: boolean) => void;
+  /** Remember the trailing window (days) chosen for a Reports analytics section (issue #116). */
+  setReportsAnalyticsWindow: (days: number) => void;
+  setReportsSpendWindow: (days: number) => void;
+  setReportsSalesWindow: (days: number) => void;
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -523,6 +539,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
       cataloguePageNumbers: true,
       catalogueRunningHeader: true,
       cataloguePaperPreview: false,
+      reportsAnalyticsWindow: DEFAULT_ANALYTICS_WINDOW,
+      reportsSpendWindow: DEFAULT_ANALYTICS_WINDOW,
+      reportsSalesWindow: DEFAULT_ANALYTICS_WINDOW,
       setBaseCurrency: (baseCurrency) => set({ baseCurrency }),
       setLocale: (locale) => set({ locale }),
       // Normalise so a stale/unknown persisted value can never reach the formatter/conversions.
@@ -619,6 +638,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setCataloguePageNumbers: (show) => set({ cataloguePageNumbers: show }),
       setCatalogueRunningHeader: (show) => set({ catalogueRunningHeader: show }),
       setCataloguePaperPreview: (on) => set({ cataloguePaperPreview: on }),
+      // Normalise so a stale/out-of-range persisted or passed value can never reach a query key
+      // or the segmented control (the control only ever offers valid windows).
+      setReportsAnalyticsWindow: (days) => set({ reportsAnalyticsWindow: normaliseAnalyticsWindow(days) }),
+      setReportsSpendWindow: (days) => set({ reportsSpendWindow: normaliseAnalyticsWindow(days) }),
+      setReportsSalesWindow: (days) => set({ reportsSalesWindow: normaliseAnalyticsWindow(days) }),
     }),
     {
       name: 'gubbins:preferences',

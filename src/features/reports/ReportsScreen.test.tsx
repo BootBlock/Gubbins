@@ -219,8 +219,10 @@ vi.mock('./queries', () => ({
   DEAD_STOCK_SINCE_DAYS: 90,
   REPORT_MOVEMENT_BUCKETS: 15,
   ABC_WINDOW_DAYS: 365,
-  ANALYTICS_WINDOWS: [30, 90, 365],
+  ANALYTICS_WINDOWS: [7, 14, 30, 60, 90, 365],
   DEFAULT_ANALYTICS_WINDOW: 90,
+  normaliseAnalyticsWindow: (days: unknown) =>
+    [7, 14, 30, 60, 90, 365].includes(days as number) ? (days as number) : 90,
   VALUATION_TREND_POINTS: 12,
   DATA_HYGIENE_STALE_DAYS: 180,
   SPEND_BUCKETS: 15,

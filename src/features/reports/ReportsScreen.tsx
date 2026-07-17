@@ -21,6 +21,7 @@ import {
   ReportIcon,
 } from '@/components/icons';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
@@ -38,7 +39,7 @@ import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
   DEAD_STOCK_SINCE_DAYS,
-  DEFAULT_ANALYTICS_WINDOW,
+  normaliseAnalyticsWindow,
   REPORT_WINDOW_DAYS,
   useAbcAnalysis,
   useConsumptionRate,
@@ -65,7 +66,10 @@ export function ReportsScreen() {
   const f = useFormatters();
   const [exportOpen, setExportOpen] = useState(false);
   // Selectable trailing window driving the turnover + valuation-trend analytics (ABC stays annual).
-  const [analyticsWindow, setAnalyticsWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
+  // Persisted per-section (issue #116) so each remembers its own window across reloads; normalised
+  // on read so a stale persisted value can never reach a query key or the segmented control.
+  const analyticsWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsAnalyticsWindow));
+  const setAnalyticsWindow = usePreferencesStore((s) => s.setReportsAnalyticsWindow);
 
   const value = useInventoryValue();
   const consumption = useConsumptionRate();
@@ -89,12 +93,14 @@ export function ReportsScreen() {
   // acquisitions), so it belongs to that module. Skip the fetch (`enabled`) rather than
   // fetch-then-hide, and omit the whole section + its live regions below.
   const spendOn = useEnabledFeatures().has('purchase-orders');
-  const [spendWindow, setSpendWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
+  const spendWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsSpendWindow));
+  const setSpendWindow = usePreferencesStore((s) => s.setReportsSpendWindow);
   const spend = useSpendAnalytics(spendWindow, { enabled: spendOn });
 
   // Sales & disposals analytics — its own selectable window; dropped when the Sales module is off.
   const salesOn = useEnabledFeatures().has('sales');
-  const [salesWindow, setSalesWindow] = useState<number>(DEFAULT_ANALYTICS_WINDOW);
+  const salesWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsSalesWindow));
+  const setSalesWindow = usePreferencesStore((s) => s.setReportsSalesWindow);
   const sales = useSalesAnalytics(salesWindow, { enabled: salesOn });
 
   // Derive aggregate loading / error state from all five queries.
