@@ -91,6 +91,15 @@ describe('parseASTtoSQL — structure & parameterisation (spec §5.1)', () => {
     expect(params).toEqual(['description : ("voltage"* "reg"*)']);
   });
 
+  it('scopes a CONTAINS on notes to the FTS index rather than the always-false 0 (issue #120)', () => {
+    // `notes` is indexed by items_fts, so a scoped notes CONTAINS must compile to a real
+    // MATCH — not degrade to the literal `0` (valid SQL that matches nothing).
+    const [sql, params] = parseASTtoSQL(and({ field: 'notes', operator: 'CONTAINS', value: 'spare' }));
+    expect(sql).toBe('(items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?))');
+    expect(sql).not.toBe('(0)');
+    expect(params).toEqual(['notes : ("spare"*)']);
+  });
+
   it('never concatenates values into the SQL text (only ? placeholders)', () => {
     const [sql, params] = parseASTtoSQL(
       and(
@@ -261,11 +270,17 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
   async function makeItem(
     id: string,
     name: string,
-    opts: { description?: string; manufacturer?: string; mpn?: string; quantity?: number } = {},
+    opts: {
+      description?: string;
+      manufacturer?: string;
+      mpn?: string;
+      quantity?: number;
+      notes?: string;
+    } = {},
   ): Promise<void> {
     await driver.execute(
-      `INSERT INTO items (id, name, description, manufacturer, mpn, quantity, location_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO items (id, name, description, manufacturer, mpn, quantity, notes, location_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
@@ -273,6 +288,7 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
         opts.manufacturer ?? null,
         opts.mpn ?? null,
         opts.quantity ?? 0,
+        opts.notes ?? null,
         UNASSIGNED_LOCATION_ID,
       ],
     );
@@ -332,6 +348,7 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
       manufacturer: 'Espressif',
       mpn: 'ESP32-WROOM',
       quantity: 3,
+      notes: 'Keep a spare on the bench',
     });
     await addCapability('reg', 'voltage', 5);
     await addCapability('mcu', 'voltage', 3.3);
@@ -344,6 +361,11 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
 
   it('matches a free-text CONTAINS via FTS5', async () => {
     expect(await run(and({ field: 'name', operator: 'CONTAINS', value: 'esp' }))).toEqual(['mcu']);
+  });
+
+  it('matches a column-scoped CONTAINS on notes via FTS5 (issue #120)', async () => {
+    // Only the MCU carries a note; a scoped notes search must find it (and nothing else).
+    expect(await run(and({ field: 'notes', operator: 'CONTAINS', value: 'spare' }))).toEqual(['mcu']);
   });
 
   it('filters by the boolean favourite flag against the real engine (issue #23)', async () => {

@@ -307,7 +307,7 @@ export type AssemblyOutcome = (typeof ASSEMBLY_OUTCOMES)[number];
  * (which defines the vtable + sync triggers) and the search layer (which builds
  * column-scoped `MATCH` queries). Changing this list requires a new migration.
  */
-export const FTS_ITEM_COLUMNS = ['name', 'description', 'mpn', 'manufacturer', 'barcode'] as const;
+export const FTS_ITEM_COLUMNS = ['name', 'description', 'notes', 'mpn', 'manufacturer', 'barcode'] as const;
 export type FtsItemColumn = (typeof FTS_ITEM_COLUMNS)[number];
 
 /**
