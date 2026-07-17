@@ -20,6 +20,7 @@ describe('CATEGORY_PRESETS (importable preset library)', () => {
     expect(TOOLS_STARTER_SEED).toBe(CATEGORY_PRESETS[0]?.seed);
     expect(TOOLS_STARTER_SEED.category).toEqual({
       name: 'Tools',
+      glyph: '🛠️',
       defaultTrackingMode: 'SERIALISED',
       defaultCondition: 'GOOD',
       defaultWarrantyMonths: 12,
@@ -64,6 +65,13 @@ describe('CATEGORY_PRESETS (importable preset library)', () => {
           expect(field.options ?? null).toBeNull();
         }
       });
+    }
+  });
+
+  it('gives every built-in preset a non-empty category glyph (issue #83)', () => {
+    for (const preset of CATEGORY_PRESETS) {
+      expect(preset.seed.category.glyph, `${preset.name} should carry a glyph`).toBeTruthy();
+      expect(preset.seed.category.glyph?.trim()).not.toBe('');
     }
   });
 });
@@ -162,6 +170,7 @@ describe('applyCategoryStarterSeed', () => {
 
       const created = await repo.getById(id);
       expect(created?.name).toBe('Tools');
+      expect(created?.glyph).toBe('🛠️');
       expect(created?.defaultTrackingMode).toBe('SERIALISED');
       expect(created?.defaultCondition).toBe('GOOD');
       expect(created?.defaultWarrantyMonths).toBe(12);

@@ -8,6 +8,8 @@ import type { Condition, FieldType, MaintenanceBasis, TrackingMode } from '../co
 export interface CategoryRow {
   readonly id: string;
   readonly name: string;
+  /** Optional decorative Unicode glyph/emoji (issue #83); null = none. */
+  readonly glyph: string | null;
   /** Optional category-template default tracking mode (backlog T1); null = no default. */
   readonly default_tracking_mode: TrackingMode | null;
   /** Optional category-template default condition (backlog T2); null = no default. */
@@ -26,6 +28,11 @@ export interface CategoryRow {
 export interface Category {
   readonly id: string;
   readonly name: string;
+  /**
+   * Optional decorative Unicode glyph/emoji (issue #83). When set, an item in this category
+   * shows it as a faint greyscale watermark on its Visual card. Null when none is chosen.
+   */
+  readonly glyph: string | null;
   /**
    * Optional category-template default (backlog T1): soft-prefills a new item's tracking
    * mode in the create form. Null when the category carries no default.
@@ -64,6 +71,8 @@ export interface CategoryWithFieldCount extends Category {
 
 export interface CreateCategoryInput {
   readonly name: string;
+  /** Optional decorative Unicode glyph/emoji (issue #83); omit/null for none. */
+  readonly glyph?: string | null;
   /** Category-template default tracking mode (backlog T1); omit/null for none. */
   readonly defaultTrackingMode?: TrackingMode | null;
   /** Category-template default condition (backlog T2); omit/null for none. */
@@ -80,6 +89,8 @@ export interface CreateCategoryInput {
 
 export interface UpdateCategoryInput {
   readonly name?: string;
+  /** Optional decorative Unicode glyph/emoji (issue #83); null clears it. */
+  readonly glyph?: string | null;
   /** Category-template default tracking mode (backlog T1); null clears it. */
   readonly defaultTrackingMode?: TrackingMode | null;
   /** Category-template default condition (backlog T2); null clears it. */

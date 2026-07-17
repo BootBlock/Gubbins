@@ -67,6 +67,14 @@ export { Glyph, type GlyphProps } from './glyph-picker/Glyph';
 export { GlyphPickerButton, type GlyphPickerButtonProps } from './glyph-picker/GlyphPickerButton';
 export { type GlyphPickerProps } from './glyph-picker/GlyphPicker';
 export { humanizeGlyphName, glyphSearchText, filterGlyphNames } from './glyph-picker/glyph-name';
+// Emoji picker — the app-wide Unicode-glyph chooser (issue #83), distinct from the Lucide
+// glyph picker above. Like it, the catalogue-bearing `EmojiPicker` dialog is not re-exported
+// here — it is reached only through the lazy `EmojiPickerButton` (or a direct subpath import)
+// so its emoji data never lands in the main bundle. The data + search helpers are pure.
+export { EmojiPickerButton, type EmojiPickerButtonProps } from './emoji-picker/EmojiPickerButton';
+export { type EmojiPickerProps } from './emoji-picker/EmojiPicker';
+export { filterEmojis, emojiName } from './emoji-picker/emoji-search';
+export { EMOJI_GROUPS, ALL_EMOJIS, type EmojiEntry, type EmojiGroup } from './emoji-picker/emoji-data';
 export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
 export { resolveTabKey } from './tab-keyboard';
 export { useSearchEscapeToClear } from './use-search-escape';

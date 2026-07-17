@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Button,
   Checkbox,
+  EmojiPickerButton,
   FormField,
   Input,
   InfoHint,
@@ -121,11 +122,18 @@ function CategoryManagerBody() {
                 <button
                   type="button"
                   onClick={() => setSelectedId(cat.id)}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
                     cat.id === selectedId ? 'bg-primary/15 text-primary' : 'hover:bg-secondary'
                   }`}
                 >
-                  <span className="truncate">{cat.name}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {cat.glyph ? (
+                      <span aria-hidden className="shrink-0 leading-none">
+                        {cat.glyph}
+                      </span>
+                    ) : null}
+                    <span className="truncate">{cat.name}</span>
+                  </span>
                   <span className="ml-2 shrink-0 text-xs text-muted-foreground">{cat.fieldCount}</span>
                 </button>
               </li>
@@ -206,11 +214,19 @@ function CategoryDetail({
 }) {
   const { data: fields } = useCategoryFields(category.id);
   const deleteField = useDeleteCategoryField();
+  const updateCategory = useUpdateCategory();
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate text-sm font-semibold">{category.name}</h3>
+        <h3 className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold">
+          {category.glyph ? (
+            <span aria-hidden className="shrink-0 leading-none">
+              {category.glyph}
+            </span>
+          ) : null}
+          <span className="truncate">{category.name}</span>
+        </h3>
         <Tooltip
           content="Delete this category and all its field definitions. Items keep their stored values."
           triggerTabIndex={-1}
@@ -222,6 +238,29 @@ function CategoryDetail({
           </span>
         </Tooltip>
       </div>
+
+      {/* Optional decorative glyph (issue #83) — a plain LWW column, so it auto-saves the moment
+          it changes, mirroring the defaults editor below. Shown as a faint greyscale watermark on
+          items' Visual cards (when the global card-watermark setting is on). */}
+      <FormField
+        label="Glyph"
+        hint={
+          'An optional emoji shown as a faint **watermark** on the Visual cards of items in this ' +
+          'category — e.g. 🔋 for batteries, 📖 for books. Pick one from the glyph browser, or ' +
+          'clear it for none. Purely decorative; you can turn all category watermarks off in ' +
+          '**Settings → Item cards**.'
+        }
+      >
+        <EmojiPickerButton
+          value={category.glyph}
+          onChange={(glyph) => updateCategory.mutate({ id: category.id, input: { glyph } })}
+          clearable
+          placeholder="No glyph"
+          aria-label="Choose category glyph"
+          clearLabel="Remove category glyph"
+          title="Choose a category glyph"
+        />
+      </FormField>
 
       <ul className="space-y-1">
         {(fields ?? []).length === 0 ? (

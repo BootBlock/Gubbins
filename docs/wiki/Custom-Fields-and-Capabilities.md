@@ -56,6 +56,31 @@ search; pressing **Escape** anywhere else (or with the search box empty) closes 
 > A preset whose category already exists is marked **Added** and can't be imported twice, so
 > there's no risk of duplicates.
 
+### Giving a category a glyph
+
+A category can carry an optional **glyph** — a single emoji such as 🔋 for batteries, 📖 for
+books or 🛠️ for tools. Open **Categories & schemas**, pick the category, and use the **Glyph**
+field to choose one; the built-in presets each come with a fitting glyph already set.
+
+When a category has a glyph, every item in it shows that glyph as a large, faint **greyscale
+watermark** in the bottom-right corner of its card in the [[Visual view|Inventory-Views]] — a
+quick at-a-glance cue for what kind of thing each card is. The watermark is always drawn in
+greyscale at a low opacity, so it reads as a background texture rather than competing with the
+item's details.
+
+Choosing a glyph opens a **glyph browser**: a list of groups down the left (Smileys, People,
+Animals & nature, Food & drink, Objects, Symbols and more) with a **search box** above them that
+filters every glyph as you type — search by name or by what it means (`car`, `screw`, `battery`).
+The grid on the right shows the chosen group, or your search matches. Pick a glyph with the
+mouse, or move through the grid with the **arrow keys** and press **Enter**; press **Escape** to
+clear the search, or again to close. The browser can be resized by dragging its corner, and it
+remembers the size you set.
+
+> **💡 Tip**
+> Prefer a cleaner grid? Turn all category watermarks off in one place under **Settings → Item
+> cards → Category watermarks** — that hides every watermark without clearing any category's
+> glyph, so you can switch them back on any time.
+
 ## Capabilities
 
 A **capability** is a *weighted* attribute — a property an item **has**, optionally with a

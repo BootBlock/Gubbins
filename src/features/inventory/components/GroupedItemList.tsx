@@ -18,7 +18,7 @@ import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
 import { tableFieldColumns, tableGridColumns } from './item-table-columns';
-import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
+import { cardFieldProps, itemCardProps, type CardFieldsListContext } from './card-fields-render';
 import type { CardFieldsConfigBundle } from './useCardFieldsConfig';
 import type { ItemSelection } from './inventory-ui';
 
@@ -335,7 +335,7 @@ function SectionItems({
                 locationTintClass={locationTintClass?.(item.locationId)}
                 selection={selection}
                 selected={selectedIds?.has(item.id) ?? false}
-                {...cardFieldProps(cardFields, item)}
+                {...itemCardProps(cardFields, item)}
               />
             ),
           )}

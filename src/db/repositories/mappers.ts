@@ -365,6 +365,7 @@ export function rowToCategory(row: CategoryRow): Category {
   return {
     id: row.id,
     name: row.name,
+    glyph: row.glyph,
     defaultTrackingMode: row.default_tracking_mode,
     defaultCondition: row.default_condition,
     defaultWarrantyMonths: row.default_warranty_months,

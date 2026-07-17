@@ -21,6 +21,12 @@ export interface CardFieldsConfigBundle {
   readonly customFields: ReadonlyMap<string, CardCustomField>;
   /** Resolve a category id to its name (null when the item has no category). */
   readonly categoryName: (categoryId: string | null) => string | null;
+  /**
+   * Resolve a category id to its decorative glyph for the card watermark (issue #83), or null
+   * when the category has none *or* the global category-watermark setting is off — so a card
+   * never needs to know the setting itself.
+   */
+  readonly categoryGlyph: (categoryId: string | null) => string | null;
   /** Whether any *visible* field is a custom field — gates the per-window value fetch. */
   readonly hasCustomFields: boolean;
 }
@@ -34,6 +40,7 @@ export interface CardFieldsConfigBundle {
  */
 export function useCardFieldsConfig(): CardFieldsConfigBundle {
   const savedConfig = usePreferencesStore((s) => s.cardFields);
+  const categoryWatermarks = usePreferencesStore((s) => s.categoryWatermarks);
   const allFields = useAllCategoryFields();
   const categories = useCategories();
 
@@ -64,12 +71,23 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
     return map;
   }, [categories.data]);
 
+  const categoryGlyphsById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories.data?.rows ?? []) if (c.glyph) map.set(c.id, c.glyph);
+    return map;
+  }, [categories.data]);
+
   const hasCustomFields = useMemo(() => order.some((id) => parseCustomCardFieldId(id) !== null), [order]);
 
-  // A plain closure (not memoised): it's called during the list's own render to produce a
-  // string per item, and the card memo compares that string — not this function's identity.
+  // Plain closures (not memoised): they're called during the list's own render to produce a
+  // string per item, and the card memo compares that string — not the function's identity.
   const categoryName = (categoryId: string | null): string | null =>
     categoryId ? (categoryNamesById.get(categoryId) ?? null) : null;
 
-  return { order, customFields, categoryName, hasCustomFields };
+  // Null when the global watermark setting is off, so a card never renders the glyph and the
+  // memoised card sees a stable null — no per-card subscription to the setting.
+  const categoryGlyph = (categoryId: string | null): string | null =>
+    categoryWatermarks && categoryId ? (categoryGlyphsById.get(categoryId) ?? null) : null;
+
+  return { order, customFields, categoryName, categoryGlyph, hasCustomFields };
 }
