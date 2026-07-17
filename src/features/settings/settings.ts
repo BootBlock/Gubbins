@@ -213,12 +213,13 @@ export function clampBudgetWarnPercent(value: number): number {
  *   ago"), for spotting stale or freshly-touched stock at a glance.
  * - `condition` — the item's tracked condition (Mint / Good / …), tinted with its
  *   condition token, or "Untracked" when the item has no condition set.
+ * - `manufacturer` — the item's manufacturer/brand, or a muted em-dash when unset.
  *
  * Gauge / serialised / untracked / unlimited cards are unaffected — their hero already
  * shows meaningful, non-duplicated content — so this preference only swaps the plain
  * discrete card's hero.
  */
-export type VisualCardMetric = 'stockHealth' | 'value' | 'lastUpdated' | 'condition';
+export type VisualCardMetric = 'stockHealth' | 'value' | 'lastUpdated' | 'condition' | 'manufacturer';
 
 /** The default Visual-card hero metric — the actionable stock-health status. */
 export const DEFAULT_VISUAL_CARD_METRIC: VisualCardMetric = 'stockHealth';
@@ -229,6 +230,7 @@ export const VISUAL_CARD_METRIC_OPTIONS = [
   { value: 'value', label: 'Total value' },
   { value: 'lastUpdated', label: 'Last updated' },
   { value: 'condition', label: 'Condition' },
+  { value: 'manufacturer', label: 'Manufacturer' },
 ] as const satisfies readonly { value: VisualCardMetric; label: string }[];
 
 /**
@@ -240,6 +242,37 @@ export function normaliseVisualCardMetric(value: string): VisualCardMetric {
   return (VISUAL_CARD_METRIC_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
     ? (value as VisualCardMetric)
     : DEFAULT_VISUAL_CARD_METRIC;
+}
+
+/**
+ * The fallback shown in the Visual-card hero when the chosen {@link VisualCardMetric} has
+ * nothing to show for a given item (issue #107) — e.g. "Manufacturer" with a "Stock health"
+ * fallback shows the maker where one is set and the reorder status everywhere else. Any of
+ * the metric ids, or `none` to keep the primary's own placeholder (a muted em-dash /
+ * "Untracked") for that item — which is the shipped default, so the fallback is opt-in and an
+ * upgrade changes nothing until the user picks one. `stockHealth` / `lastUpdated` always have
+ * content, so the fallback never triggers when either is the primary.
+ */
+export type VisualCardMetricFallback = VisualCardMetric | 'none';
+
+/** The default hero fallback — none, so the primary's own placeholder still shows (no change on upgrade). */
+export const DEFAULT_VISUAL_CARD_METRIC_FALLBACK: VisualCardMetricFallback = 'none';
+
+/** Choices for the Settings "Detail fallback" control — the metric options plus "None". */
+export const VISUAL_CARD_METRIC_FALLBACK_OPTIONS = [
+  ...VISUAL_CARD_METRIC_OPTIONS,
+  { value: 'none', label: 'None' },
+] as const satisfies readonly { value: VisualCardMetricFallback; label: string }[];
+
+/**
+ * Coerce an arbitrary persisted value to a valid {@link VisualCardMetricFallback} (default
+ * `none`). Total, like {@link normaliseVisualCardMetric}, so a stale value can never reach the
+ * card's fallback resolution.
+ */
+export function normaliseVisualCardMetricFallback(value: string): VisualCardMetricFallback {
+  return (VISUAL_CARD_METRIC_FALLBACK_OPTIONS as readonly { value: string }[]).some((o) => o.value === value)
+    ? (value as VisualCardMetricFallback)
+    : DEFAULT_VISUAL_CARD_METRIC_FALLBACK;
 }
 
 /**

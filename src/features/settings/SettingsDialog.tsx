@@ -58,6 +58,7 @@ import {
   NAV_COUNT_METRIC_CONFIG,
   NAV_COUNT_ROUTES,
   PAGE_SIZE_BOUNDS,
+  VISUAL_CARD_METRIC_FALLBACK_OPTIONS,
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
   clampBudgetWarnPercent,
@@ -696,8 +697,9 @@ export default function SettingsDialog({
                 '- **Stock health** — a colour-coded reorder status (In stock / Low / Out), from the item’s reorder point.\n' +
                 '- **Total value** — unit cost × quantity.\n' +
                 '- **Last updated** — how long ago it changed.\n' +
-                '- **Condition** — its tracked state (Mint / Good / …).\n\n' +
-                'Gauge, serialised and untracked cards are unaffected — their hero already shows something meaningful.'
+                '- **Condition** — its tracked state (Mint / Good / …).\n' +
+                '- **Manufacturer** — the item’s maker / brand.\n\n' +
+                'If the chosen detail has nothing to show for an item — say **Manufacturer** on an item with no maker set — the **fallback** below is shown for that item instead. Gauge, serialised and untracked cards are unaffected — their hero already shows something meaningful.'
               }
             >
               <Select
@@ -707,6 +709,26 @@ export default function SettingsDialog({
                 value={prefs.visualCardMetric}
                 onChange={(value) => prefs.setVisualCardMetric(value as typeof prefs.visualCardMetric)}
                 options={VISUAL_CARD_METRIC_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              />
+            </SettingRow>
+            <SettingRow
+              label="Detail fallback"
+              description="What a card shows when the chosen detail can’t apply to an item (e.g. an item with no manufacturer)."
+              hintSize="md"
+              hint={
+                'When the **Visual card details** above has nothing to show for a particular item — an item with no manufacturer under **Manufacturer**, an unpriced item under **Total value**, or one with no tracked condition under **Condition** — this is shown for that item instead.\n\n' +
+                'So **Manufacturer** with a **Stock health** fallback shows the maker where you’ve set one and the reorder status everywhere else. Leave it on **None** to keep the plain placeholder (a dash) for those items.'
+              }
+            >
+              <Select
+                aria-label="Detail fallback"
+                data-testid="setting-visual-card-metric-fallback"
+                className="h-9 w-40"
+                value={prefs.visualCardMetricFallback}
+                onChange={(value) =>
+                  prefs.setVisualCardMetricFallback(value as typeof prefs.visualCardMetricFallback)
+                }
+                options={VISUAL_CARD_METRIC_FALLBACK_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               />
             </SettingRow>
             <SettingRow

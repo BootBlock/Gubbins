@@ -80,6 +80,33 @@ Card view itself is configurable — which fields show, count pills, and more �
 **Settings → Dashboard / Inventory**. See [[Appearance & theming|Appearance-and-Theming]] and
 [[Dashboard & widgets|Dashboard-and-Widgets]].
 
+### The card detail (Card view)
+
+In **Card** view, each item card has one large **detail** slot. The ± stepper already shows the
+on-hand quantity, so this slot shows a genuinely useful *second* signal instead of repeating the
+number. Point it at whichever matters most to you:
+
+- **Stock health** — a colour-coded reorder status (In stock / Low / Out), from the item's reorder
+  point (the default).
+- **Total value** — unit cost × quantity.
+- **Last updated** — how long ago the item changed.
+- **Condition** — its tracked state (Mint / Good / …).
+- **Manufacturer** — the item's maker / brand.
+
+Pick a **fallback** too. If the chosen detail has nothing to show for a particular item — say
+you've set **Manufacturer** but an item has no maker recorded — the fallback is shown for that one
+item instead. So **Manufacturer** with a **Stock health** fallback shows the maker where you've
+entered one and the reorder status everywhere else. Leave the fallback on **None** to keep a plain
+dash for those items.
+
+**Where to find it:** **Settings → Inventory → Item cards → Visual card details** (and **Detail
+fallback**). It's a per-device preference. Gauge, serialised and untracked cards are unaffected —
+their detail already shows something meaningful.
+
+> **ℹ️ Note**
+> When an item has a **manufacturer** recorded, it's also shown as a small subtitle directly under
+> the item's name on its card — a quick brand cue, independent of the detail slot above.
+
 ### The corner badge
 
 Every item card and row shows a small **badge in its top-right corner** — by default the item's
