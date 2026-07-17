@@ -10,10 +10,17 @@ you can tidy them up.
 
 Data hygiene flags records with gaps that undermine other features, such as items missing:
 
-- A **price** or **acquired date** (needed for [[valuation and spend|Valuation-and-Spend]] and the
+- A **price** (needed for [[valuation and spend|Valuation-and-Spend]] and the
   [[insurance schedule|Insurance-and-Estate-Schedule]]).
 - A **location** (so you actually know where it is).
-- A **category** or other key fields.
+- A **category** or a **photo**.
+- Stock that's **never been counted**, or a record that's gone **stale** (untouched for a long time).
+- **Possible duplicates** — two items sharing the same manufacturer part number (MPN), the usual
+  sign of the same part entered twice.
+
+Each check reads as a green tick when everything's healthy, or lists the items that need attention.
+**Click a flagged item** to jump straight to it — Gubbins opens its card in the
+[[inventory|Items]] so you can fix the gap on the spot, no hunting required.
 
 It's a to-do list for keeping your catalogue trustworthy — work through the flagged items and the
 gaps close.

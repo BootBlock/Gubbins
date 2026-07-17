@@ -64,6 +64,7 @@ import { astError, useAstSearch } from '@/features/search/queries';
 import {
   useApplicableStatuses,
   useInventoryItems,
+  useItem,
   useItemCount,
   useItemPage,
   useLocations,
@@ -93,6 +94,7 @@ import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
 import { ImportDataDialog } from './components/ImportDataDialog';
+import { ItemDetailDialog } from './components/ItemDetailDialog';
 import { BulkEditDialog } from './components/BulkEditDialog';
 import { useCloneItem } from './mutations';
 import { useCatalogueLaunch } from '@/features/reports/useCatalogueLaunch';
@@ -196,6 +198,10 @@ function InventoryWorkspace() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Standalone item-detail dialog opened by a deep link (a Reports data-hygiene row's jump-to-fix
+  // link), keyed by item id; the item itself is fetched by `useItem` below. Distinct from the
+  // per-row detail dialog inside `ItemActions` — this one has no row to hang off.
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [cycleCountOpen, setCycleCountOpen] = useState(false);
   // Guided multi-location stock-take / audit day (spec §4.4). Unlike the single-location
   // Cycle count above, this walks a chosen scope of locations in turn and is resumable, so
@@ -243,6 +249,7 @@ function InventoryWorkspace() {
   const pendingSearch = useInventoryEntry((s) => s.pendingSearch);
   const pendingIntent = useInventoryEntry((s) => s.pendingIntent);
   const pendingLocationId = useInventoryEntry((s) => s.pendingLocationId);
+  const pendingOpenItemId = useInventoryEntry((s) => s.pendingOpenItemId);
   useEffect(() => {
     if (pendingSearch === null) return;
     setSearchInput(pendingSearch);
@@ -261,6 +268,16 @@ function InventoryWorkspace() {
     setSelectedLocationId(pendingLocationId);
     useInventoryEntry.getState().clearLocation();
   }, [pendingLocationId]);
+  // Deep-link to one item's detail card (e.g. a Reports data-hygiene row): remember the id so
+  // the standalone dialog below can fetch and open it. Paired with `pendingSearch` at the call
+  // site so the item is also in the list behind the dialog once it is closed.
+  useEffect(() => {
+    if (pendingOpenItemId === null) return;
+    setDetailItemId(pendingOpenItemId);
+    useInventoryEntry.getState().clearOpenItem();
+  }, [pendingOpenItemId]);
+  // Full record for the deep-linked detail dialog; the query is disabled until an id is set.
+  const detailItem = useItem(detailItemId ?? undefined);
 
   // The low-stock / expiring thresholds the status filters judge against are the same
   // user-tuned preferences the dashboard widgets and alert centre use (Phase 46), so the
@@ -1123,6 +1140,12 @@ function InventoryWorkspace() {
       />
       <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
       <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      {/* Deep-linked item detail (e.g. from a Reports data-hygiene row): open the card directly
+          so the user lands on the item rather than hunting for it. Rendered only once the record
+          has loaded; closing clears the id so the query goes idle again. */}
+      {detailItem.data ? (
+        <ItemDetailDialog item={detailItem.data} open onClose={() => setDetailItemId(null)} />
+      ) : null}
       <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
       <BulkEditDialog
         open={bulkEditOpen}
