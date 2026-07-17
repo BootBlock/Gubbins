@@ -267,6 +267,13 @@ interface PreferencesStore {
   /** When the §2.7 mobile Full Archive was last downloaded (UNIX-ms), or null if never. */
   readonly lastArchivedAt: number | null;
   /**
+   * When the §2.7 weekly-backup banner should reappear after the user dismissed it (UNIX-ms),
+   * or null if it was never dismissed. Dismissing snoozes the nudge rather than hiding it for
+   * good — it returns after {@link import('@/features/archive/auto-archive').ARCHIVE_NUDGE_SNOOZE_MS}
+   * if a fresh archive still hasn't been taken.
+   */
+  readonly archiveNudgeSnoozedUntil: number | null;
+  /**
    * Kiosk mode (§3 "Kiosk & Tablet Ergonomics"): hold a screen wake lock so a
    * hardwired dashboard never sleeps, and apply touch/selection containment to the
    * dashboard. Off by default — opt-in so casual use is unaffected.
@@ -437,6 +444,8 @@ interface PreferencesStore {
   setPruneWindowMonths: (months: number) => void;
   setDowngradeWindowMonths: (months: number) => void;
   setLastArchivedAt: (at: number) => void;
+  /** Snooze (or, with `null`, clear the snooze on) the weekly-backup banner until a UNIX-ms instant. */
+  setArchiveNudgeSnoozedUntil: (until: number | null) => void;
   setKioskMode: (kioskMode: boolean) => void;
   /** Turn local reminder notifications on/off (the permission prompt is a UI concern). */
   setRemindersEnabled: (enabled: boolean) => void;
@@ -518,6 +527,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       pruneWindowMonths: DEFAULT_WINDOW_MONTHS,
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
       lastArchivedAt: null,
+      archiveNudgeSnoozedUntil: null,
       kioskMode: false,
       remindersEnabled: false,
       reminderKinds: DEFAULT_REMINDER_KINDS,
@@ -607,6 +617,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setPruneWindowMonths: (months) => set({ pruneWindowMonths: normaliseWindowMonths(months) }),
       setDowngradeWindowMonths: (months) => set({ downgradeWindowMonths: normaliseWindowMonths(months) }),
       setLastArchivedAt: (lastArchivedAt) => set({ lastArchivedAt }),
+      setArchiveNudgeSnoozedUntil: (archiveNudgeSnoozedUntil) => set({ archiveNudgeSnoozedUntil }),
       setKioskMode: (kioskMode) => set({ kioskMode }),
       setRemindersEnabled: (remindersEnabled) => set({ remindersEnabled }),
       // Merge one lane's choice (normalised) over the map, leaving the others untouched.

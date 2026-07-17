@@ -34,6 +34,17 @@ There are two ways to restore:
 > Take a backup before any big change — a large import, a bulk edit, or a Replace restore. The
 > automatic restore-point has your back, but your own recent `.zip` is the surest safety net.
 
+## The weekly reminder (mobile)
+
+On a phone or tablet **without [[Cloud sync|Cloud-Sync]] connected**, Gubbins shows a *"Time for a
+weekly backup"* banner once a week, with a **Download archive** button that saves a full `.zip` to
+your device. It's a nudge to keep a safety net where continuous auto-save isn't available.
+
+> **💡 Tip**
+> Not ready right now? Dismiss the banner with its **✕** and it stays hidden for a week — it only
+> comes back if you still haven't taken a backup by then. Downloading an archive (or connecting
+> Cloud sync) clears it too.
+
 ## Backup vs sync
 
 > **ℹ️ Note**
