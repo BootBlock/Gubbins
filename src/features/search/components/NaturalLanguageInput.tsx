@@ -99,7 +99,7 @@ export function NaturalLanguageInput() {
             '- **a location** — "in the garage", "on shelf 2"',
             '- **a category** — any category name you use',
             '',
-            'Anything left over is matched across the name, description and manufacturer',
+            'Anything left over is matched across the name, description, manufacturer and notes',
             '(plurals and British/American spellings are treated the same). For expiring /',
             'on-loan and other time-based filters, use the status chips above the list.',
           ].join('\n')}

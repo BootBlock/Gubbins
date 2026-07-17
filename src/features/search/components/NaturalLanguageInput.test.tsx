@@ -48,9 +48,9 @@ describe('NaturalLanguageInput — plain-English → builder (G5)', () => {
     // Three root nodes — quantity < N, location = garage, then the residual multi-field text
     // match (a sub-tree, so the probe reports it as "group").
     expect(screen.getByTestId('fields').textContent).toBe('quantity,location,group');
-    // conditionCount is a deep *leaf* count: quantity + location + the three field leaves the
-    // "screw" text match fans out to (name/description/manufacturer) = 5.
-    expect(screen.getByTestId('count').textContent).toBe('5');
+    // conditionCount is a deep *leaf* count: quantity + location + the four field leaves the
+    // "screw" text match fans out to (name/description/manufacturer/notes) = 6.
+    expect(screen.getByTestId('count').textContent).toBe('6');
   });
 
   it('echoes what was understood', () => {

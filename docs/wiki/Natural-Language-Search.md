@@ -20,9 +20,10 @@ looking for and combines them:
   *"exactly 3"*, *"5 in stock"* (digits or words both work).
 - **Location** — *"in the garage"*, *"on shelf 2"* (matched against your location names).
 - **Category** — a category name mentioned in the phrase.
-- **Anything else** — remaining words are matched across each item's **name, description and
-  manufacturer** — so a word that only appears in an item's description still finds it. Every
-  leftover word must appear *somewhere* on the item, but it can be in any of those fields.
+- **Anything else** — remaining words are matched across each item's **name, description,
+  manufacturer and notes** — so a word that only appears in an item's description or notes still
+  finds it. Every leftover word must appear *somewhere* on the item, but it can be in any of those
+  fields.
 
 So *"low stock screws in the garage"* becomes: items mentioning *screw* (in the name or any of
 their details), with a low quantity, located in the *Garage*.

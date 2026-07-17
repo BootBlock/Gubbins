@@ -12,7 +12,7 @@ import { NL_LOW_STOCK_FALLBACK_QTY, interpretNaturalLanguage, type NlContext } f
  */
 
 /** The item text fields a residual keyword now spans, in the emission order the code uses. */
-const TEXT_FIELDS = ['name', 'description', 'manufacturer'] as const;
+const TEXT_FIELDS = ['name', 'description', 'manufacturer', 'notes'] as const;
 
 /**
  * The OR group a single residual keyword lowers to: `<field> CONTAINS <value>` for every text
@@ -100,6 +100,11 @@ describe('interpretNaturalLanguage — empty / unrecognised', () => {
 describe('interpretNaturalLanguage — residual free text → multi-field text match', () => {
   it('maps a single leftover word to an OR across every text field', () => {
     expect(singleNode('screwdriver')).toEqual(keywordGroup('screwdriver'));
+  });
+
+  it('sweeps free-text notes too, so a word that only lives in an item note still surfaces it', () => {
+    const group = singleNode('spare') as ASTGroupNode;
+    expect(group.conditions).toContainEqual({ field: 'notes', operator: 'CONTAINS', value: 'spare' });
   });
 
   it('ANDs several leftover words, each matchable in any text field, stripping filler', () => {
