@@ -36,17 +36,23 @@ describe('createZxingDecode — shared fallback decode pipeline (spec §6.6)', (
 });
 
 describe('zxingFormatsFor — symbology → zxing BarcodeFormat hints (§6.6)', () => {
-  it("'all' hints the full default set — QR, 1-D part labels and the retail GTIN family", () => {
+  it("'all' hints every supported format — the 2-D codes, the retail GTIN family and 1-D labels", () => {
     expect(zxingFormatsFor('all')).toEqual([
       BarcodeFormat.QR_CODE,
-      BarcodeFormat.CODE_128,
+      BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.AZTEC,
+      BarcodeFormat.PDF_417,
       BarcodeFormat.EAN_13,
       BarcodeFormat.EAN_8,
       BarcodeFormat.UPC_A,
       BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
       BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.CODABAR,
+      BarcodeFormat.ITF,
     ]);
-    // Kept in step with the native format list so both tiers scan the same symbologies.
+    // Derived from the native format list, so the two tiers can never scan different symbologies.
     expect(zxingFormatsFor('all')).toHaveLength(ALL_NATIVE_FORMATS.length);
   });
 
@@ -55,5 +61,7 @@ describe('zxingFormatsFor — symbology → zxing BarcodeFormat hints (§6.6)', 
     expect(zxingFormatsFor('code_128')).toEqual([BarcodeFormat.CODE_128]);
     expect(zxingFormatsFor('ean_13')).toEqual([BarcodeFormat.EAN_13]);
     expect(zxingFormatsFor('code_39')).toEqual([BarcodeFormat.CODE_39]);
+    expect(zxingFormatsFor('data_matrix')).toEqual([BarcodeFormat.DATA_MATRIX]);
+    expect(zxingFormatsFor('itf')).toEqual([BarcodeFormat.ITF]);
   });
 });

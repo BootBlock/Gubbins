@@ -55,7 +55,46 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
   }),
 }));
 
+// Stub the product-lookup panel: its own network/consent path is unit-tested in the scraping
+// feature. Here it just surfaces a button that resolves a fixed product, so the overlay's *wiring*
+// (issue #59) — showing the found product and carrying it into the Add-item hand-off — is pinned
+// without a real bridge/toast provider tree.
+vi.mock('@/features/scraping', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/scraping')>()),
+  ProductLookupPanel: ({
+    barcode,
+    onResult,
+  }: {
+    barcode: string;
+    onResult: (p: {
+      gtin: string;
+      name: string;
+      brand: string | null;
+      description: string | null;
+      quantity: string | null;
+    }) => void;
+  }) => (
+    <button
+      data-testid="stub-product-lookup"
+      onClick={() =>
+        onResult({
+          gtin: barcode,
+          name: 'Vitamin C tablets',
+          brand: 'Acme',
+          description: null,
+          quantity: null,
+        })
+      }
+    >
+      look up
+    </button>
+  ),
+}));
+
 import { ScannerOverlay } from './ScannerOverlay';
+
+// A valid EAN-13 (check digit correct) so it parses as a GTIN rather than a raw code.
+const EAN13 = '4006381333931';
 
 const baseItem: Item = {
   id: 'item-1',
@@ -119,10 +158,34 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
     // Both accepted code kinds and the on-device boundary are spelled out.
     expect(dialog).toHaveTextContent('Gubbins labels');
     expect(dialog).toHaveTextContent('Product barcodes');
-    expect(dialog).toHaveTextContent(/doesn.t look products up on the web/i);
+    expect(dialog).toHaveTextContent(/Looking a product up online is optional/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+  });
+});
+
+describe('ScannerOverlay — unknown barcode product lookup (issue #59)', () => {
+  it('offers a lookup for an unknown barcode and carries the found product into Add item', async () => {
+    const onCreateFromBarcode = vi.fn();
+    render(<ScannerOverlay open onClose={vi.fn()} onCreateFromBarcode={onCreateFromBarcode} />);
+
+    // Scan a valid retail barcode no item carries (getByBarcode → null) via the manual seam.
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value: EAN13 } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+    await screen.findByTestId('scanner-gtin-result');
+
+    // The lookup affordance is offered; resolving it shows the found product…
+    fireEvent.click(screen.getByTestId('stub-product-lookup'));
+    const found = await screen.findByTestId('scanner-gtin-product');
+    expect(found).toHaveTextContent('Vitamin C tablets');
+
+    // …and creating from the barcode hands the resolved product to the parent to pre-fill the form.
+    fireEvent.click(screen.getByTestId('scanner-create-from-barcode'));
+    expect(onCreateFromBarcode).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ name: 'Vitamin C tablets', brand: 'Acme' }),
+    );
   });
 });
 
