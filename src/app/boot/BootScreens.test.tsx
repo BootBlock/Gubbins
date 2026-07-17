@@ -81,4 +81,12 @@ describe('UnsupportedScreen', () => {
     expect(report).toHaveTextContent('serviceWorkerControlling: false');
     expect(report).toHaveTextContent('missing: Cross-Origin Isolation (COOP/COEP), SharedArrayBuffer');
   });
+
+  it('links the shared boot-screen footer to the public project home', () => {
+    render(<UnsupportedScreen diagnosis={diagnosis('isolation-blocked')} />);
+    const footer = screen.getByRole('link', { name: 'Gubbins · local-first inventory' });
+    expect(footer).toHaveAttribute('href', 'https://github.com/BootBlock/Gubbins');
+    expect(footer).toHaveAttribute('target', '_blank');
+    expect(footer).toHaveAttribute('rel', 'noreferrer');
+  });
 });
