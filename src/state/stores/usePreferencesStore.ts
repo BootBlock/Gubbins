@@ -337,6 +337,16 @@ interface PreferencesStore {
   /** Show the first-run "getting started" panel while the inventory is still empty. */
   readonly dashboardGettingStarted: boolean;
   /**
+   * Hide dashboard alert cards that currently have nothing to report (issue #111) — a
+   * Low-stock card with everything in stock, Overdue with no late loans, and so on. Only the
+   * exception/attention cards (low stock, soon to expire, overdue, maintenance due, budget
+   * alerts) are affected; the informational cards (totals, recent activity, system status) are
+   * always shown. **Off by default** so the full board stays discoverable. The board only probes
+   * the alert widgets' "all clear" state while this is on. Ignored while the board is being
+   * customised, so every card can be arranged.
+   */
+  readonly hideHealthyDashboardCards: boolean;
+  /**
    * Whether the user has dismissed the dashboard "keep your data safe" backup/sync nudge.
    * The nudge shows once there's data to protect and no sync provider is connected; dismissing
    * it (or connecting a sync provider) hides it. Persisted so it stays dismissed across sessions.
@@ -474,6 +484,8 @@ interface PreferencesStore {
   setDashboardCommandPalette: (enabled: boolean) => void;
   setDashboardQuickActions: (enabled: boolean) => void;
   setDashboardGettingStarted: (enabled: boolean) => void;
+  /** Turn "hide healthy cards" (issue #111) on/off for the dashboard board. */
+  setHideHealthyDashboardCards: (enabled: boolean) => void;
   /** Permanently dismiss the dashboard backup/sync nudge. */
   dismissBackupNudge: () => void;
   /** Permanently dismiss the pre-1.0 work-in-progress warning banner (after confirmation). */
@@ -553,6 +565,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dashboardCommandPalette: true,
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
+      hideHealthyDashboardCards: false,
       backupNudgeDismissed: false,
       wipBannerDismissed: false,
       bridgeUrl: '',
@@ -652,6 +665,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),
+      setHideHealthyDashboardCards: (hideHealthyDashboardCards) => set({ hideHealthyDashboardCards }),
       dismissBackupNudge: () => set({ backupNudgeDismissed: true }),
       dismissWipBanner: () => set({ wipBannerDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),

@@ -22,6 +22,21 @@ thing they summarise (select the Low stock widget to jump to what's low, for ins
 > Put the widgets you act on most at the top. If you manage a busy loan pool, lead with overdue
 > and upcoming; if you run a parts store, lead with low stock and in-transit.
 
+## Hide cards with nothing to report
+
+If you'd rather the dashboard stayed quiet when all is well, turn on **Hide cards with nothing to
+report** under **Settings → Dashboard**. While it's on, an **alert card** is hidden whenever it has
+nothing to flag — Low stock when everything's in stock, Overdue with no late loans, Soon to expire
+with nothing due, Maintenance due when nothing is due, and Budget alerts when every project is on
+track. A card reappears the moment it has something to report, so you never miss anything.
+
+The informational cards — Inventory totals, Recent activity, and the system-status cards — are
+always shown, since they have no "problem" to clear.
+
+> **ℹ️ Note**
+> **Customise** always shows every card, even the ones currently hidden, so you can still rearrange
+> the board. The setting is off by default.
+
 ## Quick actions & nav tiles
 
 The dashboard also offers quick actions (add, scan, search) and navigation tiles to your other
