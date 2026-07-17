@@ -19,6 +19,11 @@
  * - **Theme-correct.** The engine reads its colours from the `--precip-*` tokens; a light/dark
  *   change (explicit mode / OLED / high-contrast, or an OS scheme flip under `system`) triggers a
  *   colour refresh without resetting the falling field.
+ * - **Cards yield to it.** While the layer is actually painting, it projects `data-bg-effect` on
+ *   `<html>`; the `styles/index.css` block re-mixes `--card` to 90% opacity (the `soft` surface-style
+ *   mix, applied automatically) so the drifting effect shows faintly through content surfaces
+ *   (cards, item rows) — issue #75. The attribute tracks the real paint state (cleared whenever the
+ *   layer is hidden), so cards stay solid when no effect is on screen.
  */
 import { useEffect, useRef } from 'react';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -60,6 +65,18 @@ export function BackgroundEffects() {
   useEffect(() => {
     controllerRef.current?.refresh();
   }, [mode, oledDark, highContrast]);
+
+  // Project `data-bg-effect` on <html> while the layer is actually painting, so the CSS can
+  // re-mix `--card` translucent (issue #75). Keyed off the same `hidden`/`effect` signals the
+  // canvas uses, so the attribute never lingers when nothing is on screen; cleared on unmount.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (hidden) delete root.dataset.bgEffect;
+    else root.dataset.bgEffect = effect;
+    return () => {
+      delete root.dataset.bgEffect;
+    };
+  }, [hidden, effect]);
 
   // …and when the OS colour scheme flips under `system` mode (no store field changes then).
   useEffect(() => {

@@ -53,7 +53,9 @@ calmer centred layout.
 Gubbins has some gentle visual polish that you can dial up or down:
 
 - **Animation** — how animated the interface is, from calm to lively.
-- **Background effect** — an optional soft animated layer behind every screen.
+- **Background effect** — an optional soft animated layer behind every screen (gentle falling
+  snow or rain). While an effect is running, cards and item rows turn very slightly translucent
+  so the drift shows faintly through them, then return to solid when you switch it off.
 - **Holographic foil cards** / **Collector cards** — playful trading-card shimmer and rarity
   frames on item cards.
 

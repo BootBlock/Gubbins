@@ -16,6 +16,7 @@ afterEach(() => {
   cleanup();
   usePreferencesStore.setState({ backgroundEffect: 'none' });
   useBackdropStore.setState({ backdropActive: false });
+  delete document.documentElement.dataset.bgEffect;
 });
 
 describe('BackgroundEffects', () => {
@@ -42,5 +43,31 @@ describe('BackgroundEffects', () => {
     const { container } = render(<BackgroundEffects />);
     expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId('background-effects')).toBeNull();
+  });
+
+  it('projects data-bg-effect on <html> while an effect is painting (cards go translucent — issue #75)', () => {
+    usePreferencesStore.setState({ backgroundEffect: 'snow' });
+    render(<BackgroundEffects />);
+    expect(document.documentElement.dataset.bgEffect).toBe('snow');
+  });
+
+  it('clears data-bg-effect when the effect is off and on unmount', () => {
+    usePreferencesStore.setState({ backgroundEffect: 'rain' });
+    const { unmount, rerender } = render(<BackgroundEffects />);
+    expect(document.documentElement.dataset.bgEffect).toBe('rain');
+    // Switching the effect off clears the attribute so cards return to solid.
+    usePreferencesStore.setState({ backgroundEffect: 'none' });
+    rerender(<BackgroundEffects />);
+    expect(document.documentElement.dataset.bgEffect).toBeUndefined();
+    unmount();
+    expect(document.documentElement.dataset.bgEffect).toBeUndefined();
+  });
+
+  it('does not project the attribute while yielding to a full-viewport backdrop', () => {
+    // Hidden means nothing is painting, so cards must stay solid — no attribute.
+    usePreferencesStore.setState({ backgroundEffect: 'rain' });
+    useBackdropStore.setState({ backdropActive: true });
+    render(<BackgroundEffects />);
+    expect(document.documentElement.dataset.bgEffect).toBeUndefined();
   });
 });
