@@ -24,9 +24,9 @@
  *     phrase resolved against the caller-supplied location names (longest match wins).
  *   - **Category mentions** — a category name appearing in the phrase → `category = <id>`.
  *   - **Residual words** — whatever is left, minus filler words → a **multi-field** text
- *     match: each leftover keyword is searched across the item's name, description and
- *     manufacturer (OR), and the keywords are ANDed, so a vaguer description whose words
- *     live in the *description* rather than the *name* still surfaces the item. Each keyword
+ *     match: each leftover keyword is searched across the item's name, description,
+ *     manufacturer and notes (OR), and the keywords are ANDed, so a vaguer phrase whose words
+ *     live in the *description* or *notes* rather than the *name* still surfaces the item. Each keyword
  *     is singularised and expanded with British/American spelling variants first, so
  *     "batteries" / "grey" also find "battery" / "gray".
  *
@@ -142,11 +142,11 @@ const LOCATION_DETERMINERS = new Set(['the', 'my', 'a', 'our']);
 
 /**
  * The item text columns a residual keyword is matched against — broadened from the old
- * name-only search so plain-English words that live in an item's description or manufacturer
- * surface it too. All three are FTS-scoped-searchable columns (in `FTS_ITEM_COLUMNS`)
- * that {@link parseASTtoSQL} accepts a column-scoped `CONTAINS` against.
+ * name-only search so plain-English words that live in an item's description, manufacturer
+ * or free-text notes surface it too. All four are FTS-scoped-searchable columns (in
+ * `FTS_ITEM_COLUMNS`) that {@link parseASTtoSQL} accepts a column-scoped `CONTAINS` against.
  */
-const TEXT_SEARCH_FIELDS = ['name', 'description', 'manufacturer'] as const;
+const TEXT_SEARCH_FIELDS = ['name', 'description', 'manufacturer', 'notes'] as const;
 
 /**
  * A small, high-confidence set of British/American spelling variants (plus adapter/adaptor),
@@ -572,7 +572,7 @@ function longestNameMatch(
  *
  * Each leftover keyword is searched across **every** item text field ({@link
  * TEXT_SEARCH_FIELDS}) rather than the name alone, so a vaguer phrase whose words live in
- * an item's description or manufacturer still surfaces it. Keywords are **ANDed**
+ * an item's description, manufacturer or notes still surfaces it. Keywords are **ANDed**
  * (each must appear *somewhere*) while a single keyword may match in *any* field (**OR**) —
  * high recall without flooding the alphabetically-ordered results. Each keyword is
  * singularised and spelling-variant-expanded first. The result is a plain {@link SearchAST}
