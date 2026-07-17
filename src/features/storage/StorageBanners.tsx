@@ -6,7 +6,7 @@ import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLikelyMobile } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
-import { isArchiveDue, runFullArchive } from '@/features/archive/auto-archive';
+import { ARCHIVE_NUDGE_SNOOZE_MS, isArchiveDue, runFullArchive } from '@/features/archive/auto-archive';
 import { StorageTriageDialog } from './StorageTriageDialog';
 
 /**
@@ -29,6 +29,8 @@ export function StorageBanners() {
   const providerId = useAuthStore((state) => state.providerId);
   const lastArchivedAt = usePreferencesStore((state) => state.lastArchivedAt);
   const setLastArchivedAt = usePreferencesStore((state) => state.setLastArchivedAt);
+  const archiveNudgeSnoozedUntil = usePreferencesStore((state) => state.archiveNudgeSnoozedUntil);
+  const setArchiveNudgeSnoozedUntil = usePreferencesStore((state) => state.setArchiveNudgeSnoozedUntil);
 
   const [triageOpen, setTriageOpen] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -104,7 +106,11 @@ export function StorageBanners() {
 
   // §2.7: mobile users without active Cloud Sync (where File System Access auto-save is
   // unavailable) get a weekly nudge to download a full archive (SQLite binary + images).
-  if (mobile && providerId === null && isArchiveDue(lastArchivedAt, Date.now())) {
+  // Dismissing it snoozes the nudge for a week rather than hiding it for good, so the
+  // safety-net prompt returns if a fresh archive still hasn't been taken.
+  const now = Date.now();
+  const archiveSnoozed = archiveNudgeSnoozedUntil !== null && now < archiveNudgeSnoozedUntil;
+  if (mobile && providerId === null && !archiveSnoozed && isArchiveDue(lastArchivedAt, now)) {
     banners.push(
       <Banner
         key="archive"
@@ -112,6 +118,10 @@ export function StorageBanners() {
         role="alert"
         icon={<DownloadIcon />}
         heading="Time for a weekly backup"
+        onDismiss={() => setArchiveNudgeSnoozedUntil(Date.now() + ARCHIVE_NUDGE_SNOOZE_MS)}
+        dismissLabel="Dismiss for a week"
+        dismissTestId="archive-nudge-dismiss"
+        dismissTooltip="Hide this reminder for a week. It returns if you still haven't downloaded a backup by then."
         action={
           <Button
             size="sm"

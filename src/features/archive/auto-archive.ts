@@ -19,6 +19,13 @@ import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export
 export const ARCHIVE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * How long dismissing the weekly-backup banner hides it for. A dismissal is a "not now" —
+ * the prompt returns after this window if a fresh archive still hasn't been taken — rather
+ * than an "off forever", so the safety-net nudge can't be silenced permanently by accident.
+ */
+export const ARCHIVE_NUDGE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
  * Archive-zip layout (the single source of truth shared by {@link buildFullArchive} and
  * the restore path, so the two can never drift apart).
  */
