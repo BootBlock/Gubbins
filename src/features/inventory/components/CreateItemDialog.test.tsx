@@ -187,7 +187,7 @@ describe('CreateItemDialog', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Watched' } });
     fireEvent.click(screen.getByTestId('low-stock-policy-custom'));
     // The revealed field is pre-filled with the suggested trigger (5), not left blank.
-    expect(screen.getByLabelText('Low-stock alert at')).toHaveValue(5);
+    expect(screen.getByLabelText('Low-stock alert at')).toHaveValue('5');
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
 
     await waitFor(() => expect(spies.createItem).toHaveBeenCalledTimes(1));
@@ -371,7 +371,7 @@ describe('CreateItemDialog', () => {
     // The lifecycle facets those defaults fill live on the Lifecycle rail tab.
     fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
     expect(screen.getByRole('combobox', { name: 'Condition (optional)' })).toHaveTextContent('Good');
-    expect(screen.getByTestId('item-warranty-months')).toHaveValue(12);
+    expect(screen.getByTestId('item-warranty-months')).toHaveValue('12');
 
     // On create, the condition rides along and the months window becomes an absolute expiry
     // date (no acquired date set ⇒ measured from today, so ~12 months out — next year). The
@@ -401,7 +401,7 @@ describe('CreateItemDialog', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Lifecycle' }));
     expect(screen.getByRole('combobox', { name: 'Condition (optional)' })).toHaveTextContent('Needs repair');
-    expect(screen.getByTestId('item-warranty-months')).toHaveValue(36);
+    expect(screen.getByTestId('item-warranty-months')).toHaveValue('36');
   });
 
   it('derives the warranty expiry from the acquired date + months window at submit (backlog T2)', async () => {

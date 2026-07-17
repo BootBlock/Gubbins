@@ -55,7 +55,7 @@ describe('CustomFieldsEditor — the field description info hint', () => {
     // field control's accessible name, which stays the bare field name.
     h.fields = [resolved({ name: 'Voltage', description: 'Read from the label on the base.' })];
     render(<CustomFieldsEditor itemId="item-1" />);
-    expect(screen.getByRole('spinbutton', { name: 'Voltage' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Voltage' })).toBeInTheDocument();
   });
 
   it('shows no info badge when the field has no description', () => {

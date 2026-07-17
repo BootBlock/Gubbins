@@ -386,7 +386,7 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
     selectCategory(/Resistors/);
 
     const input = screen.getByLabelText('Default warranty in months');
-    expect(input).toHaveValue(24);
+    expect(input).toHaveValue('24');
     fireEvent.change(input, { target: { value: '' } });
 
     await waitFor(() =>
@@ -440,7 +440,7 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
     selectCategory(/Resistors/);
 
     const input = screen.getByLabelText('Default maintenance interval in days');
-    expect(input).toHaveValue(365);
+    expect(input).toHaveValue('365');
     fireEvent.change(input, { target: { value: '90' } });
 
     await waitFor(() =>
@@ -462,7 +462,7 @@ describe('CategoryManagerDialog — the new-item defaults editor (T3)', () => {
     selectCategory(/Resistors/);
 
     const input = screen.getByLabelText('Default maintenance usage interval');
-    expect(input).toHaveValue(100);
+    expect(input).toHaveValue('100');
     fireEvent.change(input, { target: { value: '250' } });
 
     await waitFor(() =>

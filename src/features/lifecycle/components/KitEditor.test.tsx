@@ -131,7 +131,7 @@ describe('KitEditor — add a component', () => {
       ),
     );
     // onSuccess clears the qty back to 1 for the next entry.
-    expect(screen.getByTestId('kit-qty')).toHaveValue(1);
+    expect(screen.getByTestId('kit-qty')).toHaveValue('1');
   });
 
   it('surfaces an add failure in an alert', async () => {
@@ -207,7 +207,7 @@ describe('KitEditor — assemble / disassemble (v2)', () => {
     fireEvent.click(screen.getByTestId('assemble-kit'));
     expect(h.assemble).toHaveBeenCalledWith({ kitId: 'kit-1', count: 3 }, expect.anything());
     // onSuccess resets the count back to 1.
-    expect(qty).toHaveValue(1);
+    expect(qty).toHaveValue('1');
 
     // Above the ceiling the Assemble button is disabled.
     fireEvent.change(qty, { target: { value: '6' } });

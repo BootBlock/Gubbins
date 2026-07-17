@@ -709,6 +709,7 @@ export default function SettingsDialog({
                   aria-label="Low-stock quantity threshold"
                   data-testid="setting-low-stock-qty"
                   type="number"
+                  calc={false}
                   min={LOW_STOCK_QTY_BOUNDS.min}
                   max={LOW_STOCK_QTY_BOUNDS.max}
                   className="h-9 w-24"
@@ -734,6 +735,7 @@ export default function SettingsDialog({
                   aria-label="Low-stock gauge threshold"
                   data-testid="setting-low-stock-gauge"
                   type="number"
+                  calc={false}
                   min={LOW_STOCK_GAUGE_BOUNDS.min}
                   max={LOW_STOCK_GAUGE_BOUNDS.max}
                   className="h-9 w-24"
@@ -762,6 +764,7 @@ export default function SettingsDialog({
                     aria-label="Expiring soon window (days)"
                     data-testid="setting-expiry-days"
                     type="number"
+                    calc={false}
                     min={EXPIRY_WINDOW_BOUNDS.min}
                     max={EXPIRY_WINDOW_BOUNDS.max}
                     className="h-9 w-24"
@@ -788,6 +791,7 @@ export default function SettingsDialog({
                     aria-label="Budget warning threshold"
                     data-testid="setting-budget-warn"
                     type="number"
+                    calc={false}
                     min={BUDGET_WARN_BOUNDS.min}
                     max={BUDGET_WARN_BOUNDS.max}
                     className="h-9 w-24"
@@ -831,6 +835,7 @@ export default function SettingsDialog({
                 aria-label={t('settings.pagination.size.label')}
                 data-testid="setting-page-size"
                 type="number"
+                calc={false}
                 min={PAGE_SIZE_BOUNDS.min}
                 max={PAGE_SIZE_BOUNDS.max}
                 className="h-9 w-24"

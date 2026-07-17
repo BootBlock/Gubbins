@@ -264,6 +264,9 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
             <span className="mb-field-gap block text-sm font-medium">Quantity</span>
             <Input
               type="number"
+              // Clamped-on-keystroke controlled field: it can't hold an intermediate expression,
+              // so the micro-calculator is opted out here (issue #93).
+              calc={false}
               min={1}
               max={maxQty}
               value={quantity}

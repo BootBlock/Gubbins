@@ -78,7 +78,7 @@ describe('ReorderPointEditor — policy picker', () => {
   it('reveals the trigger pre-seeded with the suggestion when "Custom" is chosen', () => {
     render(<ReorderPointEditor item={discrete()} />);
     fireEvent.click(policy('custom'));
-    expect(screen.getByTestId('reorder-point-input')).toHaveValue(5);
+    expect(screen.getByTestId('reorder-point-input')).toHaveValue('5');
     expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', false);
   });
 
@@ -108,7 +108,7 @@ describe('ReorderPointEditor — policy picker', () => {
   it('starts on "Custom" with the value shown for an already-watched item, pristine', () => {
     render(<ReorderPointEditor item={discrete({ reorderPoint: 20, reorderQty: 50 })} />);
     expect(policy('custom')).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByTestId('reorder-point-input')).toHaveValue(20);
+    expect(screen.getByTestId('reorder-point-input')).toHaveValue('20');
     expect(screen.getByTestId('reorder-point-save')).toHaveProperty('disabled', true);
   });
 
@@ -133,7 +133,7 @@ describe('ReorderPointEditor — policy picker', () => {
     render(<ReorderPointEditor item={gauge()} />);
     expect(screen.queryByTestId('reorder-gauge-input')).toBeNull();
     fireEvent.click(policy('custom'));
-    expect(screen.getByTestId('reorder-gauge-input')).toHaveValue(15);
+    expect(screen.getByTestId('reorder-gauge-input')).toHaveValue('15');
     fireEvent.click(screen.getByTestId('reorder-point-save'));
     expect(spies.update).toHaveBeenCalledWith({
       id: 'item-1',

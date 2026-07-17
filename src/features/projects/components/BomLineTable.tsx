@@ -53,6 +53,8 @@ function ReceiveControl({
     <div className="flex items-center gap-1.5">
       <Input
         type="number"
+        // Coerced-on-keystroke controlled field — opt out of the calculator (issue #93).
+        calc={false}
         min={1}
         max={outstanding}
         value={qty}

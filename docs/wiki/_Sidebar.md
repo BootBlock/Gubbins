@@ -101,6 +101,7 @@
 
 **Reference**
 - [[Command palette & shortcuts|Command-Palette-and-Shortcuts]]
+- [[Calculations in number fields|Calculations-in-Number-Fields]]
 - [[Glossary]]
 - [[FAQ & troubleshooting|FAQ-and-Troubleshooting]]
 - [[Privacy & security|Privacy-and-Security]]

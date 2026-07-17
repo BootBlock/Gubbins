@@ -25,6 +25,8 @@ export {
   CircleCheck as SuccessIcon,
   CircleX as ErrorIcon,
   Info as InfoIcon,
+  // Micro-calculator affordance on number fields that accept a typed sum (issue #93).
+  Calculator as CalculatorIcon,
   // Wayfinding glyph for the "page not found" screen — a friendly "let's find your way".
   Compass as CompassIcon,
 
