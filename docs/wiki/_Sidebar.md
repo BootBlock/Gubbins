@@ -93,6 +93,7 @@
 
 **Settings & customisation**
 - [[Appearance & theming|Appearance-and-Theming]]
+- [[Branding|Branding]]
 - [[Dashboard & widgets|Dashboard-and-Widgets]]
 - [[Modular UI|Modular-UI]]
 - [[Language & region|Language-and-Region]]

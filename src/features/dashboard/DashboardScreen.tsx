@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { LiveRegion, MAIN_CONTENT_ID, PageContainer } from '@/components/foundry';
 import { BrandMark } from '@/components/BrandMark';
+import { BrandTagline } from '@/components/BrandTagline';
 import { AppNav } from '@/components/nav/AppNav';
 import { ExternalLinkIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
@@ -67,6 +68,7 @@ export function DashboardScreen() {
               <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
                 Gubbins
               </h1>
+              <BrandTagline className="text-2xl tracking-tight" />
               <ExternalLinkIcon
                 aria-hidden
                 className="size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100"

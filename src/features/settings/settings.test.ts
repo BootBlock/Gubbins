@@ -49,6 +49,8 @@ const APPEARANCE: Appearance = {
   animationLevel: 'headache',
   holographicCards: true,
   gamifyCards: true,
+  customAccent: { enabled: false, hue: 277 },
+  surfaceStyle: 'solid',
 };
 
 describe('clampExpiryWindowDays', () => {
@@ -239,6 +241,10 @@ describe('applyAppearance', () => {
     delete root.dataset.starfield;
     delete root.dataset.holoCards;
     delete root.dataset.gamifyCards;
+    delete root.dataset.surface;
+    for (const prop of ['--primary', '--primary-foreground', '--ring', '--highlight']) {
+      root.style.removeProperty(prop);
+    }
   });
 
   it('toggles .dark for the resolved mode and sets data-accent', () => {
@@ -306,6 +312,49 @@ describe('applyAppearance', () => {
     expect(root.dataset.gamifyCards).toBeUndefined();
   });
 
+  it('sets data-surface for a translucent surface style and clears it for solid (Branding)', () => {
+    const root = document.createElement('div');
+    // Solid is the default — no attribute (baseline unchanged).
+    applyAppearance({ ...APPEARANCE, surfaceStyle: 'solid' }, root);
+    expect(root.dataset.surface).toBeUndefined();
+    // A translucent style projects the id for the CSS to re-mix the card tokens.
+    applyAppearance({ ...APPEARANCE, surfaceStyle: 'soft' }, root);
+    expect(root.dataset.surface).toBe('soft');
+    applyAppearance({ ...APPEARANCE, surfaceStyle: 'sheer' }, root);
+    expect(root.dataset.surface).toBe('sheer');
+    // Back to solid clears it.
+    applyAppearance({ ...APPEARANCE, surfaceStyle: 'solid' }, root);
+    expect(root.dataset.surface).toBeUndefined();
+  });
+
+  it('projects the custom accent inline for the resolved mode and clears it when off (Branding)', () => {
+    const root = document.createElement('div');
+    // Off — no inline brand tokens; the preset [data-accent] block owns the accent.
+    applyAppearance({ ...APPEARANCE, customAccent: { enabled: false, hue: 30 } }, root);
+    expect(root.style.getPropertyValue('--primary')).toBe('');
+
+    // On, dark mode — the four brand tokens are set inline, tuned for the resolved (dark) mode.
+    applyAppearance({ ...APPEARANCE, mode: 'dark', customAccent: { enabled: true, hue: 30 } }, root);
+    expect(root.style.getPropertyValue('--primary')).toBe('oklch(0.68 0.18 30)');
+    expect(root.style.getPropertyValue('--ring')).toBe('oklch(0.68 0.18 30)');
+    expect(root.style.getPropertyValue('--highlight')).toBe('oklch(0.74 0.18 30)');
+    // Hue 30 is outside the light band (33–245), so near-white foreground.
+    expect(root.style.getPropertyValue('--primary-foreground')).toBe('oklch(0.99 0 0)');
+
+    // On, light mode — the lightness/chroma drop to the light-tuned values.
+    applyAppearance({ ...APPEARANCE, mode: 'light', customAccent: { enabled: true, hue: 120 } }, root);
+    expect(root.style.getPropertyValue('--primary')).toBe('oklch(0.58 0.17 120)');
+    // Hue 120 is in the light band, so dark foreground text.
+    expect(root.style.getPropertyValue('--primary-foreground')).toBe('oklch(0.2 0.03 120)');
+
+    // Turning it back off clears every inline brand token so the preset accent resumes.
+    applyAppearance({ ...APPEARANCE, customAccent: { enabled: false, hue: 120 } }, root);
+    expect(root.style.getPropertyValue('--primary')).toBe('');
+    expect(root.style.getPropertyValue('--primary-foreground')).toBe('');
+    expect(root.style.getPropertyValue('--ring')).toBe('');
+    expect(root.style.getPropertyValue('--highlight')).toBe('');
+  });
+
   it('is idempotent on the .dark class', () => {
     const root = document.createElement('div');
     applyAppearance({ ...APPEARANCE, mode: 'dark' }, root);
@@ -341,6 +390,46 @@ describe('usePreferencesStore — animation level ↔ background effect', () => 
     usePreferencesStore.setState({ animationLevel: 'headache', backgroundEffect: 'none' });
     usePreferencesStore.getState().setAnimationLevel('calm');
     expect(usePreferencesStore.getState().backgroundEffect).toBe('none');
+  });
+});
+
+describe('usePreferencesStore — Branding preferences (issue #110)', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({
+      customAccentEnabled: false,
+      customAccentHue: 277,
+      brandTagline: '',
+      surfaceStyle: 'solid',
+    });
+  });
+
+  it('toggles the custom accent on and off', () => {
+    usePreferencesStore.getState().setCustomAccentEnabled(true);
+    expect(usePreferencesStore.getState().customAccentEnabled).toBe(true);
+    usePreferencesStore.getState().setCustomAccentEnabled(false);
+    expect(usePreferencesStore.getState().customAccentEnabled).toBe(false);
+  });
+
+  it('clamps and wraps the custom accent hue into 0–359°', () => {
+    usePreferencesStore.getState().setCustomAccentHue(120.6);
+    expect(usePreferencesStore.getState().customAccentHue).toBe(121);
+    // Wraps a value past the end back into range rather than clamping flat.
+    usePreferencesStore.getState().setCustomAccentHue(400);
+    expect(usePreferencesStore.getState().customAccentHue).toBe(40);
+    usePreferencesStore.getState().setCustomAccentHue(-10);
+    expect(usePreferencesStore.getState().customAccentHue).toBe(350);
+  });
+
+  it('stores the brand tagline verbatim (trailing spaces preserved for typing)', () => {
+    usePreferencesStore.getState().setBrandTagline('Acme Widgets ');
+    expect(usePreferencesStore.getState().brandTagline).toBe('Acme Widgets ');
+  });
+
+  it('normalises the surface style, ignoring an unknown value', () => {
+    usePreferencesStore.getState().setSurfaceStyle('sheer');
+    expect(usePreferencesStore.getState().surfaceStyle).toBe('sheer');
+    usePreferencesStore.getState().setSurfaceStyle('bogus' as never);
+    expect(usePreferencesStore.getState().surfaceStyle).toBe('solid');
   });
 });
 

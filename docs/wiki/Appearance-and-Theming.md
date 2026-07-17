@@ -25,6 +25,10 @@ The **accent** is the colour used for buttons, links and highlights. Pick from t
 swatches — surfaces stay neutral, so only the accent changes. It's tuned to look right in both
 light and dark mode.
 
+> **💡 Tip**
+> Want a colour that isn't in the row? The **[[Branding|Branding]]** tab lets you dial in *any*
+> accent hue, add your own label beside the app name, and choose how translucent surfaces look.
+
 ## Contrast & legibility
 
 - **Pure black (OLED)** — drops dark-mode surfaces to true black, which lets an OLED display
@@ -63,6 +67,7 @@ Gubbins has some gentle visual polish that you can dial up or down:
 
 ## Related pages
 
+- **[[Branding|Branding]]** — a custom accent hue, your own tagline, and surface translucency.
 - **[[Dashboard & widgets|Dashboard-and-Widgets]]** — arranging your landing screen.
 - **[[Language & region|Language-and-Region]]** — language, currency and date formats.
 - **[[Kiosk & tablet mode|Kiosk-and-Tablet-Mode]]** — a locked-down, always-awake display.

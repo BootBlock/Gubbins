@@ -74,14 +74,19 @@ import {
   normaliseMode,
   normaliseAnimationLevel,
   normaliseBackgroundEffect,
+  normaliseSurfaceStyle,
+  clampAccentHue,
   DEFAULT_ANIMATION_LEVEL,
   DEFAULT_BACKGROUND_EFFECT,
+  DEFAULT_SURFACE_STYLE,
+  DEFAULT_CUSTOM_ACCENT_HUE,
   type Accent,
   type Mode,
   type AnimationLevel,
   type BackgroundEffect,
+  type SurfaceStyle,
 } from '@/features/settings/theme-registry';
-export type { Accent, Mode, AnimationLevel, BackgroundEffect };
+export type { Accent, Mode, AnimationLevel, BackgroundEffect, SurfaceStyle };
 
 /**
  * Datasheet/attachment configuration (spec §4 "Attachments & Datasheets"):
@@ -167,6 +172,33 @@ interface PreferencesStore {
    * the card frame (the dialog gem is gated in JS at its call site).
    */
   readonly gamifyCards: boolean;
+  /**
+   * Branding — **custom accent** toggle (issue #110, Settings → Branding). When on, {@link
+   * customAccentHue} overrides the preset {@link accent}: the apply seam projects the brand tokens
+   * inline on `<html>` for the resolved mode. **Off by default**, so the preset accent is unchanged
+   * until the user opts in. Composes with mode/OLED/high-contrast exactly as a preset accent does.
+   */
+  readonly customAccentEnabled: boolean;
+  /**
+   * Branding — the **custom accent hue** (0–359°) used when {@link customAccentEnabled} is on. The
+   * lightness/chroma and per-hue foreground are derived (`theme-registry.customAccentVars`) so any
+   * hue stays legible; only the hue is stored. Defaults to the signature violet (277°).
+   */
+  readonly customAccentHue: number;
+  /**
+   * Branding — a short **custom tagline** shown beside the fixed "Gubbins" wordmark in the app chrome
+   * (nav header + dashboard hero), e.g. an organisation name, so a user can brand their copy. The
+   * "Gubbins" name itself is never editable — this is an *addition*, never a replacement. Blank by
+   * default (nothing extra shown). Stored verbatim; trimmed and length-guarded at the point of use.
+   */
+  readonly brandTagline: string;
+  /**
+   * Branding — the **surface style** ({@link SurfaceStyle}): how opaque the app's content surfaces
+   * (cards, panels) are. **Defaults to `solid`** (baseline unchanged); `soft`/`sheer` let the
+   * background mode/accent show through. Projected onto `<html>` as `data-surface`; the CSS re-mixes
+   * the card tokens. Overlays stay opaque and high contrast forces solid, so legibility is preserved.
+   */
+  readonly surfaceStyle: SurfaceStyle;
   readonly attachmentMode: AttachmentMode;
   readonly scrapeNotifications: ScrapeNotificationMode;
   /**
@@ -409,6 +441,14 @@ interface PreferencesStore {
   setHolographicCards: (enabled: boolean) => void;
   /** Turn the collector-card rarity gamification on/off. */
   setGamifyCards: (enabled: boolean) => void;
+  /** Turn the custom brand accent on/off (when on, {@link customAccentHue} overrides the preset accent). */
+  setCustomAccentEnabled: (enabled: boolean) => void;
+  /** Set the custom brand accent hue (clamped/wrapped to 0–359°). */
+  setCustomAccentHue: (hue: number) => void;
+  /** Set the custom brand tagline shown beside the "Gubbins" wordmark (stored verbatim). */
+  setBrandTagline: (tagline: string) => void;
+  /** Choose the surface style (opacity of cards/panels). */
+  setSurfaceStyle: (style: SurfaceStyle) => void;
   setAttachmentMode: (mode: AttachmentMode) => void;
   setScrapeNotifications: (mode: ScrapeNotificationMode) => void;
   /** Record the user's consent (or withdrawal) for direct online barcode lookups (issue #59). */
@@ -497,6 +537,11 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // On by default — part of the maximal "I have a headache" tier, and only rendered there.
       holographicCards: true,
       gamifyCards: true,
+      // Branding (issue #110) — off/neutral by default so the shipped look is unchanged until opted into.
+      customAccentEnabled: false,
+      customAccentHue: DEFAULT_CUSTOM_ACCENT_HUE,
+      brandTagline: '',
+      surfaceStyle: DEFAULT_SURFACE_STYLE,
       attachmentMode: 'URL_ONLY',
       scrapeNotifications: 'TOAST',
       allowOnlineProductLookup: false,
@@ -571,6 +616,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setBackgroundEffect: (effect) => set({ backgroundEffect: normaliseBackgroundEffect(effect) }),
       setHolographicCards: (holographicCards) => set({ holographicCards }),
       setGamifyCards: (gamifyCards) => set({ gamifyCards }),
+      setCustomAccentEnabled: (customAccentEnabled) => set({ customAccentEnabled }),
+      // Clamp/wrap so a stale/out-of-range persisted or typed hue can never reach the apply seam.
+      setCustomAccentHue: (hue) => set({ customAccentHue: clampAccentHue(hue) }),
+      // Stored verbatim (like the catalogue letterhead text): trimming on every keystroke would eat a
+      // space the moment it lands at the end, so any incidental whitespace is trimmed at point of use.
+      setBrandTagline: (brandTagline) => set({ brandTagline }),
+      // Normalise so a stale/unknown persisted value can never reach the apply seam / CSS gate.
+      setSurfaceStyle: (style) => set({ surfaceStyle: normaliseSurfaceStyle(style) }),
       setAttachmentMode: (attachmentMode) => set({ attachmentMode }),
       setScrapeNotifications: (scrapeNotifications) => set({ scrapeNotifications }),
       setAllowOnlineProductLookup: (allowOnlineProductLookup) => set({ allowOnlineProductLookup }),

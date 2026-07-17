@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { BrandMark } from '@/components/BrandMark';
+import { BrandTagline } from '@/components/BrandTagline';
 import { AppNav } from '@/components/nav/AppNav';
 import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 import { cn } from '@/lib/utils';
@@ -44,6 +45,7 @@ export function PageHeader({ icon, title, actions, hideSearch, homeTo = '/', cla
       <Link to={homeTo} className="flex items-center gap-2 text-foreground [&_svg]:size-6">
         <BrandMark className="size-9 rounded-xl" />
         <span className="text-lg font-semibold tracking-tight">Gubbins</span>
+        <BrandTagline className="text-lg tracking-tight" />
       </Link>
       <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight [&_svg]:size-5">
         {icon}

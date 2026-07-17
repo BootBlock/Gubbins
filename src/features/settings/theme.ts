@@ -13,7 +13,14 @@
  * pure (the OS preference is injected) so it is unit-testable without a `matchMedia` mock. The
  * appearance registry (`theme-registry.ts`) is the SSOT for the mode/accent ids.
  */
-import { suppressesMotion, type Accent, type AnimationLevel, type Mode } from './theme-registry';
+import {
+  customAccentVars,
+  suppressesMotion,
+  type Accent,
+  type AnimationLevel,
+  type Mode,
+  type SurfaceStyle,
+} from './theme-registry';
 
 /** The CSS class the palette toggles for dark mode (see styles/index.css). */
 export const DARK_CLASS = 'dark';
@@ -66,7 +73,25 @@ export interface Appearance {
    * the maximal `headache` tier, so the attribute alone never forces it on at a calmer level.
    */
   readonly gamifyCards: boolean;
+  /**
+   * Branding — a **custom accent hue** that overrides the preset {@link Accent} when enabled. When
+   * `enabled`, the seam projects the four brand tokens ({@link customAccentVars}) as inline custom
+   * properties on `<html>` for the resolved mode, so they win over the `[data-accent]` stylesheet
+   * block; when off, the inline properties are cleared and the preset accent resumes. The `hue` is a
+   * 0–359° angle.
+   */
+  readonly customAccent: { readonly enabled: boolean; readonly hue: number };
+  /**
+   * Branding — the **surface style** ({@link SurfaceStyle}): how opaque the app's content surfaces
+   * are. Projected as `data-surface="<id>"` (the `solid` default carries no attribute), which the
+   * `[data-surface]` CSS blocks read to re-mix the card tokens. Overlays stay opaque; high contrast
+   * forces solid regardless.
+   */
+  readonly surfaceStyle: SurfaceStyle;
 }
+
+/** The four brand-accent custom properties the seam sets/clears for a custom hue. */
+const CUSTOM_ACCENT_PROPS = ['--primary', '--primary-foreground', '--ring', '--highlight'] as const;
 
 /**
  * Apply `appearance` to `root` (idempotent): toggle `.dark` for the resolved mode, set
@@ -97,4 +122,17 @@ export function applyAppearance(appearance: Appearance, root: HTMLElement = docu
   else delete root.dataset.holoCards;
   if (appearance.gamifyCards) root.dataset.gamifyCards = '';
   else delete root.dataset.gamifyCards;
+  // Branding — surface style: the `solid` default carries no attribute (baseline unchanged); the
+  // translucent styles set `data-surface`, which the styles/index.css blocks read to re-mix `--card`.
+  if (appearance.surfaceStyle !== 'solid') root.dataset.surface = appearance.surfaceStyle;
+  else delete root.dataset.surface;
+  // Branding — custom accent hue: when enabled, set the four brand tokens inline for the *resolved*
+  // mode (light/dark tuned), overriding the [data-accent] block; when off, clear them so the preset
+  // accent resumes. Setting them inline (rather than a stylesheet block) keeps the hue fully dynamic.
+  if (appearance.customAccent.enabled) {
+    const vars = customAccentVars(appearance.customAccent.hue, base === 'dark');
+    for (const prop of CUSTOM_ACCENT_PROPS) root.style.setProperty(prop, vars[prop]);
+  } else {
+    for (const prop of CUSTOM_ACCENT_PROPS) root.style.removeProperty(prop);
+  }
 }
