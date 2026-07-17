@@ -494,4 +494,56 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     const assembled = await items.getById(result.itemId!);
     expect(assembled?.locationId).toBe(UNASSIGNED_LOCATION_ID);
   });
+
+  // --- picking worksheet (issue #121 location-aware gather-and-tick) --------------
+
+  it('lists a picking worksheet with each matched line’s per-location stock, busiest first', async () => {
+    const garage = await locations.create({ name: 'Garage' });
+    const loft = await locations.create({ name: 'Loft' });
+    const p = await projects.create({ name: 'Kit' });
+
+    // A matched part split across two locations (3 in Garage, 5 in Loft after the transfer).
+    const bolt = await items.create({ name: 'Bolt', quantity: 8, locationId: garage.id });
+    await items.transferStock(bolt.id, garage.id, loft.id, 5);
+    const boltLine = await projects.addLine(p.id, { itemId: bolt.id, requiredQty: 4 });
+    // A matched part with nothing on hand, and a free-text (unmatched) line.
+    const empty = await items.create({ name: 'Nut', quantity: 0 });
+    await projects.addLine(p.id, { itemId: empty.id, requiredQty: 2 });
+    await projects.addLine(p.id, { description: 'Custom bracket' });
+
+    const worksheet = await projects.listPickList(p.id);
+    expect(worksheet).toHaveLength(3);
+
+    // Declared order is preserved; the first line carries its per-location breakdown.
+    const first = worksheet[0];
+    expect(first.line.id).toBe(boltLine.id);
+    expect(first.placements.map((s) => [s.locationName, s.quantity])).toEqual([
+      ['Loft', 5],
+      ['Garage', 3],
+    ]);
+    // Matched-but-empty and unmatched lines carry no placements to walk to.
+    expect(worksheet[1].placements).toEqual([]);
+    expect(worksheet[2].placements).toEqual([]);
+  });
+
+  it('ticks and un-ticks a line as picked without moving stock or logging history', async () => {
+    const p = await projects.create({ name: 'Kit' });
+    const item = await items.create({ name: 'Bolt', quantity: 5 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 2 });
+    expect(line.picked).toBe(false);
+    const historyBefore = (await items.getHistory(item.id)).rows.length;
+
+    const picked = await projects.setPicked(line.id, true);
+    expect(picked.picked).toBe(true);
+    // Picking is a transient annotation — no stock movement, no new ledger entry.
+    expect((await items.getById(item.id))?.quantity).toBe(5);
+    expect((await items.getHistory(item.id)).rows).toHaveLength(historyBefore);
+
+    const cleared = await projects.setPicked(line.id, false);
+    expect(cleared.picked).toBe(false);
+  });
+
+  it('rejects picking a line that does not exist', async () => {
+    await expect(projects.setPicked('nope', true)).rejects.toBeInstanceOf(DbError);
+  });
 });

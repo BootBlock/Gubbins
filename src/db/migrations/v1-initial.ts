@@ -665,6 +665,14 @@ export const v1Initial: Migration = {
       sql: `ALTER TABLE project_bom_lines ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0;`,
     },
     {
+      // Per-line "picked" flag (issue #121): marks a BOM line physically gathered during
+      // the location-aware picking pass, so kitting a project becomes a walk-and-tick-off
+      // task ahead of the one-shot finalise. A transient annotation on the line — not a
+      // stock movement — so it needs no ledger entry; it syncs LWW like every other line
+      // column.
+      sql: `ALTER TABLE project_bom_lines ADD COLUMN picked INTEGER NOT NULL DEFAULT 0;`,
+    },
+    {
       sql: `
         CREATE TABLE item_stock (
           id          TEXT    PRIMARY KEY NOT NULL,
