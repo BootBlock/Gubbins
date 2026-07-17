@@ -32,6 +32,22 @@ maker and hobbyist staples like `Battery`, `Cable`, `Electronic component`, `Fas
 `Book`, `Trading card`, `Vinyl record` and `Coin`. Pick one, then rename, extend or trim its
 fields to match your own inventory.
 
+The picker is organised for browsing: sections down the left-hand side — **Workshop**,
+**Electronics**, **Household**, **Crafts & hobbies**, **Media** and **Collectibles**, plus
+**All presets** for the whole library at once — and, on the right, the presets of the chosen
+section. Each preset shows its name, a one-line description and a sample of the custom fields
+it creates, so you can see what you're getting before you add it.
+
+A **search box** above the sections filters the library as you type, matching preset names,
+descriptions and field names alike — so `isbn` finds the `Book` preset and `expiry` finds
+`Food` and `Adhesive`. While you're searching, each section shows how many of its presets
+match. Press the **✕** button — or **Escape** while typing in the search box — to clear the
+search; pressing **Escape** anywhere else (or with the search box empty) closes the picker.
+
+> **ℹ️ Note**
+> A preset whose category already exists is marked **Added** and can't be imported twice, so
+> there's no risk of duplicates.
+
 ## Capabilities
 
 A **capability** is a *weighted* attribute — a property an item **has**, optionally with a

@@ -4,6 +4,7 @@ import { SearchIcon } from '@/components/icons';
 import { Button } from '../button';
 import { Input } from '../input';
 import { Modal } from '../modal';
+import { useSearchEscapeToClear } from '../use-search-escape';
 import { GLYPH_NAMES, getGlyphIcon, isGlyphName } from './glyph-registry';
 import { filterGlyphNames, humanizeGlyphName } from './glyph-name';
 
@@ -68,25 +69,9 @@ export function GlyphPicker({
   const filtered = useMemo(() => filterGlyphNames(GLYPH_NAMES, query), [query]);
   const activeIndex = selected ? filtered.indexOf(selected) : -1;
 
-  // Escape handling that must beat the Modal's own Escape-to-close: a capture-phase
-  // listener runs before Modal's document (bubble) handler. When the search box is
-  // focused and non-empty, Escape clears the filter and keeps the dialog open; otherwise
-  // it falls through to Modal, which cancels. Reading the input's live DOM value (not the
-  // `query` state) keeps this [open]-only effect free of stale closures.
-  useEffect(() => {
-    if (!open) return;
-    const onKeyCapture = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      const input = searchRef.current;
-      if (input && document.activeElement === input && input.value.length > 0) {
-        event.preventDefault();
-        event.stopPropagation();
-        setQuery('');
-      }
-    };
-    document.addEventListener('keydown', onKeyCapture, true);
-    return () => document.removeEventListener('keydown', onKeyCapture, true);
-  }, [open]);
+  // Escape clears a focused, non-empty search box (and only then) — the shared
+  // capture-phase seam; from an empty box it falls through to Modal, which cancels.
+  useSearchEscapeToClear(open, searchRef, () => setQuery(''));
 
   // Keep the highlighted cell in view as the selection moves (keyboard or filter change).
   useEffect(() => {

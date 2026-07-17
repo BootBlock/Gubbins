@@ -61,6 +61,8 @@ export { type GlyphPickerProps } from './glyph-picker/GlyphPicker';
 export { humanizeGlyphName, glyphSearchText, filterGlyphNames } from './glyph-picker/glyph-name';
 export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
 export { resolveTabKey } from './tab-keyboard';
+export { useSearchEscapeToClear } from './use-search-escape';
+export { InputClearButton, type InputClearButtonProps } from './input-clear-button';
 export { Markdown } from './markdown';
 export { InfoHint } from './info-hint';
 export {

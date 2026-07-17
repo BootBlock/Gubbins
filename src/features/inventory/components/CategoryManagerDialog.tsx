@@ -10,7 +10,7 @@ import {
   Tooltip,
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
-import { AddIcon, CategoryIcon, CheckIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
+import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
 import {
   FIELD_TYPES,
   MAINTENANCE_BASES,
@@ -21,6 +21,7 @@ import {
   type MaintenanceBasis,
   type TrackingMode,
 } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
 import {
   useAddCategoryField,
@@ -31,12 +32,7 @@ import {
   useDeleteCategoryField,
   useUpdateCategory,
 } from '../categories';
-import {
-  applyCategoryStarterSeed,
-  CATEGORY_PRESETS,
-  hasCategoryNamed,
-  type CategoryPreset,
-} from '../category-presets';
+import { CategoryPresetPickerDialog } from './CategoryPresetPicker';
 import {
   ATTACHMENT_MODE_LABELS,
   conditionSelectOptions,
@@ -159,11 +155,12 @@ function CategoryManagerBody() {
 }
 
 /**
- * "Add from a preset" affordance (backlog T4, generalised). Opens the {@link PresetPickerDialog}
- * — a library of ready-made schemas ({@link CATEGORY_PRESETS}) a user can import to give a set
- * of items common custom fields in one step, instead of hand-assembling each field. Each import
- * runs through the ordinary create-category / add-field mutation path (no bespoke repository
- * method), so the result is a plain category whose fields propagate to every item using it.
+ * "Add from a preset" affordance (backlog T4, generalised). Opens the
+ * {@link CategoryPresetPickerDialog} — a browsable, searchable library of ready-made schemas a
+ * user can import to give a set of items common custom fields in one step, instead of
+ * hand-assembling each field. Each import runs through the ordinary create-category / add-field
+ * mutation path (no bespoke repository method), so the result is a plain category whose fields
+ * propagate to every item using it.
  */
 function PresetPickerButton({
   existingNames,
@@ -173,22 +170,20 @@ function PresetPickerButton({
   onImported: (categoryId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
 
   return (
     <>
-      <Tooltip
-        content="Import a ready-made category — such as **Battery** or **Food** — pre-filled with the custom fields that kind of item usually needs. You can tweak everything afterwards."
-        triggerTabIndex={-1}
-      >
+      <Tooltip content={t('inventory.presets.openTooltip')} triggerTabIndex={-1}>
         <span className="block">
           <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setOpen(true)}>
             <CategoryIcon />
-            Add from a preset…
+            {t('inventory.presets.open')}
           </Button>
         </span>
       </Tooltip>
       {/* Opened only on click, so this nested dialog always mounts after its parent (modal-stack seam). */}
-      <PresetPickerDialog
+      <CategoryPresetPickerDialog
         open={open}
         onClose={() => setOpen(false)}
         existingNames={existingNames}
@@ -198,114 +193,6 @@ function PresetPickerButton({
         }}
       />
     </>
-  );
-}
-
-/**
- * The preset library picker. Lists every {@link CATEGORY_PRESETS} entry as a card showing the
- * category it creates and the custom fields it adds. Importing drives the ordinary create /
- * add-field mutations; a preset whose category already exists (case-insensitive) is marked
- * "Added" and disabled, so importing is idempotent and never makes a duplicate.
- */
-function PresetPickerDialog({
-  open,
-  onClose,
-  existingNames,
-  onImported,
-}: {
-  open: boolean;
-  onClose: () => void;
-  existingNames: readonly string[];
-  onImported: (categoryId: string) => void;
-}) {
-  const createCategory = useCreateCategory();
-  const addField = useAddCategoryField();
-  const [importingId, setImportingId] = useState<string | null>(null);
-
-  const importPreset = (preset: CategoryPreset) => {
-    setImportingId(preset.id);
-    void applyCategoryStarterSeed(preset.seed, {
-      createCategory: (input) => createCategory.mutateAsync(input),
-      addField: (categoryId, input) => addField.mutateAsync({ categoryId, input }),
-    })
-      .then(onImported)
-      .finally(() => setImportingId(null));
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add a category from a preset"
-      description="Pick a ready-made category. Its custom fields are added to the category itself, so they appear on — and stay editable across — every item you assign to it."
-      className="max-w-xl"
-      scrollBody
-    >
-      <ul className="space-y-2">
-        {CATEGORY_PRESETS.map((preset) => (
-          <li key={preset.id}>
-            <PresetCard
-              preset={preset}
-              added={hasCategoryNamed(existingNames, preset.name)}
-              importing={importingId === preset.id}
-              disabled={importingId !== null}
-              onImport={() => importPreset(preset)}
-            />
-          </li>
-        ))}
-      </ul>
-    </Modal>
-  );
-}
-
-function PresetCard({
-  preset,
-  added,
-  importing,
-  disabled,
-  onImport,
-}: {
-  preset: CategoryPreset;
-  added: boolean;
-  importing: boolean;
-  disabled: boolean;
-  onImport: () => void;
-}) {
-  const fieldCount = preset.seed.fields.length;
-  return (
-    <button
-      type="button"
-      onClick={onImport}
-      disabled={added || disabled}
-      aria-label={added ? `${preset.name} preset already added` : `Add ${preset.name} preset`}
-      className="flex w-full flex-col gap-2 rounded-xl border border-border bg-secondary/20 p-3 text-left transition-colors enabled:hover:border-primary/40 enabled:hover:bg-secondary/40 disabled:cursor-default disabled:opacity-70"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-semibold">{preset.name}</span>
-        {added ? (
-          <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-glyph-success [&_svg]:size-3.5">
-            <CheckIcon aria-hidden />
-            Added
-          </span>
-        ) : (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {importing ? 'Adding…' : `${fieldCount} field${fieldCount === 1 ? '' : 's'}`}
-          </span>
-        )}
-      </div>
-      <span className="text-xs text-muted-foreground">{preset.description}</span>
-      <span className="flex flex-wrap gap-1">
-        {preset.seed.fields.map((field) => (
-          <span
-            key={field.name}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-xs"
-          >
-            {field.name}
-            <span className="text-muted-foreground">{FIELD_TYPE_LABELS[field.fieldType]}</span>
-          </span>
-        ))}
-      </span>
-    </button>
   );
 }
 
