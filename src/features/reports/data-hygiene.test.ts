@@ -98,6 +98,19 @@ describe('buildHygieneReport', () => {
     expect(photo.samples).toHaveLength(2);
   });
 
+  it('carries a distinct healthy-state description for every check', () => {
+    // Regression for the "Possible duplicates — Share an MPN with another item." confusion (#115):
+    // a passing check reads its `passDescription`, phrased as the healthy state, not the failing
+    // condition — so it never contradicts the green "All good" tick it sits beside.
+    const report = buildHygieneReport([ok({ id: 'a' })], { now: NOW, staleDays: 180 });
+    for (const s of report.sections) {
+      expect(s.passDescription.length).toBeGreaterThan(0);
+      expect(s.passDescription).not.toBe(s.description);
+    }
+    const dup = sectionFor(report, 'duplicate-mpn');
+    expect(dup.passDescription).toBe('No two items share an MPN.');
+  });
+
   it('handles an empty inventory', () => {
     const r = buildHygieneReport([], { now: NOW, staleDays: 180 });
     expect(r.totalItems).toBe(0);

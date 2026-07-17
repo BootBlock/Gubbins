@@ -56,7 +56,15 @@ export interface HygieneSample {
 export interface HygieneSection {
   readonly kind: HygieneIssueKind;
   readonly label: string;
+  /** What a *flagged* item's problem is — shown when the check finds offenders. */
   readonly description: string;
+  /**
+   * What a *clean* result means — shown beside the green tick when the check passes. Kept
+   * separate from {@link description} because the failing phrasing ("Share an MPN with another
+   * item.") reads as a contradiction next to an "All good" tick; the passing phrasing states the
+   * healthy state directly ("No two items share an MPN.").
+   */
+  readonly passDescription: string;
   /** Total items failing this check (may exceed `samples.length`). */
   readonly count: number;
   readonly samples: readonly HygieneSample[];
@@ -83,14 +91,45 @@ export interface HygieneOptions {
 const DEFAULT_SAMPLE_LIMIT = 100;
 const MS_PER_DAY = 86_400_000;
 
-const SECTION_META: Record<HygieneIssueKind, { label: string; description: string }> = {
-  'missing-category': { label: 'Missing category', description: 'No category assigned.' },
-  'missing-location': { label: 'Missing location', description: 'Still in the Unassigned holding pen.' },
-  'missing-price': { label: 'Missing price', description: 'No unit cost or supplier price.' },
-  'missing-photo': { label: 'Missing photo', description: 'No image attached.' },
-  'never-counted': { label: 'Never counted', description: 'Stock never verified by a cycle count.' },
-  stale: { label: 'Stale records', description: 'No activity for a long time.' },
-  'duplicate-mpn': { label: 'Possible duplicates', description: 'Share an MPN with another item.' },
+const SECTION_META: Record<
+  HygieneIssueKind,
+  { label: string; description: string; passDescription: string }
+> = {
+  'missing-category': {
+    label: 'Missing category',
+    description: 'No category assigned.',
+    passDescription: 'Every item has a category.',
+  },
+  'missing-location': {
+    label: 'Missing location',
+    description: 'Still in the Unassigned holding pen.',
+    passDescription: 'Every item has a real location.',
+  },
+  'missing-price': {
+    label: 'Missing price',
+    description: 'No unit cost or supplier price.',
+    passDescription: 'Every item has a price.',
+  },
+  'missing-photo': {
+    label: 'Missing photo',
+    description: 'No image attached.',
+    passDescription: 'Every item has a photo.',
+  },
+  'never-counted': {
+    label: 'Never counted',
+    description: 'Stock never verified by a cycle count.',
+    passDescription: "Every item's stock has been counted.",
+  },
+  stale: {
+    label: 'Stale records',
+    description: 'No activity for a long time.',
+    passDescription: 'Every item has recent activity.',
+  },
+  'duplicate-mpn': {
+    label: 'Possible duplicates',
+    description: 'Shares an MPN with another item.',
+    passDescription: 'No two items share an MPN.',
+  },
 };
 
 /** The order sections are emitted in. */
@@ -129,6 +168,7 @@ function section(
     kind,
     label: SECTION_META[kind].label,
     description: SECTION_META[kind].description,
+    passDescription: SECTION_META[kind].passDescription,
     count: offenders.length,
     samples: offenders.slice(0, sampleLimit),
   };
