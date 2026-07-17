@@ -102,6 +102,17 @@ export function hasBarcodeDetector(): boolean {
 }
 
 /**
+ * True when the Web NFC API (`NDEFReader`) is available — tap-to-scan and writing item
+ * deep-links to NFC tags (issue #71). Chromium-on-Android only (Chrome/Samsung Internet/
+ * Opera Mobile) and secure-context only; absent everywhere else (desktop, iOS, Firefox),
+ * where the NFC affordances simply don't appear. Never gate correctness on this — it is a
+ * progressive enhancement alongside the camera scanner.
+ */
+export function hasNfc(): boolean {
+  return typeof globalThis !== 'undefined' && 'NDEFReader' in globalThis;
+}
+
+/**
  * True when on-device OCR can run — a `Worker` to host the Tesseract WASM engine and
  * `WebAssembly` itself (feature-gap G2). Absent → the opt-in receipt/label scanner degrades
  * to hidden, never a throw. The engine + language model are lazily fetched from our own
@@ -151,6 +162,7 @@ export interface PlatformCapabilities {
   readonly wakeLock: boolean;
   readonly fileSystemAccess: boolean;
   readonly barcodeDetector: boolean;
+  readonly nfc: boolean;
   readonly vibrate: boolean;
   readonly likelyMobile: boolean;
 }
@@ -168,6 +180,7 @@ export function detectCapabilities(): PlatformCapabilities {
     wakeLock: hasWakeLock(),
     fileSystemAccess: hasFileSystemAccess(),
     barcodeDetector: hasBarcodeDetector(),
+    nfc: hasNfc(),
     vibrate: hasVibrate(),
     likelyMobile: isLikelyMobile(),
   };
