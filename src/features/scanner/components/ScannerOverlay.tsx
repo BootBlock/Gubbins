@@ -12,6 +12,7 @@ import {
   HelpIcon,
   InfoIcon,
   MoveIcon,
+  NfcIcon,
   QrCodeIcon,
   ScanIcon,
   SerialisedIcon,
@@ -23,6 +24,7 @@ import { QuantityStepper } from '@/features/inventory/components/QuantityStepper
 import { useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
 import { isUnlimited } from '@/features/inventory/unlimited';
+import { useFeature } from '@/features/modules/useFeature';
 import { ProductLookupPanel, type ProductLookupResultPayload } from '@/features/scraping';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
@@ -31,6 +33,7 @@ import type { ScannerEngine } from '../barcode-decoder';
 import { isStructuredQrPayload, parseScannedCode } from '../scan-payload';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
+import { useNfcScan } from '../useNfcScan';
 import { useScanner } from '../useScanner';
 import { ScannerViewfinder } from './ScannerViewfinder';
 
@@ -228,6 +231,18 @@ function ScannerOverlayInner({
     symbology,
   });
 
+  // Tap-to-scan over Web NFC (issue #71), alongside the camera. Only arms where the user has
+  // the NFC capability on *and* the device supports the API; a tapped tag feeds the same
+  // `handleDecode` path as a camera read, and a start/read failure surfaces via the notice
+  // region (the screen-reader channel) just like a manual-entry miss.
+  const nfcFeature = useFeature('nfc');
+  const nfc = useNfcScan({
+    active: nfcFeature,
+    onRead: (raw) => void handleDecode(raw),
+    onError: setNotice,
+  });
+  const nfcReady = nfcFeature && nfc.supported;
+
   const close = () => {
     dispatch({ type: 'CLOSE' });
     onClose();
@@ -398,6 +413,29 @@ function ScannerOverlayInner({
           onRetry={() => dispatch({ type: 'OPEN' })}
           reticleRef={reticleRef}
         />
+
+        {/* "Ready to tap" NFC indicator (issue #71) — shown only where the NFC capability is on
+            and the device supports Web NFC. `role="status"` announces readiness and any
+            start-time error (e.g. permission denied) once; tapped-tag results are announced
+            through the separate scan-announce region above. */}
+        {nfcReady ? (
+          <div className="absolute inset-x-0 top-3 z-10 flex justify-center px-4">
+            <span
+              role="status"
+              data-testid="scanner-nfc-indicator"
+              className={`flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium backdrop-blur ${
+                nfc.status === 'error' ? 'text-warning' : 'text-white/90'
+              }`}
+            >
+              <NfcIcon className="size-4" aria-hidden />
+              {nfc.status === 'error'
+                ? nfc.error
+                : nfc.status === 'ready'
+                  ? 'Ready — tap an NFC tag'
+                  : 'Starting NFC…'}
+            </span>
+          </div>
+        ) : null}
 
         {/* Discrete result card — act on one scanned item without leaving the scanner. */}
         {scanned ? (
@@ -627,6 +665,16 @@ function ScannerOverlayInner({
                 it — and can look the product up to fill in its name and brand.
               </span>
             </li>
+            {nfcReady ? (
+              <li className="flex gap-3" data-testid="scanner-help-nfc">
+                <NfcIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+                <span>
+                  <span className="font-medium">NFC tags</span> — tap a tag you've written from an item's
+                  label to open it, just like scanning its QR code. Hold the tag flat against the back of your
+                  phone.
+                </span>
+              </li>
+            ) : null}
           </ul>
           <p className="flex gap-2 text-xs text-muted-foreground">
             <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden />

@@ -178,6 +178,8 @@ export {
   // QR, scanner, contacts & checkout (Phase 6, §4 Borrowing, §5, §6)
   QrCode as QrCodeIcon,
   ScanLine as ScanIcon,
+  // Tap-to-scan / write-to-tag over Web NFC (issue #71) — the contactless "wave" glyph.
+  Nfc as NfcIcon,
   Camera as CameraIcon,
   CameraOff as CameraOffIcon,
   Users as ContactsIcon,

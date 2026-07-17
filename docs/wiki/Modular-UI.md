@@ -13,7 +13,7 @@ hidden" prompt).
 
 - **Pages** — whole screens: Projects, Purchase orders, Contacts, Bookings, Reports, and more.
 - **Capabilities** — cross-cutting sub-features woven through the app: Maintenance, Batches,
-  Kits, Variants, Scanner, Sales, and others.
+  Kits, Variants, Scanner, NFC tags, Sales, and others.
 
 A handful of essentials — Dashboard, Inventory, Settings, About — are **always on** and can't be
 hidden.

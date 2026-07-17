@@ -27,6 +27,7 @@ import {
   HomeIcon,
   InfoIcon,
   MaintenanceIcon,
+  NfcIcon,
   PackageIcon,
   PrintIcon,
   ProjectIcon,
@@ -87,6 +88,7 @@ export type FeatureId =
   | 'warranty'
   | 'batches'
   | 'scanner'
+  | 'nfc'
   | 'custom-fields'
   | 'perishables'
   | 'cycle-counts'
@@ -279,6 +281,15 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     label: 'Live camera scanning',
     description: 'Scan barcodes and QR codes with your device camera. Printed labels stay regardless.',
     Icon: ScanIcon,
+    group: 'capabilities',
+  },
+  nfc: {
+    id: 'nfc',
+    kind: 'capability',
+    label: 'NFC tags',
+    description:
+      'Tap an NFC tag to scan an item, and write item links to blank tags. Supported devices only (Android).',
+    Icon: NfcIcon,
     group: 'capabilities',
   },
   'custom-fields': {

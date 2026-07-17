@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select } from '@/components/foundry';
-import { DownloadIcon, PrintIcon } from '@/components/icons';
+import { CloseIcon, DownloadIcon, NfcIcon, PrintIcon, SuccessIcon } from '@/components/icons';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { qrSvg } from '@/features/scanner/qr-code';
+import { useNfcWrite } from '@/features/scanner/useNfcWrite';
+import { useFeature } from '@/features/modules/useFeature';
 import { code128Svg } from '../labels/code128';
 import { LABEL_SYMBOLOGY_OPTIONS, labelBarcodeValue, type LabelSymbology } from '../labels/label-template';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -50,6 +52,17 @@ export function QrCodeDialog({
 
   const url = useMemo(() => buildItemQrUrl(itemId, baseUrl), [itemId, baseUrl]);
   const barcodeValue = useMemo(() => labelBarcodeValue({ id: itemId, mpn: itemMpn }), [itemId, itemMpn]);
+
+  // Write-to-NFC-tag (issue #71): the same deep-link the QR encodes, written to a blank tag so a
+  // later tap resolves it exactly like scanning the printed code. Only offered when the NFC
+  // capability is on and the device supports Web NFC (Android Chromium); inert otherwise. The
+  // armed write is cancelled whenever the dialog closes so it never lingers waiting for a tap.
+  const nfcEnabled = useFeature('nfc');
+  const { supported: nfcSupported, status: nfcStatus, error: nfcError, write, cancel } = useNfcWrite();
+  const nfcWritable = nfcEnabled && nfcSupported;
+  useEffect(() => {
+    if (!open) cancel();
+  }, [open, cancel]);
 
   const showQr = symbology === 'qr' || symbology === 'both';
   const showBarcode = symbology === 'barcode' || symbology === 'both';
@@ -138,7 +151,47 @@ export function QrCodeDialog({
           </p>
         ) : null}
 
+        {/* NFC write status — announced to assistive tech as it changes (arming, success, error).
+            Only present once a write has been started, so the dialog stays uncluttered otherwise. */}
+        {nfcWritable && nfcStatus !== 'idle' ? (
+          <div
+            role="status"
+            data-testid="nfc-write-status"
+            className={`flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm ${
+              nfcStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {nfcStatus === 'writing' ? (
+              <>
+                <NfcIcon className="size-4 animate-pulse" aria-hidden />
+                <span>Hold a blank tag flat against your phone…</span>
+                <Button variant="ghost" size="sm" onClick={cancel} data-testid="nfc-write-cancel">
+                  <CloseIcon /> Cancel
+                </Button>
+              </>
+            ) : nfcStatus === 'success' ? (
+              <>
+                <SuccessIcon className="size-4 text-glyph-success" aria-hidden />
+                <span>Saved to the tag — tap it any time to open this item.</span>
+              </>
+            ) : (
+              <span>{nfcError}</span>
+            )}
+          </div>
+        ) : null}
+
         <div className="flex justify-end gap-2">
+          {nfcWritable ? (
+            <Button
+              variant="outline"
+              onClick={() => write(url)}
+              disabled={nfcStatus === 'writing'}
+              data-testid="nfc-write"
+            >
+              <NfcIcon />
+              {nfcStatus === 'error' ? 'Try again' : 'Write to tag'}
+            </Button>
+          ) : null}
           <Button variant="outline" onClick={download}>
             <DownloadIcon />
             Download SVG

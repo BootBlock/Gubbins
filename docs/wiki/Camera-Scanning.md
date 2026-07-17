@@ -53,6 +53,26 @@ Hold the code inside the box; good light and a steady hand still help most.
 > camera capability off doesn't affect your printed QR codes. See
 > [[Privacy & security|Privacy-and-Security]].
 
+## Tap-to-scan with NFC
+
+On a supported phone, the scanner can also read **NFC tags** — no camera, no line-of-sight. When
+the **NFC tags** capability is on and your device supports it, a **Ready — tap an NFC tag**
+indicator appears at the top of the scanner. Hold a tag you've written from an item's label flat
+against the back of your phone and Gubbins opens that item straight away, just like scanning its QR
+code. It works right alongside the camera, so you can tap a tag or point at a code — whichever is
+handier.
+
+> **💡 Tip**
+> NFC is perfect for a **closed or crammed** bin: stick a tag inside the lid, and a tap on the
+> outside opens the item without opening the box or hunting for a label. See
+> [[writing NFC tags|QR-Codes-and-Label-Printing]] to set them up.
+
+> **ℹ️ Note**
+> Tapping to scan needs a device with **Web NFC** — currently Android phones using a
+> Chromium-based browser (Chrome, Samsung Internet, Opera). On other devices the indicator simply
+> doesn't appear and camera scanning works as normal. The first tap asks your permission to use
+> NFC.
+
 ## When a code isn't found
 
 A barcode with no matching item isn't an error — it just means nothing's linked to it yet. Gubbins
@@ -65,5 +85,6 @@ first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
 
 - **[[Continuous scan & batch actions|Continuous-Scan-and-Batch-Actions]]** — scan many items in
   a row and act on them together.
-- **[[QR codes & label printing|QR-Codes-and-Label-Printing]]** — the labels you scan.
+- **[[QR codes & label printing|QR-Codes-and-Label-Printing]]** — the labels you scan, and writing
+  NFC tags.
 - **[[Receipt & label OCR|Receipt-and-Label-OCR]]** — reading text, not just codes.
