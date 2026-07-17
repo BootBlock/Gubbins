@@ -37,6 +37,7 @@ import {
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
 } from './settings';
+import { DEFAULT_CARD_BADGE_CONTENT, DEFAULT_CARD_BADGE_FALLBACK } from '@/features/inventory/card-badge';
 import { applyAppearance, DARK_CLASS, resolveMode } from './theme';
 import type { Appearance } from './theme';
 
@@ -210,6 +211,34 @@ describe('normaliseCardClickAction', () => {
   it('coerces an unknown/stale persisted value to the default', () => {
     expect(normaliseCardClickAction('checkout')).toBe(DEFAULT_CARD_CLICK_ACTION);
     expect(normaliseCardClickAction('')).toBe(DEFAULT_CARD_CLICK_ACTION);
+  });
+});
+
+describe('usePreferencesStore — item-card badge slot (issue #117)', () => {
+  afterEach(() => {
+    usePreferencesStore.setState({
+      cardBadgeContent: DEFAULT_CARD_BADGE_CONTENT,
+      cardBadgeFallback: DEFAULT_CARD_BADGE_FALLBACK,
+    });
+  });
+
+  it('defaults to the tracking pill with no fallback (the historic behaviour)', () => {
+    const s = usePreferencesStore.getState();
+    expect(s.cardBadgeContent).toBe('tracking');
+    expect(s.cardBadgeFallback).toBe('none');
+  });
+
+  it('sets each choice through its setter, normalising a stale value', () => {
+    usePreferencesStore.getState().setCardBadgeContent('unitPrice');
+    usePreferencesStore.getState().setCardBadgeFallback('tracking');
+    expect(usePreferencesStore.getState().cardBadgeContent).toBe('unitPrice');
+    expect(usePreferencesStore.getState().cardBadgeFallback).toBe('tracking');
+
+    // A stale/unknown value coerces to each preference's own default.
+    usePreferencesStore.getState().setCardBadgeContent('bogus' as never);
+    usePreferencesStore.getState().setCardBadgeFallback('bogus' as never);
+    expect(usePreferencesStore.getState().cardBadgeContent).toBe('tracking');
+    expect(usePreferencesStore.getState().cardBadgeFallback).toBe('none');
   });
 });
 

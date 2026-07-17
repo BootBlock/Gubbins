@@ -15,6 +15,10 @@ vi.mock('@tanstack/react-router', () => ({
 // the grid actually wires it to the rendered Link's onClick.
 const mockDeltaLinkClick = vi.fn();
 
+// The set of "all clear" widget ids the mocked `useHealthyWidgetIds` reports — the
+// "hide healthy cards" tests (issue #111) drive it to control which cards are dropped.
+let mockHealthyIds = new Set<string>();
+
 // A controlled widget registry so this test exercises the grid's gating logic — not the
 // real widgets' data hooks. `featureForRoute` (from the real registry) still resolves the
 // `to` targets below, so the dead-link path is tested end to end against real route data.
@@ -62,6 +66,8 @@ vi.mock('./widgets', () => {
     DASHBOARD_WIDGETS: defs,
     DASHBOARD_WIDGET_IDS: defs.map((d) => d.id),
     widgetById: (id: string) => defs.find((d) => d.id === id),
+    // "Hide healthy cards" probe (issue #111) — driven by the mutable set above.
+    useHealthyWidgetIds: () => mockHealthyIds,
   };
 });
 
@@ -70,6 +76,7 @@ import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /** The widget board no longer owns the Customise toggle — enter edit mode via the shared store. */
 function enterCustomise(): void {
@@ -80,6 +87,8 @@ beforeEach(() => {
   useModulesStore.setState({ intent: {} });
   useLayoutStore.setState({ dashboardLayout: [] });
   useDashboardCustomise.setState({ editing: false });
+  usePreferencesStore.setState({ hideHealthyDashboardCards: false });
+  mockHealthyIds = new Set<string>();
 });
 afterEach(() => {
   cleanup();
@@ -87,6 +96,8 @@ afterEach(() => {
   useLayoutStore.setState({ dashboardLayout: [] });
   useDashboardCustomise.setState({ editing: false });
   useSettingsDialog.setState({ open: false, initialTab: undefined });
+  usePreferencesStore.setState({ hideHealthyDashboardCards: false });
+  mockHealthyIds = new Set<string>();
 });
 
 /** The `<a>` wrapping a tile, or `null` when the tile isn't a live link. */
@@ -220,6 +231,53 @@ describe('DashboardGrid — shared Customise mode', () => {
     enterCustomise();
     expect(screen.getByTestId('widget-hide-alpha')).toBeInTheDocument();
     expect(screen.getByTestId('reset-dashboard')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardGrid — hide healthy cards (issue #111)', () => {
+  it('keeps every card on the board when the option is off, whatever the probe reports', () => {
+    // The option is off (default), so even a reported-healthy card stays shown — and the
+    // probe isn't even mounted, so its set is irrelevant.
+    mockHealthyIds = new Set(['gamma']);
+    render(<DashboardGrid />);
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+    expect(screen.getByTestId('widget-alpha')).toBeInTheDocument();
+  });
+
+  it('hides an all-clear card in view mode, leaving the others on the board', () => {
+    usePreferencesStore.setState({ hideHealthyDashboardCards: true });
+    mockHealthyIds = new Set(['gamma']);
+    render(<DashboardGrid />);
+    expect(screen.queryByTestId('widget-gamma')).toBeNull();
+    expect(screen.queryByText('Gamma body')).toBeNull();
+    // Every card with something to report stays.
+    expect(screen.getByTestId('widget-alpha')).toBeInTheDocument();
+    expect(screen.getByTestId('widget-beta')).toBeInTheDocument();
+  });
+
+  it('still shows every card while customising, so the board can be arranged', () => {
+    usePreferencesStore.setState({ hideHealthyDashboardCards: true });
+    mockHealthyIds = new Set(['gamma']);
+    render(<DashboardGrid />);
+    // Hidden in view mode…
+    expect(screen.queryByTestId('widget-gamma')).toBeNull();
+    // …but Customise mode ignores the healthy set so the card can be moved/hidden manually.
+    enterCustomise();
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+  });
+
+  it('never rewrites the persisted layout when it hides an all-clear card', () => {
+    const seeded = [
+      { id: 'alpha', x: 0, y: 0, visible: true },
+      { id: 'gamma', x: 1, y: 0, visible: true },
+    ];
+    useLayoutStore.setState({ dashboardLayout: seeded });
+    usePreferencesStore.setState({ hideHealthyDashboardCards: true });
+    mockHealthyIds = new Set(['gamma']);
+    render(<DashboardGrid />);
+    // Hiding is a render-only transform — the stored coordinates are untouched, so turning
+    // the option back off (or clearing the alert) restores the card exactly where it was.
+    expect(useLayoutStore.getState().dashboardLayout).toEqual(seeded);
   });
 });
 
