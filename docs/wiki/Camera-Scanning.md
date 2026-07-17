@@ -10,12 +10,20 @@ scanning** capability is enabled ([[Modular UI|Modular-UI]]).
 
 Gubbins reads codes using your browser's built-in barcode detector where available, and falls
 back to an off-thread software decoder (WASM) where it isn't — so scanning works across a wide
-range of devices, including older ones. It reads **QR codes** and the full family of common
-retail barcodes — EAN‑13, EAN‑8, UPC‑A, UPC‑E — plus Code 128 and Code 39 part labels, and skips
-frames adaptively to stay smooth.
+range of devices, including older ones. It reads **QR codes**, the full family of common retail
+barcodes — EAN‑13, EAN‑8, UPC‑A, UPC‑E — and the usual 1‑D part labels and 2‑D codes (Code 128,
+Code 39, Code 93, Codabar, ITF, Data Matrix, Aztec and PDF417), skipping frames adaptively to stay
+smooth. Where your camera supports it, Gubbins keeps the picture in focus automatically so a code
+held at reading distance stays sharp.
 
 Scan a code and Gubbins matches it to an item by its barcode, then lets you act on it — view it,
 adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it.
+
+> **💡 Tip**
+> Scanning every kind of code at once is convenient, but if you only ever scan one type — say
+> **EAN‑13** for retail products — choosing just that under **[[Settings → Scanning &
+> labels|Camera-Scanning]]** makes each read faster and more reliable. Leave it on *all supported
+> codes* if you scan a mix.
 
 While the camera is live you'll see a large framing box with a moving sweep line and a
 **Scanning…** indicator, so it's always clear the camera is working and looking for a code.
@@ -47,8 +55,11 @@ Hold the code inside the box; good light and a steady hand still help most.
 
 ## When a code isn't found
 
-A barcode with no matching item isn't an error — it just means nothing's linked to it yet. You
-can create an item for it, or (for groceries) try a [[product lookup|Scraping-Supplier-Data]].
+A barcode with no matching item isn't an error — it just means nothing's linked to it yet. Gubbins
+offers to **add an item** with the barcode already saved to it, and — right there in the scanner —
+to **look the product up** so its name and brand are filled in for you before you add it. That
+lookup is optional: it happens only when you tap **Look up**, and you're asked once before the
+first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
 
 ## Related pages
 

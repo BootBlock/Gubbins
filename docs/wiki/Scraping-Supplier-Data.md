@@ -21,7 +21,9 @@ part currently costs.
 
 When you add or edit an item, a **Look up product** panel appears next to a filled‑in **Barcode**.
 It fetches the product's **name and brand** from the open, free **Open Food Facts** database and
-fills any empty fields — handy on a phone where you've just scanned a grocery barcode.
+fills any empty fields — handy on a phone where you've just scanned a grocery barcode. The same
+lookup is offered straight from the **[[camera scanner|Camera-Scanning]]** when you scan a barcode
+that isn't in your inventory yet, so the new item can be pre‑filled before you even add it.
 
 - **With the [[companion extension|Companion-Extension-Setup]]** installed, the extension does the
   lookup for you.

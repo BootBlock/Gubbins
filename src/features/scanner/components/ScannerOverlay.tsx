@@ -23,6 +23,7 @@ import { QuantityStepper } from '@/features/inventory/components/QuantityStepper
 import { useItem, useLocations } from '@/features/inventory/queries';
 import { useMoveItem } from '@/features/inventory/mutations';
 import { isUnlimited } from '@/features/inventory/unlimited';
+import { ProductLookupPanel, type ProductLookupResultPayload } from '@/features/scraping';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
@@ -54,10 +55,12 @@ export function ScannerOverlay({
   onLocationScanned?: (locationId: string) => void;
   /**
    * Called with a valid retail barcode (GTIN) that no existing item carries — the parent
-   * opens the add-item form pre-filled with it (recommendation point 1). When omitted, an
-   * unknown barcode is still recognised but the "Add item" affordance is hidden.
+   * opens the add-item form pre-filled with it (recommendation point 1). When a product lookup
+   * has already resolved the barcode here, the resolved product rides along so the form pre-fills
+   * its name/brand/description too (issue #59). When omitted, an unknown barcode is still
+   * recognised but the "Add item" affordance is hidden.
    */
-  onCreateFromBarcode?: (gtin: string) => void;
+  onCreateFromBarcode?: (gtin: string, product?: ProductLookupResultPayload) => void;
   /**
    * Called with the scanned item when the user taps "View details" on the Discrete result
    * card — the scanner has no deep-linkable item route (detail is dialog/list state), so the
@@ -87,7 +90,7 @@ function ScannerOverlayInner({
 }: {
   onClose: () => void;
   onLocationScanned?: (locationId: string) => void;
-  onCreateFromBarcode?: (gtin: string) => void;
+  onCreateFromBarcode?: (gtin: string, product?: ProductLookupResultPayload) => void;
   onViewItem?: (item: Item) => void;
 }) {
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
@@ -116,6 +119,9 @@ function ScannerOverlayInner({
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
   // A recognised retail barcode that no item carries yet — offer to create one (point 1).
   const [gtinResult, setGtinResult] = useState<string | null>(null);
+  // A product resolved for that unknown barcode via an online / extension lookup (issue #59), so
+  // the "Add item" hand-off can pre-fill its name and brand rather than just the bare number.
+  const [lookupResult, setLookupResult] = useState<ProductLookupResultPayload | null>(null);
   const [checkoutItem, setCheckoutItem] = useState<Item | null>(null);
   const [batchName, setBatchName] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
@@ -160,6 +166,7 @@ function ScannerOverlayInner({
       const presentItem = (item: Item) => {
         setNotice(null);
         setGtinResult(null);
+        setLookupResult(null);
         if (state.mode === 'CONTINUOUS') {
           const added = queue.offer(item.id, item.name);
           if (added) feedback.current.confirm(confirmOpts);
@@ -196,6 +203,7 @@ function ScannerOverlayInner({
         feedback.current.confirm(confirmOpts);
         dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
         setDiscreteResult(null);
+        setLookupResult(null);
         setGtinResult(code.gtin);
         return;
       }
@@ -235,6 +243,7 @@ function ScannerOverlayInner({
   const scanAgain = () => {
     setDiscreteResult(null);
     setGtinResult(null);
+    setLookupResult(null);
     setSingleMove('');
     dispatch({ type: 'RESUME_SCANNING' });
   };
@@ -263,13 +272,16 @@ function ScannerOverlayInner({
     onClose();
   };
 
-  // Hand a fresh barcode to the parent to seed the add-item form, then close the scanner.
+  // Hand a fresh barcode to the parent to seed the add-item form, then close the scanner. A
+  // product resolved by the lookup rides along so its name/brand pre-fill the form too (issue #59).
   const createFromBarcode = () => {
     if (!gtinResult) return;
     const gtin = gtinResult;
+    const product = lookupResult ?? undefined;
     setGtinResult(null);
+    setLookupResult(null);
     dispatch({ type: 'CLOSE' });
-    onCreateFromBarcode?.(gtin);
+    onCreateFromBarcode?.(gtin, product);
     onClose();
   };
 
@@ -454,7 +466,22 @@ function ScannerOverlayInner({
             <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-gtin-result">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">New barcode</p>
               <p className="font-mono text-lg font-semibold tracking-wide">{gtinResult}</p>
-              <p className="text-sm text-muted-foreground">No item in your inventory has this barcode yet.</p>
+              {lookupResult ? (
+                <p className="text-sm text-muted-foreground" data-testid="scanner-gtin-product">
+                  Found <span className="font-medium text-foreground">{lookupResult.name}</span>
+                  {lookupResult.brand ? ` · ${lookupResult.brand}` : ''} — its details will pre-fill the new
+                  item.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No item in your inventory has this barcode yet.
+                </p>
+              )}
+              {/* Identify the product by its barcode (issue #59): the same keyless lookup the add-item
+                  form offers — the companion extension when present, else the open Open Food Facts
+                  database after a one-time consent. On a hit its name/brand pre-fill the new item. It
+                  renders nothing when the lookup capability is off, so it degrades to manual entry. */}
+              {!lookupResult ? <ProductLookupPanel barcode={gtinResult} onResult={setLookupResult} /> : null}
               <div className="flex gap-2">
                 {onCreateFromBarcode ? (
                   <Button onClick={createFromBarcode} data-testid="scanner-create-from-barcode">
@@ -597,15 +624,15 @@ function ScannerOverlayInner({
               <span>
                 <span className="font-medium">Product barcodes</span> — a shop's EAN or UPC barcode. Gubbins
                 finds the item that already carries it, or offers to add a new item with the barcode saved to
-                it.
+                it — and can look the product up to fill in its name and brand.
               </span>
             </li>
           </ul>
           <p className="flex gap-2 text-xs text-muted-foreground">
             <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
-              Codes are matched against your own inventory on this device — Gubbins doesn't look products up
-              on the web.
+              Codes are matched against your own inventory on this device first. Looking a product up online
+              is optional — it happens only when you tap “Look up”, and you're asked before the first time.
             </span>
           </p>
           <Button onClick={() => setHelpOpen(false)} className="w-full">

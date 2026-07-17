@@ -53,6 +53,7 @@ import {
 } from '@/components/foundry';
 import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
+import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
 import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
@@ -194,6 +195,9 @@ function InventoryWorkspace() {
   // A retail barcode scanned for an item that doesn't exist yet — seeds the add-item form
   // (recommendation point 1). Cleared when the dialog closes.
   const [scanBarcode, setScanBarcode] = useState<string | null>(null);
+  // A product the scanner resolved for that barcode via a lookup (issue #59): pre-fills the
+  // add-item form's name/brand/description alongside the barcode. Cleared with the dialog.
+  const [scanProduct, setScanProduct] = useState<ProductLookupResultPayload | null>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -1108,6 +1112,7 @@ function InventoryWorkspace() {
           onClose={() => {
             setAddOpen(false);
             setScanBarcode(null);
+            setScanProduct(null);
           }}
           locations={flatLocations}
           defaultLocationId={defaultLocationForNewItem(
@@ -1115,7 +1120,16 @@ function InventoryWorkspace() {
             flatLocations,
             markedDefaultLocationId(flatLocations),
           )}
-          initialValues={scanBarcode ? { barcode: scanBarcode } : undefined}
+          initialValues={
+            scanBarcode
+              ? {
+                  barcode: scanBarcode,
+                  name: scanProduct?.name,
+                  manufacturer: scanProduct?.brand ?? undefined,
+                  description: scanProduct?.description ?? undefined,
+                }
+              : undefined
+          }
         />
       ) : null}
       <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
@@ -1134,9 +1148,10 @@ function InventoryWorkspace() {
           setSelectedLocationId(id);
           setScannerOpen(false);
         }}
-        onCreateFromBarcode={(gtin) => {
+        onCreateFromBarcode={(gtin, product) => {
           setScannerOpen(false);
           setScanBarcode(gtin);
+          setScanProduct(product ?? null);
           setAddOpen(true);
         }}
         onViewItem={(item) => {

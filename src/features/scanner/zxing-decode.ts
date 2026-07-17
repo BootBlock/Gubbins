@@ -23,35 +23,34 @@ import {
   BarcodeFormat,
 } from '@zxing/library';
 import { rgbaToLuminance } from './luminance';
-import { type ScannerSymbology } from './scanner-formats';
+import { ALL_NATIVE_FORMATS, type ScannerSymbology } from './scanner-formats';
 
 /** zxing `BarcodeFormat` per scanned symbology key — the *only* place the enum is named. */
 const ZXING_FORMAT: Record<Exclude<ScannerSymbology, 'all'>, BarcodeFormat> = {
   qr_code: BarcodeFormat.QR_CODE,
-  code_128: BarcodeFormat.CODE_128,
+  data_matrix: BarcodeFormat.DATA_MATRIX,
+  aztec: BarcodeFormat.AZTEC,
+  pdf417: BarcodeFormat.PDF_417,
   ean_13: BarcodeFormat.EAN_13,
+  ean_8: BarcodeFormat.EAN_8,
+  upc_a: BarcodeFormat.UPC_A,
+  upc_e: BarcodeFormat.UPC_E,
+  code_128: BarcodeFormat.CODE_128,
   code_39: BarcodeFormat.CODE_39,
+  code_93: BarcodeFormat.CODE_93,
+  codabar: BarcodeFormat.CODABAR,
+  itf: BarcodeFormat.ITF,
 };
 
 /**
- * Map a {@link ScannerSymbology} to the zxing `POSSIBLE_FORMATS` hint list: the full default
- * set (QR + 1-D part labels + the retail GTIN family) for `'all'`, otherwise the single chosen
- * format. Restricting the `MultiFormatReader` to one format is markedly less per-frame work (it
- * tries every hinted format) — the §6.6 single-format perf win. Pure, so the format selection is
- * unit-testable without a real barcode. Kept in step with {@link ALL_NATIVE_FORMATS}.
+ * Map a {@link ScannerSymbology} to the zxing `POSSIBLE_FORMATS` hint list: every supported
+ * format for `'all'` (derived from {@link ALL_NATIVE_FORMATS}, so the native and zxing tiers can
+ * never drift), otherwise the single chosen format. Restricting the `MultiFormatReader` to one
+ * format is markedly less per-frame work (it tries every hinted format) — the §6.6 single-format
+ * perf win. Pure, so the format selection is unit-testable without a real barcode.
  */
 export function zxingFormatsFor(symbology: ScannerSymbology): BarcodeFormat[] {
-  return symbology === 'all'
-    ? [
-        BarcodeFormat.QR_CODE,
-        BarcodeFormat.CODE_128,
-        BarcodeFormat.EAN_13,
-        BarcodeFormat.EAN_8,
-        BarcodeFormat.UPC_A,
-        BarcodeFormat.UPC_E,
-        BarcodeFormat.CODE_39,
-      ]
-    : [ZXING_FORMAT[symbology]];
+  return symbology === 'all' ? ALL_NATIVE_FORMATS.map((f) => ZXING_FORMAT[f]) : [ZXING_FORMAT[symbology]];
 }
 
 /** Decode an RGBA frame's pixels to a code string, or `null` when none is found. */
@@ -64,13 +63,20 @@ export type RgbaDecoder = (rgba: Uint8ClampedArray, width: number, height: numbe
  * `NotFoundException`) or any transient decode error yields `null`, matching the native
  * decoder's fail-soft contract.
  *
- * `symbology` scopes which formats the reader hints (default: all four, §6.6). A single-format
- * scope makes each frame cheaper to decode — the §6.6 single-format mode.
+ * `symbology` scopes which formats the reader hints (default: every supported format, §6.6). A
+ * single-format scope makes each frame cheaper to decode — the §6.6 single-format mode.
+ *
+ * `TRY_HARDER` is set so zxing scans the frame thoroughly rather than sampling a few centre rows:
+ * it is the decisive difference between a clearly-framed retail barcode reading at once and one
+ * that "won't scan" until it fills the screen (issue #59). Each frame is already cropped to the
+ * reticle (a small image) and decoded off-thread on an adaptive cadence, so the extra thoroughness
+ * is well within budget.
  */
 export function createZxingDecode(symbology: ScannerSymbology = 'all'): RgbaDecoder {
   const reader = new MultiFormatReader();
   const hints = new Map<DecodeHintType, unknown>();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, zxingFormatsFor(symbology));
+  hints.set(DecodeHintType.TRY_HARDER, true);
   reader.setHints(hints);
 
   return (rgba, width, height) => {

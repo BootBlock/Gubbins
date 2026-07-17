@@ -22,27 +22,31 @@ describe('nativeFormatsFor — symbology → native BarcodeDetector formats (§6
     expect(nativeFormatsFor('qr_code')).toEqual(['qr_code']);
     expect(nativeFormatsFor('code_128')).toEqual(['code_128']);
     expect(nativeFormatsFor('ean_13')).toEqual(['ean_13']);
-    expect(nativeFormatsFor('code_39')).toEqual(['code_39']);
+    expect(nativeFormatsFor('data_matrix')).toEqual(['data_matrix']);
+    expect(nativeFormatsFor('itf')).toEqual(['itf']);
   });
 
-  it('every single-format choice narrows the four-format default to one', () => {
+  it('every single-format choice narrows the full default set to one supported format', () => {
     for (const opt of SCANNER_SYMBOLOGY_OPTIONS) {
       const formats = nativeFormatsFor(opt.value);
       expect(formats.length).toBe(opt.value === 'all' ? ALL_NATIVE_FORMATS.length : 1);
-      // Every hinted format is one of the canonical four (no stray strings).
+      // Every hinted format is one of the canonical supported symbologies (no stray strings).
       for (const f of formats) expect(ALL_NATIVE_FORMATS).toContain(f);
     }
   });
 });
 
 describe('normaliseSymbology — guard a persisted/arbitrary value (§2.1 Tier-2)', () => {
-  it('passes through each valid symbology unchanged', () => {
-    const valid: ScannerSymbology[] = ['all', 'qr_code', 'code_128', 'ean_13', 'code_39'];
-    for (const v of valid) expect(normaliseSymbology(v)).toBe(v);
+  it('passes through each offered symbology unchanged', () => {
+    for (const opt of SCANNER_SYMBOLOGY_OPTIONS) {
+      expect(normaliseSymbology(opt.value)).toBe(opt.value);
+    }
   });
 
   it('falls back to the default for an unknown / stale / non-string value', () => {
+    // `pdf_417` (underscore) is not the offered `pdf417` key, so it is still coerced away.
     expect(normaliseSymbology('pdf_417')).toBe(DEFAULT_SCANNER_SYMBOLOGY);
+    expect(normaliseSymbology('rss_14')).toBe(DEFAULT_SCANNER_SYMBOLOGY);
     expect(normaliseSymbology(undefined)).toBe(DEFAULT_SCANNER_SYMBOLOGY);
     expect(normaliseSymbology(42)).toBe(DEFAULT_SCANNER_SYMBOLOGY);
     expect(normaliseSymbology(null)).toBe(DEFAULT_SCANNER_SYMBOLOGY);
@@ -54,14 +58,33 @@ describe('normaliseSymbology — guard a persisted/arbitrary value (§2.1 Tier-2
 });
 
 describe('SCANNER_SYMBOLOGY_OPTIONS — the Settings control choices (§3)', () => {
-  it('offers "all" plus each of the four scanned symbologies, with labels', () => {
+  it('offers "all" plus every supported symbology, each with a label', () => {
     expect(SCANNER_SYMBOLOGY_OPTIONS.map((o) => o.value)).toEqual([
       'all',
       'qr_code',
-      'code_128',
+      'data_matrix',
+      'aztec',
+      'pdf417',
       'ean_13',
+      'ean_8',
+      'upc_a',
+      'upc_e',
+      'code_128',
       'code_39',
+      'code_93',
+      'codabar',
+      'itf',
     ]);
     for (const o of SCANNER_SYMBOLOGY_OPTIONS) expect(o.label.length).toBeGreaterThan(0);
   });
+
+  it('lists exactly the "all" scope plus one option per supported native format', () => {
+    const singles = SCANNER_SYMBOLOGY_OPTIONS.filter((o) => o.value !== 'all').map((o) => o.value);
+    // Every single-format choice is a real native format, and every native format is offered.
+    expect([...singles].sort()).toEqual([...ALL_NATIVE_FORMATS].sort());
+  });
 });
+
+// Type-level guard: the option values are exactly the ScannerSymbology union (compile-time only).
+const _exhaustive: readonly ScannerSymbology[] = SCANNER_SYMBOLOGY_OPTIONS.map((o) => o.value);
+void _exhaustive;

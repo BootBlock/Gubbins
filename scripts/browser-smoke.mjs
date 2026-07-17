@@ -3648,7 +3648,7 @@ try {
     // then restore the default so the live-scan steps keep scanning everything.
     await step('persists the single-format scanner symbology preference (§6.6)', async () => {
       await openSettingsTab('Scanning & labels');
-      await chooseOption(page.getByTestId('setting-scanner-symbology'), 'QR codes only');
+      await chooseOption(page.getByTestId('setting-scanner-symbology'), 'QR code');
       const stored = await page.evaluate(() =>
         JSON.parse(localStorage.getItem('gubbins:preferences') || '{}'),
       );

@@ -114,8 +114,22 @@ describe('createDecoder — tiered engine selection (spec §6.6)', () => {
       detect = vi.fn().mockResolvedValue([]);
     };
     await createDecoder();
-    // QR + 1-D part labels + the whole retail GTIN family (EAN-13/EAN-8/UPC-A/UPC-E).
-    expect(formats).toEqual(['qr_code', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_39']);
+    // Every supported format: 2-D codes, the whole retail GTIN family and the 1-D part labels.
+    expect(formats).toEqual([
+      'qr_code',
+      'data_matrix',
+      'aztec',
+      'pdf417',
+      'ean_13',
+      'ean_8',
+      'upc_a',
+      'upc_e',
+      'code_128',
+      'code_39',
+      'code_93',
+      'codabar',
+      'itf',
+    ]);
   });
 
   it('narrows the native detector to a single symbology when requested (§6.6 single-format)', async () => {

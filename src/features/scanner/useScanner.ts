@@ -26,6 +26,7 @@ import { createDecoder, type FrameDecoder, type ScannerEngine } from './barcode-
 import { DEFAULT_SCANNER_SYMBOLOGY, type ScannerSymbology } from './scanner-formats';
 import { initialCadence, nextCadence, DEFAULT_WASM_CADENCE } from './decode-cadence';
 import { elementRoiOf } from './roi';
+import { applyScannerTrackConstraints } from './camera-constraints';
 
 export function useScanner({
   videoRef,
@@ -112,6 +113,11 @@ export function useScanner({
           videoRef.current.srcObject = stream;
           void videoRef.current.play().catch(() => {});
         }
+        // Best-effort: ask the camera for continuous autofocus so a barcode held at reading
+        // distance stays sharp — a blurry frame is a common reason a clear code "won't scan"
+        // (issue #59). Fire-and-forget and fully guarded: cameras that can't focus on demand
+        // simply ignore it, so this only ever helps and never blocks the grant.
+        void applyScannerTrackConstraints(stream);
         dispatch({ type: 'PERMISSION_GRANTED' });
       })
       .catch((err: unknown) => {
