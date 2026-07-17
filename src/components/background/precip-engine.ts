@@ -47,12 +47,32 @@
  *  - **Paused when the tab is hidden** (no wasted frames) and fully torn down on {@link stop}.
  *  - **DPR-capped** backing store so a 3× phone doesn't rasterise 9× the pixels.
  *
+ * ## Look — the weather touches the UI (issue #68)
+ *
+ * Given an `overlay` canvas (stacked *above* the app content) and a {@link SurfaceTracker}, the
+ * precipitation interacts with the controls on screen instead of falling obliviously behind them:
+ *  - **Snow settles.** A near flake whose fall crosses the top edge of a control lands there: the
+ *    flake is consumed and a per-column depth field grows, building rounded **mounds** on control
+ *    tops over time (capped, edge-aware so drifts never smear across gaps between controls).
+ *  - **Rain splashes.** A near drop hitting a control top is consumed by a brief **splash** — an
+ *    expanding ripple with a crown of kicked-up droplets — playing pre-rendered animation frames.
+ *
+ * The same GPU discipline applies throughout: the collision test is one lookup into the tracker's
+ * per-column {@link import('./surface-map')} table; splashes blit pre-rendered frame sprites; the
+ * mound layer is re-painted into an offscreen canvas at most a few times a second (only when a
+ * flake actually lands or the layout moves) and per frame is a single `drawImage` composite. Far
+ * particles (and rain's deep-background layers) deliberately don't interact — they read as behind
+ * the scene — which also throttles the landing rate. When the tracker reports the layout moved
+ * (scroll, resize, DOM change), settled snow on moved surfaces is cleared, as if knocked off.
+ *
  * Colours come from the `--precip-rain` / `--precip-snow` design tokens (read live, so the layer is
  * theme-correct); {@link PrecipController.refresh} re-reads them + rebuilds the sprites when the
  * theme changes. The layer is decorative — the caller marks the canvas `aria-hidden` — so under a
- * reduced-motion preference the engine paints a single calm static frame and never starts the loop.
+ * reduced-motion preference the engine paints a single calm static frame, never starts the loop,
+ * and leaves the interaction layer entirely inert.
  */
 import { gust, flurry, curlField } from './flow-field';
+import { COLUMN_WIDTH, NO_SURFACE, type SurfaceSnapshot, type SurfaceTracker } from './surface-map';
 
 /** Which particle system the canvas runs. */
 export type PrecipKind = 'rain' | 'snow';
@@ -72,6 +92,19 @@ export interface StartPrecipOptions {
   readonly reduced: boolean;
   /** Device-pixel-ratio cap for the backing store (default 2). */
   readonly dprCap?: number;
+  /**
+   * Optional interaction canvas stacked *above* the app content (issue #68). When given together
+   * with {@link surfaces}, snow settles into mounds on control tops and rain splashes off them.
+   * Ignored under `reduced` — the interaction layer is pure motion.
+   */
+  readonly overlay?: HTMLCanvasElement | null;
+  /**
+   * Factory for the live control-surface map (issue #68). A factory rather than an instance so
+   * the engine only creates the tracker — and its DOM observers — when the interaction layer can
+   * actually run (both canvases usable, motion allowed); a degraded start costs nothing. The
+   * engine stops the tracker in {@link PrecipController.stop}.
+   */
+  readonly surfaces?: (() => SurfaceTracker) | null;
 }
 
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
@@ -184,6 +217,49 @@ const VORTEX = {
   drift: 30,
 } as const;
 
+/**
+ * Control-interaction tuning (issue #68): how snow settles on control tops and rain splashes off
+ * them. Landing eligibility is depth-gated so the far field keeps falling "behind" the scene —
+ * which both preserves the depth illusion and throttles the landing rate for free.
+ */
+const SETTLE = {
+  /** A surface top may drift this many px between map rebuilds and keep its snow (rounding). */
+  moveTolerance: 2,
+  snow: {
+    /** Only nearer flakes (depth ≥ this) settle; far ones pass behind the UI untouched. */
+    minZ: 0.35,
+    /** Depth added at the landing column per settled flake (css px)… */
+    deposit: 1.1,
+    /** …spread over neighbouring columns by distance (tiny lookup table, index = |offset|). */
+    kernel: [1, 0.6, 0.25] as const,
+    /** A neighbour column takes deposit / joins a mound run only while its top is within this. */
+    edgeTolerance: 3,
+    /** Mound height cap (css px): build-up visibly grows over time, then holds. */
+    maxDepth: 9,
+    /** Depth below which a column isn't worth drawing (css px). */
+    minVisibleDepth: 0.4,
+    /** Min seconds between mound-layer re-renders (per frame the layer is one cached blit). */
+    renderInterval: 0.15,
+  },
+  rain: {
+    /** Only near drops (depth ≥ this) splash; far and deep-background drops don't interact. */
+    minZ: 0.55,
+    /** Splash lifetime range (s). */
+    life: [0.26, 0.42] as const,
+    /** Pre-rendered animation frames per splash variant (the sprite lookup table). */
+    frames: 6,
+    /** Hard cap on concurrently-animating splashes (also the fixed pool size). */
+    maxSplashes: 48,
+    /** Draw scale range by drop depth (near drops splash bigger). */
+    scale: [0.7, 1.15] as const,
+  },
+} as const;
+
+/** Splash sprite geometry (css px): frame size and the y of the impact line within the frame. */
+const SPLASH_W = 34;
+const SPLASH_H = 18;
+const SPLASH_BASELINE = 13;
+
 /** Fallbacks if the token can't be read (kept close to the dark-theme values). */
 const FALLBACK_COLOR: Record<PrecipKind, string> = {
   rain: 'oklch(0.82 0.045 240)',
@@ -207,6 +283,19 @@ interface Particle {
   spin: number;
   /** Random phase for spin start + twinkle, so flakes are decorrelated. */
   phase: number;
+}
+
+/** One splash animation in flight. Pooled: `t >= life` marks a free slot. */
+interface Splash {
+  x: number;
+  y: number;
+  /** Elapsed / total lifetime (s). */
+  t: number;
+  life: number;
+  /** Draw scale, fixed at spawn from the landing drop's depth. */
+  scale: number;
+  /** Which pre-rendered frame set this splash plays. */
+  variant: number;
 }
 
 /** A drifting eddy that adds a tangential swirl to nearby particles. */
@@ -408,6 +497,59 @@ function buildSnowCrystal(dpr: number, color: string, dendrite: boolean): HTMLCa
   return c;
 }
 
+/**
+ * Build one pre-rendered splash animation frame: an expanding elliptical ripple flattened onto the
+ * surface line, a fading vertical impact spike, and a small crown of droplets that arc up, out and
+ * back down across the frames. `q` is normalised progress (0..1); `variant` decorrelates the
+ * droplet pattern so neighbouring splashes don't read as clones. All alpha is baked into the
+ * frames, so the engine plays a splash with nothing but plain `drawImage` calls.
+ */
+function buildSplashFrame(dpr: number, color: string, variant: number, q: number): HTMLCanvasElement {
+  const [c, g] = makeCanvas(SPLASH_W, SPLASH_H, dpr);
+  if (g) {
+    const cx = SPLASH_W / 2;
+    const by = SPLASH_BASELINE;
+    const fade = 1 - q;
+    // Expanding ripple ring, flattened into the surface plane.
+    g.strokeStyle = colorWithAlpha(color, 0.12 + 0.5 * fade);
+    g.lineWidth = 1.7 - 0.9 * q;
+    g.beginPath();
+    g.ellipse(cx, by, 2.5 + 12 * q, 1 + 3.4 * q, 0, 0, Math.PI * 2);
+    g.stroke();
+    // A second, trailing ripple once the first has spread.
+    if (q > 0.3) {
+      g.strokeStyle = colorWithAlpha(color, 0.3 * fade);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.ellipse(cx, by, (2.5 + 12 * q) * 0.55, (1 + 3.4 * q) * 0.55, 0, 0, Math.PI * 2);
+      g.stroke();
+    }
+    // Impact spike, brightest at the instant of the hit.
+    if (q < 0.45) {
+      const s = 1 - q / 0.45;
+      g.strokeStyle = colorWithAlpha(color, 0.55 * s);
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.moveTo(cx, by);
+      g.lineTo(cx, by - 6 * s - 1);
+      g.stroke();
+    }
+    // Crown droplets, kicked up and arcing back down over the animation.
+    const count = 4 + (variant % 2);
+    const rise = Math.sin(Math.min(1, q * 1.15) * Math.PI);
+    g.fillStyle = colorWithAlpha(color, 0.7 * fade);
+    for (let i = 0; i < count; i++) {
+      const fx = (i / (count - 1)) * 2 - 1;
+      const dx = fx * (5 + 11 * q);
+      const dy = -rise * (5.5 + ((i * 2 + variant) % 3));
+      g.beginPath();
+      g.arc(cx + dx, by + dy, 0.9, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  return c;
+}
+
 export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions): PrecipController {
   const { kind, reduced } = opts;
   const dprCap = opts.dprCap ?? 2;
@@ -415,6 +557,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   // No 2D context (very old browser or a jsdom test): nothing to do — a no-op controller keeps the
   // caller's lifecycle simple and the app fully functional without the decoration.
   if (!ctx) return { refresh: () => {}, stop: () => {} };
+
+  const overlay = opts.overlay ?? null;
+  const octx = overlay ? overlay.getContext('2d') : null;
+  // The interaction layer (issue #68) runs only with both halves usable and motion allowed —
+  // only then is the surface tracker created at all, so its DOM observers never run unconsumed.
+  const surfaces = octx && !reduced && opts.surfaces ? opts.surfaces() : null;
+  const interact = surfaces !== null;
 
   let dpr = 1;
   let cssWidth = 0;
@@ -434,6 +583,40 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let frameFlurry = 0;
   /** How far off each edge a particle travels before it wraps/recycles (kept fully off-screen). */
   let edgeMargin = 0;
+
+  // ── Interaction-layer state (issue #68) ──────────────────────────────────────────────────
+  /** The adopted surface map — the tracker's own array (swapped on rebuild, never mutated). */
+  let surfTops: Int16Array = new Int16Array(0);
+  /** Tracker generation the map was adopted at; -1 forces adoption on the next frame. */
+  let surfGen = -1;
+  /** Settled-snow depth per column (css px). */
+  let depths = new Float32Array(0);
+  /** Whether the last mound render actually drew anything (skips the per-frame blit when not). */
+  let moundVisible = false;
+  /** The mound layer needs re-rendering (a flake landed, the layout moved, or the theme changed). */
+  let moundDirty = false;
+  let lastMoundRender = -Infinity;
+  /** True while the overlay canvas holds no pixels, so blank frames skip even the clear. */
+  let overlayClean = true;
+  /** Offscreen cache the mound shapes are path-rendered into (a few times/s at most). */
+  let moundCanvas: HTMLCanvasElement | null = null;
+  let moundCtx: CanvasRenderingContext2D | null = null;
+  /** Theme colour the mound layer paints with (captured alongside the sprites). */
+  let overlayColor = FALLBACK_COLOR[kind];
+  /** Pre-rendered splash animation frames, [variant][frame]. */
+  let splashFrames: Sprite[][] = [];
+  /** Fixed splash pool, allocated once; a slot with `t >= life` is free for reuse. */
+  const splashes: Splash[] =
+    interact && kind === 'rain'
+      ? Array.from({ length: SETTLE.rain.maxSplashes }, () => ({
+          x: 0,
+          y: 0,
+          t: 0,
+          life: 0,
+          scale: 0,
+          variant: 0,
+        }))
+      : [];
 
   function toSprite(c: HTMLCanvasElement): Sprite {
     return { canvas: c, halfW: c.width / dpr / 2, halfH: c.height / dpr / 2 };
@@ -455,6 +638,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     // uses the largest drawn half-height to keep a particle fully off-screen before it wraps.
     const maxStretch = kind === 'rain' ? TUNING.rain.windStretchMax : 1;
     edgeMargin = spriteMaxHalfH * 2 * TUNING[kind].scale[1] * maxStretch + 8;
+    if (interact) {
+      overlayColor = color;
+      if (kind === 'rain') {
+        // The splash frame lookup table: every animation frame of both variants, rendered once.
+        splashFrames = [0, 1].map((variant) =>
+          Array.from({ length: SETTLE.rain.frames }, (_, i) =>
+            toSprite(buildSplashFrame(dpr, color, variant, (i + 0.5) / SETTLE.rain.frames)),
+          ),
+        );
+      }
+      // The colour may have changed (theme refresh) — repaint any settled snow with it.
+      moundDirty = true;
+    }
   }
 
   function spawn(p: Particle, initial: boolean): void {
@@ -533,6 +729,251 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       vortices = Array.from({ length: vCount }, () => ({ x: 0, y: 0, r: 0, r2: 0, peak: 0 }));
       for (const v of vortices) spawnVortex(v, true);
     }
+
+    if (interact && overlay) {
+      overlay.width = canvas.width;
+      overlay.height = canvas.height;
+      // Setting width/height resets the context (and clears the bitmap), so re-apply the
+      // transform after; the cleared bitmap means the overlay starts this size clean.
+      octx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      overlayClean = true;
+      // The mound cache mirrors the overlay via the shared helper, so its DPR handling can
+      // never drift from the sprites'.
+      [moundCanvas, moundCtx] = makeCanvas(cssWidth, cssHeight, dpr);
+      // A resize reflows everything: drop all settled snow and in-flight splashes, then
+      // re-adopt the tracker's map. Its own resize-triggered rebuild follows within the
+      // tracker's debounce window — the brief spell where landings test pre-reflow geometry is
+      // self-healing (the rebuild's reconcile knocks any misplaced snow straight off).
+      surfTops = new Int16Array(0);
+      depths = new Float32Array(0);
+      surfGen = -1;
+      moundVisible = false;
+      moundDirty = false;
+      for (const s of splashes) s.t = s.life;
+    }
+  }
+
+  /**
+   * Adopt the tracker's latest surface map (issue #68). Columns whose top edge moved beyond the
+   * tolerance lose their settled snow — the control moved (scroll, layout change), so its drift
+   * is knocked off; columns whose surface is unchanged keep building. The tracker swaps in a
+   * fresh array per rebuild (never mutates the published one), so holding the previous reference
+   * is a stable comparison baseline and no copy is needed.
+   */
+  function reconcileSurfaces(snap: SurfaceSnapshot): void {
+    const next = snap.tops;
+    const prev = surfTops;
+    if (depths.length !== next.length) depths = new Float32Array(next.length);
+    for (let c = 0; c < next.length; c++) {
+      const before = c < prev.length ? (prev[c] ?? NO_SURFACE) : NO_SURFACE;
+      if (Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance) depths[c] = 0;
+    }
+    surfTops = next;
+    surfGen = snap.generation;
+    // Splashes are absolutely positioned: one whose surface moved would hang mid-air, so expire
+    // it (splashes on unmoved surfaces play out normally).
+    for (const s of splashes) {
+      if (s.t >= s.life) continue;
+      const c = surfaceCol(s.x);
+      if (c < 0 || Math.abs(topAt(c) - s.y) > SETTLE.moveTolerance) s.t = s.life;
+    }
+    // The layout moved: bypass the deposit throttle so surviving mounds re-render at their new
+    // positions on the very next overlay pass, never lingering where controls used to be.
+    moundDirty = true;
+    lastMoundRender = -Infinity;
+  }
+
+  /** Column index of the surface map covering x, or -1 when outside it. */
+  function surfaceCol(x: number): number {
+    // floor, not |0: truncation would map the off-screen wrap margin x ∈ (-COLUMN_WIDTH, 0)
+    // onto column 0 and let unseen particles land on the leftmost control.
+    const c = Math.floor(x / COLUMN_WIDTH);
+    return c >= 0 && c < surfTops.length ? c : -1;
+  }
+
+  /** Guarded column reads (indexes are always produced in-range, so the fallbacks are inert). */
+  function topAt(c: number): number {
+    return surfTops[c] ?? NO_SURFACE;
+  }
+  function depthAt(c: number): number {
+    return depths[c] ?? 0;
+  }
+
+  /**
+   * Grow the settled-snow field around a landing column. The kernel spreads the deposit over
+   * neighbouring columns, but only while their own surface sits at (nearly) the same height —
+   * so mounds round off naturally yet never smear across the gap between two controls. Once a
+   * mound has saturated at the depth cap, further landings change nothing and must not keep
+   * re-dirtying the render cache.
+   */
+  function depositSnow(col: number, top: number): void {
+    const t = SETTLE.snow;
+    const reach = t.kernel.length - 1;
+    let changed = false;
+    for (let o = -reach; o <= reach; o++) {
+      const c = col + o;
+      if (c < 0 || c >= surfTops.length) continue;
+      if (Math.abs(topAt(c) - top) > t.edgeTolerance) continue;
+      const d = depthAt(c) + t.deposit * (t.kernel[Math.abs(o)] ?? 0);
+      const capped = d > t.maxDepth ? t.maxDepth : d;
+      if (capped !== depthAt(c)) {
+        depths[c] = capped;
+        changed = true;
+      }
+    }
+    if (changed) moundDirty = true;
+  }
+
+  /**
+   * Land a near particle whose fall just crossed the surface line in its column: snow settles
+   * onto the current crest (the mound grows under it); rain is consumed by a splash at the top
+   * edge. Far particles pass behind the UI untouched — depth is the eligibility gate.
+   */
+  function tryLand(p: Particle, prevY: number): void {
+    if (p.z < SETTLE[kind].minZ) return;
+    const c = surfaceCol(p.x);
+    if (c < 0) return;
+    const top = topAt(c);
+    if (top === NO_SURFACE) return;
+    const line = kind === 'snow' ? top - depthAt(c) : top;
+    if (prevY >= line || p.y < line) return;
+    if (kind === 'snow') depositSnow(c, top);
+    else spawnSplash(p.x, top, p.z);
+    spawn(p, false);
+  }
+
+  /** Start a splash at a free pool slot (skipped when the pool is saturated — it's decorative). */
+  function spawnSplash(x: number, y: number, z: number): void {
+    for (const s of splashes) {
+      if (s.t < s.life) continue;
+      s.x = x;
+      s.y = y;
+      s.t = 0;
+      s.life = rand(SETTLE.rain.life[0], SETTLE.rain.life[1]);
+      s.scale = lerp(SETTLE.rain.scale[0], SETTLE.rain.scale[1], clamp(z, 0, 1));
+      s.variant = Math.random() < 0.5 ? 0 : 1;
+      return;
+    }
+  }
+
+  /**
+   * Re-render the mound layer into its offscreen cache. This is the only place the interaction
+   * layer builds paths, and it runs at most every {@link SETTLE.snow.renderInterval} seconds and
+   * only when something changed; every frame in between reuses the cache with a single blit.
+   */
+  function renderMounds(): void {
+    moundDirty = false;
+    lastMoundRender = elapsed;
+    moundVisible = false;
+    moundCtx?.clearRect(0, 0, cssWidth, cssHeight);
+    const t = SETTLE.snow;
+    const n = surfTops.length;
+    let c = 0;
+    while (c < n) {
+      if (topAt(c) === NO_SURFACE || depthAt(c) < t.minVisibleDepth) {
+        c++;
+        continue;
+      }
+      // Extend the run while the surface stays (nearly) level and holds visible snow.
+      let end = c;
+      while (
+        end + 1 < n &&
+        topAt(end + 1) !== NO_SURFACE &&
+        depthAt(end + 1) >= t.minVisibleDepth &&
+        Math.abs(topAt(end + 1) - topAt(end)) <= t.edgeTolerance
+      ) {
+        end++;
+      }
+      moundVisible = true;
+      if (moundCtx) drawMoundRun(c, end);
+      c = end + 1;
+    }
+  }
+
+  /** x of a column's crest point (its centre). */
+  function crestX(c: number): number {
+    return c * COLUMN_WIDTH + COLUMN_WIDTH / 2;
+  }
+
+  /** y of a column's crest (its surface top minus the settled depth). */
+  function crestY(c: number): number {
+    return topAt(c) - depthAt(c);
+  }
+
+  /** Trace the midpoint-smoothed crest polyline for a run into the current path. */
+  function traceCrest(g: CanvasRenderingContext2D, c0: number, c1: number): void {
+    g.moveTo(crestX(c0), crestY(c0));
+    for (let c = c0 + 1; c <= c1; c++) {
+      const mx = (crestX(c - 1) + crestX(c)) / 2;
+      const my = (crestY(c - 1) + crestY(c)) / 2;
+      g.quadraticCurveTo(crestX(c - 1), crestY(c - 1), mx, my);
+    }
+    g.lineTo(crestX(c1), crestY(c1));
+  }
+
+  /** Fill one contiguous mound: a smoothed crest over the run, tapering to the surface at both ends. */
+  function drawMoundRun(c0: number, c1: number): void {
+    const g = moundCtx!;
+    // The fill returns along the per-column surface tops rather than a straight chord — a run
+    // may ramp within the edge tolerance, and the base must hug each control's actual edge.
+    g.beginPath();
+    traceCrest(g, c0, c1);
+    g.lineTo((c1 + 1) * COLUMN_WIDTH, topAt(c1));
+    for (let c = c1; c >= c0; c--) g.lineTo(crestX(c), topAt(c));
+    g.lineTo(c0 * COLUMN_WIDTH, topAt(c0));
+    g.closePath();
+    g.fillStyle = colorWithAlpha(overlayColor, 0.95);
+    g.fill();
+    // A crisp cap along the crest gives the drift a lit top edge. Stroked as its own open path —
+    // stroking the closed fill outline would also draw a hard line along the control's top edge.
+    g.beginPath();
+    traceCrest(g, c0, c1);
+    g.strokeStyle = overlayColor;
+    g.lineWidth = 1;
+    g.lineJoin = 'round';
+    g.stroke();
+  }
+
+  /** Is any splash still animating? (Plain loop — runs every frame, must not allocate.) */
+  function anySplashActive(): boolean {
+    for (const s of splashes) if (s.t < s.life) return true;
+    return false;
+  }
+
+  /** Advance and blit the active splashes (alpha is baked into the frames). */
+  function drawSplashes(dt: number): void {
+    for (const s of splashes) {
+      if (s.t >= s.life) continue;
+      s.t += dt;
+      if (s.t >= s.life) continue;
+      const set = splashFrames[s.variant];
+      if (!set) continue;
+      const q = s.t / s.life;
+      const f = set[Math.min(set.length - 1, (q * set.length) | 0)];
+      if (!f) continue;
+      const w = f.halfW * 2 * s.scale;
+      const h = f.halfH * 2 * s.scale;
+      octx!.drawImage(f.canvas, s.x - w / 2, s.y - SPLASH_BASELINE * s.scale, w, h);
+    }
+  }
+
+  /** Paint the interaction overlay: the cached mound layer plus any in-flight splashes. */
+  function drawOverlay(dt: number): void {
+    if (moundDirty && elapsed - lastMoundRender >= SETTLE.snow.renderInterval) renderMounds();
+    const hasMound = moundVisible && moundCanvas !== null;
+    if (!hasMound && !anySplashActive()) {
+      // Nothing to draw: clear once after the last visible frame, then skip the whole pass.
+      if (!overlayClean) {
+        octx!.clearRect(0, 0, cssWidth, cssHeight);
+        overlayClean = true;
+      }
+      return;
+    }
+    octx!.clearRect(0, 0, cssWidth, cssHeight);
+    overlayClean = false;
+    if (hasMound) octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
+    drawSplashes(dt);
+    octx!.globalAlpha = 1;
   }
 
   /** Add every eddy's tangential swirl to the particle's already-set velocity. */
@@ -575,8 +1016,10 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     p.vx = fall * lean + c.x * t.turb * p.z;
     p.vy = fall;
     addVortices(p, t.vortexFactor);
+    const prevY = p.y;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
+    if (interact) tryLand(p, prevY);
   }
 
   function stepSnow(p: Particle, dt: number): void {
@@ -589,8 +1032,10 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     addVortices(p, t.vortexFactor);
     // Never let a flake fly purely sideways, however hard the gust/eddy pushes.
     p.vx = clamp(p.vx, -fall * t.maxDriftRatio, fall * t.maxDriftRatio);
+    const prevY = p.y;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
+    if (interact) tryLand(p, prevY);
   }
 
   /** Wrap the particle horizontally (wind blows either way) and recycle it once past the bottom. */
@@ -656,6 +1101,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       frameGust = gust(elapsed);
       frameFlurry = flurry(elapsed);
       advanceVortices(dt);
+      if (interact) {
+        // Adopt the surface map *before* the particle step, so landings test current geometry.
+        const snap = surfaces!.snapshot();
+        if (snap.generation !== surfGen) reconcileSurfaces(snap);
+      }
     }
     if (kind === 'rain') {
       for (const p of particles) {
@@ -675,6 +1125,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       }
     }
     ctx!.globalAlpha = 1;
+    if (interact && animate) drawOverlay(dt);
   }
 
   function frame(now: number): void {
@@ -737,6 +1188,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       cancelAnimationFrame(rafId);
       removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
+      surfaces?.stop();
     },
   };
 }

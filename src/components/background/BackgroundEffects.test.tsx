@@ -36,6 +36,22 @@ describe('BackgroundEffects', () => {
     expect(canvas.className).toContain('pointer-events-none');
   });
 
+  it('mounts the control-interaction overlay above the content, equally decorative and inert (issue #68)', () => {
+    usePreferencesStore.setState({ backgroundEffect: 'snow' });
+    render(<BackgroundEffects />);
+    const overlay = screen.getByTestId('background-effects-overlay');
+    expect(overlay.tagName).toBe('CANVAS');
+    expect(overlay).toHaveAttribute('aria-hidden', 'true');
+    expect(overlay.className).toContain('pointer-events-none');
+    expect(overlay.className).toContain('z-40'); // over content, under modals/toasts/popovers
+  });
+
+  it('renders no overlay when the effect is off', () => {
+    usePreferencesStore.setState({ backgroundEffect: 'none' });
+    render(<BackgroundEffects />);
+    expect(screen.queryByTestId('background-effects-overlay')).toBeNull();
+  });
+
   it('yields (renders nothing) while a screen shows its own full-viewport backdrop', () => {
     // The About starfield raises this flag; the weather layer must not fight it for the backdrop.
     usePreferencesStore.setState({ backgroundEffect: 'rain' });

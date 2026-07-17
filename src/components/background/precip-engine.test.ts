@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startPrecip } from './precip-engine';
+import { NO_SURFACE, type SurfaceTracker } from './surface-map';
 
 interface DrawCall {
   args: unknown[];
@@ -214,6 +215,127 @@ describe('startPrecip', () => {
     const ctrl = startPrecip(makeCanvas(rec), { kind: 'rain', reduced: true });
     expect(rec.drawImages.length).toBeGreaterThan(0); // one calm frame drawn
     expect(rafQueue.length).toBe(0); // no animation loop scheduled
+    ctrl.stop();
+  });
+});
+
+/**
+ * A controllable surface-map stub: every column reports the same control top, clearable (with a
+ * generation bump and a fresh array, mirroring the real tracker's swap-don't-mutate contract) to
+ * simulate the layout moving under settled snow. Wider than the 1200px stub viewport so
+ * particles drifting through the off-screen wrap margin still sit over a column.
+ */
+function makeSurfaces(top: number, cols = 340) {
+  let tops = new Int16Array(cols).fill(top);
+  let generation = 1;
+  const tracker: SurfaceTracker = {
+    snapshot: () => ({ tops, generation }),
+    stop: () => {},
+  };
+  return {
+    tracker,
+    factory: () => tracker,
+    clear() {
+      tops = new Int16Array(cols).fill(NO_SURFACE);
+      generation++;
+    },
+  };
+}
+
+describe('startPrecip control interaction (issue #68)', () => {
+  it('settles near snow into mounds on control tops (overlay blits the mound layer)', () => {
+    // Depth pinned to 0.9 → every flake is a near crystal, well above the settle threshold.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const overlay = makeCanvas(orec);
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay,
+      surfaces: surfaces.factory,
+    });
+    // Long pump: flakes spawned below the surface line must recycle off-screen, respawn above,
+    // and fall back down to the control top before the first landing can happen.
+    for (let i = 1; i <= 250; i++) pump(i * 50);
+    expect(orec.drawImages.length).toBeGreaterThan(0); // settled snow is being composited
+    expect(orec.clearCount).toBeGreaterThan(0); // the overlay is cleared every frame
+    ctrl.stop();
+  });
+
+  it('knocks settled snow off when the layout under it moves', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    for (let i = 1; i <= 250; i++) pump(i * 50);
+    expect(orec.drawImages.length).toBeGreaterThan(0);
+    // The world moves: every surface top changes beyond the tolerance → all depths reset. If the
+    // reset were ever dropped, the engine would keep compositing the (stale) mound layer every
+    // frame and this assertion would fail.
+    surfaces.clear();
+    const before = orec.drawImages.length;
+    pump(250 * 50 + 50);
+    pump(250 * 50 + 100);
+    expect(orec.drawImages.length).toBe(before); // the settled snow was knocked off
+    ctrl.stop();
+  });
+
+  it('splashes near rain drops off control tops (overlay plays splash frames)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'rain',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    // Long pump: with Math.random pinned, every drop shares one trajectory, so the field crosses
+    // the surface line in lockstep a handful of times — enough for at least one on-map hit.
+    for (let i = 1; i <= 250; i++) pump(i * 50);
+    expect(orec.drawImages.length).toBeGreaterThan(0); // splash sprites blitted above the UI
+    ctrl.stop();
+  });
+
+  it('leaves the overlay untouched without surfaces (columns report no surface)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    surfaces.clear();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'rain',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    for (let i = 1; i <= 60; i++) pump(i * 50);
+    expect(orec.drawImages.length).toBe(0); // nothing to land on → nothing drawn above the UI
+    ctrl.stop();
+  });
+
+  it('keeps the interaction layer fully inert under reduced motion', () => {
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: true,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    expect(rec.drawImages.length).toBeGreaterThan(0); // the calm static frame still paints
+    expect(orec.drawImages.length).toBe(0); // …but the overlay is never touched
+    expect(orec.clearCount).toBe(0);
     ctrl.stop();
   });
 });
