@@ -9,6 +9,16 @@ import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
 
+// The selectable analytics windows live in their own dependency-free module (SSOT) so the
+// preferences store can share them without importing back through this store-consuming module.
+export {
+  ANALYTICS_WINDOWS,
+  DEFAULT_ANALYTICS_WINDOW,
+  normaliseAnalyticsWindow,
+  type AnalyticsWindow,
+} from './analytics-windows';
+import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
+
 /** Trailing-window length (days) shared by the consumption + movement reports. */
 export const REPORT_WINDOW_DAYS = 30;
 /** Number of time buckets in the movement chart (≈ one bar every couple of days). */
@@ -19,10 +29,6 @@ export const DEAD_STOCK_SINCE_DAYS = 90;
 // Phase 74 — advanced analytics ------------------------------------------------
 /** Annual window (days) for ABC analysis — the standard "annual consumption value" basis. */
 export const ABC_WINDOW_DAYS = 365;
-/** Selectable trailing windows (days) for the turnover + valuation-trend analytics. */
-export const ANALYTICS_WINDOWS = [30, 90, 365] as const;
-/** Default analytics window — a quarter reads well for both turnover and the value trend. */
-export const DEFAULT_ANALYTICS_WINDOW = 90;
 /** Number of reconstructed samples on the valuation-trend sparkline. */
 export const VALUATION_TREND_POINTS = 12;
 

@@ -23,6 +23,17 @@ data, and most can be exported.
 Plus two printable documents: the **[[insurance / estate schedule|Insurance-and-Estate-Schedule]]**
 and the **[[parts catalogue|Parts-Catalogue]]**.
 
+## Time periods
+
+The time-based reports — **Advanced analytics** (turnover and valuation over time), **Spend
+analytics**, and **Sales & disposals** — each carry a small period selector: **7d**, **14d**,
+**30d**, **60d**, **90d** and **365d**, running shortest on the left to longest on the right.
+Pick the window that suits the question — a fortnight for a quick pulse, a year for the long view.
+
+Each report **remembers its own choice** independently, and the choice sticks between visits — so
+you can leave Spend on a year while Sales stays on the last month, and they'll be just as you left
+them next time.
+
 ## Exporting
 
 Any report can be exported as **CSV**, so you can take the numbers into a spreadsheet or share
