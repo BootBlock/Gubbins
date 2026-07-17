@@ -63,6 +63,14 @@ export interface Formatters {
    * fallback included (the trailing raw code arrives as a `literal` part).
    */
   currencyParts(value: number, currencyOverride?: string): Intl.NumberFormatPart[] | null;
+  /**
+   * How many fraction digits this currency is written with — `2` for GBP/USD/EUR, `0` for
+   * JPY, `3` for BHD — derived from the live `Intl` currency data (no hand-maintained table).
+   * `currencyOverride` behaves as it does for {@link Formatters.currency}: a valid ISO-4217
+   * code reports *that* currency's digits, a malformed one falls back to the base currency.
+   * Used to snap a user-entered price to the right number of decimals on blur (`8` → `8.00`).
+   */
+  currencyFractionDigits(currencyOverride?: string): number;
   /** A 0..1 ratio as a percentage, clamped (e.g. `50%`). */
   percent(ratio: number, maximumFractionDigits?: number): string;
   /** A human-readable SI byte size (e.g. `1.5 kB`). */
@@ -200,6 +208,11 @@ export function makeFormatters(
     currencyParts(value, currencyOverride) {
       return computeCurrencyParts(value, currencyOverride);
     },
+    currencyFractionDigits(currencyOverride) {
+      const code = currencyOverride?.trim().toUpperCase();
+      const fmt = code && code !== currency ? (currencyFormatterFor(code) ?? currencyFormat) : currencyFormat;
+      return fmt.resolvedOptions().maximumFractionDigits ?? 2;
+    },
     percent(ratio, maximumFractionDigits = 0) {
       return percentFormatterFor(maximumFractionDigits).format(clamp01(ratio));
     },
@@ -271,4 +284,20 @@ export function getFormatters(
   const bundle = makeFormatters(locale, currency, weightUnit, dimensionUnit);
   formattersCache.set(key, bundle);
   return bundle;
+}
+
+/**
+ * Snap a user-entered monetary string to the fixed number of fraction digits its currency
+ * uses (`fractionDigits` from {@link Formatters.currencyFractionDigits}): `8` → `8.00` for a
+ * 2-digit currency, `8` for a 0-digit one (JPY), `8.000` for a 3-digit one (BHD). A blank
+ * value stays blank — the field is optional — and anything that isn't a finite number is
+ * returned unchanged so an in-progress edit is never clobbered. The result is `.`-separated,
+ * exactly what an `<input type="number">` expects for its value.
+ */
+export function snapMoneyInput(raw: string, fractionDigits: number): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') return '';
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return raw;
+  return value.toFixed(Math.max(0, fractionDigits));
 }

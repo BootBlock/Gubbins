@@ -22,7 +22,9 @@ Common fields at creation:
   **unit**, a **full capacity** and a **tare** (empty weight); serialised items track units
   individually.
 - **Unit cost** and **acquired date** — used for valuation, spend and the
-  [[insurance schedule|Insurance-and-Estate-Schedule]].
+  [[insurance schedule|Insurance-and-Estate-Schedule]]. Type a plain figure like `8` and it
+  tidies itself to your currency's decimal places when you move on (`8.00` for pounds, dollars
+  or euros; whole numbers for yen); see [[Language & region|Language-and-Region]].
 
 > **💡 Tip**
 > For a one-off, always-available supply (tap water, sunlight, a shared mains outlet) you can

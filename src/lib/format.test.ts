@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_CURRENCY, DEFAULT_LOCALE, decimalSeparatorForLocale, makeFormatters } from './format';
+import {
+  DEFAULT_CURRENCY,
+  DEFAULT_LOCALE,
+  decimalSeparatorForLocale,
+  makeFormatters,
+  snapMoneyInput,
+} from './format';
 
 const gb = makeFormatters(); // en-GB / GBP defaults (§1.2.1)
 
@@ -201,5 +207,47 @@ describe('makeFormatters — locale & currency propagation (§3)', () => {
   it('honours the locale for dates', () => {
     const us = makeFormatters('en-US', 'USD');
     expect(us.date(Date.UTC(2026, 5, 28, 12))).toBe('Jun 28, 2026');
+  });
+});
+
+describe('currencyFractionDigits', () => {
+  it('reports the digit count for the base currency', () => {
+    expect(gb.currencyFractionDigits()).toBe(2); // GBP
+    expect(makeFormatters('ja-JP', 'JPY').currencyFractionDigits()).toBe(0);
+    expect(makeFormatters('ar-BH', 'BHD').currencyFractionDigits()).toBe(3);
+  });
+
+  it('reports the override currency’s digit count, ignoring the base', () => {
+    // A yen amount stored against a GBP-base bundle still snaps to 0 decimals.
+    expect(gb.currencyFractionDigits('JPY')).toBe(0);
+    expect(gb.currencyFractionDigits('bhd')).toBe(3); // case-insensitive
+  });
+
+  it('falls back to the base currency for a malformed override', () => {
+    expect(gb.currencyFractionDigits('not-a-code')).toBe(2);
+  });
+});
+
+describe('snapMoneyInput', () => {
+  it('pads to the currency’s fraction digits', () => {
+    expect(snapMoneyInput('8', 2)).toBe('8.00');
+    expect(snapMoneyInput('8.5', 2)).toBe('8.50');
+    expect(snapMoneyInput('8', 0)).toBe('8'); // JPY
+    expect(snapMoneyInput('8', 3)).toBe('8.000'); // BHD
+  });
+
+  it('rounds to the fixed precision', () => {
+    expect(snapMoneyInput('8.005', 2)).toBe('8.01');
+    expect(snapMoneyInput('8.994', 2)).toBe('8.99');
+  });
+
+  it('leaves a blank value blank (the field is optional)', () => {
+    expect(snapMoneyInput('', 2)).toBe('');
+    expect(snapMoneyInput('   ', 2)).toBe('');
+  });
+
+  it('returns non-numeric text unchanged rather than destroying it', () => {
+    expect(snapMoneyInput('abc', 2)).toBe('abc');
+    expect(snapMoneyInput('1,2,3', 2)).toBe('1,2,3');
   });
 });
