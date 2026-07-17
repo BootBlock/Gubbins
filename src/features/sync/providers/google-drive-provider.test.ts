@@ -12,6 +12,7 @@ const snapshot: SyncSnapshot = {
   tombstones: [],
   gaugeHistory: [],
   itemTags: [],
+  locationTags: [],
   itemHistory: [],
 };
 

@@ -17,7 +17,14 @@
  * salvaged work as local-wins — rather than a blind wipe.
  */
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
-import { SYNC_TABLES, ITEM_HISTORY_TABLE, ITEM_TAGS_TABLE, itemTagEdgeId } from '@/db/repositories';
+import {
+  SYNC_TABLES,
+  ITEM_HISTORY_TABLE,
+  ITEM_TAGS_TABLE,
+  LOCATION_TAGS_TABLE,
+  itemTagEdgeId,
+  locationTagEdgeId,
+} from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
 import { decodeRowForTable } from './blob-codec';
@@ -57,9 +64,9 @@ export interface SyncResult {
   readonly clockOffset: number;
   /** Phase 11: append-only `item_history` rows unioned in from the remote. */
   readonly historyInserted: number;
-  /** Phase 11: `item_tags` membership edges added locally. */
+  /** Tag membership edges added locally — `item_tags` (Phase 11) + `location_tags` (issue #84). */
   readonly tagEdgesAdded: number;
-  /** Phase 11: `item_tags` membership edges removed locally (peer unlinked). */
+  /** Tag membership edges removed locally (peer unlinked) — `item_tags` + `location_tags`. */
   readonly tagEdgesRemoved: number;
   /**
    * Issue #72: genuine same-row concurrent-edit collisions where a local edit made since the
@@ -234,8 +241,8 @@ export async function runSync(
     prunedTombstones: pruned,
     clockOffset: offset,
     historyInserted: plan.historyInserts.length,
-    tagEdgesAdded: plan.itemTagUpserts.length,
-    tagEdgesRemoved: plan.itemTagDeletes.length,
+    tagEdgesAdded: plan.itemTagUpserts.length + plan.locationTagUpserts.length,
+    tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
     conflicts: plan.conflicts,
   });
 }
@@ -289,22 +296,34 @@ async function cloneWithSalvage(
   //  - re-assert ALL local membership edges *except* those tombstoned on either side
   //    (so a removal — local or remote — still wins), then apply every local edge
   //    tombstone (deleting any edge the clone re-introduced + recording the tombstone).
-  const removedEdges = new Set<string>();
-  for (const t of remote.tombstones) if (t.tableName === ITEM_TAGS_TABLE) removedEdges.add(t.id);
-  for (const t of salvage.tombstones) if (t.tableName === ITEM_TAGS_TABLE) removedEdges.add(t.id);
+  const removedItemEdges = new Set<string>();
+  const removedLocationEdges = new Set<string>();
+  for (const source of [remote.tombstones, salvage.tombstones]) {
+    for (const t of source) {
+      if (t.tableName === ITEM_TAGS_TABLE) removedItemEdges.add(t.id);
+      else if (t.tableName === LOCATION_TAGS_TABLE) removedLocationEdges.add(t.id);
+    }
+  }
 
   for (const row of salvage.itemHistory) {
     statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
   }
   for (const { itemId, tagId } of salvage.itemTags) {
-    if (removedEdges.has(itemTagEdgeId(itemId, tagId))) continue;
+    if (removedItemEdges.has(itemTagEdgeId(itemId, tagId))) continue;
     statements.push({
       sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
       params: [itemId, tagId],
     });
   }
+  for (const { locationId, tagId } of salvage.locationTags) {
+    if (removedLocationEdges.has(locationTagEdgeId(locationId, tagId))) continue;
+    statements.push({
+      sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
+      params: [locationId, tagId],
+    });
+  }
   for (const t of salvage.tombstones) {
-    if (t.tableName !== ITEM_TAGS_TABLE) continue;
+    if (t.tableName !== ITEM_TAGS_TABLE && t.tableName !== LOCATION_TAGS_TABLE) continue;
     statements.push(tombstoneDeleteStatement(t.tableName, t.id));
     statements.push(tombstone(t));
   }

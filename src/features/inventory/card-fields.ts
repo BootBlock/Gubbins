@@ -16,7 +16,8 @@ import type { Condition, FieldType } from '@/db/repositories/constants';
 import { UNLIMITED_GLYPH } from './unlimited';
 
 /** The built-in (always-available) card fields — those derivable from the item row itself. */
-export type BuiltinCardFieldId = 'location' | 'category' | 'condition' | 'value' | 'quantity' | 'updated';
+export type BuiltinCardFieldId =
+  'location' | 'category' | 'condition' | 'value' | 'quantity' | 'updated' | 'tags';
 
 export interface BuiltinCardField {
   readonly id: BuiltinCardFieldId;
@@ -36,6 +37,7 @@ export const BUILTIN_CARD_FIELDS: readonly BuiltinCardField[] = [
   { id: 'value', label: 'Total value' },
   { id: 'quantity', label: 'Quantity' },
   { id: 'updated', label: 'Last updated' },
+  { id: 'tags', label: 'Tags' },
 ];
 
 const BUILTIN_LABELS = new Map<string, string>(BUILTIN_CARD_FIELDS.map((f) => [f.id, f.label]));
@@ -82,6 +84,7 @@ export const DEFAULT_CARD_FIELDS: CardFieldsConfig = [
   { id: 'value', visible: false },
   { id: 'quantity', visible: false },
   { id: 'updated', visible: false },
+  { id: 'tags', visible: false },
 ];
 
 /**
@@ -200,6 +203,7 @@ export type CardFieldValue =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'money'; readonly amount: number }
   | { readonly kind: 'condition'; readonly condition: Condition }
+  | { readonly kind: 'tags'; readonly tags: readonly string[] }
   | { readonly kind: 'empty' };
 
 export interface ResolvedCardField {
@@ -226,6 +230,8 @@ export interface CardFieldContext {
   readonly customFields: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values (fieldId → raw value), if they've loaded. */
   readonly customValues: ReadonlyMap<string, string> | undefined;
+  /** This item's tag names (issue #84), if the Tags field is shown and they've loaded. */
+  readonly tags?: readonly string[];
   readonly fmt: CardFieldFormatters;
 }
 
@@ -295,6 +301,13 @@ function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCard
         label: 'Last updated',
         value: { kind: 'text', text: ctx.fmt.relativeTime(item.updatedAt) },
       };
+    case 'tags': {
+      // Issue #84: the item's freeform tags, rendered as chips by the card. Fetched per
+      // on-screen window (like custom-field values), so an item whose tags haven't loaded —
+      // or that has none — resolves to em-dash, keeping card heights config-driven.
+      const tags = ctx.tags ?? [];
+      return { id, label: 'Tags', value: tags.length > 0 ? { kind: 'tags', tags } : EMPTY };
+    }
     default:
       return null; // unknown built-in id (defensive — normalisation drops these)
   }

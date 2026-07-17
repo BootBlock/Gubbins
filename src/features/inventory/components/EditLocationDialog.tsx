@@ -12,6 +12,7 @@ import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
+import { LocationTagEditor } from './TagEditor';
 import { locationFullness } from '../location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
 import {
@@ -165,6 +166,11 @@ export function EditLocationDialog({
             placeholder="A note about what lives here, for your reference."
           />
         </FormField>
+
+        <div>
+          <span className="mb-field-gap block text-sm font-medium">Tags (optional)</span>
+          <LocationTagEditor locationId={location.id} />
+        </div>
 
         <div className="relative">
           <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">

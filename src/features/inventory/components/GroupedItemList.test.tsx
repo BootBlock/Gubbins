@@ -42,6 +42,11 @@ vi.mock('./ItemTable', () => ({
 vi.mock('../categories', () => ({
   useItemFieldValues: () => ({ data: undefined }),
 }));
+// The Tags card field (issue #84) fetches on-screen items' tags; disabled in the default
+// config, so stub it like the custom-field-values batch above.
+vi.mock('../tags', () => ({
+  useItemsTags: () => ({ data: undefined }),
+}));
 
 import { GroupedItemList } from './GroupedItemList';
 

@@ -14,7 +14,8 @@ export interface Tag {
   readonly updatedAt: number;
 }
 
-/** A tag plus how many items currently carry it, for the dictionary view. */
+/** A tag plus how many items and locations currently carry it, for the dictionary view. */
 export interface TagWithCount extends Tag {
   readonly itemCount: number;
+  readonly locationCount: number;
 }

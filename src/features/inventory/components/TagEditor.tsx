@@ -1,29 +1,34 @@
 import { useState } from 'react';
 import { InfoHint, Input } from '@/components/foundry';
 import { CloseIcon, TagIcon } from '@/components/icons';
-import { useItemTags, useSetItemTags, useTagSuggestions } from '../tags';
+import { useItemTags, useLocationTags, useSetItemTags, useSetLocationTags, useTagSuggestions } from '../tags';
 
 /**
- * Freeform tag editor (spec §4, §5). Low-friction: typing a new name and pressing
- * Enter (or comma) auto-creates the tag and assigns it; existing tags are reused
- * case-insensitively. Edits are diffed by {@link TagRepository.setForItem}.
+ * Presentational freeform tag editor (spec §4, §5). Low-friction: typing a new name and
+ * pressing Enter (or comma) auto-creates the tag and assigns it; existing tags are reused
+ * case-insensitively. Fully controlled — the owner-bound wrappers below ({@link TagEditor}
+ * for an item, {@link LocationTagEditor} for a location — issue #84) supply `names` and an
+ * `onChange` that persists the whole replacement set via {@link TagRepository.setFor}.
  */
-export function TagEditor({ itemId }: { itemId: string }) {
-  const { data: tags } = useItemTags(itemId);
-  const setTags = useSetItemTags(itemId);
+export function TagEditorControl({
+  names,
+  onChange,
+}: {
+  names: readonly string[];
+  onChange: (names: string[]) => void;
+}) {
   const [input, setInput] = useState('');
   const { data: suggestions } = useTagSuggestions(input);
 
-  const names = tags?.map((t) => t.name) ?? [];
   const has = (name: string) => names.some((n) => n.toLowerCase() === name.toLowerCase());
 
   const add = (raw: string) => {
     const name = raw.trim();
     setInput('');
     if (!name || has(name)) return;
-    setTags.mutate([...names, name]);
+    onChange([...names, name]);
   };
-  const remove = (name: string) => setTags.mutate(names.filter((n) => n !== name));
+  const remove = (name: string) => onChange(names.filter((n) => n !== name));
 
   const unusedSuggestions = (suggestions ?? []).filter((s) => !has(s.name)).slice(0, 6);
 
@@ -89,11 +94,29 @@ export function TagEditor({ itemId }: { itemId: string }) {
               'Freeform labels for grouping and filtering — *fragile*, *RoHS*, *favourite*, anything.\n\n' +
               '- Press **Enter** or **comma** to add.\n' +
               '- Names are reused **case-insensitively**, so `Fragile` and `fragile` are the same tag.\n' +
-              '- Tags are searchable from the inventory search bar.'
+              '- The same tag can sit on both items and locations, and is searchable from the inventory search bar.'
             }
           />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Tag editor bound to one item's tag set. */
+export function TagEditor({ itemId }: { itemId: string }) {
+  const { data: tags } = useItemTags(itemId);
+  const setTags = useSetItemTags(itemId);
+  return (
+    <TagEditorControl names={tags?.map((t) => t.name) ?? []} onChange={(names) => setTags.mutate(names)} />
+  );
+}
+
+/** Tag editor bound to one location's tag set (issue #84). */
+export function LocationTagEditor({ locationId }: { locationId: string }) {
+  const { data: tags } = useLocationTags(locationId);
+  const setTags = useSetLocationTags(locationId);
+  return (
+    <TagEditorControl names={tags?.map((t) => t.name) ?? []} onChange={(names) => setTags.mutate(names)} />
   );
 }

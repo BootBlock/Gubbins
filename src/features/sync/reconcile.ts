@@ -17,7 +17,15 @@
  * The engine never touches the database — the orchestrator applies the plan and
  * re-reads the merged state to push — so it is exhaustively unit-tested in isolation.
  */
-import { UNASSIGNED_LOCATION_ID, SYNC_TABLES, ITEM_HISTORY_TABLE, itemTagEdgeId } from '@/db/repositories';
+import {
+  UNASSIGNED_LOCATION_ID,
+  SYNC_TABLES,
+  ITEM_HISTORY_TABLE,
+  ITEM_TAGS_TABLE,
+  LOCATION_TAGS_TABLE,
+  itemTagEdgeId,
+  locationTagEdgeId,
+} from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
 import { buildConflict, nonLwwColumns } from './conflict-detect';
@@ -30,6 +38,8 @@ import type {
   GaugeResolution,
   ItemTagEdge,
   ItemTagEdgeDelete,
+  LocationTagEdge,
+  LocationTagEdgeDelete,
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
@@ -72,6 +82,8 @@ const EMPTY_PLAN: ReconciliationPlan = {
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
+  locationTagUpserts: [],
+  locationTagDeletes: [],
   conflicts: [],
 };
 
@@ -162,6 +174,7 @@ export function reconcile(
   // Both reference parents (items/tags), so they are filtered to the rows that will
   // survive the merge to keep the atomic apply FK-safe.
   const finalTagIds = survivingIds('tags', local, localUpserts, localDeletes);
+  const finalLocationIds = survivingIds('locations', local, localUpserts, localDeletes);
 
   const historyInserts = reconcileHistory(
     local,
@@ -177,6 +190,13 @@ export function reconcile(
     finalItemIds,
     finalTagIds,
   );
+  const { locationTagUpserts, locationTagDeletes } = reconcileLocationTags(
+    local,
+    remote,
+    offset,
+    finalLocationIds,
+    finalTagIds,
+  );
 
   return {
     localUpserts,
@@ -187,6 +207,8 @@ export function reconcile(
     historyInserts,
     itemTagUpserts,
     itemTagDeletes,
+    locationTagUpserts,
+    locationTagDeletes,
     conflicts,
   };
 }
@@ -621,14 +643,59 @@ function reconcileHistory(
 }
 
 /**
- * M:N `item_tags` membership reconciliation (§7.3, Phase 11). The join has no per-row
- * timestamp, so it cannot resolve by LWW. Instead it is a **tombstone-wins union**
- * (2P-set): an edge is present after the merge iff either side still holds it AND
- * neither side carries a deletion tombstone for it. A surviving edge missing locally is
- * added (FK-guarded against the surviving item/tag sets); an edge present locally but
- * tombstoned by the peer is deleted and the (newest) tombstone adopted. A re-link is
- * only possible once the edge tombstone is TTL-pruned.
+ * Generic M:N membership reconciliation — a **tombstone-wins union** (2P-set) shared by
+ * `item_tags` (Phase 11) and `location_tags` (issue #84). Neither join has a per-row
+ * timestamp, so neither can resolve by LWW. An edge is present after the merge iff either
+ * side still holds it AND neither side carries a deletion tombstone for it. A surviving
+ * edge missing locally is added (only when `survives` confirms both endpoints outlive the
+ * merge, keeping the atomic apply FK-safe); an edge present locally but tombstoned by the
+ * peer is deleted and the (newest) tombstone adopted. A re-link is only possible once the
+ * edge tombstone is TTL-pruned.
  */
+function reconcileEdgeMembership<E>(
+  localEdges: readonly E[] | undefined,
+  remoteEdges: readonly E[] | undefined,
+  localTomb: Map<string, number>,
+  remoteTomb: Map<string, number>,
+  edgeId: (edge: E) => string,
+  survives: (edge: E) => boolean,
+): { upserts: E[]; deletes: (E & { deletedAt: number })[] } {
+  const localMap = new Map<string, E>();
+  for (const e of localEdges ?? []) localMap.set(edgeId(e), e);
+  const remoteMap = new Map<string, E>();
+  for (const e of remoteEdges ?? []) remoteMap.set(edgeId(e), e);
+
+  const keys = new Set<string>([
+    ...localMap.keys(),
+    ...remoteMap.keys(),
+    ...localTomb.keys(),
+    ...remoteTomb.keys(),
+  ]);
+
+  const upserts: E[] = [];
+  const deletes: (E & { deletedAt: number })[] = [];
+
+  for (const key of keys) {
+    const edge = localMap.get(key) ?? remoteMap.get(key)!;
+    const lt = localTomb.get(key);
+    const rt = remoteTomb.get(key);
+    const tombstoned = lt !== undefined || rt !== undefined;
+    const present = (localMap.has(key) || remoteMap.has(key)) && !tombstoned;
+    const localHas = localMap.has(key);
+
+    if (present && !localHas) {
+      // Add the edge locally — only if both endpoints survive the merge (FK-safe).
+      if (survives(edge)) upserts.push(edge);
+    } else if (!present && localHas) {
+      // Peer removed it (we hold no tombstone, since localHas implies none) → delete +
+      // adopt the winning tombstone instant.
+      deletes.push({ ...edge, deletedAt: Math.max(lt ?? 0, rt ?? 0) });
+    }
+  }
+  return { upserts, deletes };
+}
+
+/** M:N `item_tags` membership reconciliation (§7.3, Phase 11). */
 function reconcileItemTags(
   local: SyncSnapshot,
   remote: SyncSnapshot,
@@ -636,56 +703,45 @@ function reconcileItemTags(
   finalItemIds: ReadonlySet<string>,
   finalTagIds: ReadonlySet<string>,
 ): { itemTagUpserts: ItemTagEdge[]; itemTagDeletes: ItemTagEdgeDelete[] } {
-  const localEdges = edgeSet(local.itemTags);
-  const remoteEdges = edgeSet(remote.itemTags);
-  const localTomb = edgeTombstones(local.tombstones, offset);
-  const remoteTomb = edgeTombstones(remote.tombstones, 0);
-
-  const keys = new Set<string>([
-    ...localEdges.keys(),
-    ...remoteEdges.keys(),
-    ...localTomb.keys(),
-    ...remoteTomb.keys(),
-  ]);
-
-  const itemTagUpserts: ItemTagEdge[] = [];
-  const itemTagDeletes: ItemTagEdgeDelete[] = [];
-
-  for (const key of keys) {
-    const edge = localEdges.get(key) ?? remoteEdges.get(key)!;
-    const lt = localTomb.get(key);
-    const rt = remoteTomb.get(key);
-    const tombstoned = lt !== undefined || rt !== undefined;
-    const present = (localEdges.has(key) || remoteEdges.has(key)) && !tombstoned;
-    const localHas = localEdges.has(key);
-
-    if (present && !localHas) {
-      // Add the edge locally — only if both endpoints survive the merge (FK-safe).
-      if (finalItemIds.has(edge.itemId) && finalTagIds.has(edge.tagId)) {
-        itemTagUpserts.push(edge);
-      }
-    } else if (!present && localHas) {
-      // Peer removed it (we hold no tombstone, since localHas implies none) → delete +
-      // adopt the winning tombstone instant.
-      const deletedAt = Math.max(lt ?? 0, rt ?? 0);
-      itemTagDeletes.push({ ...edge, deletedAt });
-    }
-  }
-  return { itemTagUpserts, itemTagDeletes };
+  const { upserts, deletes } = reconcileEdgeMembership<ItemTagEdge>(
+    local.itemTags,
+    remote.itemTags,
+    edgeTombstones(local.tombstones, ITEM_TAGS_TABLE, offset),
+    edgeTombstones(remote.tombstones, ITEM_TAGS_TABLE, 0),
+    (e) => itemTagEdgeId(e.itemId, e.tagId),
+    (e) => finalItemIds.has(e.itemId) && finalTagIds.has(e.tagId),
+  );
+  return { itemTagUpserts: upserts, itemTagDeletes: deletes };
 }
 
-/** Index membership edges by their composite key. */
-function edgeSet(edges: readonly ItemTagEdge[] | undefined): Map<string, ItemTagEdge> {
-  const map = new Map<string, ItemTagEdge>();
-  for (const e of edges ?? []) map.set(itemTagEdgeId(e.itemId, e.tagId), e);
-  return map;
+/** M:N `location_tags` membership reconciliation (issue #84 — the location counterpart). */
+function reconcileLocationTags(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  offset: number,
+  finalLocationIds: ReadonlySet<string>,
+  finalTagIds: ReadonlySet<string>,
+): { locationTagUpserts: LocationTagEdge[]; locationTagDeletes: LocationTagEdgeDelete[] } {
+  const { upserts, deletes } = reconcileEdgeMembership<LocationTagEdge>(
+    local.locationTags,
+    remote.locationTags,
+    edgeTombstones(local.tombstones, LOCATION_TAGS_TABLE, offset),
+    edgeTombstones(remote.tombstones, LOCATION_TAGS_TABLE, 0),
+    (e) => locationTagEdgeId(e.locationId, e.tagId),
+    (e) => finalLocationIds.has(e.locationId) && finalTagIds.has(e.tagId),
+  );
+  return { locationTagUpserts: upserts, locationTagDeletes: deletes };
 }
 
-/** Edge tombstones (key → offset-adjusted deletedAt) from a tombstone list. */
-function edgeTombstones(tombstones: readonly Tombstone[], offset: number): Map<string, number> {
+/** Edge tombstones for one edge table (key → offset-adjusted deletedAt). */
+function edgeTombstones(
+  tombstones: readonly Tombstone[],
+  tableName: string,
+  offset: number,
+): Map<string, number> {
   const map = new Map<string, number>();
   for (const t of tombstones) {
-    if (t.tableName === 'item_tags') map.set(t.id, t.deletedAt + offset);
+    if (t.tableName === tableName) map.set(t.id, t.deletedAt + offset);
   }
   return map;
 }

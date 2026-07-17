@@ -51,6 +51,8 @@ export function parseBackupJson(text: string): SyncSnapshot {
     gaugeHistory: obj.gaugeHistory ?? [],
     // Phase 11 sync-set expansion: older backups predate these, so default to empty.
     itemTags: obj.itemTags ?? [],
+    // Issue #84: location tagging — older backups predate this, so default to empty.
+    locationTags: obj.locationTags ?? [],
     itemHistory: obj.itemHistory ?? [],
   };
 }

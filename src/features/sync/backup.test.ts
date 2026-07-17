@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
-import { ImageRepository, ItemRepository, TagRepository, UNASSIGNED_LOCATION_ID } from '@/db/repositories';
+import {
+  ImageRepository,
+  ItemRepository,
+  LocationRepository,
+  TagRepository,
+  UNASSIGNED_LOCATION_ID,
+} from '@/db/repositories';
 import { buildBackupJson, parseBackupJson, restoreFromBackupJson } from './backup';
 
 describe('backup parse/validate (§2)', () => {
@@ -89,6 +95,27 @@ describe('backup → restore round-trip (§2)', () => {
       ['hist-1'],
     );
     expect(restoredHistory).toEqual([{ id: 'hist-1', note: 'manual note' }]);
+
+    await driver2.close();
+  });
+
+  it('issue #84: round-trips location tags into a fresh database', async () => {
+    const tags = new TagRepository(driver);
+    const locations = new LocationRepository(driver);
+    const location = await locations.create({ name: 'Van' });
+    await tags.setForLocation(location.id, ['mobile', 'toolkit']);
+
+    const backup = await buildBackupJson(driver);
+    const parsed = JSON.parse(backup);
+    expect(parsed.locationTags).toHaveLength(2);
+
+    const driver2 = createMemoryDriver();
+    await runMigrations(driver2, migrations);
+    await restoreFromBackupJson(driver2, backup);
+
+    const tags2 = new TagRepository(driver2);
+    const restored = (await tags2.getForLocation(location.id)).map((t) => t.name).sort();
+    expect(restored).toEqual(['mobile', 'toolkit']);
 
     await driver2.close();
   });

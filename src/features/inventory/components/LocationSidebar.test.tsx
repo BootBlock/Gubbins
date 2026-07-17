@@ -25,6 +25,15 @@ const moveState = vi.hoisted(() => ({
   isPending: false,
   variables: undefined as { id: string; locationId: string } | undefined,
 }));
+// The tag filter and the Edit dialog's location tag editor (issue #84) read react-query hooks;
+// stub them so the test stays free of a QueryClient (an undefined index means no filter chips,
+// and an empty tag set means the editor renders inertly — both leave behaviour unchanged).
+vi.mock('../tags', () => ({
+  useLocationTagIndex: () => ({ data: undefined }),
+  useLocationTags: () => ({ data: [] }),
+  useSetLocationTags: () => ({ mutate: vi.fn() }),
+  useTagSuggestions: () => ({ data: [] }),
+}));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),

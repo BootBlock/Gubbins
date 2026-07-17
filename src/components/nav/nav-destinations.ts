@@ -19,6 +19,7 @@ import {
   ReportIcon,
   SettingsIcon,
   ShoppingCartIcon,
+  TagIcon,
 } from '@/components/icons';
 
 /**
@@ -58,7 +59,8 @@ export type AppRoutePath =
   | '/home-assistant'
   | '/settings'
   | '/about'
-  | '/modules';
+  | '/modules'
+  | '/tags';
 
 /** Visual grouping in the navigation menu — a light hierarchy, not separate routers. */
 export type NavGroup = 'primary' | 'manage' | 'system';
@@ -233,6 +235,9 @@ export const PALETTE_EXTRA_DESTINATIONS: readonly PaletteDestination[] = [
     feature: 'reports',
   },
   { to: '/modules', label: 'Manage modules', Icon: ModulesIcon },
+  // The tag dictionary manager (issue #84), reached from an item/location's tag editor and the
+  // palette. Ungated — tags are a core inventory concept, always available.
+  { to: '/tags', label: 'Manage tags', Icon: TagIcon },
 ];
 
 /**

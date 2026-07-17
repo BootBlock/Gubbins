@@ -10,12 +10,16 @@
 import {
   ITEM_HISTORY_TABLE,
   ITEM_TAGS_TABLE,
+  LOCATION_TAGS_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   SYNC_TABLES,
   UNASSIGNED_LOCATION_ID,
   clearItemTagTombstoneStatement,
+  clearLocationTagTombstoneStatement,
   itemTagEdgeId,
+  locationTagEdgeId,
   parseItemTagEdgeId,
+  parseLocationTagEdgeId,
 } from '@/db/repositories';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
@@ -23,6 +27,7 @@ import { buildSchemaDictionary } from './schema-dictionary';
 import type {
   GaugeHistoryDelta,
   ItemTagEdge,
+  LocationTagEdge,
   ReconciliationPlan,
   SchemaDictionary,
   SyncSnapshot,
@@ -94,6 +99,7 @@ export async function buildLocalSnapshot(
 
   const gaugeHistory = await readGaugeHistory(driver);
   const itemTags = await readItemTags(driver);
+  const locationTags = await readLocationTags(driver);
   const itemHistory = await readItemHistory(driver);
 
   return {
@@ -103,6 +109,7 @@ export async function buildLocalSnapshot(
     tombstones,
     gaugeHistory,
     itemTags,
+    locationTags,
     itemHistory,
   };
 }
@@ -146,6 +153,14 @@ async function readItemTags(driver: IDatabaseDriver): Promise<ItemTagEdge[]> {
     `SELECT item_id, tag_id FROM ${ITEM_TAGS_TABLE} ORDER BY item_id, tag_id;`,
   );
   return rows.map((r) => ({ itemId: r.item_id, tagId: r.tag_id }));
+}
+
+/** Read the M:N `location_tags` membership edges (issue #84; no row id/timestamp). */
+async function readLocationTags(driver: IDatabaseDriver): Promise<LocationTagEdge[]> {
+  const rows = await driver.query<{ location_id: string; tag_id: string }>(
+    `SELECT location_id, tag_id FROM ${LOCATION_TAGS_TABLE} ORDER BY location_id, tag_id;`,
+  );
+  return rows.map((r) => ({ locationId: r.location_id, tagId: r.tag_id }));
 }
 
 /** Read the full append-only `item_history` ledger (Phase 11; union-by-id). */
@@ -212,6 +227,13 @@ export function tombstoneDeleteStatement(tableName: string, id: string): SqlStat
     return {
       sql: `DELETE FROM ${ITEM_TAGS_TABLE} WHERE item_id = ? AND tag_id = ?;`,
       params: [itemId, tagId],
+    };
+  }
+  if (tableName === LOCATION_TAGS_TABLE) {
+    const { locationId, tagId } = parseLocationTagEdgeId(id);
+    return {
+      sql: `DELETE FROM ${LOCATION_TAGS_TABLE} WHERE location_id = ? AND tag_id = ?;`,
+      params: [locationId, tagId],
     };
   }
   return { sql: `DELETE FROM ${tableName} WHERE id = ?;`, params: [id] };
@@ -286,6 +308,27 @@ export async function applyPlan(
     statements.push({
       sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
       params: [ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId), deletedAt],
+    });
+  }
+
+  // Issue #84: location_tags membership additions (after tags + locations exist, FK-safe).
+  for (const { locationId, tagId } of plan.locationTagUpserts) {
+    statements.push({
+      sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
+      params: [locationId, tagId],
+    });
+    statements.push(clearLocationTagTombstoneStatement(locationId, tagId));
+  }
+
+  // Issue #84: location_tags membership removals — delete the edge + record its tombstone.
+  for (const { locationId, tagId, deletedAt } of plan.locationTagDeletes) {
+    statements.push({
+      sql: `DELETE FROM ${LOCATION_TAGS_TABLE} WHERE location_id = ? AND tag_id = ?;`,
+      params: [locationId, tagId],
+    });
+    statements.push({
+      sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
+      params: [LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, tagId), deletedAt],
     });
   }
 
@@ -372,6 +415,7 @@ export function buildCloneStatements(
   // deleted, but doing it explicitly keeps the wipe order-independent — Phase 11).
   statements.push({ sql: `DELETE FROM ${ITEM_HISTORY_TABLE};` });
   statements.push({ sql: `DELETE FROM ${ITEM_TAGS_TABLE};` });
+  statements.push({ sql: `DELETE FROM ${LOCATION_TAGS_TABLE};` });
   for (const table of [...SYNC_TABLES].reverse()) {
     statements.push({
       sql: table === 'locations' ? 'DELETE FROM locations WHERE is_system = 0;' : `DELETE FROM ${table};`,
@@ -400,6 +444,12 @@ export function buildCloneStatements(
     statements.push({
       sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
       params: [itemId, tagId],
+    });
+  }
+  for (const { locationId, tagId } of remote.locationTags ?? []) {
+    statements.push({
+      sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
+      params: [locationId, tagId],
     });
   }
   for (const t of remote.tombstones) {
@@ -454,6 +504,12 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
     statements.push({
       sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
       params: [itemId, tagId],
+    });
+  }
+  for (const { locationId, tagId } of snapshot.locationTags ?? []) {
+    statements.push({
+      sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
+      params: [locationId, tagId],
     });
   }
 

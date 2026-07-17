@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UpcomingRouteImport } from './routes/upcoming'
+import { Route as TagsRouteImport } from './routes/tags'
 import { Route as SyncRouteImport } from './routes/sync'
 import { Route as ShareTargetRouteImport } from './routes/share-target'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -33,6 +34,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const UpcomingRoute = UpcomingRouteImport.update({
   id: '/upcoming',
   path: '/upcoming',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TagsRoute = TagsRouteImport.update({
+  id: '/tags',
+  path: '/tags',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SyncRoute = SyncRouteImport.update({
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
+  '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
 }
 export interface FileRoutesByTo {
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
+  '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
 }
 export interface FileRoutesById {
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
   '/sync': typeof SyncRoute
+  '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
 }
 export interface FileRouteTypes {
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/share-target'
     | '/sync'
+    | '/tags'
     | '/upcoming'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -242,6 +252,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/share-target'
     | '/sync'
+    | '/tags'
     | '/upcoming'
   id:
     | '__root__'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/share-target'
     | '/sync'
+    | '/tags'
     | '/upcoming'
   fileRoutesById: FileRoutesById
 }
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   ShareTargetRoute: typeof ShareTargetRoute
   SyncRoute: typeof SyncRoute
+  TagsRoute: typeof TagsRoute
   UpcomingRoute: typeof UpcomingRoute
 }
 
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/upcoming'
       fullPath: '/upcoming'
       preLoaderRoute: typeof UpcomingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tags': {
+      id: '/tags'
+      path: '/tags'
+      fullPath: '/tags'
+      preLoaderRoute: typeof TagsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sync': {
@@ -455,6 +475,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   ShareTargetRoute: ShareTargetRoute,
   SyncRoute: SyncRoute,
+  TagsRoute: TagsRoute,
   UpcomingRoute: UpcomingRoute,
 }
 export const routeTree = rootRouteImport
