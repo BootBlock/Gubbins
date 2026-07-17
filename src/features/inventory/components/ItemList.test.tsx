@@ -44,6 +44,7 @@ const BASE_PROPS = {
     order: [] as string[],
     customFields: new Map(),
     categoryName: () => null,
+    categoryGlyph: () => null,
     values: undefined,
   },
 };

@@ -772,6 +772,28 @@ export default function SettingsDialog({
                 options={CARD_BADGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               />
             </SettingRow>
+            <SettingRow
+              label="Category watermarks"
+              description="Show a category’s glyph as a faint watermark on its items’ Visual cards."
+              hintSize="md"
+              hint={
+                'A category can carry an optional **glyph** (e.g. 🔋 for batteries, 📖 for books), ' +
+                'set from **Categories & schemas**. When this is on, an item’s Visual card shows its ' +
+                'category’s glyph as a large, faint **greyscale watermark** in the bottom-right ' +
+                'corner — a quick at-a-glance cue for what kind of thing it is.\n\n' +
+                'Turning it off hides every category watermark without clearing any category’s glyph. ' +
+                'It only affects the Visual (grid) card — the Data row and Table never show it.'
+              }
+            >
+              <Select
+                aria-label="Category watermarks"
+                data-testid="setting-category-watermarks"
+                className="h-9 w-40"
+                value={prefs.categoryWatermarks ? 'on' : 'off'}
+                onChange={(value) => prefs.setCategoryWatermarks(value === 'on')}
+                options={ON_OFF_OPTIONS}
+              />
+            </SettingRow>
           </SettingsSection>
 
           <SettingsSection icon={<CustomiseIcon />} title="Card fields">

@@ -510,6 +510,7 @@ describe('CategoryManagerDialog — the preset picker (importable categories)', 
     await waitFor(() =>
       expect(h.createCategoryAsync).toHaveBeenCalledWith({
         name: 'Tools',
+        glyph: '🛠️',
         defaultTrackingMode: 'SERIALISED',
         defaultCondition: 'GOOD',
         defaultWarrantyMonths: 12,
@@ -539,7 +540,7 @@ describe('CategoryManagerDialog — the preset picker (importable categories)', 
     openPicker();
     fireEvent.click(screen.getByRole('button', { name: 'Add Battery preset' }));
 
-    await waitFor(() => expect(h.createCategoryAsync).toHaveBeenCalledWith({ name: 'Battery' }));
+    await waitFor(() => expect(h.createCategoryAsync).toHaveBeenCalledWith({ name: 'Battery', glyph: '🔋' }));
     await waitFor(() =>
       expect(h.addFieldAsync).toHaveBeenCalledWith(
         expect.objectContaining({

@@ -34,6 +34,19 @@ interface CategoryCountRow extends CategoryRow {
   readonly field_count: number;
 }
 
+/**
+ * Normalise a category glyph for storage (issue #83): trim surrounding whitespace and treat
+ * an empty result as "no glyph" (null). A defensive length cap keeps a stray paste from
+ * storing an essay where a single emoji belongs — a glyph is a handful of code points, so
+ * 16 chars is ample headroom for a multi-code-point emoji (skin tone, ZWJ sequence).
+ */
+function normaliseGlyph(glyph: string | null | undefined): string | null {
+  if (glyph == null) return null;
+  const trimmed = glyph.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, 16);
+}
+
 interface ResolvedFieldRow extends CategoryFieldRow {
   readonly stored_value: string | null;
   readonly has_stored: number;
@@ -49,7 +62,7 @@ export class CategoryRepository extends BaseRepository {
   async list(params: PageParams = {}): Promise<Page<CategoryWithFieldCount>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<CategoryCountRow>(
-      `SELECT c.id, c.name, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
+      `SELECT c.id, c.name, c.glyph, c.default_tracking_mode, c.default_condition, c.default_warranty_months,
               c.default_maintenance_basis, c.default_maintenance_interval_days,
               c.default_maintenance_interval_usage,
               c.updated_at, COUNT(f.id) AS field_count
@@ -76,12 +89,13 @@ export class CategoryRepository extends BaseRepository {
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO categories
-         (id, name, default_tracking_mode, default_condition, default_warranty_months,
+         (id, name, glyph, default_tracking_mode, default_condition, default_warranty_months,
           default_maintenance_basis, default_maintenance_interval_days, default_maintenance_interval_usage)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         id,
         name,
+        normaliseGlyph(input.glyph),
         input.defaultTrackingMode ?? null,
         input.defaultCondition ?? null,
         input.defaultWarrantyMonths ?? null,
@@ -108,6 +122,10 @@ export class CategoryRepository extends BaseRepository {
       }
       sets.push('name = ?');
       params.push(name);
+    }
+    if (input.glyph !== undefined) {
+      sets.push('glyph = ?');
+      params.push(normaliseGlyph(input.glyph));
     }
     if (input.defaultTrackingMode !== undefined) {
       sets.push('default_tracking_mode = ?');

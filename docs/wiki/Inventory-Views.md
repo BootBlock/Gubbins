@@ -108,6 +108,14 @@ fallback**). It's a per-device preference and applies to both the Card and Data 
 > The view density only changes how items are **drawn** — it never changes your data or which
 > items match your current [[search|Search-Overview]], location and status filters.
 
+### Category watermarks
+
+If an item's [[category|Custom-Fields-and-Capabilities]] has a **glyph** (an emoji such as 🔋 or
+📖), its Visual card shows that glyph as a large, faint greyscale watermark in the bottom-right
+corner — a quick cue for what kind of thing each card is. Set a category's glyph from
+**Categories & schemas**, and turn all watermarks on or off under **Settings → Inventory → Item
+cards → Category watermarks** (on by default; the Data and Table views never show it).
+
 ## Related pages
 
 - **[[Search overview|Search-Overview]]** — narrowing which items are shown.

@@ -62,6 +62,37 @@ describe('CategoryRepository', () => {
     expect(listed?.defaultTrackingMode).toBe('SERIALISED');
   });
 
+  it('round-trips, updates and clears an optional category glyph (issue #83)', async () => {
+    // A category with no glyph reads back as null.
+    const plain = await categories.create({ name: 'Odds & ends' });
+    expect(plain.glyph).toBeNull();
+
+    // One created with a glyph carries it through create, read and the management list.
+    const batteries = await categories.create({ name: 'Batteries', glyph: '🔋' });
+    expect(batteries.glyph).toBe('🔋');
+    expect((await categories.getById(batteries.id))?.glyph).toBe('🔋');
+    expect((await categories.list()).rows.find((c) => c.id === batteries.id)?.glyph).toBe('🔋');
+
+    // Update just the glyph — the name is left untouched (partial LWW update).
+    const changed = await categories.update(batteries.id, { glyph: '📖' });
+    expect(changed.name).toBe('Batteries');
+    expect(changed.glyph).toBe('📖');
+
+    // Passing null clears it back to "no glyph".
+    expect((await categories.update(batteries.id, { glyph: null })).glyph).toBeNull();
+  });
+
+  it('normalises a category glyph: trims, and treats blank as no glyph (issue #83)', async () => {
+    const trimmed = await categories.create({ name: 'Spaced', glyph: '  🔋  ' });
+    expect(trimmed.glyph).toBe('🔋');
+
+    const blank = await categories.create({ name: 'Blank glyph', glyph: '   ' });
+    expect(blank.glyph).toBeNull();
+
+    // A blank update clears an existing glyph too.
+    expect((await categories.update(trimmed.id, { glyph: '   ' })).glyph).toBeNull();
+  });
+
   it('updates and clears a category default tracking mode without touching the name (backlog T1)', async () => {
     const cat = await categories.create({ name: 'Test gear', defaultTrackingMode: 'SERIALISED' });
 

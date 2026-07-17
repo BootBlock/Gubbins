@@ -17,6 +17,7 @@ import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldList } from './ItemCardFields';
 import { FavouriteCardWatermark } from './FavouriteIndicator';
+import { CategoryGlyphWatermark } from './CategoryGlyphWatermark';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
 import { itemRarity } from '../rarity';
 import type { ItemSelection } from './inventory-ui';
@@ -42,6 +43,7 @@ export const ItemCard = memo(function ItemCard({
   selected = false,
   fieldOrder = DEFAULT_VISIBLE_CARD_FIELD_IDS,
   categoryName = null,
+  categoryGlyph = null,
   customFields = EMPTY_CUSTOM_FIELDS,
   customValues,
 }: {
@@ -59,6 +61,11 @@ export const ItemCard = memo(function ItemCard({
   fieldOrder?: readonly string[];
   /** This item's resolved category name, or null when it has no category. */
   categoryName?: string | null;
+  /**
+   * This item's category glyph (issue #83), or null when the category has none or the global
+   * card-watermark setting is off. When set, it's painted as a faint greyscale corner watermark.
+   */
+  categoryGlyph?: string | null;
   /** The live custom-field catalog, keyed by field id (stable across the list). */
   customFields?: ReadonlyMap<string, CardCustomField>;
   /** This item's stored custom-field values (fieldId → raw value), if loaded. */
@@ -139,6 +146,12 @@ export const ItemCard = memo(function ItemCard({
         isHighlighted && 'animate-highlight',
       )}
     >
+      {/* Category glyph watermark (issue #83): a large, faint greyscale emoji in the bottom-right
+          of the card background when the item's category carries a glyph (and the global setting
+          is on). Sits behind the content, like the favourite star. Decorative — the category name
+          is already in the card's field list for AT. Painted first so the favourite star, when
+          both are present, hangs over it in the same corner. */}
+      {categoryGlyph ? <CategoryGlyphWatermark glyph={categoryGlyph} /> : null}
       {/* Favourite flair (issue #23): a faint gold star hung 50% off the bottom-right corner,
           clipped to the card. Decorative — the sr-only label below carries the state to AT. */}
       {item.isFavourite ? (

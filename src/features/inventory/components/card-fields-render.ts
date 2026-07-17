@@ -50,6 +50,8 @@ export interface CardFieldsListContext {
   readonly order: readonly string[];
   readonly customFields: ReadonlyMap<string, CardCustomField>;
   readonly categoryName: (categoryId: string | null) => string | null;
+  /** Resolve a category id to its card-watermark glyph, or null (issue #83). */
+  readonly categoryGlyph: (categoryId: string | null) => string | null;
   /** itemId → (fieldId → stored value) for the on-screen items, or undefined while loading. */
   readonly values: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
 }
@@ -62,4 +64,13 @@ export function cardFieldProps(ctx: CardFieldsListContext, item: Item) {
     customFields: ctx.customFields,
     customValues: ctx.values?.get(item.id),
   };
+}
+
+/**
+ * The per-item props for a Visual {@link ItemCard} — the shared {@link cardFieldProps} plus the
+ * category-glyph watermark (issue #83), which only the card renders (rows/table don't). Kept
+ * separate so the watermark-only prop never lands on `ItemRow`/`ItemTableRow`.
+ */
+export function itemCardProps(ctx: CardFieldsListContext, item: Item) {
+  return { ...cardFieldProps(ctx, item), categoryGlyph: ctx.categoryGlyph(item.categoryId) };
 }

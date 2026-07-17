@@ -92,6 +92,7 @@ const PROPS = {
     order: [] as string[],
     customFields: new Map(),
     categoryName: () => null,
+    categoryGlyph: () => null,
     hasCustomFields: false,
   },
 };

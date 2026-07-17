@@ -83,6 +83,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     seed: {
       category: {
         name: TOOLS_STARTER_CATEGORY_NAME,
+        glyph: '🛠️',
         defaultTrackingMode: 'SERIALISED',
         defaultCondition: 'GOOD',
         defaultWarrantyMonths: 12,
@@ -101,7 +102,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Battery',
     description: 'Cells and packs — voltage, chemistry, capacity and form factor.',
     seed: {
-      category: { name: 'Battery' },
+      category: { name: 'Battery', glyph: '🔋' },
       fields: ordered([
         { name: 'Voltage (V)', fieldType: 'NUMBER' },
         {
@@ -125,7 +126,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Food',
     description: 'Pantry and perishables — expiry, storage and whether the packet is opened.',
     seed: {
-      category: { name: 'Food' },
+      category: { name: 'Food', glyph: '🍎' },
       fields: ordered([
         { name: 'Expiry date', fieldType: 'DATE' },
         { name: 'Storage', fieldType: 'SELECT', options: ['Pantry', 'Fridge', 'Freezer'] },
@@ -141,7 +142,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Electronic component',
     description: 'Parts for the bench — part number, datasheet, package and value.',
     seed: {
-      category: { name: 'Electronic component' },
+      category: { name: 'Electronic component', glyph: '⚙️' },
       fields: ordered([
         { name: 'Manufacturer', fieldType: 'TEXT' },
         { name: 'Manufacturer part number', fieldType: 'TEXT' },
@@ -158,7 +159,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Book',
     description: 'Books and reading — author, ISBN, format and a personal rating.',
     seed: {
-      category: { name: 'Book' },
+      category: { name: 'Book', glyph: '📖' },
       fields: ordered([
         { name: 'Author', fieldType: 'TEXT' },
         { name: 'Publisher', fieldType: 'TEXT' },
@@ -176,7 +177,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Clothing',
     description: 'Apparel — size, colour, material and brand.',
     seed: {
-      category: { name: 'Clothing' },
+      category: { name: 'Clothing', glyph: '👕' },
       fields: ordered([
         { name: 'Size', fieldType: 'SELECT', options: ['XS', 'S', 'M', 'L', 'XL', 'XXL'] },
         { name: 'Colour', fieldType: 'TEXT' },
@@ -191,7 +192,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Cable',
     description: 'Leads and adaptors — connector types and length.',
     seed: {
-      category: { name: 'Cable' },
+      category: { name: 'Cable', glyph: '🔌' },
       fields: ordered([
         {
           name: 'Type',
@@ -211,7 +212,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Fastener',
     description: 'Screws, bolts and fixings — type, thread, length and material.',
     seed: {
-      category: { name: 'Fastener' },
+      category: { name: 'Fastener', glyph: '🔩' },
       fields: ordered([
         { name: 'Type', fieldType: 'SELECT', options: ['Screw', 'Bolt', 'Nut', 'Washer', 'Rivet', 'Anchor'] },
         {
@@ -235,7 +236,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: '3D Filament',
     description: '3D-printer filament spools — material, diameter, colour and print settings.',
     seed: {
-      category: { name: '3D Filament' },
+      category: { name: '3D Filament', glyph: '🧵' },
       fields: ordered([
         { name: 'Brand', fieldType: 'TEXT' },
         {
@@ -257,7 +258,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Fabric',
     description: 'Sewing and craft fabric — material, width, colour and pattern.',
     seed: {
-      category: { name: 'Fabric' },
+      category: { name: 'Fabric', glyph: '🧶' },
       fields: ordered([
         {
           name: 'Material',
@@ -277,7 +278,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Paint',
     description: 'Hobby and craft paint — brand, colour, finish and type.',
     seed: {
-      category: { name: 'Paint' },
+      category: { name: 'Paint', glyph: '🎨' },
       fields: ordered([
         { name: 'Brand', fieldType: 'TEXT' },
         { name: 'Colour name', fieldType: 'TEXT' },
@@ -301,7 +302,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Adhesive',
     description: 'Glues, resins and tapes — type, cure time and shelf life.',
     seed: {
-      category: { name: 'Adhesive' },
+      category: { name: 'Adhesive', glyph: '🧴' },
       fields: ordered([
         {
           name: 'Type',
@@ -320,7 +321,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Model kit',
     description: 'Scale model kits — manufacturer, scale, subject and build status.',
     seed: {
-      category: { name: 'Model kit' },
+      category: { name: 'Model kit', glyph: '🧩' },
       fields: ordered([
         { name: 'Manufacturer', fieldType: 'TEXT' },
         { name: 'Kit number', fieldType: 'TEXT' },
@@ -344,7 +345,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Trading card',
     description: 'Collectible cards — set, rarity, condition and language.',
     seed: {
-      category: { name: 'Trading card' },
+      category: { name: 'Trading card', glyph: '🃏' },
       fields: ordered([
         { name: 'Set / expansion', fieldType: 'TEXT' },
         { name: 'Card number', fieldType: 'TEXT' },
@@ -370,7 +371,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Vinyl record',
     description: 'Records — artist, format, speed and condition.',
     seed: {
-      category: { name: 'Vinyl record' },
+      category: { name: 'Vinyl record', glyph: '💿' },
       fields: ordered([
         { name: 'Artist', fieldType: 'TEXT' },
         { name: 'Label', fieldType: 'TEXT' },
@@ -396,7 +397,7 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
     name: 'Coin',
     description: 'Coins — country, year, denomination and grade.',
     seed: {
-      category: { name: 'Coin' },
+      category: { name: 'Coin', glyph: '🪙' },
       fields: ordered([
         { name: 'Country', fieldType: 'TEXT' },
         { name: 'Year', fieldType: 'NUMBER' },

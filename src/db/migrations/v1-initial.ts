@@ -124,6 +124,10 @@ export const v1Initial: Migration = {
         CREATE TABLE categories (
           id                      TEXT    PRIMARY KEY NOT NULL,
           name                    TEXT    NOT NULL,
+          -- Optional decorative Unicode glyph/emoji (issue #83). When set, an item in this
+          -- category shows it as a faint greyscale watermark on its Visual card. Purely
+          -- presentational; nullable (no glyph). Stored verbatim as the emoji character(s).
+          glyph                   TEXT,
           -- Optional category template default (backlog T1): soft-prefills a new item's
           -- tracking mode in the create form. Nullable (no default); constrained to the
           -- TRACKING_MODES SSOT exactly as items.tracking_mode is.

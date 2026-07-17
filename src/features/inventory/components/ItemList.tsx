@@ -12,7 +12,7 @@ import { ItemRow } from './ItemRow';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
 import { tableFieldColumns, tableGridColumns } from './item-table-columns';
 import { SubLocationNav } from './SubLocationNav';
-import { cardFieldProps, type CardFieldsListContext } from './card-fields-render';
+import { cardFieldProps, itemCardProps, type CardFieldsListContext } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
 
 const VISUAL_CARD_MIN_WIDTH = 280;
@@ -261,7 +261,7 @@ export function ItemList({
                           locationTintClass={locationTintClass?.(item.locationId)}
                           selection={selection}
                           selected={selected}
-                          {...cardFieldProps(cardFields, item)}
+                          {...itemCardProps(cardFields, item)}
                         />
                       );
                     })}

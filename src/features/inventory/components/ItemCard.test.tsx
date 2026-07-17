@@ -240,6 +240,17 @@ describe('ItemCard — content branches', () => {
     expect(screen.queryByText('Favourite', { selector: '.sr-only' })).toBeNull();
   });
 
+  it('paints the category glyph watermark when a glyph is supplied (issue #83)', () => {
+    const { container } = renderCard(makeItem(), { categoryGlyph: '🔋' });
+    // The decorative watermark is aria-hidden; assert its glyph is present in the DOM.
+    expect(container.textContent).toContain('🔋');
+  });
+
+  it('omits the category glyph watermark when none is supplied (issue #83)', () => {
+    const { container } = renderCard(makeItem());
+    expect(container.textContent).not.toContain('🔋');
+  });
+
   it('renders a selection checkbox and marks the card selected when in select mode', () => {
     renderCard(makeItem(), { selection: { onToggle: vi.fn() }, selected: true });
     const checkbox = screen.getByRole('checkbox', { name: 'Select NE555 timer' }) as HTMLInputElement;

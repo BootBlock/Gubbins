@@ -278,6 +278,13 @@ interface PreferencesStore {
    */
   readonly cardFields: CardFieldsConfig;
   /**
+   * Whether a category's optional glyph is painted as a faint greyscale watermark on the
+   * Visual cards of its items (issue #83). **On by default** — the watermark is a discoverable
+   * cue that groups the grid at a glance. Turning it off hides every category watermark without
+   * clearing any category's glyph. Only affects the Visual card (rows/table never show it).
+   */
+  readonly categoryWatermarks: boolean;
+  /**
    * Which metric each configurable Dashboard nav tile counts (backlog A1/A2). A device-local
    * map of tile route → chosen metric id (e.g. `'/projects' → 'active'`); tiles absent from
    * the map, or holding a stale id, fall back to their shipped default at read time. The
@@ -504,6 +511,8 @@ interface PreferencesStore {
   setCardBadgeFallback: (content: CardBadgeContent) => void;
   /** Replace the item-card field configuration (order + visibility). */
   setCardFields: (fields: CardFieldsConfig) => void;
+  /** Turn category glyph card watermarks on/off across the Visual card grid (issue #83). */
+  setCategoryWatermarks: (enabled: boolean) => void;
   /** Restore the shipped default card-field configuration. */
   resetCardFields: () => void;
   /** Point a configurable Dashboard nav tile at a different count metric. */
@@ -601,6 +610,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       cardBadgeContent: DEFAULT_CARD_BADGE_CONTENT,
       cardBadgeFallback: DEFAULT_CARD_BADGE_FALLBACK,
       cardFields: DEFAULT_CARD_FIELDS,
+      categoryWatermarks: true,
       navCountMetrics: DEFAULT_NAV_COUNT_METRICS,
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
@@ -698,6 +708,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // live custom-field catalog (`normaliseCardFields`), so no store-side normalisation.
       setCardFields: (cardFields) => set({ cardFields }),
       resetCardFields: () => set({ cardFields: DEFAULT_CARD_FIELDS }),
+      setCategoryWatermarks: (categoryWatermarks) => set({ categoryWatermarks }),
       // Merge one tile's choice (normalised) over the map, leaving the other tiles untouched.
       setNavCountMetric: (route, metric) =>
         set((state) => ({
