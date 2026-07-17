@@ -5,7 +5,8 @@ import { useHighlightTarget } from '@/lib/highlight';
 import { isUnlimited } from '../unlimited';
 import { useItemDragSource } from '../item-drag';
 import { DEFAULT_VISIBLE_CARD_FIELD_IDS, type CardCustomField } from '../card-fields';
-import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
+import { UnlimitedBadge } from './TrackingBadge';
+import { CardBadge } from './CardBadge';
 import { ItemActions } from './ItemActions';
 import { ItemStockValue } from './ItemStockValue';
 import { useCardClickAction } from './useCardClickAction';
@@ -112,7 +113,7 @@ export const ItemRow = memo(function ItemRow({
         <CardFieldSummary fields={fields} locationColorClass={locationColorClass} />
       </div>
 
-      <TrackingBadge mode={item.trackingMode} className="hidden sm:inline-flex" />
+      <CardBadge item={item} className="hidden sm:inline-flex" />
       {isUnlimited(item) ? <UnlimitedBadge className="hidden sm:inline-flex" /> : null}
 
       <div className="flex w-40 items-center justify-end gap-2">

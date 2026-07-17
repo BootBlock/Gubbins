@@ -11,7 +11,8 @@ import { DiscreteCardMetric } from './DiscreteCardMetric';
 import { GaugeBar } from './GaugeBar';
 import { QuantityStepper } from './QuantityStepper';
 import { Thumbnail } from './Thumbnail';
-import { TrackingBadge, UnlimitedBadge } from './TrackingBadge';
+import { UnlimitedBadge } from './TrackingBadge';
+import { CardBadge } from './CardBadge';
 import { ItemActions } from './ItemActions';
 import { useCardClickAction } from './useCardClickAction';
 import { CardFieldList } from './ItemCardFields';
@@ -177,7 +178,7 @@ export const ItemCard = memo(function ItemCard({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <TrackingBadge mode={item.trackingMode} />
+          <CardBadge item={item} />
           {isUnlimited(item) ? <UnlimitedBadge /> : null}
         </div>
       </div>

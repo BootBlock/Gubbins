@@ -3,6 +3,7 @@ import {
   DASHBOARD_COLUMNS,
   defaultLayout,
   firstFreeCell,
+  hideHealthyCards,
   moveWidget,
   nudgeWidget,
   occupantAt,
@@ -33,6 +34,38 @@ describe('placedWidgets', () => {
   it('returns only visible placements, sorted by row then column', () => {
     const layout: DashboardLayout = [at('c', 2, 0), at('a', 0, 0), at('hidden', 1, 0, false), at('d', 0, 1)];
     expect(placedWidgets(layout).map((p) => p.id)).toEqual(['a', 'c', 'd']);
+  });
+});
+
+describe('hideHealthyCards', () => {
+  it('returns the same reference when nothing is hidden (no-op fast path)', () => {
+    const layout: DashboardLayout = [at('a', 0, 0), at('b', 1, 0)];
+    expect(hideHealthyCards(layout, new Set())).toBe(layout);
+  });
+
+  it('drops the hidden cards and re-flows the survivors gaplessly row-major', () => {
+    // a b c on the top row, d e on the next; hide b and d — c, e should close the gaps.
+    const layout: DashboardLayout = [
+      at('a', 0, 0),
+      at('b', 1, 0),
+      at('c', 2, 0),
+      at('d', 0, 1),
+      at('e', 1, 1),
+    ];
+    const result = hideHealthyCards(layout, new Set(['b', 'd']));
+    expect(result).toEqual([at('a', 0, 0), at('c', 1, 0), at('e', 2, 0)]);
+  });
+
+  it('preserves the visible row-major order of the survivors when re-flowing', () => {
+    // Deliberately out of array order; placedWidgets sorts by (row, col) first.
+    const layout: DashboardLayout = [at('c', 2, 0), at('a', 0, 0), at('b', 1, 0)];
+    expect(hideHealthyCards(layout, new Set(['a'])).map((p) => p.id)).toEqual(['b', 'c']);
+  });
+
+  it('never re-flows an already-hidden (customise-hidden) placement onto the board', () => {
+    const layout: DashboardLayout = [at('a', 0, 0), at('hidden', 1, 0, false), at('b', 2, 0)];
+    // Only the visible survivors are packed; the customise-hidden one stays off the board.
+    expect(hideHealthyCards(layout, new Set(['a']))).toEqual([at('b', 0, 0)]);
   });
 });
 

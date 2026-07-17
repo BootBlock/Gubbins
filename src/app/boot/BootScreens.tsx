@@ -8,6 +8,9 @@ import { useT, type MessageKey } from '@/features/i18n';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 import type { DbError, DbErrorCode } from '@/db/errors';
 
+/** The public project home, linked from the boot-screen footer. */
+const REPO_URL = 'https://github.com/BootBlock/Gubbins';
+
 type Accent = 'brand' | 'warning' | 'danger';
 
 const ACCENT_CLASS: Record<Accent, string> = {
@@ -54,7 +57,14 @@ function BootShell({
         </div>
         {children ? <div className="mt-6">{children}</div> : null}
       </Surface>
-      <p className="absolute bottom-5 text-xs text-muted-foreground/60">Gubbins · local-first inventory</p>
+      <a
+        href={REPO_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="absolute bottom-5 rounded-sm text-xs text-muted-foreground/60 underline-offset-4 outline-none transition-colors hover:text-muted-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        Gubbins · local-first inventory
+      </a>
     </div>
   );
 }
