@@ -19,11 +19,19 @@ Each location can have:
 - **A name** — a room, shelf, drawer, box, or anywhere else things live.
 - **A colour** — a swatch that tints the location and the cards of items stored in it, so the
   grid reads at a glance.
-- **A description** — surfaced as a tooltip when you hover the location.
+- **A description** — free notes about the location (what it holds, how to get to it, a link).
+  It shows as a tooltip when you hover the location in the tree, and — when that location is
+  selected — as a panel above the item list.
 - **A parent** — the location it sits inside.
 
 Selecting a location **filters** the inventory to what it holds, including everything nested
-beneath it. Select **All items** to clear the filter.
+beneath it, and shows the location's description (if it has one) above the items. Select
+**All items** to clear the filter.
+
+> **💡 Tip**
+> Descriptions support **Markdown** — headings, **bold**, lists, tables, and links all render,
+> in both the hover tooltip and the panel above the item list. Handy for access notes or a link
+> to a supplier.
 
 > **💡 Tip**
 > The tree is fully keyboard-navigable: arrow keys move between locations, Left/Right collapse

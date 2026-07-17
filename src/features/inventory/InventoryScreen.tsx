@@ -90,6 +90,7 @@ import { defaultLocationForNewItem, markedDefaultLocationId } from './location-t
 import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { InventoryFacetBar } from './components/InventoryFacetBar';
 import { LocationInfoCard } from './components/LocationInfoCard';
+import { LocationDescriptionCard } from './components/LocationDescriptionCard';
 import { CreateItemDialog } from './components/CreateItemDialog';
 import { CategoryManagerDialog } from './components/CategoryManagerDialog';
 import { PrintLabelsDialog } from './components/PrintLabelsDialog';
@@ -839,6 +840,14 @@ function InventoryWorkspace() {
                   </div>
                 </div>
               </div>
+            ) : null}
+
+            {/* The selected location's own description, rendered as rich Markdown above the
+                item list (issue #108). Independent of the compact summary card above — it
+                shows whenever the location carries a description, and is hidden for the
+                "All locations" view and the whole-collection visualisations. */}
+            {selectedLocation?.description && !isVizMode ? (
+              <LocationDescriptionCard location={selectedLocation} />
             ) : null}
 
             {/* The filter/facet bars and the "shown" count belong to the item list; a
