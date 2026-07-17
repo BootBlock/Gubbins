@@ -106,7 +106,7 @@ const fieldsParam: JsonValue = {
     '`fields=name,unitCost` returns just those two. Nest an array field with a dot: ' +
     '`placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, ' +
     'isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, ' +
-    'trackingMode, isActive, description, notes, condition, serialNo, parentId, unitCost, purchasePrice, ' +
+    'trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, ' +
     'weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
     'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
     'updatedAt, placements, capabilities.',
@@ -168,7 +168,7 @@ const searchParam: JsonValue = {
   in: 'query',
   required: false,
   description:
-    'Free-text search across the item name/description/notes/mpn/manufacturer via the FTS5 ' +
+    'Free-text search across the item name/description/notes/mpn/manufacturer/serial number via the FTS5 ' +
     'index (ignored when $filter is set).',
   schema: { type: 'string' },
   example: 'esp32',
@@ -193,7 +193,7 @@ const filterParam: JsonValue = {
   description:
     'A constrained OData-style boolean filter compiled to the app search AST (never bespoke ' +
     'SQL). Supported: comparisons eq/gt/lt, the contains(field, string) function, and/or with ' +
-    'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, quantity, ' +
+    'parentheses. Filterable fields: name, description, notes, mpn, manufacturer, serialNumber, quantity, ' +
     'weight, width, height, depth, category(Id), location(Id). Unsupported operators (ne/ge/le, not, startswith, arithmetic, ' +
     'lambdas) are a 400. When present it is the sole row filter (location/category are ignored).',
   schema: { type: 'string' },
@@ -1025,6 +1025,7 @@ export const openapiDocument: JsonValue = {
               categoryName: { type: 'string', nullable: true, example: 'Fasteners' },
               unitCost: { type: 'number', nullable: true },
               condition: { type: 'string', nullable: true },
+              serialNumber: { type: 'string', nullable: true, example: 'SN-2024-0042' },
               serialNo: { type: 'integer', nullable: true },
               parentId: { type: 'string', nullable: true },
               expiryDate: { type: 'integer', nullable: true },

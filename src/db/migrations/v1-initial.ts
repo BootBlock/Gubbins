@@ -394,6 +394,12 @@ export const v1Initial: Migration = {
     // the main search finds its item.
     { sql: `ALTER TABLE items ADD COLUMN barcode TEXT;` },
     { sql: `CREATE INDEX idx_items_barcode ON items(barcode COLLATE NOCASE);` },
+    // Intrinsic serial number (issue #90): the maker's unique per-unit identifier printed on
+    // the article (distinct from `serial_no`, which is only a SERIALISED-clone instance index).
+    // Stored verbatim; indexed for exact lookup and (below) FTS-indexed like the barcode so a
+    // serial typed into the main search finds its item.
+    { sql: `ALTER TABLE items ADD COLUMN serial_number TEXT;` },
+    { sql: `CREATE INDEX idx_items_serial_number ON items(serial_number COLLATE NOCASE);` },
     {
       sql: `
         CREATE TABLE item_aliases (
@@ -491,7 +497,7 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE VIRTUAL TABLE items_fts USING fts5(
-          name, description, notes, mpn, manufacturer, barcode,
+          name, description, notes, mpn, manufacturer, barcode, serial_number,
           content='items',
           content_rowid='rowid'
         );
@@ -500,24 +506,24 @@ export const v1Initial: Migration = {
     {
       sql: `
         CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
-          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode, serial_number) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode, new.serial_number);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode)
-          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode, serial_number)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode, old.serial_number);
         END;
       `,
     },
     {
       sql: `
         CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
-          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode)
-          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode);
-          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode);
+          INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode, serial_number)
+          VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode, old.serial_number);
+          INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode, serial_number) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode, new.serial_number);
         END;
       `,
     },

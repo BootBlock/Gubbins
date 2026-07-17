@@ -118,6 +118,8 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   ['description', { resolve: (c) => c.item.description }],
   ['notes', { resolve: (c) => c.item.notes }],
   ['condition', { resolve: (c) => c.item.condition }],
+  // Intrinsic serial number — the maker's per-unit identifier (issue #90); null when unset.
+  ['serialNumber', { resolve: (c) => c.item.serialNumber }],
   ['serialNo', { resolve: (c) => c.item.serialNo }],
   ['parentId', { resolve: (c) => c.item.parentId }],
   // Pricing.
@@ -187,6 +189,7 @@ export const ITEM_DETAIL_DEFAULT_FIELDS: readonly string[] = [
   'categoryName',
   'unitCost',
   'condition',
+  'serialNumber',
   'serialNo',
   'parentId',
   'expiryDate',

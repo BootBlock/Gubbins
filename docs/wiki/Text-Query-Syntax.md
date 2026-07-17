@@ -36,6 +36,7 @@ Field names are **case-insensitive** and accept short aliases.
 | Manufacturer | `manufacturer`, `mfr`, `make` | The maker |
 | Part number | `mpn` | Manufacturer part number |
 | Barcode | `barcode`, `gtin`, `upc`, `ean` | A scanned/entered barcode |
+| Serial number | `serial`, `serialnumber`, `sn` | The unit's serial number |
 | Quantity | `quantity`, `qty` | On-hand count *(numeric)* |
 | Weight | `weight` | Item weight *(numeric)* |
 | Dimensions | `width`, `height`, `depth` | Bounding size *(numeric)* |

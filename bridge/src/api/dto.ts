@@ -88,6 +88,8 @@ export interface ItemDetailDto extends ItemSummaryDto {
   readonly categoryName: string | null;
   readonly unitCost: number | null;
   readonly condition: Item['condition'];
+  /** Intrinsic serial number — the maker's per-unit identifier (issue #90); null if none. */
+  readonly serialNumber: string | null;
   readonly serialNo: number | null;
   readonly parentId: string | null;
   readonly expiryDate: number | null;

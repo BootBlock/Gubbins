@@ -96,6 +96,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [mpn, setMpn] = useState(item.mpn ?? '');
   const [manufacturer, setManufacturer] = useState(item.manufacturer ?? '');
   const [barcode, setBarcode] = useState(item.barcode ?? '');
+  const [serialNumber, setSerialNumber] = useState(item.serialNumber ?? '');
   const [unitCost, setUnitCost] = useState(item.unitCost?.toString() ?? '');
   const [categoryId, setCategoryId] = useState(item.categoryId ?? '');
   const [isUnlimited, setIsUnlimited] = useState(item.isUnlimited);
@@ -121,6 +122,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     setMpn(item.mpn ?? '');
     setManufacturer(item.manufacturer ?? '');
     setBarcode(item.barcode ?? '');
+    setSerialNumber(item.serialNumber ?? '');
     setUnitCost(item.unitCost?.toString() ?? '');
     setCategoryId(item.categoryId ?? '');
     setIsUnlimited(item.isUnlimited);
@@ -162,6 +164,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     mpn: text(mpn),
     manufacturer: text(manufacturer),
     barcode: text(barcode),
+    serialNumber: text(serialNumber),
     unitCost: Number.isFinite(nextUnitCost ?? 0) ? nextUnitCost : null,
     // Only re-derive grams from the input when the field was actually edited; an untouched
     // weight keeps its exact stored value, so saving a *different* field never nudges it by
@@ -182,6 +185,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     draft.mpn !== (item.mpn ?? null) ||
     draft.manufacturer !== (item.manufacturer ?? null) ||
     draft.barcode !== (item.barcode ?? null) ||
+    draft.serialNumber !== (item.serialNumber ?? null) ||
     draft.unitCost !== (item.unitCost ?? null) ||
     weightDirty ||
     widthState.dirty ||
@@ -280,6 +284,22 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
           </Button>
         ) : null}
       </div>
+
+      <FormField
+        label="Serial number (optional)"
+        hint={
+          'The **serial number** printed on this unit — the maker’s unique per-unit identifier ' +
+          '(e.g. an equipment or tool serial).\n\nDistinct from the **MPN** (which is the same for ' +
+          'every unit of a part) and from the **Barcode** (the retail GTIN). Searchable.'
+        }
+      >
+        <Input
+          value={serialNumber}
+          onChange={(e) => setSerialNumber(e.target.value)}
+          placeholder="e.g. SN-2024-0042"
+          data-testid="item-details-serial-number"
+        />
+      </FormField>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField

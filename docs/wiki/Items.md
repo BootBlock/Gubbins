@@ -41,7 +41,7 @@ The tabs you see depend on which [[modules|Modular-UI]] you have enabled:
 
 | Tab | Holds |
 | --- | --- |
-| **Details** | Name, description, notes, part number (MPN), manufacturer, barcode, unit cost, category, weight and dimensions. |
+| **Details** | Name, description, notes, part number (MPN), manufacturer, barcode, serial number, unit cost, category, weight and dimensions. |
 | **Supplier & ops** | [[Supplier parts & prices|Supplier-Parts-and-Price-History]] and reorder points. |
 | **Lifecycle** | [[Warranty & depreciation|Warranty-and-Depreciation]], [[current value|Current-Value-and-Revaluation]], [[maintenance|Maintenance-and-Servicing]], [[test records|Test-and-Calibration-Records]], and [[variants|Variants-and-SKUs]]. |
 | **Kit** | Define the item as a [[kit of other items|Kits-and-Bundles]]. |

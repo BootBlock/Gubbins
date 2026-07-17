@@ -23,6 +23,7 @@ export const BUILDER_FIELDS: readonly BuilderField[] = [
   { value: 'mpn', label: 'MPN', kind: 'text' },
   { value: 'manufacturer', label: 'Manufacturer', kind: 'text' },
   { value: 'barcode', label: 'Barcode', kind: 'text' },
+  { value: 'serial', label: 'Serial number', kind: 'text' },
   { value: 'quantity', label: 'Quantity', kind: 'number' },
   { value: 'weight', label: 'Weight (g)', kind: 'number' },
   { value: 'width', label: 'Width (mm)', kind: 'number' },
