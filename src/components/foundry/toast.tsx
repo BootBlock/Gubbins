@@ -6,7 +6,9 @@
  * and renders a fixed glassy viewport; {@link useToast} exposes `show`/`dismiss`. Like
  * the rest of the Foundry it is icon-library-agnostic (the icon is passed in from the
  * central registry) and never uses the native `title` attribute. Toasts auto-dismiss
- * after `duration` ms (default 5000); an optional action button stays clickable.
+ * after `duration` ms; when `duration` is omitted the delay is derived from how much
+ * text there is to read (see {@link toastDurationForLength}). An optional action button
+ * stays clickable.
  */
 import {
   createContext,
@@ -21,6 +23,7 @@ import {
 import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 import { prefersReducedMotion } from '@/lib/env/motion';
+import { reactNodeTextLength, toastDurationForLength } from './toast-duration';
 
 /**
  * How long the exit animation (`animate-toast-out`, ~0.2s) plays before the toast is
@@ -38,7 +41,11 @@ export interface ToastOptions {
   readonly message: ReactNode;
   /** An optional action (e.g. "Enter manually") rendered as a button. */
   readonly action?: { readonly label: string; readonly onClick: () => void };
-  /** Auto-dismiss delay in ms; `0` keeps it until dismissed. Default 5000. */
+  /**
+   * Auto-dismiss delay in ms; `0` keeps it until dismissed. When omitted, the delay is
+   * derived from the length of `heading` + `message` so longer notifications stay long
+   * enough to read (see {@link toastDurationForLength}).
+   */
   readonly duration?: number;
 }
 
@@ -134,7 +141,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (options: ToastOptions): string => {
       const id = crypto.randomUUID();
       setToasts((current) => [...current, { ...options, id }]);
-      const duration = options.duration ?? 5000;
+      const duration =
+        options.duration ??
+        toastDurationForLength(reactNodeTextLength(options.heading) + reactNodeTextLength(options.message));
       if (duration > 0) {
         timers.current.set(
           id,
