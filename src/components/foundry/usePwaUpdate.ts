@@ -32,6 +32,18 @@ export interface PwaUpdateHandlers {
 /** Applies the waiting worker and reloads the page onto it. */
 export type PwaUpdater = (reloadPage?: boolean) => Promise<void>;
 
+/**
+ * The identity of a deployed build, read from the site-root `version.json` (emitted by the
+ * build — see vite.config.ts). Used to describe the *incoming* waiting worker so the update
+ * prompt can compare it against the running build (issue #74).
+ */
+export interface DeployedVersion {
+  /** The deploy's app version (`0.MINOR.PATCH`), for the "skip this version" comparison. */
+  readonly version: string;
+  /** The deploy's local-database compatibility generation (see {@link APP_SCHEMA_VERSION}). */
+  readonly schemaVersion: number;
+}
+
 /** Injectable seam over service-worker registration + the update handshake. */
 export interface PwaUpdateApi {
   /**
@@ -41,6 +53,13 @@ export interface PwaUpdateApi {
   register(handlers: PwaUpdateHandlers): PwaUpdater;
   /** Re-check for a newer waiting worker; resolves when the browser check is done (no-op until the registration is ready). */
   checkForUpdate(): Promise<void>;
+  /**
+   * Fetch the deployed build's {@link DeployedVersion} from the network (`version.json`), so a
+   * waiting update can be described (schema compatibility + version) before the user reloads.
+   * Resolves to `null` when the manifest can't be read (offline, missing, or malformed) — the
+   * caller then falls back to a neutral message rather than promising the data is safe.
+   */
+  fetchDeployedVersion(): Promise<DeployedVersion | null>;
 }
 
 /**
@@ -79,7 +98,36 @@ export function browserPwaUpdateApi(): PwaUpdateApi {
       // re-fetch the worker script — a newer build surfaces via `onNeedRefresh`.
       await registration?.update();
     },
+    fetchDeployedVersion: fetchDeployedVersionFromNetwork,
   };
+}
+
+/**
+ * Read the deployed build's `version.json` straight from the network. `cache: 'no-store'`
+ * bypasses the HTTP cache, and the file is deliberately kept out of the service-worker
+ * precache (see vite.config.ts), so this reaches the *freshly deployed* manifest — the one
+ * belonging to the waiting worker — rather than the running build's cached copy. Any failure
+ * (offline, 404, malformed JSON, or a shape we don't recognise) resolves to `null` so the
+ * caller can degrade to a neutral message instead of a false "your data is safe" promise.
+ */
+async function fetchDeployedVersionFromNetwork(): Promise<DeployedVersion | null> {
+  try {
+    const response = await fetch(`${import.meta.env.BASE_URL}version.json`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const data: unknown = await response.json();
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      typeof (data as { version?: unknown }).version === 'string' &&
+      typeof (data as { schemaVersion?: unknown }).schemaVersion === 'number'
+    ) {
+      const { version, schemaVersion } = data as { version: string; schemaVersion: number };
+      return { version, schemaVersion };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -104,6 +152,8 @@ export interface PwaUpdateState {
   readonly updateAvailableSeq: number;
   /** Activate the waiting worker and reload the page onto the new version. */
   update: PwaUpdater;
+  /** Read the incoming deploy's {@link DeployedVersion} (or `null` if it can't be determined). */
+  fetchDeployedVersion: () => Promise<DeployedVersion | null>;
 }
 
 /** Default cadence for the active "is there a newer worker?" check — once an hour. */
@@ -164,5 +214,7 @@ export function usePwaUpdate(
     await updaterRef.current?.(reloadPage);
   }, []);
 
-  return { needRefresh, updateAvailableSeq, update };
+  const fetchDeployedVersion = useCallback(() => api.fetchDeployedVersion(), [api]);
+
+  return { needRefresh, updateAvailableSeq, update, fetchDeployedVersion };
 }

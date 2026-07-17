@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { readFileSync, copyFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { configDefaults } from 'vitest/config';
@@ -15,6 +15,7 @@ import { buildContentSecurityPolicy } from './src/csp';
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
   version: string;
   releaseDate: string;
+  schemaVersion: number;
 };
 
 /**
@@ -82,6 +83,38 @@ function spa404FallbackPlugin(): Plugin {
   };
 }
 
+/**
+ * Emit a tiny, un-hashed `version.json` at the site root carrying the build's `version` and
+ * `schemaVersion` (issue #74). An already-installed build fetches this from the network when a
+ * newer service worker is waiting, so it can compare the incoming deploy's `schemaVersion`
+ * against its own baked-in {@link APP_SCHEMA_VERSION} and tell the user — *before* they reload —
+ * whether the update keeps their data or (pre-1.0) resets it, plus its `version` so a
+ * "skip this version" choice can be re-shown only when a genuinely newer version appears.
+ *
+ * Kept OUT of the precache glob (JSON isn't in the `globPatterns` list), so the service worker
+ * never serves a stale cached copy — the app fetches it with `cache: 'no-store'` and reaches the
+ * freshly deployed file. Written in `closeBundle` (mirroring {@link spa404FallbackPlugin}) so it
+ * lands in the final output directory.
+ */
+function versionManifestPlugin(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'gubbins-version-manifest',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir;
+    },
+    closeBundle() {
+      const manifest = {
+        version: pkg.version,
+        schemaVersion: pkg.schemaVersion,
+        releaseDate: pkg.releaseDate,
+      };
+      writeFileSync(resolve(outDir, 'version.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
@@ -94,6 +127,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_RELEASE_DATE__: JSON.stringify(pkg.releaseDate),
+    __APP_SCHEMA_VERSION__: JSON.stringify(pkg.schemaVersion),
   },
 
   build: {
@@ -111,6 +145,7 @@ export default defineConfig({
     tailwindcss(),
     cspMetaPlugin(),
     spa404FallbackPlugin(),
+    versionManifestPlugin(),
     VitePWA({
       // injectManifest lets a single custom worker (src/sw.ts) handle BOTH
       // offline precaching (§2.4.5) and COOP/COEP header injection for static

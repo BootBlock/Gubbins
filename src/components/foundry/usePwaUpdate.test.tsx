@@ -16,6 +16,7 @@ function makeFakeApi() {
   let handlers: PwaUpdateHandlers | undefined;
   const update = vi.fn(async (_reloadPage?: boolean) => {});
   const checkForUpdate = vi.fn(async () => {});
+  const fetchDeployedVersion = vi.fn(async () => null);
   let registerCalls = 0;
   const api: PwaUpdateApi = {
     register(h) {
@@ -24,6 +25,7 @@ function makeFakeApi() {
       return update;
     },
     checkForUpdate,
+    fetchDeployedVersion,
   };
   return {
     api,

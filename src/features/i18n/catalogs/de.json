@@ -172,6 +172,15 @@
   "dashboard.version.check": "Nach App-Updates suchen",
   "dashboard.version.tooltip": "**Nach Updates suchen**\n\nGubbins v{version}, veröffentlicht am {date}.",
 
+  "pwa.update.heading": "Eine neue Version ist verfügbar",
+  "pwa.update.body.compatible": "Neu laden, um das neueste Update zu erhalten. Deine gespeicherten Daten bleiben erhalten — schließe zuerst alles Laufende ab und lade dann neu, wenn du bereit bist.",
+  "pwa.update.body.unknown": "Neu laden, um das neueste Update zu erhalten. Schließe zuerst alles Laufende ab und lade dann neu, wenn du bereit bist.",
+  "pwa.update.body.reset": "Dieses Update ändert, wie Gubbins Daten speichert. Da es sich noch um eine Vorabversion handelt (vor 1.0), werden beim Neuladen deine gespeicherten Bestandsdaten zurückgesetzt — sichere oder exportiere sie zuerst, wenn du sie behalten möchtest.",
+  "pwa.update.reload": "Jetzt neu laden",
+  "pwa.update.reloading": "Wird neu geladen…",
+  "pwa.update.skip": "Diese Version überspringen",
+  "pwa.update.remindLater": "Später erinnern",
+
   "dashboard.actions.moreAddItem": "Weitere Aktionen zum Hinzufügen",
   "dashboard.actions.addItem": "Objekt hinzufügen",
   "dashboard.actions.import": "Importieren…",
