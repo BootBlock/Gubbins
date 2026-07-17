@@ -30,6 +30,16 @@ and Gubbins shows a gauge.
 
 ![A consumable item's card, showing its fill gauge](images/item-card-gauge.png)
 
+Updating it is quick: record what you used, weigh it in on a scale, or top it up when you fit a
+fresh one. And when you can't be bothered to reach for the scales, **Estimate** lets you just
+pick a level — *Full, Mostly full, Half, Low* or *Empty* — and the gauge snaps to it. That's
+plenty to keep the [[low-stock alert|Low-Stock-and-Gauges]] honest without weighing a half-empty
+spool every time.
+
+> **💡 Tip**
+> Use Estimate for a quick eyeball, then a proper Weigh-In now and then when you want the number
+> to be exact — for example before starting a long print.
+
 ### Untracked
 
 For things you want to *list* but not *count* — reference material, fixtures, anything where a

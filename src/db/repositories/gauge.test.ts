@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   clampNetValue,
   currentGrossWeight,
+  estimateDelta,
+  estimateNetValue,
+  estimateNote,
+  GAUGE_LEVELS,
   percentageRemaining,
   refillDelta,
   refillNote,
@@ -64,5 +68,36 @@ describe('consumable gauge maths (§4.1)', () => {
   it('formats the refill ledger note', () => {
     expect(refillNote(600, 1000, 'g')).toBe('Refilled +600g (now 1000g)');
     expect(refillNote(0, 1000, 'g')).toBe('Refilled 0g (now 1000g)');
+  });
+});
+
+describe('consumable gauge "Estimate" quick-set (issue #95)', () => {
+  it('offers full → empty levels mapped to whole-quarter coefficients', () => {
+    expect(GAUGE_LEVELS.map((l) => l.percent)).toEqual([100, 75, 50, 25, 0]);
+    // Ordered full → empty so the slider reads left (full) to right (empty).
+    expect(GAUGE_LEVELS[0]!.key).toBe('full');
+    expect(GAUGE_LEVELS.at(-1)!.key).toBe('empty');
+  });
+
+  it('maps a fill level to a net value clamped to capacity', () => {
+    expect(estimateNetValue(100, 1000)).toBe(1000);
+    expect(estimateNetValue(50, 1000)).toBe(500);
+    expect(estimateNetValue(25, 1000)).toBe(250);
+    expect(estimateNetValue(0, 1000)).toBe(0);
+    expect(estimateNetValue(150, 1000)).toBe(1000); // never exceeds a full unit
+  });
+
+  it('converts a chosen level into a signed relative delta from the current net', () => {
+    // Half a 1000g spool currently at 800g → set to 500g → -300g.
+    expect(estimateDelta(50, 800, 1000)).toBe(-300);
+    // Nearly-empty 100g reel refilled to full → +900g.
+    expect(estimateDelta(100, 100, 1000)).toBe(900);
+    // Picking the level it is already at is a no-op.
+    expect(estimateDelta(50, 500, 1000)).toBe(0);
+  });
+
+  it('formats the estimate ledger note', () => {
+    expect(estimateNote('Half', 50, 500, 'g')).toBe('Estimated Half (~50%, now 500g)');
+    expect(estimateNote('Empty', 0, 0, 'g')).toBe('Estimated Empty (~0%, now 0g)');
   });
 });
