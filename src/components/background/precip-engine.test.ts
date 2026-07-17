@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startPrecip } from './precip-engine';
-import { NO_SURFACE, type SurfaceTracker } from './surface-map';
+import { NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
 
 interface DrawCall {
   args: unknown[];
@@ -228,8 +228,10 @@ describe('startPrecip', () => {
 function makeSurfaces(top: number, cols = 340) {
   let tops = new Int16Array(cols).fill(top);
   let generation = 1;
+  let hover: HoverFollow | null = null;
   const tracker: SurfaceTracker = {
     snapshot: () => ({ tops, generation }),
+    hoverFollow: () => hover,
     stop: () => {},
   };
   return {
@@ -238,6 +240,9 @@ function makeSurfaces(top: number, cols = 340) {
     clear() {
       tops = new Int16Array(cols).fill(NO_SURFACE);
       generation++;
+    },
+    setHover(next: HoverFollow | null) {
+      hover = next;
     },
   };
 }
@@ -285,6 +290,41 @@ describe('startPrecip control interaction (issue #68)', () => {
     pump(250 * 50 + 50);
     pump(250 * 50 + 100);
     expect(orec.drawImages.length).toBe(before); // the settled snow was knocked off
+    ctrl.stop();
+  });
+
+  it("rides a hovered control's lift: settled snow is blitted shifted by the hover offset", () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    for (let i = 1; i <= 250; i++) pump(i * 50);
+    // At rest the mound layer is one full-canvas blit (5-arg drawImage), never shifted.
+    const restMark = orec.drawImages.length;
+    pump(250 * 50 + 50);
+    const restFrame = orec.drawImages.slice(restMark);
+    expect(restFrame.length).toBeGreaterThan(0);
+    expect(restFrame.every((d) => d.args.length === 5)).toBe(true);
+    // Hover a mid-screen control span, lifted 4px up: its columns are drawn as a shifted slice
+    // (9-arg drawImage(img, sx,sy,sw,sh, dx,dy,dw,dh) — dest-y at index 6 is -4) while the rest
+    // stays at rest.
+    surfaces.setHover({ c0: 40, c1: 60, dy: -4 });
+    const mark = orec.drawImages.length;
+    pump(250 * 50 + 100);
+    const frame = orec.drawImages.slice(mark);
+    expect(frame.some((d) => d.args.length === 9 && d.args[6] === -4)).toBe(true);
+    // Releasing (no hover) returns to the single unshifted full-canvas blit.
+    surfaces.setHover(null);
+    const mark2 = orec.drawImages.length;
+    pump(250 * 50 + 150);
+    const frame2 = orec.drawImages.slice(mark2);
+    expect(frame2.every((d) => d.args.length === 5)).toBe(true);
     ctrl.stop();
   });
 
