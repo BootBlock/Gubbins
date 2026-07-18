@@ -1,6 +1,6 @@
 # Purchase orders
 
-A **purchase order** (PO) records what you've ordered from a [[supplier|Contacts]] and tracks it
+A **purchase order** (PO) records what you've ordered from a supplier and tracks it
 until it arrives — including part-deliveries. It closes the loop between *"we're low"* and *"it's
 on the shelf"*.
 
@@ -10,9 +10,9 @@ on the shelf"*.
 
 ## Creating an order
 
-Raise a PO against a supplier contact and add the items and quantities you're ordering. The
-ordered stock is now **on its way** — Gubbins tracks it as **in transit** so you can see what's
-inbound.
+Raise a PO against a supplier — entering the supplier's name — and add the items and quantities
+you're ordering. The ordered stock is now **on its way** — Gubbins tracks it as **in transit** so
+you can see what's inbound.
 
 ## Importing a purchase list
 
@@ -56,8 +56,8 @@ Received stock lands in your inventory and the in-transit figure drops according
 > at a glance — handy for knowing what to expect before it turns up.
 
 > **ℹ️ Note**
-> Purchase orders need [[Contacts]] enabled (a PO is raised *to* a supplier). If the module is
-> off, turn it on in [[Modular UI|Modular-UI]] and the dependency is offered automatically.
+> Purchase orders need [[Contacts]] enabled. If the module is off, turn it on in
+> [[Modular UI|Modular-UI]] and the dependency is offered automatically.
 
 ## Related pages
 

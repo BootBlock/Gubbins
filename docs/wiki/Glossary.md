@@ -20,7 +20,7 @@ explanation.
 | **Reorder point** | The stock level at which to buy more. See [[Reorder & shopping list\|Reorder-and-Shopping-List]]. |
 | **Loan** | An item temporarily *out* with a contact. See [[Loans\|Loans-Check-Out-and-In]]. |
 | **Booking** | A future reservation of an item for a contact. See [[Bookings]]. |
-| **Contact** | A person or supplier you lend to, borrow from, or buy from. See [[Contacts]]. |
+| **Contact** | A person or organisation you lend to or borrow from. See [[Contacts]]. |
 | **Project** | A build with a bill of materials and budget. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **BOM** | Bill of materials — a parts list. A *project's* BOM covers one build; a *reusable* one is a [[kit\|Kits-and-Bundles]]. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **Purchase order (PO)** | A tracked order to a supplier. See [[Purchase orders\|Purchase-Orders]]. |

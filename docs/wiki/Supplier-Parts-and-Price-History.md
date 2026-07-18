@@ -8,13 +8,20 @@ how those prices **change over time**.
 
 ## Supplier parts
 
-Link an item to one or more [[suppliers|Contacts]], each with:
+Record one or more suppliers against an item, each with:
 
+- The **supplier's name**.
 - The supplier's **part number / order code** for it.
 - The **price** (and, where relevant, price breaks for quantity).
 
 So when it's time to reorder, you already know **who** to buy from, **their code**, and **what it
 costs** — without digging through old invoices.
+
+> **ℹ️ Note**
+> A supplier is recorded here as a **name you type**, not as a link to a [[contact|Contacts]]. The
+> name field suggests suppliers you've entered before, so picking the existing suggestion keeps
+> spellings consistent across items — worth doing, as the [[reorder|Reorder-and-Shopping-List]]
+> grouping works from the name.
 
 ## Price history
 
