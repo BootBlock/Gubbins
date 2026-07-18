@@ -114,7 +114,7 @@ export {
 } from './menu';
 export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-region';
 export { liveRegionAttrs, type LiveRegionAttrs } from './aria-live';
-export { ToastProvider, useToast, type ToastOptions, type ToastTone } from './toast';
+export { ToastProvider, useToast, useOptionalToast, type ToastOptions, type ToastTone } from './toast';
 export {
   BurstProvider,
   useBurst,

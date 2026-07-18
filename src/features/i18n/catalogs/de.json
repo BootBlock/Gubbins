@@ -881,5 +881,11 @@
   "inventory.sort.direction.number.asc": "Niedrigste zuerst",
   "inventory.sort.direction.number.desc": "Höchste zuerst",
   "inventory.sort.direction.date.asc": "Älteste zuerst",
-  "inventory.sort.direction.date.desc": "Neueste zuerst"
+  "inventory.sort.direction.date.desc": "Neueste zuerst",
+  "inventory.writeError.heading.update": "Artikel konnte nicht aktualisiert werden",
+  "inventory.writeError.heading.move": "Artikel konnte nicht verschoben werden",
+  "inventory.writeError.heading.quantity": "Menge konnte nicht angepasst werden",
+  "inventory.writeError.heading.gauge": "Füllstand konnte nicht angepasst werden",
+  "inventory.writeError.heading.delete": "Artikel konnte nicht gelöscht werden",
+  "inventory.writeError.reverted": "Ihre Änderung wurde rückgängig gemacht."
 }

@@ -62,6 +62,13 @@ app|Installing-Gubbins]] and grant **persistent storage**.
 Use [[storage triage|Storage-Triage]] to see what's using space and reclaim it (downgrading old
 images usually helps most), keeping a [[backup|Backup-and-Restore]] first.
 
+**A change I made undid itself.**
+Gubbins shows edits instantly and saves them in the background, so if a save is rejected the
+change is rolled back and you'll see it revert — an item reappearing after a delete, a star
+un-starring itself, a quantity or gauge snapping back. A message appears in the corner saying what
+failed and why; read it rather than simply retrying, as the same save will usually fail again.
+Running out of space is a common cause — see [[storage triage|Storage-Triage]].
+
 **Notifications aren't arriving.**
 They need the app [[installed|Installing-Gubbins]] and permission granted, and support varies by
 device (limited on iOS). See [[Reminder notifications|Reminder-Notifications]].
