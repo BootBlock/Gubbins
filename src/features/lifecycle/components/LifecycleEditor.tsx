@@ -23,6 +23,7 @@ import { expiryStatus, daysUntilExpiry, type ExpiryStatus } from '../expiry';
 import { nowMs } from '@/lib/clock';
 import { useCreateVariant, useInTransitQty, useItemVariants } from '../hooks';
 import { StockBreakdown } from './StockBreakdown';
+import { useErrorMessage } from '@/features/errors';
 
 const EXPIRY_TONE: Record<ExpiryStatus, string> = {
   NONE: 'text-muted-foreground',
@@ -165,6 +166,7 @@ function VariantsSection({ item }: { item: Item }) {
   const [name, setName] = useState('');
   const [qty, setQty] = useState('0');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const add = () => {
     if (name.trim().length === 0) return;
@@ -179,7 +181,7 @@ function VariantsSection({ item }: { item: Item }) {
           setName('');
           setQty('0');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the variant.'),
+        onError: (e) => setError(describeError(e, 'Could not add the variant.')),
       },
     );
   };

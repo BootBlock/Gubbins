@@ -102,7 +102,11 @@ const CASES = [
 describe('optimistic item writes surface their rollback', () => {
   it.each(CASES)('$name shows the failure reason when the write is rejected', async (testCase) => {
     repo[testCase.method].mockRejectedValue(
-      new DbError('WRITE_SUSPENDED', 'Not enough space to save this change.'),
+      // The message `base.ts` actually throws: developer-facing, jargon-laden and untranslated.
+      new DbError(
+        'WRITE_SUSPENDED',
+        'Storage is full (Hard Stop): new writes are suspended. Delete items or free space to continue.',
+      ),
     );
 
     const { result } = renderHook(() => testCase.hook(), { wrapper });
@@ -110,8 +114,33 @@ describe('optimistic item writes surface their rollback', () => {
 
     const toast = await screen.findByTestId('toast');
     expect(toast).toHaveTextContent(testCase.heading);
-    // A DbError's message is written for the user — it is the actionable part, so it reaches them.
-    expect(toast).toHaveTextContent('Not enough space to save this change.');
+    // The storage hard stop is highly actionable, so it is humanised from the error's `code`
+    // (issue #311) rather than passed through — a `DbError` carries raw, untranslated text.
+    expect(toast).toHaveTextContent('Saving is paused because storage is nearly full.');
+    expect(toast).not.toHaveTextContent('Hard Stop');
+  });
+
+  it('keeps a repository’s own sentence when it wrote one for the user', async () => {
+    // Humanising must not clobber better copy: a repository that authors a specific message under
+    // a constraint code (the `AttachmentRepository` pattern) still reaches the user verbatim.
+    repo.update.mockRejectedValue(new DbError('SQLITE_CONSTRAINT', 'Enter a valid URL (http or https).'));
+
+    const { result } = renderHook(() => useUpdateItem(), { wrapper });
+    act(() => result.current.mutate({ id: 'item-1', input: { name: 'Renamed' } }));
+
+    const toast = await screen.findByTestId('toast');
+    expect(toast).toHaveTextContent('Enter a valid URL (http or https).');
+  });
+
+  it('humanises a raw constraint violation into a sentence naming the field', async () => {
+    repo.update.mockRejectedValue(new DbError('SQLITE_CONSTRAINT', 'UNIQUE constraint failed: tags.name'));
+
+    const { result } = renderHook(() => useUpdateItem(), { wrapper });
+    act(() => result.current.mutate({ id: 'item-1', input: { name: 'Renamed' } }));
+
+    const toast = await screen.findByTestId('toast');
+    expect(toast).toHaveTextContent('That tag name is already in use.');
+    expect(toast).not.toHaveTextContent('UNIQUE constraint');
   });
 
   it('degrades to the generic line for an internal error, keeping raw text off screen', async () => {
@@ -130,7 +159,11 @@ describe('optimistic item writes surface their rollback', () => {
     // Quantity adjusts are explicitly rapid-tap; a persistent failure must not stack a toast
     // (and an assistive-tech announcement) per tap.
     repo.adjustQuantity.mockRejectedValue(
-      new DbError('WRITE_SUSPENDED', 'Not enough space to save this change.'),
+      // The message `base.ts` actually throws: developer-facing, jargon-laden and untranslated.
+      new DbError(
+        'WRITE_SUSPENDED',
+        'Storage is full (Hard Stop): new writes are suspended. Delete items or free space to continue.',
+      ),
     );
 
     const { result } = renderHook(() => useAdjustQuantity(), { wrapper });

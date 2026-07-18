@@ -11,6 +11,7 @@ import { useProjects } from '@/features/projects/projects';
 import { useFeature } from '@/features/modules/useFeature';
 import { useContacts, useCheckoutItem } from '../contacts';
 import { MS_PER_DAY } from '@/features/scanner/due-date';
+import { useErrorMessage } from '@/features/errors';
 
 /** Sentinel for "lend whatever FEFO picks" — distinct from the untracked default key (''). */
 const ANY_LOT = ' any';
@@ -61,6 +62,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
   const [fromLocationId, setFromLocationId] = useState<string>(item.locationId);
   const [fromBatchKey, setFromBatchKey] = useState(ANY_LOT);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const nameRef = useRef<HTMLInputElement>(null);
 
   // --- Prerequisites (issue #70) ------------------------------------------------------------
@@ -221,7 +223,7 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
           });
           setMainLent(true);
         } catch (e) {
-          setError(e instanceof Error ? e.message : 'Could not check the item out.');
+          setError(describeError(e, 'Could not check the item out.'));
           return;
         }
       }

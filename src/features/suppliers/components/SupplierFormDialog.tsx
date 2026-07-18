@@ -5,6 +5,7 @@ import type { SupplierWithCounts } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { supplierNameKey } from '@/lib/supplier-name';
 import { useCreateSupplier, useDeleteSupplier, useUpdateSupplier } from '../mutations';
+import { useErrorMessage } from '@/features/errors';
 
 export interface SupplierFormDialogProps {
   /** The supplier being edited, or `null` to add a new one. */
@@ -53,6 +54,7 @@ export function SupplierFormDialog({
   const [currency, setCurrency] = useState(supplier?.currency ?? '');
   const [note, setNote] = useState(supplier?.note ?? '');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const create = useCreateSupplier();
@@ -85,7 +87,7 @@ export function SupplierFormDialog({
       currency: currency.trim() || null,
       note: note.trim() || null,
     };
-    const onError = (e: unknown) => setError(e instanceof Error ? e.message : t('suppliers.form.error'));
+    const onError = (e: unknown) => setError(describeError(e, t('suppliers.form.error')));
 
     if (isEdit) {
       update.mutate(
@@ -117,7 +119,7 @@ export function SupplierFormDialog({
         onAnnounce(t('suppliers.delete.done', { vars: { name: supplier.name } }));
         onClose();
       },
-      onError: (e) => setError(e instanceof Error ? e.message : t('suppliers.delete.error')),
+      onError: (e) => setError(describeError(e, t('suppliers.delete.error'))),
     });
   };
 

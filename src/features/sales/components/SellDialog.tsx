@@ -4,6 +4,7 @@ import { SaleIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useSellItem } from '../sales';
 import { OutboundSourceFields, useOutboundSource } from './OutboundSourceFields';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Sell one or more units of a DISCRETE item (Sales & disposals capability). Records a `SOLD`
@@ -17,6 +18,7 @@ export function SellDialog({ open, onClose, item }: { open: boolean; onClose: ()
   const [unitPrice, setUnitPrice] = useState('');
   const [buyer, setBuyer] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const priceRef = useRef<HTMLInputElement>(null);
 
   const parsedPrice = Number(unitPrice);
@@ -45,7 +47,7 @@ export function SellDialog({ open, onClose, item }: { open: boolean; onClose: ()
           source.reset();
           onClose();
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not record the sale.'),
+        onError: (e) => setError(describeError(e, 'Could not record the sale.')),
       },
     );
   };

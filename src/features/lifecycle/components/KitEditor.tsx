@@ -22,6 +22,7 @@ import type { Item, KitComponent } from '@/db/repositories';
 import { buildableCount } from '@/features/inventory/kit-availability';
 import { useInventoryItems, useLocations } from '@/features/inventory/queries';
 import { plural } from '@/lib/plural';
+import { useErrorMessage } from '@/features/errors';
 import {
   useAddKitComponent,
   useAssembleKit,
@@ -38,6 +39,7 @@ export function KitEditor({ item }: { item: Item }) {
   const [componentId, setComponentId] = useState('');
   const [qty, setQty] = useState('1');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   // Candidate components: active items other than this kit and the ones already added. The
   // repository rejects deeper cycles/self-containment too; excluding these here keeps the
@@ -97,7 +99,7 @@ export function KitEditor({ item }: { item: Item }) {
           setComponentId('');
           setQty('1');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the component.'),
+        onError: (e) => setError(describeError(e, 'Could not add the component.')),
       },
     );
   };

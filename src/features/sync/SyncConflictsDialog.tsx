@@ -7,6 +7,7 @@ import { diffConflict } from './conflict-diff';
 import { restoreConflictVersion } from './conflict-restore';
 import { getSyncDriver } from './runtime';
 import type { SyncConflict } from './types';
+import { useErrorMessage } from '@/features/errors';
 
 interface SyncConflictsDialogProps {
   readonly open: boolean;
@@ -30,6 +31,7 @@ export function SyncConflictsDialog({ open, onClose, onRestored }: SyncConflicts
   const clear = useSyncConflictsStore((s) => s.clear);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   async function restore(conflict: SyncConflict) {
     setBusyId(conflict.id);
@@ -39,7 +41,7 @@ export function SyncConflictsDialog({ open, onClose, onRestored }: SyncConflicts
       resolve(conflict.id);
       onRestored?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not restore that version.');
+      setError(describeError(err, 'Could not restore that version.'));
     } finally {
       setBusyId(null);
     }

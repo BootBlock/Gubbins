@@ -11,6 +11,7 @@ import {
 } from '@/features/import/tabular';
 import { useCreateProjectFromBom, useImportBom } from '../projects';
 import { parseBom, BomImportError, type ParsedBomLine } from '../bom-import';
+import { useErrorMessage } from '@/features/errors';
 
 /** The file types the BOM importer accepts (mirrors the recognised tabular formats). */
 const BOM_FILE_ACCEPT =
@@ -60,6 +61,7 @@ export function ImportBomDialog({
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
   const [parsed, setParsed] = useState<ParsedBomLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [summary, setSummary] = useState<string | null>(null);
 
   const pending = isNewProject ? createFromBom.isPending : importBom.isPending;
@@ -131,7 +133,7 @@ export function ImportBomDialog({
             close();
           },
           onError: (err) => {
-            setError(err instanceof Error ? err.message : 'Could not create the project from this BOM.');
+            setError(describeError(err, 'Could not create the project from this BOM.'));
           },
         },
       );
@@ -148,7 +150,7 @@ export function ImportBomDialog({
         setText('');
       },
       onError: (err) => {
-        setError(err instanceof Error ? err.message : 'Could not import this BOM.');
+        setError(describeError(err, 'Could not import this BOM.'));
       },
     });
   };

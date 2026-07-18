@@ -52,6 +52,7 @@ import { itemDisplayName } from '../item-display';
 import { isLocationColor, type LocationColor } from '../location-color';
 import { usePhotoImageSrc } from '../usePhotoImageSrc';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * The shape a keyboard-created region gets, per tool. Centred and comfortably clear of the edges,
@@ -90,6 +91,7 @@ export function RegionEditorDialog({
   locationName: string;
 }) {
   const t = useT();
+  const describeError = useErrorMessage();
   const { show } = useToast();
   // Every write here can fail — most plausibly against the §7.6 storage Hard Stop, which
   // `assertWritable()` throws on. Without this the dialog would simply do nothing, which is
@@ -97,7 +99,7 @@ export function RegionEditorDialog({
   const onFailure = (error: unknown) =>
     show({
       tone: 'danger',
-      message: error instanceof Error ? error.message : t('inventory.regions.saveFailed'),
+      message: describeError(error, t('inventory.regions.saveFailed')),
     });
 
   const { src, loading } = usePhotoImageSrc(photo);

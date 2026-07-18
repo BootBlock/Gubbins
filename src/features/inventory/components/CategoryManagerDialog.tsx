@@ -47,6 +47,7 @@ import {
   TRACKING_MODE_LABELS,
 } from './inventory-ui';
 import { TypedFieldControl } from './TypedFieldControl';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Category & schema manager (spec §4). Create categories, define their dynamic
@@ -575,6 +576,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   // Advisory, never blocking: a custom "Manufacturer" is legitimate when the built-in column
   // goes unused, so the name is allowed — the duplicate is just made a choice rather than a
@@ -596,7 +598,7 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         },
       },
       {
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the field.'),
+        onError: (e) => setError(describeError(e, 'Could not add the field.')),
         onSuccess: () => {
           setName('');
           setOptions('');

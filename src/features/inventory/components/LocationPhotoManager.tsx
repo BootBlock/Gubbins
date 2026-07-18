@@ -26,6 +26,7 @@ import {
 } from '../location-media';
 import { RegionEditorDialog } from './RegionEditorDialog';
 import { Thumbnail } from './Thumbnail';
+import { useErrorMessage } from '@/features/errors';
 
 export function LocationPhotoManager({
   locationId,
@@ -36,6 +37,7 @@ export function LocationPhotoManager({
   locationName: string;
 }) {
   const t = useT();
+  const describeError = useErrorMessage();
   const { show } = useToast();
   const { data: photos, isLoading } = useLocationPhotos(locationId);
   const addPhoto = useAddLocationPhoto();
@@ -44,7 +46,7 @@ export function LocationPhotoManager({
   const onFailure = (error: unknown) =>
     show({
       tone: 'danger',
-      message: error instanceof Error ? error.message : t('inventory.locationPhotos.saveFailed'),
+      message: describeError(error, t('inventory.locationPhotos.saveFailed')),
     });
   // The *id* is held, not the row: the list re-fetches on every caption edit and region change,
   // so holding the row would pin a stale copy open behind the editor.

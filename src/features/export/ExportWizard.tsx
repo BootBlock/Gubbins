@@ -5,6 +5,7 @@ import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/co
 import { getItemRepository, getProjectRepository } from '@/db/repositories';
 import { runExport } from './run-export';
 import { useExportStore, type ExportFormat, type ExportScope, type ReportExportKind } from './useExportStore';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * The Granular Export Wizard (spec §3, §2 JSON backup, §4.5 Markdown vault).
@@ -81,6 +82,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const isReport = format === 'REPORTS';
   // CATALOG_CSV always exports the whole catalogue — no scope picker needed.
@@ -114,7 +116,7 @@ export function ExportWizard({ open, onClose }: { open: boolean; onClose: () => 
       });
       setDone(filename);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The export failed.');
+      setError(describeError(e, 'The export failed.'));
     } finally {
       setBusy(false);
     }

@@ -21,7 +21,7 @@ import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from
 // would drag Modal/Menu/Markdown/RegionCanvas into every chunk that writes an item.
 import { useOptionalToast } from '@/components/foundry/toast';
 import { useT, type MessageKey } from '@/features/i18n';
-import { DbError } from '@/db/errors';
+import { useErrorMessage } from '@/features/errors';
 import {
   getCategoryRepository,
   getCheckoutRepository,
@@ -114,23 +114,25 @@ const WRITE_FAILURE_REPEAT_MS = 3_000;
  * therefore lives **here**, beside the rollback it explains, rather than at each of the ~20
  * call sites: a `.mutate()` with no `onError` of its own still tells the user.
  *
- * A {@link DbError} carries a message written for the user (the storage hard stop, a constraint
- * the repository names), so that becomes the toast body — it is the actionable part. Anything
- * else is an internal failure whose text is not user-facing copy and would not be translated, so
- * it degrades to the generic "undone" line rather than putting raw SQL in front of the user. This
- * mirrors how the stock-transfer toast already picks its message. A call site that wants a more
- * specific message can still add its own `onError` — but it no longer has to.
+ * The toast body comes from {@link useErrorMessage} (issue #311). This originally took a
+ * `DbError`'s own message as user-facing copy, but a `DbError` carries the **unmodified** SQLite
+ * text, so the storage hard stop and a constraint violation both reached the toast as jargon —
+ * `UNIQUE constraint failed: tags.name` where a real sentence was derivable from the code. The
+ * resolver humanises what it can, keeps a repository's authored sentence where there is one, and
+ * degrades to the generic "undone" line otherwise. A call site that wants a more specific message
+ * can still add its own `onError` — but it no longer has to.
  */
 function useReportWriteFailure(key: WriteFailureKey): (error: unknown) => void {
   // Optional: these hooks are exercised by harnesses that render without a ToastProvider, and a
   // failed write must not become a crash on top of a failed write.
   const toast = useOptionalToast();
   const t = useT();
+  const describeError = useErrorMessage();
   // The last failure this hook instance reported, so a burst coalesces (see below).
   const lastReport = useRef<{ signature: string; at: number } | null>(null);
   return useCallback(
     (error: unknown) => {
-      const detail = error instanceof DbError ? error.message.trim() : '';
+      const detail = describeError(error, t('inventory.writeError.reverted'));
       const signature = `${key} ${detail}`;
       const now = Date.now();
 
@@ -143,13 +145,9 @@ function useReportWriteFailure(key: WriteFailureKey): (error: unknown) => void {
       if (last && last.signature === signature && now - last.at < WRITE_FAILURE_REPEAT_MS) return;
       lastReport.current = { signature, at: now };
 
-      toast?.show({
-        tone: 'danger',
-        heading: t(key),
-        message: detail || t('inventory.writeError.reverted'),
-      });
+      toast?.show({ tone: 'danger', heading: t(key), message: detail });
     },
-    [toast, t, key],
+    [toast, t, key, describeError],
   );
 }
 

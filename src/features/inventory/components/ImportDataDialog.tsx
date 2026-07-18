@@ -65,6 +65,7 @@ import {
 } from '../importers/migrations';
 import { inventoryKeys } from '../queries';
 import { invalidateItems } from '../invalidate';
+import { useErrorMessage } from '@/features/errors';
 
 // ---------------------------------------------------------------------------
 // Catalogue loaders — read the whole item + custom-field set once per open, so
@@ -340,6 +341,7 @@ function ImportWorkbench({
   const [defaultTrackingMode, setDefaultTrackingMode] = useState('');
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [result, setResult] = useState<CatalogApplyResult | null>(null);
 
   // Read a currency price the way the user's own browser locale writes numbers, so a
@@ -439,7 +441,7 @@ function ImportWorkbench({
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     } catch (err) {
-      setApplyError(err instanceof Error ? err.message : 'The import failed unexpectedly.');
+      setApplyError(describeError(err, 'The import failed unexpectedly.'));
     } finally {
       setApplying(false);
     }

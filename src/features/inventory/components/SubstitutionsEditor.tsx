@@ -16,6 +16,7 @@ import { useInventoryItems, useItemRelations } from '../queries';
 import { useAddRelation, useRemoveRelation } from '../mutations';
 import { describeItemRelations, isSubstitutionKind } from '../item-relations';
 import { itemDisplayName } from '../item-display';
+import { useErrorMessage } from '@/features/errors';
 
 export function SubstitutionsEditor({ item }: { item: Item }) {
   const { data: relations } = useItemRelations(item.id);
@@ -33,6 +34,7 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
   const [otherId, setOtherId] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const views = useMemo(() => relations ?? [], [relations]);
   const viewById = useMemo(() => new Map(views.map((v) => [v.id, v])), [views]);
@@ -60,7 +62,7 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
           setOtherId('');
           setNote('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the substitution.'),
+        onError: (e) => setError(describeError(e, 'Could not add the substitution.')),
       },
     );
   };

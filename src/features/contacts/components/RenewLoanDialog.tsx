@@ -4,6 +4,7 @@ import { DueDateIcon } from '@/components/icons';
 import type { CheckoutWithNames } from '@/db/repositories';
 import { fromDateInputValue, toDateInputValue } from '@/features/inventory/components/inventory-ui';
 import { useRenewLoan } from '../contacts';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Renew an open loan by changing its due date in place (spec §4 Borrowing, B3).
@@ -28,6 +29,7 @@ export function RenewLoanDialog({
   const renew = useRenewLoan();
   const [dueDate, setDueDate] = useState(() => toDateInputValue(checkout.dueDate));
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const dueDateRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
@@ -36,7 +38,7 @@ export function RenewLoanDialog({
       { checkoutId: checkout.id, dueDate: fromDateInputValue(dueDate) },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not renew the loan.'),
+        onError: (e) => setError(describeError(e, 'Could not renew the loan.')),
       },
     );
   };

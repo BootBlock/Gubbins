@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/foundry';
 import { ArchiveRestoreIcon, DatabaseIcon, DownloadIcon, ResetIcon, RestoreIcon } from '@/components/icons';
 import { restoreArchive } from '@/features/archive/restore-archive';
+import { useErrorMessage } from '@/features/errors';
 import {
   downloadJsonDump,
   downloadRawSqlite,
@@ -34,6 +35,7 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const sqliteRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
 
@@ -63,7 +65,7 @@ export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}
       if (pending.kind === 'archive') await restoreArchive(pending.file);
       else await restoreRawSqlite(pending.file);
     } catch (error) {
-      setRestoreError(error instanceof Error ? error.message : 'Restore failed.');
+      setRestoreError(describeError(error, 'Restore failed.'));
       setBusy(null);
       setPending(null);
     }
