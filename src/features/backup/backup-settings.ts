@@ -10,22 +10,33 @@
  *  - the bridge **access token** inside `gubbins:preferences` is stripped, so a shared
  *    backup can't leak it (the non-secret bridge URL is kept).
  *
- * The allow-list and scrubbing are pure (testable with a plain record); only
- * {@link collectSettings} / {@link applySettings} touch `localStorage`.
+ * On top of the allow-list, the user chooses **which groups** of settings travel out and which
+ * land on restore (issue #175) — the groups themselves, and all the splitting/merging logic, live
+ * in `settings-groups.ts`. The allow-list and scrubbing are pure (testable with a plain record);
+ * only {@link collectSettings} / {@link applySettings} touch `localStorage`.
  */
+import {
+  DEFAULT_SETTINGS_GROUPS,
+  GROUPED_STORAGE_KEYS,
+  NON_PORTABLE_PREF_FIELDS,
+  PREFERENCES_KEY,
+  filterSettingsByGroups,
+  mergePreferencesBlob,
+  type SettingsGroupSelection,
+} from './settings-groups';
 
-/** The only `localStorage` keys a backup may carry (everything else, incl. auth/tokens, is excluded). */
-export const EXPORTABLE_SETTING_KEYS = [
-  'gubbins:preferences', // theme, units, density, currency, bridge URL (token scrubbed)
-  'gubbins:layout', // dashboard widget layout
-  'gubbins:saved-searches', // saved search queries
-] as const;
+/**
+ * The only `localStorage` keys a backup may carry (everything else, incl. auth/tokens, is
+ * excluded). Derived from the group registry so a group and the allow-list can never disagree:
+ * the preferences blob (split by field across groups) plus every whole-key group's keys.
+ */
+export const EXPORTABLE_SETTING_KEYS: readonly string[] = [PREFERENCES_KEY, ...GROUPED_STORAGE_KEYS];
 
 const EXPORTABLE_SET: ReadonlySet<string> = new Set(EXPORTABLE_SETTING_KEYS);
 
 /** State fields scrubbed from a persisted store blob before it enters a backup (secrets). */
 const SCRUBBED_STATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  'gubbins:preferences': ['bridgeToken'],
+  [PREFERENCES_KEY]: NON_PORTABLE_PREF_FIELDS,
 };
 
 /**
@@ -63,27 +74,39 @@ export function sanitiseSettingsRecord(record: Record<string, unknown>): Record<
   return out;
 }
 
-/** Read the allow-listed, scrubbed settings from storage (defaults to `localStorage`). */
-export function collectSettings(storage: Storage = localStorage): Record<string, string> {
+/**
+ * Read the allow-listed, scrubbed settings from storage, narrowed to the chosen groups (defaults
+ * to the shipped {@link DEFAULT_SETTINGS_GROUPS} — everything but the device-specific group).
+ */
+export function collectSettings(
+  groups: SettingsGroupSelection = DEFAULT_SETTINGS_GROUPS,
+  storage: Storage = localStorage,
+): Record<string, string> {
   const raw: Record<string, string> = {};
   for (const key of EXPORTABLE_SETTING_KEYS) {
     const value = storage.getItem(key);
     if (value !== null) raw[key] = value;
   }
-  return sanitiseSettingsRecord(raw);
+  return filterSettingsByGroups(sanitiseSettingsRecord(raw), groups);
 }
 
 /**
- * Write restored settings back into storage. Only allow-listed keys are written (the record
- * is re-sanitised first), so a malformed backup can never clobber an arbitrary key. Returns
- * the number of keys written. A reload is required for the stores to re-hydrate.
+ * Write restored settings back into storage, narrowed to the groups the user chose to apply.
+ * Only allow-listed keys are written (the record is re-sanitised first), so a malformed backup
+ * can never clobber an arbitrary key, and the preferences blob is **merged over** the live one so
+ * restoring one group never resets the settings in another. Returns the number of keys written.
+ * A reload is required for the stores to re-hydrate.
  */
-export function applySettings(record: Record<string, string>, storage: Storage = localStorage): number {
-  const clean = sanitiseSettingsRecord(record);
+export function applySettings(
+  record: Record<string, string>,
+  groups: SettingsGroupSelection = DEFAULT_SETTINGS_GROUPS,
+  storage: Storage = localStorage,
+): number {
+  const clean = filterSettingsByGroups(sanitiseSettingsRecord(record), groups);
   let written = 0;
   for (const [key, value] of Object.entries(clean)) {
     if (!EXPORTABLE_SET.has(key)) continue;
-    storage.setItem(key, value);
+    storage.setItem(key, key === PREFERENCES_KEY ? mergePreferencesBlob(value, storage.getItem(key)) : value);
     written += 1;
   }
   return written;

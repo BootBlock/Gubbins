@@ -22,6 +22,7 @@ import type { SyncSnapshot } from '../sync/types';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
+import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
 
 /** Bump when the *container* layout changes incompatibly (independent of the snapshot's own version). */
 export const BACKUP_FORMAT_VERSION = 1;
@@ -48,15 +49,21 @@ export interface BackupSelection {
   readonly removedItems: boolean;
   /** Device-local settings & preferences (theme, units, layout, saved searches). */
   readonly settings: boolean;
+  /**
+   * Which **groups** of settings travel (issue #175) — only consulted when `settings` is on.
+   * Lets the user send their theme and units without their dashboard layout, and so on.
+   */
+  readonly settingGroups: SettingsGroupSelection;
 }
 
-/** Sensible defaults: a complete backup of everything. */
+/** Sensible defaults: a complete backup of everything (bar the device-specific settings group). */
 export const DEFAULT_BACKUP_SELECTION: BackupSelection = {
   rawSqlite: true,
   images: true,
   history: true,
   removedItems: true,
   settings: true,
+  settingGroups: DEFAULT_SETTINGS_GROUPS,
 };
 
 /** A summary of what a backup contains — written on create, read back on restore for preview. */
@@ -165,7 +172,8 @@ function referencesExcludedItem(row: SqlRow, excluded: ReadonlySet<string>): boo
 /** Build the manifest describing a backup's contents. Pure. */
 export function buildManifest(input: {
   readonly snapshot: SyncSnapshot;
-  readonly selection: BackupSelection;
+  /** Only the two content filters the manifest records; the rest of the selection is irrelevant here. */
+  readonly selection: Pick<BackupSelection, 'history' | 'removedItems'>;
   readonly appVersion: string;
   readonly baselineRevision?: string;
   readonly createdAt: number;
@@ -220,12 +228,9 @@ export interface BackupArtifacts {
 
 /** Build the zip-entry maps for a backup. Pure (string/bytes in → string/bytes out). */
 export function assembleBackup(sources: BackupSources): BackupArtifacts {
-  const selection: BackupSelection = {
-    rawSqlite: sources.sqlite !== null,
-    images: sources.images.length > 0,
+  const selection: Pick<BackupSelection, 'history' | 'removedItems'> = {
     history: sources.snapshot.itemHistory.length > 0 || sources.snapshot.gaugeHistory.length > 0,
     removedItems: (sources.snapshot.tables.items ?? []).some(isRemovedItem),
-    settings: sources.settings !== null,
   };
 
   const manifest = buildManifest({

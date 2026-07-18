@@ -15,9 +15,9 @@ import { BackupDialog } from './BackupDialog';
 
 // createBackup and readBackup are the async IO boundaries — mock at the module
 // level so no DB, OPFS, or Web Workers are touched.
-const mockCreateBackup = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const mockCreateBackup = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>());
 const mockReadBackup = vi.hoisted(() => vi.fn<(f: File) => Promise<unknown>>());
-const mockRestoreBackup = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const mockRestoreBackup = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>());
 
 vi.mock('./build-backup', () => ({ createBackup: mockCreateBackup }));
 vi.mock('./restore-backup', () => ({
@@ -215,5 +215,128 @@ describe('BackupDialog — Restore panel aria-live coverage (Phase 63 / WCAG 4.1
     expect(errorRegion.getAttribute('aria-live')).toBe('assertive');
     expect(errorRegion.textContent).toContain('Not a valid backup.');
     expect(screen.getByTestId('restore-live-region').textContent).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-group settings picker (issue #175)
+// ---------------------------------------------------------------------------
+
+/** A parsed backup carrying an appearance field and a saved-searches key, but no layout. */
+const PARSED_WITH_SETTINGS = {
+  ...PARSED_BACKUP,
+  settings: {
+    'gubbins:preferences': JSON.stringify({ state: { mode: 'dark' }, version: 3 }),
+    'gubbins:saved-searches': '{"state":{"searches":[]}}',
+  },
+};
+
+/** Choose a file in the Restore tab and let the (mocked) read settle. */
+async function chooseBackupFile(parsed: unknown) {
+  mockReadBackup.mockResolvedValue(parsed);
+  const file = new File(['{}'], 'my-backup.zip', { type: 'application/zip' });
+  await act(async () => {
+    fireEvent.change(screen.getByTestId('restore-backup-input'), { target: { files: [file] } });
+  });
+}
+
+describe('BackupDialog — choosing which settings travel (issue #175)', () => {
+  it('offers every group under the settings toggle, and hides them when it is off', () => {
+    renderDialog('create');
+    expect(screen.getByTestId('backup-setting-group-appearance')).toBeTruthy();
+    expect(screen.getByTestId('backup-setting-group-device')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('backup-toggle-settings'));
+    expect(screen.queryByTestId('backup-setting-group-appearance')).toBeNull();
+  });
+
+  it('starts with everything but the device-specific group ticked', () => {
+    renderDialog('create');
+    expect((screen.getByTestId('backup-setting-group-appearance') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('backup-setting-group-device') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('passes the user’s group choice through to the backup', async () => {
+    mockCreateBackup.mockResolvedValue(BACKUP_RESULT);
+    renderDialog('create');
+
+    fireEvent.click(screen.getByTestId('backup-setting-group-none'));
+    fireEvent.click(screen.getByTestId('backup-setting-group-shortcuts'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('create-backup'));
+    });
+
+    const selection = mockCreateBackup.mock.calls[0]![0] as { settingGroups: Record<string, boolean> };
+    expect(selection.settingGroups.shortcuts).toBe(true);
+    expect(selection.settingGroups.appearance).toBe(false);
+  });
+
+  it('captures every group in the pre-Replace restore point, device settings included', async () => {
+    // The restore point is the undo for a destructive Replace — the user never chose its shape,
+    // so it must not inherit the create tab's "device settings off" default and lose them.
+    mockCreateBackup.mockResolvedValue(BACKUP_RESULT);
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    renderDialog('restore');
+    await chooseBackupFile(PARSED_BACKUP);
+
+    fireEvent.click(screen.getByTestId('restore-mode-replace'));
+    fireEvent.click(screen.getByTestId('restore-backup'));
+    fireEvent.change(screen.getByTestId('replace-confirm-input'), { target: { value: 'REPLACE' } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-restore-backup'));
+    });
+
+    const selection = mockCreateBackup.mock.calls[0]![0] as { settingGroups: Record<string, boolean> };
+    expect(Object.values(selection.settingGroups).every(Boolean)).toBe(true);
+  });
+
+  it('offers only the groups the chosen backup actually carries', async () => {
+    renderDialog('restore');
+    await chooseBackupFile(PARSED_WITH_SETTINGS);
+
+    expect(screen.getByTestId('restore-setting-group-appearance')).toBeTruthy();
+    expect(screen.getByTestId('restore-setting-group-savedSearches')).toBeTruthy();
+    // The backup carries no dashboard layout, so ticking one would promise nothing.
+    expect(screen.queryByTestId('restore-setting-group-dashboard')).toBeNull();
+  });
+
+  it('shows no picker at all for a backup with no settings', async () => {
+    renderDialog('restore');
+    await chooseBackupFile(PARSED_BACKUP);
+    expect(screen.queryByTestId('restore-setting-group-appearance')).toBeNull();
+  });
+
+  it('leaves the device-specific group unticked when restoring, too', async () => {
+    // Opt-in at both ends: a backup that happens to carry a bridge address must not silently
+    // re-point a different device just because someone chose to include it when exporting.
+    renderDialog('restore');
+    await chooseBackupFile({
+      ...PARSED_WITH_SETTINGS,
+      settings: {
+        'gubbins:preferences': JSON.stringify({
+          state: { mode: 'dark', bridgeUrl: 'http://127.0.0.1:8787' },
+          version: 3,
+        }),
+      },
+    });
+
+    expect((screen.getByTestId('restore-setting-group-appearance') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('restore-setting-group-device') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('applies only the groups left ticked when restoring', async () => {
+    mockRestoreBackup.mockResolvedValue({ reloadRequired: false, message: 'done' });
+    renderDialog('restore');
+    await chooseBackupFile(PARSED_WITH_SETTINGS);
+
+    fireEvent.click(screen.getByTestId('restore-setting-group-savedSearches')); // untick
+    fireEvent.click(screen.getByTestId('restore-backup'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-restore-backup'));
+    });
+
+    const groups = mockRestoreBackup.mock.calls[0]![2] as Record<string, boolean>;
+    expect(groups.appearance).toBe(true);
+    expect(groups.savedSearches).toBe(false);
   });
 });

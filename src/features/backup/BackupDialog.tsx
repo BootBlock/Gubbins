@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { Banner, Button, Input, LiveRegion, Modal, Surface } from '@/components/foundry';
 import {
   DatabaseIcon,
@@ -18,6 +18,16 @@ import { createBackup, type BackupResult } from './build-backup';
 import { readBackup, rememberRestoreNotice, restoreBackup, type RestoreMode } from './restore-backup';
 import { DEFAULT_BACKUP_SELECTION, type BackupSelection, type ParsedBackup } from './backup-format';
 import {
+  DEFAULT_SETTINGS_GROUPS,
+  SETTINGS_GROUP_IDS,
+  allSettingsGroups,
+  settingsGroup,
+  settingsGroupsPresent,
+  type SettingsGroupId,
+  type SettingsGroupSelection,
+} from './settings-groups';
+import { useT } from '@/features/i18n';
+import {
   REPLACE_CONFIRM_WORD,
   assessQuota,
   assessRestoreImpact,
@@ -27,9 +37,14 @@ import {
 
 type Tab = 'create' | 'restore';
 
+/** The boolean flags of a {@link BackupSelection} — i.e. everything the toggle rows can drive. */
+type BackupToggleKey = {
+  [K in keyof BackupSelection]: BackupSelection[K] extends boolean ? K : never;
+}[keyof BackupSelection];
+
 /** The toggle rows in the Create tab — each maps to a {@link BackupSelection} flag. */
 const TOGGLES: {
-  key: keyof BackupSelection;
+  key: BackupToggleKey;
   label: string;
   hint: string;
   icon: typeof DatabaseIcon;
@@ -145,7 +160,7 @@ function CreatePanel() {
   const [result, setResult] = useState<BackupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const toggle = (key: keyof BackupSelection) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: BackupToggleKey) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const run = async () => {
     setBusy(true);
@@ -170,23 +185,37 @@ function CreatePanel() {
       <fieldset className="space-y-1">
         <legend className="sr-only">Backup contents</legend>
         {TOGGLES.map(({ key, label, hint, icon: Icon }) => (
-          <label
-            key={key}
-            className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40 [&_svg]:size-5"
-          >
-            <input
-              type="checkbox"
-              checked={selection[key]}
-              onChange={() => toggle(key)}
-              className="mt-0.5 size-4 accent-primary"
-              data-testid={`backup-toggle-${key}`}
-            />
-            <Icon className="mt-0.5 text-muted-foreground" />
-            <span className="flex-1">
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="block text-xs text-muted-foreground">{hint}</span>
-            </span>
-          </label>
+          <Fragment key={key}>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-secondary/40 [&_svg]:size-5">
+              <input
+                type="checkbox"
+                checked={selection[key]}
+                onChange={() => toggle(key)}
+                className="mt-0.5 size-4 accent-primary"
+                data-testid={`backup-toggle-${key}`}
+              />
+              <Icon className="mt-0.5 text-muted-foreground" />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="block text-xs text-muted-foreground">{hint}</span>
+              </span>
+            </label>
+            {/* The settings toggle opens into a per-group picker (issue #175): the user decides
+                which parts of their settings travel, rather than all-or-nothing. */}
+            {key === 'settings' && selection.settings ? (
+              <div className="ml-7">
+                <SettingsGroupPicker
+                  ids={SETTINGS_GROUP_IDS}
+                  value={selection.settingGroups}
+                  onChange={(settingGroups) => setSelection((prev) => ({ ...prev, settingGroups }))}
+                  titleKey="backup.settings.chooseTitle"
+                  hintKey="backup.settings.chooseHint"
+                  emptyKey="backup.settings.none"
+                  testIdPrefix="backup-setting-group"
+                />
+              </div>
+            ) : null}
+          </Fragment>
         ))}
       </fieldset>
 
@@ -250,6 +279,10 @@ function RestorePanel({
   const [currentItems, setCurrentItems] = useState<number | null>(null);
   const [storage, setStorage] = useState<{ usage: number; quota: number; supported: boolean } | null>(null);
   const [replaceText, setReplaceText] = useState('');
+  // Which of the settings groups the chosen backup carries should land on this device (#175).
+  // Defaults match the create tab's, so the device-specific group is opt-in at *both* ends: a
+  // backup that happens to carry a bridge address never re-points a different device by default.
+  const [settingGroups, setSettingGroups] = useState<SettingsGroupSelection>(DEFAULT_SETTINGS_GROUPS);
 
   const resetMode = (next: RestoreMode) => {
     setMode(next);
@@ -267,6 +300,7 @@ function RestorePanel({
     setReplaceText('');
     setCurrentItems(null);
     setStorage(null);
+    setSettingGroups(DEFAULT_SETTINGS_GROUPS);
     if (!chosen) return;
     setBusy(true);
     try {
@@ -301,7 +335,13 @@ function RestorePanel({
       // — never wipe without first securing what's there.
       if (mode === 'replace') {
         try {
-          await createBackup(DEFAULT_BACKUP_SELECTION, { filenamePrefix: 'gubbins-restore-point' });
+          // The restore point is the undo for a destructive Replace, so it captures *every*
+          // settings group — including the device-specific one the create tab leaves off by
+          // default. A safety net the user never chose the shape of must not have holes in it.
+          await createBackup(
+            { ...DEFAULT_BACKUP_SELECTION, settingGroups: allSettingsGroups(true) },
+            { filenamePrefix: 'gubbins-restore-point' },
+          );
           // Let the browser commit the restore-point download before we overwrite the DB and
           // (on the .sqlite path) reload — a reload in the same tick could cancel it.
           await new Promise((resolve) => setTimeout(resolve, 400));
@@ -316,7 +356,7 @@ function RestorePanel({
         }
       }
 
-      const outcome = await restoreBackup(parsed, mode);
+      const outcome = await restoreBackup(parsed, mode, settingGroups);
       if (outcome.reloadRequired) {
         rememberRestoreNotice(outcome.message); // survives the reload, shown on the Sync screen
         location.reload();
@@ -338,6 +378,7 @@ function RestorePanel({
       ? assessQuota(estimateBackupBytes(parsed), storage.usage, storage.quota, storage.supported)
       : null;
   const replaceArmed = isReplaceConfirmed(replaceText);
+  const presentSettingGroups = parsed?.settings ? settingsGroupsPresent(parsed.settings) : [];
 
   return (
     <div className="space-y-4">
@@ -400,6 +441,20 @@ function RestorePanel({
               hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
             />
           </fieldset>
+
+          {/* Only the groups this backup actually carries are offered, so a tick-box can never
+              promise to restore something the file doesn't contain (issue #175). */}
+          {presentSettingGroups.length > 0 ? (
+            <SettingsGroupPicker
+              ids={presentSettingGroups}
+              value={settingGroups}
+              onChange={setSettingGroups}
+              titleKey="backup.settings.restoreTitle"
+              hintKey="backup.settings.restoreHint"
+              emptyKey="backup.settings.noneRestore"
+              testIdPrefix="restore-setting-group"
+            />
+          ) : null}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -522,6 +577,91 @@ function RestorePanel({
         {error ? <p>{error}</p> : null}
       </LiveRegion>
     </div>
+  );
+}
+
+/**
+ * The per-group settings picker (issue #175), shared by both tabs: on Create it chooses which
+ * groups travel into the file, on Restore which of the groups a file carries are applied here.
+ * `ids` is the set of groups on offer — every group when creating, only the ones the backup
+ * actually contains when restoring.
+ */
+function SettingsGroupPicker({
+  ids,
+  value,
+  onChange,
+  titleKey,
+  hintKey,
+  emptyKey,
+  testIdPrefix,
+}: {
+  ids: readonly SettingsGroupId[];
+  value: SettingsGroupSelection;
+  onChange: (next: SettingsGroupSelection) => void;
+  titleKey: 'backup.settings.chooseTitle' | 'backup.settings.restoreTitle';
+  hintKey: 'backup.settings.chooseHint' | 'backup.settings.restoreHint';
+  /** Note shown when the user has unticked everything on offer. */
+  emptyKey: 'backup.settings.none' | 'backup.settings.noneRestore';
+  testIdPrefix: string;
+}) {
+  const t = useT();
+  // Only the groups on offer change; anything not offered keeps its current value.
+  const setAll = (on: boolean) => onChange({ ...value, ...Object.fromEntries(ids.map((id) => [id, on])) });
+  const noneChosen = ids.every((id) => !value[id]);
+
+  return (
+    <fieldset className="space-y-field-gap-compact rounded-lg border border-border/60 bg-secondary/20 p-3">
+      <legend className="sr-only">{t(titleKey)}</legend>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-medium text-foreground">{t(titleKey)}</p>
+          <p className="text-xs text-muted-foreground">{t(hintKey)}</p>
+        </div>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setAll(true)} data-testid={`${testIdPrefix}-all`}>
+            {t('backup.settings.selectAll')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setAll(false)}
+            data-testid={`${testIdPrefix}-none`}
+          >
+            {t('backup.settings.selectNone')}
+          </Button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        {ids.map((id) => {
+          const group = settingsGroup(id);
+          if (!group) return null;
+          return (
+            // eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested checkbox is correctly associated; the label's text comes from the translated group name, which the linter cannot resolve to a static string.
+            <label
+              key={id}
+              className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-secondary/40"
+            >
+              <input
+                type="checkbox"
+                checked={value[id]}
+                onChange={() => onChange({ ...value, [id]: !value[id] })}
+                className="mt-0.5 size-4 accent-primary"
+                data-testid={`${testIdPrefix}-${id}`}
+              />
+              <span className="flex-1">
+                <span className="block text-xs font-medium">{t(group.labelKey)}</span>
+                <span className="block text-xs text-muted-foreground">{t(group.hintKey)}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {noneChosen ? (
+        <p className="text-xs text-muted-foreground" data-testid={`${testIdPrefix}-empty`}>
+          {t(emptyKey)}
+        </p>
+      ) : null}
+    </fieldset>
   );
 }
 
