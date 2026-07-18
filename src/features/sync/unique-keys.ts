@@ -26,6 +26,7 @@
  * have each device keep its own row and re-push it forever.
  */
 import type { SqlRow } from '@/db/rpc/driver';
+import { foldName } from '@/lib/name-fold';
 import { applyOffset } from './clock';
 import type { CollisionResolution, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
 
@@ -124,12 +125,20 @@ function num(value: unknown): number {
   return typeof value === 'bigint' ? Number(value) : (value as number);
 }
 
-/** The natural key of `row` under `spec`, NOCASE columns folded and `|`-joined. */
+/**
+ * The natural key of `row` under `spec`, NOCASE columns folded and `|`-joined.
+ *
+ * Folding goes through the same `lib/name-fold` seam the write paths use (issue #343), so
+ * a merge reaches the same verdict about "is this the same name?" that the app reached when
+ * it refused to create the duplicate locally. Folding more loosely here than the writer does
+ * would be the safer direction anyway — it retires a redundant id — but agreeing exactly is
+ * what keeps the two from disputing a row forever.
+ */
 function keyOf(spec: UniqueKeySpec, row: SqlRow): string {
   return spec.columns
     .map((col) => {
       const raw = String(row[col] ?? '');
-      return spec.nocase.includes(col) ? raw.toLowerCase() : raw;
+      return spec.nocase.includes(col) ? foldName(raw) : raw;
     })
     .join('|');
 }

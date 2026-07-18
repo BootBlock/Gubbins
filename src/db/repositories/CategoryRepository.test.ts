@@ -381,6 +381,39 @@ describe('CategoryRepository', () => {
     ).rejects.toBeInstanceOf(DbError);
   });
 
+  it('reuses one definition for names differing only by non-ASCII case (issue #343)', async () => {
+    // SQLite's NOCASE folds A–Z only, so the unique index alone would let these fork the
+    // dictionary in two — and a location offering "Größe" would then reach the items of one
+    // category and silently miss the other's.
+    const caps = await categories.create({ name: 'Caps' });
+    const resistors = await categories.create({ name: 'Resistors' });
+    const first = await categories.addField(caps.id, { name: 'Größe', fieldType: 'TEXT' });
+    const second = await categories.addField(resistors.id, { name: 'GRÖSSE', fieldType: 'TEXT' });
+
+    expect(second.defId).toBe(first.defId);
+    const defs = await driver.query<{ id: string }>('SELECT id FROM field_defs;');
+    expect(defs).toHaveLength(1);
+  });
+
+  it('refuses a retype through a non-ASCII case variant of an existing field (issue #343)', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    await categories.addField(cat.id, { name: 'Café', fieldType: 'TEXT' });
+    await expect(categories.addField(cat.id, { name: 'CAFÉ', fieldType: 'NUMBER' })).rejects.toBeInstanceOf(
+      DbError,
+    );
+  });
+
+  it('refuses a rename onto a non-ASCII case variant of another field (issue #343)', async () => {
+    const cat = await categories.create({ name: 'Caps' });
+    await categories.addField(cat.id, { name: 'Größe', fieldType: 'TEXT' });
+    const other = await categories.addField(cat.id, { name: 'Farbe', fieldType: 'TEXT' });
+
+    await expect(categories.updateField(other.id, { name: 'GRÖSSE' })).rejects.toBeInstanceOf(DbError);
+    // Its own name in a different case is not a clash with itself.
+    const renamed = await categories.updateField(other.id, { name: 'FARBE' });
+    expect(renamed.name).toBe('FARBE');
+  });
+
   it('resolves item fields with lenient defaulting for items lacking values', async () => {
     const cat = await categories.create({ name: 'Caps' });
     const voltage = await categories.addField(cat.id, { name: 'Voltage', fieldType: 'NUMBER' });

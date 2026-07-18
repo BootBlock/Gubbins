@@ -15,11 +15,12 @@
  * name is allowed and the *collision* is surfaced at the point of naming, where the user can
  * still cheaply choose a different word. This seam is the pure half; the UI renders it.
  *
- * Matching is case-insensitive on a trimmed name, mirroring the `field_defs.name` NOCASE
- * unique index — the dictionary already treats "manufacturer" and "Manufacturer" as one
- * name, so the warning must agree with it.
+ * Matching goes through the dictionary's own `lib/name-fold` seam — the dictionary treats
+ * "manufacturer" and "Manufacturer" as one name, so the warning must agree with it rather
+ * than restate a fold of its own.
  */
 import { BUILDER_FIELDS } from '@/features/search/fields';
+import { foldName } from '@/lib/name-fold';
 import { BUILTIN_CARD_FIELDS } from './card-fields';
 
 /**
@@ -55,19 +56,6 @@ export const BUILT_IN_ITEM_FIELD_NAMES: readonly string[] = [
 ].sort((a, b) => a.localeCompare(b));
 
 /**
- * Normalise a field name for comparison the way the dictionary's NOCASE index would.
- *
- * Deliberately locale-**in**dependent `toLowerCase`, not `toLocaleLowerCase`: SQLite's NOCASE
- * collation folds ASCII only, and a locale-aware fold disagrees with it. Under `tr-TR`,
- * `'MANUFACTURER'.toLocaleLowerCase()` yields a dotless 'ı', which would stop matching the
- * catalog entry — so a Turkish-locale user would silently lose the collision warning for a
- * name the database still considers identical.
- */
-function normalise(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-/**
  * The built-in attribute a proposed custom-field name collides with, or `undefined` when
  * there is no collision.
  *
@@ -76,12 +64,12 @@ function normalise(name: string): string {
  * makes the warning actionable. A blank or whitespace-only name never collides.
  */
 export function builtInFieldNameClash(name: string): string | undefined {
-  const needle = normalise(name);
+  const needle = foldName(name);
   if (needle === '') return undefined;
   // Some labels carry a unit suffix the user would never type ("Weight (g)"), so compare
   // against the label with any trailing parenthetical stripped as well as the label itself.
   return BUILT_IN_ITEM_FIELD_NAMES.find((label) => {
     const bare = label.replace(/\s*\([^)]*\)\s*$/, '');
-    return normalise(label) === needle || normalise(bare) === needle;
+    return foldName(label) === needle || foldName(bare) === needle;
   })?.replace(/\s*\([^)]*\)\s*$/, '');
 }
