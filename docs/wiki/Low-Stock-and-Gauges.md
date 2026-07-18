@@ -23,6 +23,10 @@ You keep that gauge up to date however suits the moment — record usage, weigh 
 top it up, or (when there's no scale to hand) just **Estimate** the level from *Full* to *Empty*.
 The gauge threshold below then flags it as low the same way, whichever method you used.
 
+Weighing one in needs Gubbins to know the **tare** — what the empty spool or bottle itself weighs
+— so it can tell the container apart from what's in it. You can pick that from the
+[[container weights|Container-Weights]] library instead of typing it each time.
+
 ## Attrition — when using some costs more than you use
 
 Some materials cost you more than you actually use. Take 100 g of flour out of the bag and
@@ -80,6 +84,9 @@ work:
 - Optional [[OS reminder notifications|Reminder-Notifications]] on an installed app.
 
 ## Related pages
+
+- **[[Container weights|Container-Weights]]** — the empty weight of the spool or jar a gauge's
+  contents sit in.
 
 - **[[Alerts|Alerts]]** — everything needing attention in one feed.
 - **[[Reorder & shopping list|Reorder-and-Shopping-List]]** — acting on low stock.

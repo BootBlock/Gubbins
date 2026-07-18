@@ -62,6 +62,8 @@ import type {
   ItemRelationView,
   TestRecord,
   TestRecordRow,
+  SavedTarePreset,
+  TarePresetRow,
   Tag,
   TagRow,
   WishlistEntry,
@@ -69,6 +71,7 @@ import type {
 } from './types';
 import type { BorrowerType, FieldType } from './constants';
 import type { RelationKind } from '@/features/inventory/item-relations';
+import { normaliseTarePresetKind } from '@/features/inventory/tare-presets';
 import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
 
@@ -259,6 +262,24 @@ export function rowToWishlistEntry(row: WishlistRow): WishlistEntry {
     url: row.url,
     targetPrice: row.target_price,
     priority: normaliseWishlistPriority(row.priority),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Map a raw saved tare-preset row (issue #94). `kind` is normalised through the seam (the DB
+ * has no CHECK on it, so a stale/unknown value softens to `OTHER` rather than leaking out
+ * untyped), exactly like `rowToWishlistEntry`'s priority.
+ */
+export function rowToSavedTarePreset(row: TarePresetRow): SavedTarePreset {
+  return {
+    id: row.id,
+    name: row.name,
+    brand: row.brand,
+    kind: normaliseTarePresetKind(row.kind),
+    tareGrams: row.tare_grams,
+    note: row.note,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

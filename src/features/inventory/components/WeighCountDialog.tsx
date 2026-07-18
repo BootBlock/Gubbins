@@ -4,11 +4,13 @@ import { ScaleIcon, WarningIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
-import { fromGrams, toGrams } from '@/lib/weight';
+import { toGrams } from '@/lib/weight';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { resolveWeighCount, weighCountNote } from '../weigh-count';
 import { useAdjustQuantity } from '../mutations';
 import { ScaleReadPanel, type ScaleReadTarget } from './ScaleReadPanel';
+import { tareFieldValue } from '../tare-presets';
+import { TarePresetPickerButton } from './TarePresetPickerButton';
 
 /**
  * "Count by weight" dialog (issue #101) — counts a handful of small, identical parts by
@@ -64,7 +66,7 @@ export function WeighCountDialog({
    */
   const applyScaleReading = useCallback(
     (grams: number, label: string, target: ScaleReadTarget) => {
-      const value = String(Math.round(fromGrams(grams, weightUnit) * 10_000) / 10_000);
+      const value = tareFieldValue(grams, weightUnit);
       if (target === 'tare') {
         setTare(value);
         setTareSource(label);
@@ -203,35 +205,54 @@ export function WeighCountDialog({
               ) : null}
             </FormField>
 
-            <FormField
-              label={t('inventory.weighCount.tareLabel', { vars: { unit: weightUnit } })}
-              hint={t('inventory.weighCount.tareHint')}
-              error={
-                issue === 'tare-too-heavy'
-                  ? t('inventory.weighCount.tareTooHeavy')
-                  : issue === 'tare-negative'
-                    ? t('inventory.weighCount.tareNegative')
-                    : undefined
-              }
-            >
-              <Input
-                ref={tareRef}
-                type="number"
-                value={tare}
-                onChange={(e) => {
-                  setTare(e.target.value);
-                  // Typing over a pulled reading makes the "from the scale" note a lie, so drop it.
-                  setTareSource(null);
-                }}
-                onKeyDown={onEnter}
-                placeholder="0"
-              />
+            {/* The scale-source note and the container picker are *siblings* of the FormField,
+                not children: FormField clones its single control child to inject the error
+                ARIA, so any second child silently drops `aria-invalid` / `aria-describedby`
+                from the input — and a button inside the <label> would fold into the control's
+                accessible name and steal its clicks. */}
+            <div>
+              <FormField
+                label={t('inventory.weighCount.tareLabel', { vars: { unit: weightUnit } })}
+                hint={t('inventory.weighCount.tareHint')}
+                error={
+                  issue === 'tare-too-heavy'
+                    ? t('inventory.weighCount.tareTooHeavy')
+                    : issue === 'tare-negative'
+                      ? t('inventory.weighCount.tareNegative')
+                      : undefined
+                }
+              >
+                <Input
+                  ref={tareRef}
+                  type="number"
+                  value={tare}
+                  onChange={(e) => {
+                    setTare(e.target.value);
+                    // Typing over a pulled reading makes the "from the scale" note a lie, so drop it.
+                    setTareSource(null);
+                  }}
+                  onKeyDown={onEnter}
+                  placeholder="0"
+                />
+              </FormField>
               {tareSource !== null ? (
                 <p className="mt-1 text-xs text-muted-foreground" data-testid="weigh-count-tare-source">
                   {t('inventory.weighCount.scaleReadFrom', { vars: { reading: tareSource } })}
                 </p>
               ) : null}
-            </FormField>
+              <div className="mt-field-gap-compact">
+                <TarePresetPickerButton
+                  currentTareGrams={tare.trim() === '' ? null : toGrams(Number.parseFloat(tare), weightUnit)}
+                  onSelect={(grams) => {
+                    setTare(tareFieldValue(grams, weightUnit));
+                    // The value no longer came off the scale, so the "from the scale" note
+                    // would be a lie — same reasoning as typing over it by hand.
+                    setTareSource(null);
+                  }}
+                  data-testid="weigh-count-tare-preset"
+                />
+              </div>
+            </div>
           </div>
 
           {result ? (

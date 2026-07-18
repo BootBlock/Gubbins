@@ -3,12 +3,15 @@ import { AutocompleteField, Button, FormField, Input, LiveRegion } from '@/compo
 import type { Item } from '@/db/repositories';
 import { ATTRITION_PERCENT_BOUNDS, clampNetValue, isValidAttritionPercent } from '@/db/repositories/gauge';
 import { useFormatters } from '@/lib/useFormatters';
+import { toGrams } from '@/lib/weight';
 import {
   GAUGE_ATTRITION_HINT,
   GAUGE_CAPACITY_HINT,
   GAUGE_TARE_EDIT_HINT,
   GAUGE_UNIT_HINT,
 } from '../gauge-field-copy';
+import { gaugeTareWeightUnit, tareFieldValue } from '../tare-presets';
+import { TarePresetPickerButton } from './TarePresetPickerButton';
 import { useFieldSuggestions } from '../queries';
 import { useReconfigureGauge } from '../mutations';
 
@@ -79,6 +82,9 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
   const unitValid = trimmedUnit.length > 0;
   const capacityValid = capacity.trim() !== '' && Number.isFinite(capacityValue) && capacityValue > 0;
   const tareValid = tare.trim() !== '' && Number.isFinite(tareValue) && tareValue >= 0;
+  // Keyed off the *draft* unit, so switching the gauge to grams offers the picker immediately
+  // rather than only after the reconfiguration is saved.
+  const tareWeightUnit = gaugeTareWeightUnit(trimmedUnit);
   const valid = unitValid && capacityValid && tareValid && attritionValid;
 
   const dirty =
@@ -131,20 +137,38 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
             data-testid="gauge-config-capacity"
           />
         </FormField>
-        <FormField
-          label="Tare (empty)"
-          error={tareValid ? undefined : 'Tare must be zero or more.'}
-          hint={GAUGE_TARE_EDIT_HINT}
-        >
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            value={tare}
-            onChange={(e) => setTare(e.target.value)}
-            data-testid="gauge-config-tare"
-          />
-        </FormField>
+        {/* The picker is a *sibling* of the FormField, never a child: FormField clones its
+            single control child to inject the error ARIA, so a second child would silently
+            drop that wiring — and a button inside the <label> would fold into the control's
+            accessible name and steal its clicks. */}
+        <div>
+          <FormField
+            label="Tare (empty)"
+            error={tareValid ? undefined : 'Tare must be zero or more.'}
+            hint={GAUGE_TARE_EDIT_HINT}
+          >
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              value={tare}
+              onChange={(e) => setTare(e.target.value)}
+              data-testid="gauge-config-tare"
+            />
+          </FormField>
+          {/* Only offered when the gauge is actually measured by mass: the tare is carried in
+              the gauge's own unit, so a gram figure written into a gauge measured in metres
+              would be a meaningless number that merely looks plausible (issue #94). */}
+          {tareWeightUnit ? (
+            <div className="mt-field-gap-compact">
+              <TarePresetPickerButton
+                currentTareGrams={tareValid ? toGrams(tareValue, tareWeightUnit) : null}
+                onSelect={(grams) => setTare(tareFieldValue(grams, tareWeightUnit))}
+                data-testid="gauge-config-tare-preset"
+              />
+            </div>
+          ) : null}
+        </div>
         <FormField
           label="Attrition (optional)"
           error={

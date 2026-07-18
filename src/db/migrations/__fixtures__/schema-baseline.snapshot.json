@@ -603,6 +603,12 @@
     },
     {
       "type": "table",
+      "name": "tare_presets",
+      "tbl_name": "tare_presets",
+      "sql": "CREATE TABLE tare_presets (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,                  -- what the user calls it (\"Flour jar\")\n          brand      TEXT,                              -- optional maker, for spools bought by brand\n          kind       TEXT    NOT NULL DEFAULT 'OTHER',  -- SPOOL | JAR | BIN | TRAY | OTHER (app-enforced)\n          tare_grams REAL    NOT NULL CHECK (tare_grams >= 0),\n          note       TEXT,\n          created_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "test_records",
       "tbl_name": "test_records",
       "sql": "CREATE TABLE test_records (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          kind         TEXT    NOT NULL DEFAULT 'TEST',   -- TEST | CALIBRATION | SERVICE (app-enforced)\n          name         TEXT    NOT NULL,                  -- the check / test name\n          result       TEXT    NOT NULL DEFAULT 'PASS',   -- PASS | FAIL | LIMIT | NA (app-enforced)\n          reading      REAL,                              -- optional measured value (may be negative)\n          unit         TEXT,                              -- optional unit for the reading (e.g. \"MΩ\")\n          note         TEXT,\n          performed_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), -- effective date of the record (UNIX-ms)\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
@@ -870,6 +876,12 @@
       "name": "trg_tags_updated_at",
       "tbl_name": "tags",
       "sql": "CREATE TRIGGER trg_tags_updated_at\n    AFTER UPDATE ON tags\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tags SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_tare_presets_updated_at",
+      "tbl_name": "tare_presets",
+      "sql": "CREATE TRIGGER trg_tare_presets_updated_at\n    AFTER UPDATE ON tare_presets\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE tare_presets SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -4934,6 +4946,84 @@
         {
           "seq": 1,
           "name": "sqlite_autoindex_tags_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "tare_presets": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "brand",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'OTHER'",
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "tare_grams",
+          "type": "REAL",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "sqlite_autoindex_tare_presets_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

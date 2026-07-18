@@ -319,6 +319,22 @@ await page.getByRole('button', { name: 'Add item' }).click();
 await shot('add-item-dialog', page.getByRole('dialog', { name: 'Add item' }));
 await page.keyboard.press('Escape').catch(() => {});
 
+// The container-weight (tare) picker, reached from the gauge fields of the Add-item dialog.
+// It only appears once the gauge is measured by mass, so the unit is set to `g` first.
+await gotoInventory();
+await page.getByRole('button', { name: 'Add item' }).click();
+{
+  const dialog = page.getByRole('dialog', { name: 'Add item' });
+  await chooseOption(dialog.getByLabel('Tracking'), 'Consumable');
+  await dialog.getByLabel('Unit', { exact: true }).fill('g');
+  await dialog.getByTestId('create-item-tare-preset').click();
+  const picker = page.getByRole('dialog', { name: 'Pick a container' });
+  await picker.waitFor({ state: 'visible', timeout: 8000 });
+  await shot('tare-preset-picker', picker, { settle: 500 });
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.keyboard.press('Escape').catch(() => {});
+}
+
 // ── Search ───────────────────────────────────────────────────────────────────
 // Quick search: type a term and capture the top of the screen — the header, the search box
 // with the query, and the matching result. A clipped viewport region reads far better than

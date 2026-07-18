@@ -28,7 +28,8 @@ Open **Count by weight…** on the item and fill in:
 - **Weight on scale** — the total reading, including anything the parts are sitting in.
 - **Container weight** — optional. The weight of the empty tray, bag or pot. Leave it blank if
   the parts are loose on the scale, or if you zeroed the scale with the empty container already
-  on it.
+  on it. **Pick a container…** fills it from the
+  [[container weights|Container-Weights]] library, so a tray you use often needn't be re-weighed.
 
 Gubbins subtracts the container, divides by the unit weight, and shows the count along with how
 it compares to the quantity already recorded. **Apply count** adjusts the item's stock and notes
@@ -106,6 +107,7 @@ are tracked individually rather than counted, and
 
 ## Related pages
 
+- **[[Container weights|Container-Weights]]** — saving the empty weight of trays, jars and spools.
 - **[[Items]]** — where a unit weight is recorded.
 - **[[Tracking modes|Tracking-Modes]]** — which items can be counted by weight.
 - **[[Low stock & gauges|Low-Stock-and-Gauges]]** — weighing a consumable to gauge what's left.
