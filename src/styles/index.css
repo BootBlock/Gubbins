@@ -1466,19 +1466,32 @@
  * Milestone success burst (visual-flair F4). A one-shot celebratory *firework* played by the
  * Foundry `BurstProvider` on a genuine milestone (the first item ever added, a completed
  * stock-take): a page-filling shell of sparks that carries into every corner of the viewport over
- * three to four seconds. Each spark translates outward from the burst origin to a per-particle
- * offset (set inline as `--burst-dx` / `--burst-dy`), sags under gravity by `--burst-drop` as it
- * fades and shrinks, and runs for its own `--burst-duration`; a soft shockwave ring expands out
- * ahead of them.
+ * three to four seconds, behind a brief ignition flash.
+ *
+ * **The flight is ballistic, not eased.** A real ember is thrown outward, slowed by air
+ * resistance, and pulled down by gravity the whole time — two forces on different curves, which no
+ * single easing function can express. So the keyframe *samples the physics* instead: each stop
+ * carries the closed-form position at that instant, and the animation runs `linear` so those
+ * samples are the motion rather than being re-shaped by an easing curve on top.
+ *
+ *   x(t) = dx · k(t)                    k(t) = (1 − e^(−4t)) / (1 − e^(−4))   ← exponential drag
+ *   y(t) = dy · k(t) + gravity · t²                                           ← constant-g fall
+ *
+ * `k(t)` spends most of its travel in the first fifth of the flight and then all but stops, so the
+ * spark shoots out, stalls, and — as the quadratic fall overtakes the stalled ejection — arcs over
+ * and drops. That hand-over is the characteristic firework droop, and it is why the ejection
+ * (`--burst-dx` / `--burst-dy`) and the fall (`--burst-gravity`) stay separate variables rather
+ * than being pre-summed into one end-point. Brightness decays with a slight flicker and the ember
+ * shrinks as it cools; this is the *only* reason the duration is per-particle, since a shared one
+ * would make ninety-six embers burn out in unison.
  *
  * GPU-only by construction — the animated properties are `transform` and `opacity` and nothing
  * else, and every transform is a `translate3d`, so each spark is composited on the GPU and no
  * frame costs layout or paint. (The provider additionally promotes and `contain`s the overlay, so
- * a hundred sparks in flight can't invalidate the page beneath.) Every colour is drawn from the
- * accent-tracking brand tokens (`--primary` / `--highlight`, set inline as each spark's
- * `background-color` / the ring's border), so the burst recolours for free whenever the user
- * changes their Colour (the Accent axis recolours exactly those tokens — see the appearance
- * Mode × Accent model).
+ * a hundred sparks in flight can't invalidate the page beneath.) Colour is drawn from the
+ * accent-tracking `--primary` brand token, which the provider offsets per spark in OKLCH, so the
+ * shell recolours for free whenever the user changes their Colour (the Accent axis recolours
+ * exactly that token — see the appearance Mode × Accent model).
  *
  * Reduced motion: the provider renders *no* particle at all under `prefers-reduced-motion`, so
  * these users get nothing to stutter — the milestone itself is surfaced by a toast / the audit
@@ -1488,53 +1501,123 @@
 @keyframes gubbins-burst-spark {
   0% {
     opacity: 0;
-    transform: translate3d(0, 0, 0) scale(0.35);
+    transform: translate3d(0, 0, 0) scale(1);
   }
-  6% {
+  /* Ignition: lit within a few frames of leaving the origin, so the backwards fill during a
+     spark's stagger stays invisible rather than parking a bright dot at the centre. */
+  3% {
     opacity: 1;
-    transform: translate3d(calc(var(--burst-dx, 0px) * 0.12), calc(var(--burst-dy, 0px) * 0.12), 0) scale(1);
-  }
-  /* The shell is fully out well before the end; the rest of the flight is the slow, sagging fade
-     that makes it read as a firework rather than a pop. */
-  55% {
-    opacity: 0.9;
     transform: translate3d(
-        calc(var(--burst-dx, 0px) * 0.94),
-        calc(var(--burst-dy, 0px) * 0.94 + var(--burst-drop, 0px) * 0.25),
+        calc(var(--burst-dx, 0px) * 0.115),
+        calc(var(--burst-dy, 0px) * 0.115 + var(--burst-gravity, 0px) * 0.001),
+        0
+      )
+      scale(1);
+  }
+  8% {
+    opacity: 1;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.279),
+        calc(var(--burst-dy, 0px) * 0.279 + var(--burst-gravity, 0px) * 0.006),
+        0
+      )
+      scale(1);
+  }
+  16% {
+    opacity: 1;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.482),
+        calc(var(--burst-dy, 0px) * 0.482 + var(--burst-gravity, 0px) * 0.026),
+        0
+      )
+      scale(0.97);
+  }
+  26% {
+    opacity: 0.98;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.659),
+        calc(var(--burst-dy, 0px) * 0.659 + var(--burst-gravity, 0px) * 0.068),
+        0
+      )
+      scale(0.94);
+  }
+  38% {
+    opacity: 0.93;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.796),
+        calc(var(--burst-dy, 0px) * 0.796 + var(--burst-gravity, 0px) * 0.144),
+        0
+      )
+      scale(0.9);
+  }
+  /* Past here the ejection has all but stopped and the fall dominates — the arc-over. */
+  52% {
+    opacity: 0.84;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.891),
+        calc(var(--burst-dy, 0px) * 0.891 + var(--burst-gravity, 0px) * 0.27),
         0
       )
       scale(0.85);
   }
+  /* A shallow dip and recovery: embers flicker as they tumble, they don't fade on a ramp. */
+  60% {
+    opacity: 0.62;
+  }
+  68% {
+    opacity: 0.71;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.952),
+        calc(var(--burst-dy, 0px) * 0.952 + var(--burst-gravity, 0px) * 0.462),
+        0
+      )
+      scale(0.78);
+  }
+  84% {
+    opacity: 0.34;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.983),
+        calc(var(--burst-dy, 0px) * 0.983 + var(--burst-gravity, 0px) * 0.706),
+        0
+      )
+      scale(0.68);
+  }
   100% {
     opacity: 0;
-    transform: translate3d(var(--burst-dx, 0px), calc(var(--burst-dy, 0px) + var(--burst-drop, 0px)), 0)
-      scale(0.3);
+    transform: translate3d(var(--burst-dx, 0px), calc(var(--burst-dy, 0px) + var(--burst-gravity, 0px)), 0)
+      scale(0.5);
   }
 }
 
 @utility animate-burst-spark {
-  /* `both` (not `forwards`) so the invisible 0% frame also fills *backwards* during a spark's
-     entrance stagger (`animation-delay`) — otherwise it would flash at its natural full opacity
-     at the origin for a frame before the animation starts. */
-  animation: gubbins-burst-spark var(--burst-duration, 3.6s) var(--ease-emphasized) both;
+  /* `linear` is deliberate and is *not* a missing `--ease-emphasized`: the keyframe stops above
+     already carry the sampled drag + gravity curves, so any easing on top would re-shape real
+     physics into a cartoon. `both` (not `forwards`) so the invisible 0% frame also fills
+     *backwards* during a spark's ignition stagger (`animation-delay`). */
+  animation: gubbins-burst-spark var(--burst-duration, 3.6s) linear both;
 }
 
-@keyframes gubbins-burst-ring {
+/*
+ * The ignition flash — the bloom of light at the moment the shell bursts, gone in half a second.
+ * (It replaced an expanding ring: a real firework has no travelling hoop, and at page scale that
+ * read as a cartoon shockwave.)
+ */
+@keyframes gubbins-burst-flash {
   0% {
     opacity: 0;
-    transform: translate3d(0, 0, 0) scale(0.05);
+    transform: translate3d(0, 0, 0) scale(0.2);
   }
-  22% {
-    opacity: 0.5;
+  12% {
+    opacity: 0.75;
   }
   100% {
     opacity: 0;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1.15);
   }
 }
 
-@utility animate-burst-ring {
-  animation: gubbins-burst-ring var(--burst-duration, 1.4s) var(--ease-emphasized) both;
+@utility animate-burst-flash {
+  animation: gubbins-burst-flash var(--burst-duration, 0.5s) var(--ease-emphasized) both;
 }
 
 /*
