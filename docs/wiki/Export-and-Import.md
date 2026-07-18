@@ -43,6 +43,11 @@ A [[project's bill of materials|Projects-and-BOM]] and a
 detection — so a BOM export, a supplier basket or a typed shopping list can be brought in without
 going through the item importer first.
 
+> **⚠️ Heads-up**
+> A **serialised** item is a single tracked instance, so its quantity is always 1. If a row says
+> it's serialised but asks for a quantity of 5, the review flags it rather than quietly importing
+> one unit — give each unit its own row.
+
 > **💡 Tip**
 > The fastest way to start a big inventory is to paste a list you already have — a spreadsheet
 > column, a stocktake note — and let the importer turn it into items. Then run

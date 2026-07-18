@@ -735,6 +735,39 @@ describe('applyCatalogImportPlan — custom fields land on the item (:memory:)',
   });
 });
 
+describe('buildCatalogImportPlan — serialised quantity (issue #348)', () => {
+  it('rejects a serialised row whose quantity is not 1 instead of silently coercing it', () => {
+    const csv = 'name,trackingMode,quantity\r\nTorque wrench,SERIALISED,5';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/quantity must be 1/i);
+    expect(plan.errors[0]!.message).toContain('5');
+  });
+
+  it('accepts a serialised row with quantity 1, or with no quantity at all', () => {
+    const csv = 'name,trackingMode,quantity\r\nTorque wrench,SERIALISED,1\r\nSocket set,SERIALISED,';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create).toHaveLength(2);
+  });
+
+  it('rejects a serialised quantity that comes from the batch default tracking mode', () => {
+    const csv = 'name,quantity\r\nTorque wrench,5';
+    const plan = buildCatalogImportPlan(csv, null, [], { defaultTrackingMode: 'SERIALISED' });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/quantity must be 1/i);
+  });
+
+  it('leaves a non-serialised row with a quantity above 1 alone', () => {
+    const csv = 'name,trackingMode,quantity\r\nM3 bolt,DISCRETE,500';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]?.input.quantity).toBe(500);
+  });
+});
+
 describe('buildCatalogImportPlan — unlimited supply (Phase 82)', () => {
   it('auto-detects an `unlimited` column and carries the flag onto a create', () => {
     const csv = 'name,unlimited\r\nTap water,true\r\nM3 bolt,false';
