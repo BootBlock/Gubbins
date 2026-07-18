@@ -118,6 +118,7 @@ export function rowToItem(row: ItemRow): Item {
       currentNetValue: net,
       percentageRemaining: percentageRemaining(net, gross),
       currentGrossWeight: currentGrossWeight(net, tare),
+      attritionPercent: row.attrition_percent,
     };
   }
 

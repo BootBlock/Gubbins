@@ -51,7 +51,13 @@ import {
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
-import { GAUGE_CAPACITY_HINT, GAUGE_TARE_HINT, GAUGE_UNIT_HINT } from '../gauge-field-copy';
+import { ATTRITION_PERCENT_BOUNDS, isValidAttritionPercent } from '@/db/repositories/gauge';
+import {
+  GAUGE_ATTRITION_HINT,
+  GAUGE_CAPACITY_HINT,
+  GAUGE_TARE_HINT,
+  GAUGE_UNIT_HINT,
+} from '../gauge-field-copy';
 import { useFieldSuggestions } from '../queries';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems, useCreateSupplierPart } from '../mutations';
 import { useAddItemImage } from '../media';
@@ -108,6 +114,7 @@ const schema = z
     grossCapacity: z.string().optional(),
     tareWeight: z.string().optional(),
     currentNetValue: z.string().optional(),
+    attritionPercent: z.string().optional(),
     // Low-stock alert policy: follow the global default, a custom trigger, or never alert.
     // Only a 'custom' floor / 'never' exemption is submitted; 'default' leaves it unset.
     lowStockPolicy: z.enum(['default', 'custom', 'never']).optional(),
@@ -124,6 +131,16 @@ const schema = z
       }
       if (!(v.grossCapacity && Number(v.grossCapacity) > 0)) {
         ctx.addIssue({ path: ['grossCapacity'], code: 'custom', message: 'Enter a positive capacity.' });
+      }
+      // Attrition is optional (issue #89) — blank means none — but a supplied value must be
+      // a number inside the bounds, matching the DB CHECK and the edit-side editor.
+      const attrition = v.attritionPercent?.trim();
+      if (attrition && !isValidAttritionPercent(Number(attrition))) {
+        ctx.addIssue({
+          path: ['attritionPercent'],
+          code: 'custom',
+          message: `Enter a value between ${ATTRITION_PERCENT_BOUNDS.min} and ${ATTRITION_PERCENT_BOUNDS.max}.`,
+        });
       }
     }
   });
@@ -162,6 +179,7 @@ const FIELD_TAB: Record<string, CreateTabId> = {
   grossCapacity: 'details',
   tareWeight: 'details',
   currentNetValue: 'details',
+  attritionPercent: 'details',
   isUnlimited: 'details',
   notes: 'details',
   lowStockPolicy: 'details',
@@ -360,6 +378,7 @@ export function CreateItemDialog({
       grossCapacity: '1000',
       tareWeight: '0',
       currentNetValue: '',
+      attritionPercent: '',
       lowStockPolicy: 'default',
       reorderPoint: '',
       reorderQty: '',
@@ -681,6 +700,7 @@ export function CreateItemDialog({
       };
     } else if (values.trackingMode === 'CONSUMABLE_GAUGE') {
       const net = values.currentNetValue?.trim() ? Number(values.currentNetValue) : undefined;
+      const attrition = values.attritionPercent?.trim() ? Number(values.attritionPercent) : undefined;
       input = {
         ...base,
         gauge: {
@@ -688,6 +708,7 @@ export function CreateItemDialog({
           grossCapacity: Number(values.grossCapacity),
           tareWeight: Number(values.tareWeight) || 0,
           ...(net !== undefined ? { currentNetValue: net } : {}),
+          ...(attrition !== undefined ? { attritionPercent: attrition } : {}),
         },
       };
     }
@@ -1121,6 +1142,24 @@ export function CreateItemDialog({
           >
             <Input type="number" min={0} step="any" placeholder="full" {...register('currentNetValue')} />
           </FormField>
+          {/* Spans the row: attrition is the one optional, rarely-set field here, and pairing
+              it with a blank cell reads as a missing input rather than a deliberate extra. */}
+          <div className="col-span-2">
+            <FormField
+              label="Attrition (optional)"
+              error={errors.attritionPercent?.message}
+              hint={GAUGE_ATTRITION_HINT}
+            >
+              <Input
+                type="number"
+                min={ATTRITION_PERCENT_BOUNDS.min}
+                max={ATTRITION_PERCENT_BOUNDS.max}
+                step="any"
+                placeholder="None"
+                {...register('attritionPercent')}
+              />
+            </FormField>
+          </div>
         </div>
       ) : null}
 

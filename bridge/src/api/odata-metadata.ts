@@ -83,6 +83,8 @@ const GAUGE_PROPERTIES: readonly EdmProperty[] = [
   p('currentNetValue', 'Edm.Double', false),
   p('percentageRemaining', 'Edm.Double', false),
   p('currentGrossWeight', 'Edm.Double', false),
+  // Nullable: an item with no attrition rate reports null rather than zero.
+  p('attritionPercent', 'Edm.Double', true),
 ];
 
 const LOCATION_PROPERTIES: readonly EdmProperty[] = [

@@ -5,7 +5,9 @@
  */
 import { DbError } from '../../errors';
 import {
+  ATTRITION_PERCENT_BOUNDS,
   clampNetValue,
+  isValidAttritionPercent,
   reconfigureNote,
   resolveGaugeReconfiguration,
   weighInNote,
@@ -41,13 +43,38 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
       const nextNet = clampNetValue(requestedNet, existing.gauge.grossCapacity);
       const appliedDelta = nextNet - existing.gauge.currentNetValue;
 
+      // A draw can be cut short by the gauge hitting empty. When that happens the attrition
+      // breakdown describes an intent that only partly happened, so record the applied total
+      // beside it and say so in the note — an append-only ledger must not assert that 110 g
+      // left a gauge that only had 50 g in it.
+      //
+      // Compare the pre- and post-clamp net values, NOT the delta magnitudes: `clampNetValue`
+      // returns its input unchanged when in range, so this is exact, whereas
+      // `nextNet - currentNetValue` re-introduces float error on fractional draws and would
+      // report a short draw on roughly a third of them.
+      const clampedShort = requestedNet !== nextNet;
+      const attritionMetadata = adjustment.attrition
+        ? {
+            attrition: {
+              requested: adjustment.attrition.requested,
+              waste: adjustment.attrition.waste,
+              total: Math.abs(adjustment.delta),
+              applied: Math.abs(appliedDelta),
+            },
+          }
+        : undefined;
+
       await this.driver.transaction([
         { sql: 'UPDATE items SET current_net_value = ? WHERE id = ?;', params: [nextNet, id] },
         historyStatement(id, 'GAUGE_UPDATE', {
           netValueDelta: appliedDelta,
+          ...(attritionMetadata ? { metadata: attritionMetadata } : {}),
           note:
-            adjustment.note ??
-            `Gauge ${appliedDelta >= 0 ? '+' : ''}${appliedDelta}${existing.gauge.unitOfMeasure} (now ${nextNet}${existing.gauge.unitOfMeasure}).`,
+            (adjustment.note ??
+              `Gauge ${appliedDelta >= 0 ? '+' : ''}${appliedDelta}${existing.gauge.unitOfMeasure} (now ${nextNet}${existing.gauge.unitOfMeasure}).`) +
+            (clampedShort && adjustment.attrition
+              ? ` — only ${Math.abs(appliedDelta)}${existing.gauge.unitOfMeasure} was available.`
+              : ''),
         }),
       ]);
       return (await this.getById(id))!;
@@ -114,6 +141,18 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
       ) {
         throw new DbError('SQLITE_CONSTRAINT', 'Gauge tare weight must be zero or a positive number.');
       }
+      // A null attrition clears the rate and is always valid; only a supplied number is
+      // range-checked (issue #89).
+      if (
+        change.attritionPercent !== undefined &&
+        change.attritionPercent !== null &&
+        !isValidAttritionPercent(change.attritionPercent)
+      ) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Attrition must be between ${ATTRITION_PERCENT_BOUNDS.min} and ${ATTRITION_PERCENT_BOUNDS.max} percent.`,
+        );
+      }
 
       const current = existing.gauge;
       const next = resolveGaugeReconfiguration(current, {
@@ -121,15 +160,24 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
         unitOfMeasure: change.unitOfMeasure?.trim(),
         grossCapacity: change.grossCapacity,
         tareWeight: change.tareWeight,
+        attritionPercent: change.attritionPercent,
       });
       if (!next.changed) return existing;
 
       await this.driver.transaction([
         {
           sql: `UPDATE items
-                SET unit_of_measure = ?, gross_capacity = ?, tare_weight = ?, current_net_value = ?
+                SET unit_of_measure = ?, gross_capacity = ?, tare_weight = ?, current_net_value = ?,
+                    attrition_percent = ?
                 WHERE id = ?;`,
-          params: [next.unitOfMeasure, next.grossCapacity, next.tareWeight, next.currentNetValue, id],
+          params: [
+            next.unitOfMeasure,
+            next.grossCapacity,
+            next.tareWeight,
+            next.currentNetValue,
+            next.attritionPercent,
+            id,
+          ],
         },
         historyStatement(id, 'GAUGE_UPDATE', {
           // Zero would be a meaningless ledger point on a pure relabel, so only a real

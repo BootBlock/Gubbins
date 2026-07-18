@@ -26,6 +26,7 @@ explanation.
 | **Purchase order (PO)** | A tracked order to a supplier. See [[Purchase orders\|Purchase-Orders]]. |
 | **Wishlist** | Things you want to buy but don't own yet. See [[Wishlist]]. |
 | **Cycle count** | Checking on-hand stock against reality, per location. See [[Cycle counts & audit day\|Cycle-Counts-and-Audit-Day]]. |
+| **Attrition** | Extra material a consumable loses each time you use some — trimmings, spillage, dust. See [[Low stock & gauges\|Low-Stock-and-Gauges]]. |
 | **FEFO** | First-expiry-first-out — consuming the soonest-expiring batch first. See [[Batches & lots\|Batches-and-Lots]]. |
 | **Depreciation** | An asset's falling book value over time. See [[Warranty & depreciation\|Warranty-and-Depreciation]]. |
 | **Current value** | A manual, up-to-date worth for appreciating assets. See [[Current value & revaluation\|Current-Value-and-Revaluation]]. |

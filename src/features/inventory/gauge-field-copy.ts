@@ -33,3 +33,12 @@ export const GAUGE_TARE_EDIT_HINT =
   'The weight of the **empty container** (the spool, bottle or reel). Subtracted from a ' +
   'measured gross weight so the gauge reflects only the *usable contents*. Changing it ' +
   're-scales future weigh-ins; it does not change how much is in the gauge now.';
+
+/**
+ * InfoHint copy for the optional attrition rate (issue #89). Deliberately leads with the
+ * worked example — "attrition" is jargon, but "take 100 g, lose 110 g" is not.
+ */
+export const GAUGE_ATTRITION_HINT =
+  'Extra material lost every time you use some — trimmings, spillage, dust. At `10%`, ' +
+  'recording `100` used takes `110` off the gauge. Leave blank if nothing is wasted. ' +
+  'Only applies when you record an amount used; a weigh-in already measures what is left.';

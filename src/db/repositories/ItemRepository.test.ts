@@ -213,6 +213,102 @@ describe('ItemRepository', () => {
     expect(history.rows[0]?.netValueDelta).toBe(600); // applied delta, clamped to top-off
   });
 
+  it('persists an attrition rate and reports it back on the gauge (issue #89)', async () => {
+    const flour = await items.create({
+      name: 'Flour',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 500, attritionPercent: 10 },
+    });
+    expect(flour.gauge?.attritionPercent).toBe(10);
+    const reread = await items.getById(flour.id);
+    expect(reread?.gauge?.attritionPercent).toBe(10);
+  });
+
+  it('rejects an out-of-range attrition rate at creation (issue #89)', async () => {
+    await expect(
+      items.create({
+        name: 'Bad rate',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, attritionPercent: 150 },
+      }),
+    ).rejects.toThrow(/Attrition must be between/);
+  });
+
+  it('clears an attrition rate when explicitly set to null (issue #89)', async () => {
+    const spool = await items.create({
+      name: 'Filament',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, attritionPercent: 5 },
+    });
+    // Omitting the field leaves it alone; an explicit null is what turns it back off.
+    const untouched = await items.reconfigureGauge(spool.id, { tareWeight: 10 });
+    expect(untouched.gauge?.attritionPercent).toBe(5);
+    const cleared = await items.reconfigureGauge(spool.id, { attritionPercent: null });
+    expect(cleared.gauge?.attritionPercent).toBeNull();
+  });
+
+  it('records the attrition breakdown beside the applied delta (issue #89)', async () => {
+    const flour = await items.create({
+      name: 'Strong flour',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 500, attritionPercent: 10 },
+    });
+    // The UI resolves the draw before calling; 100 g used at 10% costs 110 g.
+    const after = await items.adjustGauge(flour.id, {
+      delta: -110,
+      note: 'Used 100g (+10g waste, 110g total)',
+      attrition: { requested: 100, waste: 10 },
+    });
+    expect(after.gauge?.currentNetValue).toBe(390);
+
+    const history = await items.getHistory(flour.id);
+    expect(history.rows[0]?.netValueDelta).toBe(-110);
+    expect(history.rows[0]?.metadata).toEqual({
+      attrition: { requested: 100, waste: 10, total: 110, applied: 110 },
+    });
+    // Nothing was cut short, so the note must not claim it was.
+    expect(history.rows[0]?.note).not.toContain('was available');
+  });
+
+  it('does not claim a short draw on a fractional amount that fitted (issue #89)', async () => {
+    // `nextNet - currentNetValue` re-introduces float error on fractional draws; comparing
+    // magnitudes there wrongly reported a short draw on roughly a third of them.
+    const spool = await items.create({
+      name: 'Resin',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 978.87 },
+    });
+    const after = await items.adjustGauge(spool.id, {
+      delta: -12.5834,
+      attrition: { requested: 9.83, waste: 2.7534 },
+    });
+    expect(after.gauge?.currentNetValue).toBeCloseTo(966.2866, 4);
+    const history = await items.getHistory(spool.id);
+    expect(history.rows[0]?.note).not.toContain('was available');
+  });
+
+  it('says so in the note when the gauge ran out mid-draw (issue #89)', async () => {
+    const spool = await items.create({
+      name: 'Nearly gone',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 50 },
+    });
+    const after = await items.adjustGauge(spool.id, {
+      delta: -110,
+      note: 'Used 100g (+10g waste, 110g total)',
+      attrition: { requested: 100, waste: 10 },
+    });
+    expect(after.gauge?.currentNetValue).toBe(0);
+    const history = await items.getHistory(spool.id);
+    // The intent is preserved in metadata, but the note must not assert 110 g left a gauge
+    // that only held 50 g.
+    expect(history.rows[0]?.netValueDelta).toBe(-50);
+    expect(history.rows[0]?.note).toContain('only 50g was available');
+    expect(history.rows[0]?.metadata).toEqual({
+      attrition: { requested: 100, waste: 10, total: 110, applied: 50 },
+    });
+  });
+
   it('corrects a gauge’s unit, capacity and tare in place (issue #69)', async () => {
     // A 100 m cable drum entered with the wrong unit — previously only fixable by
     // deleting the item and losing its history.

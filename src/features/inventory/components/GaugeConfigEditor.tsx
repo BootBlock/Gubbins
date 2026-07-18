@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
 import { AutocompleteField, Button, FormField, Input, LiveRegion } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
-import { clampNetValue } from '@/db/repositories/gauge';
+import { ATTRITION_PERCENT_BOUNDS, clampNetValue, isValidAttritionPercent } from '@/db/repositories/gauge';
 import { useFormatters } from '@/lib/useFormatters';
-import { GAUGE_CAPACITY_HINT, GAUGE_TARE_EDIT_HINT, GAUGE_UNIT_HINT } from '../gauge-field-copy';
+import {
+  GAUGE_ATTRITION_HINT,
+  GAUGE_CAPACITY_HINT,
+  GAUGE_TARE_EDIT_HINT,
+  GAUGE_UNIT_HINT,
+} from '../gauge-field-copy';
 import { useFieldSuggestions } from '../queries';
 import { useReconfigureGauge } from '../mutations';
 
 /**
  * Consumable-Gauge **configuration** editor (issue #69) — the unit of measure, full
- * capacity and tare a gauge was set up with.
+ * capacity, tare and attrition rate a gauge was set up with.
  *
  * These are set in the Add-item dialog and were previously fixed for the life of the
  * item, so a mistyped unit (`g` where `m` was meant) or a spool swapped for a
@@ -33,17 +38,25 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
   const savedUnit = gauge?.unitOfMeasure ?? '';
   const savedCapacity = gauge ? String(gauge.grossCapacity) : '';
   const savedTare = gauge ? String(gauge.tareWeight) : '';
+  // Blank is the honest rendering of "no attrition": a literal 0 in the box invites the
+  // reading that a rate is set and happens to be zero.
+  const savedAttrition = gauge?.attritionPercent != null ? String(gauge.attritionPercent) : '';
+  // Normalise absent → null so the dirty check below compares like with like; an unset rate
+  // must not read as an edit the moment the editor mounts.
+  const savedAttritionValue = gauge?.attritionPercent ?? null;
 
   const [unit, setUnit] = useState(savedUnit);
   const [capacity, setCapacity] = useState(savedCapacity);
   const [tare, setTare] = useState(savedTare);
+  const [attrition, setAttrition] = useState(savedAttrition);
 
   // Re-seed the draft whenever the persisted configuration changes (reopen, save, sync).
   useEffect(() => {
     setUnit(savedUnit);
     setCapacity(savedCapacity);
     setTare(savedTare);
-  }, [savedUnit, savedCapacity, savedTare]);
+    setAttrition(savedAttrition);
+  }, [savedUnit, savedCapacity, savedTare, savedAttrition]);
 
   if (!gauge) {
     return (
@@ -57,15 +70,22 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
   const capacityValue = Number(capacity.trim());
   const tareValue = Number(tare.trim());
 
+  // Attrition is optional: blank means "none" and resolves to null, which is what clears a
+  // previously-set rate (issue #89).
+  const trimmedAttrition = attrition.trim();
+  const attritionValue = trimmedAttrition === '' ? null : Number(trimmedAttrition);
+  const attritionValid = attritionValue === null || isValidAttritionPercent(attritionValue);
+
   const unitValid = trimmedUnit.length > 0;
   const capacityValid = capacity.trim() !== '' && Number.isFinite(capacityValue) && capacityValue > 0;
   const tareValid = tare.trim() !== '' && Number.isFinite(tareValue) && tareValue >= 0;
-  const valid = unitValid && capacityValid && tareValid;
+  const valid = unitValid && capacityValid && tareValid && attritionValid;
 
   const dirty =
     trimmedUnit !== gauge.unitOfMeasure ||
     (capacityValid && capacityValue !== gauge.grossCapacity) ||
-    (tareValid && tareValue !== gauge.tareWeight);
+    (tareValid && tareValue !== gauge.tareWeight) ||
+    (attritionValid && attritionValue !== savedAttritionValue);
 
   // How much material a smaller capacity would displace — surfaced before the save, not after.
   const spill = capacityValid
@@ -76,7 +96,12 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
     if (!valid || !dirty) return;
     reconfigure.mutate({
       id: item.id,
-      change: { unitOfMeasure: trimmedUnit, grossCapacity: capacityValue, tareWeight: tareValue },
+      change: {
+        unitOfMeasure: trimmedUnit,
+        grossCapacity: capacityValue,
+        tareWeight: tareValue,
+        attritionPercent: attritionValue,
+      },
     });
   };
 
@@ -118,6 +143,26 @@ export function GaugeConfigEditor({ item }: { item: Item }) {
             value={tare}
             onChange={(e) => setTare(e.target.value)}
             data-testid="gauge-config-tare"
+          />
+        </FormField>
+        <FormField
+          label="Attrition (optional)"
+          error={
+            attritionValid
+              ? undefined
+              : `Attrition must be between ${ATTRITION_PERCENT_BOUNDS.min} and ${ATTRITION_PERCENT_BOUNDS.max}%.`
+          }
+          hint={GAUGE_ATTRITION_HINT}
+        >
+          <Input
+            type="number"
+            min={ATTRITION_PERCENT_BOUNDS.min}
+            max={ATTRITION_PERCENT_BOUNDS.max}
+            step="any"
+            value={attrition}
+            onChange={(e) => setAttrition(e.target.value)}
+            placeholder="None"
+            data-testid="gauge-config-attrition"
           />
         </FormField>
       </div>
