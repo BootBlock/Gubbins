@@ -213,6 +213,79 @@ describe('ItemRepository', () => {
     expect(history.rows[0]?.netValueDelta).toBe(600); // applied delta, clamped to top-off
   });
 
+  it('corrects a gauge’s unit, capacity and tare in place (issue #69)', async () => {
+    // A 100 m cable drum entered with the wrong unit — previously only fixable by
+    // deleting the item and losing its history.
+    const drum = await items.create({
+      name: 'Cat6 drum',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 100, tareWeight: 0, currentNetValue: 85.5 },
+    });
+    const fixed = await items.reconfigureGauge(drum.id, { unitOfMeasure: 'm', tareWeight: 2 });
+    expect(fixed.gauge?.unitOfMeasure).toBe('m');
+    expect(fixed.gauge?.tareWeight).toBe(2);
+    // A relabel moves no material — the drum still holds 85.5 m.
+    expect(fixed.gauge?.currentNetValue).toBe(85.5);
+
+    const history = await items.getHistory(drum.id);
+    expect(history.rows[0]?.action).toBe('GAUGE_UPDATE');
+    expect(history.rows[0]?.note).toContain('unit g → m');
+    // A pure relabel is not a stock movement, so it carries no net delta.
+    expect(history.rows[0]?.netValueDelta).toBeNull();
+  });
+
+  it('spills material and logs the delta when a gauge is shrunk below its level (issue #69)', async () => {
+    const spool = await items.create({
+      name: 'PLA',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 250, currentNetValue: 800 },
+    });
+    const smaller = await items.reconfigureGauge(spool.id, { grossCapacity: 600 });
+    expect(smaller.gauge?.grossCapacity).toBe(600);
+    // §4.1.1 forbids a net value above capacity, so the excess has to go somewhere.
+    expect(smaller.gauge?.currentNetValue).toBe(600);
+
+    const history = await items.getHistory(spool.id);
+    expect(history.rows[0]?.netValueDelta).toBe(-200);
+    expect(history.rows[0]?.note).toContain('200g over capacity discarded');
+  });
+
+  it('records nothing when a gauge reconfiguration changes nothing (issue #69)', async () => {
+    const spool = await items.create({
+      name: 'Resin',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 250, currentNetValue: 800 },
+    });
+    const before = await items.getHistory(spool.id);
+    await items.reconfigureGauge(spool.id, { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 250 });
+    const after = await items.getHistory(spool.id);
+    expect(after.rows.length).toBe(before.rows.length);
+  });
+
+  it('rejects an invalid gauge configuration rather than surfacing a raw constraint (issue #69)', async () => {
+    const spool = await items.create({
+      name: 'Filament',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'g', grossCapacity: 1000 },
+    });
+    await expect(items.reconfigureGauge(spool.id, { grossCapacity: 0 })).rejects.toMatchObject({
+      code: 'SQLITE_CONSTRAINT',
+    });
+    await expect(items.reconfigureGauge(spool.id, { tareWeight: -1 })).rejects.toMatchObject({
+      code: 'SQLITE_CONSTRAINT',
+    });
+    await expect(items.reconfigureGauge(spool.id, { unitOfMeasure: '  ' })).rejects.toMatchObject({
+      code: 'SQLITE_CONSTRAINT',
+    });
+  });
+
+  it('rejects gauge reconfiguration on a non-gauge item (issue #69)', async () => {
+    const screws = await items.create({ name: 'Screws', trackingMode: 'DISCRETE', quantity: 10 });
+    await expect(items.reconfigureGauge(screws.id, { unitOfMeasure: 'g' })).rejects.toMatchObject({
+      code: 'SQLITE_CONSTRAINT',
+    });
+  });
+
   it('rejects quantity adjustment on a gauge item', async () => {
     const spool = await items.create({
       name: 'Spool',

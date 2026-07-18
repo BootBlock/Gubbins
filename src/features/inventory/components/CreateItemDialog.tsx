@@ -51,6 +51,7 @@ import {
   type ScrapeResultPayload,
 } from '@/features/scraping';
 import { useCategories } from '../categories';
+import { GAUGE_CAPACITY_HINT, GAUGE_TARE_HINT, GAUGE_UNIT_HINT } from '../gauge-field-copy';
 import { useFieldSuggestions } from '../queries';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems, useCreateSupplierPart } from '../mutations';
 import { useAddItemImage } from '../media';
@@ -1100,7 +1101,7 @@ export function CreateItemDialog({
               <AutocompleteField
                 label="Unit"
                 error={errors.unitOfMeasure?.message}
-                hint="The unit the gauge is measured in — `g`, `ml`, `m`, etc. This labels the capacity and remaining amounts everywhere."
+                hint={GAUGE_UNIT_HINT}
                 value={field.value ?? ''}
                 onChange={field.onChange}
                 suggestions={unitSuggestions ?? []}
@@ -1108,23 +1109,10 @@ export function CreateItemDialog({
               />
             )}
           />
-          <FormField
-            label="Full capacity"
-            error={errors.grossCapacity?.message}
-            hint={
-              'The **gross** amount a brand-new/full unit holds, in the unit above — including any ' +
-              'container. The gauge reads *empty* at the tare and *full* here.'
-            }
-          >
+          <FormField label="Full capacity" error={errors.grossCapacity?.message} hint={GAUGE_CAPACITY_HINT}>
             <Input type="number" min={0} step="any" {...register('grossCapacity')} />
           </FormField>
-          <FormField
-            label="Tare (empty)"
-            hint={
-              'The weight of the **empty container** (the spool, bottle or reel). Subtracted from a ' +
-              'measured gross weight so the gauge reflects only the *usable contents*. Use `0` if not weighing.'
-            }
-          >
+          <FormField label="Tare (empty)" hint={GAUGE_TARE_HINT}>
             <Input type="number" min={0} step="any" {...register('tareWeight')} />
           </FormField>
           <FormField
