@@ -34,6 +34,8 @@ const EMPTY_PLAN: ReconciliationPlan = {
   itemTagDeletes: [],
   locationTagUpserts: [],
   locationTagDeletes: [],
+  itemRegionUpserts: [],
+  itemRegionDeletes: [],
   conflicts: [],
 };
 
