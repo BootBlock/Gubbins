@@ -1716,7 +1716,6 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `CREATE INDEX idx_item_regions_region_id ON item_regions(region_id);`,
   },
-
 ];
 
 /** The fingerprint of the DDL above — see {@link baselineFingerprint}. */
