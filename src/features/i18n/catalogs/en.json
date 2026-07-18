@@ -881,5 +881,11 @@
   "inventory.sort.direction.number.asc": "Lowest first",
   "inventory.sort.direction.number.desc": "Highest first",
   "inventory.sort.direction.date.asc": "Oldest first",
-  "inventory.sort.direction.date.desc": "Newest first"
+  "inventory.sort.direction.date.desc": "Newest first",
+  "inventory.writeError.heading.update": "Couldn’t update the item",
+  "inventory.writeError.heading.move": "Couldn’t move the item",
+  "inventory.writeError.heading.quantity": "Couldn’t adjust the quantity",
+  "inventory.writeError.heading.gauge": "Couldn’t adjust the gauge",
+  "inventory.writeError.heading.delete": "Couldn’t delete the item",
+  "inventory.writeError.reverted": "Your change has been undone."
 }

@@ -227,3 +227,16 @@ export function useToast(): ToastContextValue {
   if (!value) throw new Error('useToast must be used within a ToastProvider.');
   return value;
 }
+
+/**
+ * The non-throwing counterpart to {@link useToast} — returns `null` when there is no
+ * {@link ToastProvider} above.
+ *
+ * For code that *notifies* rather than *is* UI: a data-layer write hook wants to report a
+ * failure when it is running under the app, but must not blow up a harness that renders it
+ * without the provider. A component whose own job is to show a toast should use `useToast`,
+ * so a missing provider stays a loud wiring bug rather than a silently swallowed message.
+ */
+export function useOptionalToast(): ToastContextValue | null {
+  return useContext(ToastContext);
+}
