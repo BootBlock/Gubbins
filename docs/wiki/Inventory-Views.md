@@ -74,6 +74,39 @@ active.
 Pin the items you reach for most as **favourites** (the gold star on a card) and use the
 favourites filter to show just them. See [[Saved searches & favourites|Saved-Searches-and-Favourites]].
 
+## Status filters
+
+Above the list sits a row of **status chips** — one-tap filters for the things that usually need
+your attention. Choosing more than one widens the result rather than narrowing it: you see items
+matching *any* chip you've selected, so **Low stock** + **On order** shows both, not just items
+that are somehow both at once.
+
+| Chip | Shows |
+| --- | --- |
+| **Low stock** | Items at or below their reorder point. |
+| **Out of stock** | Items that have run down to zero on hand. |
+| **On order** | Items with stock inbound on an open purchase order — ordered, but not yet arrived. |
+| **Expiring** | Perishables past or nearing their expiry date. |
+| **Warranty** | Assets whose warranty has expired or expires soon. |
+| **On loan** | Items currently checked out to a contact. |
+| **Overdue** | Items checked out and past their due date. |
+| **Maintenance due** | Items with a service or calibration now due. |
+
+Each chip carries a count of how many items it would show, and chips that currently match nothing
+are hidden — so the row only ever offers filters that would actually do something. Chips are
+additive to whatever location and search you already have applied.
+
+> **💡 Tip**
+> **Low stock** and **On order** answer the same question from opposite sides: what's running out,
+> and what's already on its way. An item that's low *and* already ordered still appears under Low
+> stock — the alert tracks what's on the shelf, not what's in the post — so pairing the two chips
+> is a quick way to separate "still needs ordering" from "already handled".
+
+> **ℹ️ Note**
+> A chip only appears when the feature behind it is switched on. **On order** needs
+> [[Purchase orders|Purchase-Orders]]; Expiring, Warranty, On loan and Maintenance due each need
+> their own module. See [[Modular UI|Modular-UI]].
+
 ## Customising cards
 
 Card view itself is configurable — which fields show, count pills, and more — under

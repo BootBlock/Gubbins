@@ -8,6 +8,7 @@ import {
   LowStockIcon,
   MaintenanceIcon,
   OutOfStockIcon,
+  TruckIcon,
   WarrantyIcon,
 } from '@/components/icons';
 import { ITEM_STATUS_FILTERS, STATUS_FILTER_FEATURE, type ItemStatusFilter } from '@/db/repositories';
@@ -16,18 +17,19 @@ import { useFormatters } from '@/lib/useFormatters';
 
 /**
  * The inventory **status filter** bar (spec §3 / §4): a row of toggle chips for the common
- * "needs attention" filters — Low stock, Expiring, Overdue, Maintenance due. Selecting one
- * or more narrows the list to items matching *any* chosen concern (OR-combined server-side
- * via {@link buildStatusFilter}); the chips are additive to the location scope and search.
+ * "needs attention" filters — Low stock, On order, Expiring, Overdue, Maintenance due.
+ * Selecting one or more narrows the list to items matching *any* chosen concern (OR-combined
+ * server-side via {@link buildStatusFilter}); the chips are additive to the location scope
+ * and search.
  *
- * A chip is only shown when its underlying capability is enabled (Modular UI, §4): Expiring
- * needs `perishables`, Warranty needs `warranty`, On loan / Overdue need `contacts` (the
- * borrow/loan facet), Maintenance due needs `maintenance`. Low stock and Out of stock are
- * core inventory. On top of that a chip is hidden when it currently matches **nothing** (the
- * `applicable` set), so the bar only offers filters that would actually do something — this
- * keeps the row from wrapping and leaves room to add more filters. A chip that is *active*
- * always stays (so it can be switched off), and until applicability is known every enabled
- * chip shows. Each chip's label also carries its current match count (e.g. "Out of stock
+ * A chip is only shown when its underlying capability is enabled (Modular UI, §4): On order
+ * needs `purchase-orders`, Expiring needs `perishables`, Warranty needs `warranty`, On loan /
+ * Overdue need `contacts` (the borrow/loan facet), Maintenance due needs `maintenance`. Low
+ * stock and Out of stock are core inventory. On top of that a chip is hidden when it currently
+ * matches **nothing** (the `applicable` set), so the bar only offers filters that would
+ * actually do something — this keeps the row from wrapping and leaves room to add more
+ * filters. A chip that is *active* always stays (so it can be switched off), and until
+ * applicability is known every enabled chip shows. Each chip's label also carries its current match count (e.g. "Out of stock
  * (8)") via the `counts` map, so a chip communicates both what it filters and how many items
  * that would return.
  *
@@ -55,6 +57,11 @@ const STATUS_META: Record<ItemStatusFilter, StatusMeta> = {
     label: 'Out of stock',
     icon: OutOfStockIcon,
     hint: 'Items that have run down to zero on hand.',
+  },
+  'on-order': {
+    label: 'On order',
+    icon: TruckIcon,
+    hint: 'Items with stock inbound on an open purchase order — ordered, but not yet received.',
   },
   expiring: {
     label: 'Expiring',

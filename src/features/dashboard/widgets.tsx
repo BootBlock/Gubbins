@@ -33,7 +33,7 @@ import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageS
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
-import { shortfall } from '@/features/inventory/reorder-policy';
+import { resolveSupplyState } from '@/features/inventory/supply-state';
 import {
   useExpiringItems,
   useLowStockItems,
@@ -225,13 +225,15 @@ function LowStockWidget() {
         <EmptyRow>{t('dashboard.widget.lowStock.empty')}</EmptyRow>
       ) : (
         rows.slice(0, 3).map((item) => {
-          // For a low discrete item, surface the suggested top-up (its own reorder
-          // quantity, else the shortfall back up to its effective reorder point).
-          const toReorder = shortfall(item, defaults);
-          const onOrderQty = onOrderById?.get(item.id) ?? 0;
-          // "Fully covered" = enough already inbound to clear the top-up the shopping list
-          // would suggest (mirrors the reorder plan's netting). Such a row is de-emphasised.
-          const covered = toReorder > 0 && onOrderQty >= toReorder;
+          // The row's supply picture in one call (issue #88): the suggested top-up (its own
+          // reorder quantity, else the shortfall back up to its effective reorder point), how
+          // much is already inbound, and whether that inbound stock fully covers the top-up —
+          // a covered row is de-emphasised, since the shortage is already being dealt with.
+          const {
+            suggestedQty: toReorder,
+            onOrderQty,
+            covered,
+          } = resolveSupplyState({ item, defaults, onOrderQty: onOrderById?.get(item.id) ?? 0 });
           const stockMeta = item.gauge
             ? `${Math.round(item.gauge.percentageRemaining)}%`
             : toReorder > 0

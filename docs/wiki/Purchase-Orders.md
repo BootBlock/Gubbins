@@ -53,7 +53,9 @@ Received stock lands in your inventory and the in-transit figure drops according
 
 > **💡 Tip**
 > The **In transit** dashboard widget and the *In Transit* location view show everything inbound
-> at a glance — handy for knowing what to expect before it turns up.
+> at a glance — handy for knowing what to expect before it turns up. To see it item-by-item
+> instead, use the **On order** status chip on the Inventory screen
+> ([[Inventory views|Inventory-Views]]).
 
 > **ℹ️ Note**
 > Purchase orders need [[Contacts]] enabled. If the module is off, turn it on in

@@ -1,7 +1,7 @@
 /**
  * Inventory list **status filters** — the common "attention" filters the inventory screen
- * exposes as toggle chips: *Low stock*, *Expiring*, *Overdue* and *Maintenance due* (spec
- * §3 dashboard feeds / §4 alerts, surfaced as a list filter).
+ * exposes as toggle chips: *Low stock*, *On order*, *Expiring*, *Overdue* and *Maintenance
+ * due* (spec §3 dashboard feeds / §4 alerts, surfaced as a list filter).
  *
  * Each status maps to a boolean SQL fragment scoped to the outer `FROM items` query. The
  * fragments are *not* re-defined here — they are imported from each concept's SSOT
@@ -25,6 +25,7 @@ import {
 import type { LowStockThresholds } from '../types';
 import { onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from '../CheckoutRepository';
 import { maintenanceDueExistsSql } from '../MaintenanceRepository';
+import { onOrderQtyForItemSql } from '../PurchaseOrderRepository';
 import {
   expiringPredicateSql,
   lowStockPredicateSql,
@@ -34,12 +35,22 @@ import {
 
 /** The common attention filters, in canonical (stable) order. */
 export type ItemStatusFilter =
-  'low-stock' | 'out-of-stock' | 'expiring' | 'warranty' | 'on-loan' | 'overdue' | 'maintenance-due';
+  | 'low-stock'
+  | 'out-of-stock'
+  | 'on-order'
+  | 'expiring'
+  | 'warranty'
+  | 'on-loan'
+  | 'overdue'
+  | 'maintenance-due';
 
 /** Every status filter, in the order they are OR-combined and displayed. */
 export const ITEM_STATUS_FILTERS: readonly ItemStatusFilter[] = [
   'low-stock',
   'out-of-stock',
+  // Sits beside the two stock-level filters because it answers the same question from the
+  // other side: not "how little is on the shelf" but "how much is already on its way".
+  'on-order',
   'expiring',
   'warranty',
   'on-loan',
@@ -65,6 +76,7 @@ export function isItemStatusFilter(value: string): value is ItemStatusFilter {
  * warranty scan), so no work is spent computing a result the user can never see.
  */
 export const STATUS_FILTER_FEATURE: Partial<Record<ItemStatusFilter, FeatureId>> = {
+  'on-order': 'purchase-orders',
   expiring: 'perishables',
   warranty: 'warranty',
   'on-loan': 'contacts',
@@ -92,6 +104,10 @@ function predicateFor(status: ItemStatusFilter, ctx: StatusFilterContext): [sql:
     }
     case 'out-of-stock':
       return [outOfStockPredicateSql(), []];
+    case 'on-order':
+      // Reuses the purchase-order repository's own scalar so "on order" here can never mean
+      // something different from the "N on order" the reorder editor and Low Stock widget show.
+      return [`(${onOrderQtyForItemSql('items.id')} > 0)`, []];
     case 'expiring': {
       const windowDays = ctx.expirySoonWindowDays ?? EXPIRY_SOON_WINDOW_DAYS;
       return [expiringPredicateSql(), [ctx.now + windowDays * MS_PER_DAY]];
