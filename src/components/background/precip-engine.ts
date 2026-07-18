@@ -30,6 +30,16 @@
  *    a branched dendrite (nearer) — each crystal **slowly rotating** with a faint twinkle, so close
  *    flakes read as real snowflakes rather than blurry discs.
  *
+ * ## Look — a seasonal garnish
+ *
+ * On a handful of days a year the field also carries a few themed emoji (see {@link ./seasonal}):
+ * presents through December's snow, a pumpkin around Halloween. They ride the same wind and curl
+ * field as the snow — so they belong to the scene — but fall slower, rock gently instead of
+ * spinning, and spend most of their life waiting off-screen ({@link Garnish.delay}), so what you
+ * see is the occasional one drifting past rather than a second weather effect. Each glyph is
+ * rasterised into a sprite **once** ({@link buildEmojiSprite}), so per frame the garnish costs
+ * exactly what a snowflake costs: one `drawImage`.
+ *
  * ## Performance — cheap, and composited entirely on the GPU
  *
  * The layer sits behind every screen, so it must be cheap and must never touch pixels on the CPU:
@@ -81,6 +91,18 @@
 import { gust, flurry, curlField } from './flow-field';
 import { COLUMN_WIDTH, NO_SURFACE, type SurfaceSnapshot, type SurfaceTracker } from './surface-map';
 
+/**
+ * A seasonal garnish mixed into the falling field (see {@link ./seasonal}): on a handful of days
+ * a few themed emoji drift down among the rain or snow. Sparse and slow by design — it should
+ * read as a small surprise noticed in passing, not as a second weather effect.
+ */
+export interface GarnishOptions {
+  /** The sprite set; each garnish particle picks one at spawn. */
+  readonly emoji: readonly string[];
+  /** Testing aid: many more pieces, spawning near-continuously, so the whole set is quick to see. */
+  readonly dense?: boolean;
+}
+
 /** Which particle system the canvas runs. */
 export type PrecipKind = 'rain' | 'snow';
 
@@ -112,6 +134,16 @@ export interface StartPrecipOptions {
    * engine stops the tracker in {@link PrecipController.stop}.
    */
   readonly surfaces?: (() => SurfaceTracker) | null;
+  /**
+   * Optional seasonal emoji garnish drifting among the main field. Ignored under `reduced` — like
+   * the interaction layer, it is pure motion.
+   */
+  readonly garnish?: GarnishOptions | null;
+  /**
+   * Run the garnish alone, with no rain/snow behind it (the lab's "garnish without a background
+   * effect" flag). The base particle pool is left empty; everything else is unchanged.
+   */
+  readonly suppressBase?: boolean;
 }
 
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
@@ -207,6 +239,49 @@ const TUNING = {
     alpha: [0.32, 0.9] as const,
   },
 } as const;
+
+/**
+ * Seasonal-garnish tuning. The pool is tiny and each piece waits out a {@link gap} before it
+ * re-enters, so the *visible* count is far lower again than `max` — the garnish is meant to be
+ * glimpsed. `dense` collapses the gap and lifts the count for testing.
+ */
+const GARNISH = {
+  /** One piece per this many viewport px², clamped — an order of magnitude sparser than snow. */
+  density: 420_000,
+  min: 2,
+  max: 5,
+  /** Testing multipliers applied to the pool size, and the gap the pieces wait between passes. */
+  denseCountFactor: 6,
+  denseGap: [0, 0.6] as const,
+  /** Seconds a recycled piece waits off-screen before falling again (min, max). */
+  gap: [4, 26] as const,
+  /** Emoji glyph size in css px at full depth, before the depth scale. */
+  size: 26,
+  /** Fall speed range (far → near), css px/s. Slower than snow: these are big, light and gentle. */
+  speed: [26, 62] as const,
+  /** Peak sideways wind a full gust imparts (css px/s). */
+  wind: 46,
+  /** Curl-turbulence drift (css px/s). */
+  turb: 26,
+  /** Depth range: the garnish never sits in the far haze, or it would be unreadable. */
+  z: [0.4, 1] as const,
+  scale: [0.65, 1.1] as const,
+  alpha: [0.5, 0.92] as const,
+  /**
+   * The garnish rocks rather than spins: a full tumble reads as a falling icon, while a slow
+   * sway ±{@link tilt} radians reads as something light drifting down. `sway` is the rocking rate
+   * (rad/s of phase); the sign of a piece's own rate sets which way it starts.
+   */
+  sway: [-0.9, 0.9] as const,
+  tilt: 0.34,
+} as const;
+
+/**
+ * Font stack for the garnish sprites: the platform emoji font, with a generic `emoji` fallback so
+ * a system without any of the named families still rasterises a glyph rather than tofu.
+ */
+const EMOJI_FONT =
+  '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif, emoji';
 
 /** Vortex-cell tuning: transient eddies that drift with the wind and are recycled off-screen. */
 const VORTEX = {
@@ -338,6 +413,15 @@ interface Splash {
   scale: number;
   /** Which pre-rendered frame set this splash plays. */
   variant: number;
+}
+
+/**
+ * One seasonal-garnish piece. A plain particle plus the pause it sits out off-screen between
+ * passes — what keeps a pool of five emoji reading as the occasional one drifting by.
+ */
+interface Garnish extends Particle {
+  /** Seconds still to wait before this piece falls again; while positive it isn't drawn. */
+  delay: number;
 }
 
 /** A drifting eddy that adds a tangential swirl to nearby particles. */
@@ -595,6 +679,27 @@ function buildSplashFrame(dpr: number, color: string, variant: number, q: number
   return c;
 }
 
+/**
+ * Rasterise one emoji into its own sprite canvas. This runs **once per glyph** (and again only on
+ * a DPR change), which is the entire point: text layout and colour-glyph rasterisation are far too
+ * expensive to do per frame, so the garnish pays for them at build time and every frame afterwards
+ * is the same plain `drawImage` blit as the rain and snow sprites.
+ */
+function buildEmojiSprite(dpr: number, emoji: string): HTMLCanvasElement {
+  const size = GARNISH.size;
+  // Emoji routinely overflow their nominal em box (and the glyph is centred in the canvas), so the
+  // sprite is padded generously rather than clipping a pumpkin's stalk.
+  const box = Math.ceil(size * 1.4);
+  const [c, g] = makeCanvas(box, box, dpr);
+  if (g) {
+    g.font = `${size}px ${EMOJI_FONT}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(emoji, box / 2, box / 2);
+  }
+  return c;
+}
+
 export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions): PrecipController {
   const { kind, reduced } = opts;
   const dprCap = opts.dprCap ?? 2;
@@ -607,8 +712,15 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   const octx = overlay ? overlay.getContext('2d') : null;
   // The interaction layer (issue #68) runs only with both halves usable and motion allowed —
   // only then is the surface tracker created at all, so its DOM observers never run unconsumed.
-  const surfaces = octx && !reduced && opts.surfaces ? opts.surfaces() : null;
+  const suppressBase = opts.suppressBase === true;
+  // With no rain or snow in the pool nothing can ever settle or splash — the garnish deliberately
+  // doesn't land — so a garnish-only run skips the tracker rather than installing its
+  // document-wide observers to serve a layer that can never paint a pixel.
+  const surfaces = octx && !reduced && !suppressBase && opts.surfaces ? opts.surfaces() : null;
   const interact = surfaces !== null;
+  // The garnish is pure motion (its whole read is "something drifted past"), so a static frame
+  // leaves it out entirely rather than freezing emoji mid-air over the calm field.
+  const garnishOpts = !reduced && opts.garnish && opts.garnish.emoji.length > 0 ? opts.garnish : null;
 
   let dpr = 1;
   let cssWidth = 0;
@@ -618,6 +730,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let spriteMaxHalfH = 0;
   let particles: Particle[] = [];
   let vortices: Vortex[] = [];
+  /** Pre-rendered emoji sprites for the seasonal garnish (empty when there is no garnish). */
+  let garnishSprites: Sprite[] = [];
+  let garnishes: Garnish[] = [];
+  /** DPR the garnish sprites were rasterised at (-1 = never), so a refresh doesn't redo the work. */
+  let garnishDpr = -1;
+  /** Largest garnish sprite half-height, for its own off-screen margin (emoji dwarf a flake). */
+  let garnishMaxHalfH = 0;
   let rafId = 0;
   let lastTime = 0;
   let resizeQueued = false;
@@ -682,7 +801,20 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     // Streaks stretch (up to windStretchMax) and every sprite scales up with depth, so the margin
     // uses the largest drawn half-height to keep a particle fully off-screen before it wraps.
     const maxStretch = kind === 'rain' ? TUNING.rain.windStretchMax : 1;
-    edgeMargin = spriteMaxHalfH * 2 * TUNING[kind].scale[1] * maxStretch + 8;
+    // Emoji sprites take no colour from the theme, so — unlike the rain/snow sprites around them —
+    // they survive a `refresh()` untouched and are only ever rasterised again for a new DPR.
+    if (garnishOpts && (garnishSprites.length === 0 || garnishDpr !== dpr)) {
+      garnishSprites = garnishOpts.emoji.map((e) => toSprite(buildEmojiSprite(dpr, e)));
+      garnishMaxHalfH = garnishSprites.reduce((m, s) => Math.max(m, s.halfH), 0);
+      garnishDpr = dpr;
+    }
+    // The margin has to keep the *largest* drawn thing fully off-screen before it wraps, and a
+    // garnish emoji is several times a flake's size — so both sprite sets are measured here.
+    edgeMargin =
+      Math.max(
+        spriteMaxHalfH * 2 * TUNING[kind].scale[1] * maxStretch,
+        garnishMaxHalfH * 2 * GARNISH.scale[1],
+      ) + 8;
     if (interact) {
       overlayColor = color;
       if (kind === 'rain') {
@@ -728,6 +860,28 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     p.y = initial ? rand(0, cssHeight) : -rand(spriteMaxHalfH, spriteMaxHalfH + cssHeight * 0.2);
   }
 
+  /**
+   * (Re)place one garnish piece above the top edge and give it a fresh glyph, depth and sway.
+   * The `delay` is what makes the garnish occasional rather than a second snowfall: the piece
+   * waits out that many seconds before it starts falling, so a pool of a handful of emoji still
+   * only puts one or two on screen at a time.
+   */
+  function spawnGarnish(p: Garnish, initial: boolean): void {
+    const gap = garnishOpts?.dense ? GARNISH.denseGap : GARNISH.gap;
+    p.z = rand(GARNISH.z[0], GARNISH.z[1]);
+    p.vx = 0;
+    p.vy = 0;
+    p.phase = rand(0, Math.PI * 2);
+    p.spin = rand(GARNISH.sway[0], GARNISH.sway[1]);
+    p.variant = Math.min(garnishSprites.length - 1, (Math.random() * garnishSprites.length) | 0);
+    p.x = rand(-edgeMargin, cssWidth + edgeMargin);
+    p.y = -rand(garnishMaxHalfH, garnishMaxHalfH + cssHeight * 0.15);
+    // On the first fill the delays are spread across the whole gap range (rather than a full
+    // wait each), so the garnish starts trickling in shortly after the layer appears instead of
+    // leaving a suspiciously empty minute.
+    p.delay = initial ? rand(0, gap[1]) : rand(gap[0], gap[1]);
+  }
+
   function spawnVortex(v: Vortex, initial: boolean): void {
     v.r = rand(VORTEX.radius[0], VORTEX.radius[1]);
     v.r2 = v.r * v.r;
@@ -754,7 +908,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     // Rain adds the deep-background layers on top of the main count, so `deepLayerFraction` of the
     // total lands in them (via spawn) without thinning the main field.
     const frac = kind === 'rain' ? TUNING.rain.deepLayerFraction : 0;
-    const count = base + Math.round((base * frac) / (1 - frac));
+    // `suppressBase` runs the garnish on its own: no rain or snow behind it, so the pool is empty.
+    const count = suppressBase ? 0 : base + Math.round((base * frac) / (1 - frac));
     if (particles.length !== count) {
       particles = Array.from({ length: count }, () => ({
         x: 0,
@@ -767,6 +922,25 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         phase: 0,
       }));
       for (const p of particles) spawn(p, true);
+    }
+
+    if (garnishOpts) {
+      const factor = garnishOpts.dense ? GARNISH.denseCountFactor : 1;
+      const gCount = Math.round(clamp(area / GARNISH.density, GARNISH.min, GARNISH.max) * factor);
+      if (garnishes.length !== gCount) {
+        garnishes = Array.from({ length: gCount }, () => ({
+          x: 0,
+          y: 0,
+          z: 0,
+          vx: 0,
+          vy: 0,
+          variant: 0,
+          spin: 0,
+          phase: 0,
+          delay: 0,
+        }));
+        for (const g of garnishes) spawnGarnish(g, true);
+      }
     }
 
     const vCount = Math.round(clamp(area / VORTEX.density, VORTEX.min, VORTEX.max));
@@ -1228,6 +1402,45 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     if (interact) tryLand(p, prevY);
   }
 
+  /**
+   * Advance one garnish piece. It rides the same wind and curl field as the snow — so it belongs
+   * to the scene rather than falling on its own track — but slower and with a gentler response,
+   * as a big light object should. It deliberately does **not** interact with control surfaces:
+   * a present settling into a snowdrift would be a different feature, and skipping the surface
+   * lookup keeps the garnish free.
+   */
+  function stepGarnish(p: Garnish, dt: number): void {
+    if (p.delay > 0) {
+      p.delay -= dt;
+      return;
+    }
+    const fall = lerp(GARNISH.speed[0], GARNISH.speed[1], p.z);
+    const c = curlField(p.x, p.y, elapsed);
+    p.vx = frameGust * GARNISH.wind * (0.5 + frameFlurry) * p.z + c.x * GARNISH.turb * p.z;
+    p.vy = fall + c.y * GARNISH.turb * 0.4 * p.z;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.x < -edgeMargin) p.x += cssWidth + 2 * edgeMargin;
+    else if (p.x > cssWidth + edgeMargin) p.x -= cssWidth + 2 * edgeMargin;
+    if (p.y - garnishMaxHalfH > cssHeight) spawnGarnish(p, false);
+  }
+
+  /** Blit one garnish piece, rocking gently around its centre. Waiting pieces draw nothing. */
+  function drawGarnish(p: Garnish): void {
+    if (p.delay > 0) return;
+    const s = garnishSprites[p.variant];
+    if (!s) return;
+    const scale = lerp(GARNISH.scale[0], GARNISH.scale[1], p.z);
+    const w = s.halfW * 2 * scale;
+    const h = s.halfH * 2 * scale;
+    ctx!.save();
+    ctx!.translate(p.x, p.y);
+    ctx!.rotate(Math.sin(elapsed * p.spin + p.phase) * GARNISH.tilt);
+    ctx!.globalAlpha = lerp(GARNISH.alpha[0], GARNISH.alpha[1], p.z);
+    ctx!.drawImage(s.canvas, -w / 2, -h / 2, w, h);
+    ctx!.restore();
+  }
+
   /** Wrap the particle horizontally (wind blows either way) and recycle it once past the bottom. */
   function wrapAndRecycle(p: Particle): void {
     if (p.x < -edgeMargin) p.x += cssWidth + 2 * edgeMargin;
@@ -1313,6 +1526,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         }
         drawSnow(p);
       }
+    }
+    // The garnish draws last, in front of the field it rides: it is the thing meant to be noticed,
+    // and a present half-hidden behind a snow flurry reads as a rendering glitch rather than a
+    // surprise. (Under `reduced` there is no garnish at all, so this is skipped with the loop.)
+    for (const g of garnishes) {
+      if (animate) stepGarnish(g, dt);
+      drawGarnish(g);
     }
     ctx!.globalAlpha = 1;
     if (interact && animate) drawOverlay(dt);
