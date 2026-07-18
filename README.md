@@ -273,6 +273,34 @@ The body size is capped (default 64 MiB, tunable via `GUBBINS_BRIDGE_MAX_PUSH_BY
 constrained hosts like a Pi on an SD card), and push uses the same token and rate limit as
 everything else.
 
+## Self-hosting with Docker (optional)
+
+Gubbins can be served from your own hardware instead of GitHub Pages:
+
+```bash
+docker compose up -d       # then open http://localhost:8080/
+```
+
+**This does not change where your data lives.** Gubbins remains a local-first *browser* app —
+your inventory stays in the browser's OPFS storage exactly as it does on the hosted site. The
+container is stateless and holds no inventory, so self-hosting raises no storage ceiling, changes
+no image compression, and stores no attachment files.
+
+What it does buy you:
+
+- **Real COOP/COEP response headers**, so the `coi-serviceworker` polyfill that GitHub Pages
+  forces is no longer load-bearing for cross-origin isolation.
+- **A configurable base path** — `docker build --build-arg GUBBINS_BASE_PATH=/gubbins/ .` — rather
+  than the `/Gubbins/` that Pages requires. It is baked in at build time.
+- **LAN or air-gapped hosting**, with no dependency on GitHub Pages. Note that a non-`localhost`
+  address must be served over **HTTPS** (via a reverse proxy) or the browser withholds the secure
+  context the database needs.
+
+`docker compose --profile bridge up -d` additionally runs the optional
+[bridge](#home-assistant--external-query-bridge-optional) alongside it. See
+[`docs/wiki/Self-Hosting-with-Docker.md`](docs/wiki/Self-Hosting-with-Docker.md) for the
+user-facing guide.
+
 ## Architecture at a glance
 
 - **Language:** TypeScript · **Framework:** React + Vite
@@ -289,7 +317,7 @@ See **`docs/todo/done/_specification.md` §1.2** for the binding decisions (SQLi
 | --- | --- |
 | SQLite WASM | Official `@sqlite.org/sqlite-wasm` (FTS5 + OPFS VFS) |
 | Package manager | **npm** |
-| Hosting | **GitHub Pages** (`base: '/Gubbins/'` + `coi-serviceworker` for COOP/COEP) |
+| Hosting | **GitHub Pages** (`base: '/Gubbins/'` + `coi-serviceworker` for COOP/COEP); optionally [self-hosted](#self-hosting-with-docker-optional) |
 | Cloud sync | Provider-agnostic interface with File System Access + Google Drive adapters (last-write-wins) |
 
 ## Development

@@ -1,0 +1,162 @@
+name: Docker image
+
+# Builds the self-hosted app image and asserts it actually serves a usable app.
+#
+# The point of this image is the response headers: GitHub Pages cannot set them, so the
+# hosted build depends on the `coi-serviceworker` polyfill for cross-origin isolation,
+# while this one sends the real COOP/COEP. That is invisible to every other check in CI —
+# a config typo would ship an image whose in-browser database silently refuses to open —
+# so the headers are asserted here rather than assumed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'docker/**'
+      - 'docker-compose.yml'
+      - '.dockerignore'
+      - 'src/base-path.ts'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docker.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker/**'
+      - 'docker-compose.yml'
+      - '.dockerignore'
+      - 'src/base-path.ts'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docker.yml'
+
+# Least-privilege: this only reads the checkout. The image is built and smoke-tested, not
+# published — self-hosters build it themselves from a checkout.
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build & smoke-test the app image
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Both supported layouts: served from the domain root (the default), and served from
+      # a sub-path. The sub-path case is the one that silently 404s every asset if the
+      # bundle's baked-in base and the nginx config ever disagree.
+      matrix:
+        include:
+          - base: /
+            prefix: ''
+          - base: /gubbins/
+            prefix: /gubbins
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build --build-arg GUBBINS_BASE_PATH=${{ matrix.base }} -t gubbins:ci .
+
+      - name: Start the container
+        run: docker run -d --name gubbins-ci -p 8080:8080 gubbins:ci
+
+      - name: Wait for it to answer
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              echo "up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy"; docker logs gubbins-ci; exit 1
+
+      - name: Assert the app shell is served at the configured base path
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/)"
+          grep -q '<title>Gubbins</title>' <<<"$body"
+
+      - name: Assert the cross-origin isolation headers are present
+        run: |
+          set -euo pipefail
+          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080${{ matrix.prefix }}/)"
+          echo "$headers"
+          grep -iq '^cross-origin-opener-policy: *same-origin' <<<"$headers"
+          grep -iq '^cross-origin-embedder-policy: *require-corp' <<<"$headers"
+
+      - name: Assert hashed assets resolve and keep the isolation headers
+        run: |
+          set -euo pipefail
+          # Pull a real hashed asset URL out of the shell rather than guessing a filename:
+          # this is what proves the baked-in base path and the served path agree.
+          asset="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/ \
+            | grep -o '${{ matrix.prefix }}/assets/[A-Za-z0-9._-]*\.js' | head -n1)"
+          test -n "$asset"
+          echo "resolved asset: $asset"
+          headers="$(curl -fsS -D - -o /dev/null "http://127.0.0.1:8080$asset")"
+          grep -iq '^cross-origin-embedder-policy: *require-corp' <<<"$headers"
+          grep -iq '^cache-control: *public, max-age=31536000, immutable' <<<"$headers"
+          # Exactly one Cache-Control: two (from `expires` plus an explicit add_header)
+          # would leave caching behaviour ambiguous.
+          test "$(grep -ic '^cache-control:' <<<"$headers")" = "1"
+
+      - name: Assert JavaScript is actually served gzipped
+        run: |
+          set -euo pipefail
+          asset="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/ \
+            | grep -o '${{ matrix.prefix }}/assets/[A-Za-z0-9._-]*\.js' | head -n1)"
+          headers="$(curl -fsS -H 'Accept-Encoding: gzip' -D - -o /dev/null "http://127.0.0.1:8080$asset")"
+          echo "$headers"
+          # A gzip_types list that misses the mime type nginx assigns to .js compresses
+          # nothing and reports no error, so assert the encoding rather than the config.
+          grep -iq '^content-encoding: *gzip' <<<"$headers"
+
+      - name: Assert the on-device OCR assets were staged into the image
+        run: |
+          set -euo pipefail
+          # These are git-ignored, so a build that skipped the staging step yields an image
+          # whose OCR silently never loads. Check a real file rather than the directory.
+          docker exec gubbins-ci sh -c 'ls /usr/share/nginx/html${{ matrix.prefix }}/ocr/worker.min.js'
+          docker exec gubbins-ci sh -c 'ls /usr/share/nginx/html${{ matrix.prefix }}/ocr/tessdata-fast/eng.traineddata'
+
+      - name: Assert a bare / reaches the app
+        run: |
+          set -euo pipefail
+          # Served at the root this is the app itself; served under a sub-path it must
+          # redirect there rather than 403 on an empty document root.
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)"
+          echo "bare / returned $code"
+          case "$code" in 200|301|302) ;; *) echo "unexpected"; exit 1 ;; esac
+          # Following it must land on the app either way.
+          curl -fsSL http://127.0.0.1:8080/ | grep -q '<title>Gubbins</title>'
+
+      - name: Assert deep links fall back to the app shell
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/items)"
+          grep -q '<title>Gubbins</title>' <<<"$body"
+
+      - name: Assert the service worker is served uncached
+        run: |
+          set -euo pipefail
+          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080${{ matrix.prefix }}/sw.js)"
+          echo "$headers"
+          grep -iq '^cache-control: *no-cache' <<<"$headers"
+
+      - name: Assert the container is not running as root
+        run: |
+          set -euo pipefail
+          uid="$(docker exec gubbins-ci id -u)"
+          echo "container uid: $uid"
+          test "$uid" != "0"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs gubbins-ci
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f gubbins-ci

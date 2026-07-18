@@ -1,0 +1,51 @@
+# Self-hosted Gubbins.
+#
+#   docker compose up -d                    # the app on its own
+#   docker compose --profile bridge up -d   # the app + the optional bridge
+#
+# Then open http://localhost:8080/.
+#
+# Your inventory data lives in your BROWSER's storage, not in these containers — the app
+# service is entirely static, holds no state, and needs no volume. Self-hosting does not
+# change where the data lives or how much of it you can keep; see the Dockerfile header.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Baked into every asset URL at build time. Change it (and rebuild) only if you
+        # serve Gubbins under a sub-path rather than the root of its host.
+        GUBBINS_BASE_PATH: /
+    image: gubbins:local
+    ports:
+      # Bound to localhost by default. To reach it from elsewhere on your LAN, change this
+      # to "8080:8080" — and note that cross-origin isolation (which the in-browser
+      # database needs) requires a secure context, so any non-localhost address must be
+      # served over HTTPS, typically via a reverse proxy in front of this container.
+      - '127.0.0.1:8080:8080'
+    restart: unless-stopped
+
+  # OPTIONAL companion service — read-only by default, off unless you ask for it with
+  # `--profile bridge`. It answers questions about your inventory from outside the browser
+  # (Home Assistant, scripts, LLM tools). See bridge/README.md.
+  bridge:
+    profiles: ['bridge']
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    image: gubbins-bridge:local
+    ports:
+      - '127.0.0.1:8787:8787'
+    environment:
+      # Required, and never stored in this file: export it in your shell or put it in a
+      # git-ignored `.env` beside this compose file. Generate one with:
+      #   node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+      GUBBINS_BRIDGE_TOKEN: ${GUBBINS_BRIDGE_TOKEN:?set GUBBINS_BRIDGE_TOKEN before starting the bridge}
+      GUBBINS_SNAPSHOT_PATH: /data/gubbins-sync.json
+    volumes:
+      # Point the left-hand side at the folder the app syncs to, and keep it read-only:
+      # the bridge only needs to read the snapshot for its default read-only surfaces.
+      - ${GUBBINS_SNAPSHOT_DIR:-./bridge/local}:/data:ro
+    restart: unless-stopped

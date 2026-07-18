@@ -90,3 +90,5 @@ If you're not ready to update, you have two choices on the banner:
 - **[[Quick start|First-Run-and-Quick-Start]]** — add your first item.
 - **[[Core concepts|Core-Concepts]]** — the model behind the app.
 - **[[Cloud sync|Cloud-Sync]]** — use Gubbins across devices.
+- **[[Self-hosting with Docker|Self-Hosting-with-Docker]]** — serve Gubbins from your own machine
+  instead of the hosted site.
