@@ -25,6 +25,7 @@ import {
   addBatchStatement,
   consumeBatchStatements,
   placementDeltaStatements,
+  runStockDraw,
   readPlacementBatches,
   stockBatchRowId,
   UNTRACKED_BATCH,
@@ -232,7 +233,7 @@ export class CheckoutRepository extends BaseRepository {
           : await placementDeltaStatements(this.driver, input.itemId, fromLocationId, -stockDelta);
     }
 
-    await this.driver.transaction([
+    await runStockDraw(this.driver, [
       ...stockStatements,
       {
         // The borrower lands in exactly one of the three FK columns per its target type; the

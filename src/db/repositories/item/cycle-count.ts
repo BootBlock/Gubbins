@@ -7,7 +7,7 @@
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
-import { placementDeltaStatements, setBatchStatement, stockBatchRowId } from '../stock-batches';
+import { placementDeltaStatements, runStockDraw, setBatchStatement, stockBatchRowId } from '../stock-batches';
 import { stockRowId } from '../stock';
 import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
 import { historyStatement } from './history';
@@ -115,7 +115,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       }
 
       if (statements.length === 0) return [];
-      await this.driver.transaction(statements);
+      await runStockDraw(this.driver, statements);
       const updated = await Promise.all(touched.map((id) => this.getById(id)));
       return updated.filter((i): i is Item => i !== undefined);
     }
@@ -152,7 +152,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       }
 
       if (statements.length === 0) return [];
-      await this.driver.transaction(statements);
+      await runStockDraw(this.driver, statements);
       const updated = await Promise.all(touched.map((id) => this.getById(id)));
       return updated.filter((i): i is Item => i !== undefined);
     }

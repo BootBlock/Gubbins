@@ -15,6 +15,7 @@
  * {@link consumeBatchStatements} turns into per-row decrements. Emptied batches are set to 0,
  * never deleted, so a removal propagates by row-level LWW (mirroring `item_stock`).
  */
+import { DbError } from '../errors';
 import type { IDatabaseDriver, SqlStatement } from '../rpc/driver';
 import {
   batchKeyOf,
@@ -110,6 +111,60 @@ export function consumeBatchStatements(
     sql: `UPDATE stock_batches SET quantity = quantity - ? WHERE id = ?;`,
     params: [c.amount, stockBatchRowId(itemId, locationId, c.batchKey)],
   }));
+}
+
+/**
+ * The default user-facing sentence for a lost stock race — see {@link runStockDraw}.
+ */
+export const STOCK_DRAW_RACE_MESSAGE =
+  'Not enough stock left to make that change — the quantity changed while this was being saved. ' +
+  'Check the current amount and try again.';
+
+/**
+ * True when `error` is the `quantity >= 0` CHECK backstop firing.
+ *
+ * Every quantity column in the ledger (`stock_batches` → `item_stock` → `items`) carries the
+ * same unnamed `CHECK (quantity >= 0)`, and the recompute triggers chain them, so whichever of
+ * the three trips first means exactly one thing: the write would have taken stock negative.
+ * Pure and message-based because SQLite reports an unnamed CHECK by its expression text.
+ *
+ * Deliberately keyed on the message alone, **not** on `error.code`: the three drivers disagree
+ * on the code for the very same failure. `node:sqlite` (the test and bridge drivers) exposes the
+ * result code as `errcode`, which `DbError.fromUnknown` does not read, so it lands as
+ * `TRANSACTION_FAILED`; sqlite-wasm in the worker falls back to `UNKNOWN` when it carries no
+ * `resultCode`. Gating on a code set would silently miss in the browser — the one path a user
+ * actually sees. The message is the specific signal, so it is the one to match.
+ */
+export function isQuantityFloorViolation(error: unknown): boolean {
+  if (!(error instanceof DbError)) return false;
+  return /CHECK constraint failed:\s*quantity >= 0/i.test(error.message);
+}
+
+/**
+ * Run a transaction that draws stock **down**, translating the `quantity >= 0` backstop into a
+ * graceful validation error (issue #302).
+ *
+ * Availability is validated by a read taken *before* the transaction, so two overlapping
+ * decrements (a double-tapped stepper, two devices, a blur committing behind an in-flight tap)
+ * can both plan against the same on-hand and the loser trips the CHECK. The constraint is the
+ * correct backstop — it is what keeps the ledger honest — but a raw
+ * `CHECK constraint failed: quantity >= 0` is not something to show a user. Every drawdown
+ * routes through here so the loser gets the same plain sentence instead, and the caller's
+ * optimistic update rolls back exactly as it would for any other rejection.
+ */
+export async function runStockDraw(
+  driver: IDatabaseDriver,
+  statements: SqlStatement[],
+  message: string = STOCK_DRAW_RACE_MESSAGE,
+): Promise<void> {
+  try {
+    await driver.transaction(statements);
+  } catch (error) {
+    if (isQuantityFloorViolation(error)) {
+      throw new DbError('SQLITE_CONSTRAINT', message, { cause: error });
+    }
+    throw error;
+  }
 }
 
 /** Map a `stock_batches` row to the pure {@link BatchLine} the planner/UI consume. */
