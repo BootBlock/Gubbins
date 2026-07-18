@@ -19,6 +19,8 @@ vi.mock('../mutations', () => ({
   useSoftDeleteItem: () => ({ mutate: vi.fn() }),
   useRestoreItem: () => ({ mutate: vi.fn() }),
   useUpdateItem: () => ({ mutate: spies.update, isPending: false }),
+  // Read by the "Count by weight" dialog (issue #101), which mounts alongside the menu.
+  useAdjustQuantity: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { ItemActions } from './ItemActions';
