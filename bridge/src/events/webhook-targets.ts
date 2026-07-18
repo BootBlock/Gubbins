@@ -40,6 +40,7 @@
  */
 import { WebhookRepository } from '@/db/repositories/WebhookRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
+import type { WebhookSubscription } from '@/db/repositories/types';
 import type { WebhookMethod } from '@/db/repositories/constants.ts';
 import type { WebhookFilter } from '@/features/webhooks/filter.ts';
 import { WEBHOOK_ALL_EVENTS } from '@/features/webhooks/subscription.ts';
@@ -161,6 +162,77 @@ export function configTargetToDeliveryTarget(target: WebhookTarget, index: numbe
 }
 
 /**
+ * The result of mapping one synced subscription row to a delivery target.
+ *
+ * `target` is `null` when the subscription cannot be delivered **as configured** — today that means
+ * only an unresolvable `secret_ref`, which drops it rather than downgrading it to unsigned (see the
+ * module note). The warnings are secret-free and name the subscription and the missing ref's *name*.
+ */
+export interface WebhookSubscriptionMapping {
+  readonly target: WebhookDeliveryTarget | null;
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Map one `webhooks` row to a {@link WebhookDeliveryTarget}, resolving its signing secret and
+ * sanitising its headers.
+ *
+ * Shared by the two places a subscription becomes a target: {@link loadDatabaseWebhookTargets}
+ * (the per-generation delivery list) and the `POST /api/v1/webhooks/test` endpoint (`W7`'s
+ * test-fire), so the `secret_ref` and forbidden-header rules cannot drift between "what a real
+ * event does" and "what the test button reports" — which would make the test actively misleading.
+ */
+export function subscriptionToDeliveryTarget(
+  subscription: WebhookSubscription,
+  secrets: WebhookSecrets,
+): WebhookSubscriptionMapping {
+  const warnings: string[] = [];
+
+  // Exactly one of the two columns is set (a DB CHECK enforces it), so this is a resolution,
+  // not a precedence rule: an in-row secret is used as-is, a ref is looked up, neither is
+  // legitimately unsigned.
+  let secret: string | null = subscription.secret;
+  if (subscription.secretRef !== null) {
+    const resolved = secrets[subscription.secretRef];
+    if (resolved === undefined || resolved.length === 0) {
+      // Dropped, never downgraded to unsigned — see the module note.
+      warnings.push(
+        `Webhook "${subscription.name}" references a bridge-side secret named ` +
+          `"${subscription.secretRef}" that is not configured; it will not be delivered until ` +
+          'you add it to the webhooks secrets config.',
+      );
+      return { target: null, warnings };
+    }
+    secret = resolved;
+  }
+
+  const { headers, dropped } = sanitiseWebhookHeaders(subscription.headers);
+  if (dropped.length > 0) {
+    warnings.push(
+      `Webhook "${subscription.name}" sets header(s) the bridge does not allow ` +
+        `(${dropped.join(', ')}); they were ignored.`,
+    );
+  }
+
+  return {
+    target: {
+      id: subscription.id,
+      name: subscription.name,
+      source: 'database',
+      url: subscription.url,
+      method: subscription.method,
+      enabled: subscription.enabled,
+      secret,
+      eventTypes: subscription.eventTypes,
+      filter: subscription.filter,
+      template: subscription.template,
+      headers,
+    },
+    warnings,
+  };
+}
+
+/**
  * How many subscription rows to read per page, and the ceiling on how many to load in total.
  *
  * The page size is the repository's own maximum. The total cap is a safety bound on a pathological
@@ -192,46 +264,9 @@ export async function loadDatabaseWebhookTargets(
     const page = await repository.list({ limit: DB_TARGET_PAGE_SIZE, offset });
     for (const subscription of page.rows) {
       if (targets.length >= MAX_DB_TARGETS) break;
-
-      // Exactly one of the two columns is set (a DB CHECK enforces it), so this is a resolution,
-      // not a precedence rule: an in-row secret is used as-is, a ref is looked up, neither is
-      // legitimately unsigned.
-      let secret: string | null = subscription.secret;
-      if (subscription.secretRef !== null) {
-        const resolved = secrets[subscription.secretRef];
-        if (resolved === undefined || resolved.length === 0) {
-          // Dropped, never downgraded to unsigned — see the module note.
-          warnings.push(
-            `Webhook "${subscription.name}" references a bridge-side secret named ` +
-              `"${subscription.secretRef}" that is not configured; it will not be delivered until ` +
-              'you add it to the webhooks secrets config.',
-          );
-          continue;
-        }
-        secret = resolved;
-      }
-
-      const { headers, dropped } = sanitiseWebhookHeaders(subscription.headers);
-      if (dropped.length > 0) {
-        warnings.push(
-          `Webhook "${subscription.name}" sets header(s) the bridge does not allow ` +
-            `(${dropped.join(', ')}); they were ignored.`,
-        );
-      }
-
-      targets.push({
-        id: subscription.id,
-        name: subscription.name,
-        source: 'database',
-        url: subscription.url,
-        method: subscription.method,
-        enabled: subscription.enabled,
-        secret,
-        eventTypes: subscription.eventTypes,
-        filter: subscription.filter,
-        template: subscription.template,
-        headers,
-      });
+      const mapped = subscriptionToDeliveryTarget(subscription, secrets);
+      warnings.push(...mapped.warnings);
+      if (mapped.target !== null) targets.push(mapped.target);
     }
 
     if (targets.length >= MAX_DB_TARGETS) {

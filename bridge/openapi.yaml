@@ -1938,6 +1938,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/webhooks/test:
+    post:
+      tags:
+      - "webhooks"
+      summary: "Send a synthetic test event to one configured subscription"
+      description: "Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. Fires a synthetic event at a single app-configured subscription so it can be checked before a real inventory change happens to match it. Everything but the event is real: the subscription is read from the hydrated snapshot, the signing secret is resolved the same way, the matcher and filter decide whether it would be delivered, and the SSRF guard decides whether the destination may be reached — so a refusal or a filter exclusion is reported rather than forced through. A delivery-log row is written and its \"seq\" returned, so the result also arrives through the usual deliveries poll. Mutates no inventory (it is NOT gated on GUBBINS_BRIDGE_ALLOW_WRITES). The event carries no real item, and no secret or signature appears in the response. A subscription that has not yet synced to this bridge is a 422, which is deliberately distinct from the 404 above."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              required:
+              - "subscriptionId"
+              properties:
+                subscriptionId:
+                  type: "string"
+                  description: "The id of the subscription to test."
+            example:
+              subscriptionId: "7f3a1c58-0b2e-4a1d-9c77-2f5b8e0a1d34"
+      responses:
+        "200":
+          description: "The test ran; the body says what happened."
+          content:
+            application/json:
+              schema:
+                type: "object"
+                required:
+                - "outcome"
+                - "status"
+                - "attempts"
+                - "detail"
+                - "seq"
+                properties:
+                  outcome:
+                    type: "string"
+                    enum:
+                    - "delivered"
+                    - "failed"
+                    - "blocked"
+                    - "skipped"
+                    - "unmatched"
+                    description: "\"unmatched\" means the subscription’s own rules (disabled, event types, or filter) excluded the test event, so nothing was sent and no row was written."
+                  status:
+                    type: "integer"
+                    nullable: true
+                    description: "The receiver’s HTTP status, or null when no response was received."
+                  attempts:
+                    type: "integer"
+                    description: "How many HTTP attempts were made."
+                  detail:
+                    type: "string"
+                    nullable: true
+                    description: "A short, secret-free diagnostic — a refusal reason or an error."
+                  seq:
+                    type: "integer"
+                    nullable: true
+                    description: "The delivery-log row’s sequence number, or null when no row was written."
+              example:
+                outcome: "delivered"
+                status: 204
+                attempts: 1
+                detail: null
+                seq: 43
+        "400":
+          description: "Bad request — missing or invalid parameter."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: "Missing or invalid bearer token."
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: "string"
+              description: "Bearer"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: "Rate limit exceeded for this client."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/scale/entities:
     get:
       tags:

@@ -275,7 +275,9 @@ export function LocationSidebar({
       { id: itemId, locationId: targetId },
       {
         onSuccess: () => toast.show({ tone: 'success', message: `Moved ${itemName} to ${targetName}.` }),
-        onError: () => toast.show({ tone: 'danger', message: `Couldn’t move ${itemName} to ${targetName}.` }),
+        // No `onError` here: `useMoveItem` now reports a failed move itself (issue #307), and
+        // its toast carries the reason the write was rejected — more actionable than repeating
+        // the names back. A second handler here would only double-toast the one failure.
       },
     );
   };

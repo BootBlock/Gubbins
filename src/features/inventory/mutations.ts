@@ -5,13 +5,23 @@
  * defence against UI tearing during rapid successive inputs (e.g. repeated gauge
  * or quantity adjustments queuing in OPFS). Each hook snapshots the affected cache
  * slices in `onMutate`, patches them immediately, restores them in `onError`, and
- * reconciles with the worker in `onSettled` via targeted invalidation.
+ * reconciles with the worker in `onSettled` via targeted invalidation. A rollback also
+ * **tells the user why** (issue #307) — see {@link useReportWriteFailure}; a revert that
+ * says nothing is indistinguishable from a UI glitch.
  *
  * Location mutations reshape a tree whose optimistic mutation is error-prone and
  * low-frequency, so they use straightforward invalidation rather than optimistic
  * patching — a deliberate, scoped simplification.
  */
+import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
+// Imported from the subpath, not the `@/components/foundry` barrel: the barrel re-exports
+// components that import back into `@/features/inventory` and `@/features/command-palette`
+// (which imports this very module), so the barrel would close a module cycle here — and it
+// would drag Modal/Menu/Markdown/RegionCanvas into every chunk that writes an item.
+import { useOptionalToast } from '@/components/foundry/toast';
+import { useT, type MessageKey } from '@/features/i18n';
+import { DbError } from '@/db/errors';
 import {
   getCategoryRepository,
   getCheckoutRepository,
@@ -82,6 +92,67 @@ function restoreLists(client: QueryClient, snapshot: ListSnapshot | undefined): 
   snapshot?.forEach(([key, data]) => client.setQueryData(key, data));
 }
 
+/**
+ * The heading each optimistic write shows when its rollback fires (issue #307). Derived from the
+ * catalog rather than hand-listed, so a new heading is one `en.json`/`de.json` key, not three edits.
+ */
+type WriteFailureKey = Extract<MessageKey, `inventory.writeError.heading.${string}`>;
+
+/**
+ * How long an identical failure is swallowed before it is reported again (rapid-tap coalescing).
+ * Roughly a toast's own dwell time, so a burst reads as one message rather than a stack.
+ */
+const WRITE_FAILURE_REPEAT_MS = 3_000;
+
+/**
+ * Report a rolled-back optimistic write to the user (issue #307).
+ *
+ * An optimistic patch that silently reverts reads as a UI glitch — the item vanishes and
+ * reappears, the star un-stars itself, the gauge snaps back — so the rational response is to
+ * try again, against a write that is failing for a reason (a constraint violation, the storage
+ * hard stop, `SQLITE_BUSY`) that would have been actionable had it been shown. The report
+ * therefore lives **here**, beside the rollback it explains, rather than at each of the ~20
+ * call sites: a `.mutate()` with no `onError` of its own still tells the user.
+ *
+ * A {@link DbError} carries a message written for the user (the storage hard stop, a constraint
+ * the repository names), so that becomes the toast body — it is the actionable part. Anything
+ * else is an internal failure whose text is not user-facing copy and would not be translated, so
+ * it degrades to the generic "undone" line rather than putting raw SQL in front of the user. This
+ * mirrors how the stock-transfer toast already picks its message. A call site that wants a more
+ * specific message can still add its own `onError` — but it no longer has to.
+ */
+function useReportWriteFailure(key: WriteFailureKey): (error: unknown) => void {
+  // Optional: these hooks are exercised by harnesses that render without a ToastProvider, and a
+  // failed write must not become a crash on top of a failed write.
+  const toast = useOptionalToast();
+  const t = useT();
+  // The last failure this hook instance reported, so a burst coalesces (see below).
+  const lastReport = useRef<{ signature: string; at: number } | null>(null);
+  return useCallback(
+    (error: unknown) => {
+      const detail = error instanceof DbError ? error.message.trim() : '';
+      const signature = `${key} ${detail}`;
+      const now = Date.now();
+
+      // Quantity and gauge adjusts are explicitly rapid-tap (see the de-bounce in their
+      // `onSettled`), so a persistent failure would otherwise stack one identical toast per tap
+      // and announce it once per tap to assistive tech. Report the first, then swallow identical
+      // repeats for a short window. The window is deliberately not extended on a swallowed
+      // repeat, so an ongoing problem re-surfaces rather than going quiet after one message.
+      const last = lastReport.current;
+      if (last && last.signature === signature && now - last.at < WRITE_FAILURE_REPEAT_MS) return;
+      lastReport.current = { signature, at: now };
+
+      toast?.show({
+        tone: 'danger',
+        heading: t(key),
+        message: detail || t('inventory.writeError.reverted'),
+      });
+    },
+    [toast, t, key],
+  );
+}
+
 /** Recompute a gauge item's derived (non-persisted) fields after a net-value change. */
 function withGaugeNet(item: Item, nextNet: number): Item {
   if (!item.gauge) return item;
@@ -128,6 +199,7 @@ export function useCreateSerialisedItems() {
 
 export function useUpdateItem() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.update');
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateItemInput }) =>
       getItemRepository().update(id, input),
@@ -136,7 +208,10 @@ export function useUpdateItem() {
       patchItem(client, id, (item) => ({ ...item, ...stripUndefined(input) }));
       return { lists };
     },
-    onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
+    onError: (e, _v, ctx) => {
+      restoreLists(client, ctx?.lists);
+      reportFailure(e);
+    },
     onSettled: (_d, _e, { id }) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
@@ -253,6 +328,7 @@ export function useRemoveTestRecord() {
 
 export function useMoveItem() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.move');
   return useMutation({
     mutationFn: ({ id, locationId }: { id: string; locationId: string }) =>
       getItemRepository().move(id, locationId),
@@ -261,7 +337,10 @@ export function useMoveItem() {
       patchItem(client, id, (item) => ({ ...item, locationId }));
       return { lists };
     },
-    onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
+    onError: (e, _v, ctx) => {
+      restoreLists(client, ctx?.lists);
+      reportFailure(e);
+    },
     onSettled: () => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
@@ -274,6 +353,7 @@ const ADJUST_QUANTITY_KEY = ['inventory', 'adjust-quantity'] as const;
 
 export function useAdjustQuantity() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.quantity');
   return useMutation({
     mutationKey: ADJUST_QUANTITY_KEY,
     mutationFn: ({ id, delta, note }: { id: string; delta: number; note?: string }) =>
@@ -283,7 +363,10 @@ export function useAdjustQuantity() {
       patchItem(client, id, (item) => ({ ...item, quantity: Math.max(0, item.quantity + delta) }));
       return { lists };
     },
-    onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
+    onError: (e, _v, ctx) => {
+      restoreLists(client, ctx?.lists);
+      reportFailure(e);
+    },
     onSettled: (_d, _e, { id }) => {
       // Only the LAST tap of a rapid burst refetches the list. Each tap is optimistic and
       // its own write; if every settle invalidated, an earlier tap's refetch could resolve
@@ -303,6 +386,7 @@ const ADJUST_GAUGE_KEY = ['inventory', 'adjust-gauge'] as const;
 
 export function useAdjustGauge() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.gauge');
   return useMutation({
     mutationKey: ADJUST_GAUGE_KEY,
     mutationFn: ({ id, adjustment }: { id: string; adjustment: GaugeAdjustment }) =>
@@ -314,7 +398,10 @@ export function useAdjustGauge() {
       );
       return { lists };
     },
-    onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
+    onError: (e, _v, ctx) => {
+      restoreLists(client, ctx?.lists);
+      reportFailure(e);
+    },
     onSettled: (_d, _e, { id }) => {
       // As with quantity: only the last of a rapid burst refetches, so an earlier tap's
       // refetch can't snap the gauge back to a stale value before a later write lands.
@@ -347,6 +434,7 @@ export function useReconfigureGauge() {
 
 export function useSoftDeleteItem() {
   const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.delete');
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => getItemRepository().softDelete(id, note),
     onMutate: async ({ id }) => {
@@ -354,7 +442,10 @@ export function useSoftDeleteItem() {
       patchItem(client, id, (item) => ({ ...item, isActive: false }));
       return { lists };
     },
-    onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
+    onError: (e, _v, ctx) => {
+      restoreLists(client, ctx?.lists);
+      reportFailure(e);
+    },
     onSettled: () => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
