@@ -1,7 +1,7 @@
 /**
  * Activity-kind grouping for the global activity feed (Phase 80).
  *
- * The §4 ledger has 21 distinct `HistoryAction`s — too many for a chip-per-action
+ * The §4 ledger has far more distinct `HistoryAction`s than fit a chip-per-action
  * filter row. This pure seam folds each action into a handful of semantic **activity
  * kinds** the feed filters by (mirroring the agenda's kind filter). It maps each kind
  * back to the flat list of actions the repository's `getHistoryFeed` `action IN (…)`
@@ -64,6 +64,8 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   REVALUED: 'lifecycle',
   // A per-instance test / calibration / service record (feature-gap G7) — a QA record-keeping event.
   TESTED: 'lifecycle',
+  // An edit to the item's notifiable attributes (W10) — record-keeping, not a stock movement.
+  ATTRIBUTES_CHANGED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.
