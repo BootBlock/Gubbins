@@ -14,6 +14,7 @@ import {
   type StorageEstimateResult,
 } from '@/features/storage/storage-api';
 import { classifyStorageTier, type StorageTier } from '@/features/storage/tiers';
+import { useLabFlag } from './useLabStore';
 
 /** Spec §7.6.1: poll storage every 5 minutes. */
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
@@ -82,3 +83,15 @@ export const useStorageStore = create<StorageStore>()((set, get) => ({
     }
   },
 }));
+
+/**
+ * Reactive read of whether storage presents as persisted. Overridden to `false` while the lab's
+ * `storage-persistence-denied` flag is on, so the "your data may be cleared by the browser"
+ * banner and dashboard widget can be exercised even where the browser has genuinely granted
+ * persistence — the real `persisted` state (and the browser's grant) is left untouched.
+ */
+export function useStoragePersisted(): boolean {
+  const persisted = useStorageStore((state) => state.persisted);
+  const denied = useLabFlag('storage-persistence-denied');
+  return persisted && !denied;
+}

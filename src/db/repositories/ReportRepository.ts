@@ -87,6 +87,7 @@ import {
 } from '@/features/purchasing/reorder-plan';
 import { onOrderQtyForItemSql } from './PurchaseOrderRepository';
 import type { LowStockThresholds } from './types';
+import { nowMs } from '@/lib/clock';
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
 const DEFAULT_MOVEMENT_BUCKETS = 14;
@@ -228,7 +229,7 @@ export class ReportRepository extends BaseRepository {
    * through the same `effectiveUnitCost` seam as the valuation report (manual cost wins, else
    * the preferred supplier cost, via {@link preferredSupplierCostSql}).
    */
-  async insuranceSchedule(now: number = Date.now()): Promise<InsuranceSchedule> {
+  async insuranceSchedule(now: number = nowMs()): Promise<InsuranceSchedule> {
     const itemRows = await this.driver.query<{
       id: string;
       name: string;
@@ -298,7 +299,7 @@ export class ReportRepository extends BaseRepository {
   async partsCatalogue(
     scope: CatalogueScope,
     options: CataloguePartsOptions = {},
-    now: number = Date.now(),
+    now: number = nowMs(),
   ): Promise<PartsCatalogue> {
     const filter = await this.catalogueScopeFilter(scope);
     // An empty ad-hoc selection resolves to nothing — short-circuit rather than emit an
@@ -441,7 +442,7 @@ export class ReportRepository extends BaseRepository {
    * mean per-day, drawn from `item_history` **negative** quantity deltas (a stock-out) and
    * gauge net-value reductions. `windowEnd` defaults to `now`.
    */
-  async consumptionRate(windowDays: number, now: number = Date.now()): Promise<ConsumptionRateReport> {
+  async consumptionRate(windowDays: number, now: number = nowMs()): Promise<ConsumptionRateReport> {
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{ created_at: number; consumed: number }>(
       `SELECT created_at,
@@ -467,7 +468,7 @@ export class ReportRepository extends BaseRepository {
   async movement(
     windowDays: number,
     buckets: number = DEFAULT_MOVEMENT_BUCKETS,
-    now: number = Date.now(),
+    now: number = nowMs(),
   ): Promise<MovementReport> {
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{ created_at: number; quantity_delta: number | null }>(
@@ -613,7 +614,7 @@ export class ReportRepository extends BaseRepository {
    * ancestry the SQL below walks. An untouched database opts nothing in, so the common case
    * short-circuits before the location tree is ever read.
    */
-  async deadStock(sinceDays: number, now: number = Date.now()): Promise<DeadStockReport> {
+  async deadStock(sinceDays: number, now: number = nowMs()): Promise<DeadStockReport> {
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -774,10 +775,7 @@ export class ReportRepository extends BaseRepository {
    * only fetches the per-item consumed-units + cost rows. `windowDays` defaults to a calendar
    * year (the annual definition); `now` defaults to the wall clock.
    */
-  async abcAnalysis(
-    windowDays: number = DEFAULT_ABC_WINDOW_DAYS,
-    now: number = Date.now(),
-  ): Promise<AbcReport> {
+  async abcAnalysis(windowDays: number = DEFAULT_ABC_WINDOW_DAYS, now: number = nowMs()): Promise<AbcReport> {
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{
       id: string;
@@ -815,7 +813,7 @@ export class ReportRepository extends BaseRepository {
    * ledger movement (`netQtyDelta = SUM(quantity_delta)`); the repository supplies the current
    * quantity, the consumed magnitude and that net delta. `now` defaults to the wall clock.
    */
-  async turnover(windowDays: number, now: number = Date.now()): Promise<TurnoverReport> {
+  async turnover(windowDays: number, now: number = nowMs()): Promise<TurnoverReport> {
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const rows = await this.driver.query<{
       id: string;
@@ -856,7 +854,7 @@ export class ReportRepository extends BaseRepository {
    * `items.acquired_at`, else `created_at` (resolved in the pure {@link bucketStockAging}). Only
    * active, non-parent items holding stock are aged. `now` defaults to the wall clock.
    */
-  async stockAging(now: number = Date.now()): Promise<StockAgingReport> {
+  async stockAging(now: number = nowMs()): Promise<StockAgingReport> {
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -900,7 +898,7 @@ export class ReportRepository extends BaseRepository {
   async valuationTrend(
     windowDays: number,
     points: number,
-    now: number = Date.now(),
+    now: number = nowMs(),
   ): Promise<ValuationTrendReport> {
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
 
@@ -960,7 +958,7 @@ export class ReportRepository extends BaseRepository {
    * variant-parent exclusion reuses {@link notAVariantParent}. No schema change. `now` defaults to
    * the wall clock; `staleDays` sets the "no activity for this long" cutoff.
    */
-  async dataHygiene(staleDays: number, now: number = Date.now()): Promise<HygieneReport> {
+  async dataHygiene(staleDays: number, now: number = nowMs()): Promise<HygieneReport> {
     const rows = await this.driver.query<{
       id: string;
       name: string;
@@ -1011,7 +1009,7 @@ export class ReportRepository extends BaseRepository {
    * valuation-trend (that tracks inventory *value*; this tracks *money out*). `now` defaults to the
    * wall clock.
    */
-  async spendAnalytics(windowDays: number, buckets: number, now: number = Date.now()): Promise<SpendReport> {
+  async spendAnalytics(windowDays: number, buckets: number, now: number = nowMs()): Promise<SpendReport> {
     const windowEnd = now;
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
     const events: SpendEvent[] = [];
@@ -1110,7 +1108,7 @@ export class ReportRepository extends BaseRepository {
    * metadata JSON is parsed in JS (driver-agnostic) rather than via `json_extract`. `now` defaults
    * to the wall clock.
    */
-  async salesAnalytics(windowDays: number, buckets: number, now: number = Date.now()): Promise<SalesReport> {
+  async salesAnalytics(windowDays: number, buckets: number, now: number = nowMs()): Promise<SalesReport> {
     const windowEnd = now;
     const windowStart = now - Math.max(1, windowDays) * MS_PER_DAY;
 

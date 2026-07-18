@@ -21,6 +21,7 @@ import {
   type SerialisedReconciliation,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
+import { nowMs } from '@/lib/clock';
 
 // --- Variants (spec §4 Variant/SKU) --------------------------------------------
 
@@ -172,7 +173,7 @@ export function useExpiringItems(
 ) {
   return useQuery({
     queryKey: [...inventoryKeys.expiring(), withinDays],
-    queryFn: () => getItemRepository().listExpiringWithin(withinDays, Date.now(), { limit: 100 }),
+    queryFn: () => getItemRepository().listExpiringWithin(withinDays, nowMs(), { limit: 100 }),
     enabled: options?.enabled ?? true,
   });
 }
@@ -335,7 +336,7 @@ export function useItemMaintenance(itemId: string | undefined) {
 export function useDueMaintenance(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: inventoryKeys.maintenanceDue(),
-    queryFn: () => getMaintenanceRepository().listDue(Date.now(), { limit: 100 }),
+    queryFn: () => getMaintenanceRepository().listDue(nowMs(), { limit: 100 }),
     enabled: options?.enabled ?? true,
   });
 }

@@ -23,6 +23,7 @@ import { StorageBanners } from './StorageBanners';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useLabStore } from '@/state/stores/useLabStore';
 import { ARCHIVE_NUDGE_SNOOZE_MS } from '@/features/archive/auto-archive';
 
 function renderBanners() {
@@ -46,7 +47,10 @@ beforeEach(() => {
   requestPersistentStorage.mockReset();
   isLikelyMobile.mockReturnValue(false);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useLabStore.getState().resetLab();
+});
 
 describe('StorageBanners — persistence request feedback', () => {
   it('shows the ephemeral-data banner while storage is not persisted', () => {
@@ -73,6 +77,21 @@ describe('StorageBanners — persistence request feedback', () => {
 
     await waitFor(() => expect(screen.getByText('Browser kept storage temporary')).toBeTruthy());
     // The banner stays because persistence is still off, but the user now has feedback.
+    expect(screen.getByText('Your data may be cleared by the browser')).toBeTruthy();
+  });
+});
+
+describe('StorageBanners — `storage-persistence-denied` lab flag', () => {
+  it('hides the ephemeral-data banner once the browser has genuinely granted persistence', () => {
+    useStorageStore.setState({ persisted: true });
+    renderBanners();
+    expect(screen.queryByText('Your data may be cleared by the browser')).toBeNull();
+  });
+
+  it('shows the ephemeral-data banner while the flag is on, even though persistence was granted', () => {
+    useStorageStore.setState({ persisted: true });
+    useLabStore.getState().setFlag('storage-persistence-denied', true);
+    renderBanners();
     expect(screen.getByText('Your data may be cleared by the browser')).toBeTruthy();
   });
 });

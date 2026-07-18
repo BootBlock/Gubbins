@@ -9,6 +9,7 @@
  */
 import { formatWeight, type WeightUnit } from './weight';
 import { formatDimension, type DimensionUnit } from './dimensions';
+import { nowMs } from './clock';
 
 /** The locked default locale (§1.2.1) — also the fallback for non-reactive callers. */
 export const DEFAULT_LOCALE = 'en-GB';
@@ -100,7 +101,7 @@ export interface Formatters {
    * A UNIX-ms instant as a locale-aware *relative* time versus now (e.g. `3 days ago`,
    * `in 2 hours`, `yesterday`, `now`). The coarsest sensible unit is chosen automatically
    * (seconds → minutes → … → years); a past instant reads "… ago", a future one "in …".
-   * `—` for a non-finite `ms`. `now` is injectable (defaults to `Date.now()`) so the choice
+   * `—` for a non-finite `ms`. `now` is injectable (defaults to `nowMs()`) so the choice
    * of unit is deterministic in tests.
    */
   relativeTime(ms: number, now?: number): string;
@@ -242,7 +243,7 @@ export function makeFormatters(
     dateTime(ms) {
       return dateTimeFormat.format(new Date(ms));
     },
-    relativeTime(ms, now = Date.now()) {
+    relativeTime(ms, now = nowMs()) {
       if (!Number.isFinite(ms)) return '—';
       // Signed seconds from now; reduce through the cascade to the coarsest unit whose
       // magnitude is still below its ceiling, then let `Intl` phrase it (sign → ago/in).

@@ -4,6 +4,7 @@ import { Surface, Button, Spinner } from '@/components/foundry';
 import { BlockedIcon, CriticalIcon, DuplicateTabIcon, StorageIcon, WarningIcon } from '@/components/icons';
 import { BrandMark } from '@/components/BrandMark';
 import { RescueActions } from '@/app/error/RescueActions';
+import { labFlag } from '@/state/stores/useLabStore';
 import { useT, type MessageKey } from '@/features/i18n';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 import type { DbError, DbErrorCode } from '@/db/errors';
@@ -273,6 +274,11 @@ export function BootErrorScreen({ error }: { error: DbError }) {
   // Both schema mismatches — data ahead of this build, or behind it — get the same
   // pre-1.0 explanation and the same backup-then-reset rescue.
   const isSchemaMismatch = error.code === 'SCHEMA_TOO_NEW' || error.code === 'SCHEMA_STALE';
+  // …unless this failure was *staged* by the hidden lab flag. The database is then perfectly
+  // healthy, so the screen must say so and must not offer to purge it: everything else here
+  // urges the reader towards a reset, and a simulated fault that can destroy real data on one
+  // confirmed click is worse than no simulation at all.
+  const simulated = labFlag('schema-too-new');
   return (
     <BootShell
       accent="danger"
@@ -280,7 +286,22 @@ export function BootErrorScreen({ error }: { error: DbError }) {
       title="Couldn't start the database"
       subtitle={ERROR_HINTS[error.code] ?? 'An unexpected error occurred while starting Gubbins.'}
     >
-      {isSchemaMismatch ? (
+      {simulated ? (
+        <div
+          role="status"
+          data-testid="boot-error-simulated"
+          className="mb-4 rounded-xl border border-warning bg-warning/10 p-4 text-left text-sm text-foreground"
+        >
+          <p className="font-medium">This failure is simulated.</p>
+          <p className="mt-2 text-muted-foreground">
+            The “pretend the local database is from a newer version” switch on the hidden lab screen is on.
+            Your database was never opened and is completely unaffected. Turn the switch off — or clear this
+            browser’s storage for Gubbins — and the app starts normally again. The purge action is hidden here
+            for that reason.
+          </p>
+        </div>
+      ) : null}
+      {isSchemaMismatch && !simulated ? (
         <div className="mb-4 rounded-xl border border-border bg-secondary/40 p-4 text-left text-sm text-muted-foreground">
           <p className="font-medium text-foreground">Why is Gubbins asking to reset your data?</p>
           <p className="mt-2">
@@ -301,7 +322,7 @@ export function BootErrorScreen({ error }: { error: DbError }) {
       </p>
       <p className="mt-4 text-sm text-muted-foreground">Rescue your local data, or reset:</p>
       <div className="mt-3">
-        <RescueActions />
+        <RescueActions allowHardReset={!simulated} />
       </div>
       <Button className="mt-4 w-full" onClick={() => location.reload()}>
         Reload

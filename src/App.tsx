@@ -13,6 +13,7 @@ import { ReminderNotifications } from '@/features/alerts/ReminderNotifications';
 import { useApplyTheme } from '@/features/settings/useApplyTheme';
 import { useApplyLanguage } from '@/features/i18n';
 import { PwaUpdatePrompt } from '@/components/PwaUpdatePrompt';
+import { ClockOverrideBadge } from '@/features/lab/ClockOverrideBadge';
 
 /**
  * Application composition root (spec §2.1, §2.2, §3).
@@ -45,6 +46,11 @@ export function App() {
           <BurstProvider>
             <ScrapeBridgeProvider>
               <PwaUpdatePrompt />
+              {/* Says so on screen whenever the hidden date override is shifting what the app
+                  treats as "today" — a shifted clock is otherwise invisible and changes what
+                  counts as expired/overdue everywhere. Renders nothing in normal use. Outside
+                  BootGate so it shows even on the boot screens, which are date-driven too. */}
+              <ClockOverrideBadge />
               <BootGate>
                 <RouterProvider router={router} />
                 {/* Path A2: receives an Amazon active-tab scrape and opens the reviewable

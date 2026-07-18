@@ -15,6 +15,7 @@ import {
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
 import { MemoryCloudProvider } from './providers/memory-provider';
+import { useLabStore } from '@/state/stores/useLabStore';
 import { runSync, needsFullResync, TOMBSTONE_TTL_MS } from './sync-engine';
 
 async function makeDevice(): Promise<{
@@ -756,5 +757,70 @@ describe('needsFullResync (§7.2 TTL)', () => {
   it('is true once the last sync predates the tombstone TTL', () => {
     const now = 10 * TOMBSTONE_TTL_MS;
     expect(needsFullResync(now - TOMBSTONE_TTL_MS - 1, now)).toBe(true);
+  });
+});
+
+describe('`sync-lww-tie` lab flag reproduces the LWW-tie re-upsert churn', () => {
+  let a: Awaited<ReturnType<typeof makeDevice>>;
+  let b: Awaited<ReturnType<typeof makeDevice>>;
+  let provider: MemoryCloudProvider;
+
+  beforeEach(async () => {
+    a = await makeDevice();
+    b = await makeDevice();
+    provider = new MemoryCloudProvider();
+  });
+
+  afterEach(async () => {
+    await a.driver.close();
+    await b.driver.close();
+    useLabStore.getState().resetLab();
+  });
+
+  /** Publish an item from A and pull it onto B, so both share an identical baseline copy. */
+  async function sharedItem(name: string) {
+    const item = await a.items.create({ name, locationId: UNASSIGNED_LOCATION_ID });
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    return item;
+  }
+
+  it('leaves a genuinely newer local row untouched when the flag is off (default)', async () => {
+    const item = await sharedItem('Widget');
+    // B's local copy is pinned strictly ahead of what A last published — a routine resync
+    // should be a no-op (LOCAL_WINS, nothing to apply).
+    const future = Date.now() + 1_000_000_000;
+    await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
+
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await itemUpdatedAt(b.driver, item.id)).toBe(future);
+  });
+
+  it('forces a tie while on, re-upserting identical content and bumping updated_at (the churn bug)', async () => {
+    const item = await sharedItem('Widget');
+    const future = Date.now() + 1_000_000_000;
+    await b.driver.execute('UPDATE items SET updated_at = ? WHERE id = ?;', [future, item.id]);
+
+    useLabStore.getState().setFlag('sync-lww-tie', true);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    // The incoming remote row was made to carry B's own `future` stamp, so `resolveLww` sees a
+    // tie and sends it to the remote — re-upserting unchanged content. Because the applied
+    // `updated_at` then equals what B already held, the auto-stamp trigger's
+    // `WHEN NEW.updated_at = OLD.updated_at` fires and bumps it one further (§7.3), exactly the
+    // redundant churn devices see ping-ponging an unchanged row.
+    expect(await itemUpdatedAt(b.driver, item.id)).toBe(future + 1);
+    expect((await b.items.getById(item.id))?.name).toBe('Widget');
+  });
+
+  it('does not alter A’s stored data — the override only touches B’s in-memory reconcile', async () => {
+    const item = await sharedItem('Widget');
+    const before = await itemUpdatedAt(a.driver, item.id);
+
+    useLabStore.getState().setFlag('sync-lww-tie', true);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await itemUpdatedAt(a.driver, item.id)).toBe(before);
   });
 });

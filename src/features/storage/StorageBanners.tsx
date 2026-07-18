@@ -1,12 +1,13 @@
 import { type ReactNode, useState } from 'react';
 import { Banner, Button, Tooltip, useInstallPrompt, useToast } from '@/components/foundry';
 import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon, CheckIcon } from '@/components/icons';
-import { useStorageStore } from '@/state/stores/useStorageStore';
+import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLikelyMobile } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
 import { ARCHIVE_NUDGE_SNOOZE_MS, isArchiveDue, runFullArchive } from '@/features/archive/auto-archive';
+import { nowMs } from '@/lib/clock';
 import { StorageTriageDialog } from './StorageTriageDialog';
 
 /**
@@ -18,7 +19,7 @@ import { StorageTriageDialog } from './StorageTriageDialog';
  *    a Hard-Stop notice at 95%.
  */
 export function StorageBanners() {
-  const persisted = useStorageStore((state) => state.persisted);
+  const persisted = useStoragePersisted();
   const tier = useStorageStore((state) => state.tier);
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
@@ -108,7 +109,13 @@ export function StorageBanners() {
   // unavailable) get a weekly nudge to download a full archive (SQLite binary + images).
   // Dismissing it snoozes the nudge for a week rather than hiding it for good, so the
   // safety-net prompt returns if a fresh archive still hasn't been taken.
-  const now = Date.now();
+  // `nowMs()` for the *judgement* (is the snooze over?), but the dismissal below deliberately
+  // stores `Date.now()`. That asymmetry is intentional: a snooze written from a shifted clock
+  // would be a bogus future timestamp that outlives the lab flag and suppresses this safety-net
+  // banner for real. The visible cost is that while the clock is shifted forward the nudge can't
+  // be dismissed (the stored real-time snooze is already in the shifted past) — which is the
+  // correct trade, so don't "fix" it by shifting the write.
+  const now = nowMs();
   const archiveSnoozed = archiveNudgeSnoozedUntil !== null && now < archiveNudgeSnoozedUntil;
   if (mobile && providerId === null && !archiveSnoozed && isArchiveDue(lastArchivedAt, now)) {
     banners.push(

@@ -29,7 +29,7 @@ import {
   ValueIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
-import { useStorageStore } from '@/state/stores/useStorageStore';
+import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
@@ -53,6 +53,7 @@ import { describeHistoryEntry } from '@/features/inventory/history-format';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 import type { FeatureId } from '@/features/modules/feature-registry';
+import { nowMs } from '@/lib/clock';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -315,7 +316,7 @@ function OverdueWidget() {
   // One query returns every open loan (see `useOpenCheckouts`); the overdue set is derived from
   // it in a single pass (no per-checkout round-trip), and the count of the remainder still on
   // loan but not yet due drives the quiet "escalation" footer below.
-  const now = Date.now();
+  const now = nowMs();
   const open = openCheckouts.data?.rows ?? [];
   const overdue = open.filter((c) => c.isOverdue);
   const stillOnLoan = open.length - overdue.length;
@@ -601,7 +602,7 @@ function DatabaseWidget() {
 
 function StorageWidget() {
   const t = useT();
-  const persisted = useStorageStore((state) => state.persisted);
+  const persisted = useStoragePersisted();
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
   const fmt = useFormatters();

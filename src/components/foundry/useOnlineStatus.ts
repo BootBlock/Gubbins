@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { isOnline } from '@/lib/env/network';
+import { useLabFlag } from '@/state/stores/useLabStore';
 
 /** Injectable seam over the connectivity probe + `online`/`offline` window events. */
 export interface OnlineStatusApi {
@@ -43,6 +44,9 @@ export function useOnlineStatus(apiOverride?: OnlineStatusApi): boolean {
   // Resolve the seam once (per override identity) so the effect deps stay stable.
   const api = useMemo(() => apiOverride ?? browserOnlineStatusApi(), [apiOverride]);
   const [online, setOnline] = useState<boolean>(() => api.isOnline());
+  // Lab-only test seam (`force-offline`): report offline without touching the real
+  // connection, so offline banners and queued-sync paths can be exercised on demand.
+  const forcedOffline = useLabFlag('force-offline');
 
   useEffect(() => {
     // Re-sync in case connectivity changed between the initial render and this effect.
@@ -50,5 +54,5 @@ export function useOnlineStatus(apiOverride?: OnlineStatusApi): boolean {
     return api.subscribe(() => setOnline(api.isOnline()));
   }, [api]);
 
-  return online;
+  return online && !forcedOffline;
 }

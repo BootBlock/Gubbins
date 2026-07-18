@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { usePwaUpdate, type PwaUpdateApi, type PwaUpdateHandlers } from './usePwaUpdate';
+import { useLabStore } from '@/state/stores/useLabStore';
+import { APP_SCHEMA_VERSION } from '@/lib/app-version';
+
+const CLEAN_LAB = { flags: {} } as const;
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  useLabStore.setState(CLEAN_LAB);
 });
 
 /**
@@ -136,5 +141,60 @@ describe('usePwaUpdate — waiting-worker detection (spec §2 PWA update prompt)
       document.dispatchEvent(new Event('visibilitychange'));
     });
     expect(fake.checkForUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('usePwaUpdate — lab flags (`pwa-update-available` / `pwa-update-breaking`, `/lab`)', () => {
+  it('an explicit apiOverride wins even when the flags are on', () => {
+    useLabStore.setState({ flags: { 'pwa-update-available': true } });
+    const fake = makeFakeApi();
+    const { result } = renderHook(() => usePwaUpdate(fake.api));
+    // The fake seam never announced a waiting worker, so needRefresh must still be false —
+    // the flag only takes effect when no explicit api is supplied.
+    expect(result.current.needRefresh).toBe(false);
+  });
+
+  it('pretends a worker is waiting when pwa-update-available is on', () => {
+    useLabStore.setState({ flags: { 'pwa-update-available': true } });
+    const { result } = renderHook(() => usePwaUpdate());
+    expect(result.current.needRefresh).toBe(true);
+    expect(result.current.updateAvailableSeq).toBe(1);
+  });
+
+  it('reports the pretend build as schema-compatible when pwa-update-breaking is off', async () => {
+    useLabStore.setState({ flags: { 'pwa-update-available': true } });
+    const { result } = renderHook(() => usePwaUpdate());
+    const deployed = await result.current.fetchDeployedVersion();
+    expect(deployed).not.toBeNull();
+    expect(deployed?.schemaVersion).toBe(APP_SCHEMA_VERSION);
+  });
+
+  it('reports a newer schemaVersion when pwa-update-breaking is also on', async () => {
+    useLabStore.setState({ flags: { 'pwa-update-available': true, 'pwa-update-breaking': true } });
+    const { result } = renderHook(() => usePwaUpdate());
+    const deployed = await result.current.fetchDeployedVersion();
+    expect(deployed?.schemaVersion).toBe(APP_SCHEMA_VERSION + 1);
+  });
+
+  it('pwa-update-breaking alone (without pwa-update-available) does nothing', async () => {
+    useLabStore.setState({ flags: { 'pwa-update-breaking': true } });
+    // pwa-update-available is off, so the hook must fall through to the supplied seam
+    // rather than the lab pretend-api — pinned two ways: the fake is never told a worker is
+    // waiting, and fetchDeployedVersion resolves the fake's own answer (null), not the
+    // pretend api's schema-bumped one.
+    const fake = makeFakeApi();
+    const { result } = renderHook(() => usePwaUpdate(fake.api));
+    expect(result.current.needRefresh).toBe(false);
+    await expect(result.current.fetchDeployedVersion()).resolves.toBeNull();
+  });
+
+  it('the pretend updater dismisses the prompt instead of reloading onto a non-existent worker', async () => {
+    useLabStore.setState({ flags: { 'pwa-update-available': true } });
+    const { result } = renderHook(() => usePwaUpdate());
+    expect(result.current.needRefresh).toBe(true);
+    await act(async () => {
+      await result.current.update();
+    });
+    expect(result.current.needRefresh).toBe(false);
   });
 });
