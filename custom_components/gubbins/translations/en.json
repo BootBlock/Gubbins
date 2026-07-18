@@ -30,7 +30,7 @@
   "services": {
     "search": {
       "name": "Search inventory",
-      "description": "Search the Gubbins inventory (read-only) and return matching items.",
+      "description": "Search the Gubbins inventory (read-only) and return matching items, along with the resolved location ids for each match.",
       "fields": {
         "query": {
           "name": "Query",

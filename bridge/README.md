@@ -195,9 +195,9 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/search?q=&limit=&fields=&include=` | Relevance search, top-N (limit `[1, 25]`, default 5) — not paginated. Alias of `/search`. Supports [field selection](#field-selection--extended-fields). |
 | `GET /api/v1/where?q=` | "Where is X?" with per-location breakdown + spoken sentence. Alias of `/where`. |
 | `GET /api/v1/items?limit=&offset=&location=&category=&includeInactive=&fields=&include=&$orderby=&$filter=` | Paginated item summaries (`ItemSummary`). Supports [field selection](#field-selection--extended-fields) and [OData-style options](#odata-style-query-options) (`$orderby`, `$filter`, …). |
-| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields). |
-| `GET /api/v1/locations?limit=&offset=` | Paginated locations with live item counts (`Location`). |
-| `GET /api/v1/locations/{id}` | One location; `404` if unknown. |
+| `GET /api/v1/items/{id}?fields=&include=` | One item with `placements` and `capabilities` (`ItemDetail`); `404` if unknown. Supports [field selection](#field-selection--extended-fields), including `include=fields` for [custom-field values](#custom-field-values-includefields). |
+| `GET /api/v1/locations?limit=&offset=&fields=&include=` | Paginated locations with live item counts (`Location`). `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
+| `GET /api/v1/locations/{id}?fields=&include=` | One location; `404` if unknown. `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
 | `GET /api/v1/categories?limit=&offset=` | Paginated categories with field counts (`CategorySummary`). |
 | `GET /api/v1/categories/{id}` | One category with its custom-field schema (`CategoryDetail`); `404` if unknown. |
 | `GET /api/v1/capabilities?limit=&offset=` | The distinct, queryable capability vocabulary (`CapabilityKey`) — the keys you can filter on with `cap:<key>`. |
@@ -262,12 +262,14 @@ and nothing more. Both are also available on the MCP `gubbins_search` and `gubbi
 `unitCost`, `purchasePrice`, `expiryDate`, `batchNumber`, `lotNumber`, `acquiredAt`,
 `warrantyExpiresAt`, `depreciationMonths`, `reorderPoint`, `reorderGaugePercent`, `reorderQty`,
 `operationalMetadata`, `gauge`, `createdAt`, `updatedAt`, `placements` (nestable:
-`locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`).
+`locationId, locationName, quantity`), `capabilities` (nestable: `key, valueNum, valueText, weight`),
+`fieldValues` (nestable: `name, fieldType, value, source, inheritedFrom` — see
+[Custom-field values](#custom-field-values-includefields)).
 
 **Include groups** (aliases usable in `include`): `relations` (placements + capabilities +
 categoryName), `pricing` (unitCost + purchasePrice), `lifecycle` (acquiredAt + warrantyExpiresAt +
 purchasePrice + depreciationMonths), `reorder` (the three reorder fields), `timestamps`
-(createdAt + updatedAt), and `all` (every extended field).
+(createdAt + updatedAt), `fields` (fieldValues), and `all` (every extended field).
 
 An unknown field or include name is a `400 bad_request` whose message lists the valid vocabulary;
 an over-long selection is likewise rejected. Relational fields are resolved **lazily** — a
@@ -280,6 +282,47 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/search?q=M3%20screw&fields=name,un
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=all"
 curl -H "Authorization: Bearer $TOKEN" "$BASE/items?fields=id,name,quantity"
 ```
+
+### Custom-field values (`include=fields`)
+
+Gubbins lets you define your own **custom fields** in the app and record values for them against
+items *and* locations — a supplier reference, a datasheet URL, a shelf's label code, the entity id
+of the light above a bin. `include=fields` exposes those values over the API, **read-only**, so an
+integration can act on metadata you maintain in the app rather than in a parallel table of its own.
+
+It works on the item endpoints (`/search`, `/items`, `/items/{id}`) and the location endpoints
+(`/locations`, `/locations/{id}`), and adds a `fieldValues` array:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/items/item-esp32?include=fields"
+curl -H "Authorization: Bearer $TOKEN" "$BASE/locations?include=fields"
+curl -H "Authorization: Bearer $TOKEN" "$BASE/locations/loc-shelf-2?fields=id,name,fieldValues"
+```
+
+On an **item**, each entry is `{ name, fieldType, value, source, inheritedFrom }`:
+
+```json
+{
+  "name": "Indicator Entity",
+  "fieldType": "TEXT",
+  "value": "light.shelf_two",
+  "source": "inherited",
+  "inheritedFrom": { "locationId": "loc-shelf-2", "locationName": "Shelf 2" }
+}
+```
+
+`source` is `stored` (set on the item itself), `inherited` (taken from the nearest ancestor
+location offering the field) or `default` (the field's default value), and `inheritedFrom` names
+the location an inherited value came from. Inheritance is resolved by the app's own rules, so an
+item reads exactly what you see on its detail screen.
+
+On a **location**, each entry is `{ name, fieldType, value, isInheritable }` — the values the
+location holds, with `isInheritable` showing whether it offers that value to the items stored
+beneath it.
+
+> **ℹ️ Note** Fields with no value are omitted, values are always returned as text (as the app
+> stores them), and `fieldValues` never appears unless you ask for it — the default payloads are
+> unchanged.
 
 ### OData-style query options
 
@@ -628,8 +671,8 @@ All tools are **read-only** and return both human-readable `text` content and a 
 | --- | --- | --- |
 | `gubbins_search` | `q` (required), `limit?`, `fields?`, `include?` | Relevance-ranked compact matches (top-N, max 25). Accepts a casual phrase or the power-user grammar (`cap:key>n`, `AND`/`OR`, …). `fields`/`include` [shape the result](#field-selection--extended-fields). |
 | `gubbins_where_is` | `q` (required), `limit?` | The top matches with their per-location breakdown plus one spoken British-English sentence. |
-| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields). |
-| `gubbins_list_locations` | `limit?`, `offset?` | Paginated locations with live item counts. |
+| `gubbins_get_item` | `id` (required), `fields?`, `include?` | One item with `placements` and `capabilities`; `{ found: false }` if unknown. `fields`/`include` [shape the result](#field-selection--extended-fields); `include=fields` adds its [custom-field values](#custom-field-values-includefields). |
+| `gubbins_list_locations` | `limit?`, `offset?`, `fields?`, `include?` | Paginated locations with live item counts. `include=fields` adds each location's [custom-field values](#custom-field-values-includefields). |
 | `gubbins_list_categories` | `limit?`, `offset?` | Paginated categories with field counts. |
 | `gubbins_list_capabilities` | `limit?`, `offset?` | The distinct `cap:` vocabulary you can filter on. |
 
@@ -756,7 +799,10 @@ w.r.t. inventory (an event never mutates data).
 > table the app's activity feed projects — *are* the events, already typed by the §4 activity
 > actions. The bridge reuses the app's own `activityKindForAction` / `describeHistoryEntry` shapers
 > (never a fork) and never runs bespoke SQL. The **first** generation after a (re)start establishes
-> a baseline and emits **nothing** — it never replays history as a burst.
+> a baseline and emits **nothing** — it never replays history as a burst. The **one exception**
+> is the opt-in [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag),
+> which is triggered by a *read* (somebody asking "where is X?") rather than by a change — see
+> its section for why it has its own flag.
 
 ### The event shape
 
@@ -828,6 +874,75 @@ param for clients that can't set it; events still buffered after that id are rep
 A browser `EventSource` receives every event via `onmessage` (the type is in the JSON payload). The
 concurrent-stream count is capped (a `429` past the cap).
 
+### Lookup events — read-triggered (opt-in, separate flag)
+
+> **⚠️ This event class is triggered by a *read*, not by a change.** Every other bridge event
+> comes from a new row in the `item_history` ledger: something in your inventory changed.
+> `lookup.resolved` is the exception — it fires when somebody **asks where something is**, and
+> nothing was written. That is the point: an automation can react to the *question* (light the
+> shelf the answer names, wake a display, log the request). It also means the event **publishes
+> the search text**, which is why it has its own flag and is never implied by
+> `GUBBINS_BRIDGE_EVENTS`.
+
+Set **`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`** (default `off`). It rides the sinks you already have —
+SSE, webhooks, MQTT — so a lookup event reaches them exactly like any other; with no sink enabled
+there is nowhere to publish and nothing is sent. Enabling the SSE stream, webhooks or MQTT does
+**not** turn it on, and turning it on does **not** enable the SSE stream.
+
+Every `GET /where` / `GET /api/v1/where` that **matched at least one item** emits one event:
+
+```json
+{
+  "id": "lookup:4f2a91c0d7be1a35:1751004800000",
+  "type": "lookup.resolved",
+  "occurredAt": "2026-06-27T06:13:20.000Z",
+  "data": {
+    "query": "M3 screws",
+    "itemIds": ["item-m3-bolt", "item-m3-washer"],
+    "locationIds": ["loc-drawer-a", "loc-bin-4"],
+    "matches": [
+      {
+        "itemId": "item-m3-bolt",
+        "itemName": "M3 Bolt",
+        "placements": [{ "locationId": "loc-drawer-a", "locationName": "Drawer A", "quantity": 42 }]
+      }
+    ]
+  }
+}
+```
+
+`itemIds` and `locationIds` are the **flattened, de-duplicated unions** across every match — trigger
+an automation on those rather than walking `matches`. Placements carry a **location id** as well as
+a name, so a consumer can act on the answer instead of string-matching a label.
+
+**A lookup that matched nothing emits no event.** There would be no location for an automation to
+act on, so the event could only ever no-op — and it keeps queries that found nothing, the most
+revealing thing a lookup could publish, off the wire entirely. The Home Assistant integration
+suppresses the same case, so the two paths always agree. A consumer can therefore assume
+`matches`, `itemIds` and `locationIds` are **non-empty** on every event it receives.
+
+**The `id` derivation.** The published contract is "the id is deterministic, so a sink can dedupe";
+a ledger event satisfies it with the ledger row's id, and there is no ledger row here. So a lookup
+id is derived from the **resolved answer plus the debounce window**:
+
+```
+lookup:<first 16 hex of sha256(normalisedQuery + "|" + itemIds + "|" + locationIds)>:<windowStartEpochMs>
+```
+
+where `normalisedQuery` is the query trimmed, whitespace-collapsed and lower-cased, and the id lists
+are comma-joined in payload order. The same question resolving the same way inside one window always
+produces the same id — so deduping on `id` behaves exactly as it does for change events.
+
+**Debouncing.** Voice assistants retry and people rephrase, so repeated **equivalent** lookups — the
+same normalised query resolving to the same items in the same locations — emit **once** per window
+(default **3 s**, set by `GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS`; `0` disables it). The window is
+anchored at the emission that opened it, so a stream of retries cannot keep pushing it back. A
+different question, or the same wording now resolving somewhere else, emits immediately.
+
+> **ℹ️ Privacy note.** This is the only bridge event that publishes what someone *searched for*
+> rather than what the inventory *is*. Whatever you point it at — a broker, a webhook endpoint, a
+> log — will see those queries. That is exactly why it is a separate, explicit opt-in.
+
 ## MQTT publishing (opt-in)
 
 The bridge can **publish out** to your MQTT broker (Mosquitto, EMQX, the Home Assistant add-on, …),
@@ -855,13 +970,84 @@ Everything hangs under the prefix (default `gubbins`, override with `GUBBINS_BRI
 | --- | --- | --- |
 | `gubbins/status` | yes | `online` / `offline` — the availability topic (also the MQTT Last-Will, so an ungraceful death flips it to `offline` automatically). |
 | `gubbins/summary/state` | yes | `{ itemsTotal, lowStockItems, outOfStockItems, locationsTotal, generatedAt }` — refreshed on every snapshot change. |
-| `gubbins/location/<id>/state` | yes | `{ id, name, itemCount }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). |
+| `gubbins/location/<id>/state` | yes | `{ id, name, itemCount, attributes }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). See [location attributes](#location-attributes-your-custom-fields) below. |
 | `gubbins/event/<type>` | no | The EI-1 change event (the [same shape](#the-event-shape) the webhooks/SSE emit), e.g. `gubbins/event/item.low_stock`. Transient — a late subscriber doesn't replay history. |
+| `gubbins/locate` | **no** | The resolved answer to a "where is X?" lookup. Needs `GUBBINS_BRIDGE_LOOKUP_EVENTS=on` — see [the locate topic](#the-locate-topic-where-is-x-for-automations) below. Transient, deliberately. |
 
 State is **retained** so a subscriber (or Home Assistant) that connects after the bridge sees the
 last-known values immediately. The low-stock / out-of-stock counts use the exact same rule as the
 `item.low_stock` / `item.out_of_stock` events, so they never drift. Every published payload is
-synthetic-safe: it carries only inventory facts, never the token or the broker credentials.
+synthetic-safe: it carries only inventory facts — your inventory's own data, including the custom
+fields described next — and never the token or the broker credentials.
+
+### Location attributes (your custom fields)
+
+Each location's state payload carries an `attributes` object holding the **custom-field values that
+location holds** — the app's field dictionary. That is what lets an automation read "which lamp is
+above this shelf" straight off the location, instead of you keeping a parallel mapping table in your
+automation config:
+
+```json
+{
+  "id": "loc-bin-42",
+  "name": "Bin 42",
+  "itemCount": 7,
+  "attributes": { "ha_entity": "light.bin_42", "aisle": "B" }
+}
+```
+
+Field names are lower-cased with anything non-alphanumeric collapsed to `_`, so a field called
+`HA Entity` reads as `ha_entity`. A location with no custom fields publishes `"attributes": {}` — the
+key is always there, so a template never has to guard for it. Empty values are omitted, and if two
+field names normalise to the same key the first (by field name) wins.
+
+With [discovery](#home-assistant-mqtt-discovery-no-custom-component) on, these arrive as **entity
+attributes** on `sensor.gubbins_location_<id>`, so an automation reads them directly:
+
+```yaml
+# turn on whichever light the location's "HA Entity" field names
+service: light.turn_on
+target:
+  entity_id: "{{ state_attr('sensor.gubbins_location_bin_42', 'ha_entity') }}"
+```
+
+### The locate topic: "where is X?" for automations
+
+With **`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`** (the same flag as
+[lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — there is no separate one), a
+resolved "where is X?" lookup is also published to a single fixed topic, `gubbins/locate`, with the
+answer flattened to the top level:
+
+```json
+{
+  "id": "lookup:0123456789abcdef:1751000000000",
+  "occurredAt": "2025-06-27T07:33:20.000Z",
+  "query": "solder",
+  "itemIds": ["item-solder"],
+  "locationIds": ["loc-bin-42"],
+  "matches": [
+    {
+      "itemId": "item-solder",
+      "itemName": "Solder 0.7mm",
+      "placements": [{ "locationId": "loc-bin-42", "locationName": "Bin 42", "quantity": 3 }]
+    }
+  ]
+}
+```
+
+Combined with the location attributes above, that is a complete "ask where it is, light that bin"
+path in **Node-RED or a plain MQTT trigger, with no `custom_components/gubbins` installed**: trigger
+on `gubbins/locate`, read `locationIds[0]`, and look up that location's `ha_entity` attribute.
+(The event also still appears on `gubbins/event/lookup.resolved` in its untouched event shape, for
+anything consuming the event stream generically.)
+
+> **⚠️ Transient, not retained — deliberately.** Unlike the state topics, `gubbins/locate` is
+> published **without** the retain flag, and never will be. A retained locate message would be
+> re-delivered to every client that connects later, so restarting Home Assistant at midnight would
+> light a bin over a question somebody asked at lunchtime. It answers a question asked *now*, so it
+> exists only for whoever is listening now.
+
+With the flag off — its default — nothing is ever published to `gubbins/locate`.
 
 ### Home Assistant MQTT discovery (no custom component)
 
@@ -873,7 +1059,8 @@ this is an *alternative* to the [custom component](../homeassistant/README.md); 
 under a single "Gubbins" device: `sensor.gubbins_items_total`, `sensor.gubbins_low_stock_items`,
 `sensor.gubbins_out_of_stock_items`, `sensor.gubbins_locations_total`, a
 `binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), and one
-`sensor.gubbins_location_<id>` per user location. The discovery layout is re-published whenever a
+`sensor.gubbins_location_<id>` per user location — each carrying that location's
+[custom fields as entity attributes](#location-attributes-your-custom-fields). The discovery layout is re-published whenever a
 location is added/removed/renamed and on every reconnect (so a broker that restarted without
 persistence re-learns it). Entity names are **device-relative** — Home Assistant prefixes the
 "Gubbins" device name itself, so they display as *Gubbins*, *Gubbins Low stock items*, *Gubbins
@@ -1028,6 +1215,7 @@ query parameter — see their sections):
 | Surface | Path | Notes |
 | --- | --- | --- |
 | REST API + discovery/OpenAPI | `GET /health`, `/search`, `/where`, `/api/v1/*` | Read-only; field-selection + OData-style options. |
+| Custom-field values | `GET /api/v1/{items,locations}…?include=fields` | Read-only; **opt-in per request** — your custom fields are returned only when a caller asks with `include=fields`, never in a default payload. |
 | CSV export | `GET /api/v1/items.csv` | Refreshable spreadsheet pull. |
 | Calendar subscription | `GET /api/v1/calendar.ics` | `?token=` accepted (calendar clients can't send headers). |
 | Syndication feeds | `GET /api/v1/activity.{rss,atom,json}` | `?token=` accepted. |
@@ -1043,9 +1231,10 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` (JSON source only). | inbound (HTTP) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — reuses `GUBBINS_BRIDGE_TOKEN`. |
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
+| `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). | outbound (push) | No — an event never mutates inventory. | Per-target HMAC signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `.env` only. |
-| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
-| `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`). | outbound (push) | No. | None new (uses the MQTT connection above). |
+| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
+| `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
 | `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
 
@@ -1083,6 +1272,8 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same bearer token + rate limit. |
+| `GUBBINS_BRIDGE_LOOKUP_EVENTS` | no | `off` | Also emit the **read-triggered** [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag) when a "where is X?" lookup resolves. **Off by default and deliberately NOT implied by `GUBBINS_BRIDGE_EVENTS`** — it publishes the search text, so it is its own explicit choice. Needs a sink (SSE / webhooks / MQTT) to reach. |
+| `GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS` | no | `3000` | Window (ms) in which repeated **equivalent** lookups emit once. Clamped to `[0, 600000]`; `0` disables debouncing. |
 | `GUBBINS_BRIDGE_WEBHOOKS` | no | `off` | Enable opt-in signed [outbound webhooks](#events-webhooks--sse-opt-in). **Off by default**; also lights up the event stream (shared pipeline). A webhook never mutates inventory. |
 | `GUBBINS_BRIDGE_WEBHOOKS_FILE` | no | `webhooks.json` | Path to the **git-ignored** JSON webhook-target list. The target **secrets live only here** — never in a committed file. |
 | `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` | no | — | The whole target list inline as JSON (wins over the file). Carries secrets, so keep it in the git-ignored `.env` only. |
@@ -1357,6 +1548,7 @@ bridge/
       dto.ts            # stable public DTOs + pure row→DTO mappers
       field-select.ts   # generic fields/include projection engine (parse + validate + lazy project)
       item-view.ts      # item field vocabulary + lazy relational context (SSOT for projectable fields)
+      location-view.ts  # location field vocabulary (defaults + the opt-in custom-field values)
       odata.ts          # OData-style option layer: $-alias reader + $orderby parser
       odata-filter.ts   # constrained OData $filter → SearchAST compiler (never bespoke SQL)
       odata-metadata.ts # OData v4 CSDL $metadata builder (descriptive read model)

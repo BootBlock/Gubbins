@@ -109,7 +109,7 @@ const fieldsParam: JsonValue = {
     'trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, ' +
     'weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, ' +
     'reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, ' +
-    'updatedAt, placements, capabilities.',
+    'updatedAt, placements, capabilities, fieldValues.',
   schema: { type: 'string' },
   example: 'name,unitCost',
 };
@@ -127,10 +127,40 @@ const includeParam: JsonValue = {
     'top of the default payload. Groups: relations (placements, capabilities, categoryName), ' +
     'pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, ' +
     'purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, ' +
-    'reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An ' +
+    'reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field ' +
+    'values, with location inheritance resolved), and all (every extended field). An ' +
     'unknown name is a 400.',
   schema: { type: 'string' },
   example: 'capabilities,notes',
+};
+
+/**
+ * The `include` (field expansion) parameter for the **location** read endpoints. Locations
+ * have a single extended field, `fieldValues` — the custom-field values the location holds.
+ */
+const locationIncludeParam: JsonValue = {
+  name: 'include',
+  in: 'query',
+  required: false,
+  description:
+    'Field expansion: a comma-separated list of extended fields, or named groups, to ADD on ' +
+    "top of the default payload. Groups: fields (fieldValues — the location's custom-field " +
+    'values) and all. An unknown name is a 400.',
+  schema: { type: 'string' },
+  example: 'fields',
+};
+
+/** The `fields` (sparse fieldset) parameter for the location read endpoints. */
+const locationFieldsParam: JsonValue = {
+  name: 'fields',
+  in: 'query',
+  required: false,
+  description:
+    'Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the ' +
+    'default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, ' +
+    'fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400.',
+  schema: { type: 'string' },
+  example: 'id,name,fieldValues',
 };
 
 /**
@@ -765,7 +795,18 @@ export const openapiDocument: JsonValue = {
       get: {
         tags: ['locations'],
         summary: 'Browse locations (paginated)',
-        parameters: [limitParam, offsetParam],
+        description:
+          'The physical storage hierarchy, each entry with its live item count. Use `include=fields` ' +
+          "to add `fieldValues` — the location's custom-field values, which is where a user records " +
+          'metadata such as the entity id of a light above a shelf.',
+        parameters: [
+          limitParam,
+          offsetParam,
+          locationFieldsParam,
+          locationIncludeParam,
+          selectParam,
+          expandParam,
+        ],
         responses: {
           200: okList('#/components/schemas/Location'),
           ...(errorResponses(401, 429, 503) as Record<string, JsonValue>),
@@ -776,7 +817,16 @@ export const openapiDocument: JsonValue = {
       get: {
         tags: ['locations'],
         summary: 'Look up one location by id',
-        parameters: [idParam('location')],
+        description:
+          "One location with its live item count. Use `include=fields` to add the location's " +
+          'custom-field values (`fieldValues`).',
+        parameters: [
+          idParam('location'),
+          locationFieldsParam,
+          locationIncludeParam,
+          selectParam,
+          expandParam,
+        ],
         responses: {
           200: response('The location.', '#/components/schemas/Location'),
           ...(errorResponses(401, 404, 429, 503) as Record<string, JsonValue>),
@@ -1013,7 +1063,7 @@ export const openapiDocument: JsonValue = {
       },
       ItemMatch: {
         type: 'object',
-        required: ['id', 'name', 'quantity', 'locationName', 'mpn', 'manufacturer'],
+        required: ['id', 'name', 'quantity', 'locationId', 'locationName', 'mpn', 'manufacturer'],
         properties: {
           id: { type: 'string', example: 'item-esp32' },
           name: { type: 'string', example: 'ESP32 Dev Board' },
@@ -1023,6 +1073,13 @@ export const openapiDocument: JsonValue = {
             example: 7,
             description:
               'On-hand grand total; **null** for an unlimited-supply item (an infinite source has no finite count).',
+          },
+          locationId: {
+            type: 'string',
+            nullable: true,
+            example: 'loc-shelf-2',
+            description:
+              "The primary/home location's stable id — what an automation acts on (the name is for a human). Null exactly when locationName is.",
           },
           locationName: { type: 'string', nullable: true, example: 'Shelf 2' },
           mpn: { type: 'string', nullable: true, example: 'DEV-ESP32' },
@@ -1079,6 +1136,56 @@ export const openapiDocument: JsonValue = {
           valueNum: { type: 'number', nullable: true, example: 3.3 },
           valueText: { type: 'string', nullable: true, example: null },
           weight: { type: 'number', example: 2 },
+        },
+      },
+      ItemFieldValue: {
+        type: 'object',
+        description:
+          "One of the item's custom-field values, resolved exactly as the app resolves it: a " +
+          'value set on the item wins, otherwise the value offered by the nearest ancestor ' +
+          'location that makes it inheritable, otherwise the field default. Fields with no ' +
+          'value are omitted. Read-only.',
+        required: ['name', 'fieldType', 'value', 'source', 'inheritedFrom'],
+        properties: {
+          name: { type: 'string', example: 'Datasheet' },
+          fieldType: { type: 'string', example: 'TEXT' },
+          value: { type: 'string', example: 'https://example.com/esp32.pdf' },
+          source: {
+            type: 'string',
+            enum: ['stored', 'inherited', 'default'],
+            example: 'stored',
+            description:
+              'Where the value came from: set on the item (`stored`), inherited from an ' +
+              'ancestor location (`inherited`), or the field default (`default`).',
+          },
+          inheritedFrom: {
+            type: 'object',
+            nullable: true,
+            description: 'The location that supplied the value when `source` is `inherited`; null otherwise.',
+            required: ['locationId', 'locationName'],
+            properties: {
+              locationId: { type: 'string', example: 'loc-shelf-2' },
+              locationName: { type: 'string', example: 'Shelf 2' },
+            },
+          },
+        },
+      },
+      LocationFieldValue: {
+        type: 'object',
+        description:
+          'One custom-field value held by a location. Fields with no value are omitted. Read-only.',
+        required: ['name', 'fieldType', 'value', 'isInheritable'],
+        properties: {
+          name: { type: 'string', example: 'Indicator Entity' },
+          fieldType: { type: 'string', example: 'TEXT' },
+          value: { type: 'string', example: 'light.shelf_two' },
+          isInheritable: {
+            type: 'boolean',
+            example: true,
+            description:
+              'True when the location offers this value to the items stored beneath it; false ' +
+              "when it is the location's own metadata only.",
+          },
         },
       },
       ItemSummary: {
@@ -1146,6 +1253,11 @@ export const openapiDocument: JsonValue = {
               updatedAt: { type: 'integer' },
               placements: { type: 'array', items: { $ref: '#/components/schemas/Placement' } },
               capabilities: { type: 'array', items: { $ref: '#/components/schemas/Capability' } },
+              fieldValues: {
+                type: 'array',
+                description: 'Present only when requested with `include=fields`.',
+                items: { $ref: '#/components/schemas/ItemFieldValue' },
+              },
             },
           },
         ],
@@ -1161,6 +1273,11 @@ export const openapiDocument: JsonValue = {
           description: { type: 'string', nullable: true },
           color: { type: 'string', nullable: true },
           itemCount: { type: 'integer', example: 2 },
+          fieldValues: {
+            type: 'array',
+            description: 'Present only when requested with `include=fields`.',
+            items: { $ref: '#/components/schemas/LocationFieldValue' },
+          },
         },
       },
       CategoryField: {
@@ -1259,12 +1376,67 @@ export const openapiDocument: JsonValue = {
           },
         },
       },
+      LookupEventData: {
+        type: 'object',
+        required: ['query', 'itemIds', 'locationIds', 'matches'],
+        description:
+          'The payload of a `lookup.resolved` event. `itemIds` and `locationIds` are the flattened, ' +
+          'de-duplicated unions across every match, so an automation can trigger on them without ' +
+          'walking `matches`.',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The query as asked (trimmed), verbatim.',
+            example: 'M3 screws',
+          },
+          itemIds: {
+            type: 'array',
+            description: 'Every matched item id, in match order, de-duplicated.',
+            items: { type: 'string' },
+            example: ['itm-m3-bolt'],
+          },
+          locationIds: {
+            type: 'array',
+            description: 'Every resolved location id across all matches, in encounter order, de-duplicated.',
+            items: { type: 'string' },
+            example: ['loc-drawer-a'],
+          },
+          matches: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['itemId', 'itemName', 'placements'],
+              properties: {
+                itemId: { type: 'string', example: 'itm-m3-bolt' },
+                itemName: { type: 'string', example: 'M3 × 10mm bolt' },
+                placements: {
+                  type: 'array',
+                  description: 'Where this item’s stock sits, busiest location first.',
+                  items: {
+                    type: 'object',
+                    required: ['locationId', 'locationName', 'quantity'],
+                    properties: {
+                      locationId: { type: 'string', example: 'loc-drawer-a' },
+                      locationName: { type: 'string', example: 'Drawer A' },
+                      quantity: { type: 'number', example: 120 },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       BridgeEvent: {
         type: 'object',
         required: ['id', 'type', 'occurredAt', 'data'],
         description:
           'One event delivered over the SSE stream and to outbound webhooks. `id` is deterministic ' +
-          '(ledger-row-derived) so a consumer can dedupe; `type` is a stable dotted name.',
+          'so a consumer can dedupe; `type` is a stable dotted name. Almost every event is derived ' +
+          'from a new row in the history ledger — an inventory *change* — and takes its id from that ' +
+          'row. The exception is `lookup.resolved`, which is **read**-triggered (someone asked where ' +
+          'an item is, and nothing changed): it has no ledger row, so its id is derived from the ' +
+          'resolved query instead, and it is only emitted when its own opt-in flag is enabled.',
         properties: {
           id: { type: 'string', example: 'hist-0007' },
           type: {
@@ -1287,16 +1459,27 @@ export const openapiDocument: JsonValue = {
               'item.supplier_data_applied',
               'item.changed',
               'events.truncated',
+              'lookup.resolved',
             ],
             example: 'item.low_stock',
           },
           occurredAt: {
             type: 'string',
             format: 'date-time',
-            description: 'The ledger row’s created_at as ISO-8601.',
+            description:
+              'When the event occurred, as ISO-8601 — the ledger row’s created_at for a ' +
+              'ledger-derived event, or the moment the lookup resolved for `lookup.resolved`.',
             example: '2025-06-27T06:13:20.000Z',
           },
-          data: { $ref: '#/components/schemas/BridgeEventData' },
+          data: {
+            description:
+              'The payload, whose shape follows `type`: `LookupEventData` for `lookup.resolved`, ' +
+              '`BridgeEventData` for every ledger-derived event.',
+            oneOf: [
+              { $ref: '#/components/schemas/BridgeEventData' },
+              { $ref: '#/components/schemas/LookupEventData' },
+            ],
+          },
         },
       },
     },

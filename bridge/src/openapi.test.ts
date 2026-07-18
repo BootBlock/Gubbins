@@ -61,6 +61,24 @@ describe('openapiDocument', () => {
     expect(doc.components.schemas.ApiIndex.properties.streamable).toBeDefined();
   });
 
+  it('documents the read-triggered lookup.resolved event and its payload (#62)', () => {
+    const bridgeEvent = doc.components.schemas.BridgeEvent;
+    // The read-triggered event is a documented member of the type enum...
+    expect(bridgeEvent.properties.type.enum).toContain('lookup.resolved');
+    // ...and the envelope's `data` admits its distinct shape alongside the ledger payload.
+    const refs = bridgeEvent.properties.data.oneOf.map((entry: { $ref: string }) => entry.$ref);
+    expect(refs).toContain('#/components/schemas/BridgeEventData');
+    expect(refs).toContain('#/components/schemas/LookupEventData');
+    // The payload carries the flattened unions an automation triggers on.
+    const lookup = doc.components.schemas.LookupEventData;
+    expect(lookup.required).toEqual(['query', 'itemIds', 'locationIds', 'matches']);
+    // A placement must carry the location *id*, not just its name — that is what makes it actionable.
+    const placement = lookup.properties.matches.items.properties.placements.items;
+    expect(placement.required).toContain('locationId');
+    // The departure from "every event derives from the ledger" is called out for consumers.
+    expect(bridgeEvent.description).toContain('read');
+  });
+
   it('documents the syndication feeds and the Prometheus /metrics endpoint (EI-6)', () => {
     const paths = doc.paths as Record<string, any>;
     // The three feed formats, each with its own media type, tagged `feeds`.
@@ -73,6 +91,35 @@ describe('openapiDocument', () => {
     // Metrics: a root-path text/plain exposition tagged `metrics`.
     expect(paths['/metrics'].get.tags).toContain('metrics');
     expect(paths['/metrics'].get.responses['200'].content['text/plain']).toBeDefined();
+  });
+
+  it('documents custom-field values as an opt-in expansion on items and locations (A1)', () => {
+    const doc2 = doc as Record<string, any>;
+    // Both resources carry the field values, each with its own element schema.
+    const itemDetail = doc2.components.schemas.ItemDetail.allOf[1];
+    expect(itemDetail.properties.fieldValues.items.$ref).toBe('#/components/schemas/ItemFieldValue');
+    expect(doc2.components.schemas.Location.properties.fieldValues.items.$ref).toBe(
+      '#/components/schemas/LocationFieldValue',
+    );
+    // …and are OPTIONAL: neither schema lists fieldValues as required, because the default
+    // payload does not contain it — a caller opts in with `include=fields`.
+    expect(itemDetail.required).not.toContain('fieldValues');
+    expect(doc2.components.schemas.Location.required).not.toContain('fieldValues');
+
+    // An inherited value is distinguishable from a directly-set one.
+    expect(doc2.components.schemas.ItemFieldValue.properties.source.enum).toEqual([
+      'stored',
+      'inherited',
+      'default',
+    ]);
+    expect(doc2.components.schemas.LocationFieldValue.properties.isInheritable).toBeDefined();
+
+    // The location endpoints advertise the `include` parameter that turns them on.
+    for (const path of ['/api/v1/locations', '/api/v1/locations/{id}']) {
+      const names = (doc2.paths[path].get.parameters as { name: string }[]).map((p) => p.name);
+      expect(names, `${path} should accept include`).toContain('include');
+      expect(names, `${path} should accept fields`).toContain('fields');
+    }
   });
 
   it('has no dangling $ref — every referenced schema exists', () => {

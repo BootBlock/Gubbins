@@ -30,7 +30,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import { searchItems, whereIs } from './query.ts';
+import { searchItems, whereIs, type LookupObserver } from './query.ts';
 import type { RateLimiter } from './rate-limit.ts';
 import { sendError, sendJson, sendMetrics } from './api/respond.ts';
 import { readQueryParam, readResultLimit } from './api/params.ts';
@@ -145,6 +145,12 @@ export interface BridgeServerOptions {
    * `/api/v1/scale/*` endpoints a `404` (the scale reading is then unavailable to the PWA).
    */
   readonly scale?: ScaleCapability;
+  /**
+   * The opt-in resolved-lookup observer (`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`). When present, each
+   * `where` lookup that resolves publishes one read-triggered `lookup.resolved` event through the
+   * usual sinks. Omit (the default) and lookups emit nothing at all.
+   */
+  readonly lookup?: LookupObserver;
 }
 
 /**
@@ -306,6 +312,7 @@ export async function handleRequest(
         push: options.push,
         streamable: options.events !== undefined,
         scale: options.scale,
+        lookup: options.lookup,
       });
       return;
     }
@@ -454,7 +461,7 @@ async function handleWhere(res: ServerResponse, options: BridgeServerOptions, ur
     return;
   }
 
-  sendJson(res, 200, await whereIs(state.driver, q));
+  sendJson(res, 200, await whereIs(state.driver, q, { observer: options.lookup }));
 }
 
 /**

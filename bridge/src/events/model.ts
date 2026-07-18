@@ -24,19 +24,35 @@ import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '@/db/repositor
 import type { HistoryAction } from '@/db/repositories/constants.ts';
 import type { ActivityFeedEntry, Item } from '@/db/repositories/types';
 import type { ItemSummaryDto } from '../api/dto.ts';
+// Type-only (erased at runtime), so the mutual reference with `lookup.ts` creates no import cycle.
+import type { LookupEvent } from './lookup.ts';
 
 /**
- * A single typed event. `type` is a stable dotted name (`item.created`, `stock.adjusted`,
- * `item.low_stock`, …); `id` is deterministic (ledger-row-derived) so every sink can dedupe;
- * `occurredAt` is the ledger row's `created_at` as ISO-8601; `data` reuses the existing
- * `api/dto.ts` item shape.
+ * The envelope every bridge event shares, whatever its `data` carries. `type` is a stable dotted
+ * name (`item.created`, `stock.adjusted`, `lookup.resolved`, …); `id` is **deterministic** so
+ * every sink can dedupe; `occurredAt` is ISO-8601.
  */
-export interface BridgeEvent {
+export interface BridgeEventBase<TData> {
   readonly id: string;
   readonly type: string;
   readonly occurredAt: string;
-  readonly data: BridgeEventData;
+  readonly data: TData;
 }
+
+/**
+ * A ledger-derived event — the original and overwhelmingly common kind. Its `id` is the
+ * `item_history` row's id (or a suffixed derivative), its `occurredAt` is that row's `created_at`,
+ * and its `data` reuses the existing `api/dto.ts` item shape.
+ */
+export type LedgerEvent = BridgeEventBase<BridgeEventData>;
+
+/**
+ * Any event a sink may be handed. Today: a {@link LedgerEvent} (an inventory *change*) or a
+ * {@link LookupEvent} (the opt-in, read-triggered `lookup.resolved`). Sinks serialise the whole
+ * envelope and never introspect `data`, so the union costs them nothing; code that specifically
+ * builds or reads ledger payloads should say {@link LedgerEvent}.
+ */
+export type BridgeEvent = LedgerEvent | LookupEvent;
 
 /** The payload of a ledger-derived event: the change plus the item's current summary. */
 export interface BridgeEventData {
@@ -205,11 +221,11 @@ export interface BuildEventsOptions {
 export function buildEvents(
   resolved: readonly ResolvedEntry[],
   options: BuildEventsOptions = {},
-): BridgeEvent[] {
+): LedgerEvent[] {
   const cap = Math.max(1, options.fanOutCap ?? DEFAULT_FAN_OUT_CAP);
   const defaults = options.lowStockDefaults ?? DEFAULT_LOW_STOCK;
 
-  const all: BridgeEvent[] = [];
+  const all: LedgerEvent[] = [];
   for (const resolvedEntry of resolved) {
     all.push(baseEvent(resolvedEntry));
     const status = statusEvent(resolvedEntry, defaults);
@@ -224,7 +240,7 @@ export function buildEvents(
 }
 
 /** The base event for a ledger entry (its action's dotted type + the shaped payload). */
-function baseEvent({ entry, summary }: ResolvedEntry): BridgeEvent {
+function baseEvent({ entry, summary }: ResolvedEntry): LedgerEvent {
   const view = describeHistoryEntry(entry);
   return {
     id: entry.id,
@@ -250,7 +266,7 @@ function baseEvent({ entry, summary }: ResolvedEntry): BridgeEvent {
  * stock item, is not low, or could not be resolved. The id suffixes the base ledger id so it
  * is deterministic and distinct (a sink can dedupe on it).
  */
-function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): BridgeEvent | null {
+function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): LedgerEvent | null {
   const { entry, item, summary } = resolved;
   if (item === null || !isStockAction(entry.action)) return null;
   if (!isLow(item, defaults)) return null;
@@ -279,7 +295,7 @@ export function isStockEmpty(item: ReorderItem): boolean {
 }
 
 /** The summary event appended when a generation's fan-out is capped. */
-function truncationEvent(last: BridgeEvent, omitted: number): BridgeEvent {
+function truncationEvent(last: LedgerEvent, omitted: number): LedgerEvent {
   return {
     id: `${last.id}:truncated:${omitted}`,
     type: EVENTS_TRUNCATED_TYPE,

@@ -130,8 +130,16 @@ data:
   query: "ESP32"
   limit: 5
 response_variable: result
-# result.matches → [{ id, name, quantity, locationName, mpn, manufacturer }, ...]
+# result.matches         → [{ id, name, quantity, locationName, mpn, manufacturer }, ...]
+# result.location_ids    → ["loc-bin-42", "loc-shelf-2"]   (deduped, every match)
+# result.located_matches → [{ item_id, item_name, placements: [
+#                            { location_id, location_name, quantity }, ... ] }, ...]
 ```
+
+`location_ids` and `located_matches` are the same shape the `gubbins_item_located` event
+uses (see step 7), so one template works for both the voice path and a script/dashboard
+path. A bridge that predates location ids still answers — those fields just come back
+empty.
 
 **Sensor** — the integration adds `sensor.gubbins_bridge_<host>_<port>_inventory_items`
 (item count), with `ok` and `snapshot_generated_at` attributes. Use it on a dashboard, or
@@ -156,6 +164,99 @@ The bridge applies the change through the app's own mutation and writes it back 
 `gubbins-sync.json`, so the PWA merges it conflict-free on its next sync — no bespoke database
 write, no drift. (Writes are deliberately **not** wired into the voice intent or MCP; a voice
 "check out" automation can call this service explicitly.)
+
+### 7. (Optional) React to a lookup — the `gubbins_item_located` event
+
+Every time a voice lookup **resolves to at least one item**, the integration fires
+`gubbins_item_located` on the Home Assistant event bus, in addition to speaking the answer.
+An automation can then use a plain **event trigger** to do something physical — the usual
+example being to flash the light above the bin the item is in.
+
+The event is *not* fired when the lookup matched nothing, or when the bridge couldn't be
+reached, so an automation triggered on it always has somewhere to point at. Speech always
+wins: if the event can't be fired for any reason it is logged and ignored, and the spoken
+answer is unaffected.
+
+**Event data**
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `query` | string | What the user asked for (the `{item}` slot, verbatim). |
+| `item_ids` | list of string | Gubbins record id of every matched item. |
+| `location_ids` | list of string | Every resolved location id, flattened and deduped. |
+| `matches` | list | One entry per item: `item_id`, `item_name`, and `placements`. |
+| `matches[].placements` | list | `location_id`, `location_name`, `quantity` per place the item sits. |
+
+```yaml
+# Example event data (synthetic)
+query: "ESP32"
+item_ids: ["item-esp32"]
+location_ids: ["loc-bin-42", "loc-shelf-2"]
+matches:
+  - item_id: "item-esp32"
+    item_name: "ESP32 Dev Board"
+    placements:
+      - location_id: "loc-bin-42"
+        location_name: "Bin 42"
+        quantity: 5
+      - location_id: "loc-shelf-2"
+        location_name: "Shelf 2"
+        quantity: 2
+```
+
+> **ℹ️ Note** — `location_id` needs a bridge that reports location ids. An older bridge
+> sends only names, in which case `location_ids` is empty and `location_name` still works
+> (you can map on the name instead, at the cost of a rename breaking the mapping).
+
+**Worked example — flash the light above the bin**
+
+Keep one plain YAML dictionary mapping a Gubbins location id to the light entity above it,
+then flash whichever lights the lookup resolved to. To extend it, add a line to `bin_lights`
+— nothing else changes. (All ids and entities below are made up; use your own.)
+
+```yaml
+alias: "Gubbins — flash the bin a located item is in"
+mode: restart
+triggers:
+  - trigger: event
+    event_type: gubbins_item_located
+variables:
+  # Gubbins location id → the light entity above that location.
+  bin_lights:
+    loc-bin-42: light.bin_42
+    loc-shelf-2: light.shelf_2
+    loc-drawer-a: light.drawer_a
+  flash_seconds: 20
+  # The lights matching the locations this lookup resolved to.
+  lights: >-
+    {%- set ns = namespace(found=[]) -%}
+    {%- for loc in trigger.event.data.location_ids -%}
+      {%- if loc in bin_lights -%}
+        {%- set ns.found = ns.found + [bin_lights[loc]] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {{ ns.found }}
+conditions:
+  - condition: template
+    value_template: "{{ lights | count > 0 }}"
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: "{{ lights }}"
+  - delay:
+      seconds: "{{ flash_seconds }}"
+  - action: light.turn_off
+    target:
+      entity_id: "{{ lights }}"
+```
+
+Say *"where is my ESP32 dev board?"* and Assist reads the answer back **and** the light above
+Bin 42 flashes for 20 seconds. `mode: restart` means a second lookup while the first is still
+lit restarts the timer rather than queueing.
+
+> **💡 Tip** — if you'd rather not maintain the mapping in YAML, an entity named after the
+> location (`light.<location_name | slugify>`) works too:
+> `{{ trigger.event.data.matches[0].placements[0].location_name | slugify }}`.
 
 ---
 

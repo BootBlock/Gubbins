@@ -1,6 +1,11 @@
 # Read-only search against the Gubbins bridge. Returns the matched items as response
 # data (use response_variable in a script/automation, or "Call service" in Developer
 # Tools to see the result). It never modifies inventory.
+#
+# The response carries the bridge's own "matches", plus "location_ids" (every resolved
+# location id, deduped) and "located_matches" (the same matches in the snake_case shape
+# used by the gubbins_item_located event), so a script or dashboard can map a match to a
+# place without going through the voice intent.
 search:
   fields:
     query:

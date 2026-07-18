@@ -24,7 +24,12 @@ import {
   type PaginationMeta,
 } from '../api/dto.ts';
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from '../api/limits.ts';
-import { FieldSelectionError, hasSelection, type SelectedField } from '../api/field-select.ts';
+import {
+  FieldSelectionError,
+  hasSelection,
+  type RawSelection,
+  type SelectedField,
+} from '../api/field-select.ts';
 import {
   createItemViewContext,
   parseItemSelection,
@@ -32,6 +37,7 @@ import {
   ITEM_DETAIL_DEFAULT_FIELDS,
   SEARCH_DEFAULT_FIELDS,
 } from '../api/item-view.ts';
+import { createLocationViewContext, parseLocationSelection, projectLocation } from '../api/location-view.ts';
 
 /** A minimal JSON-Schema subset — enough to describe each tool's arguments in `tools/list`. */
 export interface JsonSchema {
@@ -76,7 +82,18 @@ const INCLUDE_SCHEMA: JsonSchema = {
   type: 'string',
   description:
     'Comma-separated extended fields (or groups: relations, pricing, lifecycle, reorder, ' +
-    'timestamps, all) to add on top of the default payload (e.g. "capabilities,notes").',
+    'timestamps, fields, all) to add on top of the default payload (e.g. "capabilities,notes"). ' +
+    'Use "fields" for the item\'s custom-field values (fieldValues), with any value inherited ' +
+    'from its location already resolved.',
+};
+
+/** The `include` schema for the location list tool, whose only extended field is `fieldValues`. */
+const LOCATION_INCLUDE_SCHEMA: JsonSchema = {
+  type: 'string',
+  description:
+    'Comma-separated extended fields (or the groups "fields" / "all") to add on top of the ' +
+    'default payload. Use "fields" for the location\'s custom-field values (fieldValues) — ' +
+    'user-recorded metadata such as a mapped device entity id or a label reference.',
 };
 
 // --- the tools --------------------------------------------------------------------
@@ -108,7 +125,7 @@ const searchTool: McpTool = {
   async run(driver, args) {
     const q = requireString(args, 'q');
     const limit = optionalInteger(args, 'limit');
-    const selection = selectionFromArgs(args, SEARCH_DEFAULT_FIELDS);
+    const selection = selectionFromArgs(args, (raw) => parseItemSelection(SEARCH_DEFAULT_FIELDS, raw));
     if (selection === undefined) {
       return { query: q.trim(), matches: await searchItems(driver, q, { limit }) };
     }
@@ -151,7 +168,8 @@ const getItemTool: McpTool = {
   description:
     'Fetch one inventory item by its stable id, with full detail: per-location placements ' +
     'and parametric capabilities. Returns { found: false } when no item has that id. Use ' +
-    '"fields" to project only specific fields, or "include" to add extended fields (e.g. notes).',
+    '"fields" to project only specific fields, or "include" to add extended fields (e.g. notes, ' +
+    'or "fields" for the item\'s custom-field values).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -164,7 +182,7 @@ const getItemTool: McpTool = {
   },
   async run(driver, args) {
     const id = requireString(args, 'id');
-    const selection = selectionFromArgs(args, ITEM_DETAIL_DEFAULT_FIELDS);
+    const selection = selectionFromArgs(args, (raw) => parseItemSelection(ITEM_DETAIL_DEFAULT_FIELDS, raw));
     if (selection === undefined) {
       const item = await loadItemDetail(driver, id);
       return item === null ? { found: false, id } : { found: true, item };
@@ -180,12 +198,25 @@ const listLocationsTool: McpTool = {
   name: 'gubbins_list_locations',
   description:
     'List storage locations (paginated), each with its live item count. Use the ids/names ' +
-    'here to interpret search results or to filter further.',
-  inputSchema: pageSchema('locations'),
+    'here to interpret search results or to filter further. Pass include="fields" to also get ' +
+    "each location's custom-field values (user-recorded metadata).",
+  inputSchema: {
+    ...pageSchema('locations'),
+    properties: {
+      ...pageSchema('locations').properties,
+      fields: FIELDS_SCHEMA,
+      include: LOCATION_INCLUDE_SCHEMA,
+    },
+  },
   async run(driver, args) {
     const page = clampPage(args);
     const result = await new LocationRepository(driver).list({ limit: page.limit, offset: page.offset });
-    return envelope(result.rows.map(toLocation), page, result.hasMore);
+    const selection = selectionFromArgs(args, (raw) => parseLocationSelection(raw));
+    if (selection === undefined) return envelope(result.rows.map(toLocation), page, result.hasMore);
+    const rows = await Promise.all(
+      result.rows.map((location) => projectLocation(createLocationViewContext(driver, location), selection)),
+    );
+    return envelope(rows, page, result.hasMore);
   },
 };
 
@@ -258,7 +289,7 @@ function optionalInteger(args: Readonly<Record<string, unknown>>, key: string): 
  */
 function selectionFromArgs(
   args: Readonly<Record<string, unknown>>,
-  defaults: readonly string[],
+  parse: (raw: RawSelection) => readonly SelectedField[],
 ): readonly SelectedField[] | undefined {
   const raw = {
     ...(args.fields != null ? { fields: optionalStringList(args, 'fields') } : {}),
@@ -266,7 +297,7 @@ function selectionFromArgs(
   };
   if (!hasSelection(raw)) return undefined;
   try {
-    return parseItemSelection(defaults, raw);
+    return parse(raw);
   } catch (err) {
     if (err instanceof FieldSelectionError) throw new ToolInputError(err.message);
     throw err;

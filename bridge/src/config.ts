@@ -26,6 +26,12 @@
  *                                  defaults to {@link DEFAULT_MAX_PUSH_BYTES} (64 MiB).
  *   GUBBINS_BRIDGE_EVENTS         (optional) — enable the read-only SSE event stream at
  *                                  GET /api/v1/events. Off by default; implied by _WEBHOOKS.
+ *   GUBBINS_BRIDGE_LOOKUP_EVENTS  (optional) — also emit the READ-triggered `lookup.resolved`
+ *                                  event when a "where is X?" lookup resolves. Off by default and
+ *                                  deliberately NOT implied by _EVENTS: it publishes what someone
+ *                                  searched for, so it is its own explicit choice.
+ *   GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS (optional) — window (ms) in which repeated equivalent
+ *                                  lookups emit once; defaults to 3000, clamped to [0, 600000].
  *   GUBBINS_BRIDGE_WEBHOOKS       (optional) — enable opt-in signed outbound webhooks. Off by
  *                                  default; also lights up the event stream (shared pipeline).
  *   GUBBINS_BRIDGE_WEBHOOKS_FILE  (optional) — path to the git-ignored JSON webhook-target list
@@ -52,6 +58,7 @@
  *                                 _HA_URL always wins. Supplies an address only — never a token.
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
+import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 
 /** Default bind address: loopback only, so the bridge is **not** LAN-reachable unless
  * the operator deliberately opts in via {@link LAN_HOST}. */
@@ -117,6 +124,25 @@ export interface BridgeConfig {
    * too). When neither is on, `GET /api/v1/events` is a `404`. Read-only; carries no secret.
    */
   readonly events: boolean;
+  /**
+   * Whether the operator opted into the **read-triggered lookup event**
+   * (`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`) — one `lookup.resolved` event each time a "where is X?"
+   * lookup resolves, carrying the query and the matched item/location ids.
+   *
+   * **Off by default, and deliberately NOT implied by {@link events}** (unlike the way webhooks
+   * imply the stream). Every other event describes an inventory *change* the operator already
+   * chose to publish; this one publishes *what somebody searched for*, which is a privacy step
+   * beyond publishing state — so it is an explicit, separate opt-in rather than something that
+   * arrives as a side effect of turning the event stream on. It needs a sink to reach (the SSE
+   * stream, webhooks or MQTT); with none configured it is inert.
+   */
+  readonly lookupEvents: boolean;
+  /**
+   * Debounce window in milliseconds for {@link lookupEvents}: repeated *equivalent* lookups (the
+   * same normalised query resolving to the same items in the same locations) inside the window
+   * emit once. Defaults to 3000 and is clamped to `[0, 600000]`; `0` disables debouncing.
+   */
+  readonly lookupEventsDebounceMs: number;
   /**
    * Whether the operator opted into **outbound webhooks** (`GUBBINS_BRIDGE_WEBHOOKS=on`).
    * **Off by default.** When on, each event is POSTed (HMAC-signed) to every configured target;
@@ -216,6 +242,20 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const webhooks = parseBool(env.GUBBINS_BRIDGE_WEBHOOKS, false, 'GUBBINS_BRIDGE_WEBHOOKS');
   // The event stream is on when explicitly enabled OR implied by webhooks (they share the pipeline).
   const events = parseBool(env.GUBBINS_BRIDGE_EVENTS, false, 'GUBBINS_BRIDGE_EVENTS') || webhooks;
+  // Deliberately NOT `|| events`: a lookup event reveals what someone searched for, so enabling the
+  // event stream must never turn it on as a side effect. It is its own explicit choice.
+  const lookupEvents = parseBool(env.GUBBINS_BRIDGE_LOOKUP_EVENTS, false, 'GUBBINS_BRIDGE_LOOKUP_EVENTS');
+  const lookupEventsDebounceMs = Math.min(
+    MAX_LOOKUP_DEBOUNCE_MS,
+    Math.floor(
+      parsePositive(
+        env.GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS,
+        DEFAULT_LOOKUP_DEBOUNCE_MS,
+        'GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS',
+        { allowZero: true },
+      ),
+    ),
+  );
   const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
   const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
 
@@ -281,6 +321,8 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     allowPush,
     maxPushBytes,
     events,
+    lookupEvents,
+    lookupEventsDebounceMs,
     webhooks,
     webhooksFile,
     webhooksInline,

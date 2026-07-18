@@ -17,8 +17,8 @@ const STATE: InventoryState = {
   lowStockItems: 2,
   outOfStockItems: 1,
   locations: [
-    { id: 'loc-store', name: 'Store Room', itemCount: 2 },
-    { id: 'loc-bench', name: 'Workbench', itemCount: 1 },
+    { id: 'loc-store', name: 'Store Room', itemCount: 2, fieldValues: [] },
+    { id: 'loc-bench', name: 'Workbench', itemCount: 1, fieldValues: [] },
   ],
   generatedAt: '2025-06-27T07:33:20.000Z',
 };
@@ -67,6 +67,13 @@ describe('buildDiscoveryConfigs', () => {
     expect(sensor.name).toBe('Location Store Room');
     expect(sensor.state_topic).toBe('gubbins/location/loc-store/state');
     expect(sensor.value_template).toBe('{{ value_json.itemCount }}');
+  });
+
+  it('surfaces the location custom fields as attributes off the same state topic', () => {
+    const sensor = byTopic(configs, 'homeassistant/sensor/gubbins/location_loc-store/config');
+    // Attributes ride the state topic, so a changed field VALUE needs no new discovery config.
+    expect(sensor.json_attributes_topic).toBe('gubbins/location/loc-store/state');
+    expect(sensor.json_attributes_template).toBe('{{ value_json.attributes | tojson }}');
   });
 
   it('shares one HA device across every entity', () => {

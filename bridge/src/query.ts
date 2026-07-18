@@ -34,6 +34,13 @@ export interface ItemMatch {
   readonly name: string;
   /** On-hand grand total across every location (the §4 per-location ledger sum). */
   readonly quantity: number;
+  /**
+   * The item's primary/home location id, or null if it has none. Carried alongside the name for
+   * the same reason placements carry one: a name is what a person hears, an id is what a consumer
+   * can act on. Null exactly when {@link locationName} is — i.e. the item's location could not be
+   * resolved — so the two are always consistent.
+   */
+  readonly locationId: string | null;
   /** The item's primary/home location name, or null if it has none. */
   readonly locationName: string | null;
   readonly mpn: string | null;
@@ -42,6 +49,13 @@ export interface ItemMatch {
 
 /** One location's share of an item's stock, for the "where is X?" breakdown. */
 export interface LocationBreakdown {
+  /**
+   * The location's stable id. Carried alongside the name because a *name* is for a human to hear
+   * and an *id* is what a consumer can act on — an automation lighting the right shelf, or a
+   * follow-up REST call — and matching a name back to a location is guesswork once two locations
+   * share one. `listStock` already returns it; this DTO simply stopped dropping it.
+   */
+  readonly locationId: string;
   readonly locationName: string;
   readonly quantity: number;
 }
@@ -65,6 +79,26 @@ export interface SearchOptions {
 }
 
 /**
+ * The observer {@link whereIs} notifies once a lookup has resolved — the seam behind the opt-in
+ * `lookup.resolved` event (`GUBBINS_BRIDGE_LOOKUP_EVENTS`).
+ *
+ * Declared here **structurally** and injected per call, deliberately: this module is the
+ * transport-agnostic, side-effect-free query core, and importing the event pipeline into it would
+ * couple every read to I/O and make it un-unit-testable. The composition root
+ * (`serve.ts` → `server.ts`) supplies the real implementation; with nothing injected, `whereIs`
+ * behaves exactly as it always has and emits nothing.
+ */
+export interface LookupObserver {
+  /** Called once per resolved lookup. Must not throw, and must return promptly. */
+  onLookupResolved(result: WhereIsResult): void;
+}
+
+export interface WhereIsOptions extends SearchOptions {
+  /** Optional resolved-lookup observer. Absent (the default) means nothing is emitted. */
+  readonly observer?: LookupObserver;
+}
+
+/**
  * Search the inventory for `q` and return up to {@link DEFAULT_RESULT_LIMIT} compact
  * matches. The query is parsed by the app's hybrid grammar (so `cap:voltage>3.3`,
  * `qty>10`, boolean groups… all work); only when that genuinely can't parse do we fall
@@ -78,14 +112,20 @@ export async function searchItems(
   const rows = await searchItemRows(driver, q, options);
   const locations = new LocationRepository(driver);
   return Promise.all(
-    rows.map(async (row) => ({
-      id: row.id,
-      name: row.name,
-      quantity: row.quantity,
-      locationName: (await locations.getById(row.locationId))?.name ?? null,
-      mpn: row.mpn,
-      manufacturer: row.manufacturer,
-    })),
+    rows.map(async (row) => {
+      // One read, both fields: resolving the location once keeps the id and the name from ever
+      // disagreeing about whether the item has a home location.
+      const location = await locations.getById(row.locationId);
+      return {
+        id: row.id,
+        name: row.name,
+        quantity: row.quantity,
+        locationId: location?.id ?? null,
+        locationName: location?.name ?? null,
+        mpn: row.mpn,
+        manufacturer: row.manufacturer,
+      };
+    }),
   );
 }
 
@@ -117,7 +157,7 @@ export async function searchItemRows(
 export async function whereIs(
   driver: IDatabaseDriver,
   q: string,
-  options: SearchOptions = {},
+  options: WhereIsOptions = {},
 ): Promise<WhereIsResult> {
   const matches = await searchItems(driver, q, options);
   const items = new ItemRepository(driver);
@@ -127,12 +167,31 @@ export async function whereIs(
       const placements = await items.listStock(match.id);
       return {
         ...match,
-        placements: placements.map((p) => ({ locationName: p.locationName, quantity: p.quantity })),
+        placements: placements.map((p) => ({
+          locationId: p.locationId,
+          locationName: p.locationName,
+          quantity: p.quantity,
+        })),
       };
     }),
   );
 
-  return { query: q.trim(), matches: enriched, spoken: speakWhereIs(q.trim(), enriched) };
+  const result: WhereIsResult = {
+    query: q.trim(),
+    matches: enriched,
+    spoken: speakWhereIs(q.trim(), enriched),
+  };
+  // Notify the (optional) observer *after* the answer is fully built, and never let it affect the
+  // answer: a caller asking "where is X?" must get the same result whether or not anything is
+  // listening, so a throwing observer is swallowed here rather than failing the read.
+  if (options.observer) {
+    try {
+      options.observer.onLookupResolved(result);
+    } catch {
+      // The observer owns its own error reporting; the query core stays silent and side-effect-free.
+    }
+  }
+  return result;
 }
 
 /**

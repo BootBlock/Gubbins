@@ -30,6 +30,8 @@ import { discoverHomeAssistant } from './mdns/discover.ts';
 import { resolveHaDiscoveryPlan } from './mdns/discovery.ts';
 import { createHaClient, HaError, type HaClient } from './homeassistant/client.ts';
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
+import { createLookupObserver } from './events/lookup.ts';
+import type { LookupObserver } from './query.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
@@ -65,6 +67,27 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   const mqtt = mqttEndpoint ? createMqttPublisherFromConfig(config, mqttEndpoint) : undefined;
   if (mqtt) sinks.push(mqtt);
   const pipeline = config.events || config.mqtt ? createEventPipeline({ sinks }) : undefined;
+  // A2: the READ-triggered `lookup.resolved` event. Its own opt-in, never implied by
+  // `GUBBINS_BRIDGE_EVENTS` — it publishes what someone searched for, not an inventory change.
+  // It rides the same sinks, so a lookup reaches SSE / webhooks / MQTT exactly like any other
+  // event; with no sink configured there is nowhere to publish, so it stays off.
+  const lookup: LookupObserver | undefined =
+    config.lookupEvents && sinks.length > 0
+      ? createLookupObserver({
+          deliver: (event) => {
+            for (const sink of sinks) {
+              try {
+                sink.deliver([event]);
+              } catch (err) {
+                console.error(
+                  `Lookup event delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+            }
+          },
+          debounceMs: config.lookupEventsDebounceMs,
+        })
+      : undefined;
 
   const watcher = createSnapshotWatcher({
     snapshotPath: config.snapshotPath,
@@ -130,6 +153,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     // Present only when events are enabled → `GET /api/v1/events` streams; otherwise a 404.
     events: sseHub,
     scale,
+    lookup,
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -179,6 +203,23 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         (webhookTargets.length === 0
           ? ' No targets configured — set GUBBINS_BRIDGE_WEBHOOKS_FILE or _TARGETS (nothing will be sent).'
           : ''),
+    );
+  }
+  if (config.lookupEvents && lookup) {
+    console.warn(
+      'Lookup events ENABLED (GUBBINS_BRIDGE_LOOKUP_EVENTS=on): each resolved "where is X?" lookup ' +
+        `publishes a read-triggered lookup.resolved event (including the search text) to your ` +
+        `configured sinks, debounced to one per ${config.lookupEventsDebounceMs}ms.`,
+    );
+  } else if (config.lookupEvents) {
+    console.warn(
+      'Lookup events are on but there is no sink to publish them to — enable the SSE stream, ' +
+        'webhooks or MQTT, or nothing will be sent.',
+    );
+  } else {
+    console.log(
+      'Lookup events: disabled. Set GUBBINS_BRIDGE_LOOKUP_EVENTS=on to publish a lookup.resolved ' +
+        'event when a "where is X?" lookup resolves.',
     );
   }
   if (config.events) {

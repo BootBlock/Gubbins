@@ -19,10 +19,34 @@ due. Two ways to consume them:
 
 Both are **off until you enable them**.
 
+### Lookup events
+
+The bridge can also announce when a *"where is…"* question **resolves** — the question asked, what
+matched, and which locations it's in. That's what lets an automation light up the right bin as the
+answer is read back.
+
+This one is different from every other event: the rest report something that **changed** in your
+inventory, whereas this reports something that was merely **looked up**. Because it publishes what
+someone searched for, it has its own separate switch and stays off even if you've enabled events
+generally — turning on change events never turns this on for you.
+
+> **💡 Tip**
+> Repeated or rephrased questions are grouped together for a few seconds, so asking twice won't
+> set the same automation off twice.
+
 ## MQTT publishing & Home Assistant discovery
 
 The bridge can **publish** to an MQTT broker — including summary topics like stock counts — and
 announce them via **Home Assistant MQTT discovery**, so they show up as entities automatically.
+Each location is published with its item count and its own
+[[custom fields|Custom-Fields-and-Capabilities]] alongside, so an automation can read something
+like "which light is above this shelf" straight off the location.
+
+If you've turned on lookup events, a resolved *"where is…"* question is also published to its own
+topic, so a Node-RED flow or an MQTT trigger can act on the answer without the Home Assistant
+custom integration. That one is sent **live only** — it is never replayed to something that
+connects later, so an old question can't set an automation off.
+
 See [[Home Assistant integration|Home-Assistant-Integration]].
 
 ## Calendar feed (iCal)

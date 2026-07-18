@@ -9,9 +9,10 @@
  *   - **default** — the fields already in each endpoint's baseline payload (search / list /
  *     detail). Naming these keeps today's shapes byte-identical.
  *   - **extended** — everything else the app already stores (owner's notes, pricing, lifecycle,
- *     reorder policy, operational metadata, the gauge, timestamps, and the relational
- *     `placements`/`capabilities`/`categoryName`). These are the "more information, if
- *     available" a caller opts into with `include` (or by naming in `fields`).
+ *     reorder policy, operational metadata, the gauge, timestamps, the relational
+ *     `placements`/`capabilities`/`categoryName`, and the custom-field `fieldValues`). These
+ *     are the "more information, if available" a caller opts into with `include` (or by
+ *     naming in `fields`).
  *
  * Relational fields (`locationName`, `categoryName`, `placements`, `capabilities`) are resolved
  * **lazily and once** through the context, so a projection that doesn't select them never
@@ -22,7 +23,13 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { Item } from '@/db/repositories/types';
-import { toCapability, type CapabilityDto, type PlacementDto } from './dto.ts';
+import {
+  toCapability,
+  toItemFieldValues,
+  type CapabilityDto,
+  type ItemFieldValueDto,
+  type PlacementDto,
+} from './dto.ts';
 import {
   parseSelection,
   projectThrough,
@@ -43,6 +50,7 @@ export interface ItemViewContext {
   categoryName(): Promise<string | null>;
   placements(): Promise<readonly PlacementDto[]>;
   capabilities(): Promise<readonly CapabilityDto[]>;
+  fieldValues(): Promise<readonly ItemFieldValueDto[]>;
 }
 
 /**
@@ -62,6 +70,7 @@ export function createItemViewContext(
   let categoryNameP: Promise<string | null> | undefined;
   let placementsP: Promise<readonly PlacementDto[]> | undefined;
   let capabilitiesP: Promise<readonly CapabilityDto[]> | undefined;
+  let fieldValuesP: Promise<readonly ItemFieldValueDto[]> | undefined;
 
   return {
     item,
@@ -86,12 +95,19 @@ export function createItemViewContext(
     capabilities() {
       return (capabilitiesP ??= (async () => (await items.listCapabilities(item.id)).map(toCapability))());
     },
+    // Custom-field values go through the app's own resolver, so location inheritance and
+    // lenient defaulting land exactly as they do in the app — never a second implementation.
+    fieldValues() {
+      return (fieldValuesP ??= (async () =>
+        toItemFieldValues(await new CategoryRepository(driver).resolveItemFields(item.id)))());
+    },
   };
 }
 
 /** Element sub-keys for the two nested (array-of-object) fields — kept in sync with the DTOs. */
 const PLACEMENT_KEYS = ['locationId', 'locationName', 'quantity'] as const;
 const CAPABILITY_KEYS = ['key', 'valueNum', 'valueText', 'weight'] as const;
+const ITEM_FIELD_VALUE_KEYS = ['name', 'fieldType', 'value', 'source', 'inheritedFrom'] as const;
 
 /**
  * The complete item field registry, in the order fields appear in a projected response. Every
@@ -152,6 +168,9 @@ const ITEM_FIELDS: readonly (readonly [string, FieldNode<ItemViewContext>])[] = 
   // Relations (nested, array-of-object).
   ['placements', { resolve: (c) => c.placements(), elementKeys: PLACEMENT_KEYS }],
   ['capabilities', { resolve: (c) => c.capabilities(), elementKeys: CAPABILITY_KEYS }],
+  // The item's custom-field values (the field dictionary), location inheritance resolved.
+  // Extended-only: an integration opts in with `include=fields`.
+  ['fieldValues', { resolve: (c) => c.fieldValues(), elementKeys: ITEM_FIELD_VALUE_KEYS }],
 ];
 
 /** The item field registry as a lookup map (iteration order preserved from {@link ITEM_FIELDS}). */
@@ -208,6 +227,9 @@ export const ITEM_DETAIL_DEFAULT_FIELDS: readonly string[] = [
  */
 export const ITEM_INCLUDE_ALIASES: Readonly<Record<string, readonly string[]>> = {
   relations: ['placements', 'capabilities', 'categoryName'],
+  // `include=fields` reads naturally for the custom-field values and is the name the
+  // location endpoints use for the same thing, so both resources say it the same way.
+  fields: ['fieldValues'],
   pricing: ['unitCost', 'purchasePrice'],
   lifecycle: ['acquiredAt', 'warrantyExpiresAt', 'purchasePrice', 'depreciationMonths'],
   reorder: ['reorderPoint', 'reorderGaugePercent', 'reorderQty'],

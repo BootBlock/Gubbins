@@ -18,7 +18,9 @@ import type {
   CategoryField,
   CategoryWithFieldCount,
   Item,
+  LocationFieldValue,
   LocationWithCount,
+  ResolvedItemField,
 } from '@/db/repositories/types';
 
 /** Offset/limit pagination metadata accompanying every list response. */
@@ -75,6 +77,51 @@ export interface CapabilityDto {
   readonly weight: number;
 }
 
+/**
+ * The half of a custom-field value that is the same whichever record holds it: the
+ * dictionary definition's name and type, plus the effective value.
+ *
+ * Custom fields are the app's **field dictionary** — user-defined metadata (a supplier
+ * reference, a datasheet URL, the entity id of the lamp above a shelf) recorded against an
+ * item or a location. They are keyed by *name*, globally, so the same "Datasheet" field
+ * means the same thing everywhere; the value is always the app's stored text.
+ */
+export interface FieldValueDto {
+  /** The field's name in the dictionary, e.g. `Datasheet`. Unique app-wide (case-insensitive). */
+  readonly name: string;
+  /** The definition's declared type (`TEXT`, `NUMBER`, `SELECT`, …). */
+  readonly fieldType: CategoryField['fieldType'];
+  /** The effective value as the app stores it — always text, never coerced. */
+  readonly value: string;
+}
+
+/** The location an inherited item field value came from. */
+export interface FieldInheritedFromDto {
+  readonly locationId: string;
+  readonly locationName: string;
+}
+
+/**
+ * One resolved custom-field value of an **item**, with location inheritance already applied
+ * exactly as the app applies it. `source` tells an inherited value apart from a directly-set
+ * one, and `inheritedFrom` names the ancestor location that supplied it.
+ */
+export interface ItemFieldValueDto extends FieldValueDto {
+  /** Where the value came from: set on the item, inherited from a location, or the field default. */
+  readonly source: ResolvedItemField['source'];
+  /** The ancestor location that supplied the value when `source` is `inherited`; null otherwise. */
+  readonly inheritedFrom: FieldInheritedFromDto | null;
+}
+
+/**
+ * One custom-field value held by a **location**. `isInheritable` is the location's opt-in
+ * choice to offer this value to the items stored beneath it; a non-inheritable value is the
+ * location's own metadata.
+ */
+export interface LocationFieldValueDto extends FieldValueDto {
+  readonly isInheritable: boolean;
+}
+
 /** One location's share of an item's stock, for the placement breakdown. */
 export interface PlacementDto {
   readonly locationId: string;
@@ -101,6 +148,11 @@ export interface ItemDetailDto extends ItemSummaryDto {
   readonly placements: readonly PlacementDto[];
   /** The item's parametric capabilities, ordered by key. */
   readonly capabilities: readonly CapabilityDto[];
+  /**
+   * The item's resolved custom-field values — **present only when the caller asks for them**
+   * (`include=fields`), so the default payload stays exactly as it was.
+   */
+  readonly fieldValues?: readonly ItemFieldValueDto[];
 }
 
 /** A location with its live (active) item count. */
@@ -112,6 +164,11 @@ export interface LocationDto {
   readonly description: string | null;
   readonly color: string | null;
   readonly itemCount: number;
+  /**
+   * The custom-field values this location holds — **present only when the caller asks for
+   * them** (`include=fields`), so the default payload stays exactly as it was.
+   */
+  readonly fieldValues?: readonly LocationFieldValueDto[];
 }
 
 /** A custom-field definition belonging to a category. */
@@ -177,6 +234,49 @@ export function toCapability(capability: Capability): CapabilityDto {
     valueText: capability.valueText,
     weight: capability.weight,
   };
+}
+
+/**
+ * Project an item's resolved custom fields into the public DTO.
+ *
+ * Fields with **no effective value** are dropped: a category field an item has never filled
+ * in resolves to `null`, and emitting it would pad every payload with empty entries that say
+ * nothing. What remains is exactly the metadata the item actually carries.
+ */
+export function toItemFieldValues(fields: readonly ResolvedItemField[]): ItemFieldValueDto[] {
+  const out: ItemFieldValueDto[] = [];
+  for (const field of fields) {
+    if (field.value === null) continue;
+    out.push({
+      name: field.name,
+      fieldType: field.fieldType,
+      value: field.value,
+      source: field.source,
+      // Only report the origin location for a value that was actually inherited — the
+      // repository also reports an *available* offer for a field resolved some other way,
+      // and naming it there would imply the value came from it.
+      inheritedFrom:
+        field.source === 'inherited' && field.inheritable !== null
+          ? { locationId: field.inheritable.locationId, locationName: field.inheritable.locationName }
+          : null,
+    });
+  }
+  return out;
+}
+
+/** Project a location's held custom-field values into the public DTO (empty values dropped). */
+export function toLocationFieldValues(values: readonly LocationFieldValue[]): LocationFieldValueDto[] {
+  const out: LocationFieldValueDto[] = [];
+  for (const value of values) {
+    if (value.value === null) continue;
+    out.push({
+      name: value.name,
+      fieldType: value.fieldType,
+      value: value.value,
+      isInheritable: value.isInheritable,
+    });
+  }
+  return out;
 }
 
 export function toLocation(location: LocationWithCount): LocationDto {

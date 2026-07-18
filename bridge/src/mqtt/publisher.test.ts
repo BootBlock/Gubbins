@@ -10,6 +10,8 @@ import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { createMqttPublisher, type MqttPublisherOptions } from './publisher.ts';
 import type { MqttClient, MqttClientOptions } from './client.ts';
 import type { BridgeEvent } from '../events/model.ts';
+import { createLookupObserver, LOOKUP_RESOLVED_TYPE, type LookupObserver } from '../events/lookup.ts';
+import type { WhereIsResult } from '../query.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-mqtt-snapshot.json', import.meta.url);
 const GENERATED_AT = '2025-06-27T07:33:20.000Z';
@@ -90,7 +92,12 @@ describe('publishState', () => {
 
     const store = byTopic(fake.published, 'gubbins/location/loc-store/state')!;
     expect(store.retain).toBe(true);
-    expect(JSON.parse(store.payload)).toEqual({ id: 'loc-store', name: 'Store Room', itemCount: 2 });
+    expect(JSON.parse(store.payload)).toEqual({
+      id: 'loc-store',
+      name: 'Store Room',
+      itemCount: 2,
+      attributes: {},
+    });
     expect(byTopic(fake.published, 'gubbins/location/loc-bench/state')).toBeDefined();
   });
 
@@ -140,6 +147,18 @@ describe('publishState', () => {
     expect(benchConfig.retain).toBe(true);
     // The surviving location is still published normally.
     expect(byTopic(fake.published, 'gubbins/location/loc-store/state')!.payload).not.toBe('');
+
+    // The discovery config is retracted BEFORE the state topic is blanked: the sensor reads its
+    // attributes from that state topic, so the other order hands HA an empty payload to run
+    // `json_attributes_template` over for an entity that is about to vanish.
+    const configAt = fake.published.findIndex(
+      (p) => p.topic === 'homeassistant/sensor/gubbins/location_loc-bench/config',
+    );
+    const stateAt = fake.published.findIndex(
+      (p) => p.topic === 'gubbins/location/loc-bench/state' && p.payload === '',
+    );
+    expect(configAt).toBeGreaterThanOrEqual(0);
+    expect(configAt).toBeLessThan(stateAt);
   });
 });
 
@@ -172,7 +191,93 @@ describe('event delivery (EventSink)', () => {
     expect(published.retain).toBe(false);
     expect(JSON.parse(published.payload)).toMatchObject({ id: 'e1', type: 'item.low_stock' });
   });
+
+  it('does NOT publish the locate topic for an ordinary change event', () => {
+    const { publisher, fake } = makePublisher();
+    publisher.deliver([
+      { id: 'e1', type: 'item.low_stock', occurredAt: GENERATED_AT, data: {} } as unknown as BridgeEvent,
+    ]);
+    expect(byTopic(fake.published, 'gubbins/locate')).toBeUndefined();
+  });
+
+  it('also publishes a resolved lookup to the dedicated locate topic, NOT retained', () => {
+    const { publisher, fake } = makePublisher();
+    publisher.deliver([lookupEvent()]);
+
+    // Still on the generic event topic…
+    expect(byTopic(fake.published, 'gubbins/event/lookup.resolved')).toBeDefined();
+
+    // …and on the dedicated one, flattened and — the whole point — transient, so a late
+    // subscriber can never re-light a bin over yesterday's lookup.
+    const locate = byTopic(fake.published, 'gubbins/locate')!;
+    expect(locate.retain).toBe(false);
+    expect(JSON.parse(locate.payload)).toEqual({
+      id: 'lookup:abc0123456789def:1751000000000',
+      occurredAt: GENERATED_AT,
+      query: 'solder',
+      itemIds: ['item-solder'],
+      locationIds: ['loc-store'],
+      matches: [
+        {
+          itemId: 'item-solder',
+          itemName: 'Solder 0.7mm',
+          placements: [{ locationId: 'loc-store', locationName: 'Store Room', quantity: 3 }],
+        },
+      ],
+    });
+  });
+
+  it('stays silent on the locate topic while lookup events are disabled', () => {
+    // The locate topic inherits A2's flag rather than adding one of its own: with
+    // `GUBBINS_BRIDGE_LOOKUP_EVENTS` unset, `serve.ts` wires **no observer at all**, so a resolved
+    // lookup never reaches a sink — and nothing can be published. Both postures are modelled here
+    // exactly as `serve.ts` builds them, so the flag is the only difference between them.
+    const answer = {
+      query: 'solder',
+      matches: [
+        {
+          id: 'item-solder',
+          name: 'Solder 0.7mm',
+          placements: [{ locationId: 'loc-store', locationName: 'Store Room', quantity: 3 }],
+        },
+      ],
+    } as unknown as WhereIsResult;
+
+    /** Exactly `serve.ts`'s wiring: the observer exists only when the flag is on. */
+    const wire = (lookupEventsEnabled: boolean) => {
+      const { publisher, fake } = makePublisher();
+      const observer: LookupObserver | undefined = lookupEventsEnabled
+        ? createLookupObserver({ deliver: (event) => publisher.deliver([event]) })
+        : undefined;
+      observer?.onLookupResolved(answer);
+      return fake.published;
+    };
+
+    expect(byTopic(wire(false), 'gubbins/locate')).toBeUndefined();
+    expect(byTopic(wire(true), 'gubbins/locate')).toBeDefined();
+  });
 });
+
+/** A synthetic `lookup.resolved` event with a fixed id, so the payload assertion is exact. */
+function lookupEvent(): BridgeEvent {
+  return {
+    id: 'lookup:abc0123456789def:1751000000000',
+    type: LOOKUP_RESOLVED_TYPE,
+    occurredAt: GENERATED_AT,
+    data: {
+      query: 'solder',
+      itemIds: ['item-solder'],
+      locationIds: ['loc-store'],
+      matches: [
+        {
+          itemId: 'item-solder',
+          itemName: 'Solder 0.7mm',
+          placements: [{ locationId: 'loc-store', locationName: 'Store Room', quantity: 3 }],
+        },
+      ],
+    },
+  };
+}
 
 describe('availability lifecycle', () => {
   it('announces online + re-publishes last state on (re)connect', async () => {
