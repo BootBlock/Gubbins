@@ -59,7 +59,9 @@ think they're separate jobs.
 
 ### App & this device
 
-These are local settings rather than inventory data, and none of them touch your records:
+These are local settings rather than inventory data, and none of them touch your records. Each one
+takes effect straight away — the setting returns to its default as soon as you confirm, with no
+need to reload:
 
 - **App preferences** — theme, units, scanner settings and so on, back to defaults.
 - **Dashboard layout** — your customised [[widget layout|Dashboard-and-Widgets]].
@@ -67,8 +69,7 @@ These are local settings rather than inventory data, and none of them touch your
 - **Dismissed alerts** — so any still-relevant [[alerts|Alerts]] reappear, including reminders
   you've already been notified about.
 - **Enabled features** — which optional features are switched on for this device, back to the
-  start, so the [[first-run feature chooser|Modular-UI]] runs again next time the app starts. No
-  data is deleted.
+  start: the [[first-run feature chooser|Modular-UI]] appears again. No data is deleted.
 - **Cloud sign-in** — signs you out of [[cloud sync|Cloud-Sync]] and discards the stored cloud
   access token. No data is deleted.
 - **Sync links & pending deletions** — clears the links between this device and the cloud, along

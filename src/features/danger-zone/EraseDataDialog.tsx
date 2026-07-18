@@ -54,6 +54,8 @@ import {
   type EraseSection,
   type EraseTargetId,
 } from '@/features/danger-zone';
+// Not part of the pure engine barrel: this one reaches into the live Zustand stores.
+import { resetLocalStores } from '@/features/danger-zone/local-store-resets';
 
 /** The synthetic tab id for the factory-reset panel (not an `EraseSection`). */
 const EVERYTHING_TAB = 'everything';
@@ -196,6 +198,10 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
     setErasing(true);
     try {
       const summary = await eraseTargets(effectiveSelected, { tombstone }, ports);
+      // Removing a key doesn't tell the running store its state is gone: without this the erase
+      // wouldn't show until the next app start, and the store's next write would put the whole
+      // erased blob back (issue #381).
+      resetLocalStores(summary.erased.flatMap((id) => eraseTargetById(id)?.localKeys ?? []));
       await queryClient.invalidateQueries();
       void useStorageStore.getState().refresh();
       setSelected(new Set());
