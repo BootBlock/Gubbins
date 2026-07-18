@@ -40,6 +40,8 @@ import {
   type WebhookSecrets,
 } from './events/webhook-targets.ts';
 import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './events/webhook-log.ts';
+import { createWebhookTestFirer } from './events/webhook-test.ts';
+import type { WebhookTestCapability } from './server.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
 import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
@@ -94,6 +96,20 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
       }),
     );
   }
+  // "Send test event" (`W7`, §5.5). It gets its own short-lived deliverer per fire rather than
+  // borrowing the pipeline's: the shared one fans an event out to *every* matching subscription,
+  // and a test must reach exactly the one the user asked about. Everything that decides an outcome
+  // — the matcher, the template engine, the SSRF guard, the delivery log — is the real thing.
+  const webhookTest: WebhookTestCapability | undefined =
+    config.webhooks && webhookDeliveryLog !== undefined
+      ? {
+          secrets: webhookConfig.secrets,
+          deliver: createWebhookTestFirer({
+            deliveryLog: webhookDeliveryLog,
+            ssrfPolicy: { allowPrivate: config.webhooksAllowPrivate },
+          }),
+        }
+      : undefined;
   // EI-5 outbound MQTT (opt-in). The publisher is another event sink (events → `…/event/<type>`)
   // AND publishes retained state per generation; enabling it turns the event pipeline on WITHOUT
   // exposing the SSE HTTP endpoint (that stays gated by `config.events`) — per-capability opt-in.
@@ -190,6 +206,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     scale,
     lookup,
     webhookDeliveries: webhookDeliveryLog,
+    webhookTest,
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -243,6 +260,11 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     console.log(
       'Webhook delivery log available at GET /api/v1/webhooks/deliveries (same bearer token). ' +
         'It lives in memory and does not survive a restart.',
+    );
+    console.log(
+      'Webhook test fire available at POST /api/v1/webhooks/test (same bearer token). It sends a ' +
+        'synthetic event to one subscription through the real matcher, filter and SSRF guard, and ' +
+        'records the result in the delivery log.',
     );
     if (config.webhooksAllowPrivate) {
       console.warn(

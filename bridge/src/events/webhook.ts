@@ -524,8 +524,12 @@ export function backoffFor(attempt: number, base: number, max: number): number {
  *
  * The dropped query string is not merely tidiness: a `GET` delivery puts the whole payload there,
  * so keeping it would copy event data into every log line.
+ *
+ * Exported so the one other place that writes a delivery-log row — the `W7` test-fire endpoint,
+ * which logs a subscription dropped for an unresolvable `secret_ref` before any delivery is
+ * attempted — redacts it by the same rule rather than a second, drifting one.
  */
-function redactUrl(url: string): string {
+export function redactUrl(url: string): string {
   try {
     const u = new URL(url);
     return `${u.origin}${u.pathname}`;

@@ -23,8 +23,13 @@ import type {
   ParsedBody,
   PushCapability,
   ScaleCapability,
+  WebhookTestCapability,
   WriteCapability,
 } from '../server.ts';
+import { WebhookRepository } from '@/db/repositories/WebhookRepository.ts';
+import { subscriptionToDeliveryTarget } from '../events/webhook-targets.ts';
+import { buildWebhookTestEvent } from '../events/webhook-test.ts';
+import { redactUrl } from '../events/webhook.ts';
 import { HaError } from '../homeassistant/client.ts';
 import {
   SUPPORTED_HA_WEIGHT_UNITS,
@@ -46,7 +51,11 @@ import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '..
 import { buildActivityFeed } from '../feeds/feed.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
-import { MAX_DELIVERY_LOG_PAGE, type WebhookDeliveryLog } from '../events/webhook-log.ts';
+import {
+  MAX_DELIVERY_LOG_PAGE,
+  type WebhookDeliveryLog,
+  type WebhookDeliveryRecord,
+} from '../events/webhook-log.ts';
 import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { odataMetadataXml } from './odata-metadata.ts';
 import { buildItemsCsv } from '@/features/export/export-data.ts';
@@ -147,6 +156,12 @@ export interface ApiV1Context {
    * and "nothing has been delivered yet" are different answers and must not look alike.
    */
   readonly webhookDeliveries?: WebhookDeliveryLog;
+  /**
+   * The opt-in webhook test-fire capability (`GUBBINS_BRIDGE_WEBHOOKS=on`), backing
+   * `POST /api/v1/webhooks/test`. Absent makes that path a `404` — the same capability-absent
+   * posture as the delivery log above.
+   */
+  readonly webhookTest?: WebhookTestCapability;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
 }
@@ -163,7 +178,14 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
     .filter((s) => s.length > 0)
     .slice(2); // drop 'api','v1'
 
-  if (ctx.method === 'POST') return void (await handleWrite(res, segments, ctx));
+  if (ctx.method === 'POST') {
+    // The webhook test-fire is a POST that writes nothing, so it is routed *before* the write
+    // router — whose first act is to 405 anything that is not an item action.
+    if (segments.length === 2 && segments[0] === 'webhooks' && segments[1] === 'test') {
+      return void (await handleWebhookTest(res, ctx));
+    }
+    return void (await handleWrite(res, segments, ctx));
+  }
 
   // Static, state-independent endpoints first.
   if (segments.length === 0) {
@@ -309,6 +331,137 @@ function handleWebhookDeliveries(
   // `latestSeq` is returned alongside the page so a poller can advance its cursor even when the
   // page is empty — otherwise a quiet minute would leave it re-requesting the same `since` forever.
   sendJson(res, 200, { deliveries, latestSeq: log.latestSeq() });
+}
+
+// --- Webhook test-fire (opt-in, off by default) -----------------------------------
+
+/**
+ * The result of a test fire. `outcome` reuses the delivery log's vocabulary plus one value the log
+ * has no need for — `unmatched`, meaning the subscription's own rules excluded the synthetic event
+ * so nothing was sent and no row was written.
+ */
+type WebhookTestOutcome = WebhookDeliveryRecord['outcome'] | 'unmatched';
+
+/** The `200` body: what happened, in the same terms the delivery log uses. */
+interface WebhookTestResult {
+  readonly outcome: WebhookTestOutcome;
+  readonly status: number | null;
+  readonly attempts: number;
+  readonly detail: string | null;
+  /** The delivery-log row's sequence number, or `null` when no row was written. */
+  readonly seq: number | null;
+}
+
+/**
+ * `POST /api/v1/webhooks/test` — fire a synthetic event at **one** app-configured subscription
+ * (webhooks plan §5.5).
+ *
+ * Everything but the event is real: the subscription is read from the hydrated snapshot and mapped
+ * through the same `subscriptionToDeliveryTarget` the delivery path uses, the real matcher decides
+ * whether it would be delivered, and the real deliverer (and therefore the real SSRF guard) issues
+ * it, writing a real delivery-log row the app's existing `deliveries` poll picks up. A shortcut
+ * around any of that would report success for a subscription that never delivers.
+ *
+ * The status codes are three genuinely different answers, and the UI says something different for
+ * each: `404` — webhooks are not enabled on this bridge at all; `422` — the subscription exists in
+ * the app but has not reached the bridge yet ("changes reach the bridge on the next sync"); `400` —
+ * the request itself was malformed.
+ *
+ * Nothing secret can reach the response: the outcome is read back from the delivery-log record,
+ * which by construction carries no secret, signature, header or query string.
+ */
+async function handleWebhookTest(res: ServerResponse, ctx: ApiV1Context): Promise<void> {
+  const capability = ctx.webhookTest;
+  if (capability === undefined) {
+    return void sendError(res, 404, 'not_found', 'Not found', { v1: true }); // feature off → invisible
+  }
+
+  if (ctx.body === undefined || ctx.body.ok === false) {
+    return void sendError(res, 400, 'bad_request', 'Request body must be a JSON object.', { v1: true });
+  }
+  const body = ctx.body.value;
+  const subscriptionId =
+    typeof body === 'object' && body !== null ? (body as Record<string, unknown>).subscriptionId : undefined;
+  if (typeof subscriptionId !== 'string' || subscriptionId.trim().length === 0) {
+    return void sendError(res, 400, 'bad_request', 'Body must include a "subscriptionId" string.', {
+      v1: true,
+    });
+  }
+
+  const state = ctx.getState();
+  if (state === null) {
+    return void sendError(res, 503, 'snapshot_unavailable', 'Snapshot not loaded yet', { v1: true });
+  }
+
+  const subscription = await new WebhookRepository(state.driver).getById(subscriptionId);
+  if (subscription === undefined) {
+    // Distinct from the 404 above: the feature *is* on, this subscription simply is not in the
+    // snapshot the bridge is serving — almost always because it has not synced across yet.
+    return void sendError(
+      res,
+      422,
+      'unprocessable',
+      'That subscription is not in the snapshot this bridge is serving. It reaches the bridge on the next sync.',
+      { v1: true },
+    );
+  }
+
+  // Built from the subscription's own types, so the event is the same one either branch reports on.
+  const event = buildWebhookTestEvent(subscription.eventTypes);
+
+  const { target, warnings } = subscriptionToDeliveryTarget(subscription, capability.secrets);
+  if (target === null) {
+    // Today this is only an unresolvable `secret_ref`, which drops the subscription rather than
+    // delivering it unsigned. That happens before the deliverer is ever reached, so the row it
+    // would have written is recorded here instead — otherwise this refusal would be the one
+    // outcome missing from the delivery log the app shows, and `seq` would be null for a delivery
+    // that was genuinely blocked rather than simply unmatched. The warning names the missing ref;
+    // never its value, and the URL is redacted by the deliverer's own rule.
+    const detail = warnings[0] ?? 'The subscription cannot be delivered as configured.';
+    const row = ctx.webhookDeliveries?.record({
+      targetId: subscription.id,
+      targetName: subscription.name,
+      source: 'database',
+      url: redactUrl(subscription.url),
+      method: subscription.method,
+      eventId: event.id,
+      eventType: event.type,
+      outcome: 'blocked',
+      attempts: 0,
+      status: null,
+      detail,
+    });
+    return void sendJson(res, 200, {
+      outcome: 'blocked',
+      status: null,
+      attempts: 0,
+      detail,
+      seq: row?.seq ?? null,
+    } satisfies WebhookTestResult);
+  }
+
+  const record = await capability.deliver(target, event, state.driver);
+  if (record === null) {
+    // The matcher refused it — the subscription is disabled, or its filter excluded an event that
+    // is about no real item. A true answer about a real rule, deliberately not forced through.
+    return void sendJson(res, 200, {
+      outcome: 'unmatched',
+      status: null,
+      attempts: 0,
+      detail:
+        'The subscription did not match the test event, so nothing was sent. A disabled ' +
+        'subscription, or a filter that narrows to an item, location or tag, will exclude it.',
+      seq: null,
+    } satisfies WebhookTestResult);
+  }
+
+  sendJson(res, 200, {
+    outcome: record.outcome,
+    status: record.status,
+    attempts: record.attempts,
+    detail: record.detail,
+    seq: record.seq,
+  } satisfies WebhookTestResult);
 }
 
 // --- Home Assistant scale reads (opt-in, off by default) --------------------------

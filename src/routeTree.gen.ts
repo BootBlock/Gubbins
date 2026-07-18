@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WebhooksRouteImport } from './routes/webhooks'
 import { Route as UpcomingRouteImport } from './routes/upcoming'
 import { Route as TagsRouteImport } from './routes/tags'
 import { Route as SyncRouteImport } from './routes/sync'
@@ -33,6 +34,11 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 
+const WebhooksRoute = WebhooksRouteImport.update({
+  id: '/webhooks',
+  path: '/webhooks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UpcomingRoute = UpcomingRouteImport.update({
   id: '/upcoming',
   path: '/upcoming',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/webhooks': typeof WebhooksRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/webhooks': typeof WebhooksRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
+  '/webhooks': typeof WebhooksRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/webhooks'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -276,6 +286,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/webhooks'
   id:
     | '__root__'
     | '/'
@@ -301,6 +312,7 @@ export interface FileRouteTypes {
     | '/sync'
     | '/tags'
     | '/upcoming'
+    | '/webhooks'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -327,10 +339,18 @@ export interface RootRouteChildren {
   SyncRoute: typeof SyncRoute
   TagsRoute: typeof TagsRoute
   UpcomingRoute: typeof UpcomingRoute
+  WebhooksRoute: typeof WebhooksRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/webhooks': {
+      id: '/webhooks'
+      path: '/webhooks'
+      fullPath: '/webhooks'
+      preLoaderRoute: typeof WebhooksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/upcoming': {
       id: '/upcoming'
       path: '/upcoming'
@@ -519,6 +539,7 @@ const rootRouteChildren: RootRouteChildren = {
   SyncRoute: SyncRoute,
   TagsRoute: TagsRoute,
   UpcomingRoute: UpcomingRoute,
+  WebhooksRoute: WebhooksRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
