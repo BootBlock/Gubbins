@@ -34,6 +34,12 @@ import { createLookupObserver } from './events/lookup.ts';
 import type { LookupObserver } from './query.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
+import {
+  loadDatabaseWebhookTargets,
+  parseWebhookSecrets,
+  type WebhookSecrets,
+} from './events/webhook-targets.ts';
+import { createWebhookDeliveryLog, type WebhookDeliveryLog } from './events/webhook-log.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
 import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
@@ -57,8 +63,37 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   const sinks: EventSink[] = [];
   const sseHub: SseHub | undefined = config.events ? createSseHub() : undefined;
   if (sseHub) sinks.push(sseHub);
-  const webhookTargets = config.webhooks ? loadWebhookTargets(config) : [];
-  if (webhookTargets.length > 0) sinks.push(createWebhookDeliverer({ targets: webhookTargets }));
+  // Webhooks (issue #87 `W5`). Targets come from two merged sources: the operator's git-ignored
+  // file/env config (EI-1, still supported) and the app's `webhooks` table, read out of the DB the
+  // bridge already hydrates — so a subscription created in the PWA becomes live on the next sync
+  // with no new config endpoint, token or auth surface. The deliverer is wired whenever webhooks
+  // are on, even with no file targets, because the DB may supply them later.
+  const webhookConfig = config.webhooks ? loadWebhookConfig(config) : { targets: [], secrets: {} };
+  const webhookDeliveryLog: WebhookDeliveryLog | undefined = config.webhooks
+    ? createWebhookDeliveryLog()
+    : undefined;
+  if (config.webhooks) {
+    // Warnings are per-subscription and re-derived every generation, so they are de-duplicated —
+    // otherwise one missing `secret_ref` would print on every hydration for as long as the bridge runs.
+    const reported = new Set<string>();
+    sinks.push(
+      createWebhookDeliverer({
+        targets: webhookConfig.targets,
+        resolveTargets: async (driver) => {
+          if (driver === undefined) return [];
+          const { targets, warnings } = await loadDatabaseWebhookTargets(driver, webhookConfig.secrets);
+          for (const warning of warnings) {
+            if (reported.has(warning)) continue;
+            reported.add(warning);
+            console.warn(warning);
+          }
+          return targets;
+        },
+        ssrfPolicy: { allowPrivate: config.webhooksAllowPrivate },
+        deliveryLog: webhookDeliveryLog,
+      }),
+    );
+  }
   // EI-5 outbound MQTT (opt-in). The publisher is another event sink (events → `…/event/<type>`)
   // AND publishes retained state per generation; enabling it turns the event pipeline on WITHOUT
   // exposing the SSE HTTP endpoint (that stays gated by `config.events`) — per-capability opt-in.
@@ -154,6 +189,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     events: sseHub,
     scale,
     lookup,
+    webhookDeliveries: webhookDeliveryLog,
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -198,12 +234,29 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   }
   if (config.webhooks) {
     console.warn(
-      `Webhooks ENABLED (GUBBINS_BRIDGE_WEBHOOKS=on): ${webhookTargets.length} target(s). Each event is ` +
-        'POSTed with an HMAC-SHA256 X-Gubbins-Signature.' +
-        (webhookTargets.length === 0
-          ? ' No targets configured — set GUBBINS_BRIDGE_WEBHOOKS_FILE or _TARGETS (nothing will be sent).'
-          : ''),
+      `Webhooks ENABLED (GUBBINS_BRIDGE_WEBHOOKS=on): ${webhookConfig.targets.length} target(s) from ` +
+        'bridge config, plus any subscriptions configured in the app (read from the hydrated ' +
+        'snapshot on each generation, so a new one goes live on the next sync). A signed delivery ' +
+        'carries an HMAC-SHA256 X-Gubbins-Signature; a GET delivery carries none (there is no body ' +
+        'to sign).',
     );
+    console.log(
+      'Webhook delivery log available at GET /api/v1/webhooks/deliveries (same bearer token). ' +
+        'It lives in memory and does not survive a restart.',
+    );
+    if (config.webhooksAllowPrivate) {
+      console.warn(
+        'Webhook SSRF guard DISABLED (GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on): deliveries to ' +
+          'loopback, link-local, private and cloud-metadata addresses are permitted. Only do this ' +
+          'if you trust every webhook URL configured in the app — they arrive over sync.',
+      );
+    } else {
+      console.log(
+        'Webhook SSRF guard active: deliveries to loopback/link-local/private/metadata addresses ' +
+          'are refused. Set GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on to allow them (e.g. to reach ' +
+          'Home Assistant on your LAN).',
+      );
+    }
   }
   if (config.lookupEvents && lookup) {
     console.warn(
@@ -394,43 +447,100 @@ async function maybeStartMdns(
   return advertiser;
 }
 
+/** The operator-supplied half of the webhook configuration: file/env targets plus named secrets. */
+interface WebhookFileConfig {
+  readonly targets: readonly WebhookTarget[];
+  readonly secrets: WebhookSecrets;
+}
+
 /**
- * Load the webhook targets from the inline env JSON (`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`, which
- * wins) or the git-ignored file (`GUBBINS_BRIDGE_WEBHOOKS_FILE`, default `webhooks.json`).
- * Best-effort: a missing file or a malformed list logs a **secret-free** warning and yields no
- * targets rather than aborting startup. Never logs the file's contents (they carry secrets).
+ * Load the operator's webhook config from the inline env JSON (`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`,
+ * which wins for targets) and/or the git-ignored file (`GUBBINS_BRIDGE_WEBHOOKS_FILE`, default
+ * `webhooks.json`).
+ *
+ * Two things come out of it. The **targets** are the EI-1 operator-configured destinations, still
+ * fully supported alongside the app's synced subscriptions. The **secrets** are the named values a
+ * subscription's `secret_ref` resolves against — the recommended way to sign an app-configured
+ * webhook (plan §6.1), because the value stays here and never enters the database, and therefore
+ * never reaches the sync artefact or a backup.
+ *
+ * Secrets merge across both sources (env over file) rather than the env replacing the file
+ * wholesale: an operator keeping most secrets in `webhooks.json` while overriding one from the
+ * environment is a reasonable thing to do, and silently dropping the rest would break signing in a
+ * way that is very hard to see.
+ *
+ * A missing file is **not** an error — the app's subscriptions may be the only source of targets,
+ * which is the expected setup for a user who never touches bridge config. Best-effort throughout: a
+ * malformed list logs a **secret-free** message and yields nothing rather than aborting startup.
+ * The file's contents are never logged (they carry secrets).
  */
-function loadWebhookTargets(config: BridgeConfig): WebhookTarget[] {
+function loadWebhookConfig(config: BridgeConfig): WebhookFileConfig {
+  let targets: readonly WebhookTarget[] = [];
+  let secrets: WebhookSecrets = {};
+
+  // Default to `webhooks.json` in the bridge package (resolved from this module, not the cwd),
+  // so it always lands in the git-ignored `bridge/webhooks.json` — never somewhere committable —
+  // regardless of the directory the bridge is launched from. An explicit file path is honoured as-is.
+  const file =
+    config.webhooksFile !== undefined
+      ? path.resolve(config.webhooksFile)
+      : fileURLToPath(new URL('../webhooks.json', import.meta.url));
+
+  let fileValue: unknown;
   try {
-    if (config.webhooksInline !== undefined) {
-      return parseWebhookTargets(JSON.parse(config.webhooksInline));
-    }
-    // Default to `webhooks.json` in the bridge package (resolved from this module, not the cwd),
-    // so it always lands in the git-ignored `bridge/webhooks.json` — never somewhere committable —
-    // regardless of the directory the bridge is launched from. An explicit file path is honoured as-is.
-    const file =
-      config.webhooksFile !== undefined
-        ? path.resolve(config.webhooksFile)
-        : fileURLToPath(new URL('../webhooks.json', import.meta.url));
-    let text: string;
-    try {
-      text = readFileSync(file, 'utf8');
-    } catch {
-      console.warn(
-        `Webhooks enabled but no target file found at ${file} (and no GUBBINS_BRIDGE_WEBHOOKS_TARGETS). ` +
-          'No webhooks will be sent until you add one.',
-      );
-      return [];
-    }
-    return parseWebhookTargets(JSON.parse(text));
-  } catch (err) {
-    // The parse errors are secret-free by construction; still, we only surface the message.
-    console.error(
-      `Failed to load webhook targets: ${err instanceof Error ? err.message : String(err)}. ` +
-        'No webhooks will be sent.',
-    );
-    return [];
+    fileValue = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    fileValue = undefined; // absent or unreadable — fine; the app's subscriptions may be the source
   }
+
+  if (fileValue !== undefined) {
+    // Only when the env value is absent: with it set, the file's targets are overridden below, and
+    // complaining about a stale file whose targets were never going to be used sends the operator
+    // to debug a problem that does not exist. The file's *secrets* are still read either way.
+    if (config.webhooksInline === undefined) {
+      try {
+        targets = parseWebhookTargets(fileValue);
+      } catch (err) {
+        console.error(
+          `Failed to load webhook targets from ${file}: ${errorMessage(err)}. ` +
+            'Its targets will not be used.',
+        );
+      }
+    }
+    try {
+      const block =
+        typeof fileValue === 'object' && fileValue !== null && !Array.isArray(fileValue)
+          ? (fileValue as Record<string, unknown>).secrets
+          : undefined;
+      secrets = parseWebhookSecrets(block);
+    } catch (err) {
+      console.error(`Failed to load webhook secrets from ${file}: ${errorMessage(err)}.`);
+    }
+  }
+
+  if (config.webhooksInline !== undefined) {
+    try {
+      targets = parseWebhookTargets(JSON.parse(config.webhooksInline));
+    } catch (err) {
+      console.error(
+        `Failed to parse GUBBINS_BRIDGE_WEBHOOKS_TARGETS: ${errorMessage(err)}. Its targets will not be used.`,
+      );
+    }
+  }
+
+  if (config.webhooksSecretsInline !== undefined) {
+    try {
+      secrets = { ...secrets, ...parseWebhookSecrets(JSON.parse(config.webhooksSecretsInline)) };
+    } catch (err) {
+      console.error(`Failed to parse GUBBINS_BRIDGE_WEBHOOKS_SECRETS: ${errorMessage(err)}.`);
+    }
+  }
+
+  return { targets, secrets };
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 startBridge().catch((error: unknown) => {

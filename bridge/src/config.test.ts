@@ -31,6 +31,8 @@ describe('loadConfig (HA-3)', () => {
       webhooks: false,
       webhooksFile: undefined,
       webhooksInline: undefined,
+      webhooksSecretsInline: undefined,
+      webhooksAllowPrivate: false,
       mqtt: false,
       mqttUrl: undefined,
       mqttUsername: undefined,

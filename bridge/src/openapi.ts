@@ -413,6 +413,16 @@ export const openapiDocument: JsonValue = {
         'events, the same events delivered to outbound webhooks. When disabled this path returns 404.',
     },
     {
+      name: 'webhooks',
+      description:
+        'Opt-in outbound webhooks (off by default; enabled with GUBBINS_BRIDGE_WEBHOOKS=on). The ' +
+        'bridge is the sole deliverer: subscriptions are configured in the app and arrive over the ' +
+        'existing sync, and the operator’s webhooks.json / GUBBINS_BRIDGE_WEBHOOKS_TARGETS entries ' +
+        'are merged alongside them. Delivery outcomes cannot be written back into the snapshot (it ' +
+        'is swapped wholesale on every hydration), so the bridge keeps an in-memory delivery log ' +
+        'and exposes it here for the app to poll. When disabled this path returns 404.',
+    },
+    {
       name: 'scale',
       description:
         'Opt-in Home Assistant reads (off by default; enabled with GUBBINS_BRIDGE_HA=on) — the ' +
@@ -923,6 +933,85 @@ export const openapiDocument: JsonValue = {
         },
       },
     },
+    '/api/v1/webhooks/deliveries': {
+      get: {
+        tags: ['webhooks'],
+        summary: 'Read the bridge’s recent webhook delivery outcomes',
+        description:
+          'Opt-in (GUBBINS_BRIDGE_WEBHOOKS=on); returns 404 when disabled. The bridge is read-only ' +
+          'over a snapshot that is swapped wholesale on every hydration, so it cannot record a ' +
+          'delivery outcome back into the database — anything it wrote would be discarded on the ' +
+          'next hydrate. It therefore keeps a bounded in-memory log, which the app polls while its ' +
+          'Webhooks screen is open. The log does not survive a bridge restart. No secret, ' +
+          'signature, request header or query string is ever recorded, and each URL is reduced to ' +
+          'its origin and path. Reads the bridge’s own memory rather than the snapshot, so it ' +
+          'answers before a snapshot has loaded.',
+        parameters: [
+          {
+            name: 'since',
+            in: 'query',
+            required: false,
+            description:
+              'Return only records with a higher "seq" than this — the polling form. Pass back the ' +
+              '"latestSeq" from the previous response.',
+            schema: { type: 'integer', minimum: 0 },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            description: 'Maximum records to return, clamped to 200.',
+            schema: { type: 'integer', minimum: 1, maximum: 200, default: 200 },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'The most recent delivery records, newest first.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['deliveries', 'latestSeq'],
+                  properties: {
+                    deliveries: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/WebhookDelivery' },
+                    },
+                    latestSeq: {
+                      type: 'integer',
+                      description:
+                        'The highest sequence number assigned so far. Returned even when the page ' +
+                        'is empty, so a poller can always advance its cursor.',
+                    },
+                  },
+                },
+                example: {
+                  deliveries: [
+                    {
+                      seq: 42,
+                      at: 1751000000000,
+                      targetId: '7f3a1c58-0b2e-4a1d-9c77-2f5b8e0a1d34',
+                      targetName: 'Workshop notifier',
+                      source: 'database',
+                      url: 'https://hooks.example.test/inventory',
+                      method: 'POST',
+                      eventId: 'hist-0007',
+                      eventType: 'item.low_stock',
+                      outcome: 'delivered',
+                      attempts: 1,
+                      status: 204,
+                      detail: null,
+                    },
+                  ],
+                  latestSeq: 42,
+                },
+              },
+            },
+          },
+          ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
+        },
+      },
+    },
     '/api/v1/scale/entities': {
       get: {
         tags: ['scale'],
@@ -1342,6 +1431,77 @@ export const openapiDocument: JsonValue = {
           itemCount: { type: 'integer', example: 1 },
           hasNumericValues: { type: 'boolean', example: true },
           hasTextValues: { type: 'boolean', example: false },
+        },
+      },
+      WebhookDelivery: {
+        type: 'object',
+        description:
+          'One recorded webhook delivery attempt-sequence. Deliberately carries no secret, ' +
+          'signature, request header or query string; the URL is reduced to its origin and path ' +
+          '(a GET delivery puts its whole payload in the query, which is exactly why it is dropped).',
+        required: [
+          'seq',
+          'at',
+          'targetId',
+          'targetName',
+          'source',
+          'url',
+          'method',
+          'eventId',
+          'eventType',
+          'outcome',
+          'attempts',
+          'status',
+          'detail',
+        ],
+        properties: {
+          seq: {
+            type: 'integer',
+            description: 'Monotonic per-log sequence number; pass the highest back as "since".',
+            example: 42,
+          },
+          at: { type: 'integer', description: 'UNIX-ms when the delivery finished.' },
+          targetId: {
+            type: 'string',
+            description:
+              'The subscription id for an app-configured webhook, or "config:<n>" for one from the ' +
+              'operator’s webhooks.json / GUBBINS_BRIDGE_WEBHOOKS_TARGETS.',
+          },
+          targetName: { type: 'string', example: 'Workshop notifier' },
+          source: {
+            type: 'string',
+            enum: ['database', 'config'],
+            description: 'Whether the target came from the app’s synced subscriptions or bridge config.',
+          },
+          url: { type: 'string', example: 'https://hooks.example.test/inventory' },
+          method: { type: 'string', enum: ['POST', 'GET', 'PUT', 'PATCH'] },
+          eventId: { type: 'string', example: 'hist-0007' },
+          eventType: { type: 'string', enum: [...KNOWN_EVENT_TYPES] },
+          outcome: {
+            type: 'string',
+            enum: ['delivered', 'failed', 'blocked', 'skipped'],
+            description:
+              'delivered = the receiver answered 2xx; failed = every attempt was made and none ' +
+              'succeeded; blocked = refused before any request was issued (the SSRF guard, or an ' +
+              'unresolvable secret reference); skipped = the target’s failure circuit was open.',
+          },
+          attempts: {
+            type: 'integer',
+            description: 'HTTP attempts made (0 when blocked or skipped).',
+            example: 1,
+          },
+          status: {
+            type: 'integer',
+            nullable: true,
+            description: 'The final response status, or null when no response was ever received.',
+            example: 204,
+          },
+          detail: {
+            type: 'string',
+            nullable: true,
+            description:
+              'A short, truncated diagnostic — a transport error or a refusal reason. Never a secret.',
+          },
         },
       },
       BridgeEventData: {

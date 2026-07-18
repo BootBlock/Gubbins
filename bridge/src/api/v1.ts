@@ -46,6 +46,7 @@ import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '..
 import { buildActivityFeed } from '../feeds/feed.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
 import { readPage, readQueryParam, readResultLimit, type PageRequest } from './params.ts';
+import { MAX_DELIVERY_LOG_PAGE, type WebhookDeliveryLog } from '../events/webhook-log.ts';
 import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { odataMetadataXml } from './odata-metadata.ts';
 import { buildItemsCsv } from '@/features/export/export-data.ts';
@@ -139,6 +140,13 @@ export interface ApiV1Context {
    * `GET /api/v1/where`. Absent (the default) means a lookup emits no event.
    */
   readonly lookup?: LookupObserver;
+  /**
+   * The bridge-side webhook delivery log (`GUBBINS_BRIDGE_WEBHOOKS=on`), read by
+   * `GET /api/v1/webhooks/deliveries`. Absent makes that path a `404`, matching how every other
+   * opt-in capability disappears rather than returning an empty result — "the feature isn't on"
+   * and "nothing has been delivered yet" are different answers and must not look alike.
+   */
+  readonly webhookDeliveries?: WebhookDeliveryLog;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
 }
@@ -181,6 +189,13 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   // state gate below — a bridge that has not yet loaded a snapshot can still read a scale.
   if (segments[0] === 'scale') {
     return void (await handleScale(res, segments, url, ctx.scale));
+  }
+
+  // The delivery log lives in bridge memory, not the snapshot, so — like the scale reads — it is
+  // routed *before* the state gate. A bridge still waiting for its first snapshot can already have
+  // refused a delivery, and answering `503` would leave the app's Webhooks screen unable to say so.
+  if (segments[0] === 'webhooks') {
+    return void handleWebhookDeliveries(res, segments, url, ctx.webhookDeliveries);
   }
 
   const state = ctx.getState();
@@ -235,6 +250,65 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   }
 
   sendError(res, 404, 'not_found', 'Not found', { v1: true });
+}
+
+// --- Webhook delivery log (opt-in, off by default) --------------------------------
+
+/**
+ * Route `GET /api/v1/webhooks/deliveries` — the app's only window onto what its webhook
+ * subscriptions actually did (webhooks plan §3.1).
+ *
+ * The bridge cannot write delivery outcomes back into the database: it is read-only over a snapshot
+ * that is swapped wholesale on every hydration, so any row it wrote would be discarded on the next
+ * hydrate. The log therefore lives in bridge memory and is *read* over this endpoint, on the
+ * existing bearer auth — no new token, no new auth surface. Without it the delivery log and "send
+ * test event" would show nothing at all, which is why the plan calls it non-optional.
+ *
+ * The app polls it **only while the Webhooks screen is open**, passing `since` (the highest `seq`
+ * it has already seen) so a poll returns just what is new rather than the whole buffer each time.
+ *
+ * `404` when webhooks are off, matching every other opt-in capability: "the feature isn't enabled"
+ * must not be indistinguishable from "nothing has been delivered".
+ */
+function handleWebhookDeliveries(
+  res: ServerResponse,
+  segments: readonly string[],
+  url: URL,
+  log: WebhookDeliveryLog | undefined,
+): void {
+  if (segments.length !== 2 || segments[1] !== 'deliveries' || log === undefined) {
+    return void sendError(res, 404, 'not_found', 'Not found', { v1: true });
+  }
+
+  const rawSince = url.searchParams.get('since');
+  let since: number | undefined;
+  if (rawSince !== null) {
+    const parsed = Number(rawSince);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return void sendError(res, 400, 'bad_request', '"since" must be a non-negative integer', {
+        v1: true,
+      });
+    }
+    since = parsed;
+  }
+
+  const rawLimit = url.searchParams.get('limit');
+  let limit: number | undefined;
+  if (rawLimit !== null) {
+    const parsed = Number(rawLimit);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return void sendError(res, 400, 'bad_request', '"limit" must be a positive integer', { v1: true });
+    }
+    limit = Math.min(parsed, MAX_DELIVERY_LOG_PAGE);
+  }
+
+  const deliveries = log.list({
+    ...(since !== undefined ? { since } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  });
+  // `latestSeq` is returned alongside the page so a poller can advance its cursor even when the
+  // page is empty — otherwise a quiet minute would leave it re-requesting the same `since` forever.
+  sendJson(res, 200, { deliveries, latestSeq: log.latestSeq() });
 }
 
 // --- Home Assistant scale reads (opt-in, off by default) --------------------------
