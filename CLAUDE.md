@@ -238,6 +238,29 @@ heading, and finished work is archived:
 - A unit test (`src/lib/docs-todo-status.test.ts`) enforces the banner and the placement, so drift
   fails the build rather than review. It can't judge whether "COMPLETE" is *true* — that's yours.
 
+## Every task runs in a worktree, and parallelises with sub-agents (mandatory)
+
+Multiple agents edit this repo concurrently, so **every** task starts by creating a **new git
+worktree** and doing all of its work there. This is not limited to issue work — it applies to
+any task that touches repository content: code, tests, docs, wiki pages, plan docs, config.
+
+- **The only exception is a task that touches no repo code at all** — e.g. filing a new GitHub
+  issue, answering a question, reading/reviewing without editing, or a pure `gh` operation.
+  Those may run in the primary checkout.
+- Edit via worktree-relative absolute paths, never touch another agent's worktree, and expect
+  `main` to have advanced while you worked.
+- Merge back with `--no-ff`, then clean up: remove the `node_modules` junction **before**
+  `git worktree remove` (see `feedback-worktree-junction-cleanup`).
+- Running the app or tests from a worktree is supported via the committed
+  `vite.worktree.config.ts` / `vitest.worktree.config.ts`.
+
+**Use sub-agents where applicable to speed the work up.** When a task decomposes into
+independent pieces — surveying several areas of the codebase, investigating parallel
+hypotheses, or implementing changes that don't share files — dispatch them concurrently rather
+than working serially. Keep to one agent per independent unit, give each enough context to
+work without re-deriving what you already know, and reserve serial work for steps that
+genuinely depend on an earlier result.
+
 ## Actioning a GitHub issue (workflow)
 
 When the maintainer gives you a Gubbins issue URL —
