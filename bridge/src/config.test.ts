@@ -39,6 +39,7 @@ describe('loadConfig (HA-3)', () => {
       homeAssistant: false,
       homeAssistantUrl: undefined,
       homeAssistantToken: undefined,
+      homeAssistantDiscovery: false,
     });
   });
 
@@ -59,6 +60,22 @@ describe('loadConfig (HA-3)', () => {
     expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_HA: 'on' })).toThrow(/GUBBINS_BRIDGE_HA_URL/);
     expect(() =>
       loadConfig({ ...VALID, GUBBINS_BRIDGE_HA: 'on', GUBBINS_BRIDGE_HA_URL: 'http://ha.test:8123' }),
+    ).toThrow(/GUBBINS_BRIDGE_HA_TOKEN/);
+  });
+
+  it('allows the Home Assistant URL to be unset when discovery is opted into', () => {
+    expect(loadConfig(VALID).homeAssistantDiscovery).toBe(false);
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_HA: 'on',
+      GUBBINS_BRIDGE_HA_DISCOVERY: 'on',
+      GUBBINS_BRIDGE_HA_TOKEN: '<placeholder-ha-token>',
+    });
+    expect(config.homeAssistantDiscovery).toBe(true);
+    expect(config.homeAssistantUrl).toBeUndefined();
+    // The token is never discoverable — it stays required.
+    expect(() =>
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_HA: 'on', GUBBINS_BRIDGE_HA_DISCOVERY: 'on' }),
     ).toThrow(/GUBBINS_BRIDGE_HA_TOKEN/);
   });
 

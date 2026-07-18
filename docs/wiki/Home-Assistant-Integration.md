@@ -60,8 +60,22 @@ network. The bridge sits on the same network as Home Assistant, so it can.
 
 ## Discovery
 
-The bridge can advertise itself on your network (mDNS/zeroconf), so Home Assistant can **discover**
+Discovery works in both directions, and each side is separately opt-in.
+
+The bridge can **advertise itself** on your network (mDNS/zeroconf), so Home Assistant can discover
 it rather than you typing addresses — an opt-in, locally-gated convenience.
+
+The bridge can also **find Home Assistant**, so you don't have to type its address into the bridge
+either. Switch it on and leave the address blank: the bridge asks your network where Home Assistant
+is when it starts, uses the address it advertises, and says which one it found in its log.
+
+> **ℹ️ Note**
+> A discovered address is only ever a suggestion. An address you set yourself always wins, the
+> long-lived access token is still required — discovery never finds a credential — and what the
+> bridge may do with Home Assistant is unchanged: read entity states, nothing more.
+
+If nothing answers, the bridge just starts without a scale connection and tells you so; set the
+address directly and restart.
 
 ## Optional write-back
 

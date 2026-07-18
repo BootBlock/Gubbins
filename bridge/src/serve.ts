@@ -26,6 +26,8 @@ import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
+import { discoverHomeAssistant } from './mdns/discover.ts';
+import { resolveHaDiscoveryPlan } from './mdns/discovery.ts';
 import { createHaClient, HaError, type HaClient } from './homeassistant/client.ts';
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
@@ -107,16 +109,14 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   // HA, so this opens no port and is unrelated to the data source. Present only when configured;
   // otherwise `/api/v1/scale/*` is a 404. The HA token stays here and is never sent to the PWA.
   // Kept as one object so the URL travels with the client it belongs to — the startup probe below
-  // logs that URL, and reaching for `config.homeAssistantUrl` there would need an assertion that
-  // this narrowing has already done properly.
+  // logs that URL, and reaching for the resolved URL there would need an assertion that this
+  // narrowing has already done properly.
+  const haBaseUrl = await resolveHomeAssistantBaseUrl(config);
   const ha =
-    config.homeAssistant && config.homeAssistantUrl && config.homeAssistantToken
+    config.homeAssistant && haBaseUrl && config.homeAssistantToken
       ? {
-          baseUrl: config.homeAssistantUrl,
-          client: createHaClient({
-            baseUrl: config.homeAssistantUrl,
-            token: config.homeAssistantToken,
-          }),
+          baseUrl: haBaseUrl,
+          client: createHaClient({ baseUrl: haBaseUrl, token: config.homeAssistantToken }),
         }
       : undefined;
   const scale = ha ? { client: ha.client } : undefined;
@@ -197,6 +197,13 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         'call a Home Assistant service.',
     );
     void probeHomeAssistant(ha.client, ha.baseUrl);
+  } else if (config.homeAssistant) {
+    // Opted in, but there is no address to call — discovery was on and found nothing (it already
+    // said so), or discovery is off and the URL was never set.
+    console.warn(
+      'Home Assistant reads are on but no address is configured: set GUBBINS_BRIDGE_HA_URL in ' +
+        '.env. "count by weight" cannot read a scale entity until it is.',
+    );
   } else {
     console.log('Home Assistant reads: disabled. Set GUBBINS_BRIDGE_HA=on to enable a scale reading.');
   }
@@ -226,6 +233,46 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   process.once('SIGTERM', shutdown);
 
   return { server, watcher, mdns, mqtt };
+}
+
+/**
+ * Resolve the Home Assistant base URL to call: the operator's explicit `GUBBINS_BRIDGE_HA_URL`
+ * whenever it is set, otherwise — and only when discovery is opted into — the first instance that
+ * answers on the LAN (issue #126).
+ *
+ * Discovery is a convenience, not a trust decision: it supplies an *address*, never a credential.
+ * The operator's own long-lived access token is still required, and the bridge's Home Assistant
+ * access stays read-only however the address was found. Finding nothing is not fatal — the bridge
+ * starts with the scale endpoints unavailable, exactly as it would with no URL configured.
+ */
+async function resolveHomeAssistantBaseUrl(
+  config: Awaited<ReturnType<typeof loadConfig>>,
+): Promise<string | undefined> {
+  const plan = resolveHaDiscoveryPlan({
+    homeAssistant: config.homeAssistant,
+    enabled: config.homeAssistantDiscovery,
+    configuredUrl: config.homeAssistantUrl,
+  });
+  if (!plan.discover) {
+    if (plan.reason === 'configured') {
+      console.log('Home Assistant discovery: skipped — GUBBINS_BRIDGE_HA_URL is set and always wins.');
+    }
+    return config.homeAssistantUrl;
+  }
+
+  console.log('Home Assistant discovery: looking for an instance on the LAN over mDNS…');
+  const found = await discoverHomeAssistant();
+  if (found === null) {
+    console.warn(
+      'Home Assistant discovery: nothing answered on the LAN. Set GUBBINS_BRIDGE_HA_URL in .env ' +
+        'to point at it directly.',
+    );
+    return undefined;
+  }
+  // The discovered address is safe to log (it is a LAN host advertising itself); no secret is
+  // involved — the access token is still the one the operator configured.
+  console.log(`Home Assistant discovered on the LAN: "${found.name}" at ${found.url}.`);
+  return found.url;
 }
 
 /**

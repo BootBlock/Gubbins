@@ -280,8 +280,12 @@ function encodeMessage(answers: readonly Buffer[]): Buffer {
   return Buffer.concat([header, ...answers]);
 }
 
-/** Decode a DNS name starting at `offset`, following compression pointers. */
-function decodeName(msg: Buffer, offset: number): { name: string; nextOffset: number } {
+/**
+ * Decode a DNS name starting at `offset`, following compression pointers. Exported because the
+ * *listening* half of mDNS (`discover.ts`) has to decode names that appear inside another
+ * record's RDATA (a PTR target, an SRV target), which point back into the same message.
+ */
+export function decodeName(msg: Buffer, offset: number): { name: string; nextOffset: number } {
   const labels: string[] = [];
   let pos = offset;
   let nextOffset = offset;
