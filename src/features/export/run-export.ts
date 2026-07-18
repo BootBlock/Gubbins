@@ -41,7 +41,6 @@ import {
 import {
   ABC_WINDOW_DAYS,
   DATA_HYGIENE_STALE_DAYS,
-  DEFAULT_ANALYTICS_WINDOW,
   REPORT_MOVEMENT_BUCKETS,
   REPORT_WINDOW_DAYS,
   SPEND_BUCKETS,
@@ -89,7 +88,21 @@ const REPORT_FILE_SLUG: Record<ReportExportKind, string> = {
   SPEND: 'spend',
 };
 
-/** Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61). */
+/**
+ * Build the CSV string for the chosen §3 report through `ReportRepository` (Phase 61).
+ *
+ * Where a report is driven by a user-selectable window on the Reports screen, the export reads
+ * that same preference rather than the bare default, so the CSV covers the span the user was
+ * looking at when they exported it. Each report reads the preference its own on-screen section
+ * is bound to — movement and spend have their own, while turnover and the valuation trend share
+ * the analytics window. Reads go through `normaliseAnalyticsWindow` so a stale persisted value
+ * can never reach a repository call. Reports with a fixed span (ABC's annual window, consumption,
+ * data hygiene) are deliberately left on their constants — they have no on-screen control.
+ *
+ * Dead stock established this (issue #92) and movement followed it (issue #86); turnover, the
+ * valuation trend and spend were brought into line afterwards, having silently exported the
+ * default window regardless of what the user had selected on screen.
+ */
 async function buildReportCsv(kind: ReportExportKind): Promise<string> {
   const repo = getReportRepository();
   switch (kind) {
@@ -98,8 +111,6 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
     case 'CONSUMPTION':
       return buildConsumptionCsv(await repo.consumptionRate(REPORT_WINDOW_DAYS));
     case 'MOVEMENT':
-      // Honour the user's selected movement window (issue #86), on the same reasoning as
-      // dead stock below: the exported CSV should cover the span the on-screen chart shows.
       return buildMovementCsv(
         await repo.movement(
           normaliseAnalyticsWindow(usePreferencesStore.getState().reportsMovementWindow),
@@ -107,23 +118,32 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
         ),
       );
     case 'DEAD_STOCK':
-      // Honour the user's configured idle threshold (issue #92) so the exported CSV agrees
-      // with the on-screen report it was exported from, rather than the bare default.
+      // Dead stock is bound to the configured idle threshold rather than an analytics window.
       return buildDeadStockCsv(await repo.deadStock(usePreferencesStore.getState().deadStockDays));
     case 'ABC':
       return buildAbcCsv(await repo.abcAnalysis(ABC_WINDOW_DAYS));
     case 'TURNOVER':
-      return buildTurnoverCsv(await repo.turnover(DEFAULT_ANALYTICS_WINDOW));
+      return buildTurnoverCsv(
+        await repo.turnover(normaliseAnalyticsWindow(usePreferencesStore.getState().reportsAnalyticsWindow)),
+      );
     case 'AGING':
       return buildAgingCsv(await repo.stockAging());
     case 'VALUATION_TREND':
       return buildValuationTrendCsv(
-        await repo.valuationTrend(DEFAULT_ANALYTICS_WINDOW, VALUATION_TREND_POINTS),
+        await repo.valuationTrend(
+          normaliseAnalyticsWindow(usePreferencesStore.getState().reportsAnalyticsWindow),
+          VALUATION_TREND_POINTS,
+        ),
       );
     case 'DATA_HYGIENE':
       return buildDataHygieneCsv(await repo.dataHygiene(DATA_HYGIENE_STALE_DAYS));
     case 'SPEND':
-      return buildSpendCsv(await repo.spendAnalytics(DEFAULT_ANALYTICS_WINDOW, SPEND_BUCKETS));
+      return buildSpendCsv(
+        await repo.spendAnalytics(
+          normaliseAnalyticsWindow(usePreferencesStore.getState().reportsSpendWindow),
+          SPEND_BUCKETS,
+        ),
+      );
   }
 }
 
