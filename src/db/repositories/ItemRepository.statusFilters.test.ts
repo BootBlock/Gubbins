@@ -142,7 +142,7 @@ describe('ItemRepository.list — derived-status filters', () => {
 
     /** Put `qty` of `itemId` on a PO left in the given status. */
     async function order(itemId: string, qty: number, status: 'DRAFT' | 'ORDERED') {
-      const po = await orders.create({ supplierName: 'Acme Supplies' });
+      const po = await orders.create({ supplier: { supplierName: 'Acme Supplies' } });
       const line = await orders.addLine(po.id, { itemId, orderedQty: qty });
       if (status === 'ORDERED') await orders.setStatus(po.id, 'ORDERED');
       return { po, line };
