@@ -14,6 +14,7 @@ import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import { rowToLocation } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
+import { clampDeadStockDays } from '@/features/settings/settings';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -117,8 +118,9 @@ export class LocationRepository extends BaseRepository {
       statements.push({ sql: 'UPDATE locations SET is_default = 0 WHERE is_default = 1;' });
     }
     statements.push({
-      sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+      sql: `INSERT INTO locations (id, name, parent_id, description, color, kind, capacity, is_default,
+                                   dead_stock_mode, dead_stock_days)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         name,
@@ -128,6 +130,10 @@ export class LocationRepository extends BaseRepository {
         normaliseText(input.kind),
         normaliseCapacity(input.capacity),
         makeDefault ? 1 : 0,
+        // Defaults to 'inherit' so a new location defers to its parent — dead-stock
+        // reporting stays opt-in until the user says otherwise (issue #92).
+        input.deadStockMode ?? 'inherit',
+        normaliseDeadStockDays(input.deadStockDays),
       ],
     });
     await this.driver.transaction(statements);
@@ -229,6 +235,18 @@ export class LocationRepository extends BaseRepository {
     if (input.archivedAt !== undefined) {
       sets.push('archived_at = ?');
       params.push(input.archivedAt);
+    }
+    if (input.deadStockMode !== undefined) {
+      // Dead-stock reporting for everything stored here (issue #92); 'inherit' hands the
+      // decision back to the parent location. The DB CHECK mirrors DEAD_STOCK_MODES.
+      sets.push('dead_stock_mode = ?');
+      params.push(input.deadStockMode);
+    }
+    if (input.deadStockDays !== undefined) {
+      // An idle-days override for this subtree; null defers up the tree to the global
+      // preference. Clamped so a mistyped value can't disable the report or flag everything.
+      sets.push('dead_stock_days = ?');
+      params.push(normaliseDeadStockDays(input.deadStockDays));
     }
 
     // Only guard when nesting under a real parent — a move to the root (null) can never cycle.
@@ -480,6 +498,16 @@ function normaliseText(value: string | null | undefined): string | null {
 function normaliseCapacity(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value < 0) return null;
   return Math.floor(value);
+}
+
+/**
+ * Normalise a location's dead-stock idle-days override (issue #92): null/blank/invalid ⇒
+ * no override (defer up the tree), otherwise a whole number clamped to the same bounds the
+ * global preference uses, so the DB's `> 0` CHECK can never be tripped by user input.
+ */
+function normaliseDeadStockDays(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return clampDeadStockDays(value);
 }
 
 /** Assemble flat rows into a parent/child tree, preserving input ordering. */

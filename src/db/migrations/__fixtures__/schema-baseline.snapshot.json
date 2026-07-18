@@ -177,6 +177,12 @@
     },
     {
       "type": "index",
+      "name": "idx_items_dead_stock_mode",
+      "tbl_name": "items",
+      "sql": "CREATE INDEX idx_items_dead_stock_mode ON items(dead_stock_mode) WHERE dead_stock_mode <> 'inherit'"
+    },
+    {
+      "type": "index",
       "name": "idx_items_expiry",
       "tbl_name": "items",
       "sql": "CREATE INDEX idx_items_expiry ON items(expiry_date) WHERE expiry_date IS NOT NULL"
@@ -461,7 +467,7 @@
       "type": "table",
       "name": "items",
       "tbl_name": "items",
-      "sql": "CREATE TABLE items (\n          id                   TEXT    PRIMARY KEY NOT NULL,\n          name                 TEXT    NOT NULL,\n          description          TEXT,\n          notes                TEXT,\n          location_id          TEXT    NOT NULL REFERENCES locations(id),\n          category_id          TEXT    REFERENCES categories(id) ON DELETE SET NULL,\n          tracking_mode        TEXT    NOT NULL DEFAULT 'DISCRETE',\n          quantity             INTEGER NOT NULL DEFAULT 0,\n          unit_of_measure      TEXT,\n          gross_capacity       REAL,\n          tare_weight          REAL,\n          current_net_value    REAL,\n          attrition_percent    REAL,\n          operational_metadata TEXT,\n          is_active            INTEGER NOT NULL DEFAULT 1,\n          is_unlimited         INTEGER NOT NULL DEFAULT 0,\n          is_favourite         INTEGER NOT NULL DEFAULT 0,\n          created_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), serial_no INTEGER, mpn TEXT, manufacturer TEXT, unit_cost REAL, barcode TEXT, serial_number TEXT, expiry_date INTEGER, batch_number TEXT, lot_number TEXT, condition TEXT CHECK (condition IS NULL OR condition IN ('MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION')), parent_id TEXT REFERENCES items(id), reorder_point INTEGER, reorder_gauge_percent REAL, reorder_qty INTEGER, acquired_at TEXT, warranty_expires_at TEXT, purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0), depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0), weight REAL CHECK (weight IS NULL OR weight >= 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), current_value REAL CHECK (current_value IS NULL OR current_value >= 0),\n          CHECK (tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED')),\n          CHECK (is_active IN (0, 1)),\n          CHECK (quantity >= 0),\n          CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1),\n          -- \"Unlimited supply\" (Phase 82) is a DISCRETE-only modifier: an item whose\n          -- source is effectively infinite (tap water, mains air). The first CHECK keeps\n          -- it a strict boolean; the second is the invariant that it can only sit on a\n          -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.\n          CHECK (is_unlimited IN (0, 1)),\n          CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),\n          -- \"Favourite\" (issue #23): a user-pinned item that sorts ahead of the rest of the\n          -- list. Applies to any item regardless of tracking mode, so — unlike is_unlimited —\n          -- it carries only the strict-boolean CHECK, no mode restriction.\n          CHECK (is_favourite IN (0, 1)),\n          -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.\n          CHECK (\n            tracking_mode <> 'CONSUMABLE_GAUGE' OR (\n              unit_of_measure   IS NOT NULL AND\n              gross_capacity    IS NOT NULL AND gross_capacity > 0 AND\n              tare_weight       IS NOT NULL AND tare_weight >= 0 AND\n              current_net_value IS NOT NULL AND current_net_value >= 0\n            )\n          ),\n          -- Attrition (issue #89) is the proportional waste a draw costs on top of what was\n          -- asked for. Unlike the gauge fields above it is *optional* — NULL means \"no\n          -- attrition\", which is the default and the overwhelmingly common case — so it gets\n          -- its own CHECK rather than joining the mandatory block. The 0–100 ceiling bounds a\n          -- draw at double the requested amount, so a mistyped rate cannot empty a gauge.\n          CHECK (attrition_percent IS NULL OR (attrition_percent >= 0 AND attrition_percent <= 100)),\n          CHECK (attrition_percent IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')\n        ) STRICT"
+      "sql": "CREATE TABLE items (\n          id                   TEXT    PRIMARY KEY NOT NULL,\n          name                 TEXT    NOT NULL,\n          description          TEXT,\n          notes                TEXT,\n          location_id          TEXT    NOT NULL REFERENCES locations(id),\n          category_id          TEXT    REFERENCES categories(id) ON DELETE SET NULL,\n          tracking_mode        TEXT    NOT NULL DEFAULT 'DISCRETE',\n          quantity             INTEGER NOT NULL DEFAULT 0,\n          unit_of_measure      TEXT,\n          gross_capacity       REAL,\n          tare_weight          REAL,\n          current_net_value    REAL,\n          attrition_percent    REAL,\n          operational_metadata TEXT,\n          is_active            INTEGER NOT NULL DEFAULT 1,\n          is_unlimited         INTEGER NOT NULL DEFAULT 0,\n          is_favourite         INTEGER NOT NULL DEFAULT 0,\n          created_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at           INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), serial_no INTEGER, mpn TEXT, manufacturer TEXT, unit_cost REAL, barcode TEXT, serial_number TEXT, expiry_date INTEGER, batch_number TEXT, lot_number TEXT, condition TEXT CHECK (condition IS NULL OR condition IN ('MINT', 'GOOD', 'NEEDS_REPAIR', 'OUT_FOR_CALIBRATION')), parent_id TEXT REFERENCES items(id), reorder_point INTEGER, reorder_gauge_percent REAL, reorder_qty INTEGER, acquired_at TEXT, warranty_expires_at TEXT, purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0), depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0), weight REAL CHECK (weight IS NULL OR weight >= 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), current_value REAL CHECK (current_value IS NULL OR current_value >= 0), dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN ('inherit', 'always', 'never')),\n          CHECK (tracking_mode IN ('DISCRETE', 'SERIALISED', 'CONSUMABLE_GAUGE', 'UNTRACKED')),\n          CHECK (is_active IN (0, 1)),\n          CHECK (quantity >= 0),\n          CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1),\n          -- \"Unlimited supply\" (Phase 82) is a DISCRETE-only modifier: an item whose\n          -- source is effectively infinite (tap water, mains air). The first CHECK keeps\n          -- it a strict boolean; the second is the invariant that it can only sit on a\n          -- DISCRETE item, mirroring the SERIALISED-quantity CHECK above.\n          CHECK (is_unlimited IN (0, 1)),\n          CHECK (is_unlimited = 0 OR tracking_mode = 'DISCRETE'),\n          -- \"Favourite\" (issue #23): a user-pinned item that sorts ahead of the rest of the\n          -- list. Applies to any item regardless of tracking mode, so — unlike is_unlimited —\n          -- it carries only the strict-boolean CHECK, no mode restriction.\n          CHECK (is_favourite IN (0, 1)),\n          -- Gauge fields are mandatory and sane only for CONSUMABLE_GAUGE items.\n          CHECK (\n            tracking_mode <> 'CONSUMABLE_GAUGE' OR (\n              unit_of_measure   IS NOT NULL AND\n              gross_capacity    IS NOT NULL AND gross_capacity > 0 AND\n              tare_weight       IS NOT NULL AND tare_weight >= 0 AND\n              current_net_value IS NOT NULL AND current_net_value >= 0\n            )\n          ),\n          -- Attrition (issue #89) is the proportional waste a draw costs on top of what was\n          -- asked for. Unlike the gauge fields above it is *optional* — NULL means \"no\n          -- attrition\", which is the default and the overwhelmingly common case — so it gets\n          -- its own CHECK rather than joining the mandatory block. The 0–100 ceiling bounds a\n          -- draw at double the requested amount, so a mistyped rate cannot empty a gauge.\n          CHECK (attrition_percent IS NULL OR (attrition_percent >= 0 AND attrition_percent <= 100)),\n          CHECK (attrition_percent IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')\n        ) STRICT"
     },
     {
       "type": "table",
@@ -515,7 +521,7 @@
       "type": "table",
       "name": "locations",
       "tbl_name": "locations",
-      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT, kind TEXT, capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0), is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)), archived_at INTEGER, last_counted_at INTEGER,\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT, kind TEXT, capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0), is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)), archived_at INTEGER, last_counted_at INTEGER, dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN ('inherit', 'always', 'never')), dead_stock_days INTEGER CHECK (dead_stock_days IS NULL OR dead_stock_days > 0),\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -2809,6 +2815,14 @@
           "notnull": 0,
           "dflt_value": null,
           "pk": 0
+        },
+        {
+          "cid": 42,
+          "name": "dead_stock_mode",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'inherit'",
+          "pk": 0
         }
       ],
       "foreignKeys": [
@@ -2845,77 +2859,84 @@
       ],
       "indexes": [
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_items_active_location",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 5,
+          "seq": 6,
           "name": "idx_items_barcode",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 8,
+          "seq": 9,
           "name": "idx_items_category_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 3,
+          "seq": 0,
+          "name": "idx_items_dead_stock_mode",
+          "unique": 0,
+          "origin": "c",
+          "partial": 1
+        },
+        {
+          "seq": 4,
           "name": "idx_items_expiry",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 7,
+          "seq": 8,
           "name": "idx_items_is_active",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 9,
+          "seq": 10,
           "name": "idx_items_location_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 6,
+          "seq": 7,
           "name": "idx_items_mpn",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 2,
+          "seq": 3,
           "name": "idx_items_parent_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 4,
+          "seq": 5,
           "name": "idx_items_serial_number",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 2,
           "name": "idx_items_warranty",
           "unique": 0,
           "origin": "c",
           "partial": 1
         },
         {
-          "seq": 10,
+          "seq": 11,
           "name": "sqlite_autoindex_items_1",
           "unique": 1,
           "origin": "pk",
@@ -3464,6 +3485,22 @@
         {
           "cid": 11,
           "name": "last_counted_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "dead_stock_mode",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'inherit'",
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "dead_stock_days",
           "type": "INTEGER",
           "notnull": 0,
           "dflt_value": null,

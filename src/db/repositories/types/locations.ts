@@ -1,6 +1,7 @@
 /**
  * Location domain row + DTO types (spec §4).
  */
+import type { DeadStockMode } from '../constants';
 
 export interface LocationRow {
   readonly id: string;
@@ -21,6 +22,10 @@ export interface LocationRow {
   readonly archived_at: number | null;
   /** Epoch-ms a stock-take last completed here; NULL = never counted. */
   readonly last_counted_at: number | null;
+  /** Dead-stock reporting for items here; 'inherit' defers to the parent (issue #92). */
+  readonly dead_stock_mode: DeadStockMode;
+  /** Idle-days threshold for items here; NULL defers up the tree, then to the pref. */
+  readonly dead_stock_days: number | null;
   readonly updated_at: number;
 }
 
@@ -43,6 +48,17 @@ export interface Location {
   readonly archivedAt: number | null;
   /** Epoch-ms a stock-take last completed here; null = never counted. */
   readonly lastCountedAt: number | null;
+  /**
+   * Whether items stored here are reported as dead stock (issue #92). `inherit` — the
+   * default — defers to the parent location, so reporting stays opt-in.
+   */
+  readonly deadStockMode: DeadStockMode;
+  /**
+   * The idle-days threshold for items here; null defers up the tree, then to the global
+   * preference. Independent of {@link deadStockMode}, so a location can set a house
+   * threshold without opting its contents in.
+   */
+  readonly deadStockDays: number | null;
   readonly updatedAt: number;
 }
 
@@ -64,6 +80,8 @@ export interface CreateLocationInput {
   readonly kind?: string | null;
   readonly capacity?: number | null;
   readonly isDefault?: boolean;
+  readonly deadStockMode?: DeadStockMode;
+  readonly deadStockDays?: number | null;
 }
 
 export interface UpdateLocationInput {
@@ -76,4 +94,6 @@ export interface UpdateLocationInput {
   readonly isDefault?: boolean;
   /** Epoch-ms to archive, or null to restore. Undefined leaves it unchanged. */
   readonly archivedAt?: number | null;
+  readonly deadStockMode?: DeadStockMode;
+  readonly deadStockDays?: number | null;
 }

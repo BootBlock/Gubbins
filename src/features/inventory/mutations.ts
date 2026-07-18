@@ -138,6 +138,10 @@ export function useUpdateItem() {
     onSettled: (_d, _e, { id }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
+      // An item edit can change what the reports project — most directly the dead-stock
+      // opt-in (issue #92), whose editor renders the resolved policy right beside the
+      // control that just changed it. Without this the note contradicts the save.
+      void client.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }
@@ -591,7 +595,12 @@ export function useUpdateLocation() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateLocationInput }) =>
       getLocationRepository().update(id, input),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      // A location carries the dead-stock opt-in and idle threshold for everything inside
+      // it (issue #92), so editing one re-shapes the dead-stock report.
+      void client.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 }
 

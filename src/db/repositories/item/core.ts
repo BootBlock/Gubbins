@@ -365,6 +365,13 @@ export class ItemCoreRepository extends BaseRepository {
       sets.push('is_favourite = ?');
       params.push(input.isFavourite ? 1 : 0);
     }
+    if (input.deadStockMode !== undefined) {
+      // Dead-stock reporting opt-in (issue #92): like the favourite pin, a reporting
+      // preference rather than a change to what the item is, so it's a plain LWW column
+      // with no HISTORY_ACTION. The DB CHECK mirrors DEAD_STOCK_MODES.
+      sets.push('dead_stock_mode = ?');
+      params.push(input.deadStockMode);
+    }
     if (input.reorderPoint !== undefined) {
       sets.push('reorder_point = ?');
       params.push(normaliseReorderInt(input.reorderPoint));

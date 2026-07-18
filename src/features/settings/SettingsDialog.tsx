@@ -52,6 +52,7 @@ import {
   BUDGET_WARN_BOUNDS,
   CARD_CLICK_ACTION_OPTIONS,
   CURRENCY_OPTIONS,
+  DEAD_STOCK_DAYS_BOUNDS,
   EXPIRY_WINDOW_BOUNDS,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
@@ -62,6 +63,7 @@ import {
   VISUAL_CARD_METRIC_OPTIONS,
   WINDOW_MONTH_OPTIONS,
   clampBudgetWarnPercent,
+  clampDeadStockDays,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
@@ -913,6 +915,31 @@ export default function SettingsDialog({
                 </div>
               </SettingRow>
             ) : null}
+            <SettingRow
+              stack
+              label={t('settings.deadStock.label')}
+              description={t('settings.deadStock.description', {
+                vars: { min: DEAD_STOCK_DAYS_BOUNDS.min, max: DEAD_STOCK_DAYS_BOUNDS.max },
+              })}
+              hint={t('settings.deadStock.hint', {
+                vars: { min: DEAD_STOCK_DAYS_BOUNDS.min, max: DEAD_STOCK_DAYS_BOUNDS.max },
+              })}
+            >
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label={t('settings.deadStock.ariaLabel')}
+                  data-testid="setting-dead-stock-days"
+                  type="number"
+                  calc={false}
+                  min={DEAD_STOCK_DAYS_BOUNDS.min}
+                  max={DEAD_STOCK_DAYS_BOUNDS.max}
+                  className="h-9 w-24"
+                  value={prefs.deadStockDays}
+                  onChange={(e) => prefs.setDeadStockDays(clampDeadStockDays(Number(e.target.value)))}
+                />
+                <span className="text-sm text-muted-foreground">{t('settings.deadStock.days')}</span>
+              </div>
+            </SettingRow>
             {projectsOn ? (
               <SettingRow
                 label="Budget warning threshold"

@@ -92,6 +92,19 @@ The full behaviour, including what happens when you withdraw an offer, is covere
 A location can be given a **capacity**, after which Gubbins shows a fullness gauge — handy for
 knowing when a shelf or bin is running out of room before you over-fill it.
 
+## Watching a location for dead stock
+
+A location can be set to report everything stored in it as **dead stock** once it goes unused —
+so you can keep an eye on a whole cupboard without visiting each item. Set **Dead-stock
+reporting** to *Report* when editing the location, and it applies to its sub-locations too.
+
+You can also give the location its own **idle threshold** — how long is "too long" here —
+overriding the global default for everything inside it. Handy when one place keeps different
+time to the rest: deep storage might only be worth flagging after a year.
+
+Any individual item can override what its location decided. See
+[[ABC, turnover & aging|ABC-Turnover-and-Aging]] for the full picture.
+
 ## Portable & mobile containers
 
 Not everything that holds items stays put. A **toolbox**, a **camera bag**, a **first-aid kit**
@@ -127,3 +140,5 @@ oldest first.
 - **[[Batches & lots|Batches-and-Lots]]** — expiry tracking and first-expiry-first-out.
 - **[[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]]** — checking that on-hand counts
   match reality, location by location.
+- **[[ABC, turnover & aging|ABC-Turnover-and-Aging]]** — dead-stock reporting, and how a
+  location's setting passes down to the items inside it.

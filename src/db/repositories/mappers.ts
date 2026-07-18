@@ -95,6 +95,8 @@ export function rowToLocation(row: LocationRow): Location {
     isDefault: row.is_default === 1,
     archivedAt: row.archived_at,
     lastCountedAt: row.last_counted_at,
+    deadStockMode: row.dead_stock_mode,
+    deadStockDays: row.dead_stock_days,
     updatedAt: row.updated_at,
   };
 }
@@ -146,6 +148,7 @@ export function rowToItem(row: ItemRow): Item {
     isUnlimited: row.is_unlimited === 1,
     // "Favourite" pin (issue #23): starred items sort ahead of the rest of the list.
     isFavourite: row.is_favourite === 1,
+    deadStockMode: row.dead_stock_mode,
     // Per-item reorder policy (Phase 59); null = fall back to the global default.
     reorderPoint: row.reorder_point,
     reorderGaugePercent: row.reorder_gauge_percent,

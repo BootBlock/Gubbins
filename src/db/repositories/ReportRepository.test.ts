@@ -98,7 +98,8 @@ describe('ReportRepository', () => {
       const now = Date.now();
       const item = await items.create({ name: 'OldFan', quantity: 3, unitCost: null });
       await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 6, isPreferred: true });
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+      // Dead-stock reporting is opt-in (issue #92), so the item has to ask to be watched.
+      await driver.execute("UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id = ?;", [
         now - 120 * MS_PER_DAY,
         item.id,
       ]);
@@ -233,12 +234,13 @@ describe('ReportRepository', () => {
       const idle = await items.create({ name: 'Idle', quantity: 4, unitCost: 5 });
       const moved = await items.create({ name: 'Moved', quantity: 4, unitCost: 5 });
 
-      // Backdate the idle item's creation well past the cutoff; it has no movement history.
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+      // Backdate both items' creation well past the cutoff; neither has movement history
+      // yet. Reporting is opt-in (issue #92), so both must be switched on to be considered.
+      await driver.execute("UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id = ?;", [
         now - 120 * MS_PER_DAY,
         idle.id,
       ]);
-      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+      await driver.execute("UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id = ?;", [
         now - 120 * MS_PER_DAY,
         moved.id,
       ]);
@@ -252,6 +254,128 @@ describe('ReportRepository', () => {
       expect(report.lines.map((l) => l.name)).toEqual(['Idle']);
       expect(report.totalValue).toBe(20); // 4 * £5
       expect(report.lines[0]?.idleDays).toBe(120);
+    });
+
+    // Dead-stock reporting opt-in (issue #92) --------------------------------------
+
+    /** An item idle for 200 days in `locationId`, so only the opt-in decides the outcome. */
+    async function idleItem(name: string, locationId?: string, now = Date.now()) {
+      const item = await items.create({
+        name,
+        quantity: 1,
+        unitCost: 1,
+        ...(locationId ? { locationId } : {}),
+      });
+      await driver.execute('UPDATE items SET created_at = ? WHERE id = ?;', [
+        now - 200 * MS_PER_DAY,
+        item.id,
+      ]);
+      return item;
+    }
+
+    it('reports nothing by default — reporting is opt-in', async () => {
+      const now = Date.now();
+      await idleItem('Forgotten', undefined, now);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines).toEqual([]);
+      // Nothing was even considered, which is what lets the UI distinguish "nothing is
+      // being watched" from "everything watched is still moving".
+      expect(report.consideredCount).toBe(0);
+    });
+
+    it('reports an item that opts in on its own', async () => {
+      const now = Date.now();
+      const item = await idleItem('Watched', undefined, now);
+      await driver.execute("UPDATE items SET dead_stock_mode = 'always' WHERE id = ?;", [item.id]);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines.map((l) => l.name)).toEqual(['Watched']);
+      expect(report.consideredCount).toBe(1);
+    });
+
+    it('reports items in a location that opts in, without touching each item', async () => {
+      const now = Date.now();
+      const garage = await locations.create({ name: 'Garage' });
+      await idleItem('In garage', garage.id, now);
+      await idleItem('Elsewhere', undefined, now);
+      await driver.execute("UPDATE locations SET dead_stock_mode = 'always' WHERE id = ?;", [garage.id]);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines.map((l) => l.name)).toEqual(['In garage']);
+    });
+
+    it('inherits a location opt-in down through sub-locations', async () => {
+      const now = Date.now();
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf', parentId: garage.id });
+      await idleItem('On shelf', shelf.id, now);
+      await driver.execute("UPDATE locations SET dead_stock_mode = 'always' WHERE id = ?;", [garage.id]);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines.map((l) => l.name)).toEqual(['On shelf']);
+    });
+
+    it("lets an item's own 'never' override a location that opts in", async () => {
+      const now = Date.now();
+      const garage = await locations.create({ name: 'Garage' });
+      const item = await idleItem('Exempt', garage.id, now);
+      await driver.execute("UPDATE locations SET dead_stock_mode = 'always' WHERE id = ?;", [garage.id]);
+      await driver.execute("UPDATE items SET dead_stock_mode = 'never' WHERE id = ?;", [item.id]);
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines).toEqual([]);
+    });
+
+    it("honours a location's own idle threshold over the global default", async () => {
+      const now = Date.now();
+      const storage = await locations.create({ name: 'Deep storage' });
+      await idleItem('Archived', storage.id, now); // idle 200 days
+      await driver.execute(
+        "UPDATE locations SET dead_stock_mode = 'always', dead_stock_days = 365 WHERE id = ?;",
+        [storage.id],
+      );
+
+      // Idle 200 days: past the global 30-day default, but well inside the location's 365.
+      const report = await reports.deadStock(30, now);
+      expect(report.lines).toEqual([]);
+      // Still counted as watched — it just isn't dead yet.
+      expect(report.consideredCount).toBe(1);
+    });
+
+    it('reports the threshold each line was judged against', async () => {
+      const now = Date.now();
+      const bench = await locations.create({ name: 'Workbench' });
+      await idleItem('Stale', bench.id, now);
+      await driver.execute(
+        "UPDATE locations SET dead_stock_mode = 'always', dead_stock_days = 14 WHERE id = ?;",
+        [bench.id],
+      );
+
+      const report = await reports.deadStock(30, now);
+      expect(report.lines[0]).toMatchObject({ name: 'Stale', thresholdDays: 14 });
+    });
+  });
+
+  describe('deadStockPolicy', () => {
+    it('resolves the effective policy for one item, naming the deciding location', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const shelf = await locations.create({ name: 'Shelf', parentId: garage.id });
+      const item = await items.create({ name: 'Widget', locationId: shelf.id });
+      await driver.execute("UPDATE locations SET dead_stock_mode = 'always' WHERE id = ?;", [garage.id]);
+      await driver.execute('UPDATE locations SET dead_stock_days = 45 WHERE id = ?;', [shelf.id]);
+
+      const policy = await reports.deadStockPolicy(item.id, 90);
+      expect(policy).toMatchObject({
+        reported: true,
+        reportedFrom: { name: 'Garage' },
+        thresholdDays: 45,
+        thresholdFrom: { name: 'Shelf' },
+      });
+    });
+
+    it('returns null for an item that does not exist', async () => {
+      expect(await reports.deadStockPolicy('nope', 90)).toBeNull();
     });
   });
 

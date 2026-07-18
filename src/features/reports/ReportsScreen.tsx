@@ -38,7 +38,6 @@ import { SalesBreakdown } from './components/SalesBreakdown';
 import {
   ABC_WINDOW_DAYS,
   ANALYTICS_WINDOWS,
-  DEAD_STOCK_SINCE_DAYS,
   normaliseAnalyticsWindow,
   REPORT_WINDOW_DAYS,
   useAbcAnalysis,
@@ -75,6 +74,9 @@ export function ReportsScreen() {
   const consumption = useConsumptionRate();
   const movement = useMovement();
   const lowStock = useLowStockCount();
+  // The global idle threshold (issue #92) — the figure the panel is labelled with, and the
+  // fallback for items whose location doesn't override it.
+  const deadStockDays = usePreferencesStore((s) => s.deadStockDays);
   const deadStock = useDeadStock();
 
   // Phase 74 advanced analytics.
@@ -283,7 +285,7 @@ export function ReportsScreen() {
           </Reveal>
           <Reveal index={3} className="h-full">
             <StatCard
-              label={`Dead stock (${DEAD_STOCK_SINCE_DAYS}d)`}
+              label={`Dead stock (${deadStockDays}d)`}
               testId="stat-dead-stock"
               loading={deadStock.isLoading}
               value={
@@ -337,7 +339,7 @@ export function ReportsScreen() {
 
         {/* Dead stock */}
         <Reveal>
-          <Panel title={`Dead stock — no movement in ${DEAD_STOCK_SINCE_DAYS} days`}>
+          <Panel title={`Dead stock — no movement in ${deadStockDays} days`}>
             {deadStock.isLoading ? (
               <CentredSpinner />
             ) : deadStock.data && deadStock.data.lines.length > 0 ? (
@@ -347,15 +349,25 @@ export function ReportsScreen() {
                     <span className="min-w-0 truncate font-medium">{line.name}</span>
                     <span className="flex shrink-0 items-center gap-4 text-muted-foreground">
                       <span>{f.quantity(line.quantity)} units</span>
-                      <span>{line.idleDays}d idle</span>
+                      {/* A location may set its own threshold, so a line can be flagged at a
+                          figure other than the one in the panel heading — show it rather
+                          than leave the row looking wrong. */}
+                      <span>
+                        {line.idleDays}d idle
+                        {line.thresholdDays !== deadStockDays ? ` (of ${line.thresholdDays}d)` : ''}
+                      </span>
                       <Money value={line.value} formatters={f} className="font-medium text-foreground" />
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
+              // Reporting is opt-in (issue #92), so an empty panel is ambiguous on its own:
+              // nothing is idle, or nothing is being watched. `consideredCount` says which.
               <p className="py-6 text-center text-sm text-muted-foreground">
-                Nothing idle — all stock has moved recently.
+                {deadStock.data && deadStock.data.consideredCount > 0
+                  ? 'Nothing idle — all the stock you’re watching has moved recently.'
+                  : 'No items are opted in to dead-stock reporting yet. Turn it on for a location, or for an individual item, to start watching for stock that stops moving.'}
               </p>
             )}
           </Panel>

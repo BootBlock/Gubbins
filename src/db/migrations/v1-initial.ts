@@ -2,6 +2,7 @@ import {
   ATTACHMENT_KINDS,
   CONDITIONS,
   COSTING_MODES,
+  DEAD_STOCK_MODES,
   FIELD_TYPES,
   IN_TRANSIT_LOCATION_ID,
   IN_TRANSIT_LOCATION_NAME,
@@ -88,6 +89,7 @@ function updatedAtTrigger(table: string): string {
 // can never drift from the schema's CHECK constraint.
 const trackingModeList = TRACKING_MODES.map((mode) => `'${mode}'`).join(', ');
 const fieldTypeList = FIELD_TYPES.map((t) => `'${t}'`).join(', ');
+const deadStockModeList = DEAD_STOCK_MODES.map((m) => `'${m}'`).join(', ');
 const attachmentKindList = ATTACHMENT_KINDS.map((k) => `'${k}'`).join(', ');
 const projectStatusList = PROJECT_STATUSES.map((s) => `'${s}'`).join(', ');
 const costingModeList = COSTING_MODES.map((m) => `'${m}'`).join(', ');
@@ -1314,6 +1316,32 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     sql: updatedAtTrigger('test_records'),
+  },
+
+  // --- Dead-stock reporting opt-in (issue #92) ------------------------------------
+  // Flagging stock that has not moved for a long time is opt-in: an inventory where
+  // everything is reported is noise. Both columns default to 'inherit', so an untouched
+  // database reports nothing until the user asks for it — on an item, or on a location so
+  // that everything stored there is covered without touching each item.
+  //
+  // `locations.dead_stock_days` is deliberately independent of the mode: a location can set
+  // a house threshold ("anything in deep storage is dead after a year") without also opting
+  // its contents in. NULL defers up the tree, and ultimately to the global preference.
+  // The resolution rules live in the pure `features/reports/dead-stock` seam.
+  {
+    sql: `ALTER TABLE items ADD COLUMN dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN (${deadStockModeList}));`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN (${deadStockModeList}));`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN dead_stock_days INTEGER CHECK (dead_stock_days IS NULL OR dead_stock_days > 0);`,
+  },
+  // The report filters to opted-in items, so the mode is a selective predicate on a
+  // table that grows to 100k+ rows. A partial index keeps it off the full scan while
+  // costing nothing for the overwhelmingly common 'inherit' default.
+  {
+    sql: `CREATE INDEX idx_items_dead_stock_mode ON items(dead_stock_mode) WHERE dead_stock_mode <> 'inherit';`,
   },
 ];
 

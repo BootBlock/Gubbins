@@ -21,7 +21,14 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   MS_PER_DAY,
   UNASSIGNED_LOCATION_ID,
+  type DeadStockMode,
 } from './constants';
+import { buildAncestorChain } from '@/features/inventory/location-inheritance';
+import {
+  resolveDeadStockPolicy,
+  type DeadStockLocationPolicy,
+  type ResolvedDeadStockPolicy,
+} from '@/features/reports/dead-stock';
 import {
   buildHygieneReport,
   type HygieneItemFlags,
@@ -532,10 +539,79 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Dead stock (§3): active items holding stock that have **not moved in `sinceDays`**, with
-   * the capital tied up. "Last moved" is the most recent `item_history` entry that changed
-   * quantity or gauge value; an item that has never moved falls back to its `created_at`. The
-   * boundary is inclusive (idle for exactly `sinceDays` qualifies); see `selectDeadStock`.
+   * Read the location tree once and return a memoised nearest-first ancestry lookup carrying
+   * each location's dead-stock policy (issue #92), ready for `resolveDeadStockPolicy`.
+   *
+   * The tree is bounded by the number of *locations*, not items, so reading it whole is far
+   * cheaper than a per-item recursive CTE. Chains are memoised per **location**, not per
+   * item: items sharing a location — the common case — resolve the same walk once.
+   */
+  private async deadStockChainResolver(): Promise<(locationId: string) => DeadStockLocationPolicy[]> {
+    const locations = await this.driver.query<{
+      id: string;
+      name: string;
+      parent_id: string | null;
+      dead_stock_mode: DeadStockMode;
+      dead_stock_days: number | null;
+    }>(`SELECT id, name, parent_id, dead_stock_mode, dead_stock_days FROM locations;`);
+
+    const byId = new Map(locations.map((l) => [l.id, l]));
+    const parents = new Map(locations.map((l) => [l.id, { name: l.name, parentId: l.parent_id }] as const));
+    const cache = new Map<string, DeadStockLocationPolicy[]>();
+
+    return (locationId: string): DeadStockLocationPolicy[] => {
+      let chain = cache.get(locationId);
+      if (chain === undefined) {
+        chain = buildAncestorChain(locationId, parents).map((link) => {
+          const row = byId.get(link.id);
+          return {
+            id: link.id,
+            name: link.name,
+            mode: row?.dead_stock_mode ?? 'inherit',
+            thresholdDays: row?.dead_stock_days ?? null,
+          };
+        });
+        cache.set(locationId, chain);
+      }
+      return chain;
+    };
+  }
+
+  /**
+   * The **resolved** dead-stock policy for a single item (issue #92) — whether it is
+   * reported, the idle threshold that applies, and which location decided each. Powers the
+   * explanatory note in the item editor, where "Inherit" alone tells the user nothing about
+   * whether the item is actually being watched.
+   *
+   * Returns null when the item doesn't exist.
+   */
+  async deadStockPolicy(
+    itemId: string,
+    defaultThresholdDays: number,
+  ): Promise<ResolvedDeadStockPolicy | null> {
+    const row = await this.driver.queryOne<{
+      location_id: string;
+      dead_stock_mode: DeadStockMode;
+    }>(`SELECT location_id, dead_stock_mode FROM items WHERE id = ?;`, [itemId]);
+    if (!row) return null;
+
+    const chainFor = await this.deadStockChainResolver();
+    return resolveDeadStockPolicy(row.dead_stock_mode, chainFor(row.location_id), defaultThresholdDays);
+  }
+
+  /**
+   * Dead stock (§3): items **opted in** to dead-stock reporting that have not moved within
+   * their idle threshold, with the capital tied up. "Last moved" is the most recent
+   * `item_history` entry that changed quantity or gauge value; an item that has never moved
+   * falls back to its `created_at`. The boundary is inclusive (idle for exactly the
+   * threshold qualifies); see `selectDeadStock`.
+   *
+   * Reporting is opt-in (issue #92): an item is included only when its own `dead_stock_mode`
+   * says `always`, or it defers (`inherit`) to a location in its ancestry that says so. Both
+   * the opt-in and the effective threshold — `sinceDays` unless a location overrides it —
+   * are resolved by the pure `resolveDeadStockPolicy` seam, which this feeds with the
+   * ancestry the SQL below walks. An untouched database opts nothing in, so the common case
+   * short-circuits before the location tree is ever read.
    */
   async deadStock(sinceDays: number, now: number = Date.now()): Promise<DeadStockReport> {
     const rows = await this.driver.query<{
@@ -546,10 +622,14 @@ export class ReportRepository extends BaseRepository {
       preferred_supplier_cost: number | null;
       created_at: number;
       last_moved_at: number | null;
+      location_id: string;
+      dead_stock_mode: DeadStockMode;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id')} AS preferred_supplier_cost,
               i.created_at AS created_at,
+              i.location_id AS location_id,
+              i.dead_stock_mode AS dead_stock_mode,
               ( SELECT MAX(h.created_at) FROM item_history h
                  WHERE h.item_id = i.id
                    AND (h.quantity_delta IS NOT NULL OR h.net_value_delta IS NOT NULL) ) AS last_moved_at
@@ -559,15 +639,28 @@ export class ReportRepository extends BaseRepository {
           AND ${notAVariantParent('i.id')}
           AND ${notUnlimited('i.is_unlimited')};`,
     );
-    const candidates: DeadStockCandidate[] = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      quantity: r.quantity,
-      unitCost: r.unit_cost,
-      preferredSupplierCost: r.preferred_supplier_cost,
-      lastMovedAt: r.last_moved_at,
-      createdAt: r.created_at,
-    }));
+
+    // The location tree decides the opt-in for every item still set to 'inherit' — which is
+    // the default, so it is almost always needed; only an inventory whose every candidate
+    // carries an explicit override can skip the read.
+    const needsTree = rows.some((r) => r.dead_stock_mode === 'inherit');
+    const chainFor = needsTree ? await this.deadStockChainResolver() : () => [];
+
+    const candidates: DeadStockCandidate[] = [];
+    for (const r of rows) {
+      const policy = resolveDeadStockPolicy(r.dead_stock_mode, chainFor(r.location_id), sinceDays);
+      if (!policy.reported) continue;
+      candidates.push({
+        id: r.id,
+        name: r.name,
+        quantity: r.quantity,
+        unitCost: r.unit_cost,
+        preferredSupplierCost: r.preferred_supplier_cost,
+        lastMovedAt: r.last_moved_at,
+        createdAt: r.created_at,
+        thresholdDays: policy.thresholdDays,
+      });
+    }
     return selectDeadStock(candidates, sinceDays, now);
   }
 

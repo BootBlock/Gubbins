@@ -11,12 +11,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import {
   BUDGET_WARN_PERCENT,
+  DEAD_STOCK_SINCE_DAYS,
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
 } from '@/db/repositories/constants';
 import {
   clampBudgetWarnPercent,
+  clampDeadStockDays,
   clampExpiryWindowDays,
   clampLowStockGaugePercent,
   clampLowStockQty,
@@ -316,6 +318,14 @@ interface PreferencesStore {
    * at/below this % remaining. **0 = off** (opt-in, as with {@link lowStockQtyThreshold}).
    */
   readonly lowStockGaugePercent: number;
+  /**
+   * How many days stock must sit unmoved before the §3 "Dead stock" report flags it
+   * (issue #92). Only items opted in — directly, or via the location they sit in — are
+   * reported at all, and a location may override this threshold for its own contents;
+   * this is the global default they fall back to. Clamped to
+   * {@link import('@/features/settings/settings').DEAD_STOCK_DAYS_BOUNDS}.
+   */
+  readonly deadStockDays: number;
   /** A project's budget indicator turns to a warning tone at/above this % of budget spent (§4). */
   readonly budgetWarnPercent: number;
   /**
@@ -543,6 +553,8 @@ interface PreferencesStore {
   setExpirySoonWindowDays: (days: number) => void;
   setLowStockQtyThreshold: (qty: number) => void;
   setLowStockGaugePercent: (percent: number) => void;
+  /** Set the global dead-stock idle threshold in days (clamped to the safe range). */
+  setDeadStockDays: (days: number) => void;
   setBudgetWarnPercent: (percent: number) => void;
   /** Turn list pagination on/off across the browse lists (issue #20). */
   setPaginateLists: (enabled: boolean) => void;
@@ -641,6 +653,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       expirySoonWindowDays: EXPIRY_SOON_WINDOW_DAYS,
       lowStockQtyThreshold: LOW_STOCK_QTY_THRESHOLD,
       lowStockGaugePercent: LOW_STOCK_GAUGE_PERCENT,
+      deadStockDays: DEAD_STOCK_SINCE_DAYS,
       budgetWarnPercent: BUDGET_WARN_PERCENT,
       paginateLists: false,
       defaultPageSize: DEFAULT_ITEMS_PER_PAGE,
@@ -748,6 +761,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setExpirySoonWindowDays: (days) => set({ expirySoonWindowDays: clampExpiryWindowDays(days) }),
       setLowStockQtyThreshold: (qty) => set({ lowStockQtyThreshold: clampLowStockQty(qty) }),
       setLowStockGaugePercent: (percent) => set({ lowStockGaugePercent: clampLowStockGaugePercent(percent) }),
+      setDeadStockDays: (days) => set({ deadStockDays: clampDeadStockDays(days) }),
       setBudgetWarnPercent: (percent) => set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
       setPaginateLists: (paginateLists) => set({ paginateLists }),
       // Clamp so a stale/out-of-range persisted or typed value can never reach the page maths.
