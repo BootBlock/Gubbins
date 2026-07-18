@@ -18,6 +18,7 @@ import { ContactRepository } from './ContactRepository';
 import { DiagnosticsRepository } from './DiagnosticsRepository';
 import { ImageRepository } from './ImageRepository';
 import { ItemRepository } from './ItemRepository';
+import { LocationPhotoRepository } from './LocationPhotoRepository';
 import { LocationRepository } from './LocationRepository';
 import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -37,6 +38,7 @@ import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
 export { LocationRepository } from './LocationRepository';
+export { LocationPhotoRepository } from './LocationPhotoRepository';
 export { MaintenanceRepository } from './MaintenanceRepository';
 export { CategoryRepository, INHERIT_VALUE } from './CategoryRepository';
 export { TagRepository, TagNameInUseError } from './TagRepository';
@@ -108,6 +110,7 @@ let maintenanceRepository: MaintenanceRepository | null = null;
 let categoryRepository: CategoryRepository | null = null;
 let tagRepository: TagRepository | null = null;
 let imageRepository: ImageRepository | null = null;
+let locationPhotoRepository: LocationPhotoRepository | null = null;
 let attachmentRepository: AttachmentRepository | null = null;
 let projectRepository: ProjectRepository | null = null;
 let purchaseOrderRepository: PurchaseOrderRepository | null = null;
@@ -178,6 +181,11 @@ export function getTagRepository(): TagRepository {
 export function getImageRepository(): ImageRepository {
   imageRepository ??= new ImageRepository(getDatabaseDriver(), productionOptions);
   return imageRepository;
+}
+
+export function getLocationPhotoRepository(): LocationPhotoRepository {
+  locationPhotoRepository ??= new LocationPhotoRepository(getDatabaseDriver(), productionOptions);
+  return locationPhotoRepository;
 }
 
 export function getAttachmentRepository(): AttachmentRepository {
