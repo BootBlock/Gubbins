@@ -1,33 +1,19 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useDeleteLocation, useUpdateLocation } from './mutations';
 import { resolveTreeKey, type TreeRow } from './tree-keyboard';
-import { defaultParentForNewLocation } from './location-tree';
+import { defaultParentForNewLocation, flattenVisibleTree } from './location-tree';
 import { useLocationExpansionStore } from './useLocationExpansionStore';
 
 /** Sentinel id for the synthetic "All items" treeitem (selects the null filter). */
 export const ALL_ITEMS_ID = '__all__';
 
-/** Append the visible rows (descendants of collapsed nodes omitted) in render order. */
-function flattenVisible(
-  nodes: readonly LocationTreeNode[],
-  level: number,
-  isOpen: (id: string, level: number) => boolean,
-  out: TreeRow[],
-): void {
-  for (const node of nodes) {
-    const hasChildren = node.children.length > 0;
-    const isExpanded = isOpen(node.id, level);
-    out.push({
-      id: node.id,
-      level,
-      expandable: hasChildren,
-      expanded: isExpanded,
-      deletable: !node.isSystem,
-    });
-    if (hasChildren && isExpanded) flattenVisible(node.children, level + 1, isOpen, out);
-  }
-}
+/**
+ * How long a focus request waits for a not-yet-rendered row to mount before lapsing. Generous
+ * enough to cover a scroll + re-render, short enough that a row which never arrives can't take
+ * focus away from wherever the user has moved on to.
+ */
+const PENDING_FOCUS_TIMEOUT_MS = 250;
 
 /**
  * The stateful controller behind {@link LocationSidebar}: expansion (with per-node
@@ -42,11 +28,27 @@ export function useLocationSidebar({
   flat,
   selectedId,
   onSelect,
+  forceExpandedIds,
+  scrollRowIntoView,
 }: {
   tree: readonly LocationTreeNode[];
   flat: readonly LocationWithCount[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /**
+   * Locations forced open regardless of the stored overrides — the ancestors retained by an
+   * active search/tag filter, so a deep match is reachable without hand-expanding branches
+   * (issue #129). Filtering never *writes* an override, so the user's own expanded/collapsed
+   * shape is restored untouched when the filter clears.
+   */
+  forceExpandedIds?: ReadonlySet<string>;
+  /**
+   * Bring a row into the rendered window before it is focused. The tree is virtualised above a
+   * threshold (issue #129), so a keyboard jump — End, or a long Down-arrow run — can target a row
+   * with no DOM node yet; the caller scrolls its virtualiser there and the row focuses as soon as
+   * its ref registers (see `setRowRef`). Omitted (or a no-op) when nothing is virtualised.
+   */
+  scrollRowIntoView?: (id: string) => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   // Expansion is "top-level (level 1) open by default; deeper collapsed" — including
@@ -73,17 +75,55 @@ export function useLocationSidebar({
   const deleteLocation = useDeleteLocation();
   const updateLocation = useUpdateLocation();
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  // A row a keyboard jump asked for that wasn't rendered yet (virtualised tree), plus the timer
+  // that disarms it if the row never turns up. See `focusRow`.
+  const pendingFocusId = useRef<string | null>(null);
+  const pendingFocusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const isOpen = (id: string, level: number) => overrides[id] ?? level === 1;
+  // A filtered ancestor is forced open (see `forceExpandedIds`) ahead of any stored override,
+  // so the retained path down to a match is always walkable; otherwise the baseline applies.
+  const isOpen = (id: string, level: number) =>
+    forceExpandedIds?.has(id) ? true : (overrides[id] ?? level === 1);
 
   // Seed the "+" dialog's parent with the current selection so adding inside a
   // location nests under it by default (policy in `defaultParentForNewLocation`).
   const addParentId = defaultParentForNewLocation(selectedId, flat);
 
   const setRowRef = (id: string) => (el: HTMLDivElement | null) => {
-    if (el) rowRefs.current.set(id, el);
-    else rowRefs.current.delete(id);
+    if (el) {
+      rowRefs.current.set(id, el);
+      // The row a keyboard jump was waiting on has just mounted (see `focusRow`) — claim it.
+      if (pendingFocusId.current === id) {
+        pendingFocusId.current = null;
+        window.clearTimeout(pendingFocusTimer.current);
+        el.focus();
+      }
+    } else rowRefs.current.delete(id);
   };
+
+  /**
+   * Move DOM focus to a row, whether or not it is currently rendered. Below the virtualisation
+   * threshold every row is in the DOM and this focuses immediately; above it, a row outside the
+   * window has no node yet, so we ask the caller to scroll there and arm a pending focus that
+   * `setRowRef` claims when the row mounts. The arm is short-lived: if the row never appears (it
+   * was filtered away between the keypress and the commit) it lapses rather than lying in wait to
+   * steal focus later.
+   */
+  const focusRow = (id: string) => {
+    const el = rowRefs.current.get(id);
+    if (el) {
+      el.focus();
+      return;
+    }
+    pendingFocusId.current = id;
+    window.clearTimeout(pendingFocusTimer.current);
+    pendingFocusTimer.current = window.setTimeout(() => {
+      pendingFocusId.current = null;
+    }, PENDING_FOCUS_TIMEOUT_MS);
+    scrollRowIntoView?.(id);
+  };
+
+  useEffect(() => () => window.clearTimeout(pendingFocusTimer.current), []);
 
   const toggle = (id: string, open: boolean) => setExpanded(id, open);
 
@@ -96,7 +136,7 @@ export function useLocationSidebar({
   const endRename = (id: string) => {
     setRenamingId(null);
     setFocusedId(id);
-    rowRefs.current.get(id)?.focus();
+    focusRow(id);
   };
 
   const commitRename = (id: string, name: string) => {
@@ -107,7 +147,7 @@ export function useLocationSidebar({
   // Focus retreats to "All items" before a deleted row leaves the tree.
   const retreatFocusToAllItems = () => {
     setFocusedId(ALL_ITEMS_ID);
-    rowRefs.current.get(ALL_ITEMS_ID)?.focus();
+    focusRow(ALL_ITEMS_ID);
   };
 
   // Either delete an empty location outright, or open the confirmation dialog when
@@ -129,11 +169,21 @@ export function useLocationSidebar({
     });
   };
 
-  // The flattened visible rows, in render order — fed verbatim to the keyboard maths.
+  // The flattened visible rows, in render order. Flattened **once** and handed back to the
+  // sidebar (`visibleRows`) so rendering, the ARIA set positions, the virtualiser and the keyboard
+  // maths below all read the same list — they cannot disagree about which rows exist or in what
+  // order, and the tree is only walked once per render.
+  const visibleRows = flattenVisibleTree(tree, isOpen);
   const rowMeta: TreeRow[] = [
     { id: ALL_ITEMS_ID, level: 1, expandable: false, expanded: false, deletable: false },
+    ...visibleRows.map(({ node, level }) => ({
+      id: node.id,
+      level,
+      expandable: node.children.length > 0,
+      expanded: isOpen(node.id, level),
+      deletable: !node.isSystem,
+    })),
   ];
-  flattenVisible(tree, 1, isOpen, rowMeta);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Resolve against the genuinely-focused treeitem rather than React state, so a
@@ -147,7 +197,7 @@ export function useLocationSidebar({
     switch (action.kind) {
       case 'focus':
         setFocusedId(action.id);
-        rowRefs.current.get(action.id)?.focus();
+        focusRow(action.id);
         break;
       case 'expand':
         toggle(action.id, true);
@@ -184,6 +234,7 @@ export function useLocationSidebar({
     setFocusedId,
     renamingId,
     isOpen,
+    visibleRows,
     toggle,
     select,
     commitRename,

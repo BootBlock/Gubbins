@@ -85,6 +85,26 @@ export class LocationRepository extends BaseRepository {
   }
 
   /**
+   * Every location as a flat list — the unpaginated counterpart to {@link getTree}, and
+   * justified by the same reasoning: the location hierarchy is a bounded *physical* structure,
+   * not the 100k+ item set the pagination mandate (§2.1) targets.
+   *
+   * The UI's flat list is not a "list" in the scrollable sense — it is the lookup table behind
+   * the parent/location pickers, the ancestry and cycle maths, and the sidebar's search and tag
+   * filters. All of those give *wrong* answers rather than merely short ones when a location is
+   * missing from it (a search finds nothing, an ancestry breadcrumb stops early), so this read is
+   * never capped. Use {@link list} where a genuine page is wanted.
+   */
+  async listAll(): Promise<LocationWithCount[]> {
+    const rows = await this.driver.query<LocationCountRow>(
+      `${SELECT_WITH_COUNT}
+       GROUP BY l.id
+       ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC;`,
+    );
+    return rows.map(toWithCount);
+  }
+
+  /**
    * The full location hierarchy as a nested tree (powers `useLocationTree`).
    * Locations are a bounded physical hierarchy (not the 100k+ item set), so a
    * single bounded read assembled in memory is appropriate here; the strict RPC

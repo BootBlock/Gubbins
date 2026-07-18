@@ -1,18 +1,37 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  measureElement as measureElementRect,
+  observeElementRect,
+  useVirtualizer,
+  type Virtualizer,
+} from '@tanstack/react-virtual';
 
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
-import { Button, LiveRegion, Modal, Spinner, Tooltip, useToast } from '@/components/foundry';
-import { AddIcon, DeleteIcon, PackageIcon, TagIcon } from '@/components/icons';
+import {
+  Button,
+  Input,
+  InputClearButton,
+  LiveRegion,
+  Modal,
+  Spinner,
+  Tooltip,
+  useSearchEscapeToClear,
+  useToast,
+} from '@/components/foundry';
+import { AddIcon, DeleteIcon, PackageIcon, SearchIcon, TagIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import {
   collectDescendantIds,
+  locationsMatchingQuery,
   matchingWithAncestors,
   pruneArchivedTree,
   pruneTreeToIds,
+  type VisibleTreeRow,
 } from '../location-tree';
 import { useLocationTagIndex } from '../tags';
 import { ALL_ITEMS_ID, useLocationSidebar } from '../useLocationSidebar';
@@ -23,6 +42,20 @@ import { LocationKindIcon } from './LocationKindIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
+
+/**
+ * Above this many visible rows the tree switches from "render every row" to a scrolling window
+ * (issue #129). Deliberately well clear of a normal inventory's location count: a modest tree keeps
+ * plain, fully-rendered DOM — every row available to drag-and-drop and to `Ctrl+F` — and only a
+ * tree big enough for the DOM cost to actually bite pays for windowing.
+ */
+const VIRTUALISE_ROW_THRESHOLD = 150;
+
+/** Starting guess for a row's height; the virtualiser measures the real ones as they mount. */
+const TREE_ROW_ESTIMATE_PX = 34;
+
+/** Starting guess for the scroll port's height, until it is measured for real. */
+const INITIAL_VIEWPORT_ESTIMATE_PX = 600;
 
 /**
  * Location navigation sidebar (spec §4): the nested, self-referential hierarchy
@@ -92,20 +125,39 @@ export function LocationSidebar({
       return next;
     });
 
-  const { shownTree, shownFlat } = useMemo(() => {
-    if (effectiveTagIds.size === 0) return { shownTree: visibleTree, shownFlat: visibleFlat };
+  // Name search (issue #129): the location tree is the screen's primary navigation axis, so
+  // finding a deeply nested bin must not mean expanding branches by hand. Structurally this is a
+  // third filter layer over the same "match → keep ancestors → prune" pipeline as the tag chips
+  // and "Show archived" above; matching itself lives in the pure `locationsMatchingQuery`.
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searching = search.trim().length > 0;
+  // Escape clears the box before it means anything else, via the shared searchable-surface seam.
+  useSearchEscapeToClear(searching, searchRef, () => setSearch(''));
+  const searchMatches = useMemo(() => locationsMatchingQuery(visibleFlat, search), [visibleFlat, search]);
+
+  const filtering = effectiveTagIds.size > 0 || searching;
+  const { shownTree, shownFlat, keptIds } = useMemo(() => {
+    if (!filtering) return { shownTree: visibleTree, shownFlat: visibleFlat, keptIds: undefined };
     const byLocation = tagIndex.data?.byLocation;
     const matches = new Set<string>();
     for (const loc of visibleFlat) {
-      const tags = byLocation?.get(loc.id);
-      if (tags && [...effectiveTagIds].some((id) => tags.has(id))) matches.add(loc.id);
+      // Both filters must agree — narrowing by tag *and* by name is an intersection, so each
+      // keystroke refines the chip selection rather than widening past it.
+      if (effectiveTagIds.size > 0) {
+        const tags = byLocation?.get(loc.id);
+        if (!tags || ![...effectiveTagIds].some((id) => tags.has(id))) continue;
+      }
+      if (searching && !searchMatches.has(loc.id)) continue;
+      matches.add(loc.id);
     }
     const keep = matchingWithAncestors(matches, visibleFlat);
     return {
       shownTree: pruneTreeToIds(visibleTree as LocationTreeNode[], keep),
       shownFlat: visibleFlat.filter((l) => keep.has(l.id)),
+      keptIds: keep,
     };
-  }, [effectiveTagIds, tagIndex.data, visibleTree, visibleFlat]);
+  }, [effectiveTagIds, filtering, searchMatches, searching, tagIndex.data, visibleTree, visibleFlat]);
 
   // Keep the persisted expansion overrides bounded: drop entries for locations that no
   // longer exist (deleted since a prior session) so localStorage doesn't accumulate dead
@@ -118,6 +170,19 @@ export function LocationSidebar({
     if (flat.length === 0) return;
     pruneExpansion(new Set(flat.map((l) => l.id)));
   }, [flat, pruneExpansion]);
+
+  // Virtualisation plumbing (issue #129). The virtualiser can only be created once the row list
+  // exists, and the row list needs `isOpen` from the hook below — which in turn wants to scroll
+  // the virtualiser when the keyboard jumps to an off-window row. These two refs break that cycle:
+  // the row ids and the live virtualiser are published after each render, and the stable
+  // `scrollRowIntoView` handed to the hook reads them at call time.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowIdsRef = useRef<readonly string[]>([]);
+  const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const scrollRowIntoView = useCallback((id: string) => {
+    const index = rowIdsRef.current.indexOf(id);
+    if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
+  }, []);
 
   const {
     addOpen,
@@ -133,6 +198,7 @@ export function LocationSidebar({
     setFocusedId,
     renamingId,
     isOpen,
+    visibleRows,
     toggle,
     select,
     commitRename,
@@ -140,7 +206,16 @@ export function LocationSidebar({
     requestDelete,
     setRowRef,
     onKeyDown,
-  } = useLocationSidebar({ tree: shownTree, flat: shownFlat, selectedId, onSelect });
+  } = useLocationSidebar({
+    tree: shownTree,
+    flat: shownFlat,
+    selectedId,
+    onSelect,
+    // While a filter is on, every retained ancestor opens so the matches are visible without
+    // hand-expanding — and closes back to the user's own shape when the filter clears.
+    forceExpandedIds: keptIds,
+    scrollRowIntoView,
+  });
 
   // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Gated on
   // the Label printing module (Modular UI): with it off, the per-location action disappears.
@@ -209,9 +284,55 @@ export function LocationSidebar({
   // points at shows a spinner so the drop isn't silent until the counts refresh.
   const movingItemToId = moveItem.isPending ? (moveItem.variables?.locationId ?? null) : null;
 
+  const t = useT();
+
+  // Every row the tree shows, in render order: the synthetic "All items" row, then the location
+  // rows the controller flattened (collapsed subtrees omitted). Reusing its list — rather than
+  // flattening a second time here — is what guarantees the markup, the ARIA set positions, the
+  // virtualiser and the keyboard navigation all describe the same rows.
+  const rowIds = [ALL_ITEMS_ID, ...visibleRows.map((row) => row.node.id)];
+  // "All items" sits alongside the top-level locations, so it counts towards their ARIA set.
+  const topLevelSetSize = shownTree.length + 1;
+
+  // Windowing kicks in only once the tree is genuinely long. Below the threshold every row stays
+  // in the DOM exactly as before — no absolute positioning, no measurement, and drag-to-nest and
+  // the roving-tabindex focus all work against real nodes. Above it the DOM cost stops tracking
+  // the location count, which is what makes a few hundred locations navigable.
+  const virtualize = rowIds.length > VIRTUALISE_ROW_THRESHOLD;
+  const virtualizer = useVirtualizer({
+    count: rowIds.length,
+    // Kept subscribed even below the threshold (where the plain branch renders instead). Toggling
+    // it as a filter crosses the threshold would tear the virtualiser down in the same commit that
+    // unmounts every measured row, which React flags as a re-entrant flush.
+    enabled: true,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => TREE_ROW_ESTIMATE_PX,
+    getItemKey: (index) => rowIds[index] ?? index,
+    overscan: 12,
+    // A viewport guess for the first paint, before the scroll port has been measured.
+    initialRect: { width: 0, height: INITIAL_VIEWPORT_ESTIMATE_PX },
+    // …and the same floor applied to every later measurement. A window sized from a zero-height
+    // port contains no rows at all, so a tree measured mid-layout (or in any environment that
+    // doesn't compute one) would render *nothing* rather than a short list — a blank sidebar is a
+    // far worse failure than a few rows more than strictly needed.
+    observeElementRect: (instance, cb) =>
+      observeElementRect(instance, (rect) =>
+        cb({ width: rect.width, height: rect.height || INITIAL_VIEWPORT_ESTIMATE_PX }),
+      ),
+    // Same floor per row. A rendered row is never really zero-tall, and taking a zero measurement
+    // at face value collapses every row onto the same offset — after which the virtualiser's
+    // position lookup can land anywhere in the list.
+    measureElement: (el, entry, instance) => measureElementRect(el, entry, instance) || TREE_ROW_ESTIMATE_PX,
+  });
+  // Published for the event-time `scrollRowIntoView` above (never read during render).
+  useEffect(() => {
+    virtualizerRef.current = virtualizer;
+    rowIdsRef.current = rowIds;
+  });
+
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-2 large-format:w-72">
-      <div className="flex items-center justify-between px-1">
+    <aside className="flex min-h-0 w-64 shrink-0 flex-col gap-2 large-format:w-72">
+      <div className="flex shrink-0 items-center justify-between px-1">
         <h2
           id="locations-heading"
           className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -233,8 +354,34 @@ export function LocationSidebar({
         </Tooltip>
       </div>
 
+      {/* Name search. `pr-9` reserves the clear button's lane so the two never overlap. */}
+      <div className="relative shrink-0 px-1">
+        <SearchIcon
+          aria-hidden
+          className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          ref={searchRef}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t('inventory.locations.search.placeholder')}
+          aria-label={t('inventory.locations.search.label')}
+          className={cn('pl-9', searching && 'pr-9')}
+        />
+        {searching ? (
+          <InputClearButton
+            label={t('inventory.locations.search.clear')}
+            onClick={() => {
+              setSearch('');
+              searchRef.current?.focus();
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2"
+          />
+        ) : null}
+      </div>
+
       {filterTags.length > 0 ? (
-        <div className="flex flex-wrap gap-1 px-1" role="group" aria-label="Filter locations by tag">
+        <div className="flex shrink-0 flex-wrap gap-1 px-1" role="group" aria-label="Filter locations by tag">
           {filterTags.map((tag) => {
             const active = effectiveTagIds.has(tag.id);
             return (
@@ -267,35 +414,53 @@ export function LocationSidebar({
         </div>
       ) : null}
 
-      {/* APG tree: a single keydown handler on the role="tree" container drives roving-tabindex navigation. */}
+      {/* APG tree: a single keydown handler on the role="tree" container drives roving-tabindex
+          navigation. The container is also the scroll port — the tree owns its own scrolling so a
+          long location list never pushes the archived toggle off the screen, and so the virtualiser
+          has an element to measure. The inner wrappers are `presentation` so the treeitems stay
+          direct children of the tree in the accessibility tree. */}
       <div
+        ref={scrollRef}
         role="tree"
         aria-labelledby="locations-heading"
         tabIndex={-1}
-        className="space-y-0.5"
+        className="min-h-0 flex-1 overflow-y-auto"
         onKeyDown={onKeyDown}
       >
-        <LocationTreeItem
-          id={ALL_ITEMS_ID}
-          ref={setRowRef(ALL_ITEMS_ID)}
-          level={1}
-          selected={selectedId === null}
-          focused={focusedId === ALL_ITEMS_ID}
-          icon={<PackageIcon />}
-          label="All items"
-          count={totalCount}
-          onSelect={() => select(ALL_ITEMS_ID)}
-          onFocus={() => setFocusedId(ALL_ITEMS_ID)}
-        />
-        {renderNodes(shownTree, 1)}
+        {virtualize ? (
+          <div role="presentation" className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => (
+              <div
+                key={virtualRow.key}
+                role="presentation"
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                className="absolute left-0 top-0 w-full pb-0.5"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                {renderRow(virtualRow.index)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div role="presentation" className="space-y-0.5">
+            {rowIds.map((id, index) => (
+              <Fragment key={id}>{renderRow(index)}</Fragment>
+            ))}
+          </div>
+        )}
       </div>
 
-      {effectiveTagIds.size > 0 && shownFlat.length === 0 ? (
-        <p className="px-1 text-xs text-muted-foreground">No locations carry the selected tags.</p>
+      {filtering && shownFlat.length === 0 ? (
+        <p className="shrink-0 px-1 text-xs text-muted-foreground">
+          {searching
+            ? t('inventory.locations.search.empty', { vars: { query: search.trim() } })
+            : t('inventory.locations.tags.empty')}
+        </p>
       ) : null}
 
       {archivedCount > 0 ? (
-        <label className="flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={showArchived}
@@ -377,71 +542,99 @@ export function LocationSidebar({
     </aside>
   );
 
-  function renderNodes(nodes: readonly LocationTreeNode[], level: number): ReactNode[] {
-    const out: ReactNode[] = [];
-    for (const node of nodes) {
-      const hasChildren = node.children.length > 0;
-      const isExpanded = isOpen(node.id, level);
-      out.push(
+  /**
+   * Render one row of {@link rowIds} by index — the seam the virtualiser needs. Index 0 is the
+   * synthetic "All items" row; the rest map 1:1 onto the flattened location rows. Going through an
+   * index (rather than recursing) means the windowed and unwindowed paths render identical markup.
+   */
+  function renderRow(index: number): ReactNode {
+    if (index === 0) {
+      return (
         <LocationTreeItem
-          key={node.id}
-          id={node.id}
-          ref={setRowRef(node.id)}
-          level={level}
-          selected={selectedId === node.id}
-          focused={focusedId === node.id}
-          icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
-          label={node.name}
-          colorClass={locationColorTextClass(node.color)}
-          description={node.description}
-          count={node.itemCount}
-          capacity={node.capacity}
-          isDefault={node.isDefault}
-          archived={node.archivedAt != null}
-          expanded={hasChildren ? isExpanded : undefined}
-          onToggle={hasChildren ? () => toggle(node.id, !isExpanded) : undefined}
-          onSelect={() => select(node.id)}
-          onFocus={() => setFocusedId(node.id)}
-          editing={renamingId === node.id}
-          onRename={(name) => commitRename(node.id, name)}
-          onRenameCancel={() => endRename(node.id)}
-          onEdit={node.isSystem ? undefined : () => setEditLocation(node)}
-          editLabel={`Edit ${node.name}`}
-          onArchive={
-            node.isSystem || node.archivedAt != null
-              ? undefined
-              : () => archive.mutate({ id: node.id, archived: true })
-          }
-          archiveLabel={`Archive ${node.name}`}
-          onRestore={
-            node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
-          }
-          restoreLabel={`Restore ${node.name}`}
-          onPrintLabel={labelsEnabled ? () => setPrintLabelNode(node) : undefined}
-          printLabelLabel={`Print label for ${node.name}`}
-          onDropItem={
-            node.archivedAt != null
-              ? undefined
-              : (itemId, itemName) => moveItemToLocation(itemId, itemName, node.id, node.name)
-          }
-          receivingItem={movingItemToId === node.id}
-          // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto
-          // another such location to nest beneath it. System/archived rows are neither a valid
-          // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter). While a
-          // nest is in flight no row is draggable, so the user can't start stacking a second
-          // re-parent on top of the first (see the `isPending` gate in `nestLocation`).
-          draggable={!node.isSystem && node.archivedAt == null && !updateLocation.isPending}
-          onDropLocation={
-            node.isSystem || node.archivedAt != null
-              ? undefined
-              : (draggedId) => nestLocation(draggedId, node.id)
-          }
-          acceptsLocation={(draggedId) => canNest(draggedId, node.id)}
-          nesting={nestingId === node.id}
-        />,
+          id={ALL_ITEMS_ID}
+          ref={setRowRef(ALL_ITEMS_ID)}
+          level={1}
+          posInSet={1}
+          setSize={topLevelSetSize}
+          selected={selectedId === null}
+          focused={focusedId === ALL_ITEMS_ID}
+          icon={<PackageIcon />}
+          label="All items"
+          count={totalCount}
+          onSelect={() => select(ALL_ITEMS_ID)}
+          onFocus={() => setFocusedId(ALL_ITEMS_ID)}
+        />
       );
-      if (hasChildren && isExpanded) out.push(...renderNodes(node.children, level + 1));
     }
-    return out;
+    const row = visibleRows[index - 1];
+    return row ? renderNode(row) : null;
+  }
+
+  function renderNode({ node, level, posInSet, setSize }: VisibleTreeRow<LocationTreeNode>): ReactNode {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = isOpen(node.id, level);
+    // At the top level the synthetic "All items" row is a sibling, so it shifts every real
+    // location one place along and widens the set by one.
+    const atTopLevel = level === 1;
+    return (
+      <LocationTreeItem
+        key={node.id}
+        id={node.id}
+        ref={setRowRef(node.id)}
+        level={level}
+        posInSet={atTopLevel ? posInSet + 1 : posInSet}
+        setSize={atTopLevel ? topLevelSetSize : setSize}
+        selected={selectedId === node.id}
+        focused={focusedId === node.id}
+        icon={<LocationKindIcon kind={node.kind} expanded={isExpanded && hasChildren} />}
+        label={node.name}
+        colorClass={locationColorTextClass(node.color)}
+        description={node.description}
+        count={node.itemCount}
+        capacity={node.capacity}
+        isDefault={node.isDefault}
+        archived={node.archivedAt != null}
+        expanded={hasChildren ? isExpanded : undefined}
+        onToggle={hasChildren ? () => toggle(node.id, !isExpanded) : undefined}
+        onSelect={() => select(node.id)}
+        onFocus={() => setFocusedId(node.id)}
+        editing={renamingId === node.id}
+        onRename={(name) => commitRename(node.id, name)}
+        onRenameCancel={() => endRename(node.id)}
+        onEdit={node.isSystem ? undefined : () => setEditLocation(node)}
+        editLabel={`Edit ${node.name}`}
+        onArchive={
+          node.isSystem || node.archivedAt != null
+            ? undefined
+            : () => archive.mutate({ id: node.id, archived: true })
+        }
+        archiveLabel={`Archive ${node.name}`}
+        onRestore={
+          node.archivedAt != null ? () => archive.mutate({ id: node.id, archived: false }) : undefined
+        }
+        restoreLabel={`Restore ${node.name}`}
+        onPrintLabel={labelsEnabled ? () => setPrintLabelNode(node) : undefined}
+        printLabelLabel={`Print label for ${node.name}`}
+        onDropItem={
+          node.archivedAt != null
+            ? undefined
+            : (itemId, itemName) => moveItemToLocation(itemId, itemName, node.id, node.name)
+        }
+        receivingItem={movingItemToId === node.id}
+        // Drag-to-nest (spec §4): a non-system, non-archived location can be dragged onto
+        // another such location to nest beneath it. System/archived rows are neither a valid
+        // source nor a valid parent (mirroring the dialogs' `!isSystem` parent filter). While a
+        // nest is in flight no row is draggable, so the user can't start stacking a second
+        // re-parent on top of the first (see the `isPending` gate in `nestLocation`).
+        draggable={!node.isSystem && node.archivedAt == null && !updateLocation.isPending}
+        onDropLocation={
+          node.isSystem || node.archivedAt != null
+            ? undefined
+            : (draggedId) => nestLocation(draggedId, node.id)
+        }
+        acceptsLocation={(draggedId) => canNest(draggedId, node.id)}
+        nesting={nestingId === node.id}
+      />
+    );
   }
 }

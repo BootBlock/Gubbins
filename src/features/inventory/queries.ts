@@ -20,7 +20,9 @@ import {
   type ItemListFilters,
   type ItemStatusCount,
   type ItemStatusFilter,
+  type LocationWithCount,
   type LowStockThresholds,
+  type Page,
   type SuggestionField,
 } from '@/db/repositories';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
@@ -467,10 +469,23 @@ export function useLocationTree() {
   });
 }
 
-/** A flat, paginated location list (for pickers / move targets). */
+/**
+ * The flat location list (pickers, move targets, ancestry maths, the sidebar's filters).
+ *
+ * Deliberately **unpaginated** — see `LocationRepository.listAll`. This was capped at 100, which
+ * silently gave wrong answers rather than short ones once someone had more locations than that: a
+ * picker omitted them, an ancestry breadcrumb stopped early, and a sidebar search for one of them
+ * found nothing. The location hierarchy is bounded physical structure, so it is read whole, exactly
+ * like the tree it mirrors.
+ *
+ * The `Page` shape is kept (`.rows`) so every existing caller reads it unchanged.
+ */
 export function useLocations() {
   return useQuery({
     queryKey: inventoryKeys.locationList(),
-    queryFn: () => getLocationRepository().list({ limit: 100 }),
+    queryFn: async (): Promise<Page<LocationWithCount>> => {
+      const rows = await getLocationRepository().listAll();
+      return { rows, limit: rows.length, offset: 0, hasMore: false };
+    },
   });
 }
