@@ -41,8 +41,8 @@ uncluttered until you ask for it.
 
 ### Managing the tag set
 
-**Where to find it:** the **Manage tags** screen — jump to it from the command palette
-(`Ctrl/⌘ + K`).
+**Where to find it:** the **Manage tags** screen — from the inventory **⋯ (More)** menu
+(**Tags**, right below **Categories**), or the command palette (`Ctrl/⌘ + K`).
 
 This is the place to tidy the whole dictionary. Every tag is listed with how many items and
 locations carry it, and you can:
