@@ -241,6 +241,9 @@ export {
   ChevronLeft as ChevronLeftIcon,
   CircleHelp as HelpIcon,
   BookOpen as WikiIcon,
+
+  // The hidden lab screen (`/lab`) — testing switches for behaviour that is normally automatic.
+  FlaskConical as LabIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

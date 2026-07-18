@@ -18,6 +18,7 @@ import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ModulesRouteImport } from './routes/modules'
+import { Route as LabRouteImport } from './routes/lab'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InsuranceScheduleRouteImport } from './routes/insurance-schedule'
 import { Route as ImportRouteImport } from './routes/import'
@@ -74,6 +75,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const ModulesRoute = ModulesRouteImport.update({
   id: '/modules',
   path: '/modules',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabRoute = LabRouteImport.update({
+  id: '/lab',
+  path: '/lab',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InventoryRoute = InventoryRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/import': typeof ImportRoute
   '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
+  '/lab': typeof LabRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/import': typeof ImportRoute
   '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
+  '/lab': typeof LabRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/import': typeof ImportRoute
   '/insurance-schedule': typeof InsuranceScheduleRoute
   '/inventory': typeof InventoryRoute
+  '/lab': typeof LabRoute
   '/modules': typeof ModulesRoute
   '/projects': typeof ProjectsRoute
   '/purchase-orders': typeof PurchaseOrdersRoute
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/insurance-schedule'
     | '/inventory'
+    | '/lab'
     | '/modules'
     | '/projects'
     | '/purchase-orders'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/insurance-schedule'
     | '/inventory'
+    | '/lab'
     | '/modules'
     | '/projects'
     | '/purchase-orders'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/insurance-schedule'
     | '/inventory'
+    | '/lab'
     | '/modules'
     | '/projects'
     | '/purchase-orders'
@@ -292,6 +304,7 @@ export interface RootRouteChildren {
   ImportRoute: typeof ImportRoute
   InsuranceScheduleRoute: typeof InsuranceScheduleRoute
   InventoryRoute: typeof InventoryRoute
+  LabRoute: typeof LabRoute
   ModulesRoute: typeof ModulesRoute
   ProjectsRoute: typeof ProjectsRoute
   PurchaseOrdersRoute: typeof PurchaseOrdersRoute
@@ -366,6 +379,13 @@ declare module '@tanstack/react-router' {
       path: '/modules'
       fullPath: '/modules'
       preLoaderRoute: typeof ModulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lab': {
+      id: '/lab'
+      path: '/lab'
+      fullPath: '/lab'
+      preLoaderRoute: typeof LabRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inventory': {
@@ -468,6 +488,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImportRoute: ImportRoute,
   InsuranceScheduleRoute: InsuranceScheduleRoute,
   InventoryRoute: InventoryRoute,
+  LabRoute: LabRoute,
   ModulesRoute: ModulesRoute,
   ProjectsRoute: ProjectsRoute,
   PurchaseOrdersRoute: PurchaseOrdersRoute,

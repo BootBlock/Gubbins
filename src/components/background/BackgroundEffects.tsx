@@ -16,6 +16,10 @@
  *   motion` setting), and drops out entirely at Minimal/Off (`suppressesAmbient`). A canvas is
  *   invisible to the CSS `data-anim-level` / reduced-motion catch-alls, so these gates are applied
  *   here in JS.
+ * - **A seasonal garnish.** On a few days a year (see {@link ./seasonal}) the running field also
+ *   carries a sparse drift of themed emoji. It is a garnish on an effect you already chose, so it
+ *   never appears when the effect is `none` and never replaces the rain or snow; the hidden lab
+ *   screen can force any occasion (and, with a flag, run the garnish on its own) for testing.
  * - **Theme-correct.** The engine reads its colours from the `--precip-*` tokens; a light/dark
  *   change (explicit mode / OLED / high-contrast, or an OS scheme flip under `system`) triggers a
  *   colour refresh without resetting the falling field.
@@ -30,12 +34,14 @@
  *   {@link trackSurfaces} per-column surface map. The overlay is pure motion, so it isn't rendered
  *   at all when the decoration-motion gate asks for a static frame.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useBackdropStore } from '@/state/stores/useBackdropStore';
+import { useLabFlag, useLabStore } from '@/state/stores/useLabStore';
 import { useDecorationMotionReduced } from '@/components/foundry/decoration-motion';
 import { suppressesAmbient } from '@/features/settings/theme-registry';
 import { startPrecip, type PrecipController } from './precip-engine';
+import { resolveOccasion } from './seasonal';
 import { trackSurfaces } from './surface-map';
 
 export function BackgroundEffects() {
@@ -53,7 +59,21 @@ export function BackgroundEffects() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<PrecipController | null>(null);
-  const hidden = effect === 'none' || ambientOff || backdropActive;
+
+  // Seasonal garnish (see ./seasonal): on a few days a year the field also carries themed emoji.
+  // The date is read once per mount — a device left open across midnight into Christmas Day picks
+  // it up on the next load, which is soon enough for a decoration — while the lab's per-occasion
+  // overrides make any of them testable on demand.
+  const occasionModes = useLabStore((s) => s.occasionModes);
+  const dense = useLabFlag('seasonal-dense');
+  const ignoreEffect = useLabFlag('seasonal-ignore-effect');
+  const occasion = useMemo(() => resolveOccasion(new Date(), occasionModes), [occasionModes]);
+  const garnish = useMemo(() => (occasion ? { emoji: occasion.emoji, dense } : null), [occasion, dense]);
+
+  // Normally the garnish rides an already-running rain/snow layer and never appears alone. The lab
+  // flag runs it with no effect selected: the layer starts, but with an empty base pool.
+  const garnishOnly = effect === 'none' && ignoreEffect && occasion !== null && !reduced;
+  const hidden = (effect === 'none' && !garnishOnly) || ambientOff || backdropActive;
 
   // Start/stop the engine when the chosen effect, the motion gate or the ambient cutoff changes.
   useEffect(() => {
@@ -65,13 +85,22 @@ export function BackgroundEffects() {
     // actually run (both 2D contexts usable) and stops it with itself — so a degraded start
     // (e.g. canvas blocked) never leaves DOM observers running unconsumed.
     const overlay = reduced ? null : overlayRef.current;
-    const controller = startPrecip(canvas, { kind: effect, reduced, overlay, surfaces: trackSurfaces });
+    const controller = startPrecip(canvas, {
+      // Garnish-only runs need *a* kind for the engine's tuning and token lookup even though no
+      // rain or snow is spawned; snow's gentler field is the closer match for drifting emoji.
+      kind: effect === 'none' ? 'snow' : effect,
+      reduced,
+      overlay,
+      surfaces: trackSurfaces,
+      garnish,
+      suppressBase: garnishOnly,
+    });
     controllerRef.current = controller;
     return () => {
       controller.stop();
       controllerRef.current = null;
     };
-  }, [effect, reduced, hidden]);
+  }, [effect, reduced, hidden, garnish, garnishOnly]);
 
   // Re-read the token colours when the resolved theme changes (explicit axes).
   useEffect(() => {
@@ -83,7 +112,9 @@ export function BackgroundEffects() {
   // canvas uses, so the attribute never lingers when nothing is on screen; cleared on unmount.
   useEffect(() => {
     const root = document.documentElement;
-    if (hidden) delete root.dataset.bgEffect;
+    // A garnish-only run paints a handful of emoji and nothing else, so it must not soften the
+    // cards — there is no drifting field behind them to show through.
+    if (hidden || effect === 'none') delete root.dataset.bgEffect;
     else root.dataset.bgEffect = effect;
     return () => {
       delete root.dataset.bgEffect;

@@ -234,9 +234,17 @@ function makeSurfaces(top: number, cols = 340) {
     hoverFollow: () => hover,
     stop: () => {},
   };
+  let created = 0;
   return {
     tracker,
-    factory: () => tracker,
+    factory: () => {
+      created++;
+      return tracker;
+    },
+    /** How many times the engine actually built a tracker (it takes a factory, not an instance). */
+    get created() {
+      return created;
+    },
     clear() {
       tops = new Int16Array(cols).fill(NO_SURFACE);
       generation++;
@@ -376,6 +384,117 @@ describe('startPrecip control interaction (issue #68)', () => {
     expect(rec.drawImages.length).toBeGreaterThan(0); // the calm static frame still paints
     expect(orec.drawImages.length).toBe(0); // …but the overlay is never touched
     expect(orec.clearCount).toBe(0);
+    ctrl.stop();
+  });
+});
+
+/**
+ * The seasonal garnish. `suppressBase` is the lever these lean on: with the rain/snow pool empty
+ * every recorded blit is necessarily a garnish piece, so the assertions can be exact counts rather
+ * than "more than before". The garnish runs `dense` here so its spawn delays expire within a few
+ * pumped frames instead of the sparse gap the app ships.
+ */
+describe('startPrecip seasonal garnish', () => {
+  const GARNISH = { emoji: ['🎃', '👻'], dense: true } as const;
+
+  it('blits the garnish, and only the garnish, when the base field is suppressed', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      garnish: GARNISH,
+      suppressBase: true,
+    });
+    // Nothing is drawn until the pieces' spawn delays run out.
+    for (let i = 1; i <= 40; i++) pump(i * 50);
+    expect(rec.drawImages.length).toBeGreaterThan(0);
+    // Every piece rocks around its own centre, so a blit is always inside a translate+rotate pair.
+    expect(rec.rotateCount).toBeGreaterThan(0);
+    expect(rec.translates.length).toBe(rec.drawImages.length);
+    ctrl.stop();
+  });
+
+  it('advances the garnish across frames rather than holding it still', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      garnish: GARNISH,
+      suppressBase: true,
+    });
+    for (let i = 1; i <= 40; i++) pump(i * 50);
+    const first = rec.translates[0];
+    const last = rec.translates[rec.translates.length - 1];
+    expect(first).toBeDefined();
+    expect(last).not.toEqual(first);
+    ctrl.stop();
+  });
+
+  it('draws no garnish under reduced motion (it is pure motion, not a static decoration)', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: true,
+      garnish: GARNISH,
+      suppressBase: true,
+    });
+    // A reduced start paints one static frame; with the base pool suppressed and the garnish
+    // gated off, that frame has nothing at all to draw.
+    expect(rec.drawImages.length).toBe(0);
+    for (let i = 1; i <= 10; i++) pump(i * 50);
+    expect(rec.drawImages.length).toBe(0);
+    ctrl.stop();
+  });
+
+  it('ignores an empty emoji set rather than allocating an unusable pool', () => {
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      garnish: { emoji: [] },
+      suppressBase: true,
+    });
+    for (let i = 1; i <= 20; i++) pump(i * 50);
+    expect(rec.drawImages.length).toBe(0);
+    ctrl.stop();
+  });
+
+  it('skips the control-surface tracker entirely on a garnish-only run', () => {
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    // Nothing can settle or splash without a base field, so the tracker — and the document-wide
+    // observers it installs — must never be constructed.
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+      garnish: GARNISH,
+      suppressBase: true,
+    });
+    for (let i = 1; i <= 40; i++) pump(i * 50);
+    expect(surfaces.created).toBe(0);
+    expect(orec.drawImages.length).toBe(0);
+    ctrl.stop();
+  });
+
+  it('still garnishes a normal snow field (the shipped case: a garnish, not a replacement)', () => {
+    const plain = makeCtx();
+    const plainCtrl = startPrecip(makeCanvas(plain), { kind: 'snow', reduced: false });
+    for (let i = 1; i <= 40; i++) pump(i * 50);
+    const plainPerFrame = plain.drawImages.length;
+    plainCtrl.stop();
+
+    const rec = makeCtx();
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      garnish: GARNISH,
+    });
+    for (let i = 1; i <= 40; i++) pump(i * 50);
+    // The snow pool is untouched — the garnish is added on top of it, never carved out of it.
+    expect(rec.drawImages.length).toBeGreaterThan(plainPerFrame);
     ctrl.stop();
   });
 });
