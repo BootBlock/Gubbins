@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
-import { createBridgeServer, type BridgeServerState } from './server.ts';
+import { createBridgeServer, requestBase, type BridgeServerState } from './server.ts';
 import { createRateLimiter } from './rate-limit.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
@@ -175,5 +175,24 @@ describe('503 before a snapshot is loaded', () => {
     } finally {
       await new Promise<void>((resolve) => empty.close(() => resolve()));
     }
+  });
+});
+
+describe('requestBase', () => {
+  it('resolves the base from the Host header so absolute URLs carry the real address', () => {
+    expect(requestBase('192.168.1.20:8787')).toBe('http://192.168.1.20:8787');
+    expect(requestBase('gubbins.example.com')).toBe('http://gubbins.example.com');
+  });
+
+  it('falls back to localhost when the header is missing, empty or not a bare authority', () => {
+    expect(requestBase(undefined)).toBe('http://localhost');
+    expect(requestBase('')).toBe('http://localhost');
+    // Userinfo, a path, a query, a fragment or a backslash mean this is not an authority.
+    expect(requestBase('user@evil.example')).toBe('http://localhost');
+    expect(requestBase('example.test/path')).toBe('http://localhost');
+    expect(requestBase('example.test?a=b')).toBe('http://localhost');
+    expect(requestBase('example.test#frag')).toBe('http://localhost');
+    expect(requestBase('example.test\\evil')).toBe('http://localhost');
+    expect(requestBase(':')).toBe('http://localhost');
   });
 });

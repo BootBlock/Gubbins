@@ -79,6 +79,25 @@ describe('emitAtom', () => {
     expect(xml).toContain('<updated>2025-06-27T06:13:20.000Z</updated>');
     expect(xml).toContain('<category term="stock"/>');
   });
+
+  it('carries a feed-level author (RFC 4287 §4.1.1) so validators accept the document', () => {
+    const xml = emitAtom(CHANNEL, [item()]);
+    expect(xml).toContain('<author>');
+    expect(xml).toContain('<name>Gubbins</name>');
+  });
+
+  it('gives the feed a permanent URN id that does not move with the request URL', () => {
+    const narrowed: FeedChannel = {
+      ...CHANNEL,
+      selfUrl: 'http://192.168.1.20:8787/api/v1/activity.atom?limit=5',
+    };
+    expect(emitAtom(CHANNEL, [item()])).toContain('<id>urn:gubbins:feed:activity</id>');
+    expect(emitAtom(narrowed, [item()])).toContain('<id>urn:gubbins:feed:activity</id>');
+    // The self *link* still reflects the live request — only the identity is fixed.
+    expect(emitAtom(narrowed, [item()])).toContain(
+      '<link rel="self" href="http://192.168.1.20:8787/api/v1/activity.atom?limit=5"/>',
+    );
+  });
 });
 
 describe('emitJsonFeed', () => {

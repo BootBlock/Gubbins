@@ -63,6 +63,21 @@ describe('GET /api/v1/activity.rss|.atom|.json', () => {
     expect(body).toContain('<id>urn:gubbins:activity:hist-6</id>');
   });
 
+  it('gives the Atom feed an author and a permanent id that survives a ?limit= change', async () => {
+    const full = await (await withHeader('/api/v1/activity.atom')).text();
+    const narrowed = await (await withHeader('/api/v1/activity.atom?limit=2')).text();
+    expect(full).toContain('<name>Gubbins</name>');
+    expect(full).toContain('<id>urn:gubbins:feed:activity</id>');
+    expect(narrowed).toContain('<id>urn:gubbins:feed:activity</id>');
+  });
+
+  it('builds the self/home URLs from the address the caller reached, not localhost', async () => {
+    const body = await (await withHeader('/api/v1/activity.atom')).text();
+    expect(body).toContain(`<link rel="self" href="${baseUrl}/api/v1/activity.atom"/>`);
+    expect(body).toContain(`<link rel="alternate" href="${baseUrl}"/>`);
+    expect(body).not.toContain('http://localhost');
+  });
+
   it('serves a JSON Feed (application/feed+json) carrying the _gubbins extension', async () => {
     const res = await withHeader('/api/v1/activity.json');
     expect(res.status).toBe(200);

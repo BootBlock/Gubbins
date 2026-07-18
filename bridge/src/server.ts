@@ -148,6 +148,34 @@ export interface BridgeServerOptions {
 }
 
 /**
+ * The base a request-line path is resolved against. An origin-form request line carries only the
+ * path, so the base has to come from the `Host` header — without it every absolute URL the bridge
+ * emits (the feed's `<link rel="self">`, the home link) would claim `localhost` no matter which
+ * address the caller actually reached, and two readers on different ports would see identical
+ * URLs. Falls back to `localhost` when the header is absent or not a usable authority (HTTP/1.0
+ * clients may omit it), which only restores today's behaviour.
+ *
+ * The header is client-supplied, so it is never trusted beyond URL construction: it selects no
+ * resource, is not logged, and reaches the feed body only through `escapeXml`. Reflecting it is
+ * safe here because every response is `cache-control: no-store` — there is no shared cache for a
+ * forged authority to poison.
+ *
+ * The scheme is always `http:` — the bridge serves plain HTTP on the LAN and deliberately does not
+ * infer TLS from `X-Forwarded-Proto`, which is just another header a client can set. Behind a
+ * TLS-terminating proxy the emitted links will say `http`.
+ */
+export function requestBase(hostHeader: string | undefined): string {
+  // Anything beyond a bare `host[:port]` — userinfo, a path, a query, a fragment, a backslash —
+  // is a malformed or hostile header rather than an authority; don't try to salvage it.
+  if (hostHeader === undefined || !/^[^/?#@\\]+$/.test(hostHeader)) return 'http://localhost';
+  try {
+    return new URL(`http://${hostHeader}`).origin;
+  } catch {
+    return 'http://localhost';
+  }
+}
+
+/**
  * Build the read-only bridge HTTP server. Not yet listening — the caller binds it
  * (`server.listen(port, host)`); the request/headers timeouts are pre-set as abuse
  * guards.
@@ -172,7 +200,7 @@ export async function handleRequest(
   res: ServerResponse,
   options: BridgeServerOptions,
 ): Promise<void> {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+  const url = new URL(req.url ?? '/', requestBase(req.headers.host));
   const v1 = isApiV1Path(url.pathname);
   // Allow GET everywhere; POST only for the versioned write/ingest endpoints (and only when one
   // of those opt-ins is enabled). Anything else is a 405.
