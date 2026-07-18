@@ -1,0 +1,100 @@
+# nginx configuration for the self-hosted Gubbins image (see ../Dockerfile).
+#
+# `__BASE__` is replaced at image-build time with the normalised base path (`/` by
+# default, or e.g. `/gubbins/`) — the same value the bundle was built with, so the
+# served paths and the baked-in asset URLs cannot drift apart.
+#
+# The reason this image exists at all: GitHub Pages cannot set response headers, so the
+# hosted build reaches cross-origin isolation through the `coi-serviceworker` polyfill.
+# Here we can send the real COOP/COEP headers, which is what SQLite's OPFS VFS needs for
+# `SharedArrayBuffer`. The polyfill stays in the bundle but no-ops when isolation is
+# already granted.
+
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Cross-origin isolation (spec §2.2.6) — without both of these the SQLite OPFS VFS
+    # cannot get SharedArrayBuffer and the database fails to open. `always` so they are
+    # sent on error responses too, not just 2xx/3xx.
+    add_header Cross-Origin-Opener-Policy   same-origin  always;
+    add_header Cross-Origin-Embedder-Policy require-corp always;
+
+    # Same-origin subresources satisfy COEP without this, but stating it explicitly stops
+    # any asset here from being embedded by another origin.
+    add_header Cross-Origin-Resource-Policy same-origin always;
+
+    # Gubbins sends no data anywhere, but these cost nothing and harden the deployment.
+    # The Content-Security-Policy is deliberately NOT set here: the service worker sets the
+    # authoritative policy as a response header and index.html carries a build-time <meta>
+    # for the first navigation (see src/csp.ts). A third, hand-maintained copy in nginx
+    # would be one more thing to drift.
+    add_header X-Content-Type-Options nosniff        always;
+    add_header Referrer-Policy        no-referrer     always;
+    add_header X-Frame-Options        DENY            always;
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    # Both JavaScript media types are listed deliberately: nginx's bundled mime.types has
+    # mapped `.js` to each of them across versions, and naming only the other one silently
+    # ships the bundle uncompressed — a size regression with no error anywhere.
+    gzip_types text/plain text/css application/javascript text/javascript application/json
+               image/svg+xml application/manifest+json application/wasm;
+
+    # Container-level liveness probe. Deliberately outside the base path so it works
+    # whatever the app is served under, and exempt from the SPA fallback below.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain always;
+        return 200 "ok\n";
+    }
+
+    # Hashed build output is content-addressed, so it can be cached indefinitely.
+    location __BASE__assets/ {
+        # A single explicit header: nginx's `expires` directive would emit a SECOND
+        # Cache-Control, leaving the response with two conflicting ones.
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+
+        # add_header does not inherit into a location that declares its own, so the
+        # isolation headers must be repeated here or every asset drops them.
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
+
+    # Never cache the entry points: the service worker and the app shell are how an
+    # update reaches an installed PWA, and a stale one pins users to an old build.
+    location ~* ^__BASE__(index\.html|sw\.js|registerSW\.js|manifest\.webmanifest|version\.json|coi-bootstrap\.js)$ {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
+
+    # Replaced at build time with a redirect to the base path, and left empty when the app
+    # already lives at the root. Without it a sub-path deployment answers a bare `/` with a
+    # 403 — the document root really is an empty directory in that layout — which reads as a
+    # broken server rather than "the app is one level down".
+    __ROOT_REDIRECT__
+
+    # Client-side routing: serve the app shell for any path that is not a real file, so a
+    # deep link resolves in the router (the GitHub Pages build uses 404.html for this).
+    #
+    # try_files serves its fallback within THIS location, so the app shell delivered to a
+    # deep link never reaches the no-cache rule above — the caching has to be restated here
+    # or `/items` would be heuristically cached while `/` is not.
+    location / {
+        try_files $uri $uri/ __BASE__index.html;
+
+        add_header Cache-Control "no-cache, must-revalidate" always;
+
+        add_header Cross-Origin-Opener-Policy   same-origin  always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+        add_header Cross-Origin-Resource-Policy same-origin  always;
+    }
+}

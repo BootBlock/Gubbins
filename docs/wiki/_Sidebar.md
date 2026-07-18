@@ -4,6 +4,7 @@
 - [[Home]]
 - [[Introduction]]
 - [[Installing Gubbins|Installing-Gubbins]]
+- [[Self-hosting with Docker|Self-Hosting-with-Docker]]
 - [[Quick start|First-Run-and-Quick-Start]]
 - [[Core concepts|Core-Concepts]]
 

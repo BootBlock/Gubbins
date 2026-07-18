@@ -40,3 +40,5 @@ Two safe cleanups, each keeping a copy of anything it removes:
 - **[[Backup & restore|Backup-and-Restore]]** — a full copy before you prune.
 - **[[How your data is stored|How-Your-Data-Is-Stored]]** — why storage fills up.
 - **[[Activity log|Activity-Log]]** — the history you can prune.
+- **[[Self-hosting with Docker|Self-Hosting-with-Docker]]** — worth knowing that running Gubbins
+  on your own server does **not** give you more space: the data still lives in your browser.

@@ -9,6 +9,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import type { Plugin } from 'vite';
 import { buildContentSecurityPolicy } from './src/csp';
+import { resolveBasePath } from './src/base-path';
 
 // Single-source the app version from package.json (read here so it never enters
 // the TS program / app bundle as a JSON import) and expose it via `define`.
@@ -117,8 +118,9 @@ function versionManifestPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  // GitHub Pages serves Gubbins under a project sub-path (spec §1.2).
-  base: '/Gubbins/',
+  // `/Gubbins/` for GitHub Pages (spec §1.2); overridable via `GUBBINS_BASE_PATH` so a
+  // self-hosted deployment (see Dockerfile) can serve from the root. See src/base-path.ts.
+  base: resolveBasePath(process.env.GUBBINS_BASE_PATH),
 
   // Build-time constants consumed by src/lib/app-version.ts (About + Dashboard).
   // The release date is pinned per version in package.json (`releaseDate`, an ISO
