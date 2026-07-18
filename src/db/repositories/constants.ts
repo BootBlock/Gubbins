@@ -192,6 +192,27 @@ export const EXPIRY_SOON_WINDOW_DAYS = 30;
 export const DEAD_STOCK_SINCE_DAYS = 90;
 
 /**
+ * Inclusive bounds (days) for a dead-stock idle threshold — the global preference and any
+ * per-location override alike. The floor is 1 (a zero-day threshold would flag everything
+ * the moment it was added); the ceiling of ten years is generous enough for archival
+ * storage while keeping a mistyped value from silently disabling the report.
+ *
+ * These live here, beside the default, rather than in the settings feature: the repository
+ * layer clamps location overrides with them, and a repository must not reach up into a
+ * feature module to do it. `features/settings` re-exports them for the UI call sites.
+ */
+export const DEAD_STOCK_DAYS_BOUNDS = { min: 1, max: 3650 } as const;
+
+/**
+ * Clamp a dead-stock idle threshold to {@link DEAD_STOCK_DAYS_BOUNDS}, rounded to a whole
+ * number. Non-finite input falls back to {@link DEAD_STOCK_SINCE_DAYS}.
+ */
+export function clampDeadStockDays(value: number): number {
+  if (!Number.isFinite(value)) return DEAD_STOCK_SINCE_DAYS;
+  return Math.min(DEAD_STOCK_DAYS_BOUNDS.max, Math.max(DEAD_STOCK_DAYS_BOUNDS.min, Math.round(value)));
+}
+
+/**
  * Default window (days) before a `warranty_expires_at` date within which an asset's
  * warranty is surfaced as "expiring soon" (spec §3 alert centre, §4 asset facet). The
  * feature-layer `WARRANTY_EXPIRING_SOON_DAYS` re-exports this so the alert centre and the

@@ -11,10 +11,9 @@
 import { DbError } from '../errors';
 import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
-import { UNASSIGNED_LOCATION_ID } from './constants';
+import { UNASSIGNED_LOCATION_ID, clampDeadStockDays } from './constants';
 import { rowToLocation } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
-import { clampDeadStockDays } from '@/features/settings/settings';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -33,7 +32,8 @@ interface LocationCountRow extends LocationRow {
 
 const SELECT_WITH_COUNT = `
   SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
-         l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at, l.updated_at,
+         l.kind, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
+         l.dead_stock_mode, l.dead_stock_days, l.updated_at,
          COUNT(i.id) AS item_count
   FROM locations l
   LEFT JOIN items i ON i.location_id = l.id AND i.is_active = 1

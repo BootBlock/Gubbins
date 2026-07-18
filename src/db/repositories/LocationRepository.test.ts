@@ -75,6 +75,53 @@ describe('LocationRepository', () => {
     expect(moved.parentId).toBe(a.id);
   });
 
+  describe('dead-stock reporting fields (issue #92)', () => {
+    it('defaults to inheriting, with no idle-threshold override', async () => {
+      const loc = await locations.create({ name: 'Shelf' });
+      expect(loc.deadStockMode).toBe('inherit');
+      expect(loc.deadStockDays).toBeNull();
+    });
+
+    it('round-trips the mode and threshold through update and getById', async () => {
+      const loc = await locations.create({ name: 'Deep storage' });
+      const saved = await locations.update(loc.id, { deadStockMode: 'always', deadStockDays: 365 });
+      expect(saved.deadStockMode).toBe('always');
+      expect(saved.deadStockDays).toBe(365);
+
+      const reread = await locations.getById(loc.id);
+      expect(reread?.deadStockMode).toBe('always');
+      expect(reread?.deadStockDays).toBe(365);
+    });
+
+    /**
+     * The list/tree read enumerates its columns explicitly (unlike `getById`'s `SELECT *`),
+     * so a new column is only returned if it was added there too. The edit dialog is fed
+     * from this read, so omitting it silently showed every location as un-configured while
+     * the value sat correctly in the database.
+     */
+    it('returns the fields from the list read that feeds the location tree', async () => {
+      const loc = await locations.create({ name: 'Deep storage' });
+      await locations.update(loc.id, { deadStockMode: 'always', deadStockDays: 365 });
+
+      const listed = (await locations.list()).rows.find((l) => l.id === loc.id);
+      expect(listed?.deadStockMode).toBe('always');
+      expect(listed?.deadStockDays).toBe(365);
+    });
+
+    it('clamps an out-of-range threshold rather than tripping the DB CHECK', async () => {
+      const loc = await locations.create({ name: 'Shelf' });
+      const saved = await locations.update(loc.id, { deadStockDays: 0 });
+      expect(saved.deadStockDays).toBe(1); // clamped up to the floor
+    });
+
+    it('clears the threshold override back to null', async () => {
+      const loc = await locations.create({ name: 'Shelf' });
+      await locations.update(loc.id, { deadStockDays: 30 });
+      const cleared = await locations.update(loc.id, { deadStockDays: null });
+      expect(cleared.deadStockDays).toBeNull();
+    });
+  });
+
   describe('createPath (nested-create shortcut §4)', () => {
     it('creates the whole branch from a slash-separated path and returns the leaf', async () => {
       const [leaf] = await locations.createPath({ name: 'Workshop/Cabinet A/Drawer 3' });

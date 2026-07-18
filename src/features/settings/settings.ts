@@ -8,7 +8,6 @@
  */
 import {
   BUDGET_WARN_PERCENT,
-  DEAD_STOCK_SINCE_DAYS,
   EXPIRY_SOON_WINDOW_DAYS,
   LOW_STOCK_GAUGE_PERCENT,
   LOW_STOCK_QTY_THRESHOLD,
@@ -186,25 +185,12 @@ export function clampLowStockGaugePercent(value: number): number {
 }
 
 /**
- * Inclusive bounds (days) for the global **dead-stock** idle threshold (issue #92) —
- * how long stock must sit unmoved before it is reported. Lifts the former hard-coded
- * 90-day constant into a configurable preference.
- *
- * The floor is 1 (a zero-day threshold would flag everything the moment it was added);
- * the ceiling of ten years is generous enough for archival storage while keeping a
- * mistyped value from silently disabling the report. Individual locations may override
- * this within the same bounds.
+ * The **dead-stock** idle-threshold bounds and clamp (issue #92) — how long stock must sit
+ * unmoved before it is reported. Defined in the dependency-free constants module because
+ * the repository layer clamps per-location overrides with them; re-exported here so UI call
+ * sites reach for them alongside the other Tier-2 preference clamps.
  */
-export const DEAD_STOCK_DAYS_BOUNDS = { min: 1, max: 3650 } as const;
-
-/**
- * Clamp a dead-stock idle threshold to {@link DEAD_STOCK_DAYS_BOUNDS}. Non-finite input
- * falls back to the default constant.
- */
-export function clampDeadStockDays(value: number): number {
-  if (!Number.isFinite(value)) return DEAD_STOCK_SINCE_DAYS;
-  return Math.min(DEAD_STOCK_DAYS_BOUNDS.max, Math.max(DEAD_STOCK_DAYS_BOUNDS.min, Math.round(value)));
-}
+export { DEAD_STOCK_DAYS_BOUNDS, clampDeadStockDays } from '@/db/repositories/constants';
 
 /**
  * Inclusive bounds for the user-set project-budget warning threshold (§4 budgeting).
