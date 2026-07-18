@@ -88,8 +88,28 @@ Attach the documents and images that belong with an item:
 Link an item to others it has a relationship with — reciprocal and always shown from both sides:
 
 - **Works with** — two items that go together.
+- **Requires** / **Required by** — a hard dependency: the first is unusable without the second.
 - **Accessory for** / **Has accessory** — an add-on and its host.
 - **Spare for** / **Has spare** — a replacement part and what it replaces.
+
+### Requires — the one Gubbins acts on
+
+The other links are descriptive: Gubbins records them and shows them, but never does anything
+with them. **Requires** is different — it means "you can't use this without that", so Gubbins
+watches for the gap:
+
+- **Checking the item out** offers to lend its prerequisites at the same time, each with the
+  number on hand, so a loan doesn't leave without the part that makes it work. See
+  [[Loans: check out & in|Loans-Check-Out-and-In]].
+- **A project's bill of materials** flags any part whose prerequisite isn't also on the list.
+  See [[Projects & BOM|Projects-and-BOM]].
+
+Both are prompts, not blocks — you can always go ahead without the prerequisite.
+
+> **💡 Tip**
+> Record the dependency on the item that *needs* it (the access point **requires** the injector),
+> not the other way round. Gubbins prompts on the end that would be left unusable, so a link
+> recorded backwards prompts at the wrong moment.
 
 ## Substitutions
 
@@ -101,7 +121,7 @@ substitute will do.
 
 > **ℹ️ Note**
 > These three groupings are distinct on purpose:
-> - **Related** — items that *work together* (but aren't swaps).
+> - **Related** — items that *work together*, or that one *needs* to work (but aren't swaps).
 > - **Substitutions** — items that can *replace* each other.
 > - **[[Variants|Variants-and-SKUs]]** — the *same product* in different sizes/colours.
 

@@ -133,6 +133,13 @@ export const inventoryKeys = {
   // Feature-gap G6 — an item's related-items cross-links ("works with"/accessory/spare-for); under
   // item() so an `items()` invalidation refreshes it by prefix.
   itemRelations: (itemId: string) => [...inventoryKeys.item(itemId), 'relations'] as const,
+  // Issue #70 — full rows for a set of items in one round-trip (the checkout prerequisite panel);
+  // under items() so any item write refreshes it by prefix.
+  itemsById: (itemIds: readonly string[]) => [...inventoryKeys.items(), 'by-id-batch', itemIds] as const,
+  // Issue #70 — relations for a set of on-screen items in one round-trip (the BOM dependency
+  // check); under items() so any relation write refreshes it by prefix.
+  itemsRelations: (itemIds: readonly string[]) =>
+    [...inventoryKeys.items(), 'relations-batch', itemIds] as const,
   // Feature-gap G7 — an item's test/calibration/service records; under item() so an `items()`
   // invalidation refreshes it by prefix.
   itemTestRecords: (itemId: string) => [...inventoryKeys.item(itemId), 'test-records'] as const,
@@ -238,6 +245,35 @@ export function useItemRelations(itemId: string | undefined) {
     queryKey: inventoryKeys.itemRelations(itemId ?? ''),
     queryFn: () => getItemRepository().listRelations(itemId!),
     enabled: Boolean(itemId),
+  });
+}
+
+/**
+ * Full item rows for a set of ids in one round-trip (issue #70), keyed by id — the checkout dialog
+ * reads the prerequisites of an outgoing loan to show their stock. Ids are sorted into the cache
+ * key so a re-ordered but identical set hits the same entry; disabled for an empty set.
+ */
+export function useItemsById(itemIds: readonly string[]) {
+  const sortedIds = [...itemIds].sort();
+  return useQuery({
+    queryKey: inventoryKeys.itemsById(sortedIds),
+    queryFn: () => getItemRepository().getManyById(sortedIds),
+    enabled: sortedIds.length > 0,
+  });
+}
+
+/**
+ * Relations for a whole set of items in a single round-trip (issue #70) — the project BOM checks
+ * every line's hard dependencies at once rather than N+1 times. The item ids are sorted into the
+ * cache key so a re-ordered but otherwise identical set hits the same entry. Resolves to a `Map`
+ * keyed by item id (a key is absent when the item has no relations); disabled for an empty set.
+ */
+export function useItemsRelations(itemIds: readonly string[]) {
+  const sortedIds = [...itemIds].sort();
+  return useQuery({
+    queryKey: inventoryKeys.itemsRelations(sortedIds),
+    queryFn: () => getItemRepository().listRelationsForItems(sortedIds),
+    enabled: sortedIds.length > 0,
   });
 }
 

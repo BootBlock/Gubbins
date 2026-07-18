@@ -97,4 +97,62 @@ describe('Item relations (feature-gap G6)', () => {
     await items.hardDelete(b);
     expect(await items.listRelations(a)).toHaveLength(0);
   });
+
+  /**
+   * The batched read behind the bill-of-materials dependency check (issue #70): the same
+   * per-item resolution `listRelations` does, for a whole set in one round-trip.
+   */
+  describe('listRelationsForItems (issue #70)', () => {
+    it('resolves a relation under both endpoints when both are requested', async () => {
+      await items.addRelation({ fromItemId: a, toItemId: b, kind: 'REQUIRES' });
+
+      const byItem = await items.listRelationsForItems([a, b]);
+      expect(byItem.get(a)).toHaveLength(1);
+      expect(byItem.get(a)![0]).toMatchObject({ otherItemId: b, otherItemName: 'Tripod' });
+      expect(byItem.get(b)).toHaveLength(1);
+      expect(byItem.get(b)![0]).toMatchObject({ otherItemId: a, otherItemName: 'Camera' });
+    });
+
+    it('still resolves a relation whose other endpoint was not requested', async () => {
+      await items.addRelation({ fromItemId: a, toItemId: b, kind: 'REQUIRES' });
+
+      const byItem = await items.listRelationsForItems([a]);
+      expect([...byItem.keys()]).toEqual([a]);
+      expect(byItem.get(a)![0]).toMatchObject({ otherItemId: b, otherItemName: 'Tripod' });
+    });
+
+    it('omits items with no relations, and matches listRelations for each item', async () => {
+      const c = (await items.create({ name: 'Lens cap', locationId: UNASSIGNED_LOCATION_ID })).id;
+      await items.addRelation({ fromItemId: a, toItemId: b, kind: 'REQUIRES' });
+
+      const byItem = await items.listRelationsForItems([a, b, c]);
+      expect(byItem.has(c)).toBe(false);
+      expect(byItem.get(a)).toEqual(await items.listRelations(a));
+      expect(byItem.get(b)).toEqual(await items.listRelations(b));
+    });
+
+    it('de-duplicates repeated ids and short-circuits an empty set', async () => {
+      await items.addRelation({ fromItemId: a, toItemId: b, kind: 'REQUIRES' });
+      expect((await items.listRelationsForItems([a, a])).get(a)).toHaveLength(1);
+      expect((await items.listRelationsForItems([])).size).toBe(0);
+    });
+  });
+
+  /** The batched item read behind the checkout prerequisite panel (issue #70). */
+  describe('getManyById (issue #70)', () => {
+    it('returns the requested items keyed by id', async () => {
+      const byId = await items.getManyById([a, b]);
+      expect(byId.get(a)!.name).toBe('Camera');
+      expect(byId.get(b)!.name).toBe('Tripod');
+    });
+
+    it('simply omits an id that no longer exists, rather than throwing', async () => {
+      const byId = await items.getManyById([a, 'gone']);
+      expect([...byId.keys()]).toEqual([a]);
+    });
+
+    it('short-circuits an empty set', async () => {
+      expect((await items.getManyById([])).size).toBe(0);
+    });
+  });
 });

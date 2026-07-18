@@ -33,7 +33,13 @@ function stored(id: string, from: string, to: string, kind: RelationKind): Store
 
 describe('relation kinds & labels', () => {
   it('exposes exactly the known kinds, each with a label pair', () => {
-    expect([...RELATION_KINDS]).toEqual(['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR', 'INTERCHANGEABLE_WITH']);
+    expect([...RELATION_KINDS]).toEqual([
+      'REQUIRES',
+      'WORKS_WITH',
+      'ACCESSORY_FOR',
+      'SPARE_FOR',
+      'INTERCHANGEABLE_WITH',
+    ]);
     for (const kind of RELATION_KINDS) {
       const label = RELATION_LABELS[kind];
       expect(label.forward.length).toBeGreaterThan(0);
@@ -284,14 +290,20 @@ describe('RELATION_OPTIONS & relationSpecFromOption', () => {
   it('offers one phrasing per symmetric kind and a pair per directional kind', () => {
     expect(RELATION_OPTIONS.map((o) => o.value)).toEqual([
       'works_with',
+      'requires',
+      'required_by',
       'accessory_for',
       'has_accessory',
       'spare_for',
       'has_spare',
     ]);
+    // `works_with` leads: it is the picker's default, and the mildest claim to make by accident
+    // (a `REQUIRES` link is acted on by the loan and BOM surfaces — issue #70).
+    expect(RELATION_OPTIONS[0]!.kind).toBe('WORKS_WITH');
     // Directional kinds get both a non-inverted and an inverted phrasing; symmetric only one.
     const byKind = (kind: RelationKind) => RELATION_OPTIONS.filter((o) => o.kind === kind);
     expect(byKind('WORKS_WITH')).toHaveLength(1);
+    expect(byKind('REQUIRES').map((o) => o.invert)).toEqual([false, true]);
     expect(byKind('ACCESSORY_FOR').map((o) => o.invert)).toEqual([false, true]);
     expect(byKind('SPARE_FOR').map((o) => o.invert)).toEqual([false, true]);
   });

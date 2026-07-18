@@ -15,7 +15,7 @@ import type { SqlStatement } from '../../rpc/driver';
 import { planRelation, type RelationPlanError } from '@/features/inventory/item-relations';
 import { rowToItemRelation, rowToItemRelationView } from '../mappers';
 import { tombstoneStatement } from '../tombstone';
-import type { AddRelationInput, ItemRelation, ItemRelationView } from '../types';
+import type { AddRelationInput, ItemRelation, ItemRelationRow, ItemRelationView } from '../types';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -47,6 +47,77 @@ export function withRelations<TBase extends Constructor<ItemCoreRepository>>(Bas
         [itemId],
       );
       return rows.map(rowToItemRelationView);
+    }
+
+    /**
+     * The relations touching **each** of `itemIds`, in a single round-trip (issue #70) — the
+     * bill-of-materials dependency check reads every line item's relations at once rather than
+     * N+1 times. Resolved per requested item, exactly as {@link listRelations} does: a relation
+     * joining two requested items appears under *both* keys, each time with the *other* endpoint's
+     * display fields, so the pure seam can read direction from either perspective.
+     *
+     * Keys are only present for items that actually have relations; an empty set short-circuits.
+     */
+    async listRelationsForItems(itemIds: readonly string[]): Promise<Map<string, ItemRelationView[]>> {
+      const byItem = new Map<string, ItemRelationView[]>();
+      const unique = [...new Set(itemIds)];
+      if (unique.length === 0) return byItem;
+
+      const placeholders = unique.map(() => '?').join(', ');
+      const rows = await this.driver.query<
+        ItemRelationRow & {
+          from_item_name: string;
+          from_item_serial_no: number | null;
+          to_item_name: string;
+          to_item_serial_no: number | null;
+        }
+      >(
+        `SELECT r.*,
+                fi.name      AS from_item_name,
+                fi.serial_no AS from_item_serial_no,
+                ti.name      AS to_item_name,
+                ti.serial_no AS to_item_serial_no
+         FROM item_relations r
+         JOIN items fi ON fi.id = r.from_item_id
+         JOIN items ti ON ti.id = r.to_item_id
+         WHERE r.from_item_id IN (${placeholders}) OR r.to_item_id IN (${placeholders})
+         ORDER BY r.kind ASC;`,
+        [...unique, ...unique],
+      );
+
+      const wanted = new Set(unique);
+      const push = (viewingId: string, view: ItemRelationView) => {
+        const list = byItem.get(viewingId);
+        if (list) list.push(view);
+        else byItem.set(viewingId, [view]);
+      };
+      for (const row of rows) {
+        // A row can touch two requested items — record it under each, resolved to that item's
+        // perspective (the *other* endpoint's display fields).
+        if (wanted.has(row.from_item_id)) {
+          push(
+            row.from_item_id,
+            rowToItemRelationView({
+              ...row,
+              other_item_id: row.to_item_id,
+              other_item_name: row.to_item_name,
+              other_item_serial_no: row.to_item_serial_no,
+            }),
+          );
+        }
+        if (wanted.has(row.to_item_id)) {
+          push(
+            row.to_item_id,
+            rowToItemRelationView({
+              ...row,
+              other_item_id: row.from_item_id,
+              other_item_name: row.from_item_name,
+              other_item_serial_no: row.from_item_serial_no,
+            }),
+          );
+        }
+      }
+      return byItem;
     }
 
     /**

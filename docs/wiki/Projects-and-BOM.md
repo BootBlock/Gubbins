@@ -18,6 +18,18 @@ out:
 
 So starting a project immediately tells you whether you can proceed or need to buy first.
 
+### Missing prerequisites
+
+If a part on the list **requires** another item that *isn't* also on the list, Gubbins marks that
+line with a warning glyph naming what's missing. It catches the bill of materials that looks
+complete but would build into something unusable — the controller without its power supply, the
+printer without its build plate.
+
+Add the missing item as its own line to clear the flag. As with everything on the BOM it's
+advisory: nothing stops you ordering or picking the list as it stands. Record the dependency on
+the **Related** tab of the item that needs it; see
+[[Related items|Tags-Attachments-and-Related-Items]].
+
 ## Reservations
 
 **Reserve** stock for a project to earmark it — the reserved quantity is set aside so it isn't
