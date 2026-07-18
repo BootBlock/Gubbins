@@ -1,8 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
+import { useLabStore } from '@/state/stores/useLabStore';
 import { useOnlineStatus, type OnlineStatusApi } from './useOnlineStatus';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useLabStore.getState().resetLab();
+});
 
 /** A controllable fake seam: flip `online` then call `emit()` to notify subscribers. */
 function makeFakeApi(initial: boolean) {
@@ -48,5 +52,28 @@ describe('useOnlineStatus — live connectivity (spec §2 offline-first)', () =>
     expect(fake.listenerCount()).toBe(1);
     unmount();
     expect(fake.listenerCount()).toBe(0);
+  });
+
+  it('leaves connectivity untouched with the `force-offline` lab flag off (default)', () => {
+    const fake = makeFakeApi(true);
+    const { result } = renderHook(() => useOnlineStatus(fake.api));
+    expect(result.current).toBe(true);
+  });
+
+  it('reports offline while the `force-offline` lab flag is on, even when the real seam is online', () => {
+    useLabStore.getState().setFlag('force-offline', true);
+    const fake = makeFakeApi(true);
+    const { result } = renderHook(() => useOnlineStatus(fake.api));
+    expect(result.current).toBe(false);
+  });
+
+  it('goes back to reflecting the real seam once the flag is switched off again', () => {
+    useLabStore.getState().setFlag('force-offline', true);
+    const fake = makeFakeApi(true);
+    const { result, rerender } = renderHook(() => useOnlineStatus(fake.api));
+    expect(result.current).toBe(false);
+    act(() => useLabStore.getState().setFlag('force-offline', false));
+    rerender();
+    expect(result.current).toBe(true);
   });
 });
