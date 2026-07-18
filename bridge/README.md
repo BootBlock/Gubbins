@@ -204,6 +204,7 @@ every endpoint is **GET-only** and strictly read-only.
 | `GET /api/v1/categories/{id}` | One category with its custom-field schema (`CategoryDetail`); `404` if unknown. |
 | `GET /api/v1/capabilities?limit=&offset=` | The distinct, queryable capability vocabulary (`CapabilityKey`) — the keys you can filter on with `cap:<key>`. |
 | `GET /api/v1/events` | **Opt-in** read-only SSE stream of change events (`GUBBINS_BRIDGE_EVENTS=on`); `404` when off. See [Events, webhooks & SSE](#events-webhooks--sse-opt-in). |
+| `GET /api/v1/webhooks/deliveries?since=&limit=` | **Opt-in** read-only log of recent webhook delivery outcomes (`GUBBINS_BRIDGE_WEBHOOKS=on`); `404` when off. See [the delivery log](#get-apiv1webhooksdeliveries--the-delivery-log). |
 
 Search is the **relevance** endpoint (top-N, capped at 25 for voice safety); to **browse all
 items** with pagination use `GET /api/v1/items`. Every read flows through the app's own
@@ -878,11 +879,26 @@ if the cap is exceeded), so a downstream sink can't be flooded.
 
 ### Outbound webhooks
 
-Set **`GUBBINS_BRIDGE_WEBHOOKS=on`** and list your targets in a **git-ignored** file (copy
-[`webhooks.example.json`](webhooks.example.json) → `webhooks.json`) or inline via
-`GUBBINS_BRIDGE_WEBHOOKS_TARGETS`. Each target is `{ "url", "secret", "events"? }` — omit `events`
-(or use `"*"`) to receive everything. **The signing secrets live only in that git-ignored file /
-`.env`, never in a committed file.**
+Set **`GUBBINS_BRIDGE_WEBHOOKS=on`**. Targets then come from **two sources, merged** — they are not
+alternatives, and a bridge configured with both honours both:
+
+1. **Subscriptions configured in the app.** The Webhooks screen in the PWA writes them to a synced
+   table, and the bridge reads them out of the database it already hydrates — no new config
+   endpoint, no new token, no new auth surface. These carry the richer model: an HTTP method, an
+   event-type list, a filter, a payload template and extra headers.
+2. **The operator's file / env list**, which predates the app-configured source and **stays
+   supported**. Copy [`webhooks.example.json`](webhooks.example.json) → a **git-ignored**
+   `webhooks.json`, or set the whole list inline via `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` (which wins
+   over the file). Each target is `{ "url", "secret", "events"? }` — omit `events` (or use `"*"`)
+   to receive everything. These are always `POST`, always enabled, and always send the default
+   envelope, so an existing receiver keeps seeing byte-identical bodies.
+
+> **ℹ️ App-configured subscriptions arrive on the next sync, not instantly.** The bridge re-reads
+> them from the snapshot on every hydration, so a subscription you just created starts delivering
+> once the next sync or "push to bridge" reaches the bridge — not the moment you save it.
+
+**The signing secrets live only in the git-ignored `webhooks.json` / `.env`, never in a committed
+file.**
 
 Each event is POSTed as JSON with:
 
@@ -909,6 +925,131 @@ const ok = got && got.length === expected.length &&
 A minimal **n8n / Node-RED / Discord** recipe: point a "Webhook" / "HTTP In" node (or a Discord
 channel's incoming-webhook relay) at the URL, verify the signature above, then branch on
 `type` — e.g. post to a channel when `type === 'item.low_stock'`.
+
+> **⚠️ A `GET` subscription carries no signature.** An app-configured subscription may choose
+> `GET`, in which case the payload is flattened into query parameters and there is no body to sign.
+> Authenticate those another way (a secret path segment, a receiver-side allowlist) or use `POST`.
+
+#### `secret_ref` — keep the signing secret off the sync artefact
+
+An app-configured subscription signs with **either** a secret stored in its own row **or** a
+`secret_ref`, which stores only a **name**. `secret_ref` is the recommended option, and the one the
+app steers to: the value lives here on the bridge — in the `"secrets"` block of your git-ignored
+`webhooks.json`, or inline via `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` (merged over the file) — and
+**never enters the database, the sync artefact or a backup**. An in-row secret, by contrast,
+travels with synced data, which typically means a NAS or a cloud drive.
+
+```jsonc
+// webhooks.json (git-ignored) — resolves a subscription whose secret_ref is "home-assistant"
+{
+  "secrets": { "home-assistant": "<YOUR_SIGNING_SECRET>" },
+  "targets": []
+}
+```
+
+> **⚠️ A `secret_ref` the bridge cannot resolve drops the subscription — it is never delivered
+> unsigned.** The user asked for a signed webhook and their receiver is verifying signatures;
+> silently downgrading would either fail confusingly at the receiver or succeed against one that
+> treats a missing signature as acceptable. The bridge logs the **missing name** (never a value) —
+> once, not on every hydration — and records it as a `blocked` row in the delivery log below, so a
+> subscription
+> that appears to do nothing has a visible reason rather than being a mystery.
+
+#### The SSRF guard, and reaching a receiver on your LAN
+
+A webhook URL is user-supplied and arrives over sync, and the bridge is the one component sitting on
+the LAN — able to reach a router's admin page, a printer or a cloud instance's metadata service that
+a browser never could. So by default the bridge **refuses to deliver** to loopback, link-local,
+private and cloud-metadata destinations. A hostname is **resolved** before the check (every address
+it maps to must be public) so pointing a public name at a private address does not slip through, and
+a resolution failure is a refusal rather than a pass.
+
+**Most self-hosted receivers are on the LAN, so this flag is the expected setup rather than an
+override to be nervous about.** A Home Assistant instance at `homeassistant.local:8123`, or a
+Node-RED flow on `localhost`, needs:
+
+```bash
+GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on
+```
+
+Be clear about what that opens: with it on, **any** subscription that reaches this bridge may
+deliver to **any** address it can route to, including hosts on your network that are not the one you
+had in mind. It is off by default for the same reason every other reaching capability is — the
+capability exists, but never without someone saying so. Leave it off if every receiver is a public
+HTTPS endpoint.
+
+#### Extra headers a subscription may set
+
+A subscription can attach static extra headers. Two families are **refused** and dropped
+(the operator is told which, in a secret-free warning):
+
+- **Credentials** — `authorization`, `proxy-authorization`, `cookie`, `set-cookie`. A subscription
+  that could set these would be a way to aim *your* bridge at a third-party host carrying a header
+  someone else chose: request forgery dressed as configuration.
+- **Headers the deliverer computes** — the whole `X-Gubbins-*` family (letting a subscription set
+  `X-Gubbins-Signature` would let it forge its own signature), plus `host`, `content-type`,
+  `content-length`, `transfer-encoding` and `connection`.
+
+The rule lives in [`../src/features/webhooks/headers.ts`](../src/features/webhooks/headers.ts) and
+the bridge **imports it**, so the app's editor checks a header name as it is typed against the very
+list enforced at delivery — there is one list, and it cannot drift.
+
+#### `GET /api/v1/webhooks/deliveries` — the delivery log
+
+The app's only window onto what its subscriptions actually did. It uses the **same bearer token and
+rate limit** as every other endpoint, and takes two optional query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `since` | Return only records with a `seq` greater than this — pass the highest `seq` you have already seen so a poll returns just what is new. Must be a non-negative integer. |
+| `limit` | Cap the page size (a positive integer, clamped to **200**, which is also the default). |
+
+```bash
+curl -H "Authorization: Bearer <YOUR_BRIDGE_TOKEN>" \
+  "http://127.0.0.1:8787/api/v1/webhooks/deliveries?since=0&limit=50"
+```
+
+The response carries the page plus `latestSeq`, so a poller can advance its cursor even when the
+page comes back empty. Records are **newest first** and deliberately carry **no secret, signature,
+request header or query string**; the URL is reduced to its origin and path.
+
+> **The log lives in bridge memory, and that is deliberate.** The bridge is read-only over a
+> snapshot that is **swapped wholesale on every hydration**, so a delivery outcome written back into
+> the database would simply be discarded by the next hydrate. Keeping the log here and letting the
+> app read it is the only shape that works. It follows that the log is **bounded** (the most recent
+> 200 deliveries) and does **not** survive a bridge restart. It is a debugging aid, not an audit
+> trail — send deliveries somewhere durable if you need one.
+
+> **⚠️ A `404` here means webhooks are off on this bridge** — deliberately distinct from a `200`
+> with an empty list, which means webhooks are on and nothing has been delivered yet. The app says
+> something different for each; conflating them would send someone hunting a delivery problem that
+> is really a missing flag.
+
+#### `POST /api/v1/webhooks/test` — fire a test event
+
+Backs the app's "Send test event". Post the id of one app-configured subscription:
+
+```bash
+curl -X POST -H "Authorization: Bearer <YOUR_BRIDGE_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"subscriptionId":"<SUBSCRIPTION_ID>"}' \
+  http://127.0.0.1:8787/api/v1/webhooks/test
+```
+
+**Everything but the event itself is real** — the subscription is read from the hydrated snapshot,
+the real matcher decides whether it would be delivered, and the real deliverer (and therefore the
+real SSRF guard and `secret_ref` resolution) issues it, writing a real delivery-log row. A shortcut
+around any of that would report success for a subscription that never delivers.
+
+The `200` body reports `outcome`, `status`, `attempts`, `detail` and the log row's `seq` (`null`
+when no row was written — the `unmatched` outcome, meaning the subscription's own event types or
+filter excluded the synthetic event). Three failure codes mean genuinely different things:
+
+| Status | Meaning |
+| --- | --- |
+| `404` | Webhooks are not enabled on this bridge at all. |
+| `422` | The subscription exists in the app but has not reached the bridge yet — it arrives on the next sync. |
+| `400` | The request body was malformed or carried no `subscriptionId`. |
 
 ### SSE event stream
 
@@ -1301,7 +1442,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
-| `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log. | outbound (push) | No — an event never mutates inventory. | Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
+| `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). Targets are the webhooks configured **in the app** (read from the snapshot the bridge already hydrates) merged with the operator's file/env list. Adds the read-only `GET /api/v1/webhooks/deliveries` log and `POST /api/v1/webhooks/test` (fires a synthetic event at one subscription through the real delivery path). | outbound (push) | No — an event never mutates inventory. | Signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` / `.env` only. An app-configured webhook may name a secret held here (`secret_ref`) so its value never enters the database; an **unresolvable** ref drops that subscription rather than delivering it unsigned. Delivery to loopback/private/metadata addresses is **refused** unless `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`. |
 | `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields) — **all of them, automatically, with no separate flag**, so enabling `MQTT` is what consents to publishing them. | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
 | `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
