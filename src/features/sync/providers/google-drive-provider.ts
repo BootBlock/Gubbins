@@ -70,6 +70,8 @@ export class GoogleDriveCloudProvider implements CloudProvider {
  * Build a {@link DriveApi} whose token resolver reads the device-local stored token and
  * rejects (as a 401-class {@link GoogleApiError}) when none is live — so an expired session
  * surfaces as the same "reconnect" path as a server-rejected token.
+ *
+ * @internal Exported for unit tests only.
  */
 export function makeDriveApi(fetchImpl: typeof fetch = fetch): DriveApi {
   return {

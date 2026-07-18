@@ -27,7 +27,6 @@ import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
 import { TarePresetRepository } from './TarePresetRepository';
-import { TombstoneRepository } from './tombstone';
 import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
 
@@ -106,7 +105,6 @@ let checkoutRepository: CheckoutRepository | null = null;
 let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
 let suggestionRepository: SuggestionRepository | null = null;
-let tombstoneRepository: TombstoneRepository | null = null;
 let wishlistRepository: WishlistRepository | null = null;
 let tarePresetRepository: TarePresetRepository | null = null;
 
@@ -198,11 +196,6 @@ export function getSupplierPartRepository(): SupplierPartRepository {
 export function getSuggestionRepository(): SuggestionRepository {
   suggestionRepository ??= new SuggestionRepository(getDatabaseDriver(), productionOptions);
   return suggestionRepository;
-}
-
-export function getTombstoneRepository(): TombstoneRepository {
-  tombstoneRepository ??= new TombstoneRepository(getDatabaseDriver(), productionOptions);
-  return tombstoneRepository;
 }
 
 export function getWishlistRepository(): WishlistRepository {

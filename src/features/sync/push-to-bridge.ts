@@ -20,7 +20,11 @@ import { normaliseBridgeBaseUrl } from '@/lib/bridge-url';
 import { buildLocalSnapshot } from './snapshot';
 import { snapshotToBackupJson } from './backup';
 
-/** The bridge's versioned snapshot-ingest path, appended to the user's base URL. */
+/**
+ * The bridge's versioned snapshot-ingest path, appended to the user's base URL.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SNAPSHOT_INGEST_PATH = '/api/v1/snapshot';
 
 /**

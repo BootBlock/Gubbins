@@ -108,7 +108,11 @@ export interface DiagnosticVocab {
   readonly unavailable: string;
 }
 
-/** English source-of-truth vocabulary; also the payload's wording. */
+/**
+ * English source-of-truth vocabulary; also the payload's wording.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ENGLISH_DIAGNOSTIC_VOCAB: DiagnosticVocab = {
   online: 'Online',
   offline: 'Offline',
@@ -146,7 +150,11 @@ export const ENGLISH_DIAGNOSTIC_LABELS: Record<DiagnosticFieldKey, string> = {
   database: 'Database size',
 };
 
-/** Human-readable byte size (e.g. `45.2 MB`), base-1000 to match browser storage reporting. */
+/**
+ * Human-readable byte size (e.g. `45.2 MB`), base-1000 to match browser storage reporting.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
   if (bytes < 1000) return `${bytes} B`;

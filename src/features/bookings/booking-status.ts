@@ -95,6 +95,8 @@ export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
 /**
  * Text-tone Tailwind classes per status — design tokens only (no raw colour literals), so the
  * calendar stays themable and dark-mode-correct.
+ *
+ * @internal Exported for unit tests only.
  */
 export const BOOKING_STATUS_TONE: Record<BookingStatus, string> = {
   cancelled: 'text-muted-foreground',

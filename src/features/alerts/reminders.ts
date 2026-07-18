@@ -129,6 +129,8 @@ export interface ReminderPlan {
  * shown instead of one-per-item — so enabling reminders on a busy inventory (or a long time
  * away) can never unleash a storm of OS notifications. All the new ids are still marked
  * notified, so the individual conditions won't re-summarise on the next pass.
+ *
+ * @internal Exported for unit tests only.
  */
 export const REMINDER_SUMMARY_THRESHOLD = 3;
 

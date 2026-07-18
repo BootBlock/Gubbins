@@ -29,6 +29,8 @@ function hasText(value: string | null): boolean {
  *   total, matching the `value` card field and badge).
  * - `condition` — a tracked condition is set.
  * - `manufacturer` — a manufacturer/brand is recorded.
+ *
+ * @internal Exported for unit tests only.
  */
 export function metricHasContent(metric: VisualCardMetric, item: Item): boolean {
   switch (metric) {

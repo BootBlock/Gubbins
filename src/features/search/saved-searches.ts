@@ -23,7 +23,11 @@ export interface SavedSearch {
 /** Keep the list bounded so localStorage never grows without limit. */
 export const MAX_SAVED_SEARCHES = 50;
 
-/** A saved-search name is a short label, not a paragraph. */
+/**
+ * A saved-search name is a short label, not a paragraph.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const MAX_SAVED_SEARCH_NAME_LENGTH = 60;
 
 /**

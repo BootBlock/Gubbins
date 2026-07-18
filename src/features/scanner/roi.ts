@@ -32,7 +32,11 @@ export interface FrameRoi {
   readonly sh: number;
 }
 
-/** A displayed (CSS-pixel) rectangle — the subset of `DOMRect` the reticle crop needs. */
+/**
+ * A displayed (CSS-pixel) rectangle — the subset of `DOMRect` the reticle crop needs.
+ *
+ * @internal Exported for unit tests only.
+ */
 export interface DisplayRect {
   readonly left: number;
   readonly top: number;
@@ -94,6 +98,8 @@ export function computeCoverRoi(source: CoverRoiSource): FrameRoi | null {
  * Returns `null` when it can't be computed or would be a no-op — a zero-sized element (unlaid-out,
  * as in headless tests), an unsized frame, or a target that already covers the whole frame — so
  * callers fall back to the cover crop / whole frame exactly as before.
+ *
+ * @internal Exported for unit tests only.
  */
 export function computeRectRoi(args: {
   readonly videoWidth: number;

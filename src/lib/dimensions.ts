@@ -17,7 +17,11 @@
 /** The length units the user may read/enter dimensions in. Canonical storage is always mm. */
 export type DimensionUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
 
-/** Every supported unit, for iteration/normalisation (SSOT). */
+/**
+ * Every supported unit, for iteration/normalisation (SSOT).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DIMENSION_UNITS = ['mm', 'cm', 'm', 'in', 'ft'] as const satisfies readonly DimensionUnit[];
 
 /**

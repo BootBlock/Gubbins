@@ -26,7 +26,9 @@
 /** The relation vocabulary (SSOT). Stored verbatim in `item_relations.kind` (free TEXT — see
  * the migration note; no DB CHECK, so a future kind syncs forward without a schema change).
  * `INTERCHANGEABLE_WITH` (issue #36 — substitutions) is a symmetric "these two are freely
- * substitutable" link; it lives on its own surface (see {@link SUBSTITUTION_KINDS}). */
+ *
+ * @internal Exported for unit tests only.
+ */
 export const RELATION_KINDS = ['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR', 'INTERCHANGEABLE_WITH'] as const;
 
 export type RelationKind = (typeof RELATION_KINDS)[number];
@@ -36,6 +38,8 @@ export type RelationKind = (typeof RELATION_KINDS)[number];
  * another (issue #36). These are presented on their own "Substitutions" tab and deliberately kept
  * *out* of the general "Related" surface, so the two facets read as distinct. Mechanically they are
  * ordinary symmetric, reciprocal relations; the partition is purely a presentation split.
+ *
+ * @internal Exported for unit tests only.
  */
 export const SUBSTITUTION_KINDS = ['INTERCHANGEABLE_WITH'] as const satisfies readonly RelationKind[];
 
@@ -55,6 +59,7 @@ export interface RelationLabel {
   readonly symmetric: boolean;
 }
 
+/** @internal Exported for unit tests only. */
 export const RELATION_LABELS: Record<RelationKind, RelationLabel> = {
   WORKS_WITH: { forward: 'Works with', reverse: 'Works with', symmetric: true },
   ACCESSORY_FOR: { forward: 'Accessory for', reverse: 'Has accessory', symmetric: false },
@@ -66,7 +71,11 @@ export const RELATION_LABELS: Record<RelationKind, RelationLabel> = {
   },
 };
 
-/** Type guard: is `value` one of the known relation kinds? */
+/**
+ * Type guard: is `value` one of the known relation kinds?
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isRelationKind(value: unknown): value is RelationKind {
   return typeof value === 'string' && (RELATION_KINDS as readonly string[]).includes(value);
 }
@@ -82,7 +91,11 @@ export function normaliseRelationKind(raw: string | null | undefined): RelationK
   return isRelationKind(key) ? key : null;
 }
 
-/** A symmetric kind reads identically from both ends and canonicalises its endpoint order. */
+/**
+ * A symmetric kind reads identically from both ends and canonicalises its endpoint order.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isSymmetricRelationKind(kind: RelationKind): boolean {
   return RELATION_LABELS[kind].symmetric;
 }
@@ -106,6 +119,8 @@ const SEP = '|';
  * a **directional** kind keeps the caller's order (direction carries meaning). The `kind` is
  * unchanged. Assumes `fromItemId !== toItemId` (a self-relation is rejected upstream by
  * {@link planRelation}).
+ *
+ * @internal Exported for unit tests only.
  */
 export function canonicaliseRelation(spec: RelationSpec): RelationSpec {
   if (isSymmetricRelationKind(spec.kind) && spec.toItemId < spec.fromItemId) {
@@ -143,7 +158,11 @@ export function planRelation(fromItemId: string, toItemId: string, rawKind: stri
   return { ok: true, spec, id: itemRelationId(spec) };
 }
 
-/** Dedupe key for a relation — identical to its canonical id. */
+/**
+ * Dedupe key for a relation — identical to its canonical id.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function relationDedupeKey(spec: RelationSpec): string {
   return itemRelationId(spec);
 }
@@ -151,6 +170,8 @@ export function relationDedupeKey(spec: RelationSpec): string {
 /**
  * Drop duplicate relations (same canonical triple), keeping the first occurrence. Order-preserving,
  * so a caller's chosen ordering survives. Used to sanitise a set before persisting or displaying.
+ *
+ * @internal Exported for unit tests only.
  */
 export function dedupeRelations<T extends RelationSpec>(specs: readonly T[]): T[] {
   const seen = new Set<string>();

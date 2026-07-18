@@ -21,6 +21,8 @@ import {
  * tag) *plus* a filtered list of tags already in the dictionary, with the APG combobox
  * keyboard model and a portalled listbox — so the suggestions escape the surrounding card
  * instead of being clipped by it (issue #84).
+ *
+ * @internal Exported for unit tests only.
  */
 export function TagEditorControl({
   names,

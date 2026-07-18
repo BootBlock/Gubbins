@@ -16,7 +16,7 @@
  * gathers the raw pieces (snapshot, sqlite bytes, OPFS images, settings) and the worker
  * zips/unzips; everything *decided* about the format lives here.
  */
-import { unzipSync, strFromU8, strToU8 } from 'fflate';
+import { unzipSync, strFromU8 } from 'fflate';
 import { parseBackupJson } from '../sync/backup';
 import type { SyncSnapshot } from '../sync/types';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
@@ -27,10 +27,17 @@ import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings
 /** Bump when the *container* layout changes incompatibly (independent of the snapshot's own version). */
 export const BACKUP_FORMAT_VERSION = 1;
 
-/** Zip entry paths — the single source of truth shared by the builder and the reader. */
+/**
+ * Zip entry paths — the single source of truth shared by the builder and the reader.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const MANIFEST_ENTRY = 'manifest.json';
+/** @internal Exported for unit tests only. */
 export const SNAPSHOT_ENTRY = 'backup.json';
+/** @internal Exported for unit tests only. */
 export const SETTINGS_ENTRY = 'settings.json';
+/** @internal Exported for unit tests only. */
 export const DATABASE_ENTRY = 'database/gubbins.sqlite3';
 export const IMAGES_PREFIX = 'images/';
 
@@ -169,7 +176,11 @@ function referencesExcludedItem(row: SqlRow, excluded: ReadonlySet<string>): boo
 
 // --- manifest ------------------------------------------------------------------------
 
-/** Build the manifest describing a backup's contents. Pure. */
+/**
+ * Build the manifest describing a backup's contents. Pure.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function buildManifest(input: {
   readonly snapshot: SyncSnapshot;
   /** Only the two content filters the manifest records; the rest of the selection is irrelevant here. */
@@ -300,7 +311,11 @@ function parseManifest(entries: Record<string, Uint8Array>): BackupManifest | nu
   }
 }
 
-/** Parse an unzipped backup `path → bytes` map into {@link ParsedBackup}. Pure. */
+/**
+ * Parse an unzipped backup `path → bytes` map into {@link ParsedBackup}. Pure.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function parseBackupEntries(entries: Record<string, Uint8Array>): ParsedBackup {
   const snapshotRaw = entries[SNAPSHOT_ENTRY];
   if (!snapshotRaw) {
@@ -359,11 +374,6 @@ export function readBackupFile(bytes: Uint8Array): ParsedBackup {
 
 /** Re-export so call sites can build/inspect settings via one module. */
 export { EXPORTABLE_SETTING_KEYS };
-
-/** Convenience: encode a text entry to bytes (used by tests/builders that bypass the worker). */
-export function encodeEntry(text: string): Uint8Array {
-  return strToU8(text);
-}
 
 /** The fields used only as `SqlValue` carriers — re-exported to keep call sites typed. */
 export type { SqlValue, SqlRow };

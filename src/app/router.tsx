@@ -13,7 +13,11 @@ import { RouteErrorScreen } from '@/features/not-found/RouteErrorScreen';
  * GitHub Pages. We derive it from BASE_URL (trailing slash trimmed) and fall back
  * to root when deployed at '/'.
  */
-/** Derive the router basepath from Vite's BASE_URL (trailing slash trimmed; root → undefined). */
+/**
+ * Derive the router basepath from Vite's BASE_URL (trailing slash trimmed; root → undefined).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function resolveBasepath(baseUrl: string): string | undefined {
   return baseUrl === '/' ? undefined : baseUrl.replace(/\/+$/, '');
 }

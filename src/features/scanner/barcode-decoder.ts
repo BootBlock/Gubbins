@@ -143,6 +143,8 @@ export interface CanvasWorkerGlobals {
  * for browsers with no native API and no `OffscreenCanvas` (Safari < 16.4): the worker decodes
  * the pixels the main thread reads off the canvas, so it needs neither `OffscreenCanvas` nor
  * `createImageBitmap`. (spec §6.6 / §2.4.3 feature-detect-everything.)
+ *
+ * @internal Exported for unit tests only.
  */
 export function supportsCanvasWorkerDecode(env: CanvasWorkerGlobals = globalThis): boolean {
   return (
@@ -258,6 +260,8 @@ export interface WorkerDecoderDeps {
  * Build the `'wasm'` (OffscreenCanvas) decoder: capture each frame to an `ImageBitmap` and
  * transfer it in; the worker rasterises and decodes it off-thread. The chosen `symbology`
  * rides on each request so the worker hints only the wanted format(s) (§6.6).
+ *
+ * @internal Exported for unit tests only.
  */
 export function makeWorkerDecoder(deps: WorkerDecoderDeps): FrameDecoder {
   const symbology = deps.symbology ?? DEFAULT_SCANNER_SYMBOLOGY;
@@ -298,6 +302,8 @@ export interface CanvasWorkerDecoderDeps {
  * them without needing `OffscreenCanvas`. The heavy decode still runs off-thread; only the
  * cheap canvas draw + `getImageData` is on the main thread. The chosen `symbology` rides on
  * each request so the worker hints only the wanted format(s) (§6.6).
+ *
+ * @internal Exported for unit tests only.
  */
 export function makeCanvasWorkerDecoder(deps: CanvasWorkerDecoderDeps): FrameDecoder {
   const symbology = deps.symbology ?? DEFAULT_SCANNER_SYMBOLOGY;

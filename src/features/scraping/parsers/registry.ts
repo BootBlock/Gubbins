@@ -31,6 +31,8 @@ import { DomDriftError, hostOf, type ParseOutcome, type SupplierParser } from '.
  * this list so the active-tab injection's {@link runParser} selects it by host, but it is
  * excluded from {@link SUPPORTED_SUPPLIER_LABELS} because you cannot paste an Amazon URL to
  * background-fetch it.
+ *
+ * @internal Exported for unit tests only.
  */
 export const SUPPLIER_PARSERS: readonly SupplierParser[] = [
   digikeyParser,
@@ -58,7 +60,11 @@ export const SUPPORTED_SUPPLIER_LABELS: readonly string[] = SUPPLIER_PARSERS.fil
   (p) => !URL_SCRAPE_EXCLUDED_IDS.has(p.id),
 ).map((p) => p.label);
 
-/** Pick the first parser that claims the URL (the generic fallback always does). */
+/**
+ * Pick the first parser that claims the URL (the generic fallback always does).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function selectParser(url: string): SupplierParser | null {
   return SUPPLIER_PARSERS.find((p) => p.matches(url)) ?? null;
 }

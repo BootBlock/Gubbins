@@ -53,7 +53,11 @@ export function builtinCardFieldLabel(id: string): string | undefined {
  */
 export const CUSTOM_FIELD_PREFIX = 'custom:';
 
-/** Wrap a category custom-field id as a card-field id. */
+/**
+ * Wrap a category custom-field id as a card-field id.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function customCardFieldId(fieldId: string): string {
   return `${CUSTOM_FIELD_PREFIX}${fieldId}`;
 }

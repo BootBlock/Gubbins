@@ -208,15 +208,8 @@ export const extensionMessageSchema = z.discriminatedUnion('type', [
 ]);
 
 export type ExtensionMessage = z.infer<typeof extensionMessageSchema>;
-export type ReadyMessage = Extract<ExtensionMessage, { type: 'EXTENSION_READY' }>;
 export type ScrapeRequestMessage = Extract<ExtensionMessage, { type: 'SCRAPE_REQUEST' }>;
-export type ScrapeResultMessage = Extract<ExtensionMessage, { type: 'SCRAPE_RESULT' }>;
-export type ScrapeErrorMessage = Extract<ExtensionMessage, { type: 'SCRAPE_ERROR' }>;
 export type ProductLookupRequestMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_REQUEST' }>;
-export type ProductLookupResultMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_RESULT' }>;
-export type ProductLookupErrorMessage = Extract<ExtensionMessage, { type: 'PRODUCT_LOOKUP_ERROR' }>;
-export type ActiveTabResultMessage = Extract<ExtensionMessage, { type: 'ACTIVE_TAB_RESULT' }>;
-export type ActiveTabErrorMessage = Extract<ExtensionMessage, { type: 'ACTIVE_TAB_ERROR' }>;
 
 /** Context for validating an inbound message: the event origin + the trusted set. */
 export interface MessageOriginContext {

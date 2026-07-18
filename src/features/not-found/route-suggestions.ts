@@ -50,6 +50,8 @@ function normaliseToken(value: string): string {
  * leaf is the likeliest target, but every segment is kept so a mistyped *nested* path
  * (`/inventory/99999`) can still match on the real page named earlier in it. Empty when the
  * path carries no segment (e.g. the bare base path).
+ *
+ * @internal Exported for unit tests only.
  */
 export function extractQuerySegments(pathname: string, basepath?: string): readonly string[] {
   let path = pathname;

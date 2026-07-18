@@ -46,7 +46,6 @@ vi.mock('../categories', () => ({
 }));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
-  useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateLocation: () => ({
     mutate: spies.update,
     isPending: updateState.isPending,

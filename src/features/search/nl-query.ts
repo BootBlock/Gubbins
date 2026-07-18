@@ -90,6 +90,8 @@ export interface NlInterpretation {
  * The quantity floor "low stock" means when the caller's low-stock preference is off
  * (`≤ 0`, the shipped default). A friendly non-zero value so "low stock" is never a
  * `quantity < 0` that matches nothing.
+ *
+ * @internal Exported for unit tests only.
  */
 export const NL_LOW_STOCK_FALLBACK_QTY = 5;
 

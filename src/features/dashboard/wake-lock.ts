@@ -31,6 +31,8 @@ export interface WakeLockSituation {
 /**
  * True when a wake lock *should* be held right now: only when the user opted in, the
  * API exists, and the page is visible (a hidden page can hold no lock).
+ *
+ * @internal Exported for unit tests only.
  */
 export function shouldHoldWakeLock(situation: WakeLockSituation): boolean {
   return situation.enabled && situation.supported && situation.visible;

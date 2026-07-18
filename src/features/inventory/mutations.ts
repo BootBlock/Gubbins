@@ -370,17 +370,6 @@ export function useRestoreItem() {
   });
 }
 
-export function useHardDeleteItem() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => getItemRepository().hardDelete(id),
-    onSettled: () => {
-      invalidateItems(client);
-      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
-    },
-  });
-}
-
 /** Outcome of a bulk edit: how many of the selected items applied cleanly vs. errored. */
 export interface BulkEditResult {
   readonly succeeded: number;
@@ -563,22 +552,14 @@ export function useDeleteSupplierPart() {
 
 // --- Location mutations (invalidation-based; see file header) -------------------
 
-export function useCreateLocation() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (input: CreateLocationInput) => getLocationRepository().create(input),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.locations() }),
-  });
-}
-
 /**
  * Create a whole branch of locations in one go from the nested-create shortcut (spec §4):
  * `/` or `\` nests levels *down* the tree and a `,` at the leaf fans *across* into siblings,
  * creating any missing ancestor levels and reusing the ones that already exist. See
  * {@link LocationRepository.createPath}. Resolves with the created/resolved leaves (in order),
- * so the inline "New location…" flow can select the first. A separator-free name is a single
- * leaf and behaves exactly like {@link useCreateLocation}, so this is the drop-in the create
- * dialog uses.
+ * so the inline "New location…" flow can select the first. A separator-free name creates a
+ * single leaf, so this one hook serves both the nested and the flat case, and is what the
+ * create dialog uses.
  */
 export function useCreateLocationPath() {
   const client = useQueryClient();

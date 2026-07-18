@@ -130,6 +130,8 @@ const CLOSE_DELAY_MS = 120;
  * iOS `minimumPressDuration`) so the gesture feels native, and sits comfortably above a
  * normal — even a slow — tap, so releasing late never accidentally peeks. See the touch
  * branch of `onPointerDown`.
+ *
+ * @internal Exported for unit tests only.
  */
 export const LONG_PRESS_MS = 500;
 /**

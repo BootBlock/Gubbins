@@ -57,6 +57,8 @@ function ordersEqual(a: NavOrder, b: NavOrder): boolean {
  * "pinned float to the top" invariant is established, so every op can produce a loose
  * arrangement and hand it here to be tidied. Placements in an unrecognised group are
  * appended verbatim at the end so a stale group value can never drop a tile.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseOrder(placements: NavOrder, groupOrder: readonly NavGroup[]): NavOrder {
   const out: NavTilePlacement[] = [];
@@ -69,7 +71,11 @@ export function normaliseOrder(placements: NavOrder, groupOrder: readonly NavGro
   return out;
 }
 
-/** The row-major default: every tile in its shipped group, unpinned, in SSOT order. */
+/**
+ * The row-major default: every tile in its shipped group, unpinned, in SSOT order.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function defaultOrder(defaults: readonly NavTileDefault[], groupOrder: readonly NavGroup[]): NavOrder {
   return normaliseOrder(
     defaults.map((d) => ({ id: d.id, group: d.group, pinned: false })),

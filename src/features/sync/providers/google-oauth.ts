@@ -41,7 +41,11 @@ const EXPIRY_SKEW_MS = 60_000;
 
 // --- pure: URL building, fragment parsing, validity ------------------------------
 
-/** Build the Google consent URL for the implicit (access-token) flow. */
+/**
+ * Build the Google consent URL for the implicit (access-token) flow.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function buildGoogleAuthUrl(config: GoogleDriveConfig, state: string): string {
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -66,6 +70,8 @@ function fragmentBody(hash: string): string {
  * as opposed to an ordinary hash-router route like `#/inventory`. The token/error
  * markers must be top-level fragment params, so a route that merely *contains* the text
  * (e.g. `#/sync?q=access_token`) is correctly ignored.
+ *
+ * @internal Exported for unit tests only.
  */
 export function isGoogleAuthFragment(hash: string): boolean {
   const body = fragmentBody(hash);
@@ -78,6 +84,8 @@ export function isGoogleAuthFragment(hash: string): boolean {
  * Parse an OAuth redirect fragment into a {@link GoogleAuthResult}, or `null` when the
  * fragment is not an OAuth response at all. A token with no/garbled `expires_in` is given
  * an already-past expiry, so a malformed grant can never be trusted as live.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseGoogleAuthFragment(hash: string, now: number): GoogleAuthResult | null {
   if (!isGoogleAuthFragment(hash)) return null;
@@ -131,6 +139,7 @@ export function loadGoogleToken(): GoogleToken | null {
   return null;
 }
 
+/** @internal Exported for unit tests only. */
 export function storeGoogleToken(token: GoogleToken): void {
   safeLocalStorage()?.setItem(TOKEN_KEY, JSON.stringify(token));
 }

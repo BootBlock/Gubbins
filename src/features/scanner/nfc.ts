@@ -109,6 +109,8 @@ function collectFromRecord(
  * text-ish MIME records. Records that carry no decodable text (empty/binary/unknown) are dropped.
  * The sort is **stable**, so records of equal priority keep their on-tag order. Pure — the caller
  * decides what to do with the result.
+ *
+ * @internal Exported for unit tests only.
  */
 export function ndefMessageToScanStrings(message: NdefMessage): string[] {
   const candidates: { priority: Priority; value: string }[] = [];

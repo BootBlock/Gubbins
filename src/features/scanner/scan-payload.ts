@@ -34,7 +34,11 @@ export type ScannedCode =
   | { readonly kind: 'location'; readonly id: string }
   | { readonly kind: 'gtin'; readonly gtin: string };
 
-/** True when `value` is a syntactically valid UUID. */
+/**
+ * True when `value` is a syntactically valid UUID.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }

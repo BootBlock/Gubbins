@@ -39,6 +39,8 @@ const LABEL_COLUMNS = ['name', 'title', 'label', 'alias', 'note'] as const;
  * version so the review UI can name the conflict ("Cordless drill") without a DB join — and
  * so it stays meaningful even if the row later changes or is removed. Falls back to a
  * shortened id when the row carries no obvious name-like column.
+ *
+ * @internal Exported for unit tests only.
  */
 export function entityLabelFor(tableName: SyncTable, row: SqlRow): string {
   for (const col of LABEL_COLUMNS) {
@@ -52,6 +54,8 @@ export function entityLabelFor(tableName: SyncTable, row: SqlRow): string {
  * Deterministic id for a conflict: the losing local version, keyed by its `updated_at`.
  * Re-detecting the *same* discarded version on a later sync yields the same id (so it
  * de-duplicates in the store), while a *fresh* local edit that later loses gets a new id.
+ *
+ * @internal Exported for unit tests only.
  */
 export function conflictId(tableName: SyncTable, rowId: string, localUpdatedAt: number): string {
   return `${tableName}:${rowId}:${localUpdatedAt}`;

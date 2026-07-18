@@ -47,7 +47,11 @@ import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, Tombstone
 /** Tables read into the schema dictionary: the LWW set plus the unioned ledger. */
 const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
 
-/** §7.2 Tombstone TTL: 180 days in milliseconds. */
+/**
+ * §7.2 Tombstone TTL: 180 days in milliseconds.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
 export interface SyncResult {
@@ -87,7 +91,11 @@ export interface SyncMeta {
   readonly historyPrunedBefore: number;
 }
 
-/** §7.2: must we full-clone rather than delta-reconcile? */
+/**
+ * §7.2: must we full-clone rather than delta-reconcile?
+ *
+ * @internal Exported for unit tests only.
+ */
 export function needsFullResync(
   lastSyncTimestamp: number,
   serverNow: number,

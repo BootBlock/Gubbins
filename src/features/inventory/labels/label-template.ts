@@ -182,7 +182,11 @@ export const DEFAULT_LABEL_TEMPLATE: LabelTemplate = {
 
 const SYMBOLOGIES: readonly LabelSymbology[] = LABEL_SYMBOLOGY_OPTIONS.map((o) => o.value);
 
-/** Clamp/round an arbitrary value to a valid integer column count. */
+/**
+ * Clamp/round an arbitrary value to a valid integer column count.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clampColumns(value: unknown): number {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return DEFAULT_LABEL_TEMPLATE.columns;

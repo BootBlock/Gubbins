@@ -98,7 +98,11 @@ export function indexOfStep(id: GuideStepId): number {
   return GUIDE_STEPS.findIndex((step) => step.id === id);
 }
 
-/** True when `id` names a real step (used to validate a `?step=` deep link). */
+/**
+ * True when `id` names a real step (used to validate a `?step=` deep link).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isGuideStepId(id: string): id is GuideStepId {
   return GUIDE_STEPS.some((step) => step.id === id);
 }

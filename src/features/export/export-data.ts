@@ -283,6 +283,8 @@ export function buildProjectVault(
 /**
  * Back-compatible thin wrapper: the `path → text` map only (no asset extraction). Used by
  * callers that zip text alone.
+ *
+ * @internal Exported for unit tests only.
  */
 export function buildVaultFiles(vaultItems: readonly VaultItem[]): Record<string, string> {
   return buildVault(vaultItems).files;
@@ -355,6 +357,8 @@ export interface VaultBudget {
  * The master `.md` for a Project/BOM-scope vault export (§4.5): Dataview frontmatter
  * plus a component checklist wiki-linking each item note by name, and — when the project
  * carries a budget or any recorded spend — a `## Budget` summary (§4 budgeting).
+ *
+ * @internal Exported for unit tests only.
  */
 export function buildProjectMasterNote(
   projectName: string,
@@ -406,7 +410,11 @@ function escapeCell(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
-/** Make a string safe as a single file/folder name segment. */
+/**
+ * Make a string safe as a single file/folder name segment.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function sanitiseSegment(value: string): string {
   return value
     .replace(/[\\/:*?"<>|]/g, '-')

@@ -96,7 +96,11 @@ export function scannerReducer(state: ScannerState, action: ScannerAction): Scan
   }
 }
 
-/** True when the camera track should be live for this status. */
+/**
+ * True when the camera track should be live for this status.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isStreaming(status: ScannerStatus): boolean {
   return status === 'STREAM_ACTIVE';
 }

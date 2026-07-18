@@ -18,7 +18,11 @@
  */
 import type { CreateItemInput } from '@/db/repositories/types/items';
 
-/** Marks every generated item so it can be spotted and cleaned up. Do not change casually. */
+/**
+ * Marks every generated item so it can be spotted and cleaned up. Do not change casually.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SEED_PREFIX = 'SAMPLE';
 
 /** Offered batch sizes, smallest first. The big ones exist to probe the list/virtualisation limits. */
@@ -26,7 +30,11 @@ export const SEED_COUNTS = [100, 1_000, 10_000] as const;
 
 export type SeedCount = (typeof SEED_COUNTS)[number];
 
-/** Largest batch this module will produce in one call, whatever it is asked for. */
+/**
+ * Largest batch this module will produce in one call, whatever it is asked for.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SEED_MAX = 10_000;
 
 const KINDS = [

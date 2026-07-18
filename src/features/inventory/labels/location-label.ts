@@ -29,10 +29,18 @@ export interface LocationPathNode {
   readonly parentId: string | null;
 }
 
-/** Hard cap on copies of a single location label printed at once. */
+/**
+ * Hard cap on copies of a single location label printed at once.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const MAX_LOCATION_LABEL_COPIES = 24;
 
-/** Clamp/round an arbitrary value to a valid copy count (1..{@link MAX_LOCATION_LABEL_COPIES}). */
+/**
+ * Clamp/round an arbitrary value to a valid copy count (1..{@link MAX_LOCATION_LABEL_COPIES}).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clampCopies(value: unknown): number {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return 1;
@@ -59,7 +67,11 @@ export function locationPath(id: string, nodes: readonly LocationPathNode[], sep
   return ancestors.reverse().join(separator);
 }
 
-/** The text lines a location label shows, in order, per the template's flags. */
+/**
+ * The text lines a location label shows, in order, per the template's flags.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function locationLabelLines(loc: LocationLabelInput, template: LabelTemplate): string[] {
   const lines: string[] = [];
   if (template.showName) lines.push(loc.name);

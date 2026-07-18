@@ -42,6 +42,8 @@ const EXTRA_BUILT_IN_NAMES: readonly string[] = [
  * Every name the app already uses for a built-in item attribute, de-duplicated and sorted.
  * Derived from the existing registries rather than restated, so a label renamed there is
  * reflected here without a second list to remember.
+ *
+ * @internal Exported for unit tests only.
  */
 export const BUILT_IN_ITEM_FIELD_NAMES: readonly string[] = [
   ...new Set([

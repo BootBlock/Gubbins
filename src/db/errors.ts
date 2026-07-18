@@ -94,7 +94,11 @@ export class DbError extends Error {
   }
 }
 
-/** Type guard for the serialised wire form. */
+/**
+ * Type guard for the serialised wire form.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isSerializedDbError(value: unknown): value is SerializedDbError {
   return (
     typeof value === 'object' &&
@@ -113,7 +117,11 @@ const SQLITE_FULL = 13;
 const SQLITE_CONSTRAINT = 19;
 const SQLITE_CONSTRAINT_FOREIGNKEY = 787; // extended code (19 | (9 << 8))
 
-/** Map a primary or extended SQLite result code to our stable error code. */
+/**
+ * Map a primary or extended SQLite result code to our stable error code.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function mapResultCode(resultCode: number): DbErrorCode {
   switch (resultCode) {
     case SQLITE_BUSY:

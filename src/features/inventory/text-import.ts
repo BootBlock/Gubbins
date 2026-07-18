@@ -349,6 +349,8 @@ function extractCurrencyPrice(
  * reduces to nothing but codes falls back to the ASIN/SKU, then to the raw line, so
  * nothing is dropped. `decimalSeparator` (default `.`) governs how a currency amount's
  * `,`/`.` are read, so a eurozone user's `€5,99` is interpreted as `5.99`.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseFreeformLine(line: string, decimalSeparator = '.'): FreeformItem | null {
   const trimmed = line.trim();
@@ -410,6 +412,8 @@ export function parseFreeformLine(line: string, decimalSeparator = '.'): Freefor
 /**
  * Parse a whole block of free-form text into items, one per non-blank line.
  * `decimalSeparator` (default `.`) is passed through to each line's price parsing.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseFreeformText(text: string, decimalSeparator = '.'): FreeformItem[] {
   const items: FreeformItem[] = [];

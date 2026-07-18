@@ -56,7 +56,11 @@ export const DATA_HYGIENE_STALE_DAYS = 180;
 export const SPEND_BUCKETS = 15;
 
 // Sales & disposals — proceeds vs cost margin ----------------------------------
-/** Number of time buckets in the sales-over-time strip (mirrors the spend strip). */
+/**
+ * Number of time buckets in the sales-over-time strip (mirrors the spend strip).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SALES_BUCKETS = 15;
 
 export function useInventoryValue() {

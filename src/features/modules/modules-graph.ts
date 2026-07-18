@@ -161,6 +161,8 @@ export function closureToEnable(
  * Detect a dependency cycle in the registry, returning the ids on the first cycle found
  * (in visit order) or `null` if the graph is acyclic. Used by the registry-integrity
  * unit test; a cycle would break {@link resolveEnabled}'s fixpoint assumption.
+ *
+ * @internal Exported for unit tests only.
  */
 export function findDependencyCycle(registry: readonly FeatureDef[]): FeatureId[] | null {
   const byId = new Map(registry.map((f) => [f.id, f]));

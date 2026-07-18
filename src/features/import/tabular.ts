@@ -331,7 +331,11 @@ function unionKeys(records: readonly JsonRecord[]): string[] {
   return keys;
 }
 
-/** Parse a JSON document into a header + data-row matrix, or `null` if unusable. */
+/**
+ * Parse a JSON document into a header + data-row matrix, or `null` if unusable.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function parseJsonRows(text: string): RowMatrix | null {
   let data: unknown;
   try {
@@ -351,7 +355,11 @@ export function parseJsonRows(text: string): RowMatrix | null {
   return { headerRow: ['name'], dataRows: elements.map((el) => [jsonCell(el)]) };
 }
 
-/** Parse a GitHub-flavoured Markdown table into a header + data-row matrix. */
+/**
+ * Parse a GitHub-flavoured Markdown table into a header + data-row matrix.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function parseMarkdownRows(text: string): RowMatrix | null {
   const pipeLines = nonEmptyLines(text).filter((l) => l.includes('|'));
   const sepIdx = pipeLines.findIndex(isSeparatorRow);
@@ -418,6 +426,8 @@ function htmlCellText(inner: string): string {
  * decoded, whitespace collapsed). Rows with no cells are skipped. Returns `null` when no
  * table row can be found. Best-effort: it is not a full HTML parser, but it handles the
  * tables copied from web pages and produced by spreadsheet / rich-text exports.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseHtmlRows(text: string): RowMatrix | null {
   // Scope to the first <table>…</table> when present, so surrounding page markup is ignored.

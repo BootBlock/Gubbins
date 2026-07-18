@@ -22,7 +22,11 @@ import {
   type SurfaceStyle,
 } from './theme-registry';
 
-/** The CSS class the palette toggles for dark mode (see styles/index.css). */
+/**
+ * The CSS class the palette toggles for dark mode (see styles/index.css).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DARK_CLASS = 'dark';
 
 /** The media query backing the `system` mode. */

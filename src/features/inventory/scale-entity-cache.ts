@@ -37,7 +37,11 @@ export function forgetCachedScaleEntities(bridgeUrl: string): void {
   cache.delete(bridgeUrl.trim());
 }
 
-/** Drop everything cached. Used by tests, which must not leak state between cases. */
+/**
+ * Drop everything cached. Used by tests, which must not leak state between cases.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clearScaleEntityCache(): void {
   cache.clear();
 }

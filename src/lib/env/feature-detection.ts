@@ -54,11 +54,6 @@ export function hasWebLocks(): boolean {
   return typeof navigator !== 'undefined' && 'locks' in navigator;
 }
 
-/** True when BroadcastChannel is available — fallback multi-tab guard / cross-tab messaging (§2.2.7). */
-export function hasBroadcastChannel(): boolean {
-  return typeof globalThis !== 'undefined' && 'BroadcastChannel' in globalThis;
-}
-
 /** True when the Screen Wake Lock API is available — kiosk/dashboard ergonomics (§3, §6.1). */
 export function hasWakeLock(): boolean {
   return typeof navigator !== 'undefined' && 'wakeLock' in navigator;
@@ -122,11 +117,6 @@ export function hasOcr(): boolean {
   return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 }
 
-/** True when haptic feedback is available — scanner confirmation (§6.5). */
-export function hasVibrate(): boolean {
-  return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-}
-
 /**
  * Best-effort mobile heuristic, used only for UX nudges (e.g. the mobile storage
  * eviction warning of §2). Never gate data-integrity logic on this — it is advisory.
@@ -144,46 +134,6 @@ export function isLikelyMobile(): boolean {
   }
 
   return false;
-}
-
-/**
- * Aggregate snapshot of the platform capabilities Gubbins cares about. Useful for
- * diagnostics surfaces (e.g. the Safe Mode screen of §3) and for one-shot reads in
- * React without re-probing individual APIs.
- */
-export interface PlatformCapabilities {
-  readonly crossOriginIsolated: boolean;
-  readonly sharedArrayBuffer: boolean;
-  readonly opfs: boolean;
-  readonly storagePersist: boolean;
-  readonly storageEstimate: boolean;
-  readonly webLocks: boolean;
-  readonly broadcastChannel: boolean;
-  readonly wakeLock: boolean;
-  readonly fileSystemAccess: boolean;
-  readonly barcodeDetector: boolean;
-  readonly nfc: boolean;
-  readonly vibrate: boolean;
-  readonly likelyMobile: boolean;
-}
-
-/** Snapshot every capability in one call. */
-export function detectCapabilities(): PlatformCapabilities {
-  return {
-    crossOriginIsolated: hasCrossOriginIsolation(),
-    sharedArrayBuffer: hasSharedArrayBuffer(),
-    opfs: hasOpfs(),
-    storagePersist: hasStoragePersist(),
-    storageEstimate: hasStorageEstimate(),
-    webLocks: hasWebLocks(),
-    broadcastChannel: hasBroadcastChannel(),
-    wakeLock: hasWakeLock(),
-    fileSystemAccess: hasFileSystemAccess(),
-    barcodeDetector: hasBarcodeDetector(),
-    nfc: hasNfc(),
-    vibrate: hasVibrate(),
-    likelyMobile: isLikelyMobile(),
-  };
 }
 
 /**

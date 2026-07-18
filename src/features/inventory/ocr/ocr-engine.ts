@@ -20,8 +20,7 @@ export { hasOcr };
 /** Language-model accuracy tier. `fast` (small integer model) is the default; `best` is larger. */
 export type OcrModel = 'fast' | 'best';
 
-/** Every model tier, and the default — the SSOT the preference + Settings control read from. */
-export const OCR_MODELS = ['fast', 'best'] as const satisfies readonly OcrModel[];
+/** The default model tier — the SSOT the preference + Settings control read from. */
 export const DEFAULT_OCR_MODEL: OcrModel = 'fast';
 
 /** Coerce an arbitrary persisted value to a valid {@link OcrModel} (defends the read site). */
@@ -53,6 +52,8 @@ export type OcrRecognizerFactory = (opts: {
  * Resolve the origin-relative URLs of the staged OCR assets for a model tier. Pure so the
  * base-path wiring (the app is served under a sub-path, e.g. `/Gubbins/`) is unit-testable.
  * `corePath` is a directory — Tesseract appends the SIMD/OEM-appropriate core file itself.
+ *
+ * @internal Exported for unit tests only.
  */
 export function ocrAssetPaths(
   base: string,

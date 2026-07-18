@@ -17,13 +17,19 @@ export type DueStatus = 'NONE' | 'UPCOMING' | 'DUE_SOON' | 'OVERDUE';
  * Convert a "due in `days` days" choice into an absolute UNIX-ms due date — simply
  * `from + days × MS_PER_DAY`. Returns `null` for a non-positive or non-finite day
  * count (i.e. "no due date").
+ *
+ * @internal Exported for unit tests only.
  */
 export function dueDateFromDays(days: number, from: number = Date.now()): number | null {
   if (!Number.isFinite(days) || days <= 0) return null;
   return from + Math.round(days) * MS_PER_DAY;
 }
 
-/** Whole days remaining until `dueDate` (negative when overdue), rounded down. */
+/**
+ * Whole days remaining until `dueDate` (negative when overdue), rounded down.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function daysUntil(dueDate: number, now: number = nowMs()): number {
   return Math.floor((dueDate - now) / MS_PER_DAY);
 }
@@ -31,6 +37,8 @@ export function daysUntil(dueDate: number, now: number = nowMs()): number {
 /**
  * Classify a checkout's urgency. `dueDate` of `null` is `NONE`. Past due is
  * `OVERDUE`; within `dueSoonDays` (default 2) is `DUE_SOON`; otherwise `UPCOMING`.
+ *
+ * @internal Exported for unit tests only.
  */
 export function dueStatus(dueDate: number | null, now: number = nowMs(), dueSoonDays = 2): DueStatus {
   if (dueDate === null) return 'NONE';

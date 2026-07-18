@@ -132,7 +132,11 @@ const SECTION_META: Record<
   },
 };
 
-/** The order sections are emitted in. */
+/**
+ * The order sections are emitted in.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const HYGIENE_KIND_ORDER: readonly HygieneIssueKind[] = [
   'missing-category',
   'missing-location',

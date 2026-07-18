@@ -72,7 +72,11 @@ export function occupantAt(layout: DashboardLayout, x: number, y: number): Widge
   return layout.find((p) => p.visible && p.x === x && p.y === y);
 }
 
-/** The first row-major cell not occupied by a visible widget (a hidden cell is free). */
+/**
+ * The first row-major cell not occupied by a visible widget (a hidden cell is free).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function firstFreeCell(layout: DashboardLayout): { x: number; y: number } {
   for (let y = 0; ; y++) {
     for (let x = 0; x < DASHBOARD_COLUMNS; x++) {

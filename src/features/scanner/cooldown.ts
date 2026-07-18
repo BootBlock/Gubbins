@@ -10,7 +10,11 @@
  * accept/ignore decision is fully unit-testable without a real clock or camera.
  */
 
-/** Default debounce window in milliseconds (spec §6.4). */
+/**
+ * Default debounce window in milliseconds (spec §6.4).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const COOLDOWN_WINDOW_MS = 2000;
 
 export class CooldownMap {

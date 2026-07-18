@@ -18,6 +18,8 @@
  * Escape a string for safe embedding inside a CSS `content: "…"` value. Collapses whitespace
  * runs (newlines/tabs) to single spaces, then escapes backslash and double-quote so the value
  * can never terminate the string early or inject further declarations.
+ *
+ * @internal Exported for unit tests only.
  */
 export function cssContentString(value: string): string {
   const cleaned = value

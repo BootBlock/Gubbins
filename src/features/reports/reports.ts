@@ -91,7 +91,11 @@ export interface ValuationRow {
   readonly currentValue?: number | null;
 }
 
-/** Fallback label for a row with no category/location group. */
+/**
+ * Fallback label for a row with no category/location group.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const UNGROUPED_LABEL = 'Ungrouped';
 
 /**

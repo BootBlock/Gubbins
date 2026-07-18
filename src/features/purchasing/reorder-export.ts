@@ -22,7 +22,11 @@ export interface ReorderExportRow {
   readonly unitCost: number | null;
 }
 
-/** Flatten the grouped plan into self-contained per-line rows (supplier repeated per row). */
+/**
+ * Flatten the grouped plan into self-contained per-line rows (supplier repeated per row).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function flattenReorderPlan(groups: readonly ReorderPlanGroup[]): ReorderExportRow[] {
   const rows: ReorderExportRow[] = [];
   for (const group of groups) {
@@ -38,7 +42,11 @@ export function flattenReorderPlan(groups: readonly ReorderPlanGroup[]): Reorder
   return rows;
 }
 
-/** Export columns — headers kept stable (`supplier`/`item`/`orderQty`/`unitCost`) for round-trips. */
+/**
+ * Export columns — headers kept stable (`supplier`/`item`/`orderQty`/`unitCost`) for round-trips.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function reorderExportColumns(): readonly TabularColumn<ReorderExportRow>[] {
   return [
     { header: 'supplier', value: (r) => r.supplier },

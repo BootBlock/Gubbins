@@ -210,6 +210,8 @@ function parseRadiusPx(value: string): number {
  * box, every radius scales down by the worst side's overflow factor (this is what turns a
  * `rounded-full` pill's 9999px into height/2, and what lets a single 100px corner keep its full
  * size on a tall box). Pure, exported for tests.
+ *
+ * @internal Exported for unit tests only.
  */
 export function resolveTopRadii(
   topLeft: number,

@@ -29,6 +29,8 @@ import { reactNodeTextLength, toastDurationForLength } from './toast-duration';
  * How long the exit animation (`animate-toast-out`, ~0.2s) plays before the toast is
  * removed from React state. Kept marginally above the CSS duration so the final frame
  * is painted. Skipped entirely under reduced motion (see {@link prefersReducedMotion}).
+ *
+ * @internal Exported for unit tests only.
  */
 export const TOAST_EXIT_MS = 200;
 
