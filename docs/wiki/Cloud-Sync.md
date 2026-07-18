@@ -19,6 +19,11 @@ Gubbins is **provider-agnostic**. You choose where the shared copy lives:
 
 Each device reads and writes the shared copy, so your inventory follows you between them.
 
+> **ℹ️ Note**
+> The **Google Drive** option only appears if whoever built the copy of Gubbins you're using
+> configured it with a Google sign-in identifier. If you don't see it, that build didn't include
+> one — the local-folder option and [[backups|Backup-and-Restore]] work regardless.
+
 ## How conflicts are handled
 
 When two devices change things independently, Gubbins reconciles **per item, per field** — not as
