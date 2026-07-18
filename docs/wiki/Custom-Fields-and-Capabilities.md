@@ -88,13 +88,25 @@ connect to it — inherited values included, resolved exactly as they appear in 
 a custom field a good place to record something another system needs to know: which light sits
 above a shelf, which printer serves a room, a supplier's reference for a part.
 
-Values are only sent when the connecting system asks for them, so ordinary requests stay small.
-Location fields also travel as attributes on that location's
-[[Home Assistant entity|Home-Assistant-Integration]], so an automation can read them directly.
+There are two different routes, and they behave differently — worth knowing which is which:
+
+- **Asked for.** A system reading the bridge directly gets field values only when it explicitly
+  requests them, so ordinary requests stay small and nothing is volunteered.
+- **Published.** If you've switched on [[MQTT publishing|Webhooks-MQTT-and-iCal]], each
+  **location's** fields are sent to your broker automatically, as attributes on that location's
+  [[Home Assistant entity|Home-Assistant-Integration]] — that's what lets an automation read them
+  without asking. Item fields are never published this way.
 
 > **ℹ️ Note**
 > This is read-only — nothing connecting to the bridge can change a field's value. Editing stays
 > in the app.
+
+> **⚠️ Heads-up**
+> Because location fields are *published* rather than asked for, everything you record on a
+> location reaches your broker once MQTT publishing is on — you can't currently publish some of a
+> location's fields and hold others back. It's your own broker, so this is usually exactly what you
+> want; just think twice before recording something like a door code or a valuation on a
+> **location** rather than on an item.
 
 ### Adding a field note
 

@@ -1001,6 +1001,22 @@ Field names are lower-cased with anything non-alphanumeric collapsed to `_`, so 
 key is always there, so a template never has to guard for it. Empty values are omitted, and if two
 field names normalise to the same key the first (by field name) wins.
 
+> **⚠️ Upgrading an existing MQTT setup?** Location attributes ride on the state topic whenever
+> MQTT publishing is on — there is **no separate flag** for them. So if you were already running
+> with `GUBBINS_BRIDGE_MQTT=on` before this existed, your locations' custom-field values begin
+> reaching your broker as soon as you upgrade, without you changing any configuration.
+>
+> That is the point of the feature, and a broker you run yourself is exactly where this data is
+> meant to go. But it is worth a moment's thought if a location holds a field you would rather not
+> publish — a door code, an insurance valuation, a supplier's pricing. **Every** custom-field value
+> a location holds is published, not a chosen subset, and there is currently no way to exclude one
+> field while keeping the others. Until there is, the options are: don't record that kind of detail
+> on a *location* (an item field is not published this way), restrict the topic with a broker ACL,
+> or leave MQTT publishing off.
+>
+> Nothing else changed: item custom fields are **not** pushed to MQTT, and no field of any kind is
+> readable over HTTP unless a caller explicitly asks for it.
+
 With [discovery](#home-assistant-mqtt-discovery-no-custom-component) on, these arrive as **entity
 attributes** on `sensor.gubbins_location_<id>`, so an automation reads them directly:
 
@@ -1233,7 +1249,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). | outbound (push) | No — an event never mutates inventory. | Per-target HMAC signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `.env` only. |
-| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
+| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields) — **all of them, automatically, with no separate flag**, so enabling `MQTT` is what consents to publishing them. | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
 | `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
