@@ -25,6 +25,8 @@ import {
   LOCATION_TAGS_TABLE,
   itemTagEdgeId,
   locationTagEdgeId,
+  parseItemTagEdgeId,
+  parseLocationTagEdgeId,
 } from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import { applyOffset } from './clock';
@@ -33,6 +35,7 @@ import { reconcileGauge } from './delta-crdt';
 import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
+import { resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   GaugeHistoryDelta,
   GaugeResolution,
@@ -79,6 +82,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   gaugeResolutions: [],
   reparented: [],
   rejectedCycles: [],
+  collisions: [],
   historyInserts: [],
   itemTagUpserts: [],
   itemTagDeletes: [],
@@ -146,8 +150,10 @@ export function reconcile(
     options.now ?? Date.now(),
   );
 
-  // --- §4/§7.5 alias-text collision resolution ----------------------------------
-  resolveAliasCollisions(local, localUpserts, localDeletes, offset);
+  // --- §7.5 natural-key collision resolution (issue #187) -----------------------
+  // Runs before every later phase: it can drop upserts, retire ids and repoint references,
+  // all of which the FK guard, the tag-edge sections and the apply must see settled.
+  const { collisions, rekeys } = resolveUniqueKeyCollisions(local, localUpserts, localDeletes, offset);
 
   // --- §7.5.2 orphan re-parenting ------------------------------------------------
   const { reparented, finalItems, activeLocationIds } = reparentOrphans(local, localUpserts, localDeletes);
@@ -173,7 +179,10 @@ export function reconcile(
   // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
   // Both reference parents (items/tags), so they are filtered to the rows that will
   // survive the merge to keep the atomic apply FK-safe.
+  const tagRekeys = rekeys.get('tags') ?? new Map<string, string>();
   const finalTagIds = survivingIds('tags', local, localUpserts, localDeletes);
+  // A tag that lost its name to a peer's row is retired, not surviving (issue #187).
+  for (const loserId of tagRekeys.keys()) finalTagIds.delete(loserId);
   const finalLocationIds = survivingIds('locations', local, localUpserts, localDeletes);
 
   const historyInserts = reconcileHistory(
@@ -189,6 +198,7 @@ export function reconcile(
     offset,
     finalItemIds,
     finalTagIds,
+    tagRekeys,
   );
   const { locationTagUpserts, locationTagDeletes } = reconcileLocationTags(
     local,
@@ -196,6 +206,7 @@ export function reconcile(
     offset,
     finalLocationIds,
     finalTagIds,
+    tagRekeys,
   );
 
   return {
@@ -204,6 +215,7 @@ export function reconcile(
     gaugeResolutions,
     reparented,
     rejectedCycles,
+    collisions,
     historyInserts,
     itemTagUpserts,
     itemTagDeletes,
@@ -656,6 +668,12 @@ function reconcileEdgeMembership<E>(
   remoteTomb: Map<string, number>,
   edgeId: (edge: E) => string,
   survives: (edge: E) => boolean,
+  /**
+   * Edge ids that exist locally only under a *retired* endpoint id (issue #187). The stored
+   * row still points at the loser, so the collision DELETE cascades it away: such an edge
+   * counts as present for the union, but must still be re-inserted against the winner.
+   */
+  reinsertKeys: ReadonlySet<string> = new Set(),
 ): { upserts: E[]; deletes: (E & { deletedAt: number })[] } {
   const localMap = new Map<string, E>();
   for (const e of localEdges ?? []) localMap.set(edgeId(e), e);
@@ -680,7 +698,7 @@ function reconcileEdgeMembership<E>(
     const present = (localMap.has(key) || remoteMap.has(key)) && !tombstoned;
     const localHas = localMap.has(key);
 
-    if (present && !localHas) {
+    if (present && (!localHas || reinsertKeys.has(key))) {
       // Add the edge locally — only if both endpoints survive the merge (FK-safe).
       if (survives(edge)) upserts.push(edge);
     } else if (!present && localHas) {
@@ -692,23 +710,75 @@ function reconcileEdgeMembership<E>(
   return { upserts, deletes };
 }
 
-/** M:N `item_tags` membership reconciliation (§7.3, Phase 11). */
+/**
+ * M:N `item_tags` membership reconciliation (§7.3, Phase 11).
+ *
+ * `tagRekeys` maps tag ids retired by §7.5 natural-key resolution (issue #187) onto the id
+ * that kept the name. Edges are mapped *before* the union, so both devices' links to their
+ * own "Bolts" row become the same edge and merge into one membership rather than colliding —
+ * this is what makes a re-key preserve associations instead of losing one side's.
+ */
 function reconcileItemTags(
   local: SyncSnapshot,
   remote: SyncSnapshot,
   offset: number,
   finalItemIds: ReadonlySet<string>,
   finalTagIds: ReadonlySet<string>,
+  tagRekeys: ReadonlyMap<string, string>,
 ): { itemTagUpserts: ItemTagEdge[]; itemTagDeletes: ItemTagEdgeDelete[] } {
+  const map = (e: ItemTagEdge): ItemTagEdge => ({ ...e, tagId: tagRekeys.get(e.tagId) ?? e.tagId });
+  const mapKey = (id: string) => {
+    const { itemId, tagId } = parseItemTagEdgeId(id);
+    return itemTagEdgeId(itemId, tagRekeys.get(tagId) ?? tagId);
+  };
   const { upserts, deletes } = reconcileEdgeMembership<ItemTagEdge>(
-    local.itemTags,
-    remote.itemTags,
-    edgeTombstones(local.tombstones, ITEM_TAGS_TABLE, offset),
-    edgeTombstones(remote.tombstones, ITEM_TAGS_TABLE, 0),
+    local.itemTags?.map(map),
+    remote.itemTags?.map(map),
+    rekeyEdgeTombstones(edgeTombstones(local.tombstones, ITEM_TAGS_TABLE, offset), tagRekeys, mapKey),
+    rekeyEdgeTombstones(edgeTombstones(remote.tombstones, ITEM_TAGS_TABLE, 0), tagRekeys, mapKey),
     (e) => itemTagEdgeId(e.itemId, e.tagId),
     (e) => finalItemIds.has(e.itemId) && finalTagIds.has(e.tagId),
+    rekeyedEdgeKeys(local.itemTags, tagRekeys, (e) => itemTagEdgeId(e.itemId, e.tagId)),
   );
   return { itemTagUpserts: upserts, itemTagDeletes: deletes };
+}
+
+/**
+ * The post-re-key ids of local edges that pointed at a retired tag (issue #187) — the edges
+ * the collision DELETE will cascade away, so the merge must re-insert them against the
+ * winner even though the union already counts them as present.
+ */
+function rekeyedEdgeKeys<E extends { tagId: string }>(
+  localEdges: readonly E[] | undefined,
+  tagRekeys: ReadonlyMap<string, string>,
+  edgeId: (edge: E) => string,
+): ReadonlySet<string> {
+  const keys = new Set<string>();
+  if (tagRekeys.size === 0) return keys;
+  for (const e of localEdges ?? []) {
+    const winner = tagRekeys.get(e.tagId);
+    if (winner !== undefined) keys.add(edgeId({ ...e, tagId: winner }));
+  }
+  return keys;
+}
+
+/**
+ * Re-key an edge-tombstone map through a tag re-key (issue #187). A no-op — returning the
+ * map untouched — when nothing was retired, which is every ordinary sync. Where two keys
+ * collapse onto one, the newest deletion instant wins, matching the 2P-set's tombstone rule.
+ */
+function rekeyEdgeTombstones(
+  tombstones: Map<string, number>,
+  tagRekeys: ReadonlyMap<string, string>,
+  mapKey: (id: string) => string,
+): Map<string, number> {
+  if (tagRekeys.size === 0) return tombstones;
+  const mapped = new Map<string, number>();
+  for (const [id, deletedAt] of tombstones) {
+    const key = mapKey(id);
+    mapped.set(key, Math.max(mapped.get(key) ?? 0, deletedAt));
+  }
+  return mapped;
 }
 
 /** M:N `location_tags` membership reconciliation (issue #84 — the location counterpart). */
@@ -718,14 +788,24 @@ function reconcileLocationTags(
   offset: number,
   finalLocationIds: ReadonlySet<string>,
   finalTagIds: ReadonlySet<string>,
+  tagRekeys: ReadonlyMap<string, string>,
 ): { locationTagUpserts: LocationTagEdge[]; locationTagDeletes: LocationTagEdgeDelete[] } {
+  const map = (e: LocationTagEdge): LocationTagEdge => ({
+    ...e,
+    tagId: tagRekeys.get(e.tagId) ?? e.tagId,
+  });
+  const mapKey = (id: string) => {
+    const { locationId, tagId } = parseLocationTagEdgeId(id);
+    return locationTagEdgeId(locationId, tagRekeys.get(tagId) ?? tagId);
+  };
   const { upserts, deletes } = reconcileEdgeMembership<LocationTagEdge>(
-    local.locationTags,
-    remote.locationTags,
-    edgeTombstones(local.tombstones, LOCATION_TAGS_TABLE, offset),
-    edgeTombstones(remote.tombstones, LOCATION_TAGS_TABLE, 0),
+    local.locationTags?.map(map),
+    remote.locationTags?.map(map),
+    rekeyEdgeTombstones(edgeTombstones(local.tombstones, LOCATION_TAGS_TABLE, offset), tagRekeys, mapKey),
+    rekeyEdgeTombstones(edgeTombstones(remote.tombstones, LOCATION_TAGS_TABLE, 0), tagRekeys, mapKey),
     (e) => locationTagEdgeId(e.locationId, e.tagId),
     (e) => finalLocationIds.has(e.locationId) && finalTagIds.has(e.tagId),
+    rekeyedEdgeKeys(local.locationTags, tagRekeys, (e) => locationTagEdgeId(e.locationId, e.tagId)),
   );
   return { locationTagUpserts: upserts, locationTagDeletes: deletes };
 }
@@ -741,54 +821,6 @@ function edgeTombstones(
     if (t.tableName === tableName) map.set(t.id, t.deletedAt + offset);
   }
   return map;
-}
-
-/**
- * Resolve §4 Universal-Alias-Mapping text collisions before the atomic apply. An
- * incoming alias upsert whose `alias` text already belongs to a *different* local id
- * (and that local row is not being deleted) would violate the UNIQUE(alias) index.
- * Resolve by LWW on `updated_at`: if the incoming row is newer it wins the text and
- * the local conflicting row is deleted+tombstoned; otherwise the incoming upsert is
- * dropped (the local mapping stands and the push half re-asserts it). Mutates
- * `localUpserts`/`localDeletes` in place.
- */
-function resolveAliasCollisions(
-  local: SyncSnapshot,
-  localUpserts: TableRow[],
-  localDeletes: Tombstone[],
-  offset: number,
-): void {
-  const TABLE = 'item_aliases';
-  const deletedIds = new Set(localDeletes.filter((d) => d.tableName === TABLE).map((d) => d.id));
-  // Surviving local alias rows, keyed by lower-cased alias text.
-  const localByText = new Map<string, { id: string; updatedAt: number }>();
-  for (const row of local.tables[TABLE] ?? []) {
-    const id = String(row.id);
-    if (deletedIds.has(id)) continue;
-    localByText.set(String(row.alias).toLowerCase(), {
-      id,
-      updatedAt: applyOffset(num(row.updated_at), offset),
-    });
-  }
-
-  for (let i = localUpserts.length - 1; i >= 0; i -= 1) {
-    const u = localUpserts[i]!;
-    if (u.table !== TABLE) continue;
-    const upId = String(u.row.id);
-    const text = String(u.row.alias).toLowerCase();
-    const upUpd = num(u.row.updated_at);
-    const hit = localByText.get(text);
-    if (!hit || hit.id === upId) continue; // no clash, or it's the same row updating
-
-    if (upUpd > hit.updatedAt) {
-      // Incoming mapping wins the text → remove the local conflicting row.
-      localDeletes.push({ tableName: TABLE, id: hit.id, deletedAt: upUpd });
-      localByText.set(text, { id: upId, updatedAt: upUpd });
-    } else {
-      // Local mapping wins → discard the incoming upsert.
-      localUpserts.splice(i, 1);
-    }
-  }
 }
 
 /** Location ids that survive the merge (plus the always-present Unassigned). */

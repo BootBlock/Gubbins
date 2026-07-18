@@ -28,6 +28,22 @@ changed on two devices before they sync that Gubbins has to pick one, and it doe
 **last-write-wins** — the most recent change prevails — so syncing is safe without you refereeing
 every difference.
 
+### When two devices create the same thing
+
+Some things are identified by their **name** rather than by which device made them — tags,
+contacts, and custom fields. If you add a tag called *Bolts* on your phone while your laptop is
+offline, and the laptop adds its own *Bolts* too, syncing does **not** leave you with two
+identical tags: Gubbins recognises them as the same thing and merges them into one.
+
+Nothing is lost in the merge. The surviving tag carries **both** devices' items, a merged contact
+keeps the checkout history from either side, and a merged custom field keeps the values recorded on
+both. The same applies to a value entered twice for one field, or a specification added to the same
+item on two devices — the more recent entry is kept, by the same last-write-wins rule as above.
+
+> **ℹ️ Note**
+> Matching ignores capitalisation, so *Bolts* and *bolts* are treated as one name — exactly as they
+> are when you type a duplicate on a single device.
+
 ### Reviewing overwritten edits
 
 Last-write-wins means one side's change to that same field is set aside. So you never lose that
