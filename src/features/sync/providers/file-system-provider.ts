@@ -37,10 +37,12 @@ export class FileSystemCloudProvider implements CloudProvider {
   readonly id = 'file-system';
   readonly label: string;
 
-  constructor(
-    private readonly dir: FsDirectoryHandle,
-    private readonly fileName = DEFAULT_FILE_NAME,
-  ) {
+  private readonly dir: FsDirectoryHandle;
+  private readonly fileName: string;
+
+  constructor(dir: FsDirectoryHandle, fileName = DEFAULT_FILE_NAME) {
+    this.dir = dir;
+    this.fileName = fileName;
     this.label = `Local folder · ${dir.name}`;
   }
 
