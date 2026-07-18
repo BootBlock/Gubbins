@@ -36,8 +36,12 @@ you can leave Spend on a year while Sales stays on the last month, and they'll b
 them next time.
 
 **Stock movement** charts what came in and what went out over the period you pick, so you can see
-how quickly things flow through your inventory rather than just where they've ended up. Exporting
-it as CSV uses the period you've selected, so the file covers the same span as the chart.
+how quickly things flow through your inventory rather than just where they've ended up.
+
+Your choice carries through to the **CSV export**: exporting a report that has a period selector
+gives you the span you've selected on screen, so the file always covers the same period as the
+figures you were looking at. Reports with a fixed span — **ABC analysis** (always annual),
+**consumption rate** and **data hygiene** — have no selector and export over their own set period.
 
 ## Exporting
 

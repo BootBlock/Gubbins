@@ -1903,3 +1903,27 @@ re-targeted. Smoke-only: no application code changed. (The parallel Amazon-impor
 - **Smoke stance:** the smoke's sub-variant step now asserts the persisted **inventory card**
   (robust to whether the dialog stayed open) rather than the in-dialog variant list — an honest,
   green assertion that documents the residual rather than masking it.
+
+---
+
+## Reports screen — i18n conversion (deferred as a unit)
+
+The typed `t()` seam currently covers the global chrome, the Dashboard and About. The **Reports**
+screen is not converted: every user-facing string on it is still an English literal — the panel
+titles (several interpolating a day count, e.g. *"Inventory turnover (last 90 days)"*), the period
+selectors' `aria-label`s (*"Analytics window"*, *"Stock movement window"*, *"Spend window"*, *"Sales
+window"*), the live-region announcements, and the table headers and empty states.
+
+- **Why it is deferred rather than done piecemeal.** Converting a single string — for instance the
+  movement window's `aria-label`, the most recently added — would leave one key in the catalogs
+  beside a screenful of literals that read identically in the source. That is harder to finish
+  correctly later than leaving the section uniformly unconverted, because the converted string is
+  no longer distinguishable from the rest by inspection.
+- **What the conversion involves.** Roughly a screen's worth of keys added to **both** `en.json`
+  and `de.json` (the catalog tests enforce full coverage and placeholder preservation), with the
+  day-count titles going through `{placeholder}` vars rather than template concatenation, plus
+  pluralisation where a count is user-visible. The existing `ReportsScreen` tests assert English
+  copy, so they stay green only while the `en.json` values remain byte-identical to today's
+  literals — that identity is the safety net for the conversion.
+- **Target.** A later i18n-expansion phase, converted as one coherent unit alongside the other
+  unconverted screens. **→ a later i18n phase.**
