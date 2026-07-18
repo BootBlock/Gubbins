@@ -5,6 +5,10 @@
  */
 import { currentGrossWeight, percentageRemaining } from './gauge';
 import type {
+  Role,
+  RoleRow,
+  User,
+  UserRow,
   Capability,
   CapabilityRow,
   AssetBooking,
@@ -660,4 +664,51 @@ export function rowToBomLine(row: ProjectBomLineRow): ProjectBomLine {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/**
+ * Map a `users` row to its DTO. The password triple is deliberately dropped rather than
+ * mapped: {@link User} has no field for it, so a hash cannot leak through anything that
+ * consumes a mapped user (issue #79, plan §1.1).
+ */
+export function rowToUser(row: UserRow): User {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    email: row.email,
+    hasPassword: row.password_hash !== null,
+    isEnabled: row.is_enabled === 1,
+    disabledMessage: row.disabled_message,
+    kind: row.kind,
+    roleId: row.role_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Map a `roles` row to its DTO. `permissions` is stored as a JSON array; a row whose column
+ * is unparseable or not an array degrades to *no* permissions rather than throwing — a role
+ * that fails to load must not be able to grant anything.
+ */
+export function rowToRole(row: RoleRow): Role {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    permissions: parsePermissions(row.permissions),
+    isBuiltin: row.is_builtin === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function parsePermissions(raw: string): readonly string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
 }

@@ -47,14 +47,14 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
         const leavingActual = status !== 'ACTUAL' && line.reservationStatus === 'ACTUAL';
         if (enteringActual) {
           statements.push(
-            historyStatement(line.itemId, 'RESERVED', {
+            historyStatement(line.itemId, 'RESERVED', this.actorId(), {
               quantityDelta: reservedQty,
               note: `Reserved ${reservedQty} for a project.`,
             }),
           );
         } else if (leavingActual) {
           statements.push(
-            historyStatement(line.itemId, 'RESERVATION_CLEARED', {
+            historyStatement(line.itemId, 'RESERVATION_CLEARED', this.actorId(), {
               note: 'Project reservation released.',
             }),
           );
@@ -84,7 +84,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
       ];
       if (line.itemId && status === 'IN_TRANSIT' && line.procurementStatus !== 'IN_TRANSIT') {
         statements.push(
-          historyStatement(line.itemId, 'PROCURED', {
+          historyStatement(line.itemId, 'PROCURED', this.actorId(), {
             quantityDelta: line.requiredQty,
             note: `${line.requiredQty} in transit for a project.`,
           }),
@@ -148,7 +148,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
               : addStockStatement(line.itemId, targetLocation, qty),
           );
           statements.push(
-            historyStatement(line.itemId, 'RECEIVED', {
+            historyStatement(line.itemId, 'RECEIVED', this.actorId(), {
               quantityDelta: qty,
               note: plan.fullyReceived
                 ? `Received ${qty} from procurement (now ${nextQty})${batchNote}.`

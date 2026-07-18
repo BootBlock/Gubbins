@@ -17,6 +17,7 @@
  * The engine never touches the database — the orchestrator applies the plan and
  * re-reads the merged state to push — so it is exhaustively unit-tested in isolation.
  */
+import { BUILTIN_USER_IDS, SYSTEM_USER_ID } from '@/db/repositories/constants';
 import {
   UNASSIGNED_LOCATION_ID,
   SYNC_TABLES,
@@ -185,12 +186,24 @@ export function reconcile(
   for (const loserId of tagRekeys.keys()) finalTagIds.delete(loserId);
   const finalLocationIds = survivingIds('locations', local, localUpserts, localDeletes);
 
+  // The users an inbound ledger row may be attributed to (issue #79). The built-in System and
+  // Admin users are added unconditionally: they are seeded by the baseline on every device and
+  // deliberately excluded from the snapshot (see `TABLE_FILTER`), so they never appear in
+  // `local.tables.users` — without this, every row written by Admin would arrive orphaned and
+  // be re-attributed to System.
+  const userRekeys = rekeys.get('users') ?? new Map<string, string>();
+  const finalUserIds = survivingIds('users', local, localUpserts, localDeletes);
+  for (const loserId of userRekeys.keys()) finalUserIds.delete(loserId);
+  for (const builtin of BUILTIN_USER_IDS) finalUserIds.add(builtin);
+
   const historyInserts = reconcileHistory(
     local,
     remote,
     options.dictionary[ITEM_HISTORY_TABLE],
     options.historyPrunedBefore ?? 0,
     finalItemIds,
+    finalUserIds,
+    userRekeys,
   );
   const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
     local,
@@ -423,6 +436,12 @@ function computeRemovedParents(
       remote,
       survivingIds('purchase_orders', local, localUpserts, localDeletes),
     ),
+    // Principals (issue #79). A removed role NULLs its users' `role_id`; a removed user is
+    // guarded by `reconcileHistory`, which re-attributes their inbound ledger rows to System
+    // rather than dropping them. Both are plain LWW dictionaries, so the surviving set is the
+    // usual local rows − deletes + upserts.
+    roles: removedIds('roles', local, remote, survivingIds('roles', local, localUpserts, localDeletes)),
+    users: removedIds('users', local, remote, survivingIds('users', local, localUpserts, localDeletes)),
   };
 }
 
@@ -436,6 +455,10 @@ function computeRemovedParents(
 const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTable; nullable: boolean }[]>> =
   {
     items: [{ col: 'category_id', parent: 'categories', nullable: true }],
+    // A user whose role was removed elsewhere keeps their account and loses only the grant,
+    // mirroring the column's ON DELETE SET NULL (issue #79). Dropping the user instead would
+    // delete an account because a role was renamed away on another device.
+    users: [{ col: 'role_id', parent: 'roles', nullable: true }],
     // Per-location stock ledger (Phase 25). item_id mirrors the cascade children above —
     // drop a placement whose item was removed. location_id drops an *incoming* placement at
     // a removed location (it would trip the location's RESTRICT FK); the device's *own*
@@ -639,6 +662,8 @@ function reconcileHistory(
   allowedCols: readonly string[] | undefined,
   prunedBefore: number,
   finalItemIds: ReadonlySet<string>,
+  finalUserIds: ReadonlySet<string>,
+  userRekeys: ReadonlyMap<string, string>,
 ): SqlRow[] {
   const localIds = new Set((local.itemHistory ?? []).map((r) => String(r.id)));
   const inserts: SqlRow[] = [];
@@ -646,9 +671,38 @@ function reconcileHistory(
     if (localIds.has(String(r.id))) continue;
     if (num(r.created_at) < prunedBefore) continue;
     if (!finalItemIds.has(String(r.item_id))) continue;
-    inserts.push(allowedCols ? sanitiseRow(r, allowedCols) : r);
+    const row = allowedCols ? sanitiseRow(r, allowedCols) : r;
+    inserts.push(resolveActor(row, finalUserIds, userRekeys));
   }
   return inserts;
+}
+
+/**
+ * Resolve an inbound ledger row's `actor_user_id` against the post-merge user set (issue #79).
+ *
+ * `item_history` is not a `SyncTable`, so neither `FK_REFS` nor `UNIQUE_KEY_SPECS.references`
+ * can reach it — this is the same structural gap the `tags` M:N joins have, and it is closed
+ * the same way, by applying the resolved re-key map here by hand.
+ *
+ * Two repairs, in order: a row whose author lost a `users.username` collision follows the
+ * winning id, and a row whose author will not exist locally at all is re-attributed to System.
+ * The fallback is deliberate — dropping the row instead would silently discard an immutable
+ * ledger entry (losing *what* happened) to avoid losing *who* did it, which is the worse
+ * trade. A row that arrives without the column at all keeps that shape and picks up the
+ * column's `DEFAULT` (System) on insert.
+ */
+function resolveActor(
+  row: SqlRow,
+  finalUserIds: ReadonlySet<string>,
+  userRekeys: ReadonlyMap<string, string>,
+): SqlRow {
+  const actor = row.actor_user_id;
+  if (actor === null || actor === undefined) return row;
+  const rekeyed = userRekeys.get(String(actor)) ?? String(actor);
+  if (finalUserIds.has(rekeyed)) {
+    return rekeyed === String(actor) ? row : { ...row, actor_user_id: rekeyed };
+  }
+  return { ...row, actor_user_id: SYSTEM_USER_ID };
 }
 
 /**

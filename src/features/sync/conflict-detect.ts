@@ -32,7 +32,7 @@ export function nonLwwColumns(table: SyncTable): ReadonlySet<string> {
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /** Columns tried, in order, for a human-friendly row label before falling back to the id. */
-const LABEL_COLUMNS = ['name', 'title', 'label', 'alias', 'note'] as const;
+const LABEL_COLUMNS = ['name', 'title', 'label', 'alias', 'display_name', 'username', 'note'] as const;
 
 /**
  * A short, human-friendly label for a row, captured at detect time from the losing local

@@ -171,11 +171,18 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
   };
 }
 
-/** Build the INSERT + CREATED-log statement pair for one item record. */
+/**
+ * Build the INSERT + CREATED-log statement pair for one item record.
+ *
+ * `actorUserId` sits before the optional `parentId` so it cannot be defaulted: this is a
+ * free function rather than a repository method, so it has no `this.actorId()` to fall back
+ * on and the caller must supply the actor explicitly (issue #79, plan §2.4).
+ */
 export function buildInsert(
   id: string,
   r: ResolvedCreate,
   serialNo: number | null,
+  actorUserId: string,
   parentId: string | null = null,
 ): SqlStatement[] {
   return [
@@ -233,7 +240,7 @@ export function buildInsert(
     // recompute trigger then keeps `items.quantity` equal to this (and any future
     // placements). Runs after the items INSERT so the FK + trigger resolve.
     setStockStatement(id, r.locationId, r.quantity),
-    historyStatement(id, parentId === null ? 'CREATED' : 'VARIANT_CREATED', {
+    historyStatement(id, parentId === null ? 'CREATED' : 'VARIANT_CREATED', actorUserId, {
       note:
         parentId !== null
           ? `Created variant "${r.name}".`

@@ -1,6 +1,7 @@
 # Users & ACLs — implementation plan
 
-> **Status:** 🟢 ACTIVE — design agreed; no phases shipped yet, phase 1 next.
+> **Status:** 🟢 ACTIVE — phase 1 (schema, built-in users, attribution) shipped; phase 2
+> (permission engine) next.
 
 Gubbins has no concept of a user. Every action is anonymous, `item_history` records *what*
 happened but never *who*, and the Bridge authenticates with a single all-or-nothing bearer
@@ -153,6 +154,33 @@ on `item_history` and friends, repository layer, sync registration (`SYNC_TABLES
 `UNIQUE_KEY_SPECS` for `users.username`), regenerated schema snapshot. Threading the actor through
 every history write is the bulk of the work. No UI. **Ships with the module still absent** — the
 app runs as `Admin` throughout, so this phase is invisible to the user.
+
+#### Phase 1 as built — decisions worth knowing before phase 2
+
+Four things were settled during implementation that the design above did not pin down:
+
+- **The actor reaches the ledger through a resolver, not through every method signature.**
+  `historyStatement(itemId, action, actorUserId, fields?)` takes the actor as a *required*
+  argument, so the compile-time guarantee §2.4 asks for holds at the ledger seam. Repository
+  methods pass `this.actorId()`, backed by `RepositoryOptions.resolveActor` and wired once in
+  `repositories/index.ts`. **Phase 3 changes that single arrow to a session lookup** and every
+  write in the app follows; no public repository signature or call site needs to change.
+  Callers with no user — sync reconciliation, the Bridge — pass `SYSTEM_USER_ID` explicitly.
+- **`item_history.actor_user_id` is `NOT NULL … ON DELETE SET DEFAULT`, and the immutability
+  trigger is scoped to the substantive columns.** Deleting a user must not delete or dangle
+  their history, so SQLite re-points their entries at System itself — locally and through
+  sync — with no extra statements. That requires the ledger's `BEFORE UPDATE` guard to name
+  the columns it protects rather than the whole row; re-attributing an orphaned entry is not
+  a rewrite of what happened.
+- **The built-in users are excluded from the sync snapshot** (`TABLE_FILTER: users → WHERE
+  kind = 'normal'`), exactly as the system-locked locations are. They are seeded with constant
+  ids on every device and protected by triggers a remote UPSERT would trip. Consequently
+  `reconcile` must add them back into the surviving-user set by hand, or every Admin-attributed
+  row arriving from a peer is re-attributed to System.
+- **Built-in *roles* are not seeded yet.** §2.3 lists Administrator/Manager/Stocker/Viewer, but
+  their contents are permission keys, and the registry that defines those keys is phase 2. The
+  `roles` table, its triggers and its repository exist; seeding the four ships alongside the
+  registry so no guessed key is ever baked into the baseline.
 
 ### Phase 2 — Permission engine
 

@@ -150,7 +150,7 @@ export class ItemCoreRepository extends BaseRepository {
     this.assertWritable();
     const resolved = resolveCreate(input);
     const id = crypto.randomUUID();
-    const statements = buildInsert(id, resolved, null);
+    const statements = buildInsert(id, resolved, null, this.actorId());
     // Apply the category-template default maintenance schedule (backlog T2a) in the same
     // transaction, so an item created in a category with a default schedule can never be
     // committed without it.
@@ -182,7 +182,7 @@ export class ItemCoreRepository extends BaseRepository {
       const id = crypto.randomUUID();
       ids.push(id);
       pairs.push({ itemId: id, categoryId: resolved.categoryId });
-      statements.push(...buildInsert(id, resolved, null));
+      statements.push(...buildInsert(id, resolved, null, this.actorId()));
     }
     // Category-template default maintenance schedules (backlog T2a) for every row whose
     // category carries one — a single batched category read for the whole import, then one
@@ -210,7 +210,7 @@ export class ItemCoreRepository extends BaseRepository {
     for (let serial = 1; serial <= count; serial += 1) {
       const id = crypto.randomUUID();
       ids.push(id);
-      statements.push(...buildInsert(id, resolved, serial));
+      statements.push(...buildInsert(id, resolved, serial, this.actorId()));
     }
     // Each serialised instance is its own asset, so each gets its own copy of the category's
     // default maintenance schedule (backlog T2a) — e.g. three drills, three calibration clocks.
@@ -268,7 +268,11 @@ export class ItemCoreRepository extends BaseRepository {
       if (name !== existing.name) {
         sets.push('name = ?');
         params.push(name);
-        statements.push(historyStatement(id, 'RENAMED', { note: `Renamed "${existing.name}" → "${name}".` }));
+        statements.push(
+          historyStatement(id, 'RENAMED', this.actorId(), {
+            note: `Renamed "${existing.name}" → "${name}".`,
+          }),
+        );
       }
     }
     if (input.trackingMode !== undefined && input.trackingMode !== existing.trackingMode) {
@@ -287,7 +291,7 @@ export class ItemCoreRepository extends BaseRepository {
       sets.push('tracking_mode = ?');
       params.push(input.trackingMode);
       statements.push(
-        historyStatement(id, 'TRACKING_CHANGED', {
+        historyStatement(id, 'TRACKING_CHANGED', this.actorId(), {
           note: `Tracking changed from "${existing.trackingMode}" to "${input.trackingMode}".`,
           metadata: { from: existing.trackingMode, to: input.trackingMode },
         }),
@@ -341,7 +345,7 @@ export class ItemCoreRepository extends BaseRepository {
       sets.push('condition = ?');
       params.push(input.condition);
       statements.push(
-        historyStatement(id, 'CONDITION_CHANGED', {
+        historyStatement(id, 'CONDITION_CHANGED', this.actorId(), {
           note: `Condition changed ${existing.condition ? `from "${existing.condition}" ` : ''}to "${input.condition ?? 'untracked'}".`,
           metadata: { from: existing.condition, to: input.condition },
         }),
@@ -465,7 +469,7 @@ export class ItemCoreRepository extends BaseRepository {
     await this.driver.transaction([
       ...consolidateStockStatements(id, locationId),
       { sql: 'UPDATE items SET location_id = ? WHERE id = ?;', params: [locationId, id] },
-      historyStatement(id, 'MOVED', {
+      historyStatement(id, 'MOVED', this.actorId(), {
         note: 'Moved to a new location.',
         metadata: { fromLocationId: existing.locationId, toLocationId: locationId },
       }),
@@ -479,7 +483,9 @@ export class ItemCoreRepository extends BaseRepository {
     if (!existing.isActive) return existing;
     await this.driver.transaction([
       { sql: 'UPDATE items SET is_active = 0 WHERE id = ?;', params: [id] },
-      historyStatement(id, 'SOFT_DELETED', { note: note ?? 'Marked as removed from active inventory.' }),
+      historyStatement(id, 'SOFT_DELETED', this.actorId(), {
+        note: note ?? 'Marked as removed from active inventory.',
+      }),
     ]);
     return (await this.getById(id))!;
   }
@@ -490,7 +496,7 @@ export class ItemCoreRepository extends BaseRepository {
     if (existing.isActive) return existing;
     await this.driver.transaction([
       { sql: 'UPDATE items SET is_active = 1 WHERE id = ?;', params: [id] },
-      historyStatement(id, 'RESTORED', { note: 'Restored to active inventory.' }),
+      historyStatement(id, 'RESTORED', this.actorId(), { note: 'Restored to active inventory.' }),
     ]);
     return (await this.getById(id))!;
   }

@@ -264,7 +264,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
             c.amount,
           );
         }),
-        historyStatement(itemId, 'MOVED', {
+        historyStatement(itemId, 'MOVED', this.actorId(), {
           note: `Transferred ${plan.quantity} from "${fromName}" to "${toName}".`,
           metadata: { fromLocationId, toLocationId, quantity: plan.quantity, batchKey: selectedKey ?? null },
         }),
@@ -300,7 +300,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       const stockStatements = await placementDeltaStatements(this.driver, id, existing.locationId, delta);
       await this.driver.transaction([
         ...stockStatements,
-        historyStatement(id, 'QUANTITY_CHANGE', {
+        historyStatement(id, 'QUANTITY_CHANGE', this.actorId(), {
           quantityDelta: delta,
           note: note ?? `Quantity ${delta >= 0 ? '+' : ''}${delta} (now ${next}).`,
         }),
@@ -334,7 +334,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
 
       await this.driver.transaction([
         ...draw.stockStatements,
-        historyStatement(input.itemId, 'SOLD', {
+        historyStatement(input.itemId, 'SOLD', this.actorId(), {
           quantityDelta: -draw.quantity,
           netValueDelta: saleTotal,
           note,
@@ -371,7 +371,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
 
       await this.driver.transaction([
         ...draw.stockStatements,
-        historyStatement(input.itemId, 'WRITTEN_OFF', {
+        historyStatement(input.itemId, 'WRITTEN_OFF', this.actorId(), {
           quantityDelta: -draw.quantity,
           note,
           metadata: {

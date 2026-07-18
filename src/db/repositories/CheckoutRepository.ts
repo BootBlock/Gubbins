@@ -19,6 +19,7 @@ import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, type RepositoryOptions } from './base';
 import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
+import { historyStatement } from './item/history';
 import { stockRowId } from './stock';
 import {
   addBatchStatement,
@@ -249,7 +250,7 @@ export class CheckoutRepository extends BaseRepository {
           fromBatchKey,
         ],
       },
-      historyStatement(input.itemId, 'CHECKED_OUT', {
+      historyStatement(input.itemId, 'CHECKED_OUT', this.actorId(), {
         quantityDelta: stockDelta === 0 ? null : -stockDelta,
         note: `Checked out ${quantity} to ${borrower.name}${dueDate ? ' (due set)' : ''}.`,
         metadata: {
@@ -325,7 +326,7 @@ export class CheckoutRepository extends BaseRepository {
         sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ?;`,
         params: [note?.trim() || null, checkoutId],
       },
-      historyStatement(existing.item_id, 'CHECKED_IN', {
+      historyStatement(existing.item_id, 'CHECKED_IN', this.actorId(), {
         quantityDelta: restoreDelta === 0 ? null : restoreDelta,
         note: note?.trim() || `Returned ${existing.quantity} from loan.`,
         metadata: { checkoutId },
@@ -339,7 +340,7 @@ export class CheckoutRepository extends BaseRepository {
               sql: `UPDATE items SET condition = ? WHERE id = ?;`,
               params: [condition, existing.item_id] as SqlValue[],
             },
-            historyStatement(existing.item_id, 'CONDITION_CHANGED', {
+            historyStatement(existing.item_id, 'CONDITION_CHANGED', this.actorId(), {
               note: `Condition changed ${currentCondition ? `from "${currentCondition}" ` : ''}to "${condition}" on return.`,
               metadata: { from: currentCondition, to: condition, checkoutId },
             }),
@@ -387,7 +388,7 @@ export class CheckoutRepository extends BaseRepository {
         sql: `UPDATE checkouts SET due_date = ? WHERE id = ?;`,
         params: [newDueDate, checkoutId],
       },
-      historyStatement(existing.item_id, 'LOAN_RENEWED', {
+      historyStatement(existing.item_id, 'LOAN_RENEWED', this.actorId(), {
         note: renewNote(oldDueDate, newDueDate),
         metadata: { checkoutId, from: oldDueDate, to: newDueDate },
       }),
@@ -582,27 +583,4 @@ function toCheckoutWithNames(row: CheckoutJoinRow, now: number): CheckoutWithNam
 function renewNote(from: number | null, to: number | null): string {
   const label = (ms: number | null) => (ms === null ? 'open-ended' : new Date(ms).toISOString().slice(0, 10));
   return `Loan due date changed from ${label(from)} to ${label(to)}.`;
-}
-
-interface HistoryFields {
-  readonly quantityDelta?: number | null;
-  readonly note?: string | null;
-  readonly metadata?: Record<string, unknown> | null;
-}
-
-/** Append a row to the immutable Activity Ledger (mirrors ItemRepository's helper). */
-function historyStatement(itemId: string, action: string, fields: HistoryFields = {}): SqlStatement {
-  return {
-    sql: `INSERT INTO item_history (id, item_id, action, quantity_delta, net_value_delta, note, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?);`,
-    params: [
-      crypto.randomUUID(),
-      itemId,
-      action,
-      fields.quantityDelta ?? null,
-      null,
-      fields.note ?? null,
-      fields.metadata ? JSON.stringify(fields.metadata) : null,
-    ],
-  };
 }

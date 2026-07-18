@@ -39,7 +39,7 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
       const id = crypto.randomUUID();
       await this.assertVariantLinkValid(id, parentId);
       const resolved = resolveCreate(input);
-      await this.driver.transaction(buildInsert(id, resolved, null, parentId));
+      await this.driver.transaction(buildInsert(id, resolved, null, this.actorId(), parentId));
       return (await this.getById(id))!;
     }
 
@@ -62,7 +62,9 @@ export function withVariants<TBase extends Constructor<ItemCoreRepository>>(Base
         await this.assertVariantLinkValid(childId, parentId);
         statements.push({ sql: 'UPDATE items SET parent_id = ? WHERE id = ?;', params: [parentId, childId] });
         statements.push(
-          historyStatement(childId, 'VARIANT_CREATED', { note: 'Attached as a variant of a parent item.' }),
+          historyStatement(childId, 'VARIANT_CREATED', this.actorId(), {
+            note: 'Attached as a variant of a parent item.',
+          }),
         );
       }
       await this.driver.transaction(statements);

@@ -31,6 +31,7 @@
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
+import { SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { DbError } from '@/db/errors';
 import type { Item } from '@/db/repositories/types';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
@@ -91,7 +92,10 @@ export class WriteError extends Error {
  * the app's, so the resulting snapshot is LWW/Delta-CRDT-correct by construction.
  */
 export async function applyOperation(driver: IDatabaseDriver, op: WriteOperation): Promise<Item> {
-  const items = new ItemRepository(driver);
+  // The Bridge has no signed-in user, so every ledger row it writes is attributed to the
+  // System user explicitly rather than inheriting the repository's Admin default (issue #79,
+  // plan §2.4). Phase 5 replaces this with the identity behind the presented API token.
+  const items = new ItemRepository(driver, { resolveActor: () => SYSTEM_USER_ID });
 
   // Explicit existence check first, so a missing item is a clean 404 rather than the
   // repository's generic SQLITE_CONSTRAINT ("Item … does not exist."), which it raises for

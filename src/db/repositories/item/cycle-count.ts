@@ -63,7 +63,10 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           if (delta === 0) continue;
           statements.push(setBatchStatement(adj.itemId, adj.locationId, adj.batch, adj.counted));
           statements.push(
-            historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }),
+            historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
+              quantityDelta: delta,
+              note: adj.note,
+            }),
           );
           touched.push(adj.itemId);
           continue;
@@ -86,7 +89,10 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
             ...(await placementDeltaStatements(this.driver, adj.itemId, adj.locationId, delta)),
           );
           statements.push(
-            historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }),
+            historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
+              quantityDelta: delta,
+              note: adj.note,
+            }),
           );
           touched.push(adj.itemId);
           continue;
@@ -99,7 +105,12 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         statements.push(
           ...(await placementDeltaStatements(this.driver, adj.itemId, existing.locationId, delta)),
         );
-        statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: delta, note: adj.note }));
+        statements.push(
+          historyStatement(adj.itemId, 'RECONCILED', this.actorId(), {
+            quantityDelta: delta,
+            note: adj.note,
+          }),
+        );
         touched.push(adj.itemId);
       }
 
@@ -134,7 +145,9 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
         }
         if (!existing.isActive) continue; // already removed from active inventory → no-op
         statements.push({ sql: 'UPDATE items SET is_active = 0 WHERE id = ?;', params: [adj.itemId] });
-        statements.push(historyStatement(adj.itemId, 'RECONCILED', { quantityDelta: -1, note: adj.note }));
+        statements.push(
+          historyStatement(adj.itemId, 'RECONCILED', this.actorId(), { quantityDelta: -1, note: adj.note }),
+        );
         touched.push(adj.itemId);
       }
 

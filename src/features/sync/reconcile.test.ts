@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { reconcile } from './reconcile';
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
+import { ADMIN_USER_ID, SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import type { SqlRow } from '@/db/rpc/driver';
 import type { GaugeHistoryDelta, ItemTagEdge, LocationTagEdge, SyncSnapshot, Tombstone } from './types';
 
@@ -588,6 +588,88 @@ describe('reconcile (§7.3 / §7.5)', () => {
       });
       const plan = reconcile(local, remote, opts);
       expect(plan.localUpserts.some((u) => u.table === 'item_field_values' && u.row.id === 'v1')).toBe(true);
+    });
+  });
+
+  describe('actor attribution on inbound ledger rows (issue #79)', () => {
+    const DICT_WITH_ACTOR = {
+      ...DICTIONARY,
+      users: ['id', 'username', 'display_name', 'kind', 'role_id', 'updated_at'],
+      item_history: [...DICTIONARY.item_history, 'actor_user_id'],
+    };
+    const withActor = { offset: 0, dictionary: DICT_WITH_ACTOR };
+    const item = { id: 'i1', name: 'Drill', updated_at: 1 };
+
+    function historyFrom(actor: string | undefined): SqlRow[] {
+      const row: SqlRow = { id: 'h1', item_id: 'i1', action: 'CREATED', created_at: 5 };
+      return [actor === undefined ? row : { ...row, actor_user_id: actor }];
+    }
+
+    it("preserves the peer's actor when that user survives the merge", () => {
+      const sam = { id: 'u-sam', username: 'sam', display_name: 'Sam', kind: 'normal', updated_at: 1 };
+      const local = snapshot({ tables: { items: [item], users: [sam] } });
+      const remote = snapshot({ tables: { items: [item], users: [sam] }, itemHistory: historyFrom('u-sam') });
+
+      const plan = reconcile(local, remote, withActor);
+
+      expect(plan.historyInserts).toHaveLength(1);
+      expect(plan.historyInserts[0].actor_user_id).toBe('u-sam');
+    });
+
+    it('preserves attribution to the built-in Admin, which is never in the synced user set', () => {
+      // Admin is seeded identically on every device and excluded from the snapshot, so it
+      // never appears in `tables.users`. Treating that as "unknown user" would silently
+      // re-attribute every ordinary edit to System.
+      const local = snapshot({ tables: { items: [item] } });
+      const remote = snapshot({ tables: { items: [item] }, itemHistory: historyFrom(ADMIN_USER_ID) });
+
+      const plan = reconcile(local, remote, withActor);
+
+      expect(plan.historyInserts[0].actor_user_id).toBe(ADMIN_USER_ID);
+    });
+
+    it('re-attributes to System rather than dropping the entry when the author is unknown', () => {
+      const local = snapshot({ tables: { items: [item] } });
+      const remote = snapshot({ tables: { items: [item] }, itemHistory: historyFrom('u-ghost') });
+
+      const plan = reconcile(local, remote, withActor);
+
+      // Losing *who* did it is preferable to losing the record that it happened at all.
+      expect(plan.historyInserts).toHaveLength(1);
+      expect(plan.historyInserts[0].actor_user_id).toBe(SYSTEM_USER_ID);
+    });
+
+    it('leaves a row that carries no actor column for the schema default to fill', () => {
+      const local = snapshot({ tables: { items: [item] } });
+      const remote = snapshot({ tables: { items: [item] }, itemHistory: historyFrom(undefined) });
+
+      const plan = reconcile(local, remote, withActor);
+
+      expect(plan.historyInserts).toHaveLength(1);
+      expect(plan.historyInserts[0].actor_user_id).toBeUndefined();
+    });
+
+    it('follows a re-keyed author when two devices invented the same username', () => {
+      // Both devices minted a "sam" with different random ids; the newer row wins the
+      // username and the loser is retired, so the ledger must follow the winner.
+      const localSam = { id: 'u-local', username: 'sam', display_name: 'Sam', kind: 'normal', updated_at: 1 };
+      const remoteSam = {
+        id: 'u-remote',
+        username: 'sam',
+        display_name: 'Sam',
+        kind: 'normal',
+        updated_at: 9,
+      };
+      const local = snapshot({ tables: { items: [item], users: [localSam] } });
+      const remote = snapshot({
+        tables: { items: [item], users: [remoteSam] },
+        itemHistory: historyFrom('u-local'),
+      });
+
+      const plan = reconcile(local, remote, withActor);
+
+      expect(plan.historyInserts).toHaveLength(1);
+      expect(plan.historyInserts[0].actor_user_id).toBe('u-remote');
     });
   });
 });

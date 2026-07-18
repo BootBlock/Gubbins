@@ -7,6 +7,7 @@
  * production worker and the Zustand storage store meet the repository layer.
  */
 import { getDatabaseDriver } from '../client';
+import { ADMIN_USER_ID } from './constants';
 import { isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { AssetBookingRepository } from './AssetBookingRepository';
@@ -22,12 +23,14 @@ import { MaintenanceRepository } from './MaintenanceRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { PurchaseOrderRepository } from './PurchaseOrderRepository';
 import { ReportRepository } from './ReportRepository';
+import { RoleRepository } from './RoleRepository';
 import { StorageRepository } from './StorageRepository';
 import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
 import { TarePresetRepository } from './TarePresetRepository';
 import { TombstoneRepository } from './tombstone';
+import { UserRepository } from './UserRepository';
 import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
 
@@ -43,6 +46,8 @@ export { PurchaseOrderRepository } from './PurchaseOrderRepository';
 export { ReportRepository } from './ReportRepository';
 export { StorageRepository } from './StorageRepository';
 export { ContactRepository } from './ContactRepository';
+export { UserRepository } from './UserRepository';
+export { RoleRepository } from './RoleRepository';
 export {
   DiagnosticsRepository,
   type DiagnosticsSnapshot,
@@ -109,11 +114,32 @@ let suggestionRepository: SuggestionRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
 let wishlistRepository: WishlistRepository | null = null;
 let tarePresetRepository: TarePresetRepository | null = null;
+let userRepository: UserRepository | null = null;
+let roleRepository: RoleRepository | null = null;
 
-/** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
+/**
+ * Production repository options: the §7.6.1 write-gate, plus the actor every write is
+ * attributed to (issue #79, plan §2.4).
+ *
+ * Attribution resolves to the built-in **Admin** user. The users module does not exist yet, so
+ * there is no session to read and plan §3 specifies that single-user mode acts as Admin — which
+ * is exactly what the app does today, just now recorded. Phase 3 replaces this one arrow with a
+ * session lookup and every write in the app follows, with no call site changed.
+ */
 const productionOptions: RepositoryOptions = {
   isWriteSuspended: () => isWriteSuspended(useStorageStore.getState().tier),
+  resolveActor: () => ADMIN_USER_ID,
 };
+
+export function getUserRepository(): UserRepository {
+  userRepository ??= new UserRepository(getDatabaseDriver(), productionOptions);
+  return userRepository;
+}
+
+export function getRoleRepository(): RoleRepository {
+  roleRepository ??= new RoleRepository(getDatabaseDriver(), productionOptions);
+  return roleRepository;
+}
 
 export function getItemRepository(): ItemRepository {
   itemRepository ??= new ItemRepository(getDatabaseDriver(), productionOptions);

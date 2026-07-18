@@ -343,7 +343,7 @@ export class PurchaseOrderRepository extends BaseRepository {
             : addStockStatement(line.itemId, targetLocation, qty),
         );
         statements.push(
-          historyStatement(line.itemId, 'RECEIVED', {
+          historyStatement(line.itemId, 'RECEIVED', this.actorId(), {
             quantityDelta: qty,
             note: plan.fullyReceived
               ? `Received ${qty} from a purchase order (now ${nextQty})${batchNote}.`
@@ -415,7 +415,7 @@ export class PurchaseOrderRepository extends BaseRepository {
         const supplierName = await this.supplierNameFor(line.poId);
         statements.push(...(await placementDeltaStatements(this.driver, line.itemId, targetLocation, -qty)));
         statements.push(
-          historyStatement(line.itemId, 'RETURNED_TO_SUPPLIER', {
+          historyStatement(line.itemId, 'RETURNED_TO_SUPPLIER', this.actorId(), {
             quantityDelta: -qty,
             note: `Returned ${qty} to ${supplierName ?? 'the supplier'} (PO refund).`,
             metadata: {

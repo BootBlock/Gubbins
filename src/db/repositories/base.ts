@@ -9,21 +9,45 @@
  */
 import { DbError } from '../errors';
 import type { IDatabaseDriver } from '../rpc/driver';
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './constants';
+import { ADMIN_USER_ID, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './constants';
 import type { Page, PageParams } from './types';
 
 export interface RepositoryOptions {
   /** Returns true when storage is locked and growth-writes must be refused. */
   readonly isWriteSuspended?: () => boolean;
+  /**
+   * Resolves the user every write of this repository is attributed to (issue #79, plan §2.4).
+   *
+   * Resolved per call rather than captured once, so signing in or out changes attribution
+   * without rebuilding the repository graph. Production wires it in `repositories/index.ts`:
+   * today that is a constant `Admin` (the users module does not exist yet, and plan §3 says
+   * single-user mode acts as Admin), and phase 3 swaps the session in at that one point.
+   *
+   * Tests omit it and get `Admin` too, which keeps existing fixtures compiling unchanged.
+   * Callers that genuinely have no user — maintenance, sync reconciliation, the Bridge —
+   * pass {@link SYSTEM_USER_ID} explicitly at the call site instead of relying on this.
+   */
+  readonly resolveActor?: () => string;
 }
 
 export abstract class BaseRepository {
   protected readonly driver: IDatabaseDriver;
   private readonly isWriteSuspended: () => boolean;
+  private readonly resolveActor: () => string;
 
   constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
     this.driver = driver;
     this.isWriteSuspended = options.isWriteSuspended ?? (() => false);
+    this.resolveActor = options.resolveActor ?? (() => ADMIN_USER_ID);
+  }
+
+  /**
+   * The user id to attribute this write to. Every `historyStatement` call in the repository
+   * layer passes this explicitly — the ledger builder takes the actor as a required argument
+   * precisely so that omitting it is a compile error rather than a silent `System` entry.
+   */
+  protected actorId(): string {
+    return this.resolveActor();
   }
 
   /**

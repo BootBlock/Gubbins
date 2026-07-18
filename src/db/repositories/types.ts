@@ -17,6 +17,7 @@ export type * from './types/items';
 export type * from './types/reconciliation';
 export type * from './types/stock';
 export type * from './types/history';
+export type * from './types/users';
 export type * from './types/categories';
 export type * from './types/tags';
 export type * from './types/images';
