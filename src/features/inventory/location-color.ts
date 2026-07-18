@@ -57,6 +57,29 @@ const BG_CLASS: Record<LocationColor, string> = {
 };
 
 /**
+ * The SVG paint classes for a location-photo **region** outlined in its location's swatch
+ * (issue #81). `stroke-*` and `fill-*` are ordinary Tailwind colour utilities — the same
+ * `--color-loc-*` aliases behind `text-loc-*` / `bg-loc-*` drive them — so a tinted region
+ * reuses this palette rather than forking a parallel one. Written as static literals for the
+ * scanner, exactly as the maps above are. The fill is translucent via the shape's
+ * `fill-opacity` attribute (a number, not a colour) so the photo still reads through it.
+ */
+const STROKE_CLASS: Record<LocationColor, string> = {
+  rose: 'stroke-loc-rose fill-loc-rose',
+  orange: 'stroke-loc-orange fill-loc-orange',
+  amber: 'stroke-loc-amber fill-loc-amber',
+  lime: 'stroke-loc-lime fill-loc-lime',
+  green: 'stroke-loc-green fill-loc-green',
+  teal: 'stroke-loc-teal fill-loc-teal',
+  cyan: 'stroke-loc-cyan fill-loc-cyan',
+  blue: 'stroke-loc-blue fill-loc-blue',
+  violet: 'stroke-loc-violet fill-loc-violet',
+  fuchsia: 'stroke-loc-fuchsia fill-loc-fuchsia',
+  pink: 'stroke-loc-pink fill-loc-pink',
+  slate: 'stroke-loc-slate fill-loc-slate',
+};
+
+/**
  * The paired classes that paint an inventory card/row with its location's accent tint
  * (visual-flair F10): the shared `gubbins-loc-tint` behaviour class plus a `.loc-tint-*`
  * class that sets the `--loc-tint` custom property to this location's `--loc-*` swatch
@@ -115,6 +138,15 @@ export function locationColorTextClass(value: string | null | undefined): string
  */
 export function locationColorTintClass(value: string | null | undefined): string | undefined {
   return isLocationColor(value) ? TINT_CLASS[value] : undefined;
+}
+
+/**
+ * The SVG `stroke-*` + `fill-*` utilities for a region outlined in this location's swatch, or
+ * `undefined` for none / an unrecognised key — in which case the caller falls back to the
+ * untinted `--shape-*` overlay tokens.
+ */
+export function locationColorStrokeClass(value: string | null | undefined): string | undefined {
+  return isLocationColor(value) ? STROKE_CLASS[value] : undefined;
 }
 
 /** The background-fill utility for a swatch chip in the picker. */
