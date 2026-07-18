@@ -14,6 +14,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 import type { SyncConflict } from './types';
 
 interface SyncConflictsStore {
@@ -56,6 +57,9 @@ export const useSyncConflictsStore = create<SyncConflictsStore>()(
     }),
     {
       name: 'gubbins:sync-conflicts',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       partialize: (state): PersistedState => ({ conflicts: [...state.conflicts] }),
       merge: (persisted, current) => {
         const p = persisted as Partial<PersistedState>;

@@ -16,6 +16,25 @@
  */
 
 /**
+ * `migrate` for a store adopting `version: 1` over its shipped, *unversioned* (v0) shape.
+ *
+ * A persisted store with no `version` is pinned at 0 with nowhere to hang a future migration.
+ * Declaring one can't be done on its own, though: zustand only calls `migrate` when the stored
+ * version differs from the declared one, and when there is **no** `migrate` it logs an error and
+ * hydrates with `undefined` — i.e. bumping 0 → 1 bare would *discard* every existing install's
+ * layout, saved searches or half-finished stock-take. So the version bump and this pass-through
+ * ship together: v0 and v1 are the same shape, so the stored state is adopted verbatim and the
+ * store gains the hook point without touching anyone's data.
+ *
+ * Reconciling the *shape* is deliberately not this function's job — that happens on read in each
+ * store's `merge` (see the module header). A store making a real shape change replaces this with
+ * a versioned `migrate` of its own rather than extending it here.
+ */
+export function adoptUnversioned<T>(persistedState: unknown): T {
+  return persistedState as T;
+}
+
+/**
  * Reconcile an unknown rehydrated value against a closed set of allowed values, falling
  * back to `fallback` when it doesn't match. The canonical guard for a string-union field —
  * pass the union's SSOT array and its default:

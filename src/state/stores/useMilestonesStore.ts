@@ -13,6 +13,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface MilestonesStore {
   /** Whether the "first item ever added" burst has already played on this device. */
@@ -27,6 +28,11 @@ export const useMilestonesStore = create<MilestonesStore>()(
       firstItemCelebrated: false,
       celebrateFirstItem: () => set({ firstItemCelebrated: true }),
     }),
-    { name: 'gubbins:milestones' },
+    {
+      name: 'gubbins:milestones',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );

@@ -18,6 +18,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 /** Default snooze window — roughly a working day's "remind me later" (~8h). */
 export const DEFAULT_SNOOZE_MS = 8 * 60 * 60 * 1000;
@@ -44,6 +45,11 @@ export const usePwaUpdateSnoozeStore = create<PwaUpdateSnoozeStore>()(
       skip: (version: string) => set({ skippedVersion: version }),
       surface: () => set({ snoozedUntil: 0 }),
     }),
-    { name: 'gubbins:pwa-update-snooze' },
+    {
+      name: 'gubbins:pwa-update-snooze',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );

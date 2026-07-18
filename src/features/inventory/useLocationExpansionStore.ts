@@ -12,6 +12,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface LocationExpansionStore {
   /**
@@ -50,6 +51,11 @@ export const useLocationExpansionStore = create<LocationExpansionStore>()(
 
       reset: () => set({ overrides: {} }),
     }),
-    { name: 'gubbins:location-expansion' },
+    {
+      name: 'gubbins:location-expansion',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );

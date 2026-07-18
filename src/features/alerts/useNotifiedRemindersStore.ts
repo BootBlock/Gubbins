@@ -10,6 +10,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface NotifiedRemindersStore {
   /** Set of alert ids already notified, persisted across page loads. */
@@ -34,6 +35,9 @@ export const useNotifiedRemindersStore = create<NotifiedRemindersStore>()(
     }),
     {
       name: 'gubbins:notified-reminders',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       partialize: (state): PersistedState => ({ notifiedIds: [...state.notifiedIds] }),
       merge: (persisted, current) => {
         const p = persisted as Partial<PersistedState>;

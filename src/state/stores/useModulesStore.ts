@@ -18,6 +18,7 @@ import { persist } from 'zustand/middleware';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { OPTIONAL_FEATURE_IDS } from '@/features/modules/feature-registry';
 import { getPreset, type PresetId } from '@/features/modules/presets';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface ModulesStore {
   /**
@@ -63,6 +64,11 @@ export const useModulesStore = create<ModulesStore>()(
       resetToEverything: () => set({ intent: {} }),
       completeFirstRun: () => set({ firstRunComplete: true }),
     }),
-    { name: 'gubbins:modules' },
+    {
+      name: 'gubbins:modules',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );

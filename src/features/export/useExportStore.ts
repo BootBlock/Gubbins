@@ -7,7 +7,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
+import { adoptUnversioned, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
  * JSON = §2 versioned backup; CSV = items spreadsheet; VAULT = §4.5 Markdown zip;
@@ -97,6 +97,9 @@ export const useExportStore = create<ExportStore>()(
     }),
     {
       name: 'gubbins:export',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       // Rehydrated JSON is untyped, so reconcile the remembered settings against the live
       // unions rather than pre-selecting a step the wizard can no longer run. A target id is
       // kept only for a scope that has one — `ALL` never carries a target.

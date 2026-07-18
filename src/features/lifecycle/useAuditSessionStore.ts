@@ -13,6 +13,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 import {
   startAudit,
   markLocation,
@@ -82,6 +83,9 @@ export const useAuditSessionStore = create<AuditSessionStore>()(
     }),
     {
       name: 'gubbins:audit-session',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       // The session is rehydrated from untyped JSON but every reducer here indexes `scope` by
       // `currentIndex`, so reconcile it back to a valid shape (or "no session") on read rather
       // than letting a truncated or stale write reach `progress`.

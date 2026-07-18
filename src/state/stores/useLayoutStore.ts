@@ -13,7 +13,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
 import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
-import { normaliseArray, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
+import { adoptUnversioned, normaliseArray, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
  * The inventory "View" axis — how the collection is presented (orthogonal to {@link GroupingMode}).
@@ -129,6 +129,9 @@ export const useLayoutStore = create<LayoutStore>()(
     }),
     {
       name: 'gubbins:layout',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       // Rehydrated JSON is untyped, so reconcile every persisted field against its live shape
       // rather than merging it over the defaults verbatim. `dashboardLayout` / `navTileOrder`
       // are only array-checked here — their *members* are reconciled against the live widget
