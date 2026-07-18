@@ -1,6 +1,9 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
-import type { Item, LocationWithCount } from '@/db/repositories';
+import type { Item, ItemSortField, LocationWithCount } from '@/db/repositories';
+import { SortAscIcon, SortDescIcon } from '@/components/icons';
+import { useLayoutStore } from '@/state/stores/useLayoutStore';
+import { columnAriaSort, nextSortForColumn } from '../sorting';
 import { useHighlightTarget } from '@/lib/highlight';
 import { useItemDragSource } from '../item-drag';
 import type { CardCustomField } from '../card-fields';
@@ -10,7 +13,12 @@ import { FavouriteStar } from './FavouriteIndicator';
 import { FieldValue } from './ItemCardFields';
 import { useCardClickAction } from './useCardClickAction';
 import { EMPTY_CUSTOM_FIELDS, useResolvedCardFields } from './card-fields-render';
-import type { TableColumn } from './item-table-columns';
+import {
+  columnSortField,
+  NAME_COLUMN_SORT_FIELD,
+  STOCK_COLUMN_SORT_FIELD,
+  type TableColumn,
+} from './item-table-columns';
 import type { ItemSelection } from './inventory-ui';
 
 /**
@@ -28,6 +36,61 @@ import type { ItemSelection } from './inventory-ui';
  * row; the flexible columns use `minmax(0, …fr)` so they shrink and truncate rather than forcing
  * a horizontal scrollbar, keeping the header and rows aligned without a scroll-sync.
  */
+
+/**
+ * One column label in the header. A column the data layer can order by (issue #128) renders as a
+ * button that cycles the sort — ordered → reversed → back to the default order — with the active
+ * column showing a direction arrow and the whole header reporting `aria-sort`, so a screen-reader
+ * user hears the same ordering a sighted one sees. Every other column stays an inert label, which
+ * is what "not sortable" should feel like: nothing to click and nothing announced.
+ */
+function ColumnHeader({
+  label,
+  field,
+  align = 'left',
+}: {
+  label: string;
+  /** The sortable field this column orders by, or `null` for an inert label column. */
+  field: ItemSortField | null;
+  align?: 'left' | 'right';
+}) {
+  const sort = useLayoutStore((s) => s.inventorySort);
+  const setSort = useLayoutStore((s) => s.setInventorySort);
+  const alignClass = align === 'right' ? 'justify-end text-right' : 'text-left';
+
+  if (field === null) {
+    return (
+      <span role="columnheader" className={cn('truncate', align === 'right' && 'text-right')}>
+        {label}
+      </span>
+    );
+  }
+
+  const active = sort.field === field;
+  return (
+    <span role="columnheader" aria-sort={columnAriaSort(sort, field)} className="min-w-0">
+      <button
+        type="button"
+        onClick={() => setSort(nextSortForColumn(sort, field))}
+        className={cn(
+          'flex w-full min-w-0 items-center gap-1 rounded transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-3',
+          alignClass,
+          active && 'text-foreground',
+        )}
+      >
+        <span className="truncate">{label}</span>
+        {/* The arrow is decorative — `aria-sort` on the header already carries the direction. */}
+        {active ? (
+          sort.direction === 'asc' ? (
+            <SortAscIcon aria-hidden />
+          ) : (
+            <SortDescIcon aria-hidden />
+          )
+        ) : null}
+      </button>
+    </span>
+  );
+}
 
 /** The sticky-styled header row of column labels. Rendered once above the virtualised body. */
 export function ItemTableHeader({
@@ -47,17 +110,11 @@ export function ItemTableHeader({
       className="grid items-center gap-4 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground"
     >
       {selecting ? <span role="columnheader" aria-label="Select" /> : null}
-      <span role="columnheader" className="truncate">
-        Name
-      </span>
+      <ColumnHeader label="Name" field={NAME_COLUMN_SORT_FIELD} />
       {columns.map((col) => (
-        <span key={col.id} role="columnheader" className="truncate">
-          {col.label}
-        </span>
+        <ColumnHeader key={col.id} label={col.label} field={columnSortField(col.id)} />
       ))}
-      <span role="columnheader" className="truncate text-right">
-        Stock
-      </span>
+      <ColumnHeader label="Stock" field={STOCK_COLUMN_SORT_FIELD} align="right" />
       <span role="columnheader" className="text-right" aria-label="Actions" />
     </div>
   );
