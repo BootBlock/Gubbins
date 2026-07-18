@@ -17,6 +17,7 @@ import {
   consumeBatchStatements,
   placementDeltaStatements,
   readPlacementBatches,
+  runStockDraw,
   stockBatchRowId,
 } from '../stock-batches';
 import type { Item, ItemStockPlacement, SellItemInput, WriteOffItemInput } from '../types';
@@ -253,7 +254,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       const byKey = new Map(srcBatches.map((b) => [b.batchKey, b]));
       const fromName = names.get(fromLocationId) ?? 'another location';
       const toName = names.get(toLocationId) ?? 'another location';
-      await this.driver.transaction([
+      await runStockDraw(this.driver, [
         ...consumeBatchStatements(itemId, fromLocationId, consumption),
         ...consumption.consumed.map((c) => {
           const b = byKey.get(c.batchKey)!;
@@ -298,7 +299,11 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       // down first-expiry-first-out (Phase 28); `items.quantity` follows via the recompute
       // triggers. Splitting stock across locations is done with `transferStock`.
       const stockStatements = await placementDeltaStatements(this.driver, id, existing.locationId, delta);
-      await this.driver.transaction([
+      // A decrement is planned from a read taken before this transaction, so an overlapping
+      // decrement (a double-tapped stepper, another device) can leave this one short; the
+      // drawdown seam turns that lost race into validation rather than a raw CHECK (#302). An
+      // increment can never trip the floor, so it passes through untouched either way.
+      await runStockDraw(this.driver, [
         ...stockStatements,
         historyStatement(id, 'QUANTITY_CHANGE', this.actorId(), {
           quantityDelta: delta,
@@ -332,7 +337,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       const counterparty = input.counterparty?.trim() || null;
       const note = input.note?.trim() || `Sold ${draw.quantity}${counterparty ? ` to ${counterparty}` : ''}.`;
 
-      await this.driver.transaction([
+      await runStockDraw(this.driver, [
         ...draw.stockStatements,
         historyStatement(input.itemId, 'SOLD', this.actorId(), {
           quantityDelta: -draw.quantity,
@@ -369,7 +374,7 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
       const reason = input.reason?.trim() || null;
       const note = input.note?.trim() || `Wrote off ${draw.quantity}${reason ? ` (${reason})` : ''}.`;
 
-      await this.driver.transaction([
+      await runStockDraw(this.driver, [
         ...draw.stockStatements,
         historyStatement(input.itemId, 'WRITTEN_OFF', this.actorId(), {
           quantityDelta: -draw.quantity,

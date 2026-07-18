@@ -299,6 +299,7 @@
   "inventory.itemActions.favourite": "Add to favourites",
   "inventory.itemActions.unfavourite": "Remove from favourites",
   "inventory.favourite.badge": "Favourite",
+  "inventory.quantity.updateFailed": "Couldn’t update the quantity",
   "inventory.itemActions.addToProject": "Add to project…",
   "inventory.addToProject.title": "Add to project",
   "inventory.addToProject.description": "Add “{name}” to an existing project as a required part.",

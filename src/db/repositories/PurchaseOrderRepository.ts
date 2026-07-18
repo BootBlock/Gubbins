@@ -35,7 +35,7 @@ import { BaseRepository, type RepositoryOptions } from './base';
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
 import { addStockStatement, stockRowId } from './stock';
-import { addBatchStatement, placementDeltaStatements } from './stock-batches';
+import { addBatchStatement, placementDeltaStatements, runStockDraw } from './stock-batches';
 import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
@@ -457,7 +457,7 @@ export class PurchaseOrderRepository extends BaseRepository {
       }
     }
 
-    await this.driver.transaction(statements);
+    await runStockDraw(this.driver, statements);
 
     // Re-derive and persist the PO status snapshot from the (now reduced) line totals.
     await this.refreshStatus(line.poId);

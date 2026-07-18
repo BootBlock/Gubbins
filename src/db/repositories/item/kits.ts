@@ -54,6 +54,7 @@ import {
   addBatchStatement,
   itemConsumeStatements,
   placementDeltaStatements,
+  runStockDraw,
   readItemBatches,
   stockBatchRowId,
 } from '../stock-batches';
@@ -292,7 +293,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
           }),
         );
       }
-      await this.driver.transaction(statements);
+      await runStockDraw(this.driver, statements);
       return (await this.getById(kitId))!;
     }
 
@@ -366,7 +367,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
           );
         }
       }
-      await this.driver.transaction(statements);
+      await runStockDraw(this.driver, statements);
       return (await this.getById(kitId))!;
     }
 

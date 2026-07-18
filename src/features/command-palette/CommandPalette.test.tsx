@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { ToastProvider } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
+
+/**
+ * The quick-action panel's ± stepper toasts on a failed adjust, so every render needs the
+ * provider the palette has under `<App>`.
+ */
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: ToastProvider });
 
 // Router: only useNavigate is needed by the palette.
 const navigateMock = vi.fn();
@@ -323,9 +330,10 @@ describe('CommandPalette', () => {
       await openActions();
       expect(screen.getByTestId('command-palette-adjust')).toBeTruthy();
       fireEvent.click(screen.getByLabelText('Increase quantity'));
-      expect(adjustMutate).toHaveBeenCalledWith({ id: 'i1', delta: 1 });
+      // The second argument is the stepper's per-call error toast (see QuantityStepper).
+      expect(adjustMutate).toHaveBeenCalledWith({ id: 'i1', delta: 1 }, expect.anything());
       fireEvent.click(screen.getByLabelText('Decrease quantity'));
-      expect(adjustMutate).toHaveBeenCalledWith({ id: 'i1', delta: -1 });
+      expect(adjustMutate).toHaveBeenCalledWith({ id: 'i1', delta: -1 }, expect.anything());
     });
 
     it.each([

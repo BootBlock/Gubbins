@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { ToastProvider } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 
 /**
@@ -132,7 +133,9 @@ const baseItem: Item = {
 /** Render the overlay, scan one item via the manual-entry seam, and await its result card. */
 async function scan(item: Item, props: Partial<React.ComponentProps<typeof ScannerOverlay>> = {}) {
   scanResult = item;
-  render(<ScannerOverlay open onClose={vi.fn()} {...props} />);
+  // The Discrete card's ± stepper toasts on a failed adjust, so it needs the provider it has
+  // under `<App>`.
+  render(<ScannerOverlay open onClose={vi.fn()} {...props} />, { wrapper: ToastProvider });
   fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value: UUID } });
   fireEvent.click(screen.getByTestId('scanner-manual-submit'));
   await screen.findByTestId('scanner-discrete-result');
@@ -195,10 +198,11 @@ describe('ScannerOverlay — Discrete card ± quantity', () => {
     expect(screen.queryByTestId('scanner-adjust-quantity')).not.toBeNull();
 
     fireEvent.click(screen.getByLabelText('Increase quantity'));
-    expect(adjustMutate).toHaveBeenCalledWith({ id: 'item-1', delta: 1 });
+    // The second argument is the stepper's per-call error toast (see QuantityStepper).
+    expect(adjustMutate).toHaveBeenCalledWith({ id: 'item-1', delta: 1 }, expect.anything());
 
     fireEvent.click(screen.getByLabelText('Decrease quantity'));
-    expect(adjustMutate).toHaveBeenCalledWith({ id: 'item-1', delta: -1 });
+    expect(adjustMutate).toHaveBeenCalledWith({ id: 'item-1', delta: -1 }, expect.anything());
   });
 
   it.each([
