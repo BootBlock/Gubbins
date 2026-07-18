@@ -37,7 +37,7 @@ export function useStorageBreakdown() {
       ]);
       return {
         counts,
-        bytes: estimateTableBytes(counts, { itemImagesBytes }),
+        bytes: estimateTableBytes(counts, { photoBytes: itemImagesBytes }),
         imagesMeasured: itemImagesBytes !== null,
       };
     },

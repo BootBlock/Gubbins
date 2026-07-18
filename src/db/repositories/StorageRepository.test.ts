@@ -43,7 +43,7 @@ describe('StorageRepository (spec §7.6.2, §7.6.3)', () => {
 
       const counts = await storage.rowCounts();
       expect(counts.items).toBe(2);
-      expect(counts.itemImages).toBe(1);
+      expect(counts.photos).toBe(1);
       // 2 CREATED rows + 1 manual = 3.
       expect(counts.itemHistory).toBe(3);
     });
@@ -100,7 +100,7 @@ describe('StorageRepository (spec §7.6.2, §7.6.3)', () => {
 
     it('marks an image downgraded, keeping the thumbnail and excluding it next time', async () => {
       const id = await addImageAt('images/old.webp', 100);
-      await storage.markImageDowngraded(id, 12_345);
+      await storage.markImageDowngraded(id, 'item_images', 12_345);
 
       const row = await driver.queryOne<{ full_res_downgraded_at: number }>(
         'SELECT full_res_downgraded_at FROM item_images WHERE id = ?;',
@@ -114,7 +114,7 @@ describe('StorageRepository (spec §7.6.2, §7.6.3)', () => {
     it('marks downgraded even at the Hard Stop (it reclaims space, never bricks the user)', async () => {
       const id = await addImageAt('images/old.webp', 100);
       const locked = new StorageRepository(driver, { isWriteSuspended: () => true });
-      await expect(locked.markImageDowngraded(id, 999)).resolves.toBeUndefined();
+      await expect(locked.markImageDowngraded(id, 'item_images', 999)).resolves.toBeUndefined();
     });
   });
 });

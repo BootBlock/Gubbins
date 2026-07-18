@@ -228,6 +228,37 @@
   --rarity-epic: oklch(0.55 0.2 300);
   --rarity-legendary: oklch(0.66 0.15 80);
 
+  /*
+   * Shape-overlay palette (location-photo regions, issue #81). The outlines, fill and grab
+   * handles the `RegionCanvas` draws over a photo.
+   *
+   * These are the one family in this file that is **deliberately theme-invariant** — the
+   * `.dark` block restates the same values rather than lifting them. Every other palette here
+   * is tuned against a *themed* surface (`--background` / `--card`), which the mode switch
+   * changes; a region is drawn over an **arbitrary user photograph**, which it does not. A
+   * "dark-mode variant" would therefore be tuned against a backdrop that was never there, and
+   * would make the overlay *less* legible on exactly the photos it already struggles with.
+   *
+   * Legibility against an unknown image comes from **luminance contrast in both directions**,
+   * not from a hue: the bright stroke is drawn over a near-black `--shape-casing` under-stroke
+   * (a 1px halo), so a white outline still reads on a snow-white shelf and a dark one still
+   * reads on a black toolbox. Never alias these to `--primary`: a mid-luminance accent
+   * disappears into mid-tone photo content, and the accent is user-selectable, so a region
+   * could become invisible purely by picking a theme colour.
+   *
+   * Selection is signalled by hue *and* weight — the selected outline is warm gold, and the
+   * component also thickens the stroke and shows handles — so it never depends on colour
+   * alone (WCAG 1.4.1).
+   */
+  --shape-stroke: oklch(0.99 0 0); /* default region outline — near-white */
+  --shape-stroke-selected: oklch(0.86 0.17 85); /* selected region outline — warm gold */
+  --shape-casing: oklch(0.14 0 0); /* near-black halo drawn under either outline */
+  /* Translucent body fill, derived from the stroke so the two can never drift — the same
+   * `color-mix` derivation `--color-item-count` uses. Kept low so the photo still reads
+   * through the region rather than being tinted flat. */
+  --shape-fill: color-mix(in oklab, var(--shape-stroke) 16%, transparent);
+  --shape-handle: oklch(0.99 0 0); /* resize-handle affordance — matches the default stroke */
+
   --radius: 0.65rem;
 }
 
@@ -347,6 +378,17 @@
   --rarity-rare: oklch(0.72 0.15 250);
   --rarity-epic: oklch(0.72 0.18 300);
   --rarity-legendary: oklch(0.83 0.15 85);
+
+  /* Shape overlays, dark-theme variant — **deliberately identical to :root**, and restated
+   * here rather than omitted so the equality reads as a decision instead of an oversight.
+   * The backdrop is a user photo, not a themed surface, so there is nothing for the mode
+   * switch to compensate for; the bright-stroke-over-dark-casing pairing is what carries
+   * legibility on both light and dark image content. See the :root block for the rationale. */
+  --shape-stroke: oklch(0.99 0 0);
+  --shape-stroke-selected: oklch(0.86 0.17 85);
+  --shape-casing: oklch(0.14 0 0);
+  --shape-fill: color-mix(in oklab, var(--shape-stroke) 16%, transparent);
+  --shape-handle: oklch(0.99 0 0);
 }
 
 /*
@@ -878,6 +920,18 @@
   --color-loc-fuchsia: var(--loc-fuchsia);
   --color-loc-pink: var(--loc-pink);
   --color-loc-slate: var(--loc-slate);
+
+  /* Shape overlays (location-photo regions) → `stroke-shape-stroke`,
+   * `stroke-shape-stroke-selected`, `stroke-shape-casing`, `fill-shape-fill` and
+   * `fill-shape-handle` utilities on the `RegionCanvas` SVG. Colour utilities in Tailwind v4
+   * cover `fill-*` / `stroke-*` as well as `text-*` / `bg-*`, so one alias per token drives
+   * whichever the shape needs. A region tinted with a location's own swatch uses the
+   * `--loc-*` family above instead — these are the untinted default. */
+  --color-shape-stroke: var(--shape-stroke);
+  --color-shape-stroke-selected: var(--shape-stroke-selected);
+  --color-shape-casing: var(--shape-casing);
+  --color-shape-fill: var(--shape-fill);
+  --color-shape-handle: var(--shape-handle);
 
   /* ABC-analysis tiers → `bg-abc-a` / `text-abc-b` … utilities for the Pareto bars. */
   --color-abc-a: var(--abc-a);

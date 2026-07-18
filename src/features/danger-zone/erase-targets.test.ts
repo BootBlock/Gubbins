@@ -16,6 +16,7 @@ const ALL_IDS: EraseTargetId[] = [
   'categories',
   'field-dictionary',
   'locations',
+  'location-photos',
   'projects',
   'purchase-orders',
   'contacts',

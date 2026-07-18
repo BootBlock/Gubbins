@@ -21,8 +21,10 @@ import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
   ITEM_TAGS_TABLE,
+  ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
   itemTagEdgeId,
+  itemRegionEdgeId,
   locationTagEdgeId,
 } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
@@ -312,10 +314,12 @@ async function cloneWithSalvage(
   //    tombstone (deleting any edge the clone re-introduced + recording the tombstone).
   const removedItemEdges = new Set<string>();
   const removedLocationEdges = new Set<string>();
+  const removedRegionEdges = new Set<string>();
   for (const source of [remote.tombstones, salvage.tombstones]) {
     for (const t of source) {
       if (t.tableName === ITEM_TAGS_TABLE) removedItemEdges.add(t.id);
       else if (t.tableName === LOCATION_TAGS_TABLE) removedLocationEdges.add(t.id);
+      else if (t.tableName === ITEM_REGIONS_TABLE) removedRegionEdges.add(t.id);
     }
   }
 
@@ -336,8 +340,21 @@ async function cloneWithSalvage(
       params: [locationId, tagId],
     });
   }
+  for (const { itemId, regionId } of salvage.itemRegions) {
+    if (removedRegionEdges.has(itemRegionEdgeId(itemId, regionId))) continue;
+    statements.push({
+      sql: `INSERT OR IGNORE INTO ${ITEM_REGIONS_TABLE} (item_id, region_id) VALUES (?, ?);`,
+      params: [itemId, regionId],
+    });
+  }
   for (const t of salvage.tombstones) {
-    if (t.tableName !== ITEM_TAGS_TABLE && t.tableName !== LOCATION_TAGS_TABLE) continue;
+    if (
+      t.tableName !== ITEM_TAGS_TABLE &&
+      t.tableName !== LOCATION_TAGS_TABLE &&
+      t.tableName !== ITEM_REGIONS_TABLE
+    ) {
+      continue;
+    }
     statements.push(tombstoneDeleteStatement(t.tableName, t.id));
     statements.push(tombstone(t));
   }

@@ -21,6 +21,7 @@ export type * from './types/users';
 export type * from './types/categories';
 export type * from './types/tags';
 export type * from './types/images';
+export type * from './types/regions';
 export type * from './types/attachments';
 export type * from './types/aliases';
 export type * from './types/supplier-parts';

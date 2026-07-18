@@ -13,6 +13,7 @@ const snapshot: SyncSnapshot = {
   gaugeHistory: [],
   itemTags: [],
   locationTags: [],
+  itemRegions: [],
   itemHistory: [],
 };
 

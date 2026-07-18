@@ -37,6 +37,10 @@ import type {
   ItemHistoryRow,
   ItemImage,
   ItemImageRow,
+  LocationPhoto,
+  LocationPhotoRow,
+  LocationRegion,
+  LocationRegionRow,
   ItemRow,
   Location,
   LocationRow,
@@ -562,6 +566,36 @@ export function rowToItemImage(row: ItemImageRow): ItemImage {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     fullResDowngradedAt: row.full_res_downgraded_at ?? null,
+  };
+}
+
+export function rowToLocationPhoto(row: LocationPhotoRow): LocationPhoto {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    caption: row.caption ?? null,
+    thumbnailBlob: row.thumbnail_blob ?? null,
+    fullResOpfsPath: row.full_res_opfs_path,
+    fullResDowngradedAt: row.full_res_downgraded_at ?? null,
+    naturalWidth: row.natural_width,
+    naturalHeight: row.natural_height,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToLocationRegion(row: LocationRegionRow): LocationRegion {
+  return {
+    id: row.id,
+    photoId: row.photo_id,
+    name: row.name,
+    shape: row.shape,
+    geometry: row.geometry,
+    color: row.color ?? null,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

@@ -13,7 +13,13 @@ import { plural } from '@/lib/plural';
 export interface TableRowCounts {
   readonly items: number;
   readonly itemHistory: number;
-  readonly itemImages: number;
+  /**
+   * Photo rows across **every** table that anchors an OPFS image — item images and
+   * location photos (issue #81). They share one flat `images/` directory and one row
+   * shape (thumbnail blob + full-resolution path), so they estimate identically and are
+   * counted together.
+   */
+  readonly photos: number;
 }
 
 export interface TableByteEstimate extends TableRowCounts {
@@ -22,21 +28,21 @@ export interface TableByteEstimate extends TableRowCounts {
 }
 
 /**
- * Average bytes-per-row heuristics (§7.6.2). `itemImages` is weighted far heavier
- * because each image row anchors a full-resolution WebP file in OPFS (~100 KB) plus
- * its thumbnail blob — the dominant OPFS consumer — whereas `items` and
- * `item_history` are lightweight scalar rows.
+ * Average bytes-per-row heuristics (§7.6.2). `photos` is weighted far heavier because
+ * each photo row anchors a full-resolution WebP file in OPFS (~100 KB) plus its
+ * thumbnail blob — the dominant OPFS consumer — whereas `items` and `item_history` are
+ * lightweight scalar rows.
  *
- * `itemImageThumbnail` is the per-row estimate of the in-database thumbnail blob,
- * used only when the *real* full-resolution OPFS bytes are measured and supplied
- * (see {@link estimateTableBytes}); the full-res files then contribute their true
- * size and only the small thumbnail is approximated.
+ * `photoThumbnail` is the per-row estimate of the in-database thumbnail blob, used only
+ * when the *real* full-resolution OPFS bytes are measured and supplied (see
+ * {@link estimateTableBytes}); the full-res files then contribute their true size and
+ * only the small thumbnail is approximated.
  */
 export const AVG_ROW_BYTES = {
   items: 600,
   itemHistory: 200,
-  itemImages: 110_000,
-  itemImageThumbnail: 12_000,
+  photos: 110_000,
+  photoThumbnail: 12_000,
 } as const;
 
 /** Coerce a row count to a safe non-negative integer (defensive against bad input). */
@@ -52,29 +58,30 @@ function safeBytes(value: number | null | undefined): number | null {
 export interface EstimateOptions {
   /**
    * The *measured* total size, in bytes, of the full-resolution image files actually
-   * on disk in OPFS (summed via `imagesBytesOnDisk()`). When supplied, the image
-   * figure becomes this true size plus a small per-row thumbnail estimate, rather
-   * than the deliberately-rough `AVG_ROW_BYTES.itemImages` heuristic (§7.6.2). Pass
-   * `null`/omit where OPFS cannot be measured (e.g. the unit test environment).
+   * on disk in OPFS (summed via `imagesBytesOnDisk()`, which spans the whole shared
+   * directory and so already covers both owning tables). When supplied, the photo figure
+   * becomes this true size plus a small per-row thumbnail estimate, rather than the
+   * deliberately-rough `AVG_ROW_BYTES.photos` heuristic (§7.6.2). Pass `null`/omit where
+   * OPFS cannot be measured (e.g. the unit test environment).
    */
-  readonly itemImagesBytes?: number | null;
+  readonly photoBytes?: number | null;
 }
 
 /**
  * Estimate per-table OPFS consumption (§7.6.2). The `items`/`item_history` figures
- * are always row-count × avg-byte heuristics; the `item_images` figure prefers the
- * *measured* on-disk OPFS bytes when {@link EstimateOptions.itemImagesBytes} is
+ * are always row-count × avg-byte heuristics; the photo figure prefers the
+ * *measured* on-disk OPFS bytes when {@link EstimateOptions.photoBytes} is
  * supplied (the accurate path), falling back to the flat per-row heuristic otherwise.
  */
 export function estimateTableBytes(counts: TableRowCounts, options: EstimateOptions = {}): TableByteEstimate {
   const items = safeCount(counts.items) * AVG_ROW_BYTES.items;
   const itemHistory = safeCount(counts.itemHistory) * AVG_ROW_BYTES.itemHistory;
-  const measured = safeBytes(options.itemImagesBytes);
-  const itemImages =
+  const measured = safeBytes(options.photoBytes);
+  const photos =
     measured !== null
-      ? measured + safeCount(counts.itemImages) * AVG_ROW_BYTES.itemImageThumbnail
-      : safeCount(counts.itemImages) * AVG_ROW_BYTES.itemImages;
-  return { items, itemHistory, itemImages, total: items + itemHistory + itemImages };
+      ? measured + safeCount(counts.photos) * AVG_ROW_BYTES.photoThumbnail
+      : safeCount(counts.photos) * AVG_ROW_BYTES.photos;
+  return { items, itemHistory, photos, total: items + itemHistory + photos };
 }
 
 /** Days in a given UTC month (0-indexed), accounting for leap years. */

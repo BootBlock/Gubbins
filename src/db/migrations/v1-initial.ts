@@ -12,6 +12,7 @@ import {
   MAINTENANCE_BASES,
   PROCUREMENT_STATUSES,
   PROJECT_STATUSES,
+  REGION_SHAPES,
   RESERVATION_STATUSES,
   SYSTEM_USER_DISPLAY_NAME,
   SYSTEM_USER_ID,
@@ -105,6 +106,7 @@ const reservationStatusList = RESERVATION_STATUSES.map((s) => `'${s}'`).join(', 
 const procurementStatusList = PROCUREMENT_STATUSES.map((s) => `'${s}'`).join(', ');
 const conditionList = CONDITIONS.map((c) => `'${c}'`).join(', ');
 const basisList = MAINTENANCE_BASES.map((b) => `'${b}'`).join(', ');
+const regionShapeList = REGION_SHAPES.map((s) => `'${s}'`).join(', ');
 const userKindList = USER_KINDS.map((k) => `'${k}'`).join(', ');
 const webhookMethodList = WEBHOOK_METHODS.map((m) => `'${m}'`).join(', ');
 
@@ -1634,6 +1636,85 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     sql: updatedAtTrigger('webhooks'),
+  },
+
+  // --- Location photos & item regions (issue #81) --------------------------------
+  //
+  // A photo of a location, onto which named *regions* are drawn; items reference a region
+  // many-to-many. A region is a place ("Top shelf") that exists independently of what is in
+  // it, which is why the link is a join table rather than an `item_id` on the region: the
+  // layer beneath already lets one item sit in several locations (`item_stock`'s UNIQUE is
+  // per item+location *pair*), so forcing one position per item would contradict it.
+  //
+  // Storage mirrors `item_images` exactly, including the §4.2.1 Anti-Base64 Directive: the
+  // full-resolution WebP is a raw OPFS file and only its path is stored here, while a tiny
+  // WebP `thumbnail_blob` lives in the row so a peer can render without the original. The
+  // blob column keeps that exact name deliberately — `features/sync/blob-codec.ts` matches
+  // on it by name, and a differently-named column would not error, it would silently sync a
+  // corrupt `{"0":…}` object.
+  {
+    sql: `
+        CREATE TABLE location_photos (
+          id                     TEXT    PRIMARY KEY NOT NULL,
+          location_id            TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+          caption                TEXT,
+          thumbnail_blob         BLOB,
+          full_res_opfs_path     TEXT    NOT NULL,
+          full_res_downgraded_at INTEGER,
+          natural_width          INTEGER NOT NULL,
+          natural_height         INTEGER NOT NULL,
+          position               INTEGER NOT NULL DEFAULT 0,
+          created_at             INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at             INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  {
+    sql: `CREATE INDEX idx_location_photos_location_id ON location_photos(location_id, position);`,
+  },
+  { sql: updatedAtTrigger('location_photos') },
+
+  // `natural_width`/`natural_height` are stored rather than read from the image because
+  // region geometry is normalised: rendering the overlay needs the aspect ratio *before* the
+  // full-res file decodes, and on a peer device that file may never arrive at all (only the
+  // thumbnail syncs). Without them the overlay would jump into place on load.
+  {
+    sql: `
+        CREATE TABLE location_regions (
+          id         TEXT    PRIMARY KEY NOT NULL,
+          photo_id   TEXT    NOT NULL REFERENCES location_photos(id) ON DELETE CASCADE,
+          name       TEXT    NOT NULL,
+          shape      TEXT    NOT NULL CHECK (shape IN (${regionShapeList})),
+          geometry   TEXT    NOT NULL,
+          color      TEXT,
+          position   INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  {
+    sql: `CREATE INDEX idx_location_regions_photo_id ON location_regions(photo_id, position);`,
+  },
+  { sql: updatedAtTrigger('location_regions') },
+
+  // The M:N link. Deliberately carries **no timestamps**, exactly like `location_tags`: it is
+  // reconciled by *membership* (2P-set — union minus edge tombstones), not Last-Write-Wins,
+  // and the membership path writes `INSERT OR IGNORE` over the key columns alone. A
+  // `created_at` here would look harmless but would silently re-default on every peer apply.
+  {
+    sql: `
+        CREATE TABLE item_regions (
+          item_id   TEXT NOT NULL REFERENCES items(id)            ON DELETE CASCADE,
+          region_id TEXT NOT NULL REFERENCES location_regions(id) ON DELETE CASCADE,
+          PRIMARY KEY (item_id, region_id)
+        ) STRICT;
+      `,
+  },
+  // The reverse lookup ("which regions hold this item?") drives the item-side panel; the
+  // composite PK already covers the forward direction.
+  {
+    sql: `CREATE INDEX idx_item_regions_region_id ON item_regions(region_id);`,
   },
 ];
 

@@ -44,6 +44,7 @@ export type EraseTargetId =
   | 'categories'
   | 'field-dictionary'
   | 'locations'
+  | 'location-photos'
   | 'projects'
   | 'purchase-orders'
   | 'contacts'
@@ -216,6 +217,32 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
       const statements: SqlStatement[] = [];
       if (tombstone) statements.push(tombstoneSelect('item_images', 'FROM item_images'));
       statements.push({ sql: 'DELETE FROM item_images;' });
+      return statements;
+    },
+  },
+  {
+    id: 'location-photos',
+    section: 'organisation',
+    label: 'Location photos',
+    tooltip:
+      'Removes every location photo (thumbnails and full-resolution files) and the regions drawn on them, while keeping the locations themselves. Items placed in a region are kept — they are only unplaced.',
+    scope: 'db',
+    clearsImages: true,
+    countSql: 'SELECT COUNT(*) AS n FROM location_photos',
+    buildStatements: ({ tombstone }) => {
+      const statements: SqlStatement[] = [];
+      if (tombstone) {
+        // Children first: deleting a photo cascades to its regions and their item links,
+        // and a cascade records no tombstone of its own (§7.2).
+        statements.push({
+          sql: "INSERT OR REPLACE INTO tombstones (table_name, id) SELECT 'item_regions', item_id || '|' || region_id FROM item_regions;",
+        });
+        statements.push(
+          tombstoneSelect('location_regions', 'FROM location_regions'),
+          tombstoneSelect('location_photos', 'FROM location_photos'),
+        );
+      }
+      statements.push({ sql: 'DELETE FROM location_photos;' });
       return statements;
     },
   },
@@ -425,6 +452,28 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
           sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
                 SELECT 'location_field_values', lfv.id FROM location_field_values lfv
                 WHERE lfv.location_id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
+        });
+        // Photos of the doomed locations cascade away with them, taking their regions and
+        // item placements — none of which tombstone themselves (issue #81, §7.2).
+        statements.push({
+          sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
+                SELECT 'item_regions', ir.item_id || '|' || ir.region_id
+                  FROM item_regions ir
+                  JOIN location_regions lr ON lr.id = ir.region_id
+                  JOIN location_photos  lp ON lp.id = lr.photo_id
+                 WHERE lp.location_id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
+        });
+        statements.push({
+          sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
+                SELECT 'location_regions', lr.id
+                  FROM location_regions lr
+                  JOIN location_photos lp ON lp.id = lr.photo_id
+                 WHERE lp.location_id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
+        });
+        statements.push({
+          sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
+                SELECT 'location_photos', lp.id FROM location_photos lp
+                 WHERE lp.location_id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
         });
         statements.push({
           sql: `INSERT OR REPLACE INTO tombstones (table_name, id) SELECT 'locations', l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE};`,

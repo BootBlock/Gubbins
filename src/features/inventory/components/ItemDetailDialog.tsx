@@ -14,6 +14,7 @@ import {
   LinkIcon,
   LocationOtherIcon,
   LowStockIcon,
+  MapViewIcon,
   SettingsIcon,
   SubstituteIcon,
   SupplierIcon,
@@ -32,6 +33,7 @@ import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
 import { GaugeConfigEditor } from './GaugeConfigEditor';
 import { ItemDetailsEditor } from './ItemDetailsEditor';
+import { ItemPlacementsPanel } from './ItemPlacementsPanel';
 import { RarityBadge } from './RarityBadge';
 import { itemRarity } from '../rarity';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -166,6 +168,14 @@ const SECTION_HINT_LOCATION =
   '- **Unassigned** and **In Transit** are the holding pens for stock not yet shelved or still on ' +
   'its way in.\n\n' +
   '> **Tip:** split a quantity across several locations from the **Lifecycle** tab.';
+
+const SECTION_HINT_PLACEMENTS =
+  'The exact spot this item occupies, marked on a **photo of its location** — the shelf, drawer or ' +
+  'bin it actually sits in.\n\n' +
+  '- Regions are drawn on a location’s photos from the **location editor**.\n' +
+  '- An item can be placed in more than one region (a long part spanning two bins, say).\n\n' +
+  '> Nothing here moves stock: a placement describes *where* something is, while the **Location** ' +
+  'above decides which location holds it.';
 
 const SECTION_HINT_SUPPLIER =
   'Who you **buy this from**, and the names it goes by.\n\n' +
@@ -335,6 +345,16 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           icon: <LocationOtherIcon />,
           content: <LocationEditor item={item} />,
           hint: SECTION_HINT_LOCATION,
+        },
+        // Where in that location it physically sits, shown on the location's own photo
+        // (issue #81). Sits directly under Location because it answers the follow-up
+        // question — "which shelf?" — rather than repeating "which room?".
+        {
+          title: 'Where it sits',
+          icon: <MapViewIcon />,
+          content: <ItemPlacementsPanel itemId={item.id} />,
+          hint: SECTION_HINT_PLACEMENTS,
+          feature: 'location-photos',
         },
       ],
     },
