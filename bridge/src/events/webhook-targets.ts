@@ -72,58 +72,20 @@ export interface WebhookDeliveryTarget {
 }
 
 /**
- * Header names a subscription may **not** set (§6.4).
+ * The header allow-rule (§6.4) is **shared with the app**, not defined here: the app's subscription
+ * editor checks a header name as it is typed, and the deliverer enforces the same rule at send
+ * time. One definition, imported back over the existing one-way `@/` alias — a UI copy that
+ * drifted from the enforced list would be worse than no check at all.
  *
- * Two kinds of name are refused. `authorization` / `cookie` / `proxy-authorization` are credentials:
- * a subscription that could set them would be a way to aim the *operator's* bridge at a third-party
- * host carrying a header the user chose, which is a request-forgery primitive dressed as
- * configuration. The rest (`host`, `content-length`, `content-type`, the `x-gubbins-*` family) are
- * ones the deliverer computes: letting a subscription overwrite `X-Gubbins-Signature` would let it
- * forge its own signature, and overriding `content-length` desynchronises the request.
+ * Re-exported so this module stays the single import site for everything target-shaped.
  */
-export const WEBHOOK_FORBIDDEN_HEADERS: readonly string[] = [
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-  'host',
-  'content-length',
-  'content-type',
-  'transfer-encoding',
-  'connection',
-];
+import { sanitiseWebhookHeaders } from '@/features/webhooks/headers.ts';
 
-/** The reserved prefix the deliverer's own headers use; a subscription may not set any of them. */
-const GUBBINS_HEADER_PREFIX = 'x-gubbins-';
-
-/** Is this a header name a subscription is allowed to set? */
-export function isAllowedWebhookHeader(name: string): boolean {
-  const lower = name.trim().toLowerCase();
-  if (lower.length === 0) return false;
-  if (lower.startsWith(GUBBINS_HEADER_PREFIX)) return false;
-  return !WEBHOOK_FORBIDDEN_HEADERS.includes(lower);
-}
-
-/**
- * Drop any header a subscription may not set, returning the survivors (or `null` when none).
- *
- * Filtered rather than rejected: a subscription that also sets three legitimate headers should keep
- * them. The caller reports what was dropped so the operator learns why their `Authorization` header
- * is not arriving, instead of debugging it at the receiver.
- */
-export function sanitiseWebhookHeaders(headers: Readonly<Record<string, string>> | null): {
-  readonly headers: Readonly<Record<string, string>> | null;
-  readonly dropped: readonly string[];
-} {
-  if (headers === null) return { headers: null, dropped: [] };
-  const kept: Record<string, string> = {};
-  const dropped: string[] = [];
-  for (const [name, value] of Object.entries(headers)) {
-    if (isAllowedWebhookHeader(name)) kept[name.trim()] = value;
-    else dropped.push(name.trim());
-  }
-  return { headers: Object.keys(kept).length > 0 ? kept : null, dropped };
-}
+export {
+  WEBHOOK_FORBIDDEN_HEADERS,
+  isAllowedWebhookHeader,
+  sanitiseWebhookHeaders,
+} from '@/features/webhooks/headers.ts';
 
 /** A named secret held in the bridge's own git-ignored config, keyed by the name a row references. */
 export type WebhookSecrets = Readonly<Record<string, string>>;

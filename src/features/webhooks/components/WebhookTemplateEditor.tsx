@@ -10,6 +10,7 @@
  * its own `BridgeEvent`, and `src/` cannot import `bridge/`, so the editor describes its shape in
  * words rather than rendering a plausible-looking JSON body the deliverer would never send.
  */
+import { useState } from 'react';
 import { Surface, Textarea, SelectField } from '@/components/foundry';
 import { useT, type MessageKey } from '@/features/i18n';
 import type { WebhookMethod } from '@/db/repositories/constants';
@@ -20,10 +21,11 @@ import {
   WEBHOOK_TEMPLATE_PATH_NAMES,
   type WebhookPreset,
 } from '../template';
-
-/** What the mode dropdown offers, over the single nullable `template` column. */
-const ENVELOPE_MODE = 'envelope';
-const CUSTOM_MODE = 'custom';
+import {
+  modeForTemplate,
+  WEBHOOK_TEMPLATE_MODE_CUSTOM as CUSTOM_MODE,
+  WEBHOOK_TEMPLATE_MODE_ENVELOPE as ENVELOPE_MODE,
+} from '../template-mode';
 
 const PRESET_LABEL_KEYS = {
   discord: 'webhooks.template.preset.discord',
@@ -43,16 +45,24 @@ export interface WebhookTemplateEditorProps {
 export function WebhookTemplateEditor({ value, onChange, method }: WebhookTemplateEditorProps) {
   const t = useT();
 
-  const trimmed = value?.trim() ?? '';
-  const presetName = trimmed.startsWith(WEBHOOK_PRESET_PREFIX)
-    ? trimmed.slice(WEBHOOK_PRESET_PREFIX.length).trim()
-    : null;
-  const mode = trimmed === '' ? ENVELOPE_MODE : (presetName ?? CUSTOM_MODE);
+  /**
+   * The chosen mode is **held**, not re-derived from `value` on every render.
+   *
+   * Deriving it looks tidy and is wrong: "Custom" starts life as an empty template, an empty
+   * template is indistinguishable from "no template", and so the mode would snap straight back to
+   * the envelope — leaving the option impossible to select and the textarea impossible to reach.
+   * The stored value stays the single source of truth for what is *sent*; this is only the source
+   * of truth for which editor is on screen.
+   */
+  const [mode, setMode] = useState(() => modeForTemplate(value));
 
   const preview = previewWebhookPayload(value, method);
 
   const onModeChange = (next: string): void => {
+    setMode(next);
     if (next === ENVELOPE_MODE) return void onChange(null);
+    // A newly-chosen custom template starts empty. Until something is typed the bridge still sends
+    // the standard envelope, which is exactly what the preview below goes on saying.
     if (next === CUSTOM_MODE) return void onChange('');
     onChange(`${WEBHOOK_PRESET_PREFIX}${next}`);
   };
@@ -60,6 +70,7 @@ export function WebhookTemplateEditor({ value, onChange, method }: WebhookTempla
   return (
     <div className="flex flex-col gap-field-gap">
       <SelectField
+        data-testid="webhook-template-mode"
         label={t('webhooks.template.mode')}
         value={mode}
         onChange={onModeChange}

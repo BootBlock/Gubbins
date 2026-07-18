@@ -18,6 +18,11 @@ describe('webhookFilterToForm', () => {
     expect(webhookFilterToForm(null)).toEqual(emptyWebhookFilterForm());
   });
 
+  it('reads an item leaf, which the builder can now edit', () => {
+    const form = webhookFilterToForm({ kind: 'item', itemIds: ['item-1'] });
+    expect(form?.conditions[0]).toMatchObject({ kind: 'item', ids: ['item-1'] });
+  });
+
   it('reads a bare leaf as a one-condition form', () => {
     const form = webhookFilterToForm({ kind: 'category', categoryIds: ['cat-1'] });
     expect(form?.combinator).toBe('all');
@@ -57,7 +62,6 @@ describe('webhookFilterToForm', () => {
   it.each<[string, WebhookFilter]>([
     ['a negation', { kind: 'not', of: { kind: 'tag', tagIds: ['t'] } }],
     ['the inert node', { kind: 'none' }],
-    ['an item leaf', { kind: 'item', itemIds: ['item-1'] }],
     ['a nested tree', { kind: 'all', of: [{ kind: 'any', of: [{ kind: 'tag', tagIds: ['t'] }] }] }],
   ])('refuses to represent %s', (_label, filter) => {
     expect(webhookFilterToForm(filter)).toBeNull();
@@ -120,6 +124,15 @@ describe('formToWebhookFilter', () => {
     ).toBeNull();
   });
 
+  it('emits an item leaf', () => {
+    expect(
+      formToWebhookFilter({
+        combinator: 'all',
+        conditions: [condition({ kind: 'item', ids: ['item-1', 'item-2'] })],
+      }),
+    ).toEqual({ kind: 'item', itemIds: ['item-1', 'item-2'] });
+  });
+
   it('keeps a valid quantity of zero', () => {
     expect(
       formToWebhookFilter({
@@ -143,6 +156,7 @@ describe('round trip', () => {
   it.each<[string, WebhookFilter]>([
     ['a category leaf', { kind: 'category', categoryIds: ['cat-1', 'cat-2'] }],
     ['a quantity leaf', { kind: 'quantity', op: 'gte', value: 12 }],
+    ['an item leaf', { kind: 'item', itemIds: ['item-1'] }],
     ['a location subtree', { kind: 'location', locationIds: ['loc-1'], includeDescendants: true }],
     [
       'an all-combinator',

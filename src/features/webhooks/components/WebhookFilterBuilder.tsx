@@ -6,17 +6,17 @@
  * delivery time; the worst a filter can do is match, or not match.
  *
  * The conversion in both directions lives in the pure `filter-form.ts`, including the decision to
- * show a filter **read-only** when the builder cannot represent it (a nested tree, a `not`, or an
- * `item` leaf, all of which can arrive over sync from a peer on another build). Rewriting a filter
+ * show a filter **read-only** when the builder cannot represent it — a nested tree, a `not`, or the
+ * inert `none`, any of which can arrive over sync from a peer on another build. Rewriting a filter
  * this editor only partly understood would change what a subscription delivers without anyone
  * asking, so it declines to try.
  */
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button, Checkbox, Input, Select, SelectField, Surface } from '@/components/foundry';
 import { CloseIcon, AddIcon } from '@/components/icons';
 import { useT, type MessageKey } from '@/features/i18n';
 import { useCategories } from '@/features/inventory/categories';
-import { useLocations } from '@/features/inventory/queries';
+import { useInventoryItems, useItemsById, useLocations } from '@/features/inventory/queries';
 import { useTagDictionary } from '@/features/inventory/tags';
 import { WEBHOOK_FILTER_OPS, type WebhookFilter, type WebhookFilterOp } from '../filter';
 import {
@@ -43,8 +43,15 @@ const CONDITION_LABEL_KEYS = {
   location: 'webhooks.filter.kind.location',
   category: 'webhooks.filter.kind.category',
   tag: 'webhooks.filter.kind.tag',
+  item: 'webhooks.filter.kind.item',
   quantity: 'webhooks.filter.kind.quantity',
 } as const satisfies Record<WebhookFormConditionKind, MessageKey>;
+
+/** How many search matches the item picker offers at once. A filter names a few things, not a page. */
+const ITEM_SEARCH_LIMIT = 20;
+
+/** Matches the command palette's item search: long enough to skip a keystroke, short enough to feel live. */
+const ITEM_SEARCH_DEBOUNCE_MS = 200;
 
 const OP_LABEL_KEYS = {
   lt: 'webhooks.filter.op.lt',
@@ -156,6 +163,7 @@ function ConditionRow({
     <Surface className="flex flex-col gap-field-gap p-3">
       <div className="flex items-end gap-2">
         <SelectField
+          data-testid="webhook-condition-kind"
           className="flex-1"
           label={t('webhooks.filter.conditionLabel')}
           value={condition.kind}
@@ -172,6 +180,8 @@ function ConditionRow({
 
       {condition.kind === 'quantity' ? (
         <QuantityCondition condition={condition} onChange={onChange} />
+      ) : condition.kind === 'item' ? (
+        <ItemCondition condition={condition} onChange={onChange} />
       ) : (
         <IdListCondition condition={condition} onChange={onChange} />
       )}
@@ -255,27 +265,11 @@ function IdListCondition({
         }}
       />
 
-      {condition.ids.length > 0 ? (
-        <ul className="flex flex-wrap gap-2">
-          {condition.ids.map((id) => (
-            <li key={id}>
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-                {labelFor(id)}
-                <button
-                  type="button"
-                  aria-label={t('webhooks.filter.removeValue', { vars: { name: labelFor(id) } })}
-                  className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() =>
-                    onChange({ ...condition, ids: condition.ids.filter((entry) => entry !== id) })
-                  }
-                >
-                  <CloseIcon aria-hidden className="size-3" />
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <SelectedChips
+        ids={condition.ids}
+        labelFor={labelFor}
+        onRemove={(id) => onChange({ ...condition, ids: condition.ids.filter((entry) => entry !== id) })}
+      />
 
       {condition.kind === 'location' ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -287,5 +281,115 @@ function IdListCondition({
         </label>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The `item` leaf — "notify me about these specific things".
+ *
+ * Unlike the other id-list kinds this cannot offer a complete dropdown: an inventory can hold far
+ * more items than belong in a list, so the candidates come from a search rather than from
+ * everything. Already-chosen items are resolved by id for their chip labels, so a selection still
+ * reads as names once the search box is cleared.
+ */
+function ItemCondition({
+  condition,
+  onChange,
+}: {
+  readonly condition: WebhookFormCondition;
+  readonly onChange: (next: WebhookFormCondition) => void;
+}) {
+  const t = useT();
+  const searchId = useId();
+  const [search, setSearch] = useState('');
+  const [term, setTerm] = useState('');
+
+  // Debounced, so each keystroke doesn't hit the worker — the same 200ms the command palette's
+  // item search settled on.
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(search.trim()), ITEM_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const matches = useInventoryItems({ search: term }, ITEM_SEARCH_LIMIT, term !== '');
+  const chosen = useItemsById(condition.ids);
+
+  const selected = new Set(condition.ids);
+  const available = (matches.data?.pages[0]?.rows ?? [])
+    .filter((row) => !selected.has(row.id))
+    .map((row) => ({ value: row.id, label: row.name }));
+
+  // `useItemsById` resolves to a Map keyed by id; an id still loading (or since deleted) falls back
+  // to showing the id rather than an empty chip, so a selection is never silently blank.
+  const labelFor = (id: string): string => chosen.data?.get(id)?.name ?? id;
+
+  return (
+    <div className="flex flex-col gap-field-gap-compact">
+      <label htmlFor={searchId} className="text-xs text-muted-foreground">
+        {t('webhooks.filter.itemSearch')}
+      </label>
+      <Input
+        id={searchId}
+        value={search}
+        placeholder={t('webhooks.filter.itemSearchPlaceholder')}
+        onChange={(event) => setSearch(event.currentTarget.value)}
+      />
+
+      {search.trim() === '' ? (
+        <p className="text-xs text-muted-foreground">{t('webhooks.filter.itemSearchHint')}</p>
+      ) : term !== '' && available.length === 0 && !matches.isPending ? (
+        <p className="text-xs text-muted-foreground">{t('webhooks.filter.itemNoMatches')}</p>
+      ) : (
+        <Select
+          value=""
+          placeholder={t('webhooks.filter.addValue')}
+          aria-label={t('webhooks.filter.addValue')}
+          options={available}
+          onChange={(value) => {
+            if (value !== '') onChange({ ...condition, ids: [...condition.ids, value] });
+          }}
+        />
+      )}
+
+      <SelectedChips
+        ids={condition.ids}
+        labelFor={labelFor}
+        onRemove={(id) => onChange({ ...condition, ids: condition.ids.filter((entry) => entry !== id) })}
+      />
+    </div>
+  );
+}
+
+/** The chosen values, as removable chips. Shared by every id-list kind so they stay identical. */
+function SelectedChips({
+  ids,
+  labelFor,
+  onRemove,
+}: {
+  readonly ids: readonly string[];
+  readonly labelFor: (id: string) => string;
+  readonly onRemove: (id: string) => void;
+}) {
+  const t = useT();
+  if (ids.length === 0) return null;
+
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {ids.map((id) => (
+        <li key={id}>
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+            {labelFor(id)}
+            <button
+              type="button"
+              aria-label={t('webhooks.filter.removeValue', { vars: { name: labelFor(id) } })}
+              className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onRemove(id)}
+            >
+              <CloseIcon aria-hidden className="size-3" />
+            </button>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
