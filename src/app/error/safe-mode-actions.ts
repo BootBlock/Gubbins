@@ -157,6 +157,12 @@ export async function hardResetLocalData(): Promise<void> {
  * file-system-access IndexedDB store. Factored out so the same teardown is reusable, and each
  * step is wrapped independently so one failure (e.g. OPFS unavailable) can never block the
  * others — a hard reset must make best-effort progress on every front.
+ *
+ * The `localStorage` step stays a **prefix sweep** rather than iterating the key registry
+ * (`lib/storage-keys.ts`): a full reset should take even a stray key that predates the registry
+ * or was written by an older version. The registry is the superset's *documented* contents —
+ * `storage-keys.test.ts` asserts every registered key carries the `gubbins:` prefix this sweep
+ * matches — while the selective Danger-Zone erase and the backup allow-list are derived from it.
  */
 export async function clearLocalAppState(): Promise<void> {
   try {

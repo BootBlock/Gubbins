@@ -28,6 +28,7 @@
  * `erase-actions.ts` prepends the deferred-FK pragma and wraps the whole batch atomically.
  */
 import type { SqlStatement } from '@/db/rpc/driver';
+import { eraseGroupKeys, type LocalEraseGroupId } from '@/lib/storage-keys';
 
 /** Every distinct thing a user can erase. The UI codes against these ids verbatim. */
 export type EraseTargetId =
@@ -51,7 +52,18 @@ export type EraseTargetId =
   | 'dismissed-alerts'
   | 'cloud-signin'
   | 'sync-links'
+  | 'enabled-features'
   | 'local-ui';
+
+/**
+ * The `localStorage` keys the shared registry (`lib/storage-keys.ts`, issue #378) files under
+ * this target. The parameter type is the *intersection* of the registry's group union and the
+ * target ids above, so a group that isn't a real target here fails to compile at the call site
+ * rather than quietly erasing nothing.
+ */
+function localKeysFor(group: LocalEraseGroupId & EraseTargetId): readonly string[] {
+  return eraseGroupKeys(group);
+}
 
 /** Grouping for the Danger-Zone UI (one collapsible section per id). */
 export type EraseSection = 'inventory' | 'organisation' | 'projects' | 'contacts' | 'local';
@@ -66,7 +78,10 @@ export interface EraseTarget {
   readonly scope: 'db' | 'local';
   /** `SELECT COUNT(*) AS n FROM …` for the affected-count badge (DB targets). */
   readonly countSql?: string;
-  /** localStorage keys removed for a local-scope target. */
+  /**
+   * localStorage keys removed for this target. Always sourced from {@link eraseGroupKeys} so
+   * the registry — not this catalog — decides which keys belong to which target (issue #378).
+   */
   readonly localKeys?: readonly string[];
   /** When true, the executor removes the whole OPFS `images/` directory. */
   readonly clearsImages?: boolean;
@@ -470,7 +485,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     tooltip:
       'Resets your app preferences on this device (theme, units, scanner settings and so on) to their defaults.',
     scope: 'local',
-    localKeys: ['gubbins:preferences'],
+    localKeys: localKeysFor('preferences'),
   },
   {
     id: 'dashboard-layout',
@@ -478,7 +493,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     label: 'Dashboard layout',
     tooltip: 'Resets your customised dashboard widget layout on this device.',
     scope: 'local',
-    localKeys: ['gubbins:layout'],
+    localKeys: localKeysFor('dashboard-layout'),
   },
   {
     id: 'saved-searches',
@@ -486,34 +501,38 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     label: 'Saved searches',
     tooltip: 'Removes the searches you saved on this device.',
     scope: 'local',
-    localKeys: ['gubbins:saved-searches'],
+    localKeys: localKeysFor('saved-searches'),
   },
   {
     id: 'dismissed-alerts',
     section: 'local',
     label: 'Dismissed alerts',
-    tooltip: 'Forgets which alerts you dismissed on this device, so any still-relevant alerts reappear.',
+    tooltip:
+      'Forgets which alerts you dismissed, and which reminders you have already been notified about, on this device — so any still-relevant ones reappear.',
     scope: 'local',
-    localKeys: ['gubbins:dismissed-alerts'],
+    localKeys: localKeysFor('dismissed-alerts'),
   },
   {
     id: 'cloud-signin',
     section: 'local',
     label: 'Cloud sign-in',
-    tooltip: 'Signs you out of cloud sync on this device. Your data is not deleted.',
+    tooltip:
+      'Signs you out of cloud sync on this device and discards the stored cloud access token. Your data is not deleted.',
     scope: 'local',
-    localKeys: ['gubbins:auth'],
+    localKeys: localKeysFor('cloud-signin'),
   },
   {
     id: 'sync-links',
     section: 'local',
     label: 'Sync links & pending deletions',
     tooltip:
-      'Clears the links between this device and the cloud, plus any pending deletion markers. Your inventory is not deleted; the next sync starts fresh.',
+      'Clears the links between this device and the cloud, plus any pending deletion markers and unresolved sync conflicts. Your inventory is not deleted; the next sync starts fresh.',
     // Lives in the "local" section but writes to the DB (tombstones + sync_meta) and
-    // deletes the file-system-access IndexedDB store, so it is a db-scope target.
+    // deletes the file-system-access IndexedDB store, so it is a db-scope target. It also
+    // clears the local unresolved-conflict list, which the executor removes post-commit.
     scope: 'db',
     clearsIdb: ['gubbins-fs'],
+    localKeys: localKeysFor('sync-links'),
     countSql: 'SELECT COUNT(*) AS n FROM tombstones',
     buildStatements: () => [
       // No tombstoning here — we are *clearing* deletion markers, not creating them.
@@ -524,12 +543,25 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     ],
   },
   {
+    id: 'enabled-features',
+    section: 'local',
+    label: 'Enabled features',
+    // Wording deliberately promises the reset, not an *immediate* chooser: a selective erase
+    // clears the stored key but does not reload, so the live store keeps its state until the
+    // app next starts. Claiming the chooser reappears straight away would be untrue.
+    tooltip:
+      'Resets which optional features are switched on for this device, so the first-run feature chooser runs again next time the app starts. No data is deleted.',
+    scope: 'local',
+    localKeys: localKeysFor('enabled-features'),
+  },
+  {
     id: 'local-ui',
     section: 'local',
     label: 'Drafts & reminders',
-    tooltip: 'Clears local-only odds and ends on this device: export drafts and app-update reminders.',
+    tooltip:
+      'Clears local-only odds and ends on this device: export drafts, app-update reminders, an in-progress stock-take, which location groups are expanded, remembered dialog sizes, and which one-off celebrations have already played.',
     scope: 'local',
-    localKeys: ['gubbins:export', 'gubbins:pwa-update-snooze'],
+    localKeys: localKeysFor('local-ui'),
   },
 ] as const;
 

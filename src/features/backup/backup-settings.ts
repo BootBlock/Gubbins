@@ -14,6 +14,12 @@
  * land on restore (issue #175) — the groups themselves, and all the splitting/merging logic, live
  * in `settings-groups.ts`. The allow-list and scrubbing are pure (testable with a plain record);
  * only {@link collectSettings} / {@link applySettings} touch `localStorage`.
+ *
+ * The groups stay the authority for *what a backup carries*, because they also decide how the
+ * preferences blob is split and what the picker shows. The shared key registry
+ * (`lib/storage-keys.ts`, issue #378) records the same fact per key as `backupIncluded`, and
+ * `storage-keys.test.ts` asserts the two agree — so a key added to a group without a registry
+ * decision (or the reverse) fails the build rather than drifting.
  */
 import {
   DEFAULT_SETTINGS_GROUPS,
