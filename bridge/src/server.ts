@@ -273,6 +273,15 @@ export async function handleRequest(
         sendError(res, 405, 'method_not_allowed', 'Method not allowed', { v1: false, headers: { allow } });
         return;
       }
+      // Every POST body the bridge accepts is JSON. A declared non-JSON type is refused with
+      // `415` (RFC 9110 §15.5.16) rather than being parsed as JSON anyway — an HTML form post
+      // reaching a write endpoint should fail loudly. A *missing* `Content-Type` is still
+      // allowed: RFC 9110 §8.3 lets the recipient infer one, and a bodyless POST sends none.
+      if (!isJsonContentType(req.headers['content-type'])) {
+        req.resume();
+        sendError(res, 415, 'unsupported_media_type', 'Body must be application/json', { v1: true });
+        return;
+      }
       // The snapshot-ingest endpoint streams a (potentially large) body straight to disk, so it
       // is handled before — and instead of — the small bounded JSON-body read the write
       // endpoints use. When push is not opted in it is a 404 (invisible).
@@ -345,6 +354,18 @@ export async function handleRequest(
 }
 
 /**
+ * Whether a request's `Content-Type` names a JSON media type. Accepts `application/json` and the
+ * `+json` structured suffix (RFC 6839), with any parameters (`; charset=utf-8`) ignored, and
+ * treats an absent header as acceptable — see the call site for why.
+ */
+function isJsonContentType(header: string | undefined): boolean {
+  if (header === undefined) return true;
+  const type = header.split(';', 1)[0]!.trim().toLowerCase();
+  if (type.length === 0) return true;
+  return type === 'application/json' || type.endsWith('+json');
+}
+
+/**
  * Read and JSON-parse a bounded request body. Caps the byte count (an abuse guard) and keeps
  * draining once the cap is hit so the socket still ends cleanly; an over-large or non-JSON body
  * yields `{ ok: false }` for the caller to turn into a `400`. An empty body parses to `{}`.
@@ -405,7 +426,9 @@ async function handlePush(
 async function handleHealth(res: ServerResponse, options: BridgeServerOptions): Promise<void> {
   const state = options.getState();
   if (state === null) {
-    sendJson(res, 503, { ok: false, error: 'Snapshot not loaded yet' });
+    // The legacy flat `{ error }` envelope, same as every other unversioned error — `ok: false`
+    // here would make /health the one legacy path with a bespoke error shape.
+    sendError(res, 503, 'snapshot_unavailable', 'Snapshot not loaded yet', { v1: false });
     return;
   }
   // Count through the app's own search path (emptyAst → parseASTtoSQL), never bespoke SQL.

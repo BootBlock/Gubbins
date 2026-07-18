@@ -197,6 +197,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -304,6 +309,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -360,6 +370,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -540,6 +555,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -605,6 +625,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -678,6 +703,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -742,6 +772,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -802,6 +837,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -862,6 +902,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -922,6 +967,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -964,6 +1014,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1057,6 +1112,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1123,6 +1183,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "422":
           description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
           content:
@@ -1142,6 +1208,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1208,6 +1279,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "422":
           description: "The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build)."
           content:
@@ -1227,6 +1304,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1284,6 +1366,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "413":
           description: "The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: "The request body was not declared as application/json."
           content:
             application/json:
               schema:
@@ -1404,6 +1492,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1491,6 +1584,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1561,6 +1659,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1615,6 +1718,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1686,6 +1794,11 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: "Snapshot not loaded yet."
+          headers:
+            Retry-After:
+              schema:
+                type: "integer"
+              description: "Seconds to wait before retrying."
           content:
             application/json:
               schema:
@@ -1912,6 +2025,7 @@ components:
               - "method_not_allowed"
               - "too_many_requests"
               - "snapshot_unavailable"
+              - "unsupported_media_type"
               - "unprocessable"
               - "payload_too_large"
               - "internal_error"

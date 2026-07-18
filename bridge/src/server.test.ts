@@ -172,7 +172,10 @@ describe('503 before a snapshot is loaded', () => {
         headers: { authorization: `Bearer ${TOKEN}` },
       });
       expect(res.status).toBe(503);
-      expect((await res.json()).ok).toBe(false);
+      // The flat legacy envelope, the same as every other unversioned error — plus the
+      // Retry-After RFC 9110 §15.6.4 recommends, since the watcher will re-hydrate shortly.
+      expect(await res.json()).toEqual({ error: 'Snapshot not loaded yet' });
+      expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
     } finally {
       await new Promise<void>((resolve) => empty.close(() => resolve()));
     }

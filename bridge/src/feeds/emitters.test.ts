@@ -47,13 +47,21 @@ describe('emitRss', () => {
   it('emits a channel with a non-permalink guid and an RFC 822 pubDate per item', () => {
     const xml = emitRss(CHANNEL, [item()]);
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
-    expect(xml).toContain('<rss version="2.0">');
+    expect(xml).toContain('<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">');
     expect(xml).toContain('<title>Gubbins activity</title>');
     expect(xml).toContain('<lastBuildDate>Fri, 27 Jun 2025 06:13:20 GMT</lastBuildDate>');
     expect(xml).toContain('<guid isPermaLink="false">urn:gubbins:activity:hist-0007</guid>');
     expect(xml).toContain('<title>ESP32 Dev Board — Quantity changed</title>');
     expect(xml).toContain('<category>stock</category>');
     expect(xml).toContain('<pubDate>Fri, 27 Jun 2025 06:13:20 GMT</pubDate>');
+  });
+
+  it('carries an atom:link self-reference so a reader knows where the feed lives', () => {
+    const xml = emitRss(CHANNEL, [item()]);
+    expect(xml).toContain(
+      '<atom:link rel="self" type="application/rss+xml" ' +
+        'href="http://127.0.0.1:8787/api/v1/activity.rss"/>',
+    );
   });
 
   it('escapes a hostile item title/summary so it cannot inject feed structure', () => {
