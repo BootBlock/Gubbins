@@ -265,11 +265,14 @@ const ERROR_HINTS: Partial<Record<DbErrorCode, string>> = {
   OPFS_UNAVAILABLE: 'Secure on-device storage (OPFS) is unavailable here.',
   NOT_CROSS_ORIGIN_ISOLATED: 'The page is not cross-origin isolated, so secure storage is blocked.',
   SCHEMA_TOO_NEW: 'Your local data is from a newer schema than this build. Reset local data to rebuild it.',
+  SCHEMA_STALE: 'Your local data is from an earlier schema than this build. Reset local data to rebuild it.',
   INIT_FAILED: 'The database failed to initialise.',
 };
 
 export function BootErrorScreen({ error }: { error: DbError }) {
-  const isSchemaTooNew = error.code === 'SCHEMA_TOO_NEW';
+  // Both schema mismatches — data ahead of this build, or behind it — get the same
+  // pre-1.0 explanation and the same backup-then-reset rescue.
+  const isSchemaMismatch = error.code === 'SCHEMA_TOO_NEW' || error.code === 'SCHEMA_STALE';
   return (
     <BootShell
       accent="danger"
@@ -277,7 +280,7 @@ export function BootErrorScreen({ error }: { error: DbError }) {
       title="Couldn't start the database"
       subtitle={ERROR_HINTS[error.code] ?? 'An unexpected error occurred while starting Gubbins.'}
     >
-      {isSchemaTooNew ? (
+      {isSchemaMismatch ? (
         <div className="mb-4 rounded-xl border border-border bg-secondary/40 p-4 text-left text-sm text-muted-foreground">
           <p className="font-medium text-foreground">Why is Gubbins asking to reset your data?</p>
           <p className="mt-2">

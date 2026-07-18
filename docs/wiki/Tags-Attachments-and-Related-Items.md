@@ -14,9 +14,13 @@ location** dialog (for locations), and the **Tags** management screen (to tidy t
 A **tag** is a freeform label you can stick on any item **or location** — `fragile`, `on-loan`,
 `project-x`, `vintage`. Unlike a category (an item has one), a thing can have **many** tags, and
 you can [[filter and search|Text-Query-Syntax]] by them. Tags are perfect for cross-cutting
-groupings that don't fit a single category. Type a new name and press **Enter** (or a comma) to
-add it — a brand-new name creates the tag, and existing names are reused **case-insensitively**,
-so `Fragile` and `fragile` are always the same tag.
+groupings that don't fit a single category.
+
+The tag box is a **drop-down you can also type into**. Click it to see the tags you already use
+and pick one from the list, or just type a new name — you are never limited to what's in the
+list. Press **Enter** (or a comma) to add whatever you've typed; as you type, the list narrows to
+matching tags. A brand-new name creates the tag, and existing names are reused
+**case-insensitively**, so `Fragile` and `fragile` are always the same tag.
 
 The **same dictionary is shared** between items and locations: tag an item `waterproof` and a
 location `waterproof`, and they use one tag — so a rename or a merge tidies both at once.

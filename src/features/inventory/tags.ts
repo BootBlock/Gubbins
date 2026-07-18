@@ -16,6 +16,18 @@ export function useTagDictionary() {
   });
 }
 
+/**
+ * The tag dictionary without usage counts — the tag-entry combobox's "what already exists"
+ * list (issue #84). Separate from {@link useTagDictionary} so the picker doesn't pay for the
+ * per-tag item/location COUNT subqueries it never displays.
+ */
+export function useTagNames() {
+  return useQuery({
+    queryKey: inventoryKeys.tagNames(),
+    queryFn: () => getTagRepository().listNames({ limit: 100 }),
+  });
+}
+
 export function useItemTags(itemId: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.itemTags(itemId ?? ''),

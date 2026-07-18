@@ -33,6 +33,8 @@ vi.mock('../tags', () => ({
   useLocationTags: () => ({ data: [] }),
   useSetLocationTags: () => ({ mutate: vi.fn() }),
   useTagSuggestions: () => ({ data: [] }),
+  // The tag editor's combobox offers the existing tag names (issue #84).
+  useTagNames: () => ({ data: { rows: [] } }),
 }));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),

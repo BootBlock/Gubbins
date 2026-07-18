@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { InfoHint, Input } from '@/components/foundry';
+import { Autocomplete, InfoHint } from '@/components/foundry';
 import { CloseIcon, TagIcon } from '@/components/icons';
-import { useItemTags, useLocationTags, useSetItemTags, useSetLocationTags, useTagSuggestions } from '../tags';
+import {
+  useItemTags,
+  useLocationTags,
+  useSetItemTags,
+  useSetLocationTags,
+  useTagNames,
+  useTagSuggestions,
+} from '../tags';
 
 /**
  * Presentational freeform tag editor (spec §4, §5). Low-friction: typing a new name and
@@ -9,6 +16,11 @@ import { useItemTags, useLocationTags, useSetItemTags, useSetLocationTags, useTa
  * case-insensitively. Fully controlled — the owner-bound wrappers below ({@link TagEditor}
  * for an item, {@link LocationTagEditor} for a location — issue #84) supply `names` and an
  * `onChange` that persists the whole replacement set via {@link TagRepository.setFor}.
+ *
+ * The entry field is the Foundry {@link Autocomplete} in creatable mode: free text (any new
+ * tag) *plus* a filtered list of tags already in the dictionary, with the APG combobox
+ * keyboard model and a portalled listbox — so the suggestions escape the surrounding card
+ * instead of being clipped by it (issue #84).
  */
 export function TagEditorControl({
   names,
@@ -18,19 +30,58 @@ export function TagEditorControl({
   onChange: (names: string[]) => void;
 }) {
   const [input, setInput] = useState('');
-  const { data: suggestions } = useTagSuggestions(input);
+  // Two sources, because neither alone is right. Empty field → the dictionary's first page, so
+  // clicking the control shows what already exists instead of nothing. Typing → the prefix
+  // query, which reaches the *whole* dictionary rather than only that first page (the
+  // dictionary read is capped at one page, so filtering it client-side would silently hide
+  // matches once there are more tags than fit).
+  const { data: dictionary } = useTagNames();
+  const { data: matches } = useTagSuggestions(input);
 
   const has = (name: string) => names.some((n) => n.toLowerCase() === name.toLowerCase());
 
-  const add = (raw: string) => {
-    const name = raw.trim();
+  /**
+   * Append every genuinely-new name in one `onChange`. Taking a list (rather than calling a
+   * single-name `add` in a loop) is what makes a multi-tag paste correct: each call would
+   * otherwise rebuild from the same stale `names` prop, so only the last would survive — and
+   * in the bound wrappers each would fire its own racing write.
+   */
+  const addAll = (raws: readonly string[]) => {
+    const additions: string[] = [];
+    for (const raw of raws) {
+      const name = raw.trim();
+      if (!name) continue;
+      // Compare against what is already applied *and* what this batch has added.
+      if (has(name) || additions.some((n) => n.toLowerCase() === name.toLowerCase())) continue;
+      additions.push(name);
+    }
     setInput('');
-    if (!name || has(name)) return;
-    onChange([...names, name]);
+    if (additions.length > 0) onChange([...names, ...additions]);
   };
+
+  const add = (raw: string) => addAll([raw]);
   const remove = (name: string) => onChange(names.filter((n) => n !== name));
 
-  const unusedSuggestions = (suggestions ?? []).filter((s) => !has(s.name)).slice(0, 6);
+  /**
+   * Comma is the second commit key alongside Enter (which the combobox handles): typing or
+   * pasting "fragile," lands the tag instead of leaving a stray separator in the field, and
+   * pasting "fragile,heavy,on-loan" lands all three at once.
+   */
+  const onInputChange = (next: string) => {
+    if (!next.includes(',')) {
+      setInput(next);
+      return;
+    }
+    const parts = next.split(',');
+    const trailing = parts[parts.length - 1]!.trim();
+    addAll(parts.slice(0, -1));
+    // addAll clears the field; anything after the final comma is still being typed.
+    if (trailing) setInput(trailing);
+  };
+
+  // Tags already on this owner are dropped from the list — re-adding one is a no-op.
+  const source = input.trim().length > 0 ? (matches ?? []) : (dictionary?.rows ?? []);
+  const unusedSuggestions = source.map((t) => t.name).filter((n) => !has(n));
 
   return (
     <div className="space-y-2">
@@ -59,34 +110,15 @@ export function TagEditorControl({
       </div>
 
       <div className="flex items-start gap-2">
-        <div className="relative flex-1">
-          <Input
+        <div className="flex-1">
+          <Autocomplete
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                add(input);
-              }
-            }}
+            onChange={onInputChange}
+            suggestions={unusedSuggestions}
+            onCommit={add}
             placeholder="Add a tag and press Enter…"
             aria-label="Add a tag"
           />
-          {unusedSuggestions.length > 0 ? (
-            <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-              {unusedSuggestions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => add(s.name)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-secondary [&_svg]:size-3.5 [&_svg]:text-muted-foreground"
-                >
-                  <TagIcon />
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
         <div className="pt-2.5">
           <InfoHint

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import { AutocompleteField } from './autocomplete';
+import { Autocomplete, AutocompleteField } from './autocomplete';
 import { filterSuggestions } from './autocomplete-filter';
 
 afterEach(cleanup);
@@ -153,5 +153,66 @@ describe('AutocompleteField — labelled wrapper', () => {
       />,
     );
     expect(el).toBeInstanceOf(HTMLInputElement);
+  });
+});
+
+describe('Autocomplete — creatable mode (onCommit, issue #84)', () => {
+  /** Controlled host mirroring the tag editor: each committed value is consumed. */
+  function CreatableHarness({ onCommit }: { onCommit: (value: string) => void }) {
+    const [value, setValue] = useState('');
+    return (
+      <Autocomplete
+        aria-label="Add a tag"
+        value={value}
+        onChange={setValue}
+        suggestions={MAKERS}
+        onCommit={(v) => {
+          setValue('');
+          onCommit(v);
+        }}
+      />
+    );
+  }
+
+  it('commits the typed free text on Enter when nothing is highlighted', () => {
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'brand-new-tag' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Free text is accepted verbatim — the value is never constrained to the list.
+    expect(committed).toEqual(['brand-new-tag']);
+    expect((input as HTMLInputElement).value).toBe('');
+  });
+
+  it('commits the highlighted suggestion on Enter rather than the typed text', () => {
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'td' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['TDK']);
+  });
+
+  it('ignores Enter on an empty field', () => {
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Add a tag' }), { key: 'Enter' });
+    expect(committed).toEqual([]);
+  });
+
+  it('leaves Enter alone for a plain (non-creatable) field, so forms still submit', () => {
+    // No onCommit: Enter with nothing highlighted must NOT be swallowed.
+    render(<Harness />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Anything' } });
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

@@ -28,6 +28,17 @@ export interface AutocompleteProps {
   readonly autoComplete?: string;
   /** Fires on blur, mirroring a plain input so RHF `register`-style callers stay happy. */
   readonly onBlur?: () => void;
+  /**
+   * Opt-in "creatable" behaviour: fires when the user *accepts* a value — Enter (on the
+   * highlighted option, or on the typed text when nothing is highlighted) or choosing an
+   * option with the pointer. Turns the combobox into a repeated-entry control, where each
+   * accepted value is consumed by the caller rather than left in the field (the tag editor).
+   *
+   * When provided, Enter is always swallowed (it commits rather than submitting the enclosing
+   * form) and the list closes. Omit it for the plain single-value case, where the field simply
+   * holds the value and Enter falls through to submit.
+   */
+  readonly onCommit?: (value: string) => void;
 }
 
 /**
@@ -66,6 +77,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
     maxLength,
     autoComplete = 'off',
     onBlur,
+    onCommit,
   },
   forwardedRef,
 ) {
@@ -113,10 +125,20 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
 
   const choose = (index: number) => {
     const match = matches[index];
-    if (match !== undefined) onChange(match);
+    // In creatable mode the caller consumes the accepted value (and typically clears the
+    // field); otherwise the value simply becomes the field's contents.
+    if (match !== undefined) (onCommit ?? onChange)(match);
     setOpen(false);
     setActiveIndex(-1);
     inputRef.current?.focus();
+  };
+
+  /** Creatable mode: accept whatever is highlighted, else the typed text. */
+  const commitTyped = () => {
+    const typed = value.trim();
+    if (typed.length > 0) onCommit?.(typed);
+    setOpen(false);
+    setActiveIndex(-1);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -149,10 +171,14 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         break;
       case 'Enter':
         // Only swallow Enter when it actually accepts a highlighted option; otherwise let it
-        // fall through so the enclosing form still submits on Enter.
+        // fall through so the enclosing form still submits on Enter. In creatable mode Enter
+        // always accepts (the highlighted option, or the typed text), so it is always swallowed.
         if (isOpen && activeIndex >= 0) {
           event.preventDefault();
           choose(activeIndex);
+        } else if (onCommit) {
+          event.preventDefault();
+          commitTyped();
         }
         break;
       case 'Escape':
@@ -290,6 +316,8 @@ export interface AutocompleteFieldProps {
   readonly maxLength?: number;
   /** Forwarded to the underlying input (mirrors {@link AutocompleteFieldProps.inputRef}). */
   readonly inputRef?: React.Ref<HTMLInputElement>;
+  /** Opt-in creatable behaviour — see {@link AutocompleteProps.onCommit}. */
+  readonly onCommit?: (value: string) => void;
   readonly 'data-testid'?: string;
 }
 
@@ -315,6 +343,7 @@ export function AutocompleteField({
   inputMode,
   maxLength,
   inputRef,
+  onCommit,
   'data-testid': testId,
 }: AutocompleteFieldProps) {
   const reactId = useId();
@@ -336,6 +365,7 @@ export function AutocompleteField({
         maxOptions={maxOptions}
         inputMode={inputMode}
         maxLength={maxLength}
+        onCommit={onCommit}
         aria-invalid={controlProps['aria-invalid']}
         aria-describedby={controlProps['aria-describedby']}
         data-testid={testId}

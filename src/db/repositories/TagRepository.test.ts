@@ -62,6 +62,14 @@ describe('TagRepository', () => {
     expect(dict.rows.every((t) => t.itemCount === 1)).toBe(true);
   });
 
+  it('lists tag names without usage counts, ordered case-insensitively', async () => {
+    const a = await items.create({ name: 'A' });
+    await tags.setForItem(a.id, ['Zeta', 'alpha']);
+
+    const page = await tags.listNames();
+    expect(page.rows.map((t) => t.name)).toEqual(['alpha', 'Zeta']);
+  });
+
   it('suggests tags by prefix for autocomplete', async () => {
     const a = await items.create({ name: 'A' });
     await tags.setForItem(a.id, ['arduino', 'arm', 'wifi']);

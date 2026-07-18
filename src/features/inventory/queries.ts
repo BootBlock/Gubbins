@@ -89,6 +89,8 @@ export const inventoryKeys = {
     [...inventoryKeys.items(), 'fieldValues', itemIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
   tagList: () => [...inventoryKeys.tags(), 'list'] as const,
+  /** The dictionary without usage counts — the tag-entry combobox (issue #84). */
+  tagNames: () => [...inventoryKeys.tags(), 'names'] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
   /** Tags for a set of on-screen items in one round-trip (the item-card Tags field, issue #84);
    *  under items() so any item/tag write refreshes it by prefix. */

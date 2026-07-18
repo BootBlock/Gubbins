@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
-import { runMigrations, getUserVersion } from './engine';
+import { runMigrations, getUserVersion, assertBaselineCurrent } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
-import type { Migration } from './migration';
+import { BASELINE_REVISION, BASELINE_REVISION_KEY, type Migration } from './migration';
 import { DbError } from '@/db/errors';
 
 describe('migration engine', () => {
@@ -92,6 +92,67 @@ describe('migration engine', () => {
     });
     // Guard is non-destructive: it neither writes nor rewinds the version.
     expect(await getUserVersion(driver)).toBe(TARGET_SCHEMA_VERSION + 5);
+  });
+
+  describe('baseline revision guard (issue #84)', () => {
+    it('stamps the current baseline revision into app_meta', async () => {
+      await runMigrations(driver, migrations);
+      const row = await driver.queryOne<{ value: string }>('SELECT value FROM app_meta WHERE key = ?;', [
+        BASELINE_REVISION_KEY,
+      ]);
+      expect(Number(row?.value)).toBe(BASELINE_REVISION);
+    });
+
+    it('accepts a database built by the current baseline', async () => {
+      await runMigrations(driver, migrations);
+      await expect(assertBaselineCurrent(driver)).resolves.toBeUndefined();
+    });
+
+    it('refuses a database built by an older revision of the baseline', async () => {
+      await runMigrations(driver, migrations);
+      await driver.execute('UPDATE app_meta SET value = ? WHERE key = ?;', [
+        String(BASELINE_REVISION - 1),
+        BASELINE_REVISION_KEY,
+      ]);
+      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SCHEMA_STALE',
+      });
+    });
+
+    it('treats a malformed stamp as stale rather than letting NaN pass the check', async () => {
+      await runMigrations(driver, migrations);
+      await driver.execute('UPDATE app_meta SET value = ? WHERE key = ?;', [
+        'nonsense',
+        BASELINE_REVISION_KEY,
+      ]);
+      // Number('nonsense') is NaN, and NaN < n is false — it must not slip through.
+      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SCHEMA_STALE',
+      });
+    });
+
+    it('reports SCHEMA_STALE — not a raw SQL error — when app_meta is absent', async () => {
+      await runMigrations(driver, migrations);
+      await driver.execute('DROP TABLE app_meta;');
+      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SCHEMA_STALE',
+      });
+    });
+
+    it('refuses a database predating the stamp entirely — the issue #84 case', async () => {
+      // A device that installed before location_tags was folded into the baseline: at the
+      // target user_version, so runMigrations correctly applies nothing, but missing schema.
+      await runMigrations(driver, migrations);
+      await driver.execute('DELETE FROM app_meta WHERE key = ?;', [BASELINE_REVISION_KEY]);
+      expect(await getUserVersion(driver)).toBe(TARGET_SCHEMA_VERSION);
+      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+        name: 'DbError',
+        code: 'SCHEMA_STALE',
+      });
+    });
   });
 
   it('rolls back atomically and halts when a migration statement fails', async () => {
