@@ -15,11 +15,7 @@ import type { Item } from '@/db/repositories';
 import { useInventoryItems, useItemRelations } from '../queries';
 import { useAddRelation, useRemoveRelation } from '../mutations';
 import { describeItemRelations, isSubstitutionKind } from '../item-relations';
-
-/** Display label for an item: `Name` or `Name #serial` for a serialised clone. */
-function itemLabel(name: string, serialNo: number | null): string {
-  return serialNo === null ? name : `${name} #${serialNo}`;
-}
+import { itemDisplayName } from '../item-display';
 
 export function SubstitutionsEditor({ item }: { item: Item }) {
   const { data: relations } = useItemRelations(item.id);
@@ -48,7 +44,7 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
       resolved.flatMap((r) => {
         const view = viewById.get(r.id);
         if (!view) return [];
-        return [{ id: r.id, itemLabel: itemLabel(view.otherItemName, view.otherItemSerialNo) }];
+        return [{ id: r.id, itemLabel: itemDisplayName(view.otherItemName, view.otherItemSerialNo) }];
       }),
     [resolved, viewById],
   );
@@ -137,7 +133,7 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
               onChange={setOtherId}
               options={[
                 { value: '', label: '— Choose an item —' },
-                ...candidates.map((i) => ({ value: i.id, label: itemLabel(i.name, i.serialNo) })),
+                ...candidates.map((i) => ({ value: i.id, label: itemDisplayName(i.name, i.serialNo) })),
               ]}
               data-testid="substitution-item-picker"
             />

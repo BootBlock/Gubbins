@@ -98,6 +98,22 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   /**
+   * Full item rows for a set of ids, in one round-trip, keyed by id (issue #70) — the checkout
+   * dialog reads the items an outgoing loan *requires* so it can show each one's stock and lend
+   * it alongside. Missing ids are simply absent from the map (an archived or deleted prerequisite
+   * is a legitimate outcome, not an error); an empty set short-circuits.
+   */
+  async getManyById(ids: readonly string[]): Promise<Map<string, Item>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const rows = await this.driver.query<ItemRow>(
+      `SELECT items.*, ${THUMBNAIL_SUBQUERY} FROM items WHERE id IN (${unique.map(() => '?').join(', ')});`,
+      unique as SqlValue[],
+    );
+    return new Map(rows.map((row) => [row.id, rowToItem(row)]));
+  }
+
+  /**
    * Find the **active** item carrying a given retail barcode (GTIN), or `undefined`.
    * The scanner uses this to resolve a scanned EAN/UPC to an existing item before
    * offering to create one (recommendation point 1). The match is case-insensitive and

@@ -20,11 +20,7 @@ import {
   relationOptionByValue,
   relationSpecFromOption,
 } from '../item-relations';
-
-/** Display label for an item: `Name` or `Name #serial` for a serialised clone. */
-function itemLabel(name: string, serialNo: number | null): string {
-  return serialNo === null ? name : `${name} #${serialNo}`;
-}
+import { itemDisplayName } from '../item-display';
 
 export function RelationsEditor({ item }: { item: Item }) {
   const { data: relations } = useItemRelations(item.id);
@@ -61,7 +57,7 @@ export function RelationsEditor({ item }: { item: Item }) {
       const entry = {
         id: r.id,
         label: r.label,
-        itemLabel: itemLabel(view.otherItemName, view.otherItemSerialNo),
+        itemLabel: itemDisplayName(view.otherItemName, view.otherItemSerialNo),
       };
       const last = out[out.length - 1];
       if (last && last.label === r.label) last.entries.push(entry);
@@ -92,7 +88,8 @@ export function RelationsEditor({ item }: { item: Item }) {
       {/* Existing relations, grouped by their reciprocal label. */}
       {groups.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="relations-empty">
-          No related items yet. Link this item to the things it works with, or is an accessory or spare for.
+          No related items yet. Link this item to the things it works with, requires, or is an accessory or
+          spare for.
         </p>
       ) : (
         <div className="space-y-3" data-testid="relations-list">
@@ -146,9 +143,13 @@ export function RelationsEditor({ item }: { item: Item }) {
               'Link this item to another it relates to — distinct from **variants** (same product) ' +
               'and **kits** (an assembly).\n\n' +
               '- **Works with** — a compatible companion (symmetric).\n' +
+              '- **Requires** / **Is required by** — a hard dependency: the first is unusable ' +
+              'without the second.\n' +
               '- **Is an accessory for** / **Has accessory** — an add-on and the thing it fits.\n' +
               '- **Is a spare for** / **Has spare** — a replacement part and what it replaces.\n\n' +
-              'Relationships are **reciprocal** — the link also shows on the other item.'
+              'Relationships are **reciprocal** — the link also shows on the other item. ' +
+              '**Requires** is the only one Gubbins acts on: checking the item out or adding it ' +
+              'to a project offers to bring its prerequisites along.'
             }
           />
         </p>
@@ -169,7 +170,7 @@ export function RelationsEditor({ item }: { item: Item }) {
               onChange={setOtherId}
               options={[
                 { value: '', label: '— Choose an item —' },
-                ...candidates.map((i) => ({ value: i.id, label: itemLabel(i.name, i.serialNo) })),
+                ...candidates.map((i) => ({ value: i.id, label: itemDisplayName(i.name, i.serialNo) })),
               ]}
               data-testid="relation-item-picker"
             />

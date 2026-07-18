@@ -26,12 +26,37 @@
 /** The relation vocabulary (SSOT). Stored verbatim in `item_relations.kind` (free TEXT — see
  * the migration note; no DB CHECK, so a future kind syncs forward without a schema change).
  * `INTERCHANGEABLE_WITH` (issue #36 — substitutions) is a symmetric "these two are freely
+ * substitutable" link; it lives on its own surface (see {@link SUBSTITUTION_KINDS}).
+ * `REQUIRES` (issue #70) is the one kind with *teeth* — see {@link DEPENDENCY_KINDS}.
  *
  * @internal Exported for unit tests only.
  */
-export const RELATION_KINDS = ['WORKS_WITH', 'ACCESSORY_FOR', 'SPARE_FOR', 'INTERCHANGEABLE_WITH'] as const;
+export const RELATION_KINDS = [
+  'REQUIRES',
+  'WORKS_WITH',
+  'ACCESSORY_FOR',
+  'SPARE_FOR',
+  'INTERCHANGEABLE_WITH',
+] as const;
 
 export type RelationKind = (typeof RELATION_KINDS)[number];
+
+/**
+ * Relation kinds that express a **hard dependency** — "you cannot use A without B" (issue #70).
+ * Every other kind is advisory ("these go well together"); a dependency kind is the only one other
+ * surfaces *act* on, flagging a loan or a bill of materials that takes the dependent item without
+ * its prerequisite (see the pure `item-requirements.ts` seam).
+ *
+ * Directional and deliberately **not** symmetric: A requiring B says nothing about B requiring A.
+ * Dependency relations still show on the ordinary "Related" tab — they are a stronger flavour of
+ * cross-link, not a separate surface like substitutions.
+ */
+export const DEPENDENCY_KINDS = ['REQUIRES'] as const satisfies readonly RelationKind[];
+
+/** Is `kind` a hard-dependency ("requires") relation rather than an advisory cross-link? */
+export function isDependencyKind(kind: RelationKind): boolean {
+  return (DEPENDENCY_KINDS as readonly RelationKind[]).includes(kind);
+}
 
 /**
  * Relation kinds that express **interchangeability** — an item that can be freely substituted for
@@ -61,6 +86,7 @@ export interface RelationLabel {
 
 /** @internal Exported for unit tests only. */
 export const RELATION_LABELS: Record<RelationKind, RelationLabel> = {
+  REQUIRES: { forward: 'Requires', reverse: 'Required by', symmetric: false },
   WORKS_WITH: { forward: 'Works with', reverse: 'Works with', symmetric: true },
   ACCESSORY_FOR: { forward: 'Accessory for', reverse: 'Has accessory', symmetric: false },
   SPARE_FOR: { forward: 'Spare for', reverse: 'Has spare', symmetric: false },
@@ -237,10 +263,11 @@ export interface ResolvedItemRelation extends ResolvedRelation {
 
 /** Sort order of the kinds in the UI (matches {@link RELATION_KINDS}). */
 const KIND_ORDER: Record<RelationKind, number> = {
-  WORKS_WITH: 0,
-  ACCESSORY_FOR: 1,
-  SPARE_FOR: 2,
-  INTERCHANGEABLE_WITH: 3,
+  REQUIRES: 0,
+  WORKS_WITH: 1,
+  ACCESSORY_FOR: 2,
+  SPARE_FOR: 3,
+  INTERCHANGEABLE_WITH: 4,
 };
 
 /** Directions sort forward → symmetric → reverse, so "Accessory for" precedes "Has accessory". */
@@ -299,7 +326,11 @@ export interface RelationOption {
 // (substitutions, issue #36) is deliberately absent: it has a single implicit phrasing offered on
 // its own "Substitutions" surface, so it needs no picker entry here.
 export const RELATION_OPTIONS: readonly RelationOption[] = [
+  // `works_with` stays first: it is the picker's default, and the mildest claim to make by
+  // accident. The `requires` phrasings sit next — a hard dependency other surfaces act on.
   { value: 'works_with', label: 'Works with', kind: 'WORKS_WITH', invert: false },
+  { value: 'requires', label: 'Requires', kind: 'REQUIRES', invert: false },
+  { value: 'required_by', label: 'Is required by', kind: 'REQUIRES', invert: true },
   { value: 'accessory_for', label: 'Is an accessory for', kind: 'ACCESSORY_FOR', invert: false },
   { value: 'has_accessory', label: 'Has accessory', kind: 'ACCESSORY_FOR', invert: true },
   { value: 'spare_for', label: 'Is a spare for', kind: 'SPARE_FOR', invert: false },

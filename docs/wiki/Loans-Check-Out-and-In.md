@@ -15,6 +15,21 @@ back. The stock leaves your available count while it's out, so your numbers stay
 If the contact doesn't exist yet, you can create them right from the checkout — no need to set up
 the [[contact|Contacts]] first.
 
+### Prerequisites go with it
+
+If the item you're lending **requires** another one — an access point that needs its power
+injector, a printer that needs a particular build plate — the checkout lists those prerequisites
+and offers to lend them at the same time. Each shows how many are on hand, and the ones you have
+stock for start ticked, so the common case is a single click.
+
+Untick anything you don't want to send. A prerequisite with nothing on hand is still listed, so
+you can see the gap, but it can't be selected.
+
+> **ℹ️ Note**
+> This is a prompt, not a block — the loan always goes ahead whether or not you bring the
+> prerequisites along. Record the dependency on the **Related** tab of the item that needs it; see
+> [[Related items|Tags-Attachments-and-Related-Items]].
+
 ## Checking in
 
 When the item comes back, **check it in**. Gubbins returns the stock to its **original location

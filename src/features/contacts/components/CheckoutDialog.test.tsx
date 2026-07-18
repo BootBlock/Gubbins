@@ -21,12 +21,16 @@ const h = vi.hoisted(() => ({
   projectRows: [] as { id: string; name: string }[],
   locationRows: [] as { id: string; name: string }[],
   projectsOn: true,
-  mutate: vi.fn(),
+  mutateAsync: vi.fn(),
+  /** Relations touching the item under test (issue #70 — drives the prerequisite panel). */
+  relations: [] as { id: string; fromItemId: string; toItemId: string; kind: string }[],
+  /** The items those relations point at, keyed by id. */
+  itemsById: new Map<string, Item>(),
 }));
 
 vi.mock('../contacts', () => ({
   useContacts: () => ({ data: { rows: h.contactRows } }),
-  useCheckoutItem: () => ({ mutate: h.mutate, isPending: false }),
+  useCheckoutItem: () => ({ mutateAsync: h.mutateAsync, isPending: false }),
 }));
 vi.mock('@/features/lifecycle/hooks', () => ({
   useItemStock: () => ({ data: h.placements }),
@@ -38,6 +42,9 @@ vi.mock('@/features/projects/projects', () => ({
 }));
 vi.mock('@/features/inventory/queries', () => ({
   useLocations: () => ({ data: { rows: h.locationRows } }),
+  // Issue #70 — the prerequisite panel reads the item's relations, then the required items.
+  useItemRelations: () => ({ data: h.relations }),
+  useItemsById: () => ({ data: h.itemsById }),
 }));
 vi.mock('@/features/modules/useFeature', () => ({
   useFeature: () => h.projectsOn,
@@ -76,6 +83,9 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     locationId: 'loc-1',
     trackingMode: 'DISCRETE',
     quantity: 3,
+    // Not a serialised clone — spelled out so a label that appends `#serial` reads correctly
+    // rather than picking up an `undefined` the real row can never hold.
+    serialNo: null,
     ...overrides,
   } as Item;
 }
@@ -97,7 +107,9 @@ beforeEach(() => {
     { id: 'van', name: 'The van' },
   ];
   h.projectsOn = true;
-  h.mutate.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
+  h.mutateAsync.mockReset().mockResolvedValue(undefined);
+  h.relations = [];
+  h.itemsById = new Map();
   onClose.mockReset();
 });
 afterEach(cleanup);
@@ -121,7 +133,7 @@ describe('CheckoutDialog — the borrower gate', () => {
     // Enter drives submit even while the button is disabled — the guard must reject it.
     fireEvent.keyDown(borrowerInput(), { key: 'Enter' });
     expect(screen.getByRole('alert')).toHaveTextContent('Enter who is borrowing this.');
-    expect(h.mutate).not.toHaveBeenCalled();
+    expect(h.mutateAsync).not.toHaveBeenCalled();
   });
 });
 
@@ -132,17 +144,14 @@ describe('CheckoutDialog — the simple happy path (single placement, no lots)',
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
-        {
-          itemId: 'item-1',
-          contactName: 'Ada Lovelace', // trimmed
-          quantity: 1,
-          dueDate: null,
-          fromLocationId: undefined, // not split → repository uses the primary placement
-          fromBatchKey: undefined, // no tracked lot → repository draws FEFO
-        },
-        expect.anything(),
-      ),
+      expect(h.mutateAsync).toHaveBeenCalledWith({
+        itemId: 'item-1',
+        contactName: 'Ada Lovelace', // trimmed
+        quantity: 1,
+        dueDate: null,
+        fromLocationId: undefined, // not split → repository uses the primary placement
+        fromBatchKey: undefined, // no tracked lot → repository draws FEFO
+      }),
     );
     expect(onClose).toHaveBeenCalled();
   });
@@ -162,9 +171,7 @@ describe('CheckoutDialog — discrete quantity bounds', () => {
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '10' } });
     fireEvent.click(checkoutButton());
 
-    await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(expect.objectContaining({ quantity: 3 }), expect.anything()),
-    );
+    await waitFor(() => expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ quantity: 3 })));
   });
 });
 
@@ -182,10 +189,7 @@ describe('CheckoutDialog — split source location (Phase 26)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ fromLocationId: 'loc-1' }),
-        expect.anything(),
-      ),
+      expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ fromLocationId: 'loc-1' })),
     );
   });
 
@@ -198,10 +202,7 @@ describe('CheckoutDialog — split source location (Phase 26)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ fromLocationId: 'loc-2' }),
-        expect.anything(),
-      ),
+      expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ fromLocationId: 'loc-2' })),
     );
   });
 });
@@ -220,10 +221,7 @@ describe('CheckoutDialog — explicit lot vs. FEFO (Phase 29)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ fromBatchKey: undefined }),
-        expect.anything(),
-      ),
+      expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ fromBatchKey: undefined })),
     );
   });
 
@@ -237,9 +235,8 @@ describe('CheckoutDialog — explicit lot vs. FEFO (Phase 29)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
+      expect(h.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ fromBatchKey: '["42",null,null]', quantity: 3 }),
-        expect.anything(),
       ),
     );
   });
@@ -259,9 +256,8 @@ describe('CheckoutDialog — non-discrete items are pinned to one unit', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
+      expect(h.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ quantity: 1, fromLocationId: undefined, fromBatchKey: undefined }),
-        expect.anything(),
       ),
     );
   });
@@ -275,10 +271,7 @@ describe('CheckoutDialog — due date', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ dueDate: expect.any(Number) }),
-        expect.anything(),
-      ),
+      expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ dueDate: expect.any(Number) })),
     );
   });
 });
@@ -302,13 +295,12 @@ describe('CheckoutDialog — loan target is a tagged union (B4)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
+      expect(h.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ itemId: 'item-1', projectId: 'p-1' }),
-        expect.anything(),
       ),
     );
     // No contact fields leak into the project loan.
-    const input = h.mutate.mock.calls[0][0];
+    const input = h.mutateAsync.mock.calls[0][0];
     expect(input.contactName).toBeUndefined();
     expect(input.locationId).toBeUndefined();
   });
@@ -321,9 +313,8 @@ describe('CheckoutDialog — loan target is a tagged union (B4)', () => {
     fireEvent.click(checkoutButton());
 
     await waitFor(() =>
-      expect(h.mutate).toHaveBeenCalledWith(
+      expect(h.mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({ itemId: 'item-1', locationId: 'van' }),
-        expect.anything(),
       ),
     );
   });
@@ -346,9 +337,144 @@ describe('CheckoutDialog — loan target is a tagged union (B4)', () => {
   });
 });
 
+/**
+ * Prerequisites (issue #70). A `REQUIRES` relation asserts the item being lent is unusable
+ * without another; the dialog offers to lend those alongside. Which relations *count* is the
+ * pure `item-requirements` seam's job (covered by its own tests) — this pins the dialog's
+ * contract: what is shown, what is ticked, what is actually lent, and the partial-failure path.
+ */
+describe('CheckoutDialog — prerequisites', () => {
+  /** Record that `item-1` requires `injector`, and register the injector with `stock` on hand. */
+  function requireInjector(stock: number) {
+    h.relations = [{ id: 'rel-1', fromItemId: 'item-1', toItemId: 'injector', kind: 'REQUIRES' }];
+    h.itemsById = new Map([
+      ['injector', makeItem({ id: 'injector', name: '48V PoE injector', quantity: stock })],
+    ]);
+  }
+
+  it('shows no panel when the item requires nothing', () => {
+    renderDialog();
+    expect(screen.queryByTestId('checkout-prerequisites')).toBeNull();
+  });
+
+  it('lists the prerequisite with its stock, ticked by default', () => {
+    requireInjector(2);
+    renderDialog();
+
+    const panel = screen.getByTestId('checkout-prerequisites');
+    expect(panel).toHaveTextContent('48V PoE injector');
+    expect(panel).toHaveTextContent('2 on hand');
+    expect(screen.getByTestId('checkout-prerequisite-injector')).toBeChecked();
+  });
+
+  it('does not prompt on the "required by" end of the relation', () => {
+    // The injector is *required by* the wrench — lending the injector must not nag about it.
+    h.relations = [{ id: 'rel-1', fromItemId: 'other', toItemId: 'item-1', kind: 'REQUIRES' }];
+    renderDialog();
+    expect(screen.queryByTestId('checkout-prerequisites')).toBeNull();
+  });
+
+  it('does not prompt for an advisory relation', () => {
+    h.relations = [{ id: 'rel-1', fromItemId: 'item-1', toItemId: 'tripod', kind: 'WORKS_WITH' }];
+    h.itemsById = new Map([['tripod', makeItem({ id: 'tripod', name: 'Tripod' })]]);
+    renderDialog();
+    expect(screen.queryByTestId('checkout-prerequisites')).toBeNull();
+  });
+
+  it('lends the prerequisite alongside the item, to the same borrower', async () => {
+    requireInjector(2);
+    renderDialog();
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(h.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(h.mutateAsync).toHaveBeenNthCalledWith(1, expect.objectContaining({ itemId: 'item-1' }));
+    expect(h.mutateAsync).toHaveBeenNthCalledWith(2, {
+      itemId: 'injector',
+      contactName: 'Ada',
+      quantity: 1,
+      dueDate: null,
+    });
+  });
+
+  it('omits a prerequisite the user unticks', async () => {
+    requireInjector(2);
+    renderDialog();
+    fireEvent.click(screen.getByTestId('checkout-prerequisite-injector'));
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(h.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ itemId: 'item-1' }));
+  });
+
+  it('shows a prerequisite with nothing on hand, but neither ticks nor lends it', async () => {
+    requireInjector(0);
+    renderDialog();
+
+    const box = screen.getByTestId('checkout-prerequisite-injector');
+    expect(box).toBeDisabled();
+    expect(box).not.toBeChecked();
+    expect(screen.getByTestId('checkout-prerequisites')).toHaveTextContent('none on hand');
+
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(h.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a prerequisite that could not be lent, and keeps the dialog open', async () => {
+    requireInjector(2);
+    h.mutateAsync.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('no stock'));
+    renderDialog();
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Torque wrench was checked out, but 48V PoE injector could not be',
+      ),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second submit fired before the first settles', async () => {
+    // Enter is not gated by the button's disabled state, so a double-press must not lend twice.
+    requireInjector(2);
+    renderDialog();
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.keyDown(borrowerInput(), { key: 'Enter' });
+    fireEvent.keyDown(borrowerInput(), { key: 'Enter' });
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    const lentItemIds = h.mutateAsync.mock.calls.map((c) => (c[0] as { itemId: string }).itemId);
+    expect(lentItemIds).toEqual(['item-1', 'injector']);
+  });
+
+  it('a retry after a prerequisite failure does not lend the main item twice', async () => {
+    requireInjector(2);
+    h.mutateAsync.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('no stock'));
+    renderDialog();
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    // Second attempt: the main loan is already committed, so only the outstanding prerequisite
+    // is re-sent.
+    h.mutateAsync.mockResolvedValue(undefined);
+    fireEvent.click(checkoutButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    const lentItemIds = h.mutateAsync.mock.calls.map((c) => (c[0] as { itemId: string }).itemId);
+    expect(lentItemIds).toEqual(['item-1', 'injector', 'injector']);
+  });
+});
+
 describe('CheckoutDialog — a failed checkout surfaces the error and stays open', () => {
   it('shows the mutation error in an alert and does not close', async () => {
-    h.mutate.mockImplementation((_input, opts) => opts?.onError?.(new Error('Not enough stock at Shelf A.')));
+    h.mutateAsync.mockRejectedValue(new Error('Not enough stock at Shelf A.'));
     renderDialog();
     fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
     fireEvent.click(checkoutButton());

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Input, Select, Tooltip } from '@/components/foundry';
-import { DeleteIcon, TruckIcon } from '@/components/icons';
+import { DeleteIcon, TruckIcon, WarningIcon } from '@/components/icons';
 import {
   PROCUREMENT_STATUSES,
   RESERVATION_STATUSES,
@@ -8,6 +8,8 @@ import {
   type ProjectBomLine,
   type ReservationStatus,
 } from '@/db/repositories';
+import { useItemsRelations } from '@/features/inventory/queries';
+import { missingRequirementsByLine } from '@/features/inventory/item-requirements';
 import { useRemoveBomLine, useSetProcurement, useSetReservation, useReceiveLine } from '../projects';
 import { outstandingQty } from '../receipts';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './projects-ui';
@@ -106,6 +108,29 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
   const receiveLine = useReceiveLine(projectId);
   const removeLine = useRemoveBomLine(projectId);
 
+  // Hard dependencies (issue #70): a line whose item `REQUIRES` something no *other* line covers
+  // is flagged, so a BOM that would build into an unusable assembly says so before it is picked.
+  // One batched read for every matched line; the pure seam does the set arithmetic.
+  const lineItemIds = useMemo(
+    () => lines.map((l) => l.itemId).filter((id): id is string => id !== null),
+    [lines],
+  );
+  const { data: relationsByItem } = useItemsRelations(lineItemIds);
+  const missingByItem = useMemo(
+    () => missingRequirementsByLine(lineItemIds, relationsByItem ?? new Map()),
+    [lineItemIds, relationsByItem],
+  );
+  // Relation id → the required item's display name, for naming the gap in the flag's tooltip.
+  const requiredNameByRelationId = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const views of relationsByItem?.values() ?? []) {
+      for (const view of views) {
+        out.set(view.id, view.otherItemName);
+      }
+    }
+    return out;
+  }, [relationsByItem]);
+
   if (lines.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -127,84 +152,112 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
           </tr>
         </thead>
         <tbody>
-          {lines.map((line) => (
-            <tr key={line.id} className="border-t border-border/60 align-middle">
-              <td className="px-3 py-2">
-                <div className="font-medium">
-                  {line.description ?? line.mpn ?? line.designator ?? 'Unnamed part'}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {[line.designator, line.mpn, line.manufacturer].filter(Boolean).join(' · ') || '—'}
-                  {line.itemId ? null : <span className="ml-1 text-warning">· unmatched</span>}
-                </div>
-              </td>
-              <td className="px-3 py-2 tabular-nums">
-                {line.reservedQty > 0 ? `${line.reservedQty}/${line.requiredQty}` : line.requiredQty}
-                {line.receivedQty > 0 ? (
-                  <div className="text-xs text-success" data-testid={`received-progress-${line.id}`}>
-                    {line.receivedQty}/{line.requiredQty} received
+          {lines.map((line) => {
+            const missing = line.itemId ? (missingByItem.get(line.itemId) ?? []) : [];
+            const missingNames = missing
+              .map((m) => requiredNameByRelationId.get(m.relationId))
+              .filter((n): n is string => n !== undefined);
+            return (
+              <tr key={line.id} className="border-t border-border/60 align-middle">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <span>{line.description ?? line.mpn ?? line.designator ?? 'Unnamed part'}</span>
+                    {missingNames.length > 0 ? (
+                      <Tooltip
+                        content={`This part requires ${missingNames.join(', ')}, which ${
+                          missingNames.length === 1 ? 'is' : 'are'
+                        } not on this bill of materials. Add ${
+                          missingNames.length === 1 ? 'it' : 'them'
+                        } so the assembly is complete.`}
+                        triggerTabIndex={-1}
+                      >
+                        <span
+                          className="inline-flex text-warning [&_svg]:size-4"
+                          data-testid={`bom-missing-requirement-${line.id}`}
+                        >
+                          {/* Meaningful, not decorative — `role="img"` + a label so the gap is
+                              announced rather than being a colour-only signal (WCAG 1.4.1). */}
+                          <WarningIcon
+                            role="img"
+                            aria-label={`Missing prerequisite — requires ${missingNames.join(', ')}`}
+                          />
+                        </span>
+                      </Tooltip>
+                    ) : null}
                   </div>
-                ) : null}
-              </td>
-              <td className="px-3 py-2">
-                <Select
-                  className="h-8 text-xs"
-                  value={line.reservationStatus}
-                  aria-label="Reservation status"
-                  onChange={(value) =>
-                    setReservation.mutate({ lineId: line.id, status: value as ReservationStatus })
-                  }
-                  options={RESERVATION_STATUSES.map((s) => ({
-                    value: s,
-                    label: RESERVATION_STATUS_LABELS[s],
-                  }))}
-                />
-              </td>
-              <td className="px-3 py-2">
-                <div className="flex items-center gap-1.5">
+                  <div className="text-xs text-muted-foreground">
+                    {[line.designator, line.mpn, line.manufacturer].filter(Boolean).join(' · ') || '—'}
+                    {line.itemId ? null : <span className="ml-1 text-warning">· unmatched</span>}
+                  </div>
+                </td>
+                <td className="px-3 py-2 tabular-nums">
+                  {line.reservedQty > 0 ? `${line.reservedQty}/${line.requiredQty}` : line.requiredQty}
+                  {line.receivedQty > 0 ? (
+                    <div className="text-xs text-success" data-testid={`received-progress-${line.id}`}>
+                      {line.receivedQty}/{line.requiredQty} received
+                    </div>
+                  ) : null}
+                </td>
+                <td className="px-3 py-2">
                   <Select
                     className="h-8 text-xs"
-                    value={line.procurementStatus}
-                    aria-label="Procurement status"
+                    value={line.reservationStatus}
+                    aria-label="Reservation status"
                     onChange={(value) =>
-                      setProcurement.mutate({ lineId: line.id, status: value as ProcurementStatus })
+                      setReservation.mutate({ lineId: line.id, status: value as ReservationStatus })
                     }
-                    options={PROCUREMENT_STATUSES.map((s) => ({
+                    options={RESERVATION_STATUSES.map((s) => ({
                       value: s,
-                      label: PROCUREMENT_STATUS_LABELS[s],
+                      label: RESERVATION_STATUS_LABELS[s],
                     }))}
                   />
-                  {line.itemId && line.procurementStatus === 'IN_TRANSIT' ? (
-                    <ReceiveControl
-                      key={line.receivedQty}
-                      line={line}
-                      onReceive={(quantity, batch) =>
-                        receiveLine.mutate({ lineId: line.id, quantity, batch })
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      className="h-8 text-xs"
+                      value={line.procurementStatus}
+                      aria-label="Procurement status"
+                      onChange={(value) =>
+                        setProcurement.mutate({ lineId: line.id, status: value as ProcurementStatus })
                       }
+                      options={PROCUREMENT_STATUSES.map((s) => ({
+                        value: s,
+                        label: PROCUREMENT_STATUS_LABELS[s],
+                      }))}
                     />
-                  ) : null}
-                </div>
-              </td>
-              <td className="px-3 py-2 text-right">
-                <Tooltip
-                  content="Remove this part from the bill of materials. Any matched inventory stock is unaffected."
-                  triggerTabIndex={-1}
-                >
-                  <span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8"
-                      aria-label="Remove line"
-                      onClick={() => removeLine.mutate(line.id)}
-                    >
-                      <DeleteIcon className="text-glyph-danger" />
-                    </Button>
-                  </span>
-                </Tooltip>
-              </td>
-            </tr>
-          ))}
+                    {line.itemId && line.procurementStatus === 'IN_TRANSIT' ? (
+                      <ReceiveControl
+                        key={line.receivedQty}
+                        line={line}
+                        onReceive={(quantity, batch) =>
+                          receiveLine.mutate({ lineId: line.id, quantity, batch })
+                        }
+                      />
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Tooltip
+                    content="Remove this part from the bill of materials. Any matched inventory stock is unaffected."
+                    triggerTabIndex={-1}
+                  >
+                    <span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-8"
+                        aria-label="Remove line"
+                        onClick={() => removeLine.mutate(line.id)}
+                      >
+                        <DeleteIcon className="text-glyph-danger" />
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
