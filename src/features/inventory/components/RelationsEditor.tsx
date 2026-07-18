@@ -21,6 +21,7 @@ import {
   relationSpecFromOption,
 } from '../item-relations';
 import { itemDisplayName } from '../item-display';
+import { useErrorMessage } from '@/features/errors';
 
 export function RelationsEditor({ item }: { item: Item }) {
   const { data: relations } = useItemRelations(item.id);
@@ -39,6 +40,7 @@ export function RelationsEditor({ item }: { item: Item }) {
   const [otherId, setOtherId] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const views = useMemo(() => relations ?? [], [relations]);
   // Substitutions (issue #36) live on their own tab — keep them out of the general "Related" list.
@@ -78,7 +80,7 @@ export function RelationsEditor({ item }: { item: Item }) {
           setOtherId('');
           setNote('');
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the relationship.'),
+        onError: (e) => setError(describeError(e, 'Could not add the relationship.')),
       },
     );
   };

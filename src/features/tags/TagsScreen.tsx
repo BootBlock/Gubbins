@@ -18,6 +18,7 @@ import { useT } from '@/features/i18n';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { useFormatters } from '@/lib/useFormatters';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useErrorMessage } from '@/features/errors';
 import {
   useTagCount,
   useTagDictionary,
@@ -53,6 +54,7 @@ export function TagsScreen() {
 
   const [newName, setNewName] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [editing, setEditing] = useState<TagWithCount | null>(null);
 
   const tags = dictionary.data?.rows ?? [];
@@ -79,7 +81,7 @@ export function TagsScreen() {
         // list the user is looking at is the one their tag joined.
         setPage(1);
       },
-      onError: (e) => setAddError(e instanceof Error ? e.message : t('tags.add.error')),
+      onError: (e) => setAddError(describeError(e, t('tags.add.error'))),
     });
   };
 
@@ -228,6 +230,7 @@ function EditTagDialog({ tag, onClose }: { tag: TagWithCount; onClose: () => voi
   const [mergeQuery, setMergeQuery] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [clashTargetId, setClashTargetId] = useState<string | null>(null);
 
   // The merge target is picked from the **whole** dictionary, never from the page the list
@@ -262,7 +265,7 @@ function EditTagDialog({ tag, onClose }: { tag: TagWithCount; onClose: () => voi
             setClashTargetId(e.existingTagId);
             setError(t('tags.edit.rename.clash', { vars: { name: trimmed } }));
           } else {
-            setError(e instanceof Error ? e.message : t('tags.edit.rename.error'));
+            setError(describeError(e, t('tags.edit.rename.error')));
           }
         },
       },

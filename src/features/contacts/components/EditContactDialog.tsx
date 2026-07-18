@@ -4,6 +4,7 @@ import { DeleteIcon } from '@/components/icons';
 import type { Contact, CheckoutWithNames } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useContactCheckouts, useUpdateContact } from '../contacts';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Edit an existing contact's details: rename them, and fill in the optional metadata
@@ -35,6 +36,7 @@ export function EditContactDialog({
   const [address, setAddress] = useState(contact.address ?? '');
   const [note, setNote] = useState(contact.note ?? '');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const trimmed = name.trim();
   // Blank fields collapse to `null` so the dirty check compares against how the
@@ -69,7 +71,7 @@ export function EditContactDialog({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save changes to this contact.'),
+        onError: (e) => setError(describeError(e, 'Could not save changes to this contact.')),
       },
     );
   };

@@ -69,6 +69,13 @@ un-starring itself, a quantity or gauge snapping back. A message appears in the 
 failed and why; read it rather than simply retrying, as the same save will usually fail again.
 Running out of space is a common cause — see [[storage triage|Storage-Triage]].
 
+**An error message mentions a "constraint" or looks like database jargon.**
+It shouldn't — Gubbins explains what went wrong in plain language, and the most common causes tell
+you exactly what to do: a name or username that's already taken, a required value left empty, or
+something still linked to another record. Saving is also paused when the device runs out of space,
+which the message will say — see [[storage triage|Storage-Triage]]. If you do see a technical
+message, that's worth [[reporting|About-and-Diagnostics]].
+
 **Notifications aren't arriving.**
 They need the app [[installed|Installing-Gubbins]] and permission granted, and support varies by
 device (limited on iOS). See [[Reminder notifications|Reminder-Notifications]].

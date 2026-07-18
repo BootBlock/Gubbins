@@ -4,6 +4,7 @@ import { UploadIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT } from '@/features/i18n';
 import { EMPTY_SUPPLIER_VALUE, SupplierPicker, type SupplierPickerValue } from '@/features/suppliers';
+import { useErrorMessage } from '@/features/errors';
 import {
   detectImportFormat,
   IMPORT_FORMATS,
@@ -91,6 +92,7 @@ export function ImportPurchaseListDialog({
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
   const [parsed, setParsed] = useState<ParsedPurchaseListLine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [summary, setSummary] = useState<string | null>(null);
 
   const pending = importIntoOrder.isPending || createOrder.isPending || importIntoWishlist.isPending;
@@ -151,7 +153,7 @@ export function ImportPurchaseListDialog({
     err: unknown,
     fallbackKey: 'purchasing.import.error.order' | 'purchasing.import.error.wishlist',
   ) => {
-    setError(err instanceof Error ? err.message : t(fallbackKey));
+    setError(describeError(err, t(fallbackKey)));
   };
 
   const handleImport = () => {

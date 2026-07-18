@@ -267,8 +267,10 @@ describe('CreateItemDialog', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Doomed item' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create item' }));
 
-    // The raw error message is shown so the cause is diagnosable.
-    expect(await screen.findByText('no such column: is_unlimited')).toBeInTheDocument();
+    // The dialog's own copy is shown, not the raw SQLite text (issue #311): this failure carries
+    // no code to humanise from, and untranslated internal jargon helps nobody using the app.
+    expect(await screen.findByText('The item was not saved. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByText('no such column: is_unlimited')).toBeNull();
     expect(screen.getByText('Couldn’t create item')).toBeInTheDocument();
   });
 

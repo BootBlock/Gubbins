@@ -4,6 +4,7 @@ import { MergeIcon, WarningIcon } from '@/components/icons';
 import type { SupplierWithCounts } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useMergeSuppliers } from '../mutations';
+import { useErrorMessage } from '@/features/errors';
 
 export interface MergeSuppliersDialogProps {
   readonly suppliers: readonly SupplierWithCounts[];
@@ -39,6 +40,7 @@ export function MergeSuppliersDialog({
   const [targetId, setTargetId] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const source = suppliers.find((s) => s.id === sourceId);
   const target = suppliers.find((s) => s.id === targetId);
@@ -90,7 +92,7 @@ export function MergeSuppliersDialog({
           onAnnounce(t('suppliers.merge.done', { vars: { source: source.name, target: target.name } }));
           onClose();
         },
-        onError: (e) => setError(e instanceof Error ? e.message : t('suppliers.merge.error')),
+        onError: (e) => setError(describeError(e, t('suppliers.merge.error'))),
       },
     );
   };

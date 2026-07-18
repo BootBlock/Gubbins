@@ -31,6 +31,7 @@ import { LocationTagEditor } from './TagEditor';
 import { LocationFieldsEditor } from './LocationFieldsEditor';
 import { locationFullness } from '../location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
+import { useErrorMessage } from '@/features/errors';
 import {
   HINT_CAPACITY,
   HINT_COLOUR,
@@ -101,6 +102,7 @@ export function EditLocationDialog({
     location.deadStockDays != null ? String(location.deadStockDays) : '',
   );
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   // A location may not move under itself or any of its own descendants (the repo
   // guards this too, but excluding them from the picker is the kinder UX).
@@ -164,7 +166,7 @@ export function EditLocationDialog({
       },
       {
         onSuccess: () => onClose(),
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not save changes to this location.'),
+        onError: (e) => setError(describeError(e, 'Could not save changes to this location.')),
       },
     );
   };

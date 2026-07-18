@@ -27,6 +27,7 @@ import {
   type SettingsGroupSelection,
 } from './settings-groups';
 import { useT } from '@/features/i18n';
+import { useErrorMessage } from '@/features/errors';
 import {
   REPLACE_CONFIRM_WORD,
   assessQuota,
@@ -159,6 +160,7 @@ function CreatePanel() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<BackupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const toggle = (key: BackupToggleKey) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -169,7 +171,7 @@ function CreatePanel() {
     try {
       setResult(await createBackup(selection));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The backup could not be created.');
+      setError(describeError(err, 'The backup could not be created.'));
     } finally {
       setBusy(false);
     }
@@ -275,6 +277,7 @@ function RestorePanel({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   // Live context for the Replace guards: how many items exist now, and the storage head-room.
   const [currentItems, setCurrentItems] = useState<number | null>(null);
   const [storage, setStorage] = useState<{ usage: number; quota: number; supported: boolean } | null>(null);
@@ -318,7 +321,7 @@ function RestorePanel({
         estimate ? { usage: estimate.usage, quota: estimate.quota, supported: estimate.supported } : null,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'That file could not be read as a backup.');
+      setError(describeError(err, 'That file could not be read as a backup.'));
     } finally {
       setBusy(false);
     }
@@ -347,9 +350,10 @@ function RestorePanel({
           await new Promise((resolve) => setTimeout(resolve, 400));
         } catch (err) {
           setError(
-            `Could not save a safety backup of your current data, so the restore was cancelled. ${
-              err instanceof Error ? err.message : ''
-            }`.trim(),
+            `Could not save a safety backup of your current data, so the restore was cancelled. ${describeError(
+              err,
+              '',
+            )}`.trim(),
           );
           setBusy(false);
           return;
@@ -365,7 +369,7 @@ function RestorePanel({
       onRestored?.(outcome.message);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The restore failed.');
+      setError(describeError(err, 'The restore failed.'));
       setBusy(false);
       setConfirming(false);
     }

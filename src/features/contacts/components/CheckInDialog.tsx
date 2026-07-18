@@ -4,6 +4,7 @@ import { CheckInIcon } from '@/components/icons';
 import type { CheckoutWithNames, Condition } from '@/db/repositories';
 import { conditionSelectOptions } from '@/features/inventory/components/inventory-ui';
 import { useCheckInItem } from '../contacts';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Check a loaned item back in (spec §4 Borrowing, B2 "condition on return").
@@ -31,6 +32,7 @@ export function CheckInDialog({
   const [condition, setCondition] = useState<Condition | ''>('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   const submit = () => {
@@ -49,7 +51,7 @@ export function CheckInDialog({
           setNote('');
           onClose();
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not check the item back in.'),
+        onError: (e) => setError(describeError(e, 'Could not check the item back in.')),
       },
     );
   };

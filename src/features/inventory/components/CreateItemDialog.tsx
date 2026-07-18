@@ -70,6 +70,7 @@ import { CreateCategoryDialog } from './CreateCategoryDialog';
 import { CreateLocationDialog } from './CreateLocationDialog';
 import { LocationSelect } from './LocationSelect';
 import { TRACKING_MODE_LABELS } from './inventory-ui';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Item creation form (spec §2.4.4) — React Hook Form bound to a Zod schema via
@@ -303,6 +304,7 @@ export function CreateItemDialog({
   initialScrape?: ScrapeResultPayload;
 }) {
   const createItem = useCreateItem();
+  const describeError = useErrorMessage();
   const createSerialised = useCreateSerialisedItems();
   const applyScrape = useApplyScrape();
   const createSupplierPart = useCreateSupplierPart();
@@ -684,7 +686,7 @@ export function CreateItemDialog({
       show({
         tone: 'danger',
         heading: 'Couldn’t create item',
-        message: e instanceof Error ? e.message : 'The item was not saved. Please try again.',
+        message: describeError(e, 'The item was not saved. Please try again.'),
       });
 
     if (values.trackingMode === 'SERIALISED') {

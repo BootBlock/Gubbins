@@ -4,6 +4,7 @@ import { DeleteIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useWriteOffItem } from '../sales';
 import { OutboundSourceFields, useOutboundSource } from './OutboundSourceFields';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Write off one or more units of a DISCRETE item (Sales & disposals capability) — lost, damaged,
@@ -15,6 +16,7 @@ export function WriteOffDialog({ open, onClose, item }: { open: boolean; onClose
   const source = useOutboundSource(item);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const reasonRef = useRef<HTMLInputElement>(null);
 
   const lostValue = item.unitCost != null ? item.unitCost * source.quantity : null;
@@ -35,7 +37,7 @@ export function WriteOffDialog({ open, onClose, item }: { open: boolean; onClose
           source.reset();
           onClose();
         },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not write the stock off.'),
+        onError: (e) => setError(describeError(e, 'Could not write the stock off.')),
       },
     );
   };

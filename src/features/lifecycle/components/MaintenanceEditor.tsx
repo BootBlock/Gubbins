@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { nowMs } from '@/lib/clock';
 import { MAINTENANCE_BASIS_LABELS } from '@/features/inventory/components/inventory-ui';
 import { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from '../maintenance';
+import { useErrorMessage } from '@/features/errors';
 import {
   useAddMaintenanceUsage,
   useCreateMaintenance,
@@ -36,6 +37,7 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
   const [accrueCheckoutHours, setAccrueCheckoutHours] = useState(false);
   const [locationId, setLocationId] = useState<string>(WHOLE_ITEM);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const locScopeLabelId = useId();
 
   // Offer a per-placement scope only where the tool actually sits in more than one place
@@ -66,7 +68,7 @@ export function MaintenanceEditor({ itemId }: { itemId: string }) {
         setName('');
         setInterval(basis === 'TIME' ? '90' : '100');
       },
-      onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the schedule.'),
+      onError: (e) => setError(describeError(e, 'Could not add the schedule.')),
     });
   };
 

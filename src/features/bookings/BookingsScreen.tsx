@@ -31,6 +31,7 @@ import { useFormatters } from '@/lib/useFormatters';
 import { nowMs } from '@/lib/clock';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
+import { useErrorMessage } from '@/features/errors';
 import {
   BOOKING_STATUS_BADGE,
   BOOKING_STATUS_LABEL,
@@ -107,6 +108,7 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
   const [contactName, setContactName] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const reset = () => {
     setItemId('');
@@ -146,7 +148,7 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
           onResult('Booking created.', true);
         },
         onError: (e) => {
-          const message = e instanceof Error ? e.message : 'Could not create the booking.';
+          const message = describeError(e, 'Could not create the booking.');
           setError(message);
           onResult(message, false);
         },
@@ -288,6 +290,7 @@ function BookingCard({
   const cancel = useCancelBooking();
   const convert = useConvertBooking();
   const remove = useDeleteBooking();
+  const describeError = useErrorMessage();
 
   const isOpen = status === 'upcoming' || status === 'active' || status === 'overdue';
   const busy = cancel.isPending || convert.isPending || remove.isPending;
@@ -295,7 +298,7 @@ function BookingCard({
   /** Shared success/error reporter for a booking mutation. */
   const report = (okMessage: string, failMessage: string) => ({
     onSuccess: () => onResult(okMessage, true),
-    onError: (e: unknown) => onResult(e instanceof Error ? e.message : failMessage, false),
+    onError: (e: unknown) => onResult(describeError(e, failMessage), false),
   });
 
   return (

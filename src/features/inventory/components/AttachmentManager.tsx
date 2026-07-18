@@ -7,6 +7,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAddAttachment, useItemAttachments, useRemoveAttachment, useUpdateAttachment } from '../media';
 import { resolveAttachmentLink } from '../attachment-link';
 import { ATTACHMENT_KIND_LABELS } from './inventory-ui';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * Datasheet/attachment manager (spec §4 "Attachments & Datasheets"). The kinds a
@@ -33,6 +34,7 @@ export function AttachmentManager({ itemId }: { itemId: string }) {
   const [value, setValue] = useState('');
   const [label, setLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const effectiveKind: AttachmentKind = mode === 'URL_ONLY' ? 'URL' : kind;
 
@@ -48,7 +50,7 @@ export function AttachmentManager({ itemId }: { itemId: string }) {
         originDeviceId: effectiveKind === 'LOCAL_POINTER' ? deviceId : null,
       },
       {
-        onError: (e) => setError(e instanceof Error ? e.message : 'Could not add the attachment.'),
+        onError: (e) => setError(describeError(e, 'Could not add the attachment.')),
         onSuccess: () => {
           setValue('');
           setLabel('');
@@ -155,6 +157,7 @@ function AttachmentRow({
   const [relinkMode, setRelinkMode] = useState<'local' | 'url' | null>(null);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
 
   const confirm = () => {
     setError(null);
@@ -163,7 +166,7 @@ function AttachmentRow({
         ? ({ kind: 'URL', value: draft, originDeviceId: null } as const)
         : ({ value: draft, originDeviceId: deviceId } as const);
     onUpdate(input, {
-      onError: (e: unknown) => setError(e instanceof Error ? e.message : 'Could not update the datasheet.'),
+      onError: (e: unknown) => setError(describeError(e, 'Could not update the datasheet.')),
       onSuccess: () => {
         setRelinkMode(null);
         setDraft('');

@@ -53,6 +53,7 @@ import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 import { useSyncConflictsStore } from './conflict-store';
 import { SyncConflictsDialog } from './SyncConflictsDialog';
+import { useErrorMessage } from '@/features/errors';
 
 /**
  * The Cloud Sync & File System Access hub (spec §2 Initial Handshake, §7, Phase 7).
@@ -71,6 +72,7 @@ export function SyncScreen() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const describeError = useErrorMessage();
   const [notice, setNotice] = useState<string | null>(null);
   const [reconnectable, setReconnectable] = useState(false);
   const [googleReconnectable, setGoogleReconnectable] = useState(false);
@@ -219,7 +221,7 @@ export function SyncScreen() {
         setGoogleReconnectable(true);
         setError('Your Google Drive sign-in expired. Reconnect to resume syncing.');
       } else {
-        setError(err instanceof Error ? err.message : 'Sync failed.');
+        setError(describeError(err, 'Sync failed.'));
       }
     } finally {
       setBusy(false);
@@ -242,7 +244,7 @@ export function SyncScreen() {
       });
       setPushResult({ ok: result.ok, message: result.message });
     } catch (err) {
-      setPushResult({ ok: false, message: err instanceof Error ? err.message : 'Push failed.' });
+      setPushResult({ ok: false, message: describeError(err, 'Push failed.') });
     } finally {
       setBusy(false);
     }
