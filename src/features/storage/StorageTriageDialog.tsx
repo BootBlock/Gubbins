@@ -141,7 +141,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                     key: 'images',
                     label: 'Images',
                     icon: <ImageIcon />,
-                    bytes: breakdown.data.bytes.itemImages,
+                    bytes: breakdown.data.bytes.photos,
                   },
                   {
                     key: 'history',

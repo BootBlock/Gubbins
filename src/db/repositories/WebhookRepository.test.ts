@@ -102,11 +102,15 @@ describe('WebhookRepository (issue #87)', () => {
     const created = await webhooks.create({
       ...draft,
       eventTypes: ['item.created', 'stock.adjusted'],
-      filter: { locationId: 'loc-1', minQuantity: 5 },
+      filter: { kind: 'location', locationIds: ['loc-1'], includeDescendants: true },
       headers: { 'X-Source': 'gubbins' },
     });
     expect(created.eventTypes).toEqual(['item.created', 'stock.adjusted']);
-    expect(created.filter).toEqual({ locationId: 'loc-1', minQuantity: 5 });
+    expect(created.filter).toEqual({
+      kind: 'location',
+      locationIds: ['loc-1'],
+      includeDescendants: true,
+    });
     expect(created.headers).toEqual({ 'X-Source': 'gubbins' });
 
     // …and they are genuinely stored as JSON text, so the bridge can read them the same way.
@@ -115,7 +119,11 @@ describe('WebhookRepository (issue #87)', () => {
       [created.id],
     );
     expect(JSON.parse(row!.event_types)).toEqual(['item.created', 'stock.adjusted']);
-    expect(JSON.parse(row!.filter)).toEqual({ locationId: 'loc-1', minQuantity: 5 });
+    expect(JSON.parse(row!.filter)).toEqual({
+      kind: 'location',
+      locationIds: ['loc-1'],
+      includeDescendants: true,
+    });
     expect(JSON.parse(row!.headers)).toEqual({ 'X-Source': 'gubbins' });
   });
 
@@ -146,7 +154,11 @@ describe('WebhookRepository (issue #87)', () => {
   });
 
   it('clears an optional field when passed null', async () => {
-    const created = await webhooks.create({ ...draft, filter: { tag: 'critical' }, template: 'x' });
+    const created = await webhooks.create({
+      ...draft,
+      filter: { kind: 'tag', tagIds: ['critical'] },
+      template: 'x',
+    });
     const updated = await webhooks.update(created.id, { filter: null, template: null });
     expect(updated.filter).toBeNull();
     expect(updated.template).toBeNull();
@@ -299,6 +311,21 @@ describe('WebhookRepository (issue #87)', () => {
     );
     const read = await webhooks.getById('bad');
     expect(read).toMatchObject({ name: 'Corrupt', eventTypes: [], filter: null, headers: null });
+  });
+
+  /**
+   * A filter using a node this build has never heard of — a newer peer's vocabulary — must read
+   * back as the **inert** filter, not as "no filter". Softening it to `null` would silently widen
+   * the subscription to every event of its types, which is the one direction that turns a sync
+   * from an older build into unwanted outbound traffic.
+   */
+  it('reads an unrecognised filter shape as inert rather than as no filter', async () => {
+    await driver.execute(
+      `INSERT INTO webhooks (id, name, url, event_types, filter)
+       VALUES ('future', 'Newer peer', 'https://example.test/hook', '["item.created"]',
+               '{"kind":"weather","condition":"rain"}');`,
+    );
+    expect((await webhooks.getById('future'))!.filter).toEqual({ kind: 'none' });
   });
 
   /**

@@ -12,6 +12,7 @@
 - [[Items]]
 - [[Tracking modes|Tracking-Modes]]
 - [[Locations & stock|Locations-and-Stock]]
+- [[Location photos & regions|Location-Photos-and-Regions]]
 - [[Batches & lots|Batches-and-Lots]]
 - [[Variants & SKUs|Variants-and-SKUs]]
 - [[Kits & bundles|Kits-and-Bundles]]

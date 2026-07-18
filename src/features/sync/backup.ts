@@ -53,6 +53,8 @@ export function parseBackupJson(text: string): SyncSnapshot {
     itemTags: obj.itemTags ?? [],
     // Issue #84: location tagging — older backups predate this, so default to empty.
     locationTags: obj.locationTags ?? [],
+    // Issue #81: item-to-region placements — older backups predate this, so default to empty.
+    itemRegions: obj.itemRegions ?? [],
     itemHistory: obj.itemHistory ?? [],
   };
 }

@@ -28,6 +28,11 @@ Selecting a location **filters** the inventory to what it holds, including every
 beneath it, and shows the location's description (if it has one) above the items. Select
 **All items** to clear the filter.
 
+## Photos of a location
+
+A location can also carry **photos**, with named regions drawn on them, so an item can point at
+exactly where on a shelf it sits. See [[Location photos & regions|Location-Photos-and-Regions]].
+
 > **💡 Tip**
 > Descriptions support **Markdown** — headings, **bold**, lists, tables, and links all render,
 > in both the hover tooltip and the panel above the item list. Handy for access notes or a link

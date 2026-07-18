@@ -37,6 +37,10 @@ import type {
   ItemHistoryRow,
   ItemImage,
   ItemImageRow,
+  LocationPhoto,
+  LocationPhotoRow,
+  LocationRegion,
+  LocationRegionRow,
   ItemRow,
   Location,
   LocationRow,
@@ -74,7 +78,6 @@ import type {
   TagRow,
   WishlistEntry,
   WishlistRow,
-  WebhookFilter,
   WebhookRow,
   WebhookSubscription,
 } from './types';
@@ -83,6 +86,7 @@ import type { RelationKind } from '@/features/inventory/item-relations';
 import { normaliseTarePresetKind } from '@/features/inventory/tare-presets';
 import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
+import { parseWebhookFilter } from '@/features/webhooks/filter';
 import { normaliseWebhookMethod } from '@/features/webhooks/subscription';
 
 function parseJson(value: string | null): Record<string, unknown> | null {
@@ -342,7 +346,7 @@ export function rowToWebhookSubscription(row: WebhookRow): WebhookSubscription {
     secret: row.secret,
     secretRef: row.secret_ref,
     eventTypes: Array.isArray(eventTypes) ? eventTypes.filter((t): t is string => typeof t === 'string') : [],
-    filter: parseJsonObject(row.filter) as WebhookFilter | null,
+    filter: parseWebhookFilter(parseJsonObject(row.filter)),
     headers: textHeaders !== null && Object.keys(textHeaders).length > 0 ? textHeaders : null,
     template: row.template,
     createdAt: row.created_at,
@@ -562,6 +566,36 @@ export function rowToItemImage(row: ItemImageRow): ItemImage {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     fullResDowngradedAt: row.full_res_downgraded_at ?? null,
+  };
+}
+
+export function rowToLocationPhoto(row: LocationPhotoRow): LocationPhoto {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    caption: row.caption ?? null,
+    thumbnailBlob: row.thumbnail_blob ?? null,
+    fullResOpfsPath: row.full_res_opfs_path,
+    fullResDowngradedAt: row.full_res_downgraded_at ?? null,
+    naturalWidth: row.natural_width,
+    naturalHeight: row.natural_height,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function rowToLocationRegion(row: LocationRegionRow): LocationRegion {
+  return {
+    id: row.id,
+    photoId: row.photo_id,
+    name: row.name,
+    shape: row.shape,
+    geometry: row.geometry,
+    color: row.color ?? null,
+    position: row.position,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

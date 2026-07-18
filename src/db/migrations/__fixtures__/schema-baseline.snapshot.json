@@ -135,6 +135,12 @@
     },
     {
       "type": "index",
+      "name": "idx_item_regions_region_id",
+      "tbl_name": "item_regions",
+      "sql": "CREATE INDEX idx_item_regions_region_id ON item_regions(region_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_relations_from",
       "tbl_name": "item_relations",
       "sql": "CREATE INDEX idx_item_relations_from ON item_relations(from_item_id)"
@@ -252,6 +258,18 @@
       "name": "idx_location_field_values_location_id",
       "tbl_name": "location_field_values",
       "sql": "CREATE INDEX idx_location_field_values_location_id ON location_field_values(location_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_photos_location_id",
+      "tbl_name": "location_photos",
+      "sql": "CREATE INDEX idx_location_photos_location_id ON location_photos(location_id, position)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_regions_photo_id",
+      "tbl_name": "location_regions",
+      "sql": "CREATE INDEX idx_location_regions_photo_id ON location_regions(photo_id, position)"
     },
     {
       "type": "index",
@@ -495,6 +513,12 @@
     },
     {
       "type": "table",
+      "name": "item_regions",
+      "tbl_name": "item_regions",
+      "sql": "CREATE TABLE item_regions (\n          item_id   TEXT NOT NULL REFERENCES items(id)            ON DELETE CASCADE,\n          region_id TEXT NOT NULL REFERENCES location_regions(id) ON DELETE CASCADE,\n          PRIMARY KEY (item_id, region_id)\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "item_relations",
       "tbl_name": "item_relations",
       "sql": "CREATE TABLE item_relations (\n          id           TEXT    PRIMARY KEY NOT NULL,   -- canonical \"from|to|kind\" (deterministic)\n          from_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          to_item_id   TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          kind         TEXT    NOT NULL,               -- WORKS_WITH | ACCESSORY_FOR | SPARE_FOR (app-enforced)\n          note         TEXT,                           -- optional free-text context for the link\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (from_item_id <> to_item_id)\n        ) STRICT"
@@ -558,6 +582,18 @@
       "name": "location_field_values",
       "tbl_name": "location_field_values",
       "sql": "CREATE TABLE location_field_values (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          location_id    TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          def_id         TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value          TEXT,\n          is_inheritable INTEGER NOT NULL DEFAULT 0,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (location_id, def_id),\n          CHECK (is_inheritable IN (0, 1))\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "location_photos",
+      "tbl_name": "location_photos",
+      "sql": "CREATE TABLE location_photos (\n          id                     TEXT    PRIMARY KEY NOT NULL,\n          location_id            TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          caption                TEXT,\n          thumbnail_blob         BLOB,\n          full_res_opfs_path     TEXT    NOT NULL,\n          full_res_downgraded_at INTEGER,\n          natural_width          INTEGER NOT NULL,\n          natural_height         INTEGER NOT NULL,\n          position               INTEGER NOT NULL DEFAULT 0,\n          created_at             INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at             INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "location_regions",
+      "tbl_name": "location_regions",
+      "sql": "CREATE TABLE location_regions (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          photo_id   TEXT    NOT NULL REFERENCES location_photos(id) ON DELETE CASCADE,\n          name       TEXT    NOT NULL,\n          shape      TEXT    NOT NULL CHECK (shape IN ('rect', 'circle', 'polygon')),\n          geometry   TEXT    NOT NULL,\n          color      TEXT,\n          position   INTEGER NOT NULL DEFAULT 0,\n          created_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -840,6 +876,18 @@
       "name": "trg_location_field_values_updated_at",
       "tbl_name": "location_field_values",
       "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_photos_updated_at",
+      "tbl_name": "location_photos",
+      "sql": "CREATE TRIGGER trg_location_photos_updated_at\n    AFTER UPDATE ON location_photos\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_photos SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_regions_updated_at",
+      "tbl_name": "location_regions",
+      "sql": "CREATE TRIGGER trg_location_regions_updated_at\n    AFTER UPDATE ON location_regions\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_regions SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -2362,6 +2410,64 @@
         }
       ]
     },
+    "item_regions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "item_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "region_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 2
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "location_regions",
+          "from": "region_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "items",
+          "from": "item_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_item_regions_region_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_item_regions_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
     "item_relations": {
       "columns": [
         {
@@ -3481,6 +3587,230 @@
           "name": "sqlite_autoindex_location_field_values_2",
           "unique": 1,
           "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "location_photos": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "caption",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "thumbnail_blob",
+          "type": "BLOB",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "full_res_opfs_path",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "full_res_downgraded_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "natural_width",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "natural_height",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "position",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "locations",
+          "from": "location_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_location_photos_location_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_location_photos_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "location_regions": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "photo_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "shape",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "geometry",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "color",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "position",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "location_photos",
+          "from": "photo_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_location_regions_photo_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_location_regions_1",
+          "unique": 1,
+          "origin": "pk",
           "partial": 0
         }
       ]

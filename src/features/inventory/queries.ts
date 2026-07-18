@@ -110,6 +110,12 @@ export const inventoryKeys = {
    *  locations() so a tag/location write refreshes it by prefix. */
   locationTagIndex: () => [...inventoryKeys.locations(), 'tag-index'] as const,
   itemImages: (itemId: string) => [...inventoryKeys.item(itemId), 'images'] as const,
+  /** One location's photos (issue #81); under locations() so a location write refreshes it. */
+  locationPhotos: (locationId: string) => [...inventoryKeys.locations(), locationId, 'photos'] as const,
+  /** The regions drawn on one photo (issue #81). */
+  photoRegions: (photoId: string) => [...inventoryKeys.locations(), 'photo', photoId, 'regions'] as const,
+  /** Every region an item is placed in, resolved up to its location (issue #81). */
+  itemPlacements: (itemId: string) => [...inventoryKeys.item(itemId), 'placements'] as const,
   itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
   // Phase 5 — weighted capabilities & Visual-Builder search.
   itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,

@@ -297,6 +297,21 @@ export type FieldType = (typeof FIELD_TYPES)[number];
 export const ATTACHMENT_KINDS = ['URL', 'LOCAL_POINTER'] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
+// --- Location photos & regions (issue #81) --------------------------------------
+
+/**
+ * The shapes a location-photo region can take. A region marks *where* something sits
+ * within a photo of a location ("Top shelf", "Drawer 2"); items reference it many-to-many,
+ * so a region is a place that exists independently of what is in it.
+ *
+ * Geometry is stored as JSON in **normalised image space** (0–1 per axis) so re-encoding a
+ * photo at a different size never moves its regions. The pure `features/inventory/regions`
+ * seam owns the coordinate maths — including the circle aspect correction, since a radius
+ * normalised per-axis would render as an ellipse on a non-square photo.
+ */
+export const REGION_SHAPES = ['rect', 'circle', 'polygon'] as const;
+export type RegionShape = (typeof REGION_SHAPES)[number];
+
 // --- Projects, BOMs & procurement (spec §4 "Projects & BOMs", Phase 4) ----------
 
 /**

@@ -11,6 +11,7 @@
  * They are parsed and re-serialised at the repository boundary, so a caller only ever sees
  * the typed shapes below — never a string it has to `JSON.parse` itself.
  */
+import type { WebhookFilter } from '@/features/webhooks/filter';
 import type { WebhookMethod } from '../constants';
 
 export interface WebhookRow {
@@ -33,12 +34,13 @@ export interface WebhookRow {
  * A declarative, JSON-serialisable narrowing beyond the event type — a location subtree, a
  * category, a tag, an item, a quantity threshold.
  *
- * Deliberately opaque at this layer: the filter *vocabulary* and its pure evaluator are the
- * next phase's concern, and storage must not fossilise a shape the matcher has not yet
- * agreed. It is always a data structure evaluated by a pure matcher — never a user-supplied
- * expression string that gets interpreted or `eval`'d.
+ * `W1` deliberately left this opaque (`Record<string, unknown>`) so storage would not fossilise
+ * a shape the matcher had not yet agreed; `W3` agreed it, so the real vocabulary — and the pure
+ * evaluator that reads it — now lives in `@/features/webhooks/filter` and is re-exported here.
+ * It is always a data structure evaluated by a pure matcher, never a user-supplied expression
+ * string that gets interpreted or `eval`'d.
  */
-export type WebhookFilter = Readonly<Record<string, unknown>>;
+export type { WebhookFilter };
 
 /** Extra static request headers, as a flat name → value map. */
 export type WebhookHeaders = Readonly<Record<string, string>>;

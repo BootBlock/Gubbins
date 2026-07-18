@@ -66,6 +66,8 @@ export const SYNC_TABLES = [
   'item_field_values', // FK → items, field_defs
   'item_images', // FK → items
   'item_attachments', // FK → items
+  'location_photos', // FK → locations (issue #81 — photos of a place; ordered after locations so its FK never trips on an UPSERT batch)
+  'location_regions', // FK → location_photos (issue #81 — named shapes drawn on a photo; ordered after its parent photo). The `item_regions` join that links items to these is NOT here: it has no `updated_at` and reconciles by membership, like `location_tags`.
   'capabilities',
   'contacts',
   'checkouts',
@@ -101,6 +103,15 @@ export const ITEM_TAGS_TABLE = 'item_tags';
  * keyed by {@link locationTagEdgeId}.
  */
 export const LOCATION_TAGS_TABLE = 'location_tags';
+
+/**
+ * The M:N `item_regions` join (composite PK `(item_id, region_id)`, no `id`/`updated_at`).
+ * Links an item to a *region* — a named shape drawn on a location photo (issue #81) —
+ * and is reconciled by the same **membership** rule as the tag joins above, keyed by
+ * {@link itemRegionEdgeId}. Deliberately absent from {@link SYNC_TABLES}: with no
+ * `updated_at`, Last-Write-Wins would resolve every edge against a missing timestamp.
+ */
+export const ITEM_REGIONS_TABLE = 'item_regions';
 
 /**
  * The append-only `item_history` Activity Ledger (immutable, no `updated_at`). Not in
@@ -163,6 +174,33 @@ export function locationTagTombstoneStatement(locationId: string, tagId: string)
   };
 }
 
+/** Composite tombstone id for an `item_regions` edge (membership deletion, issue #81). */
+export function itemRegionEdgeId(itemId: string, regionId: string): string {
+  return `${itemId}${EDGE_SEP}${regionId}`;
+}
+
+/** Split an {@link itemRegionEdgeId} back into its `(itemId, regionId)` pair. */
+export function parseItemRegionEdgeId(id: string): { itemId: string; regionId: string } {
+  const sep = id.indexOf(EDGE_SEP);
+  return { itemId: id.slice(0, sep), regionId: id.slice(sep + 1) };
+}
+
+/** The INSERT-OR-REPLACE recording an `item_regions` edge deletion as a tombstone. */
+export function itemRegionTombstoneStatement(itemId: string, regionId: string): SqlStatement {
+  return {
+    sql: 'INSERT OR REPLACE INTO tombstones (table_name, id) VALUES (?, ?);',
+    params: [ITEM_REGIONS_TABLE, itemRegionEdgeId(itemId, regionId)],
+  };
+}
+
+/** Clear any stale `item_regions` edge tombstone (run when an edge is re-linked locally). */
+export function clearItemRegionTombstoneStatement(itemId: string, regionId: string): SqlStatement {
+  return {
+    sql: 'DELETE FROM tombstones WHERE table_name = ? AND id = ?;',
+    params: [ITEM_REGIONS_TABLE, itemRegionEdgeId(itemId, regionId)],
+  };
+}
+
 /** Clear any stale `location_tags` edge tombstone (run when an edge is re-linked locally). */
 export function clearLocationTagTombstoneStatement(locationId: string, tagId: string): SqlStatement {
   return {
@@ -188,6 +226,8 @@ export function clearLocationTagTombstoneStatement(locationId: string, tagId: st
  */
 export const SYNC_EXCLUDED_COLUMNS: Partial<Record<SyncTable, readonly string[]>> = {
   item_images: ['full_res_downgraded_at'],
+  // Location photos carry the same per-device OPFS state for the same reason (issue #81).
+  location_photos: ['full_res_downgraded_at'],
 };
 
 export interface Tombstone {

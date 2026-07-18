@@ -48,7 +48,7 @@ export function decodeThumbnail(row: Record<string, unknown>): Record<string, un
 }
 
 /** Tables carrying a BLOB column that needs base64 transcoding in the snapshot. */
-const BLOB_TABLES = new Set<string>(['item_images']);
+const BLOB_TABLES = new Set<string>(['item_images', 'location_photos']);
 
 /** Table-aware encode for the snapshot read side (bytes → base64). */
 export function encodeRowForTable<T extends Record<string, unknown>>(table: string, row: T): T {

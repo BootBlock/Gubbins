@@ -25,6 +25,7 @@ import {
   ExtensionIcon,
   HistoryIcon,
   HomeIcon,
+  ImageIcon,
   InfoIcon,
   MaintenanceIcon,
   NfcIcon,
@@ -94,6 +95,7 @@ export type FeatureId =
   | 'custom-fields'
   | 'perishables'
   | 'cycle-counts'
+  | 'location-photos'
   | 'tags-attachments'
   | 'variants'
   | 'kits'
@@ -328,6 +330,15 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     label: 'Cycle counts',
     description: 'Periodic stock-taking to keep on-hand quantities honest.',
     Icon: CycleCountIcon,
+    group: 'capabilities',
+  },
+  'location-photos': {
+    id: 'location-photos',
+    kind: 'capability',
+    label: 'Location photos',
+    description:
+      'Add photos to a location and mark out regions on them, so an item can point at exactly where it sits.',
+    Icon: ImageIcon,
     group: 'capabilities',
   },
   'tags-attachments': {

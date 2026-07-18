@@ -78,6 +78,9 @@ export { humanizeGlyphName, glyphSearchText, filterGlyphNames } from './glyph-pi
 export { EmojiPickerButton, type EmojiPickerButtonProps } from './emoji-picker/EmojiPickerButton';
 export { type EmojiPickerProps } from './emoji-picker/EmojiPicker';
 export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
+// Region canvas — a photo with a drawable shape overlay (location photos, issue #81). Read-only
+// by default, so the item-side viewer and the region editor are the same component.
+export { RegionCanvas, type RegionCanvasProps, type RegionCanvasRegion } from './region-canvas';
 export { resolveTabKey } from './tab-keyboard';
 export { useSearchEscapeToClear } from './use-search-escape';
 export { InputClearButton, type InputClearButtonProps } from './input-clear-button';
