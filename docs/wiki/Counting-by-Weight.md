@@ -42,6 +42,10 @@ reading the display and typing the figure in. The dialog then shows a **scale pi
 **Read the scale** button; the current reading drops straight into **Weight on scale**, and
 everything after that works exactly as it does for a typed figure.
 
+There is a second button, **Read the container**, which does the same thing for the tare: put the
+empty tray on the scale, press it, and its weight lands in **Container weight**. Weigh the empty
+tray, then tip the parts in and press **Read the scale** — neither figure has to be typed.
+
 This is entirely optional, and typing the reading in yourself always works — nothing here is a
 prerequisite for counting by weight.
 
@@ -58,6 +62,11 @@ and Gubbins remembers it on that device.
 > **💡 Tip**
 > The choice of scale is remembered **per device**, so a tablet in the workshop and a phone in the
 > stockroom can each read their own bench scale.
+
+The list of scales is fetched once and then kept for the rest of your session, so opening the
+dialog for item after item doesn't re-ask Home Assistant each time. If you have **just** added a
+scale in Home Assistant and it isn't in the picker yet, use the **refresh** button beside the
+picker to fetch the list again — no page reload needed.
 
 Gubbins converts the reading into your chosen weight unit for you, so a sensor reporting
 kilograms works fine even if you read everything in grams.

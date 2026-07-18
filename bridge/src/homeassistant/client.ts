@@ -23,8 +23,54 @@ import {
 } from './scale.ts';
 import type { ApiErrorCode } from '../api/respond.ts';
 
-/** How long to wait on Home Assistant before giving up, so a hung HA can't tie up a bridge slot. */
+/**
+ * The **total** wall-clock budget for one logical read, so a hung HA can't tie up a bridge slot.
+ *
+ * A momentarily-busy Home Assistant (a restarting integration, a recorder flush) used to surface
+ * as an outright failure, so a read is now attempted twice — but *within the same budget*, never
+ * on top of it: an instance that is genuinely down still reports in ~5s, exactly as before.
+ *
+ *   attempt 1 (2 400 ms) + backoff (200 ms) + attempt 2 (2 400 ms) = 5 000 ms worst case
+ *
+ * Only a failure a retry can plausibly fix is retried — a timeout, a transport error, or a 5xx.
+ * A rejected token (401/403) or an unknown entity (404) is deterministic and answered immediately.
+ */
 export const HA_REQUEST_TIMEOUT_MS = 5_000;
+
+/** How many times one logical read is attempted, in total (not extra retries). */
+export const HA_MAX_ATTEMPTS = 2;
+
+/** A short fixed pause between attempts, so an instance mid-restart gets a moment to recover. */
+export const HA_RETRY_BACKOFF_MS = 200;
+
+/** How one logical read spends its budget: how many tries, how long each, how long between. */
+export interface HaRetryPlan {
+  readonly attempts: number;
+  readonly attemptTimeoutMs: number;
+  readonly backoffMs: number;
+}
+
+/**
+ * Carve a total budget into equal per-attempt slices, leaving room for the backoff(s).
+ *
+ * A budget too small to hold two real attempts *plus* a backoff spends itself on one attempt
+ * instead. Retrying inside it would otherwise overrun the very budget this function exists to
+ * honour — two 1 ms attempts around a 200 ms pause is 202 ms of a caller's 100 ms, and the
+ * attempts are too short to succeed anyway.
+ */
+export function haRetryPlan(totalBudgetMs: number = HA_REQUEST_TIMEOUT_MS): HaRetryPlan {
+  const backoffTotal = HA_RETRY_BACKOFF_MS * (HA_MAX_ATTEMPTS - 1);
+  // Each attempt must be worth at least as much as the pause between attempts, or retrying is
+  // buying a wait rather than a second chance.
+  if (totalBudgetMs < backoffTotal + HA_RETRY_BACKOFF_MS * HA_MAX_ATTEMPTS) {
+    return { attempts: 1, attemptTimeoutMs: Math.max(1, totalBudgetMs), backoffMs: 0 };
+  }
+  return {
+    attempts: HA_MAX_ATTEMPTS,
+    attemptTimeoutMs: Math.floor((totalBudgetMs - backoffTotal) / HA_MAX_ATTEMPTS),
+    backoffMs: HA_RETRY_BACKOFF_MS,
+  };
+}
 
 /** A minimal `fetch` shape, so tests inject a fake without pulling in DOM types. */
 export type FetchLike = (
@@ -39,6 +85,7 @@ export interface HaClientOptions {
   /** Long-lived access token. Never logged, never returned to a caller. */
   readonly token: string;
   readonly fetchImpl?: FetchLike;
+  /** The **total** budget for one read, across all attempts. Defaults to `HA_REQUEST_TIMEOUT_MS`. */
   readonly timeoutMs?: number;
 }
 
@@ -77,17 +124,26 @@ export interface HaClient {
   readonly listScaleEntities: () => Promise<ScaleEntityDto[]>;
   /** The current reading for one entity, reconciled to grams (or the reason it isn't). */
   readonly readScale: (entityId: string) => Promise<ScaleReadingOutcome>;
+  /**
+   * A liveness check for startup: does this URL answer, and is this token accepted? It is the
+   * *same* list-states read — no third endpoint and no new capability — with the payload thrown
+   * away rather than projected, because the answer wanted here is only "yes" or an `HaError`.
+   */
+  readonly probe: () => Promise<void>;
 }
 
 /** Build a client bound to one Home Assistant instance. */
 export function createHaClient(options: HaClientOptions): HaClient {
   const baseUrl = normaliseHaBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
-  const timeoutMs = options.timeoutMs ?? HA_REQUEST_TIMEOUT_MS;
+  const plan = haRetryPlan(options.timeoutMs ?? HA_REQUEST_TIMEOUT_MS);
 
-  async function get(path: string): Promise<unknown> {
+  /** One HTTP attempt. Failures come back tagged with whether trying again could plausibly help. */
+  async function attempt(
+    path: string,
+  ): Promise<{ ok: true; body: unknown } | { ok: false; error: HaError; retryable: boolean }> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), plan.attemptTimeoutMs);
     let response: { ok: boolean; status: number; json: () => Promise<unknown> };
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
@@ -98,25 +154,54 @@ export function createHaClient(options: HaClientOptions): HaClient {
     } catch {
       // Offline, DNS failure, TLS problem or our own timeout. The underlying error is swallowed
       // rather than forwarded: it can contain the full URL, and the caller can act on none of it.
-      throw new HaError(502, 'home_assistant_unreachable', 'Could not reach Home Assistant.');
+      // Transient by nature, so this is the case a second attempt exists for.
+      return {
+        ok: false,
+        error: new HaError(502, 'home_assistant_unreachable', 'Could not reach Home Assistant.'),
+        retryable: true,
+      };
     } finally {
       clearTimeout(timer);
     }
 
     if (response.status === 401 || response.status === 403) {
-      throw new HaError(502, 'home_assistant_unauthorised', 'Home Assistant rejected the access token.');
+      // Deterministic: the token is wrong now and will be wrong in 200 ms. Answer immediately.
+      return {
+        ok: false,
+        error: new HaError(502, 'home_assistant_unauthorised', 'Home Assistant rejected the access token.'),
+        retryable: false,
+      };
     }
     if (response.status === 404) {
-      throw new HaError(404, 'not_found', 'No such entity.');
+      return { ok: false, error: new HaError(404, 'not_found', 'No such entity.'), retryable: false };
     }
     if (!response.ok) {
-      throw new HaError(502, 'home_assistant_error', 'Home Assistant returned an error.');
+      // A 5xx is Home Assistant itself struggling (restarting, an integration mid-reload); any
+      // other 4xx is a request HA has decided about, and repeating it changes nothing.
+      return {
+        ok: false,
+        error: new HaError(502, 'home_assistant_error', 'Home Assistant returned an error.'),
+        retryable: response.status >= 500,
+      };
     }
 
     try {
-      return await response.json();
+      return { ok: true, body: await response.json() };
     } catch {
-      throw new HaError(502, 'home_assistant_error', 'Home Assistant returned an unreadable response.');
+      return {
+        ok: false,
+        error: new HaError(502, 'home_assistant_error', 'Home Assistant returned an unreadable response.'),
+        retryable: false,
+      };
+    }
+  }
+
+  async function get(path: string): Promise<unknown> {
+    for (let n = 1; ; n += 1) {
+      const outcome = await attempt(path);
+      if (outcome.ok) return outcome.body;
+      if (!outcome.retryable || n >= plan.attempts) throw outcome.error;
+      await new Promise<void>((resolve) => setTimeout(resolve, plan.backoffMs));
     }
   }
 
@@ -124,5 +209,8 @@ export function createHaClient(options: HaClientOptions): HaClient {
     listScaleEntities: async () => projectScaleEntities(await get('/api/states')),
     readScale: async (entityId: string) =>
       parseScaleReading(await get(`/api/states/${encodeURIComponent(entityId)}`)),
+    // Deliberately the list-states read, discarded: it proves reachability *and* the token in one
+    // call, and keeps the client's two-reads-only posture (nothing new is callable).
+    probe: async () => void (await get('/api/states')),
   };
 }

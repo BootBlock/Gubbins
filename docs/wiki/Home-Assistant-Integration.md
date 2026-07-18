@@ -40,8 +40,14 @@ current reading straight into the app rather than you typing it in.
 
 This is **off by default** and enabled on the bridge, by pointing it at your Home Assistant
 instance and giving it a **long-lived access token** (created in Home Assistant under **Profile →
-Security**). Once it's on, the *Count by weight* dialog gains a scale picker and a **Read the
-scale** button.
+Security**). Once it's on, the *Count by weight* dialog gains a scale picker, a **Read the scale**
+button and a **Read the container** button for weighing the empty tray. The in-app setup guide
+covers the settings on its **Run the bridge** step.
+
+> **💡 Tip**
+> When the bridge starts with this turned on, it checks the connection to Home Assistant there and
+> then, and says so in its log if the address is wrong or the token was rejected — rather than
+> leaving you to find out the first time you press **Read the scale**.
 
 > **ℹ️ Note**
 > The token lives on the bridge, not in the app — the app only ever receives the resulting weight.

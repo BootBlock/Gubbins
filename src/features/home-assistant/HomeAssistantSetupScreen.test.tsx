@@ -90,6 +90,24 @@ describe('HomeAssistantSetupScreen', () => {
     expect(screen.getByTestId('guide-prev')).toBeDisabled();
   });
 
+  it('documents the opt-in Home Assistant scale read on the bridge step', async () => {
+    const user = userEvent.setup();
+    renderGuide();
+
+    const rail = screen.getByRole('navigation', { name: /setup steps/i });
+    await user.click(within(rail).getByRole('button', { name: /Run the bridge/i }));
+
+    // Always shown — it is the guide's only mention of the capability, so it must not hide
+    // behind a branch the reader may never open.
+    expect(
+      screen.getByRole('heading', { name: /Optional: read a scale from Home Assistant/i }),
+    ).toBeInTheDocument();
+    const settings = screen.getByText(/GUBBINS_BRIDGE_HA=on/);
+    expect(settings).toHaveTextContent('GUBBINS_BRIDGE_HA_URL=http://homeassistant.local:8123');
+    // The Home Assistant token is the user's own secret: only ever a placeholder.
+    expect(settings).toHaveTextContent('GUBBINS_BRIDGE_HA_TOKEN=<YOUR_HOME_ASSISTANT_TOKEN>');
+  });
+
   it('covers Google Home and reveals the conversation-automation wiring on the sentences step', async () => {
     const user = userEvent.setup();
     renderGuide();

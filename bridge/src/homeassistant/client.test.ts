@@ -6,7 +6,15 @@
  * leaks its own error text or the access token onward to the PWA.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createHaClient, HaError, normaliseHaBaseUrl, type FetchLike } from './client.ts';
+import {
+  createHaClient,
+  haRetryPlan,
+  HA_MAX_ATTEMPTS,
+  HA_REQUEST_TIMEOUT_MS,
+  HaError,
+  normaliseHaBaseUrl,
+  type FetchLike,
+} from './client.ts';
 
 /** A `fetch` stand-in returning a canned response, recording the calls it received. */
 function fakeFetch(response: { ok?: boolean; status?: number; json?: () => Promise<unknown> }) {
@@ -109,13 +117,16 @@ describe('createHaClient', () => {
     await expect(client.listScaleEntities()).rejects.toMatchObject({ code: 'home_assistant_error' });
   });
 
-  it('aborts a request that outlives the timeout', async () => {
+  it('aborts a request that outlives the timeout, after exhausting its attempts', async () => {
     vi.useFakeTimers();
     try {
-      const impl: FetchLike = (_url, init) =>
-        new Promise((_resolve, reject) => {
+      let attempts = 0;
+      const impl: FetchLike = (_url, init) => {
+        attempts += 1;
+        return new Promise((_resolve, reject) => {
           init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
         });
+      };
       const client = createHaClient({
         baseUrl: 'http://ha.test:8123',
         token: TOKEN,
@@ -126,8 +137,116 @@ describe('createHaClient', () => {
       const pending = client.listScaleEntities().catch((e: unknown) => e);
       await vi.advanceTimersByTimeAsync(1_100);
       expect(await pending).toMatchObject({ code: 'home_assistant_unreachable' });
+      // The whole budget bought both attempts — it was not spent twice over.
+      expect(attempts).toBe(HA_MAX_ATTEMPTS);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('probes with the same list-states read, discarding the payload', async () => {
+    const { impl, calls } = fakeFetch({ json: async () => [] });
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(client.probe()).resolves.toBeUndefined();
+    expect(calls.map((c) => c.url)).toEqual(['http://ha.test:8123/api/states']);
+  });
+
+  it('surfaces a rejected token from the probe, so startup can say which failure it was', async () => {
+    const { impl } = fakeFetch({ ok: false, status: 401 });
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(client.probe()).rejects.toMatchObject({ code: 'home_assistant_unauthorised' });
+  });
+});
+
+/**
+ * Retry policy. The point of these is the *budget*: a momentarily-busy Home Assistant gets a second
+ * chance, but a genuinely-down one must not take noticeably longer to report than it used to, and a
+ * deterministic refusal (a bad token, an unknown entity) must not be asked twice at all.
+ */
+describe('createHaClient retry budget', () => {
+  it('fits every attempt and backoff inside the total request budget', () => {
+    const plan = haRetryPlan();
+    const total = plan.attemptTimeoutMs * plan.attempts + plan.backoffMs * (plan.attempts - 1);
+    expect(total).toBeLessThanOrEqual(HA_REQUEST_TIMEOUT_MS);
+    expect(plan.attempts).toBe(HA_MAX_ATTEMPTS);
+    expect(HA_MAX_ATTEMPTS).toBeGreaterThan(1);
+  });
+
+  it('spends a budget too small to retry within on a single attempt', () => {
+    // Retrying inside a 100 ms budget would cost 200 ms of backoff alone — it would overrun the
+    // very budget the caller asked for, and buy two attempts too short to succeed.
+    const plan = haRetryPlan(100);
+    expect(plan.attempts).toBe(1);
+    expect(plan.attemptTimeoutMs).toBe(100);
+    expect(plan.attemptTimeoutMs * plan.attempts + plan.backoffMs * (plan.attempts - 1)).toBeLessThanOrEqual(
+      100,
+    );
+  });
+
+  /** A `fetch` stand-in that plays a scripted sequence of outcomes, one per attempt. */
+  function scriptedFetch(steps: readonly (Error | { ok?: boolean; status?: number })[]) {
+    let n = 0;
+    const impl: FetchLike = async () => {
+      const step = steps[Math.min(n, steps.length - 1)]!;
+      n += 1;
+      if (step instanceof Error) throw step;
+      return { ok: step.ok ?? true, status: step.status ?? 200, json: async () => [] };
+    };
+    return { impl, attempts: () => n };
+  }
+
+  /** Run `body` with fake timers, so the fixed backoff costs no real wall time. */
+  async function withFakeTimers<T>(body: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers();
+    try {
+      const pending = body();
+      await vi.advanceTimersByTimeAsync(HA_REQUEST_TIMEOUT_MS);
+      return await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('retries a transport failure once and succeeds on the second attempt', async () => {
+    const { impl, attempts } = scriptedFetch([new Error('ECONNRESET'), {}]);
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(withFakeTimers(() => client.listScaleEntities())).resolves.toEqual([]);
+    expect(attempts()).toBe(2);
+  });
+
+  it('retries a 5xx — Home Assistant itself struggling is exactly the transient case', async () => {
+    const { impl, attempts } = scriptedFetch([{ ok: false, status: 503 }, {}]);
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(withFakeTimers(() => client.listScaleEntities())).resolves.toEqual([]);
+    expect(attempts()).toBe(2);
+  });
+
+  it('gives up after the attempt limit rather than retrying indefinitely', async () => {
+    const { impl, attempts } = scriptedFetch([new Error('ECONNREFUSED')]);
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(
+      withFakeTimers(() => client.listScaleEntities().catch((e: unknown) => e)),
+    ).resolves.toMatchObject({ code: 'home_assistant_unreachable' });
+    expect(attempts()).toBe(HA_MAX_ATTEMPTS);
+  });
+
+  it.each([
+    ['a rejected token', 401, 'home_assistant_unauthorised'],
+    ['a forbidden token', 403, 'home_assistant_unauthorised'],
+    ['an unknown entity', 404, 'not_found'],
+    ['a malformed request', 400, 'home_assistant_error'],
+  ])('never retries %s — the answer is deterministic', async (_label, status, code) => {
+    const { impl, attempts } = scriptedFetch([{ ok: false, status }]);
+    const client = createHaClient({ baseUrl: 'http://ha.test:8123', token: TOKEN, fetchImpl: impl });
+
+    await expect(
+      withFakeTimers(() => client.readScale('sensor.x').catch((e: unknown) => e)),
+    ).resolves.toMatchObject({ code });
+    expect(attempts()).toBe(1);
   });
 });
