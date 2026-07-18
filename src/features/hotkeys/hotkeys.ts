@@ -375,7 +375,11 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   },
 ];
 
-/** Every action id, for total-map construction and validation. */
+/**
+ * Every action id, for total-map construction and validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const HOTKEY_ACTION_IDS: readonly HotkeyActionId[] = HOTKEY_ACTIONS.map((a) => a.id);
 
 const ACTIONS_BY_ID = new Map<HotkeyActionId, HotkeyAction>(HOTKEY_ACTIONS.map((a) => [a.id, a]));
@@ -400,6 +404,8 @@ export const DEFAULT_HOTKEY_BINDINGS: Readonly<Record<HotkeyActionId, HotkeyBind
  * vs `Esc` historically), so a chord recorded with Shift held would otherwise never match the
  * same chord replayed. Single characters upper-case; named keys keep their spelling, with
  * `' '` spelled `Space` so it survives a round-trip through the `+`-joined string.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseHotkeyKey(key: string): string {
   if (key === ' ' || key === 'Spacebar') return 'Space';
@@ -407,7 +413,11 @@ export function normaliseHotkeyKey(key: string): string {
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
-/** Serialise a chord into its canonical string (modifiers in a fixed order, then the key). */
+/**
+ * Serialise a chord into its canonical string (modifiers in a fixed order, then the key).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function formatChord(chord: HotkeyChord): HotkeyBinding {
   const parts: string[] = [];
   if (chord.ctrl) parts.push('Ctrl');
@@ -444,6 +454,8 @@ export interface HotkeyKeyEvent {
  * "Letter" is decided by Unicode property, not an `A-Z` range: on a German layout `Ä` is a letter
  * that `A-Z` would miss, and dropping Shift there would store `Shift+Ä` as plain `Ä` — so pressing
  * the *unshifted* `ä` would then fire a shortcut the user bound to the shifted key.
+ *
+ * @internal Exported for unit tests only.
  */
 export function chordFromEvent(event: HotkeyKeyEvent, isMac = false): HotkeyChord | null {
   if (event.key === '' || event.key === 'Unidentified' || MODIFIER_KEYS.has(event.key)) return null;
@@ -471,6 +483,8 @@ export function bindingFromEvent(event: HotkeyKeyEvent, isMac = false): HotkeyBi
  * Parsed from the **right**, because `+` is both the separator and a perfectly ordinary key:
  * a naive `split('+')` turns `Ctrl++` into `['Ctrl','','']` and reads the key as empty, so
  * the `+` key could never be bound. Returns `null` for a structurally broken string.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseBinding(
   binding: HotkeyBinding,
@@ -501,6 +515,8 @@ export const MAX_SEQUENCE_LENGTH = 2;
 /**
  * Split a binding into its chords: one for an ordinary chord binding, two for a sequence.
  * Returns `null` for `''` (unbound) or a structurally broken string.
+ *
+ * @internal Exported for unit tests only.
  */
 export function parseSequence(binding: HotkeyBinding): readonly string[] | null {
   if (binding === '') return null;
@@ -509,7 +525,11 @@ export function parseSequence(binding: HotkeyBinding): readonly string[] | null 
   return steps.some((s) => s === '') ? null : steps;
 }
 
-/** Whether a binding is a two-chord sequence rather than a single chord. */
+/**
+ * Whether a binding is a two-chord sequence rather than a single chord.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isSequenceBinding(binding: HotkeyBinding): boolean {
   const steps = parseSequence(binding);
   return steps !== null && steps.length > 1;
@@ -581,6 +601,8 @@ export function normaliseHotkeyBindings(value: unknown): Record<HotkeyActionId, 
  * Registry order breaks a tie, so a duplicated binding is deterministic (the topmost action in
  * the Settings list wins) rather than order-of-iteration luck. `enabled` filters out actions
  * whose module is switched off, so a hidden screen's shortcut can't navigate to it.
+ *
+ * @internal Exported for unit tests only.
  */
 export function resolveHotkeyAction(
   bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,
@@ -689,6 +711,8 @@ export function findHotkeyConflictRivals(
  * The ids of actions sharing a binding with another action — what the Settings list marks as
  * conflicting. A thin view over {@link findHotkeyConflictRivals}: an action conflicts exactly
  * when it has at least one rival.
+ *
+ * @internal Exported for unit tests only.
  */
 export function findHotkeyConflicts(
   bindings: Readonly<Record<HotkeyActionId, HotkeyBinding>>,

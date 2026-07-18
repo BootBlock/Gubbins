@@ -14,6 +14,8 @@
  * back to a process-stable in-memory id so a call never throws — mirroring the optimistic
  * defaults in `network.ts` / `install.ts` / `motion.ts`. The `storage` argument is
  * injectable so the logic is unit-testable without touching real `localStorage`.
+ *
+ * @internal Exported for unit tests only.
  */
 
 export const DEVICE_ID_KEY = 'gubbins:device-id';

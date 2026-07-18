@@ -23,7 +23,11 @@ import { DEAD_STOCK_MODES, type DeadStockMode } from '@/db/repositories/constant
 
 export { DEAD_STOCK_MODES, type DeadStockMode };
 
-/** Narrow an untrusted string (DB row, import, sync peer) to a {@link DeadStockMode}. */
+/**
+ * Narrow an untrusted string (DB row, import, sync peer) to a {@link DeadStockMode}.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isDeadStockMode(value: unknown): value is DeadStockMode {
   return typeof value === 'string' && (DEAD_STOCK_MODES as readonly string[]).includes(value);
 }

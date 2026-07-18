@@ -62,6 +62,8 @@ export function useDecorationFlourishReduced(provider?: MediaQueryProvider): boo
 
 /**
  * Imperative flourish gate: the same decision as {@link useDecorationFlourishReduced}, read live.
+ *
+ * @internal Exported for unit tests only.
  */
 export function decorationFlourishReduced(): boolean {
   return prefersReducedMotion() || suppressesFlourish(usePreferencesStore.getState().animationLevel);

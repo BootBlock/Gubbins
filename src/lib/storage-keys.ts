@@ -72,6 +72,8 @@ export const EMOJI_PICKER_SIZE_KEY = 'gubbins:emoji-picker-size';
 /**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
+ *
+ * @internal Exported for unit tests only.
  */
 export const STORAGE_KEYS = [
   // --- Preferences & layout (the only things a backup carries) ----------------------
@@ -237,7 +239,11 @@ export const STORAGE_KEYS = [
   },
 ] as const satisfies readonly StorageKeyEntry[];
 
-/** Every registered key, for the coverage test and the hard-reset assertion. */
+/**
+ * Every registered key, for the coverage test and the hard-reset assertion.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ALL_STORAGE_KEYS: readonly string[] = STORAGE_KEYS.map((entry) => entry.key);
 
 /** The `localStorage` keys a given Danger-Zone target erases, in registry order. */
@@ -247,7 +253,11 @@ export function eraseGroupKeys(group: LocalEraseGroupId): readonly string[] {
   );
 }
 
-/** The `localStorage` keys a portable backup may carry, in registry order. */
+/**
+ * The `localStorage` keys a portable backup may carry, in registry order.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function backupIncludedKeys(): readonly string[] {
   return STORAGE_KEYS.filter((entry) => entry.storage === 'local' && entry.backupIncluded).map(
     (entry) => entry.key,

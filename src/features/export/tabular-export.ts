@@ -36,6 +36,8 @@ function delimitedCell(value: TabularCell, delimiter: string): string {
 /**
  * Serialise rows to a delimited table with CRLF row separators. `delimiter` is `,` for
  * CSV or a tab for TSV; both share the RFC-4180 quoting above.
+ *
+ * @internal Exported for unit tests only.
  */
 export function toDelimited<T>(
   columns: readonly TabularColumn<T>[],
@@ -52,7 +54,11 @@ export function toCsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[
   return toDelimited(columns, rows, ',');
 }
 
-/** Tab-separated values (same RFC-4180 quoting, CRLF rows). */
+/**
+ * Tab-separated values (same RFC-4180 quoting, CRLF rows).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function toTsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
   return toDelimited(columns, rows, '\t');
 }
@@ -61,6 +67,8 @@ export function toTsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[
  * Serialise rows to a pretty-printed JSON array — one object per row keyed by column
  * header, with the raw cell values preserved (numbers stay numbers, booleans stay
  * booleans, null / undefined become `null`) so the file is faithful and machine-readable.
+ *
+ * @internal Exported for unit tests only.
  */
 export function toJson<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
   const objects = rows.map((row) => {
@@ -83,6 +91,8 @@ function singleLine(value: TabularCell): string {
  * Serialise rows to a fixed-width plain-text table: each column padded to the widest of its
  * header and values, a dashed divider under the header, two spaces between columns. Useful
  * for pasting into a monospaced context (a README, a terminal, a note).
+ *
+ * @internal Exported for unit tests only.
  */
 export function toTextTable<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
   const headers = columns.map((c) => c.header);
@@ -109,7 +119,11 @@ function markdownCell(value: TabularCell): string {
   return cellText(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
-/** Build a GitHub-flavoured Markdown table (leading/trailing pipes, `---` divider row). */
+/**
+ * Build a GitHub-flavoured Markdown table (leading/trailing pipes, `---` divider row).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function toMarkdownTable<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
   const header = `| ${columns.map((c) => markdownCell(c.header)).join(' | ')} |`;
   const divider = `| ${columns.map(() => '---').join(' | ')} |`;
@@ -138,6 +152,8 @@ export interface HtmlTableOptions {
  * opens and prints straight from the browser. Styling is inline and deliberately minimal
  * — this is downloaded output, not app chrome, so it uses system fonts and neutral rules
  * rather than the app's design tokens.
+ *
+ * @internal Exported for unit tests only.
  */
 export function toHtmlTable<T>(
   columns: readonly TabularColumn<T>[],

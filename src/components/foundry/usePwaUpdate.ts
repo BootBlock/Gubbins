@@ -76,6 +76,8 @@ export interface PwaUpdateApi {
  * The real browser seam, backed by vite-plugin-pwa's `registerSW`. The virtual module
  * is loaded lazily (dynamic import) so it is only resolved in a real browser build —
  * tests use a fake `apiOverride` and never reach this code path.
+ *
+ * @internal Exported for unit tests only.
  */
 export function browserPwaUpdateApi(): PwaUpdateApi {
   // The active registration, captured asynchronously via `onRegisteredSW`. Until it

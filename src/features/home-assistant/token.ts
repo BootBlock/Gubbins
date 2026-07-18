@@ -19,11 +19,20 @@ export interface RandomSource {
   getRandomValues<T extends ArrayBufferView>(array: T): T;
 }
 
-/** Default entropy in bytes. 32 bytes → 256 bits → a 64-character hex string. */
+/**
+ * Default entropy in bytes. 32 bytes → 256 bits → a 64-character hex string.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_TOKEN_BYTES = 32;
 
-/** Guard rails so a bad caller can't ask for a trivially weak or absurdly large token. */
+/**
+ * Guard rails so a bad caller can't ask for a trivially weak or absurdly large token.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const MIN_TOKEN_BYTES = 16;
+/** @internal Exported for unit tests only. */
 export const MAX_TOKEN_BYTES = 64;
 
 /**
@@ -43,7 +52,11 @@ export function generateBridgeToken(
   return toHex(buffer);
 }
 
-/** Clamp a requested byte count to the supported range, rounding to a whole number. */
+/**
+ * Clamp a requested byte count to the supported range, rounding to a whole number.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clampBytes(bytes: number): number {
   if (!Number.isFinite(bytes)) return DEFAULT_TOKEN_BYTES;
   return Math.min(MAX_TOKEN_BYTES, Math.max(MIN_TOKEN_BYTES, Math.round(bytes)));

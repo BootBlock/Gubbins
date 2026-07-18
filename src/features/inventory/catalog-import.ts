@@ -575,6 +575,8 @@ export interface BuildPlanOptions {
  * values (`SERIALISED`) and the British-English UI labels (`Serialised`, `Bulk`,
  * `Consumable`, `Untracked`) case-insensitively, so an inline `track: serialised` or a
  * spreadsheet column reading "Bulk" both resolve. Returns `null` for an unknown value.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseTrackingMode(raw: string): TrackingMode | null {
   const key = raw

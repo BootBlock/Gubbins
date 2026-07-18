@@ -40,6 +40,8 @@ export const LARGE_FORMAT_QUERY = '(min-width: 768px) and (min-height: 600px) an
  * between them (the Viewport Segments media feature; Edge stable, Chrome origin trial).
  * Used only as a progressive enhancement to keep content clear of the hinge; layout must
  * never *depend* on it, since most engines don't report it yet.
+ *
+ * @internal Exported for unit tests only.
  */
 export const FOLDABLE_BOOK_QUERY = '(horizontal-viewport-segments: 2)';
 
@@ -47,6 +49,8 @@ export const FOLDABLE_BOOK_QUERY = '(horizontal-viewport-segments: 2)';
  * Whether the current device is a large-format touch device. Feature-detected; defaults
  * to `false` (the standard frame) where `matchMedia` is unavailable — in that case the
  * CSS `large-format:` variant remains the authority, so nothing is lost.
+ *
+ * @internal Exported for unit tests only.
  */
 export function isLargeFormat(): boolean {
   if (typeof matchMedia !== 'function') return false;

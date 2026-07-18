@@ -84,6 +84,8 @@ const CODE_RE = new RegExp(`\\b(${CURRENCY_CODES.join('|')})\\b`);
  * Detect the dominant currency of the text: the first symbol seen wins (they are
  * unambiguous), else the first written ISO code. Returns undefined when none is present, so
  * the price is offered without forcing a currency the user didn't intend.
+ *
+ * @internal Exported for unit tests only.
  */
 export function detectCurrency(text: string): string | undefined {
   const symbol = text.match(new RegExp(`[${CURRENCY_SYMBOLS}]`));
@@ -196,6 +198,8 @@ const TOTAL_EXCLUSIONS =
  * (totals sit at the line's end). With no usable total keyword it falls back to the largest
  * genuinely-priced amount (currency-symboled or two-decimal) — a receipt's total is almost
  * always its biggest money figure.
+ *
+ * @internal Exported for unit tests only.
  */
 export function extractPrice(
   lines: readonly string[],
@@ -378,6 +382,8 @@ function datesOnLine(line: string, referenceYear?: number): string[] {
  * order / invoice* wins; otherwise the first plausible full date in the text is used (a
  * receipt's date is near the top). Two-component fragments like a card's `MM/YY` never match —
  * a full day+month+year is required — so an expiry date can't be mistaken for a purchase date.
+ *
+ * @internal Exported for unit tests only.
  */
 export function extractDate(
   lines: readonly string[],

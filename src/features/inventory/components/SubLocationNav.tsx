@@ -10,6 +10,8 @@ import { LocationKindIcon } from './LocationKindIcon';
  * A one-line summary of what a child location holds, shown beneath its name so the
  * card/row conveys whether it's worth opening: its direct item count and, when it
  * nests further locations, how many. An entirely empty branch reads "Empty".
+ *
+ * @internal Exported for unit tests only.
  */
 export function describeLocationContents(itemCount: number, subLocationCount: number): string {
   const parts: string[] = [];

@@ -514,6 +514,8 @@ export function normaliseNavCountMetric(route: NavCountRoute, value: string): st
 /**
  * Coerce a whole persisted map (possibly partial or stale — e.g. missing a route added in a
  * later build) into a complete, valid one. Every configurable route gets a valid metric.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseNavCountMetrics(
   value: Partial<Record<NavCountRoute, string>> | undefined,
@@ -534,6 +536,8 @@ export function navCountOption(route: NavCountRoute, metric: string): NavCountMe
 /**
  * The attention {@link NavCountTone} for a tile's current metric (backlog A2) — `'neutral'`
  * for a plain total (the tile's group hue), `'warning'`/`'danger'` for a problem metric.
+ *
+ * @internal Exported for unit tests only.
  */
 export function navCountTone(route: NavCountRoute, metric: string): NavCountTone {
   return navCountOption(route, metric).tone ?? 'neutral';

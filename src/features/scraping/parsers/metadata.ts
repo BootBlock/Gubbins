@@ -131,6 +131,8 @@ function productToMetadata(product: Record<string, JsonValue>): StructuredMetada
  * An identified product (one bearing an `mpn`/`sku`) is preferred over an anonymous stub;
  * only if no node is identified does the first `Product` stand, so a page that describes
  * itself loosely still yields its description and price.
+ *
+ * @internal Exported for unit tests only.
  */
 export function readJsonLdProduct(doc: ParentNode): StructuredMetadata | null {
   const products: Record<string, JsonValue>[] = [];

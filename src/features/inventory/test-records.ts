@@ -30,12 +30,18 @@
  *  - `FAIL`  — did not meet them.
  *  - `LIMIT` — marginal: within limits but flagged (borderline / conditional).
  *  - `NA`    — no pass/fail judgement (an informational reading, e.g. a bare calibration measurement).
+ *
+ * @internal Exported for unit tests only.
  */
 export const TEST_RESULTS = ['PASS', 'FAIL', 'LIMIT', 'NA'] as const;
 
 export type TestResult = (typeof TEST_RESULTS)[number];
 
-/** The result a record takes when none is chosen (and the soft fallback for an unknown value). */
+/**
+ * The result a record takes when none is chosen (and the soft fallback for an unknown value).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_TEST_RESULT: TestResult = 'PASS';
 
 /** Human labels for each result. */
@@ -64,7 +70,11 @@ export const TEST_RESULT_TONE: Record<TestResult, TestResultTone> = {
 export const TEST_RESULT_OPTIONS: readonly { readonly value: TestResult; readonly label: string }[] =
   TEST_RESULTS.map((result) => ({ value: result, label: TEST_RESULT_LABELS[result] }));
 
-/** Type guard: is `value` one of the known results? */
+/**
+ * Type guard: is `value` one of the known results?
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isTestResult(value: unknown): value is TestResult {
   return typeof value === 'string' && (TEST_RESULTS as readonly string[]).includes(value);
 }
@@ -88,12 +98,18 @@ export function normaliseTestResult(raw: string | null | undefined): TestResult 
  *  - `TEST`        — a functional / acceptance check.
  *  - `CALIBRATION` — a calibration against a reference.
  *  - `SERVICE`     — a service / maintenance visit recorded against the unit.
+ *
+ * @internal Exported for unit tests only.
  */
 export const TEST_RECORD_KINDS = ['TEST', 'CALIBRATION', 'SERVICE'] as const;
 
 export type TestRecordKind = (typeof TEST_RECORD_KINDS)[number];
 
-/** The kind a record takes when none is chosen (and the soft fallback for an unknown value). */
+/**
+ * The kind a record takes when none is chosen (and the soft fallback for an unknown value).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_TEST_RECORD_KIND: TestRecordKind = 'TEST';
 
 /** Human labels for each kind. */
@@ -107,7 +123,11 @@ export const TEST_RECORD_KIND_LABELS: Record<TestRecordKind, string> = {
 export const TEST_RECORD_KIND_OPTIONS: readonly { readonly value: TestRecordKind; readonly label: string }[] =
   TEST_RECORD_KINDS.map((kind) => ({ value: kind, label: TEST_RECORD_KIND_LABELS[kind] }));
 
-/** Type guard: is `value` one of the known kinds? */
+/**
+ * Type guard: is `value` one of the known kinds?
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isTestRecordKind(value: unknown): value is TestRecordKind {
   return typeof value === 'string' && (TEST_RECORD_KINDS as readonly string[]).includes(value);
 }
@@ -123,13 +143,21 @@ export function normaliseTestRecordKind(raw: string | null | undefined): TestRec
   return isTestRecordKind(key) ? key : DEFAULT_TEST_RECORD_KIND;
 }
 
-/** Trim a required name to its canonical form, or `null` when it is blank. */
+/**
+ * Trim a required name to its canonical form, or `null` when it is blank.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function normaliseTestName(raw: string | null | undefined): string | null {
   const trimmed = raw?.trim();
   return trimmed ? trimmed : null;
 }
 
-/** Trim an optional free-text field (unit / note) to its canonical form, or `null` when blank. */
+/**
+ * Trim an optional free-text field (unit / note) to its canonical form, or `null` when blank.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function normaliseTestText(raw: string | null | undefined): string | null {
   const trimmed = raw?.trim();
   return trimmed ? trimmed : null;
@@ -141,6 +169,8 @@ export function normaliseTestText(raw: string | null | undefined): string | null
  * **negative** (temperature, dBm, drift), so — unlike a price — no non-negative constraint applies.
  * Distinguishing `undefined` lets {@link planTestRecord} surface a helpful error rather than
  * silently dropping a bad figure.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseReading(raw: number | null | undefined): number | null | undefined {
   if (raw == null) return null;

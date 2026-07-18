@@ -44,12 +44,20 @@ export function nowDate(): Date {
   return new Date(nowMs());
 }
 
-/** The active offset in ms (0 when the clock is real). */
+/**
+ * The active offset in ms (0 when the clock is real).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clockOffsetMs(): number {
   return offsetMs;
 }
 
-/** True while the clock is shifted — used to badge the UI so a shifted app is never mistaken for a real one. */
+/**
+ * True while the clock is shifted — used to badge the UI so a shifted app is never mistaken for a real one.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isClockShifted(): boolean {
   return offsetMs !== 0;
 }

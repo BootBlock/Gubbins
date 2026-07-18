@@ -28,7 +28,11 @@ export const MODE_OPTIONS = [
   { value: 'system', label: 'System' },
 ] as const satisfies readonly { value: Mode; label: string }[];
 
-/** The default mode when nothing is persisted (the app's dark-first aesthetic, §3). */
+/**
+ * The default mode when nothing is persisted (the app's dark-first aesthetic, §3).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_MODE: Mode = 'dark';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link Mode} (default dark). */
@@ -65,10 +69,18 @@ export const ACCENTS = [
 /** An accent colour id. */
 export type Accent = (typeof ACCENTS)[number]['id'];
 
-/** Every accent id, for iteration / validation. */
+/**
+ * Every accent id, for iteration / validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ACCENT_IDS = ACCENTS.map((a) => a.id) as Accent[];
 
-/** The default accent — the app's signature violet. */
+/**
+ * The default accent — the app's signature violet.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_ACCENT: Accent = 'violet';
 
 /** Coerce an arbitrary (stale/unknown) persisted value to a valid {@link Accent} (default violet). */
@@ -171,7 +183,11 @@ export const ANIMATION_LEVELS = [
 /** An animation level id. */
 export type AnimationLevel = (typeof ANIMATION_LEVELS)[number]['id'];
 
-/** Every animation level id, most flair → least (index === rank), for iteration / validation. */
+/**
+ * Every animation level id, most flair → least (index === rank), for iteration / validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ANIMATION_LEVEL_IDS = ANIMATION_LEVELS.map((l) => l.id) as AnimationLevel[];
 
 /**
@@ -188,7 +204,11 @@ export function normaliseAnimationLevel(value: string): AnimationLevel {
     : DEFAULT_ANIMATION_LEVEL;
 }
 
-/** A level's rank on the liveliest(0) → calmest scale. Higher = calmer / more suppressed. */
+/**
+ * A level's rank on the liveliest(0) → calmest scale. Higher = calmer / more suppressed.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function animationLevelRank(level: AnimationLevel): number {
   return ANIMATION_LEVEL_IDS.indexOf(level);
 }
@@ -246,7 +266,11 @@ export const BACKGROUND_EFFECTS = [
 /** A background-effect id. */
 export type BackgroundEffect = (typeof BACKGROUND_EFFECTS)[number]['id'];
 
-/** Every background-effect id, for iteration / validation. */
+/**
+ * Every background-effect id, for iteration / validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const BACKGROUND_EFFECT_IDS = BACKGROUND_EFFECTS.map((e) => e.id) as BackgroundEffect[];
 
 /** The default background effect — `none`, so the shipped baseline paints nothing. */
@@ -287,7 +311,11 @@ export const SURFACE_STYLES = [
 /** A surface-style id. */
 export type SurfaceStyle = (typeof SURFACE_STYLES)[number]['id'];
 
-/** Every surface-style id, for iteration / validation. */
+/**
+ * Every surface-style id, for iteration / validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SURFACE_STYLE_IDS = SURFACE_STYLES.map((s) => s.id) as SurfaceStyle[];
 
 /** The default surface style — `solid`, so the shipped baseline is fully opaque. */

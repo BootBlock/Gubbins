@@ -31,7 +31,11 @@ export const RARITY_TIERS = [
 /** A rarity tier id. */
 export type Rarity = (typeof RARITY_TIERS)[number]['id'];
 
-/** Every rarity id, least → most rare (index === rank), for iteration / validation. */
+/**
+ * Every rarity id, least → most rare (index === rank), for iteration / validation.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const RARITY_IDS = RARITY_TIERS.map((t) => t.id) as Rarity[];
 
 /** A tier's display label (e.g. `'Legendary'`). */
@@ -42,6 +46,8 @@ export const RARITY_LABELS: Record<Rarity, string> = Object.fromEntries(
 /**
  * Fraction of items that are collector cards (~5%). An item is a collector when its normalised
  * name hash falls below this threshold.
+ *
+ * @internal Exported for unit tests only.
  */
 export const COLLECTOR_FRACTION = 0.05;
 
@@ -62,6 +68,8 @@ const TIER_BANDS: readonly { readonly id: Rarity; readonly max: number }[] = [
 /**
  * A stable 32-bit unsigned hash of a string (FNV-1a). Deterministic and dependency-free; used only
  * to decide the decorative collector status, so it needs to distribute, not to be cryptographic.
+ *
+ * @internal Exported for unit tests only.
  */
 export function hashName(name: string): number {
   let h = 0x811c9dc5;

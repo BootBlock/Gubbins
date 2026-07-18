@@ -13,7 +13,11 @@
  * affordance) where the relevant API is unavailable, so nothing is lost.
  */
 
-/** The media query that is true when the app runs in a standalone (installed) window. */
+/**
+ * The media query that is true when the app runs in a standalone (installed) window.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const STANDALONE_DISPLAY_QUERY = '(display-mode: standalone)';
 
 /**

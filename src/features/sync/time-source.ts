@@ -15,7 +15,11 @@
  * local clock) so a flaky network can never block or crash a sync.
  */
 
-/** Parse an HTTP `Date` header into epoch milliseconds; `null` if absent/unparseable. */
+/**
+ * Parse an HTTP `Date` header into epoch milliseconds; `null` if absent/unparseable.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function parseHttpDate(header: string | null | undefined): number | null {
   if (!header) return null;
   const ms = Date.parse(header);

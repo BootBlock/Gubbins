@@ -35,7 +35,11 @@ export interface LocationMapTile {
   readonly weight: number;
 }
 
-/** Total items in a location and everything nested beneath it. */
+/**
+ * Total items in a location and everything nested beneath it.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function subtreeItemCount(node: LocationTreeNode): number {
   let total = node.itemCount;
   for (const child of node.children) total += subtreeItemCount(child);
@@ -45,6 +49,8 @@ export function subtreeItemCount(node: LocationTreeNode): number {
 /**
  * Index a nested location tree by id, so the map can resolve a re-root target and walk a
  * breadcrumb ancestry without re-scanning the tree each time.
+ *
+ * @internal Exported for unit tests only.
  */
 export function indexLocationTree(nodes: readonly LocationTreeNode[]): Map<string, LocationTreeNode> {
   const index = new Map<string, LocationTreeNode>();
@@ -62,6 +68,8 @@ export function indexLocationTree(nodes: readonly LocationTreeNode[]): Map<strin
  * The sibling nodes shown at a given map root: the top-level locations when `rootId` is null, else
  * the direct children of that location (empty when the id is unknown, e.g. a re-rooted location
  * that has since been removed).
+ *
+ * @internal Exported for unit tests only.
  */
 export function childrenAtRoot(
   nodes: readonly LocationTreeNode[],
@@ -76,6 +84,8 @@ export function childrenAtRoot(
  * The root-first ancestry of a map root (the breadcrumb trail), from the top-level location down
  * to and including `rootId` itself. Empty for the `null` (top-level) root. Defensive against a
  * broken/cyclic parent chain — a missing or repeated ancestor stops the walk.
+ *
+ * @internal Exported for unit tests only.
  */
 export function rootAncestry(
   rootId: string | null,
@@ -96,6 +106,8 @@ export function rootAncestry(
  * Turn a level of sibling locations into map tiles, sized by their subtree stock totals. Each
  * tile's `weight` is `subtreeCount + baseline`; the `baseline` (default 1) guarantees an empty
  * location still shows as a small tile so it stays navigable. Tiles keep the tree's given order.
+ *
+ * @internal Exported for unit tests only.
  */
 export function locationMapTiles(nodes: readonly LocationTreeNode[], baseline = 1): LocationMapTile[] {
   return nodes.map((node) => {

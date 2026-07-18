@@ -27,6 +27,8 @@
  *
  * Anything outside Code B's encodable range (or an empty string) throws
  * {@link Code128Error}.
+ *
+ * @internal Exported for unit tests only.
  */
 
 export class Code128Error extends Error {
@@ -181,6 +183,8 @@ function digitRunLength(codes: number[], i: number): number {
  * encoded data, the mod-103 checksum symbol, and the stop symbol (106). Pure.
  *
  * @throws {Code128Error} on empty input or any character outside ASCII 32..126.
+ *
+ * @internal Exported for unit tests only.
  */
 export function encodeCode128(text: string): number[] {
   if (text.length === 0) throw new Code128Error('Cannot encode an empty string.');
@@ -263,6 +267,8 @@ function checksum(symbols: number[]): number {
  * Each symbol is 11 modules; the stop symbol (106) contributes 13 modules (its
  * 11-module pattern plus the 2-module termination bar), so the canonical stop
  * pattern `1100011101011` ends the bitmap. No quiet zone is included here.
+ *
+ * @internal Exported for unit tests only.
  */
 export function code128Modules(text: string): boolean[] {
   const symbols = encodeCode128(text);

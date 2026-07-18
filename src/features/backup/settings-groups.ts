@@ -60,6 +60,8 @@ export interface SettingsGroup {
 /**
  * The groups, in the order the picker shows them — broadly "most likely to want" first, with the
  * device-specific group last.
+ *
+ * @internal Exported for unit tests only.
  */
 export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   {
@@ -255,7 +257,11 @@ const FIELD_OWNER: ReadonlyMap<string, SettingsGroupId> = new Map(
   SETTINGS_GROUPS.flatMap((group) => (group.prefFields ?? []).map((field) => [field, group.id] as const)),
 );
 
-/** The group owning a preference field, or undefined when it is ungrouped/non-portable. */
+/**
+ * The group owning a preference field, or undefined when it is ungrouped/non-portable.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function ownerOfPrefField(field: string): SettingsGroupId | undefined {
   return FIELD_OWNER.get(field);
 }

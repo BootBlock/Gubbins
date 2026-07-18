@@ -40,7 +40,11 @@ export function totalOnHand(placements: readonly StockPlacement[]): number {
   return placements.reduce((sum, p) => sum + Math.max(0, p.quantity), 0);
 }
 
-/** Placements actually holding stock, busiest first then alphabetical — the breakdown order. */
+/**
+ * Placements actually holding stock, busiest first then alphabetical — the breakdown order.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function activePlacements(placements: readonly StockPlacement[]): StockPlacement[] {
   return placements
     .filter((p) => p.quantity > 0)

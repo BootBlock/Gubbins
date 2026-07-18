@@ -113,7 +113,11 @@ export function monthsLabel(months: number): string {
   return `${months} ${plural(months, 'month')}`;
 }
 
-/** Schema version of the cold-storage history archive payload (§7.6.3 A). */
+/**
+ * Schema version of the cold-storage history archive payload (§7.6.3 A).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const HISTORY_ARCHIVE_FORMAT_VERSION = 1;
 
 export interface HistoryArchive<T> {

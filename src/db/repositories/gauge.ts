@@ -105,6 +105,8 @@ export type GaugeLevelKey = (typeof GAUGE_LEVELS)[number]['key'];
  * The net value a chosen fill level (`percent`, 0–100) maps to for a gauge of this
  * capacity, clamped to the valid `[0, grossCapacity]` range (§4.1.1). `50` → half a
  * full unit. Drives the "Estimate" quick-set (issue #95).
+ *
+ * @internal Exported for unit tests only.
  */
 export function estimateNetValue(percent: number, grossCapacity: number): number {
   return clampNetValue((percent / 100) * grossCapacity, grossCapacity);

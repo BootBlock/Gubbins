@@ -12,7 +12,11 @@
 import type { CreateItemInput, Item, ResolvedItemField, SupplierPart } from '@/db/repositories';
 import type { CreateSupplierPartInput } from '@/db/repositories';
 
-/** Default suffix appended to the cloned item's name so the copy is distinguishable. */
+/**
+ * Default suffix appended to the cloned item's name so the copy is distinguishable.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const CLONE_NAME_SUFFIX = ' (copy)';
 
 /**

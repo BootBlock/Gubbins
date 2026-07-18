@@ -15,7 +15,11 @@ import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
 
-/** Weekly cadence (§2.7 "weekly prompt"). */
+/**
+ * Weekly cadence (§2.7 "weekly prompt").
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ARCHIVE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**

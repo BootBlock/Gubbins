@@ -56,12 +56,20 @@ export interface LabelCell {
  */
 export const MAX_LABELS = 500;
 
-/** Truncate a label set to {@link MAX_LABELS}, keeping the first labels. */
+/**
+ * Truncate a label set to {@link MAX_LABELS}, keeping the first labels.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function clampLabels<T>(items: readonly T[]): T[] {
   return items.slice(0, MAX_LABELS);
 }
 
-/** The text lines an item label shows, in display order, per the template's flags. */
+/**
+ * The text lines an item label shows, in display order, per the template's flags.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function itemLabelLines(item: LabelItem, template: LabelTemplate): string[] {
   const lines: string[] = [];
   if (template.showName) lines.push(item.name);

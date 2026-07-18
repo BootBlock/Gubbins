@@ -66,6 +66,8 @@ function numberFormatterFor(locale: string): Intl.NumberFormat {
  * The CLDR plural category for `count` in `locale` (`'one'`, `'other'`, and for some languages
  * `'few'`/`'many'`/…). A non-finite count or a malformed locale resolves to `'other'` — the
  * category every language defines — so a bad input can never throw here.
+ *
+ * @internal Exported for unit tests only.
  */
 export function selectPluralCategory(locale: string, count: number): Intl.LDMLPluralRule {
   if (!Number.isFinite(count)) return 'other';

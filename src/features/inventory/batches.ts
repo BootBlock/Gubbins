@@ -42,6 +42,8 @@ function normaliseAttr(value: string | null | undefined): string | null {
 /**
  * Normalise a batch identity to its canonical form: blank strings become null and a
  * non-finite expiry becomes null, so equivalent identities always compare and key equal.
+ *
+ * @internal Exported for unit tests only.
  */
 export function normaliseBatch(identity: BatchIdentity): BatchIdentity {
   const expiry = identity.expiryDate;
@@ -100,6 +102,8 @@ export function batchIdentityFromKey(batchKey: string): BatchIdentity {
  * FEFO (First-Expiry-First-Out) order: soonest expiry first, an absent expiry (the
  * untracked remainder and non-perishable lots) always last, ties broken by batch key for
  * a stable, device-independent order. Returns a new array; the input is not mutated.
+ *
+ * @internal Exported for unit tests only.
  */
 export function sortFefo<T extends { expiryDate: number | null; batchKey: string }>(
   batches: readonly T[],
@@ -221,7 +225,11 @@ export function planItemConsumption(
   return { consumed, shortfall: remaining };
 }
 
-/** Total units held across a placement's batches. */
+/**
+ * Total units held across a placement's batches.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function totalBatched(batches: readonly BatchLine[]): number {
   return batches.reduce((sum, b) => sum + Math.max(0, b.quantity), 0);
 }
@@ -229,6 +237,8 @@ export function totalBatched(batches: readonly BatchLine[]): number {
 /**
  * The batches actually holding stock, in FEFO order — the breakdown display order, so a
  * user reads the soonest-to-expire lot at the top. Empty (zeroed) batches are dropped.
+ *
+ * @internal Exported for unit tests only.
  */
 export function activeBatches(batches: readonly BatchLine[]): BatchLine[] {
   return sortFefo(batches.filter((b) => b.quantity > 0));

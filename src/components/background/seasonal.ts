@@ -68,6 +68,8 @@ function daysBetween(date: Date, from: Date): number {
  * local-time `Date` at midnight. Easter moves — it is the only window here that can't be a fixed
  * month/day pair — so it gets the real computation rather than a hard-coded table that would
  * quietly expire.
+ *
+ * @internal Exported for unit tests only.
  */
 export function easterSunday(year: number): Date {
   const a = year % 19;
@@ -176,7 +178,11 @@ export const OCCASIONS: readonly SeasonalOccasion[] = [
   },
 ] as const;
 
-/** Look one up by id (unknown ids — e.g. a stale stored override — read as absent). */
+/**
+ * Look one up by id (unknown ids — e.g. a stale stored override — read as absent).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function getOccasion(id: string): SeasonalOccasion | undefined {
   return OCCASIONS.find((occasion) => occasion.id === id);
 }

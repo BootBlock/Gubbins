@@ -49,13 +49,25 @@ export interface WeighCountResult {
  */
 export type WeighCountConfidence = 'exact' | 'close' | 'uncertain';
 
-/** Deviation (in units) at or below which a reading is treated as landing on a whole unit. */
+/**
+ * Deviation (in units) at or below which a reading is treated as landing on a whole unit.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const EXACT_DEVIATION_UNITS = 0.05;
 
-/** Deviation (in units) above which a reading is no longer trustworthy. */
+/**
+ * Deviation (in units) above which a reading is no longer trustworthy.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const CLOSE_DEVIATION_UNITS = 0.25;
 
-/** Band a unit-space deviation (0 … 0.5) into a {@link WeighCountConfidence}. */
+/**
+ * Band a unit-space deviation (0 … 0.5) into a {@link WeighCountConfidence}.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function classifyDeviation(deviationUnits: number): WeighCountConfidence {
   if (!Number.isFinite(deviationUnits) || deviationUnits > CLOSE_DEVIATION_UNITS) return 'uncertain';
   return deviationUnits <= EXACT_DEVIATION_UNITS ? 'exact' : 'close';
@@ -67,6 +79,8 @@ export function classifyDeviation(deviationUnits: number): WeighCountConfidence 
  * or a non-finite gross/tare reading. A *negative* net (tare heavier than the gross reading,
  * i.e. the user mistyped one of them) is not an error here: it clamps to an empty scale, and
  * the caller decides how loudly to say so.
+ *
+ * @internal Exported for unit tests only.
  */
 export function countFromWeight({
   grossGrams,

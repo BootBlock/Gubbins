@@ -50,6 +50,27 @@ with it — so "I just weighed this, keep it" is a name and a button.
 Saved containers appear **above** the built-in catalogue and are marked **Yours**, because a
 container you measured yourself beats any published figure.
 
+## Changing or removing one of your containers
+
+Your own containers stay yours to correct. Every entry marked **Yours** carries an **edit** and a
+**delete** button beside it in the picker:
+
+- **Edit** reopens the form over that container, pre-filled with its current name, kind and empty
+  weight. Change what you need and choose **Save changes** — you stay in the library rather than
+  the picker closing, since correcting an entry isn't the same as choosing one. Reweighed the jar
+  after a chip came off the rim? This is where that goes.
+- **Delete** asks first, then removes the container from your library.
+
+> **ℹ️ Note**
+> Editing or deleting a container only changes the library. A tare figure you've already put into
+> an item or a gauge keeps the value it was given — Gubbins copies the number in when you pick a
+> container, it doesn't leave the field pointing at the entry. If you correct a container's weight
+> and want an existing item to match, pick the container again on that item.
+
+Built-in catalogue entries have no edit or delete button. They're the shipped reference list, not
+your data — if one doesn't match the container in your hand, weigh yours and save it, and your
+entry sorts above the built-in anyway.
+
 > **💡 Tip**
 > Saved containers travel with your data. They're included in [[cloud sync|Cloud-Sync]] and
 > [[backups|Backup-and-Restore]], so a jar you weighed on the kitchen tablet is there on the

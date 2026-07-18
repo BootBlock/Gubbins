@@ -137,6 +137,7 @@ const VERSIONS: VersionSpec[] = [
   },
 ];
 
+/** @internal Exported for unit tests only. */
 export class QrError extends Error {
   constructor(message: string) {
     super(message);
@@ -151,7 +152,11 @@ export interface QrMatrix {
   readonly version: number;
 }
 
-/** Encode UTF-8 `text` into a QR module matrix (byte mode, EC level M). */
+/**
+ * Encode UTF-8 `text` into a QR module matrix (byte mode, EC level M).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function encodeQr(text: string): QrMatrix {
   const bytes = utf8Bytes(text);
   const spec = chooseVersion(bytes.length);

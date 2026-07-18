@@ -99,6 +99,8 @@ export function isAllowedLookupUrl(rawUrl: string): boolean {
  * The full set of host patterns the extension manifest must grant — suppliers plus the
  * product-lookup provider. `host-permissions.test.ts` pins `extension/manifest.json` to
  * this, so neither list can drift from the manifest.
+ *
+ * @internal Exported for unit tests only.
  */
 export const ALL_EXTENSION_HOST_PERMISSIONS: readonly string[] = [
   ...EXTENSION_HOST_PERMISSIONS,

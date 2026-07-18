@@ -312,7 +312,11 @@ export function buildAgenda(sources: AgendaSources, now: number): AgendaEvent[] 
 // Date bucketing
 // ---------------------------------------------------------------------------
 
-/** Display order of the agenda buckets. */
+/**
+ * Display order of the agenda buckets.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const AGENDA_BUCKET_ORDER: readonly AgendaBucket[] = ['overdue', 'today', 'week', 'month', 'later'];
 
 /** Human-readable bucket headings. */

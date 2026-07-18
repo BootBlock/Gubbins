@@ -22,7 +22,6 @@ vi.mock('../mutations', () => ({
   useCreateItem: () => ({ mutate: spies.createItem, isPending: mockState.createItemPending }),
   useCreateSerialisedItems: () => ({ mutate: spies.createSerialised, isPending: false }),
   useApplyScrape: () => ({ mutate: spies.applyScrape, isPending: false }),
-  useCreateLocation: () => ({ mutate: spies.createLocation, isPending: false }),
   useCreateLocationPath: () => ({ mutate: spies.createLocation, isPending: false }),
   // Path A2 active-tab supplier-part persistence (only fired when `initialScrape` is passed).
   useCreateSupplierPart: () => ({ mutate: spies.createSupplierPart, isPending: false }),

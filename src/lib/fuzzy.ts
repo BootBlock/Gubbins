@@ -122,6 +122,8 @@ export function rankFuzzy<T>(
  * which is exactly the "did you mean…?" signal a mistyped URL needs. Uses a single rolling
  * row (O(min length) memory); the inputs here are short route names, so the classic O(n·m)
  * pass is more than fast enough.
+ *
+ * @internal Exported for unit tests only.
  */
 export function editDistance(a: string, b: string): number {
   const s = a.toLowerCase();

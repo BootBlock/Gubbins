@@ -25,7 +25,11 @@ export const WISHLIST_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW', 'NONE'] as const;
 
 export type WishlistPriority = (typeof WISHLIST_PRIORITIES)[number];
 
-/** The priority a new entry takes when none is chosen. */
+/**
+ * The priority a new entry takes when none is chosen.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const DEFAULT_WISHLIST_PRIORITY: WishlistPriority = 'NONE';
 
 /** Human labels for each priority (the `NONE` sentinel reads as "No priority"). */
@@ -36,7 +40,11 @@ export const WISHLIST_PRIORITY_LABELS: Record<WishlistPriority, string> = {
   NONE: 'No priority',
 };
 
-/** Display sort rank for each priority (derived from {@link WISHLIST_PRIORITIES} order). */
+/**
+ * Display sort rank for each priority (derived from {@link WISHLIST_PRIORITIES} order).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const WISHLIST_PRIORITY_RANK: Record<WishlistPriority, number> = WISHLIST_PRIORITIES.reduce(
   (acc, priority, index) => {
     acc[priority] = index;
@@ -51,7 +59,11 @@ export const WISHLIST_PRIORITY_OPTIONS: readonly {
   readonly label: string;
 }[] = WISHLIST_PRIORITIES.map((priority) => ({ value: priority, label: WISHLIST_PRIORITY_LABELS[priority] }));
 
-/** Type guard: is `value` one of the known priorities? */
+/**
+ * Type guard: is `value` one of the known priorities?
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isWishlistPriority(value: unknown): value is WishlistPriority {
   return typeof value === 'string' && (WISHLIST_PRIORITIES as readonly string[]).includes(value);
 }

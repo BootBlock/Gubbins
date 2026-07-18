@@ -10,17 +10,25 @@
  */
 import { Children, isValidElement, type ReactNode } from 'react';
 
-/** Floor — short toasts keep the familiar ~5s dwell. */
+/**
+ * Floor — short toasts keep the familiar ~5s dwell.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const TOAST_MIN_DURATION_MS = 5000;
 /**
  * Ceiling — even a very long toast auto-dismisses within this so the viewport never
  * fills up with lingering notifications; the message is still readable while it shows.
+ *
+ * @internal Exported for unit tests only.
  */
 export const TOAST_MAX_DURATION_MS = 15000;
 /**
  * Per-character reading budget. ~50ms/char ≈ 20 chars/s ≈ ~240 wpm at ~5 chars/word —
  * a relaxed glance-and-read pace rather than a focused-prose one, since a toast is a
  * peripheral interruption competing for attention.
+ *
+ * @internal Exported for unit tests only.
  */
 export const TOAST_MS_PER_CHAR = 50;
 

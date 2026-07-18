@@ -70,17 +70,29 @@ export interface AuditTotals {
 /** A location record's default before the auditor has touched it. */
 const PENDING_RECORD: AuditLocationRecord = { status: 'pending', variancesFound: 0, adjustmentsMade: 0 };
 
-/** True for the statuses that count as "dealt with" (no longer remaining). */
+/**
+ * True for the statuses that count as "dealt with" (no longer remaining).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isTerminal(status: AuditLocationStatus): boolean {
   return status !== 'pending';
 }
 
-/** The record for a location id, falling back to the pending default. */
+/**
+ * The record for a location id, falling back to the pending default.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function recordFor(state: AuditSessionState, id: string): AuditLocationRecord {
   return state.records[id] ?? PENDING_RECORD;
 }
 
-/** The status of a location id (pending when never recorded). */
+/**
+ * The status of a location id (pending when never recorded).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function statusOf(state: AuditSessionState, id: string): AuditLocationStatus {
   return recordFor(state, id).status;
 }
@@ -119,7 +131,11 @@ export function markLocation(
   };
 }
 
-/** Move the walk to a specific index, clamped into `[0, scope.length - 1]`. */
+/**
+ * Move the walk to a specific index, clamped into `[0, scope.length - 1]`.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function goToIndex(state: AuditSessionState, index: number): AuditSessionState {
   if (state.scope.length === 0) return { ...state, currentIndex: 0 };
   const clamped = Math.min(Math.max(index, 0), state.scope.length - 1);
@@ -131,6 +147,8 @@ export function goToIndex(state: AuditSessionState, index: number): AuditSession
  * `fromIndex + 1` and then wrapping to the start (so a location left pending earlier in
  * the walk is picked up again once everything after it is done). Returns `-1` when no
  * location remains pending — i.e. the session is complete.
+ *
+ * @internal Exported for unit tests only.
  */
 export function nextPendingIndex(state: AuditSessionState, fromIndex: number): number {
   const n = state.scope.length;
@@ -141,7 +159,11 @@ export function nextPendingIndex(state: AuditSessionState, fromIndex: number): n
   return -1;
 }
 
-/** The first still-pending index anywhere in the scope, or `-1` when none remain. */
+/**
+ * The first still-pending index anywhere in the scope, or `-1` when none remain.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function firstPendingIndex(state: AuditSessionState): number {
   const i = state.scope.findIndex((loc) => statusOf(state, loc.id) === 'pending');
   return i;
@@ -282,6 +304,8 @@ export interface AuditTreeNode {
  * scope follows the physical hierarchy. System-locked and archived locations — and, for
  * an archived branch, its whole subtree — are dropped: they are not places an auditor
  * walks with a clipboard.
+ *
+ * @internal Exported for unit tests only.
  */
 export function collectAuditableInOrder(tree: readonly AuditTreeNode[]): AuditScopeLocation[] {
   const out: AuditScopeLocation[] = [];

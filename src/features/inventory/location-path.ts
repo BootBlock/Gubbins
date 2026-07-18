@@ -36,6 +36,8 @@ export interface LocationBranch {
  * ones (so leading/trailing/doubled separators like `Workshop//Drawer/` collapse cleanly). A
  * name with no separator yields a single-element list; an all-blank input yields `[]`. The
  * leaf level is returned intact (commas untouched) — {@link splitLeafSiblings} fans it out.
+ *
+ * @internal Exported for unit tests only.
  */
 export function splitLocationPath(raw: string): string[] {
   return raw
@@ -49,6 +51,8 @@ export function splitLocationPath(raw: string): string[] {
  * comma (`,,`) as an escaped literal comma so names like `Bay 1,, 2` survive intact. Each name
  * is trimmed and empties are dropped, so stray/doubled separators (`Box 1, , Box 2,`) collapse
  * cleanly. A separator-free leaf yields a single-element list; an all-blank leaf yields `[]`.
+ *
+ * @internal Exported for unit tests only.
  */
 export function splitLeafSiblings(leaf: string): string[] {
   const names: string[] = [];
@@ -85,7 +89,11 @@ export function parseLocationBranch(raw: string): LocationBranch {
   return { ancestors: levels.slice(0, -1), leaves };
 }
 
-/** True when the raw name describes more than one level (i.e. contains a usable separator). */
+/**
+ * True when the raw name describes more than one level (i.e. contains a usable separator).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function isLocationPath(raw: string): boolean {
   return splitLocationPath(raw).length > 1;
 }

@@ -66,7 +66,11 @@ function ordered(fields: readonly Omit<CreateCategoryFieldInput, 'position'>[]):
   return fields.map((field, index) => ({ ...field, position: index }));
 }
 
-/** The canonical name of the "Tools" preset category (kept for the T4 idempotency guard/tests). */
+/**
+ * The canonical name of the "Tools" preset category (kept for the T4 idempotency guard/tests).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const TOOLS_STARTER_CATEGORY_NAME = 'Tools';
 
 /**
@@ -1573,6 +1577,8 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
 /**
  * The "Tools" preset seed, kept as a named export for the T4 idempotency affordance and its
  * tests. Sourced from {@link CATEGORY_PRESETS} so there is a single source of truth.
+ *
+ * @internal Exported for unit tests only.
  */
 export const TOOLS_STARTER_SEED: CategoryStarterSeed = CATEGORY_PRESETS[0]!.seed;
 

@@ -44,6 +44,8 @@ export const COI_BOOTSTRAP_MARKER = '__gubbinsCoiBootstrapRan';
  * alongside the boot gate, so on a first visit the worker legitimately does not exist yet at
  * the moment we probe. Waiting costs nothing on a healthy boot (this code only ever runs once
  * support has already failed) and buys a correct answer instead of a premature one.
+ *
+ * @internal Exported for unit tests only.
  */
 export const SERVICE_WORKER_PROBE_TIMEOUT_MS = 3_000;
 
@@ -181,7 +183,11 @@ async function probeServiceWorkerActive(): Promise<boolean> {
   }
 }
 
-/** Read every signal from the live environment (the only impure step). */
+/**
+ * Read every signal from the live environment (the only impure step).
+ *
+ * @internal Exported for unit tests only.
+ */
 export async function collectSupportSignals(): Promise<SupportSignals> {
   const serviceWorkerApi = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   const serviceWorkerActive = serviceWorkerApi ? await probeServiceWorkerActive() : false;

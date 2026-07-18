@@ -88,7 +88,11 @@ export type ScaleReadingResult =
   | { readonly ok: true; readonly grams: number; readonly value: number; readonly unit: string }
   | { readonly ok: false; readonly failure: ScaleFailure };
 
-/** Build the GET a scale call makes. Throws on a blank URL/token, validated before any network. */
+/**
+ * Build the GET a scale call makes. Throws on a blank URL/token, validated before any network.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function buildScaleRequest(
   baseUrl: string,
   token: string,
@@ -166,6 +170,8 @@ export async function fetchScaleReading(
  * API contract, whereas the prose is untranslatable English. A `409` is therefore resolved by
  * code (`scale_unavailable` → `scale-unavailable`, …), falling back to the generic
  * `scale-unavailable` reason only when the bridge sends a `409` we don't recognise.
+ *
+ * @internal Exported for unit tests only.
  */
 export function mapScaleFailure(status: number, payload: unknown): ScaleFailure {
   const code = readErrorCode(payload);

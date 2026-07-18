@@ -393,7 +393,11 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
  */
 export const FEATURE_REGISTRY: readonly FeatureDef[] = Object.values(FEATURE_DEFS);
 
-/** The full set of registered feature ids (every {@link FeatureId} appears exactly once). */
+/**
+ * The full set of registered feature ids (every {@link FeatureId} appears exactly once).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const ALL_FEATURE_IDS: readonly FeatureId[] = FEATURE_REGISTRY.map((f) => f.id);
 
 /** The optional (non-core) feature ids — the ones a preset or toggle can turn off. */

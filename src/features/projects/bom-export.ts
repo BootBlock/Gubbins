@@ -34,6 +34,8 @@ function lineCost(line: ProjectBomLine): number | null {
  * The BOM export columns: the on-screen part identity plus the quantity, status and
  * costing detail. Costs stay raw numbers (blank when unknown) so the file is
  * machine-readable and locale-independent.
+ *
+ * @internal Exported for unit tests only.
  */
 export function bomExportColumns(): readonly TabularColumn<ProjectBomLine>[] {
   return [
@@ -100,7 +102,11 @@ export interface EdaBomRow {
   readonly manufacturer: string | null;
 }
 
-/** Group BOM lines by distinct part, collecting references and summing quantities (order-stable). */
+/**
+ * Group BOM lines by distinct part, collecting references and summing quantities (order-stable).
+ *
+ * @internal Exported for unit tests only.
+ */
 export function groupEdaBom(lines: readonly ProjectBomLine[]): EdaBomRow[] {
   interface Group {
     readonly references: string[];
@@ -137,7 +143,11 @@ export function groupEdaBom(lines: readonly ProjectBomLine[]): EdaBomRow[] {
   });
 }
 
-/** The EDA BOM columns — the reference designators, quantity and part identity EDA tools import. */
+/**
+ * The EDA BOM columns — the reference designators, quantity and part identity EDA tools import.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function edaBomColumns(): readonly TabularColumn<EdaBomRow>[] {
   return [
     { header: 'References', value: (r) => r.references },

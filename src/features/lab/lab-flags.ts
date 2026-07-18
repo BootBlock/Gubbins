@@ -149,8 +149,3 @@ export const LAB_FLAGS: readonly LabFlagDef[] = [
       'Makes incoming rows arrive carrying exactly the local row’s timestamp, reproducing the tie that last-write-wins has to break. Useful when investigating devices that keep re-syncing the same rows.',
   },
 ] as const;
-
-/** Look one up by id (unknown ids — e.g. a stale stored override — read as absent). */
-export function getLabFlag(id: string): LabFlagDef | undefined {
-  return LAB_FLAGS.find((flag) => flag.id === id);
-}

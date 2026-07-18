@@ -103,6 +103,8 @@ export function countProjects(rows: readonly ProjectRow[], metric: string): numb
  * final cost has passed the budget. Shares {@link projectBudgetHealth} with the Dashboard
  * "Budget alerts" widget, so the count and the widget can never drift; `listBudgetAlerts` already
  * returns only budgeted projects.
+ *
+ * @internal Exported for unit tests only.
  */
 export function countOverBudgetProjects(rows: readonly BudgetAlertFigures[], warnPercent: number): number {
   return rows.filter((a) => projectBudgetHealth(a, warnPercent).over).length;

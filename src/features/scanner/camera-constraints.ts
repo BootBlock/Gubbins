@@ -29,6 +29,8 @@ export interface ScannerAdvancedConstraint {
  * for `continuous` focus only when the track lists it as supported. Returns an empty list when the
  * camera advertises nothing useful (or no capabilities at all), so the caller applies nothing.
  * Pure — no DOM, fully unit-testable.
+ *
+ * @internal Exported for unit tests only.
  */
 export function pickFocusConstraints(
   capabilities: ScannerTrackCapabilities | null | undefined,

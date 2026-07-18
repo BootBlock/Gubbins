@@ -189,7 +189,11 @@ export const DEFAULT_CATALOGUE_FIELDS: readonly CatalogueFieldKey[] = [
   'lineValue',
 ];
 
-/** The set of {@link CatalogueFieldKey}s that carry a money value (drive the totals footer). */
+/**
+ * The set of {@link CatalogueFieldKey}s that carry a money value (drive the totals footer).
+ *
+ * @internal Exported for unit tests only.
+ */
 export const CATALOGUE_MONEY_FIELDS: ReadonlySet<CatalogueFieldKey> = new Set(
   CATALOGUE_FIELDS.filter((f) => f.money).map((f) => f.key),
 );

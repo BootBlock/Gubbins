@@ -14,6 +14,8 @@
 /**
  * The least-privilege Drive scope: an app-private folder Gubbins cannot see *or* touch
  * any of the user's other Drive files through. The whole sync snapshot lives there.
+ *
+ * @internal Exported for unit tests only.
  */
 export const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 

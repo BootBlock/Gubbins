@@ -31,6 +31,8 @@ function isAllDigits(value: string): boolean {
  * every GTIN width). Weights alternate 3,1 anchored at the check digit — the data digit
  * immediately to its left is weighted 3 — which makes the rule length-agnostic across
  * GTIN-8/12/13/14. Returns false for anything that is not a run of digits.
+ *
+ * @internal Exported for unit tests only.
  */
 export function hasValidGtinCheckDigit(digits: string): boolean {
   if (!isAllDigits(digits)) return false;
@@ -49,6 +51,8 @@ export function hasValidGtinCheckDigit(digits: string): boolean {
  * True when `raw` is a syntactically valid GTIN: a run of digits of a recognised length
  * ({@link GTIN_LENGTHS}) whose mod-10 check digit is correct. Surrounding whitespace is
  * ignored; any other character (letters, dashes, dots) makes it not a GTIN.
+ *
+ * @internal Exported for unit tests only.
  */
 export function isValidGtin(raw: string): boolean {
   const digits = raw.trim();

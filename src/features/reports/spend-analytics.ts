@@ -19,7 +19,11 @@
 /** The three spend sources, each composed from data already stored. */
 export type SpendSource = 'PURCHASE_ORDER' | 'PROJECT_EXPENSE' | 'ACQUISITION';
 
-/** Fixed display order for the by-source breakdown. */
+/**
+ * Fixed display order for the by-source breakdown.
+ *
+ * @internal Exported for unit tests only.
+ */
 export const SPEND_SOURCES: readonly SpendSource[] = ['PURCHASE_ORDER', 'PROJECT_EXPENSE', 'ACQUISITION'];
 
 /** Human-readable source labels (British English). */

@@ -35,7 +35,11 @@ export function isWriteSuspended(tier: StorageTier): boolean {
   return tier === 'locked';
 }
 
-/** Non-essential features (e.g. new high-res image uploads) are disabled from critical upward. */
+/**
+ * Non-essential features (e.g. new high-res image uploads) are disabled from critical upward.
+ *
+ * @internal Exported for unit tests only.
+ */
 export function areNonEssentialFeaturesDisabled(tier: StorageTier): boolean {
   return tier === 'critical' || tier === 'locked';
 }

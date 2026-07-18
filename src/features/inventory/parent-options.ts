@@ -20,6 +20,8 @@ export interface ParentLocationRow {
  * a terse `"-"` (far quicker to scan than `"0 items"`), otherwise a locale-formatted,
  * pluralised count. The `quantity` argument is `Formatters.quantity` — passed in (not
  * imported) so this stays a pure, directly-testable function.
+ *
+ * @internal Exported for unit tests only.
  */
 export function itemCountMeta(count: number, quantity: (value: number) => string): string {
   if (count === 0) return '-';
