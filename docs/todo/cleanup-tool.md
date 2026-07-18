@@ -2,13 +2,17 @@
 
 > **Status:** 🟢 ACTIVE — design notes for a **separate** application; nothing here ships as part of Gubbins.
 
-A small Windows utility (C# / WinUI 3) that finds and reclaims wasted disk space on a developer
-workstation, with a safety model good enough to trust unattended.
+A small Windows utility — **C# 14 / .NET 10 / WinUI 3** — that finds and reclaims wasted disk space
+on a developer workstation, with a safety model good enough to trust unattended.
 
-> **Scope note.** This is **not a Gubbins feature** and shares no code with it. The document lives
-> here only because the findings below were gathered while working in this repository, and would
-> otherwise be lost. When the tool gets its own repository, move this document there and leave a
-> pointer behind.
+> **Scope note.** This is **not a Gubbins feature** and shares no code with it — different language,
+> different runtime, different repository. The document lives here only because the findings below
+> were gathered while working in this repository, and would otherwise be lost.
+>
+> **It is staged to move.** When the tool gets its own repository this file moves there wholesale and
+> is deleted from `docs/todo/`. Nothing in Gubbins links to it, so the move strands nothing; note
+> only that `docs/todo/` carries a status-banner convention enforced by a unit test, which this
+> document satisfies while it is here and will not need once it leaves.
 
 ---
 
@@ -178,7 +182,27 @@ than the hundredth.
 
 ---
 
-## 6. Proposed architecture (C# / WinUI 3)
+## 6. Platform and architecture
+
+### 6.1 Toolchain (decided)
+
+| Choice | Value |
+| --- | --- |
+| Language | **C# 14** |
+| Runtime | **.NET 10** (LTS) |
+| UI framework | **WinUI 3**, via the Windows App SDK |
+| Target framework | `net10.0-windows10.0.19041.0` (both projects) |
+| Deployment | **Unpackaged** — see the note below |
+| Minimum OS | Windows 10 1809 / Windows 11 |
+
+`LangVersion` needs no explicit setting: the .NET 10 SDK defaults to C# 14. Pin it only if a
+future SDK bump must not silently change language semantics.
+
+`Cleanup.Core` stays free of any UI dependency, but still targets `net10.0-windows` rather than
+plain `net10.0` — the scanner P/Invokes Win32 for MFT access, so there is no meaningful portable
+subset to preserve. It is testable as an ordinary class library.
+
+### 6.2 Project layout
 
 ```
 Cleanup.Core/          ← no UI dependency; unit-testable
@@ -205,10 +229,14 @@ interface ICleanupProvider {
 
 Adding support for a new cache is then one class plus tests, and the safety model applies uniformly.
 
-**Notes on the platform choice**
+### 6.3 Platform notes
 
 - WinUI 3 is fine for this, but **unpackaged** deployment is simpler here: a packaged app runs
   virtualised against `%LOCALAPPDATA%` in ways that complicate reading other apps' caches.
+- Ship **self-contained** rather than framework-dependent. A disk-cleanup tool is exactly the thing
+  someone reaches for on a machine that is too full to install a runtime, so requiring a separate
+  .NET 10 install would defeat it at the moment of need. (NativeAOT is not an option — WinUI 3 does
+  not support it.)
 - MFT reading requires **administrator**; the app should run unelevated by default, scan what it
   can, and request elevation only for the fast scanner and for `C:\Windows\Temp`.
 - Enable **long path** support (`\\?\` prefixes or the manifest opt-in). Node and NuGet trees
