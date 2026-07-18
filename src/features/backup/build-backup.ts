@@ -50,7 +50,10 @@ export async function createBackup(
   // Copy the sqlite bytes out of WASM memory so the Blob is independent of the worker heap.
   const sqlite = selection.rawSqlite ? (await driver.exportBinary()).slice() : null;
   const images = selection.images ? await readAllImages() : [];
-  const settings = selection.settings ? collectSettings() : null;
+  // Only the setting groups the user ticked travel; an all-unticked selection yields an empty
+  // record, which is treated as "no settings" so the backup carries no `settings.json` at all.
+  const collected = selection.settings ? collectSettings(selection.settingGroups) : null;
+  const settings = collected && Object.keys(collected).length > 0 ? collected : null;
 
   const { files, assets, manifest } = assembleBackup({
     snapshot,
