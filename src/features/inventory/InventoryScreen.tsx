@@ -35,6 +35,7 @@ import {
   SearchIcon,
   SelectIcon,
   TableViewIcon,
+  TagIcon,
   TreemapViewIcon,
   VisualDensityIcon,
 } from '@/components/icons';
@@ -748,6 +749,9 @@ function InventoryWorkspace() {
               <MenuSeparator />
               <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
                 Categories
+              </MenuAction>
+              <MenuAction icon={<TagIcon />} onSelect={() => void navigate({ to: '/tags' })}>
+                Tags
               </MenuAction>
               <MenuAction
                 icon={<CycleCountIcon />}
