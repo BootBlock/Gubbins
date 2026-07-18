@@ -1463,14 +1463,19 @@
 }
 
 /*
- * Milestone success burst (visual-flair F4). A one-shot, tasteful celebratory burst played by
- * the Foundry `BurstProvider` on a genuine milestone (the first item ever added, a completed
- * stock-take) — not a screen-filling confetti storm. Each spark translates outward from the
- * burst origin to a per-particle offset (set inline as `--burst-dx` / `--burst-dy`) while fading
- * and shrinking, and a single soft ring expands once behind them.
+ * Milestone success burst (visual-flair F4). A one-shot celebratory *firework* played by the
+ * Foundry `BurstProvider` on a genuine milestone (the first item ever added, a completed
+ * stock-take): a page-filling shell of sparks that carries into every corner of the viewport over
+ * three to four seconds. Each spark translates outward from the burst origin to a per-particle
+ * offset (set inline as `--burst-dx` / `--burst-dy`), sags under gravity by `--burst-drop` as it
+ * fades and shrinks, and runs for its own `--burst-duration`; a soft shockwave ring expands out
+ * ahead of them.
  *
- * Compositor-only — transform + opacity, no layout/paint thrash — and every colour is drawn from
- * the accent-tracking brand tokens (`--primary` / `--highlight`, set inline as each spark's
+ * GPU-only by construction — the animated properties are `transform` and `opacity` and nothing
+ * else, and every transform is a `translate3d`, so each spark is composited on the GPU and no
+ * frame costs layout or paint. (The provider additionally promotes and `contain`s the overlay, so
+ * a hundred sparks in flight can't invalidate the page beneath.) Every colour is drawn from the
+ * accent-tracking brand tokens (`--primary` / `--highlight`, set inline as each spark's
  * `background-color` / the ring's border), so the burst recolours for free whenever the user
  * changes their Colour (the Accent axis recolours exactly those tokens — see the appearance
  * Mode × Accent model).
@@ -1483,14 +1488,27 @@
 @keyframes gubbins-burst-spark {
   0% {
     opacity: 0;
-    transform: translate3d(0, 0, 0) scale(0.3);
+    transform: translate3d(0, 0, 0) scale(0.35);
   }
-  18% {
+  6% {
     opacity: 1;
+    transform: translate3d(calc(var(--burst-dx, 0px) * 0.12), calc(var(--burst-dy, 0px) * 0.12), 0) scale(1);
+  }
+  /* The shell is fully out well before the end; the rest of the flight is the slow, sagging fade
+     that makes it read as a firework rather than a pop. */
+  55% {
+    opacity: 0.9;
+    transform: translate3d(
+        calc(var(--burst-dx, 0px) * 0.94),
+        calc(var(--burst-dy, 0px) * 0.94 + var(--burst-drop, 0px) * 0.25),
+        0
+      )
+      scale(0.85);
   }
   100% {
     opacity: 0;
-    transform: translate3d(var(--burst-dx, 0), var(--burst-dy, 0), 0) scale(0.5);
+    transform: translate3d(var(--burst-dx, 0px), calc(var(--burst-dy, 0px) + var(--burst-drop, 0px)), 0)
+      scale(0.3);
   }
 }
 
@@ -1498,25 +1516,25 @@
   /* `both` (not `forwards`) so the invisible 0% frame also fills *backwards* during a spark's
      entrance stagger (`animation-delay`) — otherwise it would flash at its natural full opacity
      at the origin for a frame before the animation starts. */
-  animation: gubbins-burst-spark var(--burst-duration, 0.9s) var(--ease-emphasized) both;
+  animation: gubbins-burst-spark var(--burst-duration, 3.6s) var(--ease-emphasized) both;
 }
 
 @keyframes gubbins-burst-ring {
   0% {
     opacity: 0;
-    transform: scale(0.2);
+    transform: translate3d(0, 0, 0) scale(0.05);
   }
-  28% {
-    opacity: 0.55;
+  22% {
+    opacity: 0.5;
   }
   100% {
     opacity: 0;
-    transform: scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @utility animate-burst-ring {
-  animation: gubbins-burst-ring var(--burst-duration, 0.9s) var(--ease-emphasized) both;
+  animation: gubbins-burst-ring var(--burst-duration, 1.4s) var(--ease-emphasized) both;
 }
 
 /*
