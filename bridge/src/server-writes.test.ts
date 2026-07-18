@@ -65,15 +65,18 @@ afterAll(async () => {
 });
 
 function post(base: string, path: string, body?: unknown, init: RequestInit = {}): Promise<Response> {
+  // `...init` is spread first so the merged headers below always win — spreading it last would
+  // replace them wholesale, silently dropping the bearer token and turning every override into
+  // a confusing 401.
   return fetch(`${base}${path}`, {
+    body: body === undefined ? undefined : JSON.stringify(body),
+    ...init,
     method: 'POST',
     headers: {
       authorization: `Bearer ${TOKEN}`,
       'content-type': 'application/json',
       ...(init.headers ?? {}),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    ...init,
   });
 }
 
@@ -85,14 +88,13 @@ describe('writes disabled (default)', () => {
   });
 
   it('still rejects a POST with a missing token before anything else (401)', async () => {
-    const res = await post(
-      readonlyBase,
-      '/api/v1/items/item-m3-bolt/adjust-quantity',
-      { delta: -1 },
-      {
-        headers: { 'content-type': 'application/json' },
-      },
-    );
+    // Drives fetch directly rather than through `post`, which always attaches the bearer token —
+    // the point here is the *absence* of one, so it must not be supplied at all.
+    const res = await fetch(`${readonlyBase}/api/v1/items/item-m3-bolt/adjust-quantity`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ delta: -1 }),
+    });
     expect(res.status).toBe(401);
   });
 
@@ -138,6 +140,25 @@ describe('writes enabled', () => {
       body: '{ not json',
     });
     expect(res.status).toBe(400);
+  });
+
+  const postAs = (contentType: string, body: string): Promise<Response> =>
+    post(writableBase, '/api/v1/items/item-m3-bolt/adjust-quantity', undefined, {
+      headers: { 'content-type': contentType },
+      body,
+    });
+
+  it('rejects a non-JSON Content-Type with 415 rather than parsing the body anyway', async () => {
+    const res = await postAs('application/x-www-form-urlencoded', 'delta=-2');
+    expect(res.status).toBe(415);
+    expect((await res.json()).error.code).toBe('unsupported_media_type');
+  });
+
+  it('accepts a JSON Content-Type with parameters, and the +json structured suffix', async () => {
+    for (const contentType of ['application/json; charset=utf-8', 'application/merge-patch+json']) {
+      const res = await postAs(contentType, JSON.stringify({ delta: 1 }));
+      expect(res.status).toBe(200);
+    }
   });
 
   it('maps a WriteError(404) from the executor to a 404 not_found', async () => {

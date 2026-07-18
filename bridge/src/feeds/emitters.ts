@@ -120,10 +120,14 @@ export function isoDate(unixMs: number): string {
 export function emitRss(channel: FeedChannel, items: readonly FeedItem[]): string {
   const lines: string[] = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<rss version="2.0">',
+    '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
     '  <channel>',
     `    <title>${escapeXml(channel.title)}</title>`,
     `    <link>${escapeXml(channel.homeUrl)}</link>`,
+    // RSS 2.0 has no self-reference of its own, so the RSS Advisory Board's best practice (and
+    // what readers expect) is to borrow Atom's — it tells a reader where the feed lives when it
+    // has been copied or proxied. Same `selfUrl` the Atom emitter uses; never carries the token.
+    `    <atom:link rel="self" type="application/rss+xml" href="${escapeXml(channel.selfUrl)}"/>`,
     `    <description>${escapeXml(channel.description)}</description>`,
     `    <lastBuildDate>${rfc822(channel.updated)}</lastBuildDate>`,
     `    <generator>Gubbins Bridge</generator>`,

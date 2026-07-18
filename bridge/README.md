@@ -144,7 +144,9 @@ byte-for-byte identical success bodies, so existing consumers keep working uncha
 
 Status codes: `401` (missing/wrong token), `400` (missing or over-long `q`, max 200 chars),
 `404` (unknown path), `405` (non-GET), `429` (rate-limited — see [below](#rate-limiting)),
-`503` (no snapshot loaded yet), `500` (generic — never leaks internals). `q` accepts the
+`503` (no snapshot loaded yet, with a `Retry-After`), `500` (generic — never leaks
+internals). A `POST` that declares a `Content-Type` other than `application/json` is
+refused with `415` rather than having its body read as JSON. `q` accepts the
 app's full search grammar (`field:value`, `cap:key>n`, `AND`/`OR`/parentheses) as well as a
 casual phrase like `M3 screws`. The unversioned paths keep a flat `{ "error": "<message>" }`
 body; the versioned API uses the structured envelope described next.
@@ -168,8 +170,8 @@ every endpoint is **GET-only** and strictly read-only.
   benign `true` on an exact-boundary last page — fetch the next page to confirm).
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
-  `unauthorized`, `not_found`, `method_not_allowed`, `too_many_requests`,
-  `snapshot_unavailable`, `internal_error`.
+  `unauthorized`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
+  `too_many_requests`, `snapshot_unavailable`, `internal_error`.
 - **Field selection** — the item endpoints accept `fields` (return only the named fields) and
   `include` (add extended fields on top of the default payload). See
   [Field selection & extended fields](#field-selection--extended-fields) below.

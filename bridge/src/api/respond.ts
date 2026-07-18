@@ -22,6 +22,9 @@ export type ApiErrorCode =
   | 'method_not_allowed'
   | 'too_many_requests'
   | 'snapshot_unavailable'
+  // A POST whose `Content-Type` is not JSON — HTTP 415. The body is never parsed, so a form
+  // encoding or `text/plain` is refused rather than silently read as JSON.
+  | 'unsupported_media_type'
   // A well-formed write that the domain rejected (e.g. quantity below zero, wrong tracking
   // mode) — HTTP 422. Only reachable when the opt-in write endpoints are enabled.
   | 'unprocessable'
@@ -40,6 +43,13 @@ export type ApiErrorCode =
   | 'home_assistant_unauthorised'
   | 'home_assistant_error'
   | 'internal_error';
+
+/**
+ * Seconds a client should wait before retrying a `503 snapshot_unavailable`. Short, because the
+ * snapshot watcher hydrates within a debounce of the file appearing — this is "try again in a
+ * moment", not a back-off schedule.
+ */
+export const SNAPSHOT_RETRY_AFTER_SEC = 5;
 
 /** Write a JSON response with no-store caching and optional extra headers. */
 export function sendJson(
@@ -138,5 +148,13 @@ export function sendError(
   options: { v1: boolean; headers?: Readonly<Record<string, string>> },
 ): void {
   const body = options.v1 ? { error: { code, message } } : { error: message };
-  sendJson(res, status, body, options.headers ?? {});
+  const headers = options.headers ?? {};
+  // RFC 9110 §15.6.4 recommends `Retry-After` on a 503. Every 503 the bridge emits means the
+  // same thing — no snapshot hydrated yet — and the watcher re-hydrates as soon as the file
+  // lands, so a short fixed delay is the honest answer. An explicit header still wins.
+  const withRetry: Record<string, string> =
+    status === 503 && headers['retry-after'] === undefined
+      ? { 'retry-after': String(SNAPSHOT_RETRY_AFTER_SEC), ...headers }
+      : { ...headers };
+  sendJson(res, status, body, withRetry);
 }

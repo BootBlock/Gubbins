@@ -39,6 +39,7 @@ const errorSchema: JsonValue = {
             'method_not_allowed',
             'too_many_requests',
             'snapshot_unavailable',
+            'unsupported_media_type',
             'unprocessable',
             'payload_too_large',
             'internal_error',
@@ -290,6 +291,7 @@ const errorResponses = (...codes: number[]): JsonValue => {
       'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
       '#/components/schemas/Error',
     ),
+    415: response('The request body was not declared as application/json.', '#/components/schemas/Error'),
     422: response(
       'The request was well-formed but rejected (e.g. quantity below zero, the wrong tracking mode, or a snapshot from a newer Gubbins build).',
       '#/components/schemas/Error',
@@ -301,7 +303,16 @@ const errorResponses = (...codes: number[]): JsonValue => {
       },
       content: jsonContent('#/components/schemas/Error'),
     },
-    503: response('Snapshot not loaded yet.', '#/components/schemas/Error'),
+    503: {
+      description: 'Snapshot not loaded yet.',
+      headers: {
+        'Retry-After': {
+          schema: { type: 'integer' },
+          description: 'Seconds to wait before retrying.',
+        },
+      },
+      content: jsonContent('#/components/schemas/Error'),
+    },
   };
   const out: Record<string, JsonValue> = {};
   for (const code of codes) {
@@ -734,7 +745,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Whole-number change; negative to check out.'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -750,7 +761,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
         responses: {
           200: response('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -789,7 +800,7 @@ export const openapiDocument: JsonValue = {
             formatVersion: 3,
             generatedAt: 1751004800000,
           }),
-          ...(errorResponses(400, 401, 413, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 413, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },

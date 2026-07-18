@@ -125,6 +125,11 @@ describe('formatCalendar', () => {
     expect(out).toContain('X-WR-CALNAME:Gubbins\r\n');
   });
 
+  it('emits no METHOD, so clients treat it as a subscribable feed and not an invitation', () => {
+    const out = formatCalendar({ prodId: 'p', calName: 'Gubbins', events: [event()] });
+    expect(out).not.toContain('METHOD:');
+  });
+
   it('renders an all-day VEVENT with VALUE=DATE start/end, UID, DTSTAMP, SUMMARY and CATEGORIES', () => {
     const out = formatCalendar({ prodId: 'p', events: [event()] });
     expect(out).toContain('BEGIN:VEVENT\r\n');

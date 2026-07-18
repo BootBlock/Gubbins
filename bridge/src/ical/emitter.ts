@@ -6,8 +6,9 @@
  * dependency (CLAUDE.md "minimal dependency surface"; the plan's stdlib-first invariant). It
  * covers exactly what the calendar feed needs and nothing more:
  *
- *   - `BEGIN/END:VCALENDAR` with `VERSION`, `PRODID`, `CALSCALE`, `METHOD` and an optional
- *     `X-WR-CALNAME` (the de-facto "calendar name" hint most clients honour);
+ *   - `BEGIN/END:VCALENDAR` with `VERSION`, `PRODID`, `CALSCALE` and an optional
+ *     `X-WR-CALNAME` (the de-facto "calendar name" hint most clients honour) — but no `METHOD`,
+ *     which would mark the document as an iTIP message (see {@link formatCalendar});
  *   - one `VEVENT` per row with a stable `UID`, a `DTSTAMP`, a `DTSTART` (+ optional `DTEND`),
  *     `SUMMARY`, and optional `DESCRIPTION` / `CATEGORIES`;
  *   - **all-day** dates (`VALUE=DATE`, `YYYYMMDD`) and **timed** UTC date-times
@@ -190,7 +191,9 @@ export function formatCalendar(calendar: VCalendar): string {
     'VERSION:2.0',
     `PRODID:${escapeText(calendar.prodId)}`,
     'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
+    // Deliberately no `METHOD`. Per RFC 5546 a `METHOD` marks the document as an iTIP message,
+    // and some Outlook versions then treat the `.ics` as a meeting invitation rather than a
+    // calendar to subscribe to. This is a published, subscribable feed, which needs no METHOD.
   ];
   if (calendar.calName !== undefined && calendar.calName.length > 0) {
     lines.push(`X-WR-CALNAME:${escapeText(calendar.calName)}`);
