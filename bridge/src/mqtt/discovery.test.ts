@@ -3,7 +3,13 @@
  * needs to auto-create the Gubbins entities with no custom component.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DISCOVERY_PREFIX, DEVICE_ID, buildDiscoveryConfigs } from './discovery.ts';
+import {
+  DEFAULT_DISCOVERY_PREFIX,
+  DEVICE_ID,
+  ORIGIN_NAME,
+  ORIGIN_SUPPORT_URL,
+  buildDiscoveryConfigs,
+} from './discovery.ts';
 import type { InventoryState } from './state.ts';
 
 const STATE: InventoryState = {
@@ -40,6 +46,8 @@ describe('buildDiscoveryConfigs', () => {
     expect(sensor.state_topic).toBe('gubbins/summary/state');
     expect(sensor.value_template).toBe('{{ value_json.itemsTotal }}');
     expect(sensor.unique_id).toBe('gubbins_items_total');
+    // The primary feature takes the device's own name rather than repeating it.
+    expect(sensor.name).toBeNull();
     expect(sensor.availability_topic).toBe('gubbins/status');
     expect((sensor.device as Record<string, unknown>).identifiers).toEqual([DEVICE_ID]);
     expect((sensor.device as Record<string, unknown>).sw_version).toBe('9.9.9');
@@ -56,7 +64,7 @@ describe('buildDiscoveryConfigs', () => {
 
   it('creates a per-location sensor pointed at that location state topic', () => {
     const sensor = byTopic(configs, 'homeassistant/sensor/gubbins/location_loc-store/config');
-    expect(sensor.name).toBe('Gubbins location Store Room');
+    expect(sensor.name).toBe('Location Store Room');
     expect(sensor.state_topic).toBe('gubbins/location/loc-store/state');
     expect(sensor.value_template).toBe('{{ value_json.itemCount }}');
   });
@@ -64,6 +72,22 @@ describe('buildDiscoveryConfigs', () => {
   it('shares one HA device across every entity', () => {
     const ids = configs.map((c) => (JSON.parse(c.payload).device as Record<string, unknown>).identifiers);
     expect(ids.every((i) => JSON.stringify(i) === JSON.stringify([DEVICE_ID]))).toBe(true);
+  });
+
+  it('carries the origin block on every entity', () => {
+    for (const config of configs) {
+      const origin = JSON.parse(config.payload).origin as Record<string, unknown>;
+      expect(origin.name).toBe(ORIGIN_NAME);
+      expect(origin.sw_version).toBe('9.9.9');
+      expect(origin.support_url).toBe(ORIGIN_SUPPORT_URL);
+    }
+  });
+
+  it('never repeats the device name in an entity name', () => {
+    // MQTT entities with a device get `has_entity_name`, so HA prefixes "Gubbins" itself.
+    const names = configs.map((c) => JSON.parse(c.payload).name as string | null);
+    expect(names.some((n) => n === null)).toBe(true);
+    expect(names.every((n) => n === null || !n.startsWith('Gubbins'))).toBe(true);
   });
 
   it('honours a custom discovery prefix', () => {

@@ -875,7 +875,9 @@ under a single "Gubbins" device: `sensor.gubbins_items_total`, `sensor.gubbins_l
 `binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), and one
 `sensor.gubbins_location_<id>` per user location. The discovery layout is re-published whenever a
 location is added/removed/renamed and on every reconnect (so a broker that restarted without
-persistence re-learns it).
+persistence re-learns it). Entity names are **device-relative** — Home Assistant prefixes the
+"Gubbins" device name itself, so they display as *Gubbins*, *Gubbins Low stock items*, *Gubbins
+Location Store Room* and so on, never doubled up.
 
 ```bash
 # verify the bridge is publishing (subscribe to everything under the prefix)
