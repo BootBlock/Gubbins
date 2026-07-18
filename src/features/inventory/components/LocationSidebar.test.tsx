@@ -36,6 +36,14 @@ vi.mock('../tags', () => ({
   // The tag editor's combobox offers the existing tag names (issue #84).
   useTagNames: () => ({ data: { rows: [] } }),
 }));
+// Same reasoning for the Edit dialog's inheritable-fields editor (issue #97): it reads
+// react-query hooks, and an empty dictionary renders it inertly without a QueryClient.
+vi.mock('../categories', () => ({
+  useFieldDefs: () => ({ data: [] }),
+  useLocationFieldValues: () => ({ data: [], isLoading: false }),
+  useSetLocationFieldValue: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveLocationFieldValue: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock('../mutations', () => ({
   useDeleteLocation: () => ({ mutate: spies.del, isPending: false }),
   useCreateLocation: () => ({ mutate: vi.fn(), isPending: false }),

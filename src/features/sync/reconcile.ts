@@ -384,14 +384,17 @@ function computeRemovedParents(
       remote,
       survivingIds('projects', local, localUpserts, localDeletes),
     ),
-    // §7.5 cascade-of-cascade (Phase 14): deleting a category cascades its category_fields
-    // (which themselves leave no tombstone), so a field belonging to a removed category is
-    // *also* removed — fold those in so item_field_values referencing them are guarded too.
-    category_fields: cascadeRemovedFields(
+    // The global custom-field dictionary (issue #97). Every field-value table now hangs off
+    // a *definition* rather than off a category's use of one, so the definitions are the
+    // parent to guard: a value row referencing a deleted definition would trip its FK.
+    // Definitions are a top-level dictionary deleted only explicitly (never by cascade), so
+    // the surviving set is the plain local-rows − deletes + upserts, with no
+    // cascade-of-cascade to fold in.
+    field_defs: removedIds(
+      'field_defs',
       local,
       remote,
-      removedCategories,
-      survivingIds('category_fields', local, localUpserts, localDeletes),
+      survivingIds('field_defs', local, localUpserts, localDeletes),
     ),
     // Phase 62: a removed supplier-part NULLs a PO line's nullable supplier_part_id, and a
     // removed PO drops its lines (CASCADE). Both parents are plain LWW tables, so their
@@ -439,7 +442,20 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
       { col: 'item_id', parent: 'items', nullable: false },
       { col: 'location_id', parent: 'locations', nullable: false },
     ],
-    category_fields: [{ col: 'category_id', parent: 'categories', nullable: false }],
+    // A category's use of a dictionary definition (issue #97): both ends are ON DELETE
+    // CASCADE / NOT NULL, so an incoming row whose category *or* whose definition did not
+    // survive the merge is dropped.
+    category_fields: [
+      { col: 'category_id', parent: 'categories', nullable: false },
+      { col: 'def_id', parent: 'field_defs', nullable: false },
+    ],
+    // The values a location offers for inheritance (issue #97). Same shape: both FKs are
+    // ON DELETE CASCADE / NOT NULL. A value at a removed location is dropped rather than
+    // resurrected, mirroring item_stock's location guard above.
+    location_field_values: [
+      { col: 'location_id', parent: 'locations', nullable: false },
+      { col: 'def_id', parent: 'field_defs', nullable: false },
+    ],
     item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
     // Manual current-value log points (feature-gap G9). item_id mirrors the item-child cascade
     // above — drop an incoming revaluation whose item did not survive the merge (ON DELETE
@@ -466,7 +482,7 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
     supplier_part_price_history: [{ col: 'supplier_part_id', parent: 'supplier_parts', nullable: false }],
     item_field_values: [
       { col: 'item_id', parent: 'items', nullable: false },
-      { col: 'field_id', parent: 'category_fields', nullable: false },
+      { col: 'def_id', parent: 'field_defs', nullable: false },
     ],
     item_images: [{ col: 'item_id', parent: 'items', nullable: false }],
     item_attachments: [{ col: 'item_id', parent: 'items', nullable: false }],
@@ -547,25 +563,6 @@ function removedIds(
   for (const r of remote.tables[table] ?? []) {
     const id = String(r.id);
     if (!surviving.has(id)) removed.add(id);
-  }
-  return removed;
-}
-
-/**
- * `category_fields` that will not survive the merge: those directly removed, *plus* those
- * whose owning `category_id` was removed (the cascade a `categories` delete triggers,
- * which leaves no child tombstone). Folding the cascade in lets the FK guard also drop
- * `item_field_values` that reference a field whose category was deleted (§7.5, Phase 14).
- */
-function cascadeRemovedFields(
-  local: SyncSnapshot,
-  remote: SyncSnapshot,
-  removedCategories: ReadonlySet<string>,
-  survivingFields: ReadonlySet<string>,
-): Set<string> {
-  const removed = removedIds('category_fields', local, remote, survivingFields);
-  for (const f of [...(local.tables.category_fields ?? []), ...(remote.tables.category_fields ?? [])]) {
-    if (removedCategories.has(String(f.category_id))) removed.add(String(f.id));
   }
   return removed;
 }

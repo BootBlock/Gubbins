@@ -169,13 +169,13 @@ describe('parseASTtoSQL — capabilities (spec §4 Weighted Capabilities)', () =
 });
 
 describe('parseASTtoSQL — custom fields (spec §4 Categories & Schema Evolution, Phase 71)', () => {
-  it('translates a presence HAS_CAPABILITY to an EXISTS over the item_field_values join', () => {
+  it('translates a presence HAS_CAPABILITY to an EXISTS over the effective-value join', () => {
     const [sql, params] = parseASTtoSQL(
       and({ field: 'field:Datasheet', operator: 'HAS_CAPABILITY', value: '' }),
     );
     expect(sql).toBe(
-      '(EXISTS (SELECT 1 FROM item_field_values ifv JOIN category_fields cf ON cf.id = ifv.field_id ' +
-        'WHERE ifv.item_id = items.id AND cf.name = ? COLLATE NOCASE AND ifv.value IS NOT NULL))',
+      '(EXISTS (SELECT 1 FROM item_field_effective_values ifv JOIN field_defs fd ON fd.id = ifv.def_id ' +
+        'WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE AND ifv.value IS NOT NULL))',
     );
     expect(params).toEqual(['Datasheet']);
   });
@@ -306,21 +306,47 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
     );
   }
 
-  /** Define a category custom field and return its id. */
+  /**
+   * Define a dictionary field and assign it to a category, returning the **definition**
+   * id (issue #97 — values key on the definition, not on a category's use of it).
+   */
   async function addCategoryField(categoryId: string, name: string, fieldType: string): Promise<string> {
-    const fieldId = crypto.randomUUID();
-    await driver.execute(
-      `INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);`,
-      [fieldId, categoryId, name, fieldType],
-    );
-    return fieldId;
+    const defId = crypto.randomUUID();
+    await driver.execute(`INSERT INTO field_defs (id, name, field_type) VALUES (?, ?, ?);`, [
+      defId,
+      name,
+      fieldType,
+    ]);
+    await driver.execute(`INSERT INTO category_fields (id, category_id, def_id) VALUES (?, ?, ?);`, [
+      crypto.randomUUID(),
+      categoryId,
+      defId,
+    ]);
+    return defId;
   }
 
-  /** Set an item's value for a defined custom field (TEXT EAV). */
-  async function setFieldValue(itemId: string, fieldId: string, value: string): Promise<void> {
+  /** Set an item's own value for a defined custom field (TEXT EAV). */
+  async function setFieldValue(itemId: string, defId: string, value: string): Promise<void> {
     await driver.execute(
-      `INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);`,
-      [crypto.randomUUID(), itemId, fieldId, value],
+      `INSERT INTO item_field_values (id, item_id, def_id, value, mode) VALUES (?, ?, ?, ?, 'literal');`,
+      [crypto.randomUUID(), itemId, defId, value],
+    );
+  }
+
+  /** Mark a location as offering an inheritable value for a definition (issue #97). */
+  async function setLocationFieldValue(locationId: string, defId: string, value: string): Promise<void> {
+    await driver.execute(
+      `INSERT INTO location_field_values (id, location_id, def_id, value, is_inheritable)
+       VALUES (?, ?, ?, ?, 1);`,
+      [crypto.randomUUID(), locationId, defId, value],
+    );
+  }
+
+  /** Record an item's intent to inherit a definition from its location (issue #97). */
+  async function setFieldInherited(itemId: string, defId: string): Promise<void> {
+    await driver.execute(
+      `INSERT INTO item_field_values (id, item_id, def_id, value, mode) VALUES (?, ?, ?, NULL, 'inherit');`,
+      [crypto.randomUUID(), itemId, defId],
     );
   }
 
@@ -450,6 +476,86 @@ describe('parseASTtoSQL — executes correctly against a real SQLite engine', ()
 
     it('resolves the field name case-insensitively', async () => {
       expect(await run(and({ field: 'field:rating', operator: 'EQUALS', value: 5 }))).toEqual(['reg']);
+    });
+  });
+
+  /**
+   * Issue #97 — a value an item *inherits* from its location must be as findable as one it
+   * stores. Searching through the raw value rows would miss these entirely (they hold NULL
+   * and defer to the location), which is the whole reason predicates read the
+   * `item_field_effective_values` view instead.
+   */
+  describe('custom-field predicates see location-inherited values (issue #97)', () => {
+    let makerId: string;
+
+    beforeEach(async () => {
+      await driver.execute('INSERT INTO categories (id, name) VALUES (?, ?);', ['cat-1', 'Chips']);
+      makerId = await addCategoryField('cat-1', 'Maker', 'TEXT');
+
+      // A cabinet inside Unassigned offers Maker = Ryobi to everything beneath it.
+      await driver.execute('INSERT INTO locations (id, name, parent_id) VALUES (?, ?, ?);', [
+        'cabinet',
+        'Cabinet A',
+        UNASSIGNED_LOCATION_ID,
+      ]);
+      await setLocationFieldValue('cabinet', makerId, 'Ryobi');
+      await driver.execute("UPDATE items SET location_id = 'cabinet' WHERE id = 'mcu';");
+    });
+
+    it('matches an item that inherits the value rather than storing it', async () => {
+      await setFieldInherited('mcu', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'EQUALS', value: 'Ryobi' }))).toEqual(['mcu']);
+    });
+
+    it('counts an inherited value as present for HAS_CAPABILITY', async () => {
+      await setFieldInherited('mcu', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([
+        'mcu',
+      ]);
+    });
+
+    it('does not match an item whose location offers no value for the field', async () => {
+      // `reg` is still in Unassigned, which offers nothing, so inheriting resolves to NULL.
+      await setFieldInherited('reg', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([]);
+    });
+
+    it("prefers an item's own stored value over the one its location offers", async () => {
+      await setFieldValue('mcu', makerId, 'Makita');
+      expect(await run(and({ field: 'field:Maker', operator: 'EQUALS', value: 'Makita' }))).toEqual(['mcu']);
+      expect(await run(and({ field: 'field:Maker', operator: 'EQUALS', value: 'Ryobi' }))).toEqual([]);
+    });
+
+    it('follows the value down through a nested location', async () => {
+      // A drawer inside the cabinet inherits the cabinet's offer transitively.
+      await driver.execute('INSERT INTO locations (id, name, parent_id) VALUES (?, ?, ?);', [
+        'drawer',
+        'Drawer 3',
+        'cabinet',
+      ]);
+      await driver.execute("UPDATE items SET location_id = 'drawer' WHERE id = 'mcu';");
+      await setFieldInherited('mcu', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'EQUALS', value: 'Ryobi' }))).toEqual(['mcu']);
+    });
+
+    it('takes the nearest location when both a parent and a child offer a value', async () => {
+      await driver.execute('INSERT INTO locations (id, name, parent_id) VALUES (?, ?, ?);', [
+        'drawer',
+        'Drawer 3',
+        'cabinet',
+      ]);
+      await setLocationFieldValue('drawer', makerId, 'Makita');
+      await driver.execute("UPDATE items SET location_id = 'drawer' WHERE id = 'mcu';");
+      await setFieldInherited('mcu', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'EQUALS', value: 'Makita' }))).toEqual(['mcu']);
+    });
+
+    it('ignores a location value that is not marked inheritable', async () => {
+      await driver.execute(
+        "UPDATE location_field_values SET is_inheritable = 0 WHERE location_id = 'cabinet';",
+      );
+      await setFieldInherited('mcu', makerId);
+      expect(await run(and({ field: 'field:Maker', operator: 'HAS_CAPABILITY', value: '' }))).toEqual([]);
     });
   });
 });

@@ -13,8 +13,10 @@ const DICTIONARY = {
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
   checkouts: ['id', 'item_id', 'contact_id', 'updated_at'],
-  category_fields: ['id', 'category_id', 'name', 'updated_at'],
-  item_field_values: ['id', 'item_id', 'field_id', 'value', 'updated_at'],
+  field_defs: ['id', 'name', 'field_type', 'updated_at'],
+  category_fields: ['id', 'category_id', 'def_id', 'updated_at'],
+  location_field_values: ['id', 'location_id', 'def_id', 'value', 'is_inheritable', 'updated_at'],
+  item_field_values: ['id', 'item_id', 'def_id', 'value', 'mode', 'updated_at'],
   tags: ['id', 'name', 'updated_at'],
   item_history: ['id', 'item_id', 'action', 'net_value_delta', 'note', 'created_at'],
   projects: ['id', 'name', 'updated_at'],
@@ -475,43 +477,107 @@ describe('reconcile (§7.3 / §7.5)', () => {
       expect(plan.localUpserts.some((u) => u.table === 'checkouts' && u.row.id === 'co1')).toBe(true);
     });
 
-    it('drops an item_field_value when its category cascade-removed the owning field', () => {
-      // A category delete cascades category_fields, which cascades item_field_values.
-      // The peer still carries the field-value referencing the cascaded field → on the
-      // deleting device it must NOT be re-inserted (its category_fields parent is gone).
+    it('drops a category_field when its category was removed', () => {
+      // A category delete cascades its category_fields, which record no tombstone of their
+      // own (§7.2). The peer never saw the delete and still offers the field → the deleting
+      // device must not re-insert it.
       const local = snapshot({
         tables: {
           categories: [{ id: 'cat1', name: 'Resistors', updated_at: 1 }],
-          category_fields: [{ id: 'f1', category_id: 'cat1', name: 'tolerance', updated_at: 1 }],
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          category_fields: [{ id: 'f1', category_id: 'cat1', def_id: 'd1', updated_at: 1 }],
         },
       });
       const remote = snapshot({
         tombstones: [{ tableName: 'categories', id: 'cat1', deletedAt: 99 }],
         tables: {
-          // The peer never saw the delete: it still holds the field and a value for it.
-          category_fields: [{ id: 'f1', category_id: 'cat1', name: 'tolerance', updated_at: 1 }],
-          item_field_values: [{ id: 'v1', item_id: 'i1', field_id: 'f1', value: '1%', updated_at: 5 }],
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          category_fields: [{ id: 'f1', category_id: 'cat1', def_id: 'd1', updated_at: 1 }],
         },
       });
       const plan = reconcile(local, remote, opts);
       expect(plan.localDeletes.some((d) => d.tableName === 'categories' && d.id === 'cat1')).toBe(true);
-      // The cascaded field must not be re-upserted, and neither must its value.
       expect(plan.localUpserts.some((u) => u.table === 'category_fields')).toBe(false);
-      expect(plan.localUpserts.some((u) => u.table === 'item_field_values')).toBe(false);
     });
 
-    it('keeps an item_field_value when its field (and category) survive', () => {
+    it('keeps an item_field_value when only its category was removed (issue #97)', () => {
+      // Values hang off the *definition*, not off a category's use of it, so deleting a
+      // category no longer destroys what items stored for that field. The value survives
+      // and reappears if the item is recategorised into another category using the def.
       const local = snapshot({
         tables: {
           categories: [{ id: 'cat1', name: 'Resistors', updated_at: 1 }],
-          category_fields: [{ id: 'f1', category_id: 'cat1', name: 'tolerance', updated_at: 1 }],
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          category_fields: [{ id: 'f1', category_id: 'cat1', def_id: 'd1', updated_at: 1 }],
         },
       });
       const remote = snapshot({
+        tombstones: [{ tableName: 'categories', id: 'cat1', deletedAt: 99 }],
         tables: {
-          categories: [{ id: 'cat1', name: 'Resistors', updated_at: 1 }],
-          category_fields: [{ id: 'f1', category_id: 'cat1', name: 'tolerance', updated_at: 1 }],
-          item_field_values: [{ id: 'v1', item_id: 'i1', field_id: 'f1', value: '1%', updated_at: 5 }],
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          item_field_values: [
+            { id: 'v1', item_id: 'i1', def_id: 'd1', value: '1%', mode: 'literal', updated_at: 5 },
+          ],
+        },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localUpserts.some((u) => u.table === 'item_field_values' && u.row.id === 'v1')).toBe(true);
+    });
+
+    it('drops an item_field_value when its field definition was removed', () => {
+      // Deleting the definition itself *does* cascade every value referencing it, so a peer
+      // that never saw the delete must not resurrect one.
+      const local = snapshot({
+        tables: { field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }] },
+      });
+      const remote = snapshot({
+        tombstones: [{ tableName: 'field_defs', id: 'd1', deletedAt: 99 }],
+        tables: {
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          item_field_values: [
+            { id: 'v1', item_id: 'i1', def_id: 'd1', value: '1%', mode: 'literal', updated_at: 5 },
+          ],
+        },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localDeletes.some((d) => d.tableName === 'field_defs' && d.id === 'd1')).toBe(true);
+      expect(plan.localUpserts.some((u) => u.table === 'item_field_values')).toBe(false);
+    });
+
+    it('drops a location_field_value when its definition was removed (issue #97)', () => {
+      const local = snapshot({
+        tables: { field_defs: [{ id: 'd1', name: 'Maker', field_type: 'TEXT', updated_at: 1 }] },
+      });
+      const remote = snapshot({
+        tombstones: [{ tableName: 'field_defs', id: 'd1', deletedAt: 99 }],
+        tables: {
+          field_defs: [{ id: 'd1', name: 'Maker', field_type: 'TEXT', updated_at: 1 }],
+          location_field_values: [
+            {
+              id: 'lv1',
+              location_id: 'loc1',
+              def_id: 'd1',
+              value: 'Ryobi',
+              is_inheritable: 1,
+              updated_at: 5,
+            },
+          ],
+        },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localUpserts.some((u) => u.table === 'location_field_values')).toBe(false);
+    });
+
+    it('keeps an item_field_value when its definition survives', () => {
+      const local = snapshot({
+        tables: { field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }] },
+      });
+      const remote = snapshot({
+        tables: {
+          field_defs: [{ id: 'd1', name: 'tolerance', field_type: 'TEXT', updated_at: 1 }],
+          item_field_values: [
+            { id: 'v1', item_id: 'i1', def_id: 'd1', value: '1%', mode: 'literal', updated_at: 5 },
+          ],
         },
       });
       const plan = reconcile(local, remote, opts);

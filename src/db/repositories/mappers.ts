@@ -17,7 +17,11 @@ import type {
   CategoryField,
   CategoryFieldRow,
   CategoryRow,
+  FieldDef,
+  FieldDefRow,
   GaugeState,
+  LocationFieldValue,
+  LocationFieldValueRow,
   Item,
   ItemAlias,
   ItemAliasRow,
@@ -63,7 +67,7 @@ import type {
   WishlistEntry,
   WishlistRow,
 } from './types';
-import type { BorrowerType } from './constants';
+import type { BorrowerType, FieldType } from './constants';
 import type { RelationKind } from '@/features/inventory/item-relations';
 import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
@@ -391,6 +395,7 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
   return {
     id: row.id,
     categoryId: row.category_id,
+    defId: row.def_id,
     name: row.name,
     fieldType: row.field_type,
     options: parseStringArray(row.options),
@@ -398,6 +403,44 @@ export function rowToCategoryField(row: CategoryFieldRow): CategoryField {
     defaultValue: row.default_value,
     description: row.description,
     position: row.position,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** A global field-dictionary definition row (issue #97) as a DTO. */
+export function rowToFieldDef(row: FieldDefRow): FieldDef {
+  return {
+    id: row.id,
+    name: row.name,
+    fieldType: row.field_type,
+    options: parseStringArray(row.options),
+    description: row.description,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * A location's value for a definition, joined to that definition (issue #97). The
+ * join columns are read alongside the value row so callers get one flat field.
+ */
+export function rowToLocationFieldValue(
+  row: LocationFieldValueRow & {
+    readonly name: string;
+    readonly field_type: FieldType;
+    readonly options: string | null;
+    readonly description: string | null;
+  },
+): LocationFieldValue {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    defId: row.def_id,
+    name: row.name,
+    fieldType: row.field_type,
+    options: parseStringArray(row.options),
+    description: row.description,
+    value: row.value,
+    isInheritable: row.is_inheritable === 1,
     updatedAt: row.updated_at,
   };
 }

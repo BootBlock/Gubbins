@@ -287,19 +287,45 @@ export const v1Initial: Migration = {
     },
     { sql: `ALTER TABLE items ADD COLUMN serial_no INTEGER;` },
     {
+      // The global **field dictionary** (issue #97). A custom field's *identity* —
+      // its name, type, option list and help note — lives here once, decoupled from
+      // any one category. Categories and locations both reference a definition rather
+      // than owning a private copy, which is what lets a location's value for a def
+      // be inherited by an item whose category uses that same def: the link is the
+      // def id, so it is exact and survives a rename on either side.
+      sql: `
+        CREATE TABLE field_defs (
+          id          TEXT    PRIMARY KEY NOT NULL,
+          name        TEXT    NOT NULL,
+          field_type  TEXT    NOT NULL,
+          options     TEXT,                            -- JSON array for SELECT fields
+          description TEXT,                            -- optional help note shown on the control
+          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (field_type IN (${fieldTypeList}))
+        ) STRICT;
+      `,
+    },
+    {
+      // One definition per name: the dictionary must not fragment, or two spellings of
+      // "Manufacturer" would silently break inheritance. NOCASE so case alone can't
+      // fork a def.
+      sql: `CREATE UNIQUE INDEX idx_field_defs_name ON field_defs(name COLLATE NOCASE);`,
+    },
+    { sql: updatedAtTrigger('field_defs') },
+    {
+      // A category's *use* of a dictionary definition, carrying the policy that is
+      // genuinely category-local: whether the field is required of items in this
+      // category, its lenient-defaulting value (§4), and its display position.
       sql: `
         CREATE TABLE category_fields (
           id            TEXT    PRIMARY KEY NOT NULL,
           category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-          name          TEXT    NOT NULL,
-          field_type    TEXT    NOT NULL,
-          options       TEXT,                          -- JSON array for SELECT fields
+          def_id        TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,
           is_required   INTEGER NOT NULL DEFAULT 0,
           default_value TEXT,                          -- lenient-defaulting value (§4)
-          description   TEXT,                          -- optional help note shown on the item control
           position      INTEGER NOT NULL DEFAULT 0,
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (field_type IN (${fieldTypeList})),
+          UNIQUE (category_id, def_id),
           CHECK (is_required IN (0, 1))
         ) STRICT;
       `,
@@ -307,16 +333,55 @@ export const v1Initial: Migration = {
     {
       sql: `CREATE INDEX idx_category_fields_category_id ON category_fields(category_id);`,
     },
+    {
+      sql: `CREATE INDEX idx_category_fields_def_id ON category_fields(def_id);`,
+    },
     { sql: updatedAtTrigger('category_fields') },
     {
+      // A location's value for a dictionary definition (issue #97). `is_inheritable`
+      // is opt-in per row: a location may record a value purely as its own metadata
+      // without offering it to the items inside it, which is what stops every field
+      // becoming inherited by default.
+      sql: `
+        CREATE TABLE location_field_values (
+          id             TEXT    PRIMARY KEY NOT NULL,
+          location_id    TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+          def_id         TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,
+          value          TEXT,
+          is_inheritable INTEGER NOT NULL DEFAULT 0,
+          updated_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          UNIQUE (location_id, def_id),
+          CHECK (is_inheritable IN (0, 1))
+        ) STRICT;
+      `,
+    },
+    {
+      sql: `CREATE INDEX idx_location_field_values_location_id ON location_field_values(location_id);`,
+    },
+    {
+      sql: `CREATE INDEX idx_location_field_values_def_id ON location_field_values(def_id);`,
+    },
+    { sql: updatedAtTrigger('location_field_values') },
+    {
+      // Per-item values, keyed by **definition** rather than by a category's use of it,
+      // so a value survives the item moving between categories that share a def.
+      //
+      // `mode` makes inheritance a *stored intent* rather than an absence: 'inherit'
+      // means "take the nearest inheritable ancestor location's value", re-resolved on
+      // every read, so moving the item to another location updates it live. That is
+      // deliberately distinct from having no row at all, which means "never set" and
+      // falls back to the category default (§4 lenient defaulting).
       sql: `
         CREATE TABLE item_field_values (
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          field_id   TEXT    NOT NULL REFERENCES category_fields(id) ON DELETE CASCADE,
+          def_id     TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,
           value      TEXT,
+          mode       TEXT    NOT NULL DEFAULT 'literal',
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          UNIQUE (item_id, field_id)
+          UNIQUE (item_id, def_id),
+          CHECK (mode IN ('literal', 'inherit')),
+          CHECK (mode <> 'inherit' OR value IS NULL)
         ) STRICT;
       `,
     },
@@ -324,9 +389,49 @@ export const v1Initial: Migration = {
       sql: `CREATE INDEX idx_item_field_values_item_id ON item_field_values(item_id);`,
     },
     {
-      sql: `CREATE INDEX idx_item_field_values_field_id ON item_field_values(field_id);`,
+      sql: `CREATE INDEX idx_item_field_values_def_id ON item_field_values(def_id);`,
     },
     { sql: updatedAtTrigger('item_field_values') },
+    {
+      // The **effective** value of every item custom field, with location inheritance
+      // already applied (issue #97). A row whose mode is 'inherit' resolves to the value
+      // offered by its nearest inheritable ancestor location; a literal row passes through.
+      //
+      // This exists so the *query* layer sees the same value the UI does. Without it a
+      // search for `field:Manufacturer=Ryobi` would silently miss every item that inherits
+      // Ryobi rather than storing it — the values are NULL in the base table. Resolving it
+      // once here keeps that rule in a single place instead of duplicated into each
+      // predicate that touches a custom field.
+      //
+      // The recursive term walks each location to its root; the closure is bounded by the
+      // location tree (user-scale), not by the item count.
+      sql: `
+        CREATE VIEW item_field_effective_values AS
+        WITH RECURSIVE location_ancestors(location_id, ancestor_id, depth) AS (
+          SELECT id, id, 0 FROM locations
+          UNION ALL
+          SELECT la.location_id, l.parent_id, la.depth + 1
+          FROM location_ancestors la
+          JOIN locations l ON l.id = la.ancestor_id
+          WHERE l.parent_id IS NOT NULL
+        )
+        SELECT
+          ifv.item_id AS item_id,
+          ifv.def_id  AS def_id,
+          CASE WHEN ifv.mode = 'inherit' THEN (
+            SELECT lfv.value
+            FROM location_field_values lfv
+            JOIN location_ancestors la ON la.ancestor_id = lfv.location_id
+            WHERE la.location_id = i.location_id
+              AND lfv.def_id = ifv.def_id
+              AND lfv.is_inheritable = 1
+            ORDER BY la.depth ASC
+            LIMIT 1
+          ) ELSE ifv.value END AS value
+        FROM item_field_values ifv
+        JOIN items i ON i.id = ifv.item_id;
+      `,
+    },
     {
       sql: `
         CREATE TABLE tags (

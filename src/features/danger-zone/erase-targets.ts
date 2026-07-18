@@ -40,6 +40,7 @@ export type EraseTargetId =
   | 'custom-field-values'
   | 'tags'
   | 'categories'
+  | 'field-dictionary'
   | 'locations'
   | 'projects'
   | 'purchase-orders'
@@ -310,7 +311,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     section: 'organisation',
     label: 'Categories & schemas',
     tooltip:
-      'Deletes every category and its custom-field schema, and clears the matching field values from items. Items are kept but become uncategorised.',
+      'Deletes every category and the custom fields assigned to them, and clears the matching field values from items. Items are kept but become uncategorised. The field dictionary and any values set on locations are kept.',
     scope: 'db',
     includes: ['custom-field-values'],
     countSql: 'SELECT COUNT(*) AS n FROM categories',
@@ -320,15 +321,46 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
         { sql: 'UPDATE items SET category_id = NULL WHERE category_id IS NOT NULL;' },
       ];
       if (tombstone) {
-        // category_fields cascades to its item_field_values; list both children explicitly.
+        // Since issue #97 item values hang off the *definition*, not off a category's use
+        // of it, so deleting categories no longer cascades them — they are deleted
+        // explicitly below and so need their own tombstones, not a cascade's.
         statements.push(
           tombstoneSelect('item_field_values', 'FROM item_field_values'),
           tombstoneSelect('category_fields', 'FROM category_fields'),
           tombstoneSelect('categories', 'FROM categories'),
         );
       }
-      // Cascades category_fields → item_field_values.
-      statements.push({ sql: 'DELETE FROM categories;' });
+      statements.push(
+        // Explicit: the FK cascade from categories reaches category_fields but stops there.
+        { sql: 'DELETE FROM item_field_values;' },
+        // Cascades category_fields.
+        { sql: 'DELETE FROM categories;' },
+      );
+      return statements;
+    },
+  },
+  {
+    id: 'field-dictionary',
+    section: 'organisation',
+    label: 'Custom field dictionary',
+    tooltip:
+      'Deletes every custom field definition, and with it the values stored against items and locations. Removes the vocabulary itself, not just the values — use "Custom field values" if you only want to clear what is stored.',
+    scope: 'db',
+    includes: ['custom-field-values'],
+    countSql: 'SELECT COUNT(*) AS n FROM field_defs',
+    buildStatements: ({ tombstone }) => {
+      const statements: SqlStatement[] = [];
+      if (tombstone) {
+        // Children first: cascade deletes do not record their own tombstones (§7.2).
+        statements.push(
+          tombstoneSelect('item_field_values', 'FROM item_field_values'),
+          tombstoneSelect('location_field_values', 'FROM location_field_values'),
+          tombstoneSelect('category_fields', 'FROM category_fields'),
+          tombstoneSelect('field_defs', 'FROM field_defs'),
+        );
+      }
+      // Cascades category_fields, location_field_values and item_field_values.
+      statements.push({ sql: 'DELETE FROM field_defs;' });
       return statements;
     },
   },
@@ -343,6 +375,13 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     buildStatements: ({ tombstone }) => {
       const statements: SqlStatement[] = [];
       if (tombstone) {
+        // Children first: the location's inheritable field values cascade away with it
+        // (issue #97) and, like every cascade, record no tombstone of their own (§7.2).
+        statements.push({
+          sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
+                SELECT 'location_field_values', lfv.id FROM location_field_values lfv
+                WHERE lfv.location_id IN (SELECT l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE});`,
+        });
         statements.push({
           sql: `INSERT OR REPLACE INTO tombstones (table_name, id) SELECT 'locations', l.id FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE};`,
         });

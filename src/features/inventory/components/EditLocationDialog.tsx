@@ -13,6 +13,7 @@ import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationKindPicker } from './LocationKindPicker';
 import { LocationKindIcon } from './LocationKindIcon';
 import { LocationTagEditor } from './TagEditor';
+import { LocationFieldsEditor } from './LocationFieldsEditor';
 import { locationFullness } from '../location-fullness';
 import { LocationFullnessBar } from './LocationFullnessBar';
 import {
@@ -171,6 +172,12 @@ export function EditLocationDialog({
           <span className="mb-field-gap block text-sm font-medium">Tags (optional)</span>
           <LocationTagEditor locationId={location.id} />
         </div>
+
+        {/* Custom-field values this location can pass down to its contents (issue #97).
+            Saves per-row on change rather than with the dialog's Save button, matching
+            LocationTagEditor above — both edit rows in their own tables, not columns of
+            the location being edited. */}
+        <LocationFieldsEditor locationId={location.id} />
 
         <div className="relative">
           <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">

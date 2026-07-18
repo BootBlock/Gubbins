@@ -4,7 +4,7 @@ import { fieldAria } from '@/components/foundry/field-aria';
 import { InfoIcon } from '@/components/icons';
 import { useItemFields, useSetItemFieldValues } from '../categories';
 import { validateFieldValue } from '../custom-fields';
-import { TypedFieldControl } from './TypedFieldControl';
+import { InheritableFieldControl, INHERIT_DRAFT_VALUE } from './InheritableFieldControl';
 
 /**
  * Per-item custom-field editor (spec §4). Fields come from the item's category,
@@ -25,7 +25,14 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
 
   useEffect(() => {
     if (!fields) return;
-    setDraft(Object.fromEntries(fields.map((f) => [f.id, f.value ?? ''])));
+    // A field the item inherits seeds the draft with the sentinel, not the resolved value:
+    // the draft records the *intent*, so re-resolving (the item moves, the location's value
+    // changes) keeps working rather than freezing today's value in as a literal.
+    setDraft(
+      Object.fromEntries(
+        fields.map((f) => [f.id, f.mode === 'inherit' ? INHERIT_DRAFT_VALUE : (f.value ?? '')]),
+      ),
+    );
   }, [fields]);
 
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading fields…</p>;
@@ -37,12 +44,19 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
     );
   }
 
-  const changed = fields.filter((f) => (draft[f.id] ?? '') !== (f.value ?? ''));
+  /** The draft entry a field started at, so "changed" compares intent with intent. */
+  const initialOf = (f: (typeof fields)[number]) =>
+    f.mode === 'inherit' ? INHERIT_DRAFT_VALUE : (f.value ?? '');
+
+  const changed = fields.filter((f) => (draft[f.id] ?? '') !== initialOf(f));
 
   // Validate every changed field through the same seam the repository enforces, so
   // the editor blocks a save the worker would reject and shows *why*, per field.
+  // "Inherit" is an intent rather than a value, so it bypasses validation — the value it
+  // resolves to was already validated when the location stored it.
   const errors: Record<string, string> = {};
   for (const f of changed) {
+    if ((draft[f.id] ?? '') === INHERIT_DRAFT_VALUE) continue;
     const result = validateFieldValue(f, draft[f.id] ?? '');
     if (!result.ok) errors[f.id] = result.error;
   }
@@ -54,9 +68,15 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
     if (hasErrors) return;
     const patch: Record<string, string | null> = {};
     for (const f of changed) {
+      const raw = draft[f.id] ?? '';
+      if (raw === INHERIT_DRAFT_VALUE) {
+        // Pass the sentinel through untouched — the repository stores the inherit intent.
+        patch[f.id] = INHERIT_DRAFT_VALUE;
+        continue;
+      }
       // Persist the coerced/normalised value (e.g. NUMBER '1.50' → '1.5'); a value
       // that validates to null clears the row back to the category default.
-      const result = validateFieldValue(f, draft[f.id] ?? '');
+      const result = validateFieldValue(f, raw);
       patch[f.id] = result.ok ? result.value : null;
     }
     setValues.mutate(patch);
@@ -91,13 +111,14 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
                 </Tooltip>
               ) : null}
             </div>
-            <TypedFieldControl
+            <InheritableFieldControl
               fieldType={field.fieldType}
               value={draft[field.id] ?? ''}
               onChange={(v) => set(field.id, v)}
               options={field.options}
               controlProps={controlProps}
               labelId={`${field.id}-label`}
+              inheritable={field.inheritable}
             />
             {hasError ? (
               <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
