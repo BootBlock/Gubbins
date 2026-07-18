@@ -852,6 +852,8 @@
   "inventory.placements.at": "{region} — {location}",
   "inventory.location.detailsTab": "Details",
   "inventory.location.railLabel": "Ortsabschnitte",
+  "inventory.location.cancel": "Abbrechen",
+  "inventory.location.close": "Schließen",
   "inventory.locationPhotos.missing": "Das Foto in voller Größe ist auf diesem Gerät nicht verfügbar.",
   "inventory.regions.add": "Bereich hinzufügen",
   "inventory.regions.defaultName": "Neuer Bereich",

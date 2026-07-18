@@ -406,8 +406,10 @@ export function EditLocationDialog({
               <span />
             )}
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
+              {/* "Cancel" implies discarding work, so it is only honest once there is work to
+                  discard — an untouched dialog is simply being closed. */}
+              <Button variant="ghost" onClick={onClose} data-testid="edit-location-dismiss">
+                {dirty ? t('inventory.location.cancel') : t('inventory.location.close')}
               </Button>
               <Button
                 onClick={submit}

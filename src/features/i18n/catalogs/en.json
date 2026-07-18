@@ -852,6 +852,8 @@
   "inventory.placements.at": "{region} — {location}",
   "inventory.location.detailsTab": "Details",
   "inventory.location.railLabel": "Location sections",
+  "inventory.location.cancel": "Cancel",
+  "inventory.location.close": "Close",
   "inventory.locationPhotos.missing": "The full-size photo isn’t available on this device.",
   "inventory.regions.add": "Add region",
   "inventory.regions.defaultName": "New region",
