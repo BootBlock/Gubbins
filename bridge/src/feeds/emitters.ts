@@ -40,6 +40,25 @@ function entryUrn(item: FeedItem): string {
 }
 
 /**
+ * The feed document's own permanent id (Atom `<id>`, RFC 4287 §4.2.6 — a universally unique IRI
+ * that "MUST NOT change"). Deliberately *not* the self URL: that is built from the live request,
+ * so it would differ per `?limit=` and per bridge address, and a reader would treat each variant
+ * as a different feed. This URN is one feed, forever, wherever the bridge is reachable.
+ *
+ * It identifies *the* Gubbins activity feed rather than one installation's, so two bridges would
+ * publish the same id — the deliberate trade for stability, since the only per-installation
+ * discriminator available here is the request address, which is exactly what must not appear.
+ */
+const FEED_URN = 'urn:gubbins:feed:activity';
+
+/**
+ * The feed-level author name (Atom `<author>`, RFC 4287 §4.1.1 — required unless every entry
+ * carries its own). The bridge is the publisher; entries are ledger rows with no per-person
+ * attribution, and committing a real name here would leak personal data (CLAUDE.md).
+ */
+const FEED_AUTHOR_NAME = 'Gubbins';
+
+/**
  * Escape a string for XML text or a double-quoted attribute (RSS + Atom). Ampersand first (so an
  * already-escaped entity isn't double-escaped), then the angle brackets and both quote styles.
  */
@@ -127,8 +146,10 @@ export function emitRss(channel: FeedChannel, items: readonly FeedItem[]): strin
 // --- Atom 1.0 ---------------------------------------------------------------------
 
 /**
- * Emit an Atom 1.0 document. The feed `<id>` is the self URL; each `<entry>` carries the same
- * host-free URN id as the RSS `<guid>` so the two formats agree on entry identity.
+ * Emit an Atom 1.0 document. The feed `<id>` is a permanent host-free URN (never the
+ * request-derived self URL — see {@link FEED_URN}) and the feed carries an `<author>` so the
+ * document satisfies RFC 4287 §4.1.1; each `<entry>` carries the same host-free URN id as the
+ * RSS `<guid>` so the two formats agree on entry identity.
  */
 export function emitAtom(channel: FeedChannel, items: readonly FeedItem[]): string {
   const lines: string[] = [
@@ -136,8 +157,11 @@ export function emitAtom(channel: FeedChannel, items: readonly FeedItem[]): stri
     '<feed xmlns="http://www.w3.org/2005/Atom">',
     `  <title>${escapeXml(channel.title)}</title>`,
     `  <subtitle>${escapeXml(channel.description)}</subtitle>`,
-    `  <id>${escapeXml(channel.selfUrl)}</id>`,
+    `  <id>${FEED_URN}</id>`,
     `  <updated>${isoDate(channel.updated)}</updated>`,
+    '  <author>',
+    `    <name>${escapeXml(FEED_AUTHOR_NAME)}</name>`,
+    '  </author>',
     `  <link rel="self" href="${escapeXml(channel.selfUrl)}"/>`,
     `  <link rel="alternate" href="${escapeXml(channel.homeUrl)}"/>`,
     `  <generator>Gubbins Bridge</generator>`,
