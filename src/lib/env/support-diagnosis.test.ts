@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { repoPath } from '../../test/repo-path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   COI_BOOTSTRAP_MARKER,
@@ -225,9 +225,8 @@ describe('coi-bootstrap.js', () => {
   it('sets the exact global support-diagnosis reads', () => {
     // The bootstrap is a static asset and cannot import COI_BOOTSTRAP_MARKER, so the name is
     // duplicated there. If they drift, every visitor is told their scripts are blocked.
-    // (Resolved from the project root — this env's import.meta.url is an http: URL under
-    // happy-dom, not a file: URL.)
-    const bootstrap = readFileSync(resolve(process.cwd(), 'public/coi-bootstrap.js'), 'utf8');
+    // (Resolved from *this file's* checkout, never `process.cwd()` — see `repoPath`.)
+    const bootstrap = readFileSync(repoPath(import.meta.dirname, 'public', 'coi-bootstrap.js'), 'utf8');
     expect(bootstrap).toContain(`window.${COI_BOOTSTRAP_MARKER} = true`);
   });
 });
