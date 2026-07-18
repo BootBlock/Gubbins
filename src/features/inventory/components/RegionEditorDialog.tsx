@@ -257,45 +257,59 @@ export function RegionEditorDialog({
             )}
           </div>
 
-          <div className="min-w-0 space-y-4">
-            <RegionList
-              rows={rows}
-              selectedId={selectedId}
-              pendingDeleteId={pendingDeleteId}
-              shapeLabel={shapeLabel}
-              onSelect={select}
-              onAskDelete={setPendingDeleteId}
-              onConfirmDelete={confirmDelete}
-              onCancelDelete={() => setPendingDeleteId(null)}
-            />
+          {/* Selecting a region mounts the editor panel below the list, and in normal flow that
+              growth resizes the whole dialog under the pointer. Beside the canvas the column
+              therefore claims a fixed height and its content is taken *out* of flow, scrolling
+              within that box — so the dialog is one size whether or not something is selected.
+              The height is the canvas's own (a 16:9 photo at this dialog's width) plus the
+              margin the editor panel needs to sit fully in view rather than clipped mid-control;
+              a region holding several items still scrolls, which is the honest trade for a
+              dialog that never moves under the pointer.
 
-            {selected ? (
-              <SelectedRegionEditor
-                key={selected.id}
-                photoId={photo.id}
-                region={selected}
-                onError={onFailure}
-                onRename={(name) =>
-                  updateRegion.mutate(
-                    { id: selected.id, input: { name } },
-                    {
-                      onError: onFailure,
-                      onSuccess: () => setAnnouncement(t('inventory.regions.updated', { vars: { name } })),
-                    },
-                  )
-                }
-                onRecolour={(color) =>
-                  updateRegion.mutate(
-                    { id: selected.id, input: { color } },
-                    {
-                      onError: onFailure,
-                      onSuccess: () =>
-                        setAnnouncement(t('inventory.regions.updated', { vars: { name: selected.name } })),
-                    },
-                  )
-                }
+              Stacked, the column is the only thing in its row with no canvas height to borrow,
+              so it is left in flow: there the dialog is already scrolling at full height, and
+              growth extends that scroll rather than re-staging the layout. */}
+          <div className="relative min-w-0 lg:h-[26rem]">
+            <div className="space-y-4 lg:absolute lg:inset-0 lg:overflow-y-auto lg:pr-1">
+              <RegionList
+                rows={rows}
+                selectedId={selectedId}
+                pendingDeleteId={pendingDeleteId}
+                shapeLabel={shapeLabel}
+                onSelect={select}
+                onAskDelete={setPendingDeleteId}
+                onConfirmDelete={confirmDelete}
+                onCancelDelete={() => setPendingDeleteId(null)}
               />
-            ) : null}
+
+              {selected ? (
+                <SelectedRegionEditor
+                  key={selected.id}
+                  photoId={photo.id}
+                  region={selected}
+                  onError={onFailure}
+                  onRename={(name) =>
+                    updateRegion.mutate(
+                      { id: selected.id, input: { name } },
+                      {
+                        onError: onFailure,
+                        onSuccess: () => setAnnouncement(t('inventory.regions.updated', { vars: { name } })),
+                      },
+                    )
+                  }
+                  onRecolour={(color) =>
+                    updateRegion.mutate(
+                      { id: selected.id, input: { color } },
+                      {
+                        onError: onFailure,
+                        onSuccess: () =>
+                          setAnnouncement(t('inventory.regions.updated', { vars: { name: selected.name } })),
+                      },
+                    )
+                  }
+                />
+              ) : null}
+            </div>
           </div>
         </div>
 
