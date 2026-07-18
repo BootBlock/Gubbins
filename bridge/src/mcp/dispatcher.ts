@@ -8,10 +8,15 @@
  * **zero runtime dependencies and no build step** (see `README.md`). The read-only surface we
  * need — `initialize`, `tools/list`, `tools/call`, `ping` — is small and stable, so a minimal
  * JSON-RPC loop preserves that invariant (the same "stdlib-first" call made for the HTTP
- * server). Strictly read-only throughout: the only thing a tool can do is read.
+ * server).
+ *
+ * The dispatcher itself is transport plumbing and holds no policy: what a caller may do is
+ * decided entirely by the `tools` list it is built with. The composition root includes the
+ * opt-in write tools only under `GUBBINS_BRIDGE_ALLOW_WRITES`; with the flag off the list is
+ * read-only and nothing here can mutate anything.
  */
 import type { BridgeServerState } from '../server.ts';
-import { ALL_TOOLS, findTool, ToolInputError, type McpTool } from './tools.ts';
+import { ALL_TOOLS, ToolInputError, type McpTool } from './tools.ts';
 
 /** The MCP protocol revision we advertise when a client doesn't request a specific one. */
 export const DEFAULT_PROTOCOL_VERSION = '2024-11-05';
@@ -130,7 +135,10 @@ async function callTool(
   if (typeof name !== 'string') {
     throw new RpcError(INVALID_PARAMS, 'tools/call requires a string "name"');
   }
-  const tool = findTool(name) ?? tools.find((t) => t.name === name);
+  // Resolve *only* within the configured tool list — never a global registry lookup. The list is
+  // the single gate: an opt-in tool that wasn't built (writes disabled) must be uncallable, not
+  // merely unlisted, so a model that guesses the name gets "Unknown tool" rather than a mutation.
+  const tool = tools.find((t) => t.name === name);
   if (tool === undefined) {
     throw new RpcError(INVALID_PARAMS, `Unknown tool: ${name}`);
   }

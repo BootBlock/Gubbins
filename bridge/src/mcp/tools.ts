@@ -1,14 +1,21 @@
 /**
- * The read-only MCP tool registry — the Model Context Protocol surface an LLM/agent (e.g.
- * Claude) calls to query the Gubbins inventory.
+ * The MCP tool registry — the Model Context Protocol surface an LLM/agent (e.g. Claude) calls
+ * to query, and optionally adjust, the Gubbins inventory.
  *
- * Every tool is a thin wrapper over the *same* read-only core the HTTP API uses: the
- * transport-agnostic query core ({@link searchItems}/{@link whereIs}), the shared
- * {@link loadItemDetail} loader, and the app's own repositories — projected through the same
- * stable DTOs (`api/dto.ts`). There is **no bespoke SQL and no write path**: the only SQL is
- * the parameterised `parseASTtoSQL` the repositories already use. This module is pure logic
- * (driver in, plain JSON-serialisable data out) so each tool is unit-testable without any
- * transport.
+ * The **read** tools ({@link ALL_TOOLS}) are thin wrappers over the *same* read-only core the
+ * HTTP API uses: the transport-agnostic query core ({@link searchItems}/{@link whereIs}), the
+ * shared {@link loadItemDetail} loader, and the app's own repositories — projected through the
+ * same stable DTOs (`api/dto.ts`). There is no bespoke SQL: the only SQL is the parameterised
+ * `parseASTtoSQL` the repositories already use. This module is pure logic (driver in, plain
+ * JSON-serialisable data out) so each tool is unit-testable without any transport.
+ *
+ * The **write** tools ({@link createWriteTools}) are *not* part of {@link ALL_TOOLS} — they only
+ * exist when the composition root builds them with a write executor, which it does solely under
+ * the `GUBBINS_BRIDGE_ALLOW_WRITES` opt-in and a JSON snapshot source. With the flag off the
+ * tools are never constructed, so they are absent from `tools/list` *and* uncallable — the same
+ * "invisible when disabled" posture the HTTP write endpoints take (they 404). Each one maps 1:1
+ * to an HTTP write endpoint and round-trips through the identical §7.3 sync merge (see
+ * `write.ts`); no new mutation path is introduced here.
  */
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
@@ -20,6 +27,7 @@ import {
   toCapabilityKey,
   toCategorySummary,
   toLocation,
+  type ItemDetailDto,
   type ListEnvelope,
   type PaginationMeta,
 } from '../api/dto.ts';
@@ -38,6 +46,7 @@ import {
   SEARCH_DEFAULT_FIELDS,
 } from '../api/item-view.ts';
 import { createLocationViewContext, parseLocationSelection, projectLocation } from '../api/location-view.ts';
+import { MAX_NOTE_LENGTH, WriteError, type WriteOperation } from '../write.ts';
 
 /** A minimal JSON-Schema subset — enough to describe each tool's arguments in `tools/list`. */
 export interface JsonSchema {
@@ -258,9 +267,126 @@ export const ALL_TOOLS: readonly McpTool[] = [
   listCapabilitiesTool,
 ];
 
-/** Look a tool up by name, or undefined if there is no such tool. */
+/** Look a read tool up by name, or undefined if there is no such tool. */
 export function findTool(name: string): McpTool | undefined {
   return ALL_TOOLS.find((tool) => tool.name === name);
+}
+
+// --- the write tools (opt-in) -----------------------------------------------------
+
+/**
+ * Executes one mutation, returning the updated item. This is the *same* single-flight executor
+ * the HTTP write endpoints use ({@link createWriteExecutor}) — it re-reads the snapshot fresh,
+ * applies the change through the app's own repository, and writes the merged snapshot back
+ * atomically.
+ */
+export type WriteExecutor = (op: WriteOperation) => Promise<ItemDetailDto>;
+
+/** The shared `delta`/`note` argument schemas for both adjust tools. */
+const NOTE_SCHEMA: JsonSchema = {
+  type: 'string',
+  description:
+    'Optional short reason recorded on the item\'s history entry (e.g. "Taken to the workshop"). ' +
+    `Max ${MAX_NOTE_LENGTH} characters.`,
+};
+
+/**
+ * Build the opt-in write tools over a write executor. Called only when writes are enabled, so
+ * the returned tools simply *are not there* otherwise — there is no per-call flag to check.
+ *
+ * Note the executor closes over the snapshot path and does its own fresh read/hydrate, so these
+ * tools deliberately ignore the read driver they are handed: mutating the watcher's shared,
+ * possibly-stale read snapshot is exactly the drift `write.ts` exists to prevent.
+ */
+export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
+  const adjustQuantityTool: McpTool = {
+    name: 'gubbins_adjust_quantity',
+    description:
+      "Adjust a DISCRETE item's stock at its home location by a signed whole number — a positive " +
+      'delta checks stock in, a negative delta checks it out (e.g. delta -2 to take two). Records ' +
+      "the change in the item's history and returns the updated item. Use gubbins_search first to " +
+      'get the item id, and confirm with the user before adjusting.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+        delta: {
+          type: 'integer',
+          description: 'Signed whole number to add to the current quantity (negative to check out).',
+        },
+        note: NOTE_SCHEMA,
+      },
+      required: ['id', 'delta'],
+      additionalProperties: false,
+    },
+    async run(_driver, args) {
+      return runWrite(execute, {
+        kind: 'adjust-quantity',
+        itemId: requireString(args, 'id'),
+        delta: requireInteger(args, 'delta'),
+        ...noteArg(args),
+      });
+    },
+  };
+
+  const adjustGaugeTool: McpTool = {
+    name: 'gubbins_adjust_gauge',
+    description:
+      "Adjust a CONSUMABLE_GAUGE item's net value by a signed amount (e.g. a part-used bottle or " +
+      "reel). The result is clamped to the item's [0, capacity] range. Records the change in the " +
+      "item's history and returns the updated item. Use gubbins_search first to get the item id, " +
+      'and confirm with the user before adjusting.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The item id (as returned by gubbins_search).' },
+        delta: {
+          type: 'number',
+          description: 'Signed amount to add to the current net value (negative to consume).',
+        },
+        note: NOTE_SCHEMA,
+      },
+      required: ['id', 'delta'],
+      additionalProperties: false,
+    },
+    async run(_driver, args) {
+      return runWrite(execute, {
+        kind: 'adjust-gauge',
+        itemId: requireString(args, 'id'),
+        delta: requireNumber(args, 'delta'),
+        ...noteArg(args),
+      });
+    },
+  };
+
+  return [adjustQuantityTool, adjustGaugeTool];
+}
+
+/**
+ * Run one mutation, translating a {@link WriteError} into a model-visible {@link ToolInputError}.
+ * Every `WriteError` message is safe domain text by construction (see `write.ts` — no SQL, paths
+ * or PII), and each case is one the model can act on: correct the id, pick the right tool for the
+ * tracking mode, or retry when the snapshot is briefly unavailable mid-write.
+ */
+async function runWrite(execute: WriteExecutor, op: WriteOperation): Promise<unknown> {
+  try {
+    return { updated: true, item: await execute(op) };
+  } catch (err) {
+    if (err instanceof WriteError) throw new ToolInputError(err.message);
+    throw err;
+  }
+}
+
+/**
+ * Read the optional `note`. Only the *type* is checked here; the length bound is the write
+ * core's ({@link applyOperation}), so it stays single-sourced across both write surfaces — an
+ * over-long note comes back as a `WriteError` that {@link runWrite} surfaces to the model.
+ */
+function noteArg(args: Readonly<Record<string, unknown>>): { note?: string } {
+  const value = args.note;
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'string') throw new ToolInputError('"note" must be a string when provided.');
+  return { note: value };
 }
 
 // --- argument helpers -------------------------------------------------------------
@@ -269,6 +395,29 @@ function requireString(args: Readonly<Record<string, unknown>>, key: string): st
   const value = args[key];
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new ToolInputError(`"${key}" is required and must be a non-empty string.`);
+  }
+  return value;
+}
+
+/**
+ * A required, finite number. Zero is rejected for the adjust deltas it serves: a no-op write
+ * would still append a history row and rewrite the snapshot, so it is far more likely to be a
+ * model mistake than an intent.
+ */
+function requireNumber(args: Readonly<Record<string, unknown>>, key: string): number {
+  const value = args[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ToolInputError(`"${key}" is required and must be a finite number.`);
+  }
+  if (value === 0) throw new ToolInputError(`"${key}" must not be zero.`);
+  return value;
+}
+
+/** A required, finite whole number (a fractional value is a mistake, not something to round). */
+function requireInteger(args: Readonly<Record<string, unknown>>, key: string): number {
+  const value = requireNumber(args, key);
+  if (!Number.isInteger(value)) {
+    throw new ToolInputError(`"${key}" must be a whole number.`);
   }
   return value;
 }

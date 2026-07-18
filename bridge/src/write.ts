@@ -92,6 +92,12 @@ export class WriteError extends Error {
  * the app's, so the resulting snapshot is LWW/Delta-CRDT-correct by construction.
  */
 export async function applyOperation(driver: IDatabaseDriver, op: WriteOperation): Promise<Item> {
+  // Enforce the note bound here, in the shared core, so every surface that mutates through this
+  // function honours it — rather than each transport re-checking it (and one of them forgetting).
+  if (op.note !== undefined && op.note.length > MAX_NOTE_LENGTH) {
+    throw new WriteError(422, 'unprocessable', `A note may be at most ${MAX_NOTE_LENGTH} characters.`);
+  }
+
   // The Bridge has no signed-in user, so every ledger row it writes is attributed to the
   // System user explicitly rather than inheriting the repository's Admin default (issue #79,
   // plan §2.4). Phase 5 replaces this with the identity behind the presented API token.

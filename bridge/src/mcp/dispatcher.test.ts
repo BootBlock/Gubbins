@@ -15,6 +15,7 @@ import {
   type JsonRpcResponse,
   type McpDispatch,
 } from './dispatcher.ts';
+import type { McpTool } from './tools.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-snapshot.json', import.meta.url);
 
@@ -175,5 +176,56 @@ describe('protocol guards', () => {
 
   it('stays silent on a malformed message with no id', async () => {
     expect(await dispatch({ foo: 'bar' })).toBeNull();
+  });
+});
+
+describe('the tool list is the only gate', () => {
+  /** A stand-in for an opt-in tool that was NOT built (e.g. writes disabled). */
+  const absentTool: McpTool = {
+    name: 'gubbins_absent',
+    description: 'Never included in the dispatcher’s tool list.',
+    inputSchema: { type: 'object', additionalProperties: false },
+    run: async () => ({ ran: true }),
+  };
+
+  it('refuses to call a tool that is not in the configured list', async () => {
+    // Guards the write opt-in: a model that guesses a disabled tool's name must get "Unknown
+    // tool", never a dispatch. Resolving against a global registry instead of this list would
+    // silently make every opt-in tool callable regardless of configuration.
+    const response = await call({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: absentTool.name, arguments: {} },
+    });
+    expect(response.error?.message).toMatch(/Unknown tool/);
+    expect(response.result).toBeUndefined();
+  });
+
+  it('lists and calls a tool once it IS in the configured list', async () => {
+    const withTool = createMcpDispatcher({ getState: () => state, tools: [absentTool] });
+    const listed = await withTool({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect((listed!.result as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual([
+      absentTool.name,
+    ]);
+
+    const called = await withTool({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: absentTool.name, arguments: {} },
+    });
+    expect((called!.result as { isError: boolean }).isError).toBe(false);
+  });
+
+  it('no longer reaches the read tools when given a restricted list', async () => {
+    const restricted = createMcpDispatcher({ getState: () => state, tools: [absentTool] });
+    const response = await restricted({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'gubbins_search', arguments: { q: 'bolt' } },
+    });
+    expect(response!.error?.message).toMatch(/Unknown tool/);
   });
 });

@@ -25,8 +25,8 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >   categories, capabilities, with field-selection + an OData-style query subset); a
 >   [CSV export](#csv-export); an [iCalendar subscription feed](#calendar-subscription); and
 >   [syndication feeds + a Prometheus `/metrics`](#feeds--metrics) endpoint. The same read-only
->   core is also offered over a read-only [MCP stdio server](#mcp-server-for-llmagent-tools) for
->   LLM/agent tools.
+>   core is also offered over an [MCP stdio server](#mcp-server-for-llmagent-tools) for LLM/agent
+>   tools (read-only unless writes are opted in).
 > - **Opt-in, off by default (each its own `GUBBINS_BRIDGE_*` flag):**
 >   [limited stock writes](#limited-writes-opt-in), [snapshot push](#snapshot-push-opt-in),
 >   [outbound webhooks + an SSE event stream](#events-webhooks--sse-opt-in),
@@ -564,10 +564,15 @@ or a client-generator at either.
 ## MCP server (for LLM/agent tools)
 
 For an **LLM/agent** (e.g. Claude) to query your inventory as a *tool*, the bridge ships a
-read-only **Model Context Protocol** server over **stdio** — separate from, and additive to,
-the HTTP API. It wraps the *same* read-only core (the query core, the shared item-detail
-loader, and the app's repositories), so an agent gets exactly the answers the HTTP API and the
-PWA give. There is **no write path**: an agent can only read.
+**Model Context Protocol** server over **stdio** — separate from, and additive to, the HTTP
+API. It wraps the *same* read-only core (the query core, the shared item-detail loader, and
+the app's repositories), so an agent gets exactly the answers the HTTP API and the PWA give.
+
+It is **read-only by default**: an agent can only read unless you opt in. Setting
+**`GUBBINS_BRIDGE_ALLOW_WRITES=on`** — the *same* flag the HTTP endpoints use — additionally
+exposes the two [stock-adjustment tools](#write-tools-opt-in), which round-trip through the
+identical sync merge. With the flag off those tools are not built at all, so they are absent
+from `tools/list` **and** uncallable.
 
 Run it directly (it speaks JSON-RPC on stdin/stdout, so a human won't interact with it — an
 MCP client launches it):
@@ -671,15 +676,16 @@ $env:GUBBINS_SNAPSHOT_PATH = "C:\Users\<you>\Gubbins\gubbins-sync.json"
 
 You should see JSON-RPC responses on stdout: the `initialize` reply advertises a `serverInfo`
 of **`gubbins-bridge-mcp`**, and `tools/list` returns the **six `gubbins_*` tools** below. On
-stderr you'll see `Gubbins MCP server ready on stdio (read-only).`. A missing snapshot file is
+stderr you'll see `Gubbins MCP server ready on stdio (read-only).` — or `(reads + limited
+writes)` when the write opt-in is on. A missing snapshot file is
 **non-fatal** — the server still starts and the tools return an "Inventory snapshot is not
 loaded yet" message until the file appears, so you can wire everything up before the first
 sync has written `gubbins-sync.json`.
 
 ### Tools
 
-All tools are **read-only** and return both human-readable `text` content and a machine-usable
-`structuredContent`:
+These six tools are **read-only** and always present. Each returns both human-readable `text`
+content and a machine-usable `structuredContent`:
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
@@ -693,6 +699,38 @@ All tools are **read-only** and return both human-readable `text` content and a 
 The list tools clamp `limit` to `[1, 100]` (default 50); `gubbins_search`/`gubbins_where_is`
 cap results at 25 (default 5) for safety. Tool ids/keys (e.g. `item-esp32`, `voltage`) in
 examples are from the synthetic test fixture.
+
+### Write tools (opt-in)
+
+Set **`GUBBINS_BRIDGE_ALLOW_WRITES=on`** and two more tools join the six above, letting an
+agent adjust stock as well as read it ("I've used two of those" → the count drops):
+
+| Tool | Arguments | Effect |
+| --- | --- | --- |
+| `gubbins_adjust_quantity` | `id`, `delta` (required), `note?` | Adjust a **DISCRETE** item's home-location stock by a signed whole number (negative = check out). |
+| `gubbins_adjust_gauge` | `id`, `delta` (required), `note?` | Adjust a **CONSUMABLE_GAUGE** item's net value by a signed amount (clamped to `[0, capacity]`). |
+
+Each maps 1:1 to the HTTP [write endpoints](#limited-writes-opt-in) and shares their machinery
+exactly — the same single-flight executor, the same round-trip through the app's own mutation
+code and the §7.3 sync merge, the same `note` bound (500 chars). There is no separate write
+path here. A rejection (unknown id, wrong tracking mode, quantity below zero) comes back as a
+tool result flagged `isError` carrying the reason, so the model can correct itself rather than
+just failing. A `delta` of `0` is refused — a no-op still writes a history entry, so it is far
+more likely a mistake than an intent.
+
+The same source restriction applies: writes need a **JSON snapshot** source and are refused for
+a raw `.sqlite` one (no sync channel to round-trip through), in which case the server logs why
+and stays read-only.
+
+> **⚠️ Understand the trust boundary before enabling this.** Unlike the HTTP API, stdio has
+> **no bearer token** — the boundary is the OS process, so *anything able to launch this server
+> with the flag set can adjust your stock*, with no second credential. That is fine for an MCP
+> client you configured yourself and reasonable for a local agent you trust; it is not a
+> permission system. Leave the flag off in the client config unless you actively want an agent
+> writing, and note that an agent can be steered by the content it reads. Writes are never
+> destructive in the "lose data" sense — every adjustment is a delta recorded in the item's
+> history, visible and reversible in the app — but they are still real changes to your
+> inventory. On enabling, the server logs a loud `Writes ENABLED` line to stderr.
 
 ---
 
@@ -753,8 +791,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/jso
   "$BASE/items/item-m3-bolt/adjust-quantity"
 ```
 
-The change lands in the synced `gubbins-sync.json`; the PWA applies it on its next sync. The MCP
-server stays **read-only** — writes are HTTP-only, by design.
+The change lands in the synced `gubbins-sync.json`; the PWA applies it on its next sync. The same
+flag also exposes the equivalent [MCP write tools](#write-tools-opt-in), which share this exact
+machinery — so enabling writes enables them on **both** surfaces.
 
 ## Snapshot push (opt-in)
 
@@ -1258,7 +1297,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 
 | Flag (`GUBBINS_BRIDGE_…`) | Turns on | Direction | Writes inventory? | Secret — where it lives |
 | --- | --- | --- | --- | --- |
-| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` (JSON source only). | inbound (HTTP) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — reuses `GUBBINS_BRIDGE_TOKEN`. |
+| `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge`, plus the matching [MCP write tools](#write-tools-opt-in) (JSON source only). | inbound (HTTP + MCP stdio) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — HTTP reuses `GUBBINS_BRIDGE_TOKEN`; the MCP tools have **no token** (stdio's boundary is the OS process), so enabling this trusts whoever can launch the server. |
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
 | `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
@@ -1298,7 +1337,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_RATE_REFILL` | no | `1` | Per-client sustained rate (requests/second) once the burst is spent. |
 | `GUBBINS_BRIDGE_MDNS` | no | `off` | Advertise over mDNS so Home Assistant can auto-discover the bridge. `on` to enable. Carries **no secret**; only meaningful when LAN-exposed (auto-skipped on the loopback default). See [mDNS / zeroconf discovery](#mdns--zeroconf-discovery). |
 | `GUBBINS_BRIDGE_MDNS_NAME` | no | `Gubbins Bridge` | Service instance name shown in a discovery browser. |
-| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust). **Off by default — the bridge is read-only unless this is `on`.** Writes use the same bearer token + rate limit. |
+| `GUBBINS_BRIDGE_ALLOW_WRITES` | no | `off` | Enable the opt-in [limited write endpoints](#limited-writes-opt-in) (stock check-in/out, quantity adjust) **and the matching [MCP write tools](#write-tools-opt-in)**. **Off by default — the bridge is read-only unless this is `on`.** HTTP writes use the same bearer token + rate limit; the MCP tools are gated by process launch (stdio carries no token). |
 | `GUBBINS_BRIDGE_ALLOW_PUSH` | no | `off` | Enable the opt-in [snapshot-ingest endpoint](#snapshot-push-opt-in) (`POST /api/v1/snapshot`, the PWA "push to bridge"). **Off by default**, independent of writes; JSON source only. Same bearer token + rate limit. |
 | `GUBBINS_BRIDGE_MAX_PUSH_BYTES` | no | `67108864` | Hard cap (bytes) on a pushed snapshot; default 64 MiB. An over-large push is rejected with `413`. Lower it on a constrained host. |
 | `GUBBINS_BRIDGE_EVENTS` | no | `off` | Enable the opt-in read-only [SSE event stream](#events-webhooks--sse-opt-in) at `GET /api/v1/events`. **Off by default** (the path is `404` when off). Implied by `GUBBINS_BRIDGE_WEBHOOKS`. Same bearer token + rate limit. |
@@ -1567,7 +1606,7 @@ bridge/
       publisher.ts      # orchestrator: EventSink + per-generation retained state + availability
       packet.test.ts / topics.test.ts / discovery.test.ts / state.test.ts / client.test.ts / publisher.test.ts
     mcp/
-      tools.ts          # the six read-only gubbins_* MCP tools (wrap the query core/repositories)
+      tools.ts          # the six read-only gubbins_* MCP tools + the two opt-in write tools
       dispatcher.ts     # stdlib JSON-RPC dispatcher (initialize/tools.list/tools.call/ping)
       stdio.ts          # newline-delimited JSON-RPC over stdin/stdout
       serve.ts          # MCP composition root: watcher → stdio server (logs to stderr)

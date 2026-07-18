@@ -25,7 +25,7 @@ import { snapshotToBackupJson } from '@/features/sync/backup';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { createNodeDriver } from './node-driver.ts';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
-import { applyOperation, createWriteExecutor, executeWrite, WriteError } from './write.ts';
+import { applyOperation, createWriteExecutor, executeWrite, MAX_NOTE_LENGTH, WriteError } from './write.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 const DICTIONARY_TABLES = [...SYNC_TABLES, ITEM_HISTORY_TABLE];
@@ -95,6 +95,29 @@ describe('applyOperation', () => {
     await expect(
       applyOperation(hydrated.driver, { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1.5 }),
     ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
+  it('rejects a note longer than the documented bound with a 422', async () => {
+    // The bound lives here, in the shared core, so BOTH write surfaces (HTTP and the MCP tools)
+    // honour it — an unbounded string must never reach the history ledger.
+    const err = await applyOperation(hydrated.driver, {
+      kind: 'adjust-quantity',
+      itemId: 'item-m3-bolt',
+      delta: 1,
+      note: 'x'.repeat(MAX_NOTE_LENGTH + 1),
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(WriteError);
+    expect(err.status).toBe(422);
+  });
+
+  it('accepts a note exactly at the bound', async () => {
+    const item = await applyOperation(hydrated.driver, {
+      kind: 'adjust-quantity',
+      itemId: 'item-m3-bolt',
+      delta: 1,
+      note: 'x'.repeat(MAX_NOTE_LENGTH),
+    });
+    expect(item.id).toBe('item-m3-bolt');
   });
 
   it('rejects a gauge adjustment on a DISCRETE item with a 422', async () => {
