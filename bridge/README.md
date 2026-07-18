@@ -330,9 +330,10 @@ beneath it.
 
 For callers already fluent in **OData**, the item endpoints accept a small, familiar subset of
 the OData v4 query options. This is a **convenience alias layer, not a compliant OData service** —
-there is deliberately **no** `$metadata`/CSDL document, `$batch`, `$apply`, or navigation-property
-semantics (see [the earlier discussion](#versioned-rest-api-apiv1) of why full OData isn't a fit
-for a zero-dependency bridge). It adds **no dependency** and ships **nothing** to the PWA.
+there is deliberately no `$batch`, no `$apply`, and no navigation-property semantics, and the
+`$metadata` document below is descriptive rather than a conformance claim (see
+[the earlier discussion](#versioned-rest-api-apiv1) of why full OData isn't a fit for a
+zero-dependency bridge). It adds **no dependency** and ships **nothing** to the PWA.
 
 | Option | Maps to | Notes |
 | --- | --- | --- |
@@ -356,6 +357,17 @@ There are also two dedicated paths:
   It is **descriptive**: the service implements only this query subset, not the whole OData
   protocol (no service document, no `$batch`/`$apply`, no navigation-property expansion beyond the
   bundled `placements`/`capabilities`).
+
+  Each entity type describes the **whole projectable shape**, which is wider than a default
+  request returns — `GET /items` emits the summary field set, and the rest (`placements`,
+  `capabilities`, `fieldValues`, the gauge, dimensions, pricing, …) is opt-in via
+  `fields`/`include` or `$select`/`$expand`. So that a CSDL reader isn't misled into
+  materialising columns that are always empty, every property outside its entity set's default
+  payload carries an `Org.OData.Core.V1.Description` annotation saying it is opt-in, and each
+  entity set is annotated with the exact field list an unprojected request returns. Note also
+  that on the collection-valued properties `Nullable="false"` describes the *elements* (CSDL
+  v4.01 §7.1.1) — the collection itself can never be null — and says nothing about whether the
+  property is present.
 - **`GET /api/v1/items/$count`** — the OData inline-count path: the total number of matching items
   as a bare `text/plain` integer (honouring `$filter`/`$search`/`location`/`category`).
 
