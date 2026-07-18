@@ -3,12 +3,16 @@
  *
  * There is a known bug where a tied `updated_at` between the local and incoming remote copy
  * of a row still resolves to `REMOTE_WINS` (§7.3 `resolveLww` sends ties to the remote), so
- * `applyPlan` re-upserts the row even when nothing meaningful changed. Because the auto-stamp
- * trigger only skips its bump when the caller's `UPDATE` leaves `updated_at` unchanged (see
- * `updatedAtTrigger` in `v1-initial.ts`), and a tie-driven upsert sets it to the very value it
- * already held, the trigger's `WHEN NEW.updated_at = OLD.updated_at` fires and stamps a *new*
- * value — making this device look newer next round. Two devices that keep re-syncing an
- * unchanged row can then ping-pong it back and forth indefinitely.
+ * `applyPlan` re-upserts the row even when nothing meaningful changed.
+ *
+ * That re-upsert is what turns a harmless no-op into churn, via the auto-stamp trigger (see
+ * `updatedAtTrigger` in `v1-initial.ts`). Its guard is `WHEN NEW.updated_at = OLD.updated_at`,
+ * which normally means "the caller didn't set `updated_at`, so stamp it now" — and an ordinary
+ * sync upsert is exempt precisely because it *does* set the column, to a value that differs.
+ * On a tie, though, the engine explicitly sets `updated_at` to the value the row already held,
+ * which the trigger cannot distinguish from not setting it at all: the guard matches, and the
+ * row is stamped `MAX(now, OLD.updated_at + 1)` anyway. This device now looks strictly newer,
+ * so the next round pushes it back — and two devices ping-pong an unchanged row indefinitely.
  *
  * A genuine tie is rare in practice (it needs two clocks to land on the exact same millisecond),
  * so reproducing it on demand for investigation means forcing one. This pure transform does

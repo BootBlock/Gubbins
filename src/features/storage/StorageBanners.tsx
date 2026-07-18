@@ -109,6 +109,12 @@ export function StorageBanners() {
   // unavailable) get a weekly nudge to download a full archive (SQLite binary + images).
   // Dismissing it snoozes the nudge for a week rather than hiding it for good, so the
   // safety-net prompt returns if a fresh archive still hasn't been taken.
+  // `nowMs()` for the *judgement* (is the snooze over?), but the dismissal below deliberately
+  // stores `Date.now()`. That asymmetry is intentional: a snooze written from a shifted clock
+  // would be a bogus future timestamp that outlives the lab flag and suppresses this safety-net
+  // banner for real. The visible cost is that while the clock is shifted forward the nudge can't
+  // be dismissed (the stored real-time snooze is already in the shifted past) — which is the
+  // correct trade, so don't "fix" it by shifting the write.
   const now = nowMs();
   const archiveSnoozed = archiveNudgeSnoozedUntil !== null && now < archiveNudgeSnoozedUntil;
   if (mobile && providerId === null && !archiveSnoozed && isArchiveDue(lastArchivedAt, now)) {
