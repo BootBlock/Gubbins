@@ -21,6 +21,7 @@ import {
   ShoppingCartIcon,
   SupplierIcon,
   TagIcon,
+  WebhookIcon,
 } from '@/components/icons';
 
 /**
@@ -59,6 +60,7 @@ export type AppRoutePath =
   | '/alerts'
   | '/sync'
   | '/home-assistant'
+  | '/webhooks'
   | '/settings'
   | '/about'
   | '/modules'
@@ -196,6 +198,14 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
   },
   // System — sync, preferences and app info.
   { to: '/sync', label: 'Sync', messageKey: 'nav.sync', Icon: CloudIcon, group: 'system', feature: 'sync' },
+  {
+    to: '/webhooks',
+    label: 'Webhooks',
+    messageKey: 'nav.webhooks',
+    Icon: WebhookIcon,
+    group: 'system',
+    feature: 'webhooks',
+  },
   {
     to: '/home-assistant',
     label: 'Home Assistant',
