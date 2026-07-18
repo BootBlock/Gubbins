@@ -604,6 +604,8 @@ interface PreferencesStore {
   setHotkeysEnabled: (enabled: boolean) => void;
   /** Rebind one action; `''` unbinds it. Invalid/reserved chords fall back to its default. */
   setHotkeyBinding: (id: HotkeyActionId, binding: HotkeyBinding) => void;
+  /** Replace the whole map at once — how a preset scheme is applied (issue #127). */
+  setHotkeyBindings: (bindings: Record<HotkeyActionId, HotkeyBinding>) => void;
   /** Restore every shortcut to its shipped default. */
   resetHotkeyBindings: () => void;
   setDashboardQuickActions: (enabled: boolean) => void;
@@ -823,6 +825,9 @@ export const usePreferencesStore = create<PreferencesStore>()(
         set((state) => ({
           hotkeyBindings: normaliseHotkeyBindings({ ...state.hotkeyBindings, [id]: binding }),
         })),
+      // Normalised on the way in for the same reason a single rebind is: a preset is data, and
+      // data that has been edited or has aged past a registry change must not reach the matcher.
+      setHotkeyBindings: (bindings) => set({ hotkeyBindings: normaliseHotkeyBindings(bindings) }),
       resetHotkeyBindings: () => set({ hotkeyBindings: DEFAULT_HOTKEY_BINDINGS }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),

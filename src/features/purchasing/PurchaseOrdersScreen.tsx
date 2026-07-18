@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   LiveRegion,
@@ -19,6 +19,8 @@ import {
   WishlistIcon,
 } from '@/components/icons';
 import { useT } from '@/features/i18n';
+import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
+import { useHotkeyIntent } from '@/features/hotkeys/useHotkeyIntent';
 import { ReorderTab } from './ReorderTab';
 import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
@@ -74,6 +76,23 @@ export function PurchaseOrdersScreen() {
   const [activeTab, setActiveTab] = useState<PoTab>('orders');
 
   const createPo = useCreatePurchaseOrder();
+
+  // The contextual "new" shortcut (issue #127). Only offered on the Orders tab — `N` on the
+  // Reorder or Wishlist tab would create something the user cannot see from where they stand.
+  const openCreate = useCallback(() => {
+    setActiveTab('orders');
+    setCreateOpen(true);
+  }, []);
+  useHotkeyScope({ onNew: activeTab === 'orders' ? openCreate : undefined });
+
+  // A "new purchase order" shortcut pressed from another screen navigates here and leaves an
+  // intent behind, since the create dialog is local state with no route of its own.
+  const pendingIntent = useHotkeyIntent((s) => s.pending);
+  useEffect(() => {
+    if (pendingIntent !== 'new-purchase-order') return;
+    useHotkeyIntent.getState().consume('new-purchase-order');
+    openCreate();
+  }, [pendingIntent, openCreate]);
 
   const orders = ordersQuery.data?.rows ?? [];
   const selected = selectedId ?? (orders.length > 0 ? orders[0]!.id : null);

@@ -7,6 +7,7 @@ import { CommandPalette } from '@/features/command-palette/CommandPalette';
 import { FirstRunModules } from '@/features/modules/FirstRunModules';
 import { SettingsDialogHost } from '@/features/settings/SettingsDialogHost';
 import { useGlobalHotkeys } from '@/features/hotkeys/useGlobalHotkeys';
+import { ShortcutsOverlayHost } from '@/features/hotkeys/ShortcutsOverlayHost';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
@@ -59,6 +60,7 @@ function RootLayout() {
       <Outlet />
       <OfflineIndicator />
       <CommandPalette />
+      <ShortcutsOverlayHost />
       <FirstRunModules />
       <SettingsDialogHost />
     </div>

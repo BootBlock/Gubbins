@@ -61,8 +61,10 @@ describe('AppNav — global navigation menu (spec §2.4.2)', () => {
   it('places the wiki directly under Settings, above About', () => {
     render(<AppNav />);
     openNav();
-    const labels = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
-    const settings = labels.indexOf('Settings');
+    // Rows now print their keyboard accelerator after the label (issue #127), so compare on the
+    // label the row *starts* with rather than its full text content.
+    const labels = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim() ?? '');
+    const settings = labels.findIndex((l) => l.startsWith('Settings'));
     expect(labels[settings + 1]).toBe('Wiki');
     expect(labels[settings + 2]).toBe('About');
   });

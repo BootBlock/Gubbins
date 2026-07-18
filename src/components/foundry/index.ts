@@ -81,6 +81,7 @@ export { RailModal, type RailModalProps, type RailTab } from './rail-modal';
 export { resolveTabKey } from './tab-keyboard';
 export { useSearchEscapeToClear } from './use-search-escape';
 export { InputClearButton, type InputClearButtonProps } from './input-clear-button';
+export { Kbd, type KbdProps } from './kbd';
 export { Markdown } from './markdown';
 export { InfoHint } from './info-hint';
 export {
