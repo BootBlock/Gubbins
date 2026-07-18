@@ -5,6 +5,7 @@ import {
   DatabaseIcon,
   ExternalLinkIcon,
   InfoIcon,
+  ScaleIcon,
   ServerIcon,
   TerminalIcon,
   WarningIcon,
@@ -18,6 +19,8 @@ type RunMethod = 'node' | 'docker' | 'systemd';
 type Outcome = 'ok' | 'port' | 'node' | 'other';
 
 const SNAPSHOT_PLACEHOLDER = '/path/to/your/gubbins-sync.json';
+/** Stand-in for the user's own Home Assistant long-lived token — never a real value. */
+const HA_TOKEN_PLACEHOLDER = '<YOUR_HOME_ASSISTANT_TOKEN>';
 
 /**
  * Step 3 — run the bridge.
@@ -25,7 +28,8 @@ const SNAPSHOT_PLACEHOLDER = '/path/to/your/gubbins-sync.json';
  * The most branch-heavy step. It first establishes *where* the bridge runs relative to Home
  * Assistant (which decides whether it must be exposed on the LAN), then offers three ways to
  * run it (bare Node, Docker, systemd) with the token already spliced into every command, and
- * finally an outcome selector that routes common startup problems to a fix.
+ * then an outcome selector that routes common startup problems to a fix, and finally the one
+ * optional capability that is also configured here: reading a Home Assistant scale entity.
  */
 export function BridgeStep() {
   const { token } = useGuide();
@@ -258,8 +262,58 @@ export function BridgeStep() {
           ) : null}
         </StepCard>
       ) : null}
+
+      <StepCard title="Optional: read a scale from Home Assistant" icon={<ScaleIcon />}>
+        <p className="text-sm text-muted-foreground">
+          If you already have a scale exposed to Home Assistant, the bridge can read it for you. With this
+          turned on, Gubbins' <span className="text-foreground">Count by weight</span> dialog gains a scale
+          picker and a <span className="text-foreground">Read the scale</span> button that pulls the live
+          weight straight into the "Weight on scale" field — instead of you reading the display and typing the
+          figure in.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          It is <span className="text-foreground">off unless you switch it on</span>, and typing the weight by
+          hand stays the default either way. To enable it, add these three lines to the same env file as above
+          and restart the bridge:
+        </p>
+        <CommandBlock
+          label="Home Assistant read settings"
+          code={haEnvSettings()}
+          caption="added to bridge/.env"
+        />
+        <p className="text-sm text-muted-foreground">
+          <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_HA_URL</code> is your Home Assistant's
+          own address. The token is a <span className="text-foreground">Home Assistant</span> long-lived
+          access token — a different secret from the bridge token above. Create one from your Home Assistant{' '}
+          <span className="text-foreground">profile → Security → Long-lived access tokens</span>, and prefer
+          an account that has only the access it needs over your main administrator login.
+        </p>
+        <Banner tone="info" icon={<InfoIcon />} heading="The Home Assistant token stays on the bridge">
+          It lives in the bridge's env file and never reaches the app — the app only ever receives the
+          resulting weight. The read is outbound-only and read-only: the bridge opens no extra port, and it
+          can only read a sensor's state, never call a Home Assistant service, so it can't switch or unlock
+          anything in your home.
+        </Banner>
+        <p className="text-sm text-muted-foreground">
+          The app finds the bridge using the URL and token you set under{' '}
+          <span className="text-foreground">Push to bridge</span> on the Cloud Sync screen (covered on the
+          next step). Skip all of this if you don't need it — nothing else in the guide changes.
+        </p>
+      </StepCard>
     </div>
   );
+}
+
+/**
+ * The opt-in Home Assistant read settings. The Home Assistant token is the *user's own* secret —
+ * unlike the bridge token, the guide can't generate it, so it is only ever shown as a placeholder.
+ */
+function haEnvSettings(): string {
+  return [
+    'GUBBINS_BRIDGE_HA=on',
+    'GUBBINS_BRIDGE_HA_URL=http://homeassistant.local:8123',
+    `GUBBINS_BRIDGE_HA_TOKEN=${HA_TOKEN_PLACEHOLDER}`,
+  ].join('\n');
 }
 
 /** The `.env` / env-file body, with the token filled in and LAN exposure added when needed. */

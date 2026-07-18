@@ -26,7 +26,7 @@ import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
-import { createHaClient } from './homeassistant/client.ts';
+import { createHaClient, HaError, type HaClient } from './homeassistant/client.ts';
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
@@ -106,15 +106,20 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   // Home Assistant reads (issue #122) — an independent, outbound-only opt-in: the bridge calls
   // HA, so this opens no port and is unrelated to the data source. Present only when configured;
   // otherwise `/api/v1/scale/*` is a 404. The HA token stays here and is never sent to the PWA.
-  const scale =
+  // Kept as one object so the URL travels with the client it belongs to — the startup probe below
+  // logs that URL, and reaching for `config.homeAssistantUrl` there would need an assertion that
+  // this narrowing has already done properly.
+  const ha =
     config.homeAssistant && config.homeAssistantUrl && config.homeAssistantToken
       ? {
+          baseUrl: config.homeAssistantUrl,
           client: createHaClient({
             baseUrl: config.homeAssistantUrl,
             token: config.homeAssistantToken,
           }),
         }
       : undefined;
+  const scale = ha ? { client: ha.client } : undefined;
 
   const server = createBridgeServer({
     token: config.token,
@@ -184,13 +189,14 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
         'GUBBINS_BRIDGE_WEBHOOKS=on for outbound webhooks.',
     );
   }
-  if (scale) {
+  if (ha) {
     // The HA base URL is safe to log (it is a host the operator typed); the TOKEN never is.
     console.log(
       `Home Assistant reads ENABLED (GUBBINS_BRIDGE_HA=on): "count by weight" can read a scale ` +
-        `entity from ${config.homeAssistantUrl}. Outbound-only and read-only — the bridge cannot ` +
+        `entity from ${ha.baseUrl}. Outbound-only and read-only — the bridge cannot ` +
         'call a Home Assistant service.',
     );
+    void probeHomeAssistant(ha.client, ha.baseUrl);
   } else {
     console.log('Home Assistant reads: disabled. Set GUBBINS_BRIDGE_HA=on to enable a scale reading.');
   }
@@ -220,6 +226,37 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
   process.once('SIGTERM', shutdown);
 
   return { server, watcher, mdns, mqtt };
+}
+
+/**
+ * Check the configured Home Assistant actually answers, and accepts the token — otherwise a wrong
+ * URL or a revoked token stays silent until a user opens the weigh dialog and gets an error there.
+ *
+ * Deliberately **not awaited**: it is diagnostics, not a precondition. Home Assistant may well be
+ * still booting alongside the bridge, and a bridge whose *other* capabilities are fine must not
+ * wait on it — nor fail to start because of it. So this is fired after `listen`, and every outcome
+ * is a log line. The base URL is safe to log; the token never appears here (or in `HaError`).
+ */
+async function probeHomeAssistant(client: HaClient, baseUrl: string): Promise<void> {
+  try {
+    await client.probe();
+    console.log(`Home Assistant reachable at ${baseUrl} and the access token was accepted.`);
+  } catch (err) {
+    const code = err instanceof HaError ? err.code : undefined;
+    if (code === 'home_assistant_unauthorised') {
+      console.warn(
+        `Home Assistant at ${baseUrl} REJECTED the access token — check GUBBINS_BRIDGE_HA_TOKEN ` +
+          '(Profile → Security → Long-lived access tokens). Reading a scale will fail until it is fixed.',
+      );
+    } else if (code === 'home_assistant_unreachable') {
+      console.warn(
+        `Home Assistant at ${baseUrl} could not be reached — check GUBBINS_BRIDGE_HA_URL and that ` +
+          'Home Assistant is running. Reading a scale will fail until it is reachable.',
+      );
+    } else {
+      console.warn(`Home Assistant at ${baseUrl} did not answer as expected. Reading a scale may fail.`);
+    }
+  }
 }
 
 /** Build the MQTT publisher from config + the already-parsed broker endpoint. */

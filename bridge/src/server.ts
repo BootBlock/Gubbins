@@ -91,7 +91,11 @@ export interface EventStreamCapability {
  * Home Assistant — so it needs no `BridgeServerState` and works before a snapshot has loaded.
  */
 export interface ScaleCapability {
-  readonly client: HaClient;
+  /**
+   * Narrowed to the two reads the endpoints actually serve: the client's startup `probe` is a
+   * composition-root concern, and nothing reachable over HTTP should be able to trigger it.
+   */
+  readonly client: Pick<HaClient, 'listScaleEntities' | 'readScale'>;
 }
 
 /** A parsed request body: a successfully-parsed JSON value, or a marker that parsing failed. */

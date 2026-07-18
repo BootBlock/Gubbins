@@ -337,6 +337,8 @@
   "inventory.weighCount.scaleEntityLabel": "Scale",
   "inventory.weighCount.scaleEntityPlaceholder": "Choose a scale…",
   "inventory.weighCount.scaleRead": "Read the scale",
+  "inventory.weighCount.scaleReadTare": "Read the container",
+  "inventory.weighCount.scaleRefresh": "Refresh the list of scales",
   "inventory.weighCount.scaleReading": "Reading…",
   "inventory.weighCount.scaleReadFrom": "Read {reading} from the scale.",
   "inventory.weighCount.scaleFailure.unauthorised": "The bridge rejected the access token. Check it matches the token the bridge is configured with.",

@@ -337,6 +337,8 @@
   "inventory.weighCount.scaleEntityLabel": "Waage",
   "inventory.weighCount.scaleEntityPlaceholder": "Waage auswählen…",
   "inventory.weighCount.scaleRead": "Waage ablesen",
+  "inventory.weighCount.scaleReadTare": "Behälter ablesen",
+  "inventory.weighCount.scaleRefresh": "Liste der Waagen aktualisieren",
   "inventory.weighCount.scaleReading": "Wird abgelesen…",
   "inventory.weighCount.scaleReadFrom": "{reading} von der Waage abgelesen.",
   "inventory.weighCount.scaleFailure.unauthorised": "Die Bridge hat das Zugriffstoken abgelehnt. Prüfen Sie, ob es mit dem Token der Bridge übereinstimmt.",
