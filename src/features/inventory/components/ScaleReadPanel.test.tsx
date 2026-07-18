@@ -52,6 +52,7 @@ function stubFetch(routes: { entities?: [number, unknown]; state?: [number, unkn
 }
 
 const grossField = () => screen.getByLabelText(/Weight on scale/i);
+const tareField = () => screen.getByLabelText(/Container weight/i);
 
 beforeEach(() => {
   spies.adjust.mockReset();
@@ -211,5 +212,104 @@ describe('ScaleReadPanel (issue #122)', () => {
 
     // The stale id must not silently read from the wrong sensor.
     expect(await screen.findByTestId('scale-read')).toBeDisabled();
+  });
+
+  describe('taring from the scale (issue #124 §5)', () => {
+    it('fills the container field from the same scale, leaving the gross field alone', async () => {
+      usePreferencesStore.setState({ scaleEntityId: 'sensor.bench' });
+      stubFetch({ state: [200, { grams: 12, value: 12, unit: 'g' }] });
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+
+      fireEvent.click(await screen.findByTestId('scale-read-tare'));
+
+      await waitFor(() => expect(tareField()).toHaveValue('12'));
+      expect(grossField()).toHaveValue('');
+      expect(screen.getByTestId('weigh-count-tare-source')).toHaveTextContent('12 g');
+      // The gross field's own note must not appear — nothing was read into it.
+      expect(screen.queryByTestId('weigh-count-scale-source')).toBeNull();
+    });
+
+    it('counts the net weight once both the tray and the parts have been weighed', async () => {
+      // Weigh the empty tray (12 g), then the tray with parts (55 g): 43 g of 0.5 g screws → 86.
+      usePreferencesStore.setState({ scaleEntityId: 'sensor.bench' });
+      stubFetch({ state: [200, { grams: 12, value: 12, unit: 'g' }] });
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+
+      fireEvent.click(await screen.findByTestId('scale-read-tare'));
+      await waitFor(() => expect(tareField()).toHaveValue('12'));
+
+      stubFetch({ state: [200, { grams: 55, value: 55, unit: 'g' }] });
+      fireEvent.click(screen.getByTestId('scale-read'));
+      await waitFor(() => expect(grossField()).toHaveValue('55'));
+
+      expect(screen.getByTestId('weigh-count-result')).toHaveTextContent('86 units');
+    });
+
+    it('drops the container note once that field is edited by hand', async () => {
+      usePreferencesStore.setState({ scaleEntityId: 'sensor.bench' });
+      stubFetch({ state: [200, { grams: 12, value: 12, unit: 'g' }] });
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+
+      fireEvent.click(await screen.findByTestId('scale-read-tare'));
+      await screen.findByTestId('weigh-count-tare-source');
+
+      fireEvent.change(tareField(), { target: { value: '20' } });
+      expect(screen.queryByTestId('weigh-count-tare-source')).toBeNull();
+    });
+
+    it('will not read a container weight until a scale is chosen', async () => {
+      stubFetch({});
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+      expect(await screen.findByTestId('scale-read-tare')).toBeDisabled();
+    });
+  });
+
+  describe('refreshing the scale list (issue #124 §4)', () => {
+    it('re-asks the bridge, so a scale just added in Home Assistant appears without a reload', async () => {
+      const impl = stubFetch({});
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+      await screen.findByTestId('scale-read');
+      expect(impl).toHaveBeenCalledTimes(1);
+
+      // A second scale has since been added in Home Assistant.
+      stubFetch({
+        entities: [
+          200,
+          {
+            entities: [
+              ...ENTITIES.entities,
+              { entityId: 'sensor.kitchen', name: 'Kitchen scale', unit: 'g' },
+            ],
+          },
+        ],
+      });
+      fireEvent.click(screen.getByTestId('scale-refresh'));
+
+      await waitFor(() => expect(screen.getByTestId('scale-entity-select')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('scale-entity-select'));
+      expect(await screen.findByText('Kitchen scale')).toBeInTheDocument();
+    });
+
+    it('keeps the existing list when a refresh fails, and says why', async () => {
+      // A blip while refreshing must not take the whole panel — refresh control included — off
+      // the screen, stranding the user with no way to try again.
+      stubFetch({});
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+      await screen.findByTestId('scale-read');
+
+      stubFetch({ entities: [502, { error: { code: 'home_assistant_unreachable' } }] });
+      fireEvent.click(screen.getByTestId('scale-refresh'));
+
+      expect(await screen.findByTestId('scale-error')).toHaveTextContent(/could not reach Home Assistant/i);
+      expect(screen.getByTestId('scale-read')).toBeInTheDocument();
+      expect(screen.getByTestId('scale-refresh')).toBeEnabled();
+    });
+
+    it('names the refresh control for screen readers, since it is icon-only', async () => {
+      stubFetch({});
+      render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+
+      expect(await screen.findByTestId('scale-refresh')).toHaveAccessibleName('Refresh the list of scales');
+    });
   });
 });

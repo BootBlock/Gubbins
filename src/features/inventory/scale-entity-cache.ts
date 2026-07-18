@@ -6,8 +6,14 @@
  * — would be a lot of traffic for a set that does not realistically change mid-session.
  *
  * Module scope rather than component state, so it survives the dialog unmounting between items.
- * Deliberately **not** persisted: a page reload starts fresh, which is also how a user who has
- * just added a scale in Home Assistant picks it up without a "refresh" affordance in the UI.
+ * Deliberately **not** persisted: a page reload starts fresh.
+ *
+ * A session-long cache used to mean that a user who had *just* added a scale in Home Assistant
+ * had to reload the page before it appeared. {@link forgetCachedScaleEntities} closes that
+ * without giving up the saving: the picker offers an explicit refresh, which drops this bridge's
+ * entry so the next fetch goes to Home Assistant. An automatic TTL was the alternative and is
+ * worse here — it re-pulls the entity list on a timer nobody asked for, to catch a change that
+ * only the user knows they made.
  */
 import type { ScaleEntity } from './scale-reading';
 
@@ -21,6 +27,14 @@ export function getCachedScaleEntities(bridgeUrl: string): readonly ScaleEntity[
 /** Cache a successfully-fetched scale list against its bridge. */
 export function setCachedScaleEntities(bridgeUrl: string, entities: readonly ScaleEntity[]): void {
   cache.set(bridgeUrl.trim(), entities);
+}
+
+/**
+ * Forget one bridge's cached list, so the next read re-asks Home Assistant. Backs the picker's
+ * refresh control — scoped to the one bridge, because another bridge's list is still good.
+ */
+export function forgetCachedScaleEntities(bridgeUrl: string): void {
+  cache.delete(bridgeUrl.trim());
 }
 
 /** Drop everything cached. Used by tests, which must not leak state between cases. */

@@ -914,6 +914,34 @@ Create the token in Home Assistant under **Profile → Security → Long-lived a
 > calls exactly two Home Assistant endpoints (list states, read one state) and **cannot call a
 > service**, so this path can never switch, unlock or actuate anything in your home.
 
+### Startup check
+
+When this capability is enabled, the bridge checks Home Assistant once at startup — it lists states
+and throws the result away — so a wrong URL or a revoked token is reported in the log immediately
+rather than the first time someone opens **Count by weight**:
+
+```text
+Home Assistant reachable at http://homeassistant.local:8123 and the access token was accepted.
+Home Assistant at http://homeassistant.local:8123 REJECTED the access token — check GUBBINS_BRIDGE_HA_TOKEN …
+Home Assistant at http://homeassistant.local:8123 could not be reached — check GUBBINS_BRIDGE_HA_URL …
+```
+
+The check **never blocks or fails startup**: it runs after the bridge is already listening, so a
+Home Assistant that is still booting (or down entirely) costs the bridge's other capabilities
+nothing. A failure is a warning; fix the setting and restart, or just try a reading. Only the base
+URL you configured is logged — the token never is.
+
+### Timeouts and retries
+
+One read is given a **5-second total budget**, split across **two attempts** (about 2.4s each) with
+a 200 ms pause between them. A single busy moment in Home Assistant — an integration reloading, a
+recorder flush — therefore recovers silently, while an instance that is genuinely down still reports
+in about five seconds rather than ten.
+
+A retry only happens where it could plausibly help: a timeout, a transport failure, or a `5xx` from
+Home Assistant. A rejected token (`401`/`403`) or an unknown entity (`404`) is deterministic and
+answered on the first attempt.
+
 ### Endpoints
 
 | Endpoint | Returns |
