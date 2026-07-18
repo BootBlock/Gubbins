@@ -74,11 +74,19 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 - **Local dev:** `npm run dev` picks up `.env` automatically; the redirect URI resolves to
   `http://localhost:5173/Gubbins/`.
-- **Production (GitHub Pages):** provide `VITE_GOOGLE_CLIENT_ID` to the build (e.g. a CI
-  secret exposed to `vite build`). It is inlined at build time. The public deployment in
-  this repository ships **without** a client id, so Google Drive is hidden there until a
-  maintainer configures one — which is the correct posture for a public repo (no secrets in
-  source).
+- **Production (GitHub Pages):** the "Deploy to GitHub Pages" workflow passes
+  `VITE_GOOGLE_CLIENT_ID` to `npm run build` from the **repository variable** of the same
+  name, and it is inlined into the bundle at build time. The client id is public (it ships
+  in the client bundle by design and there is no client secret), so it belongs in a
+  variable, **not** a secret — nothing confidential enters the build.
+
+  To enable Drive sync on a deployment, set it once at **Settings → Secrets and variables →
+  Actions → Variables → New repository variable**, name `VITE_GOOGLE_CLIENT_ID`, value the
+  client id from step 5 above. Then re-run the deploy workflow.
+
+  If the variable is unset the build still succeeds and Google Drive is simply hidden in
+  the deployed app; the workflow emits a warning annotation on the run saying so, rather
+  than failing silently.
 
 ## How to use
 

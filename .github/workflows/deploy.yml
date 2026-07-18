@@ -35,8 +35,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Google Drive OAuth client id is PUBLIC (it ships in the client bundle by
+      # design and has no client secret), so it lives in a repository *variable*, not a
+      # secret. Left undefined the build still succeeds — Google Drive sync is simply
+      # hidden in the deployed app — so say so loudly rather than failing silently.
+      - name: Check Google Drive sync configuration
+        # Read the variable through `env:` rather than interpolating it into the script —
+        # `${{ }}` is substituted before the shell runs, so its contents would be parsed
+        # as shell source.
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
+            echo "::warning title=Google Drive sync disabled::Repository variable VITE_GOOGLE_CLIENT_ID is not set, so the Google Drive sync provider will be hidden in this deployment. Set it under Settings → Secrets and variables → Actions → Variables (see docs/dev/google-drive-sync.md)."
+          else
+            echo "VITE_GOOGLE_CLIENT_ID is set; Google Drive sync will be available."
+          fi
+
       - name: Build
         run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
