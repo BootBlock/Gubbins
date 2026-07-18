@@ -44,8 +44,12 @@
  *   GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX (optional) — HA discovery prefix (default `homeassistant`).
  *   GUBBINS_BRIDGE_HA            (optional) — opt into reading Home Assistant entity state (the
  *                                 "count by weight" scale reading). Off by default; outbound-only.
- *   GUBBINS_BRIDGE_HA_URL        (required when HA on) — base URL of the Home Assistant instance.
+ *   GUBBINS_BRIDGE_HA_URL        (required when HA on, unless _HA_DISCOVERY finds one) — base URL
+ *                                 of the Home Assistant instance.
  *   GUBBINS_BRIDGE_HA_TOKEN      (required when HA on) — long-lived access token; .env only.
+ *   GUBBINS_BRIDGE_HA_DISCOVERY  (optional) — find Home Assistant on the LAN over mDNS and use it
+ *                                 as the default when _HA_URL is unset. Off by default; an explicit
+ *                                 _HA_URL always wins. Supplies an address only — never a token.
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 
@@ -165,8 +169,20 @@ export interface BridgeConfig {
    * read one, and cannot call a service. When off, the `/api/v1/scale/*` endpoints are a `404`.
    */
   readonly homeAssistant: boolean;
-  /** Base URL of the Home Assistant instance. Required (non-empty) when {@link homeAssistant} is on. */
+  /**
+   * Base URL of the Home Assistant instance. Required (non-empty) when {@link homeAssistant} is on,
+   * unless {@link homeAssistantDiscovery} is on — in which case it may be left unset and filled in
+   * from the LAN at startup. An explicit value here always wins over a discovered one.
+   */
   readonly homeAssistantUrl: string | undefined;
+  /**
+   * Whether the operator opted into **discovering** Home Assistant over mDNS
+   * (`GUBBINS_BRIDGE_HA_DISCOVERY=on`), so {@link homeAssistantUrl} does not have to be typed by
+   * hand. **Off by default**, like everything else that touches the network. It is a convenience
+   * only: discovery supplies an *address*, never a credential — the operator's own access token is
+   * still required, and Home Assistant access stays read-only however the address was found.
+   */
+  readonly homeAssistantDiscovery: boolean;
   /**
    * Home Assistant long-lived access token (`GUBBINS_BRIDGE_HA_TOKEN`). Required when
    * {@link homeAssistant} is on. `.env` only — never logged, and never forwarded to the PWA.
@@ -222,8 +238,18 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const homeAssistant = parseBool(env.GUBBINS_BRIDGE_HA, false, 'GUBBINS_BRIDGE_HA');
   const homeAssistantUrl = (env.GUBBINS_BRIDGE_HA_URL ?? '').trim() || undefined;
   const homeAssistantToken = (env.GUBBINS_BRIDGE_HA_TOKEN ?? '').trim() || undefined;
-  if (homeAssistant && homeAssistantUrl === undefined) {
-    throw new Error('GUBBINS_BRIDGE_HA is on but GUBBINS_BRIDGE_HA_URL is unset (set it in .env).');
+  const homeAssistantDiscovery = parseBool(
+    env.GUBBINS_BRIDGE_HA_DISCOVERY,
+    false,
+    'GUBBINS_BRIDGE_HA_DISCOVERY',
+  );
+  // Discovery can fill the URL in at startup, so an unset URL is only an error without it. It
+  // stays a startup failure either way if nothing answers — this just moves *when* we can tell.
+  if (homeAssistant && homeAssistantUrl === undefined && !homeAssistantDiscovery) {
+    throw new Error(
+      'GUBBINS_BRIDGE_HA is on but GUBBINS_BRIDGE_HA_URL is unset (set it in .env, or set ' +
+        'GUBBINS_BRIDGE_HA_DISCOVERY=on to find Home Assistant on the LAN).',
+    );
   }
   if (homeAssistant && homeAssistantToken === undefined) {
     throw new Error('GUBBINS_BRIDGE_HA is on but GUBBINS_BRIDGE_HA_TOKEN is unset (set it in .env).');
@@ -269,6 +295,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     homeAssistant,
     homeAssistantUrl,
     homeAssistantToken,
+    homeAssistantDiscovery,
   };
 }
 

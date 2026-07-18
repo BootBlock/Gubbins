@@ -914,6 +914,39 @@ Create the token in Home Assistant under **Profile → Security → Long-lived a
 > calls exactly two Home Assistant endpoints (list states, read one state) and **cannot call a
 > service**, so this path can never switch, unlock or actuate anything in your home.
 
+### Finding Home Assistant instead of typing its URL (opt-in)
+
+The bridge already advertises *itself* over mDNS (see [mDNS / zeroconf discovery](#mdns--zeroconf-discovery))
+so Home Assistant can find it. This is the reverse: rather than typing `GUBBINS_BRIDGE_HA_URL` and
+finding out at startup that you mistyped it, let the bridge ask the LAN where Home Assistant is.
+
+```bash
+GUBBINS_BRIDGE_HA=on
+GUBBINS_BRIDGE_HA_DISCOVERY=on
+GUBBINS_BRIDGE_HA_TOKEN=<YOUR_HOME_ASSISTANT_TOKEN>
+# GUBBINS_BRIDGE_HA_URL left unset — the bridge fills it in
+```
+
+```text
+Home Assistant discovery: looking for an instance on the LAN over mDNS…
+Home Assistant discovered on the LAN: "Home" at http://homeassistant.local:8123.
+```
+
+**Off by default**, like everything else that touches the network. Three things to know:
+
+- **An explicit URL always wins.** Set `GUBBINS_BRIDGE_HA_URL` and discovery is skipped entirely —
+  it only ever supplies a *default* for a value you left unset.
+- **It finds an address, not a credential.** A discovered instance is a suggestion, not a trust
+  decision: your long-lived access token is still required, and the bridge still cannot call a Home
+  Assistant service. Nothing about what the integration can do changes.
+- **Nothing answering is not fatal.** The bridge waits about 2.5 seconds, logs that it found
+  nothing, and starts anyway with the scale endpoints unavailable — exactly as it would with no URL
+  configured. Set the URL directly and restart.
+
+Home Assistant is asked over the same standard `_home-assistant._tcp` service it advertises to
+every other device on your network, and the bridge prefers the *internal* URL Home Assistant
+publishes for itself (falling back to the advertised host and port).
+
 ### Startup check
 
 When this capability is enabled, the bridge checks Home Assistant once at startup — it lists states
@@ -1059,6 +1092,12 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_MQTT_CLIENT_ID` | no | `gubbins-bridge` | The MQTT client identifier. |
 | `GUBBINS_BRIDGE_MQTT_DISCOVERY` | no | `off` | Also publish [Home Assistant MQTT-discovery](#home-assistant-mqtt-discovery-no-custom-component) configs so HA auto-creates entities with no custom component. Only meaningful when MQTT is on. |
 | `GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX` | no | `homeassistant` | HA discovery prefix (match HA's `discovery_prefix` if you changed it). |
+| `GUBBINS_BRIDGE_HA` | no | `off` | Enable opt-in [Home Assistant reads](#home-assistant-reads-opt-in) so "Count by weight" can read a scale entity. **Off by default** (`/api/v1/scale/*` is `404` when off). Outbound-only and read-only — the bridge cannot call a service. |
+| `GUBBINS_BRIDGE_HA_URL` | when HA on¹ | — | Base URL of your Home Assistant instance, e.g. `http://homeassistant.local:8123`. |
+| `GUBBINS_BRIDGE_HA_TOKEN` | when HA on | — | Home Assistant long-lived access token. `.env` only; **never logged** and never sent to the app. |
+| `GUBBINS_BRIDGE_HA_DISCOVERY` | no | `off` | Find Home Assistant on the LAN over mDNS and use its advertised address when `GUBBINS_BRIDGE_HA_URL` is unset. **Off by default**; an explicit URL always wins. Supplies an **address only** — the token above is still required. See [Finding Home Assistant](#finding-home-assistant-instead-of-typing-its-url-opt-in). |
+
+¹ Unless `GUBBINS_BRIDGE_HA_DISCOVERY=on`, in which case the bridge fills it in from the LAN.
 
 A missing required value, an out-of-range port, or a non-numeric rate setting makes the
 bridge **fail loudly at startup** (with a secret-free message) rather than serve

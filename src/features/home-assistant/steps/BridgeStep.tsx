@@ -288,6 +288,12 @@ export function BridgeStep() {
           <span className="text-foreground">profile → Security → Long-lived access tokens</span>, and prefer
           an account that has only the access it needs over your main administrator login.
         </p>
+        <p className="text-sm text-muted-foreground">
+          If you'd rather not type the address, add{' '}
+          <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_HA_DISCOVERY=on</code> and leave the
+          URL line out — the bridge looks for Home Assistant on your network at startup and uses the address
+          it advertises. A URL you set yourself always wins, and the token is still needed either way.
+        </p>
         <Banner tone="info" icon={<InfoIcon />} heading="The Home Assistant token stays on the bridge">
           It lives in the bridge's env file and never reaches the app — the app only ever receives the
           resulting weight. The read is outbound-only and read-only: the bridge opens no extra port, and it
