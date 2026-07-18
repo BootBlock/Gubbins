@@ -258,7 +258,7 @@ function SeedSection() {
   return (
     <Surface className="border-destructive/40 p-5" aria-labelledby="lab-actions-heading">
       <h2 id="lab-actions-heading" className="flex items-center gap-2 text-sm font-semibold text-foreground">
-        <WarningIcon aria-hidden className="size-4 text-glyph-warning" />
+        <WarningIcon aria-hidden className="size-4 text-warning" />
         {t('lab.actions.heading')}
       </h2>
       <p className="mt-1 text-xs text-muted-foreground">{t('lab.actions.intro')}</p>
