@@ -47,6 +47,18 @@ topic, so a Node-RED flow or an MQTT trigger can act on the answer without the H
 custom integration. That one is sent **live only** — it is never replayed to something that
 connects later, so an old question can't set an automation off.
 
+> **⚠️ Heads-up — if you already had MQTT publishing switched on**
+> Locations' [[custom fields|Custom-Fields-and-Capabilities]] were added to what MQTT publishes,
+> and they don't have a switch of their own — turning on MQTT publishing is what enables them. So
+> if you'd already set MQTT up before this was added, your locations' field values start reaching
+> your broker when you update, without you changing anything.
+>
+> That's the intended behaviour, and it's your own broker. It's just worth a glance at what you've
+> recorded **on locations**: all of a location's fields are published, and you can't hold one back
+> while publishing the rest. If something there is genuinely sensitive, move it to the item, limit
+> the topic with a broker rule, or leave MQTT publishing off. Fields on *items* are never published
+> this way.
+
 See [[Home Assistant integration|Home-Assistant-Integration]].
 
 ## Calendar feed (iCal)
