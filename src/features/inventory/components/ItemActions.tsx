@@ -12,6 +12,7 @@ import {
   QrCodeIcon,
   RestoreIcon,
   SaleIcon,
+  ScaleIcon,
   UnfavouriteIcon,
   WriteOffIcon,
 } from '@/components/icons';
@@ -27,10 +28,11 @@ import { GaugeAdjustDialog } from './GaugeAdjustDialog';
 import { ItemDetailDialog } from './ItemDetailDialog';
 import { MoveItemDialog } from './MoveItemDialog';
 import { QrCodeDialog } from './QrCodeDialog';
+import { WeighCountDialog } from './WeighCountDialog';
 
 /** Which of the item's dialogs to open — the shared vocabulary between a button and a card click. */
 export type ItemDialogKind =
-  'move' | 'gauge' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff' | 'project';
+  'move' | 'gauge' | 'weigh' | 'details' | 'qr' | 'checkout' | 'sell' | 'writeoff' | 'project';
 
 /**
  * Rich help behind the loan-out row for an **Untracked** item (B5). A loan needs a countable
@@ -98,6 +100,11 @@ export const ItemActions = forwardRef<
   // via "Remove from inventory"; gauges/untracked carry no countable units to sell).
   const salesEnabled = useFeature('sales');
   const canSell = salesEnabled && item.isActive && item.trackingMode === 'DISCRETE' && !item.isUnlimited;
+  // Counting by weight (issue #101) needs countable, finite stock to land on — the same shape
+  // as selling. It is offered even when no unit weight is recorded yet: the dialog explains
+  // what to set rather than the action silently not existing, so the feature is discoverable
+  // from the item it applies to (the "explain, don't hide" pattern the loan row uses).
+  const canWeighCount = item.isActive && item.trackingMode === 'DISCRETE' && !item.isUnlimited;
   const size = compact ? 'size-8' : '';
 
   return (
@@ -157,6 +164,15 @@ export const ItemActions = forwardRef<
         <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
           Move…
         </MenuAction>
+        {canWeighCount ? (
+          <MenuAction
+            icon={<ScaleIcon className="text-glyph-gauge" />}
+            onSelect={() => setDialog('weigh')}
+            data-testid="item-actions-weigh-count"
+          >
+            {t('inventory.itemActions.weighCount')}
+          </MenuAction>
+        ) : null}
         {projectsEnabled && item.isActive ? (
           <MenuAction
             icon={<ProjectIcon className="text-muted-foreground" />}
@@ -246,6 +262,9 @@ export const ItemActions = forwardRef<
       />
       {item.gauge ? (
         <GaugeAdjustDialog item={item} open={dialog === 'gauge'} onClose={() => setDialog(null)} />
+      ) : null}
+      {canWeighCount ? (
+        <WeighCountDialog item={item} open={dialog === 'weigh'} onClose={() => setDialog(null)} />
       ) : null}
       <ItemDetailDialog item={item} open={dialog === 'details'} onClose={() => setDialog(null)} />
       <QrCodeDialog
