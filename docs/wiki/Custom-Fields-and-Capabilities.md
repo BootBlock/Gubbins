@@ -23,6 +23,60 @@ field:material=steel
 > Because custom fields hang off a **category**, setting a category up once gives every item in
 > it the right fields automatically — no need to re-add them item by item.
 
+### One field, shared everywhere
+
+A field is identified by its **name**. If two categories both define `Manufacturer`, they are
+the same field — not two fields that happen to look alike. That's what lets a value set on a
+[[location|Locations-and-Stock]] reach items in either category, and it means renaming
+`Manufacturer` to `Brand` renames it everywhere at once.
+
+Two consequences worth knowing:
+
+- You can't define the same name twice with **different types** — if `Rating` already exists as
+  a text field, adding a number field called `Rating` is refused. Pick a different name.
+- Changing a field's **type** is only allowed while a single category uses it. If others share
+  it, Gubbins refuses rather than silently reinterpreting the values stored under them.
+
+Whether a field is **required**, its **default value** and its **position** stay per-category —
+so `Manufacturer` can be required for Power tools and optional for Spares.
+
+### Inheriting a value from a location
+
+Instead of typing the same value onto every item in a drawer, you can set it **once on the
+location** and let the items take it.
+
+Open a location's **Edit** dialog and find **Inheritable fields**. Add a field, give it a value,
+and tick **Offer to items here**. Any item in that location — or in any location nested inside
+it — can then pick up that value.
+
+On the item, the field grows a small chooser above it:
+
+- **Inherit — *value* (from *location*)** — take the location's value.
+- **Set a value for this item** — enter your own, exactly as before.
+
+Inheriting is **opt-in per item and per field**: nothing changes on existing items until you
+choose it. The chooser only appears when a location above the item actually offers that field.
+
+> **💡 Tip**
+> Inherited values are *live*. Change the value on the location and every item inheriting it
+> follows immediately — no re-editing. Move an item to a different location and it picks up
+> that location's value instead.
+
+When locations are nested, the **nearest one wins**: if `Workshop` offers `Manufacturer =
+Ryobi` and `Workshop → Cabinet A` offers `Makita`, an item in Cabinet A inherits Makita.
+
+Inherited values behave like any other for [[search|Text-Query-Syntax]] — `field:manufacturer=ryobi`
+finds items that inherit Ryobi just as it finds items that store it.
+
+> **ℹ️ Note**
+> Ticking **Offer to items here** is deliberately separate from setting the value. A location
+> can record a detail about *itself* — a shelf's load rating, a room's humidity — without every
+> item inside quietly adopting it.
+
+If a location stops offering a field (you untick the box, clear the value, or move the item
+elsewhere), items that were inheriting fall back to the category default. Your choice to inherit
+is remembered, so restoring the value on the location restores the inheritance too.
+
 ### Adding a field note
 
 When you define a custom field you can give it an optional **Description** — a short note about

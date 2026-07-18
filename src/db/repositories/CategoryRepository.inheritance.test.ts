@@ -320,6 +320,75 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
     });
   });
 
+  describe('removing a field from a category', () => {
+    it("clears the stored values of that category's items", async () => {
+      const { drill, tools, field } = await scenario();
+      await categories.setItemFieldValues(drill.id, { [field.id]: 'Makita' });
+
+      // Values key on the definition, so nothing cascades — deleteField must clear them
+      // explicitly or they would linger invisibly and resurrect on a re-add.
+      await categories.deleteField(field.id);
+      await categories.addField(tools.id, { name: 'Manufacturer', fieldType: 'TEXT' });
+
+      const [resolved] = await categories.resolveItemFields(drill.id);
+      expect(resolved?.value).toBeNull();
+    });
+
+    it("leaves an item's value alone when it sits under another category", async () => {
+      const { drill, field } = await scenario();
+      const spares = await categories.create({ name: 'Spares' });
+      const spareField = await categories.addField(spares.id, { name: 'Manufacturer', fieldType: 'TEXT' });
+      const bit = await items.create({ name: 'Drill bit', categoryId: spares.id });
+      await categories.setItemFieldValues(drill.id, { [field.id]: 'Makita' });
+      await categories.setItemFieldValues(bit.id, { [spareField.id]: 'Bosch' });
+
+      // Removing the field from Power tools must not touch Spares' items.
+      await categories.deleteField(field.id);
+      expect((await categories.resolveItemFields(bit.id))[0]?.value).toBe('Bosch');
+    });
+  });
+
+  describe('guards on a shared definition', () => {
+    it('refuses to retype a definition another category also uses', async () => {
+      const tools = await categories.create({ name: 'Power tools' });
+      const spares = await categories.create({ name: 'Spares' });
+      const a = await categories.addField(tools.id, { name: 'Rating', fieldType: 'TEXT' });
+      await categories.addField(spares.id, { name: 'Rating', fieldType: 'TEXT' });
+
+      // Retyping would reinterpret every value stored under Spares, a category the user
+      // is not looking at — the same reasoning that makes addField reject the mismatch.
+      await expect(categories.updateField(a.id, { fieldType: 'NUMBER' })).rejects.toThrow(DbError);
+    });
+
+    it('allows retyping a definition only this category uses', async () => {
+      const tools = await categories.create({ name: 'Power tools' });
+      const only = await categories.addField(tools.id, { name: 'Rating', fieldType: 'TEXT' });
+      const updated = await categories.updateField(only.id, { fieldType: 'NUMBER' });
+      expect(updated.fieldType).toBe('NUMBER');
+    });
+
+    it('refuses to inherit a blank into a required field', async () => {
+      const workshop = await locations.create({ name: 'Workshop' });
+      const tools = await categories.create({ name: 'Power tools' });
+      const field = await categories.addField(tools.id, {
+        name: 'Manufacturer',
+        fieldType: 'TEXT',
+        isRequired: true,
+      });
+      const drill = await items.create({ name: 'Drill', categoryId: tools.id, locationId: workshop.id });
+      // The location may hold a blank (required-ness is the category's policy for items),
+      // so inheriting it would slip a required field past validation.
+      await categories.setLocationFieldValue(workshop.id, {
+        defId: field.defId,
+        value: '',
+        isInheritable: true,
+      });
+      await expect(categories.setItemFieldValues(drill.id, { [field.id]: INHERIT_VALUE })).rejects.toThrow(
+        DbError,
+      );
+    });
+  });
+
   describe('item card values', () => {
     it('reports an inherited value alongside stored ones', async () => {
       const { drill, workshop, tools, field } = await scenario();

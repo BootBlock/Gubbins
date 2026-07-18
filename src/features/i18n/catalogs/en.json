@@ -414,5 +414,6 @@
   "inventory.location.fields.inheritable": "Offer to items here",
   "inventory.location.fields.inheritableHint": "When off, the value is kept as this location's own detail and is not offered to anything inside it.",
   "inventory.location.fields.remove": "Remove {name}",
-  "inventory.location.fields.saving": "Saving…"
+  "inventory.location.fields.saving": "Saving…",
+  "inventory.location.fields.emptyNoFields": "No custom fields exist yet. Create one under Categories & schemas, then set its value here to share it with the items inside."
 }

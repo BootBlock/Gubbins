@@ -1,4 +1,5 @@
-import { Select } from '@/components/foundry';
+import { useRef } from 'react';
+import { LiveRegion, Select } from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import { INHERIT_VALUE, type FieldType, type InheritableFieldValue } from '@/db/repositories';
 import { TypedFieldControl, type TypedFieldControlAria } from './TypedFieldControl';
@@ -67,6 +68,12 @@ export function InheritableFieldControl({
 }: InheritableFieldControlProps) {
   const t = useT();
 
+  // The last non-inherit value this control held, so switching Inherit → custom can put it
+  // back. A ref rather than state: it must not itself trigger a render, and it only ever
+  // trails the value the caller already owns.
+  const lastLiteral = useRef(value === INHERIT_DRAFT_VALUE ? '' : value);
+  if (value !== INHERIT_DRAFT_VALUE) lastLiteral.current = value;
+
   // Nothing above this item offers the field — no choice to present, so don't imply one.
   if (inheritable == null) {
     return (
@@ -89,7 +96,12 @@ export function InheritableFieldControl({
     <div className="space-y-field-gap-compact">
       <Select
         value={isInheriting ? INHERIT_DRAFT_VALUE : ''}
-        onChange={(next) => onChange(next === INHERIT_DRAFT_VALUE ? INHERIT_DRAFT_VALUE : '')}
+        // Switching back to a custom value restores the literal the field held before it
+        // started inheriting, rather than blanking it: a round trip through this dropdown
+        // must not silently discard the user's value.
+        onChange={(next) =>
+          onChange(next === INHERIT_DRAFT_VALUE ? INHERIT_DRAFT_VALUE : lastLiteral.current)
+        }
         options={[
           {
             value: INHERIT_DRAFT_VALUE,
@@ -108,16 +120,20 @@ export function InheritableFieldControl({
             : t('inventory.fields.inherit.sourceLabel')
         }
       />
-      {isInheriting ? (
-        // The resolved value, shown read-only: the user needs to see *what* they are
-        // inheriting, not just that they are. Announced politely so a screen-reader user
-        // hears the value change when they switch source or the item moves location.
-        <p className="text-xs text-muted-foreground" aria-live="polite">
-          {t('inventory.fields.inherit.from', {
-            vars: { value: inheritedDisplay, location: inheritable.locationName },
-          })}
-        </p>
-      ) : (
+      {/* The resolved value, shown read-only: the user needs to see *what* they are
+          inheriting, not just that they are. The LiveRegion is always mounted and only its
+          children change — a live region inserted at the same moment as its message is
+          frequently not announced at all. */}
+      <LiveRegion className="text-xs text-muted-foreground">
+        {isInheriting ? (
+          <p>
+            {t('inventory.fields.inherit.from', {
+              vars: { value: inheritedDisplay, location: inheritable.locationName },
+            })}
+          </p>
+        ) : null}
+      </LiveRegion>
+      {isInheriting ? null : (
         <TypedFieldControl
           fieldType={fieldType}
           value={value}

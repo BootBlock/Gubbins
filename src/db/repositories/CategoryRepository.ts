@@ -60,6 +60,9 @@ interface InheritanceContext {
   readonly offers: readonly InheritableOffer[];
 }
 
+/** The "nothing inherits anything" context — no ancestry to walk, no offers to match. */
+const EMPTY_INHERITANCE_CONTEXT: InheritanceContext = { chainByItem: new Map(), offers: [] };
+
 interface CategoryCountRow extends CategoryRow {
   readonly field_count: number;
 }
@@ -305,6 +308,10 @@ export class CategoryRepository extends BaseRepository {
    * precedence logic itself lives in the pure `location-inheritance` seam.
    */
   private async loadInheritanceContext(itemIds: readonly string[]): Promise<InheritanceContext> {
+    // An empty id list would interpolate to `IN ()` — a SQLite syntax error, not an empty
+    // result. Every current caller guards, but the guard belongs here so a future one can't
+    // reintroduce it.
+    if (itemIds.length === 0) return EMPTY_INHERITANCE_CONTEXT;
     const placeholders = itemIds.map(() => '?').join(', ');
     const [itemRows, locationRows, offerRows] = await Promise.all([
       this.driver.query<{ id: string; location_id: string }>(
@@ -359,23 +366,27 @@ export class CategoryRepository extends BaseRepository {
 
     // Join through the item's own category so the result is keyed by the card-field id
     // (the category's use of the definition) while the value rows key on the definition.
-    const [rows, context] = await Promise.all([
-      this.driver.query<{
-        item_id: string;
-        field_id: string;
-        def_id: string;
-        value: string | null;
-        mode: FieldValueMode;
-      }>(
-        `SELECT ifv.item_id, cf.id AS field_id, ifv.def_id, ifv.value, ifv.mode
-         FROM item_field_values ifv
-         JOIN items i ON i.id = ifv.item_id
-         JOIN category_fields cf ON cf.def_id = ifv.def_id AND cf.category_id = i.category_id
-         WHERE ifv.item_id IN (${placeholders});`,
-        itemIds as SqlValue[],
-      ),
-      this.loadInheritanceContext(itemIds),
-    ]);
+    const rows = await this.driver.query<{
+      item_id: string;
+      field_id: string;
+      def_id: string;
+      value: string | null;
+      mode: FieldValueMode;
+    }>(
+      `SELECT ifv.item_id, cf.id AS field_id, ifv.def_id, ifv.value, ifv.mode
+       FROM item_field_values ifv
+       JOIN items i ON i.id = ifv.item_id
+       JOIN category_fields cf ON cf.def_id = ifv.def_id AND cf.category_id = i.category_id
+       WHERE ifv.item_id IN (${placeholders});`,
+      itemIds as SqlValue[],
+    );
+
+    // Only pay for the location tree when a row actually defers to it. This runs per
+    // resident window as the virtualised list scrolls, and in an inventory where nothing
+    // inherits, the two extra whole-table reads would be pure waste on a hot path.
+    const context = rows.some((r) => r.mode === 'inherit')
+      ? await this.loadInheritanceContext(itemIds)
+      : EMPTY_INHERITANCE_CONTEXT;
 
     for (const row of rows) {
       const effective =
@@ -480,6 +491,24 @@ export class CategoryRepository extends BaseRepository {
       defParams.push(validated.name);
     }
     if (input.fieldType !== undefined || input.options !== undefined) {
+      // Retyping is refused while another category shares the definition, mirroring the
+      // guard in `addField`: the type change would reinterpret every stored value under
+      // categories the user isn't looking at, silently invalidating them. Changing the
+      // option list is safe by comparison, so only a genuine *type* change is blocked.
+      if (input.fieldType !== undefined && input.fieldType !== existing.fieldType) {
+        const sharers = await this.driver.queryOne<{ n: number }>(
+          'SELECT COUNT(*) AS n FROM category_fields WHERE def_id = ? AND id <> ?;',
+          [existing.defId, fieldId],
+        );
+        if ((sharers?.n ?? 0) > 0) {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `"${existing.name}" is shared with ${sharers!.n} other categor${sharers!.n === 1 ? 'y' : 'ies'}, ` +
+              `so its type cannot be changed here — that would reinterpret the values stored under them. ` +
+              `Remove it from the others first, or rename this one to create a separate field.`,
+          );
+        }
+      }
       defSets.push('field_type = ?', 'options = ?');
       defParams.push(validated.fieldType, validated.options);
     }
@@ -520,11 +549,39 @@ export class CategoryRepository extends BaseRepository {
     return this.requireField(fieldId);
   }
 
+  /**
+   * Remove a custom field from a category.
+   *
+   * Since issue #97 the item values key on the shared **definition**, not on this row, so
+   * dropping it no longer cascades them — the values must be cleared explicitly or they
+   * would linger invisibly, sync to peers forever, and reappear if the field were ever
+   * re-added. They are scoped to the items *in this category*: the definition may still be
+   * in use elsewhere, and an item under another category keeps its own value.
+   *
+   * The definition itself is deliberately left in the dictionary. It is shared vocabulary —
+   * other categories or locations may still use it, and one still exists to be re-picked.
+   */
   async deleteField(fieldId: string): Promise<void> {
-    // Tombstone the field-definition deletion (Phase 11: category_fields is synced). Its
-    // item_field_values cascade-delete locally and, on a peer, cascade from this same
-    // tombstone, so the value rows need no tombstones of their own.
+    const field = await this.driver.queryOne<{ def_id: string; category_id: string }>(
+      'SELECT def_id, category_id FROM category_fields WHERE id = ?;',
+      [fieldId],
+    );
+    if (!field) return;
+
+    // Each cleared value is a synced row deletion, so each needs its own tombstone
+    // (§7.2 — a cascade records none, and here there is no cascade at all).
+    const orphaned = await this.driver.query<{ id: string }>(
+      `SELECT ifv.id FROM item_field_values ifv
+       JOIN items i ON i.id = ifv.item_id
+       WHERE ifv.def_id = ? AND i.category_id IS ?;`,
+      [field.def_id, field.category_id],
+    );
+
     await this.driver.transaction([
+      ...orphaned.flatMap(({ id }) => [
+        { sql: 'DELETE FROM item_field_values WHERE id = ?;', params: [id] },
+        tombstoneStatement('item_field_values', id),
+      ]),
       { sql: 'DELETE FROM category_fields WHERE id = ?;', params: [fieldId] },
       tombstoneStatement('category_fields', fieldId),
     ]);
@@ -642,6 +699,17 @@ export class CategoryRepository extends BaseRepository {
       if (rawValue === INHERIT_VALUE) {
         context ??= await this.loadInheritanceContext([itemId]);
         const offered = findInheritedValue(context.chainByItem.get(itemId) ?? [], context.offers, def.defId);
+        // A required field must not inherit a blank. Locations validate their values with
+        // `isRequired: false` (required-ness is the category's policy for items, not a
+        // constraint on the location), so an inheritable-but-empty offer would otherwise
+        // slip a required field past validation and leave it resolving to null.
+        if (offered !== null && def.isRequired && (offered.value === null || offered.value.trim() === '')) {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `${def.name} is required, and ${offered.locationName} offers no value for it — ` +
+              `set a value on that location, or enter one for this item.`,
+          );
+        }
         if (offered === null) {
           throw new DbError(
             'SQLITE_CONSTRAINT',
