@@ -35,6 +35,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `public/ocr/` is git-ignored (several MB of Tesseract binaries), so a CI checkout has
+      # none of it and a build would quietly publish an app whose on-device OCR can never
+      # load. Stage the assets here, with `--require` so a failure breaks the deploy rather
+      # than shipping a feature that only appears to exist.
+      - name: Stage on-device OCR assets
+        run: npm run ocr:assets -- --require
+
       - name: Build
         run: npm run build
 
