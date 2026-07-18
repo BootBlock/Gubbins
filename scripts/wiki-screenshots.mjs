@@ -575,6 +575,79 @@ await screenShot('upcoming', 'upcoming');
 await screenShot('sync', 'sync');
 await screenShot('home-assistant', 'home-assistant');
 
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+// The Add dialog first (captured before submitting, so the form is shown filled in), then the
+// screen itself with the resulting row.
+//
+// The signing mode is left on its default — a secret held by the bridge — which stores only a
+// *name*. That is deliberate: the alternative generates a real secret and shows it once, and a
+// screenshot of anything secret-shaped has no business in a public repository. The endpoint is a
+// reserved `example.test` address for the same reason.
+const WEBHOOK_NAME = 'Workshop automation';
+
+try {
+  await page.goto(`${BASE}webhooks`, { waitUntil: 'domcontentloaded' });
+  const addButton = page.getByRole('button', { name: 'Add webhook' }).first();
+  await addButton.waitFor({ state: 'visible', timeout: 12000 });
+
+  // The dialog is always opened and always captured, so the form shot stays current — but it is
+  // only *submitted* when this profile hasn't got the webhook already. Unlike the seeding block
+  // above, this step sits among the captures, which a re-run against a persistent profile reaches
+  // directly; submitting unconditionally would stack up another row every run until the list
+  // outgrew the clip below.
+  const alreadyAdded = await page
+    .getByText(WEBHOOK_NAME, { exact: true })
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  await addButton.click();
+  const dialog = page.getByRole('dialog', { name: 'Add webhook' });
+  await dialog.waitFor({ state: 'visible', timeout: 8000 });
+  // Exact: `getByLabel` matches on substring by default, and "Name" is also a substring of the
+  // signing block's "Secret name" — an inexact match would depend on field order to pick right.
+  await dialog.getByLabel('Name', { exact: true }).fill(WEBHOOK_NAME);
+  await dialog.getByLabel('URL').fill('https://automation.example.test/gubbins');
+  await dialog.getByLabel('Secret name').fill('workshop-hook');
+  await shot('webhooks-form', dialog, { settle: 600 });
+
+  if (alreadyAdded) {
+    await page.keyboard.press('Escape');
+  } else {
+    await dialog.getByRole('button', { name: 'Add webhook' }).click();
+  }
+  await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+  await waitForToastsToClear();
+
+  // The clip is *measured*, not hardcoded. An element shot of `#main-content` is mostly empty
+  // space — main is a flex column that stretches to the viewport, and one webhook fills little of
+  // it — but a fixed top-region clip is no better: the transient storage-permission banner shifts
+  // the whole page down on the runs where it appears, so the same numbers frame the content on one
+  // run and cut it off on the next. Measuring main and its last child instead brackets exactly the
+  // content, whatever sits above it.
+  const main = page.locator('#main-content');
+  const mainBox = await main.boundingBox();
+  const lastBox = await main.locator('> *').last().boundingBox();
+  await shot('webhooks', null, {
+    settle: 600,
+    clip:
+      mainBox && lastBox
+        ? {
+            // Flush to main's top edge rather than a few pixels above it: anything above is the
+            // page header, and a clip that reaches for breathing room catches a sliver of its
+            // button instead.
+            x: 0,
+            y: mainBox.y,
+            width: VIEWPORT.width,
+            height: lastBox.y + lastBox.height - mainBox.y + 24,
+          }
+        : undefined,
+  });
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ webhooks — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // The Purchase Orders screen — a top-region clip so the Orders/Reorder/Wishlist tab bar and
 // the New-order button (which sit above #main-content) are included, not just the empty list.
 try {

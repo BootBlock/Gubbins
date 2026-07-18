@@ -5,17 +5,21 @@ systems — fire webhooks on changes, publish over MQTT, and serve a calendar fe
 separate opt-in.
 
 > **ℹ️ Note**
-> These are technical integrations. Exact configuration is in the bridge `README` in the
-> [Gubbins repository](https://github.com/BootBlock/Gubbins); this page explains what each is for.
+> These are technical integrations, configured on the bridge itself rather than in Gubbins; this
+> page explains what each is for, and the exact configuration is in the bridge `README` in the
+> [Gubbins repository](https://github.com/BootBlock/Gubbins). **Webhooks are the exception** — they
+> have their own screen in Gubbins, and their own page: [[Webhooks]].
 
 ## Change events: webhooks & SSE
 
 The bridge can emit **change events** — an item's stock went low, something was added, a loan came
 due. Two ways to consume them:
 
-- **Webhooks** — the bridge calls a URL you provide when something happens, so another system can
-  react.
-- **SSE event stream** — a live stream you can subscribe to for a running feed of changes.
+- **Webhooks** — a URL of your choosing is called when something happens, so another system can
+  react. You set these up **in Gubbins**, on its own [[Webhooks]] screen; the bridge delivers them.
+  That page covers events, filters, payloads, signing and the delivery log.
+- **SSE event stream** — a live stream you can subscribe to for a running feed of changes, set up
+  on the bridge.
 
 Both are **off until you enable them**.
 
@@ -79,6 +83,7 @@ Gubbins deadlines then sit alongside the rest of your schedule, updating as your
 
 ## Related pages
 
+- **[[Webhooks]]** — setting up webhooks in Gubbins itself.
 - **[[Bridge overview|Bridge-Overview]]** and **[[Running the bridge|Running-the-Bridge]]** — the
   foundation.
 - **[[Home Assistant integration|Home-Assistant-Integration]]** — MQTT discovery in context.

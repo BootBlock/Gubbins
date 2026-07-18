@@ -95,6 +95,7 @@
 - [[Running the bridge|Running-the-Bridge]]
 - [[Home Assistant|Home-Assistant-Integration]]
 - [[AI assistant query (MCP)|AI-Assistant-Query-MCP]]
+- [[Webhooks]]
 - [[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]
 
 **Settings & customisation**
