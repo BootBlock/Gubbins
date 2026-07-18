@@ -33,7 +33,7 @@ import type { RepositoryOptions } from './base';
 export { ItemRepository } from './ItemRepository';
 export { LocationRepository } from './LocationRepository';
 export { MaintenanceRepository } from './MaintenanceRepository';
-export { CategoryRepository } from './CategoryRepository';
+export { CategoryRepository, INHERIT_VALUE } from './CategoryRepository';
 export { TagRepository, TagNameInUseError } from './TagRepository';
 export { ImageRepository } from './ImageRepository';
 export { AttachmentRepository } from './AttachmentRepository';

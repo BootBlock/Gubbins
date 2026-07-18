@@ -39,6 +39,12 @@
     },
     {
       "type": "index",
+      "name": "idx_category_fields_def_id",
+      "tbl_name": "category_fields",
+      "sql": "CREATE INDEX idx_category_fields_def_id ON category_fields(def_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_checkouts_contact_id",
       "tbl_name": "checkouts",
       "sql": "CREATE INDEX idx_checkouts_contact_id ON checkouts(contact_id)"
@@ -75,6 +81,12 @@
     },
     {
       "type": "index",
+      "name": "idx_field_defs_name",
+      "tbl_name": "field_defs",
+      "sql": "CREATE UNIQUE INDEX idx_field_defs_name ON field_defs(name COLLATE NOCASE)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_aliases_alias",
       "tbl_name": "item_aliases",
       "sql": "CREATE UNIQUE INDEX idx_item_aliases_alias ON item_aliases(alias COLLATE NOCASE)"
@@ -93,9 +105,9 @@
     },
     {
       "type": "index",
-      "name": "idx_item_field_values_field_id",
+      "name": "idx_item_field_values_def_id",
       "tbl_name": "item_field_values",
-      "sql": "CREATE INDEX idx_item_field_values_field_id ON item_field_values(field_id)"
+      "sql": "CREATE INDEX idx_item_field_values_def_id ON item_field_values(def_id)"
     },
     {
       "type": "index",
@@ -216,6 +228,18 @@
       "name": "idx_kit_components_kit_item_id",
       "tbl_name": "kit_components",
       "sql": "CREATE INDEX idx_kit_components_kit_item_id ON kit_components(kit_item_id, sort)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_field_values_def_id",
+      "tbl_name": "location_field_values",
+      "sql": "CREATE INDEX idx_location_field_values_def_id ON location_field_values(def_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_location_field_values_location_id",
+      "tbl_name": "location_field_values",
+      "sql": "CREATE INDEX idx_location_field_values_location_id ON location_field_values(location_id)"
     },
     {
       "type": "index",
@@ -365,7 +389,7 @@
       "type": "table",
       "name": "category_fields",
       "tbl_name": "category_fields",
-      "sql": "CREATE TABLE category_fields (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,\n          name          TEXT    NOT NULL,\n          field_type    TEXT    NOT NULL,\n          options       TEXT,                          -- JSON array for SELECT fields\n          is_required   INTEGER NOT NULL DEFAULT 0,\n          default_value TEXT,                          -- lenient-defaulting value (§4)\n          description   TEXT,                          -- optional help note shown on the item control\n          position      INTEGER NOT NULL DEFAULT 0,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT')),\n          CHECK (is_required IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE category_fields (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,\n          def_id        TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          is_required   INTEGER NOT NULL DEFAULT 0,\n          default_value TEXT,                          -- lenient-defaulting value (§4)\n          position      INTEGER NOT NULL DEFAULT 0,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (category_id, def_id),\n          CHECK (is_required IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -378,6 +402,12 @@
       "name": "contacts",
       "tbl_name": "contacts",
       "sql": "CREATE TABLE contacts (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          name         TEXT    NOT NULL,\n          note         TEXT,\n          phone_mobile TEXT,\n          phone_home   TEXT,\n          email        TEXT,\n          address      TEXT,\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "field_defs",
+      "tbl_name": "field_defs",
+      "sql": "CREATE TABLE field_defs (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,\n          field_type  TEXT    NOT NULL,\n          options     TEXT,                            -- JSON array for SELECT fields\n          description TEXT,                            -- optional help note shown on the control\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (field_type IN ('TEXT', 'LONG_TEXT', 'URL', 'NUMBER', 'RATING', 'BOOLEAN', 'ON_OFF', 'DATE', 'SELECT'))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -395,7 +425,7 @@
       "type": "table",
       "name": "item_field_values",
       "tbl_name": "item_field_values",
-      "sql": "CREATE TABLE item_field_values (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          field_id   TEXT    NOT NULL REFERENCES category_fields(id) ON DELETE CASCADE,\n          value      TEXT,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (item_id, field_id)\n        ) STRICT"
+      "sql": "CREATE TABLE item_field_values (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          def_id     TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value      TEXT,\n          mode       TEXT    NOT NULL DEFAULT 'literal',\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (item_id, def_id),\n          CHECK (mode IN ('literal', 'inherit')),\n          CHECK (mode <> 'inherit' OR value IS NULL)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -468,6 +498,12 @@
       "name": "kit_components",
       "tbl_name": "kit_components",
       "sql": "CREATE TABLE kit_components (\n          id                TEXT    PRIMARY KEY NOT NULL,\n          kit_item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          component_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          quantity          INTEGER NOT NULL DEFAULT 1,\n          sort              INTEGER NOT NULL DEFAULT 0,\n          created_at        INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at        INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity > 0),\n          CHECK (kit_item_id <> component_item_id),\n          UNIQUE (kit_item_id, component_item_id)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "location_field_values",
+      "tbl_name": "location_field_values",
+      "sql": "CREATE TABLE location_field_values (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          location_id    TEXT    NOT NULL REFERENCES locations(id) ON DELETE CASCADE,\n          def_id         TEXT    NOT NULL REFERENCES field_defs(id) ON DELETE CASCADE,\n          value          TEXT,\n          is_inheritable INTEGER NOT NULL DEFAULT 0,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          UNIQUE (location_id, def_id),\n          CHECK (is_inheritable IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -639,6 +675,12 @@
     },
     {
       "type": "trigger",
+      "name": "trg_field_defs_updated_at",
+      "tbl_name": "field_defs",
+      "sql": "CREATE TRIGGER trg_field_defs_updated_at\n    AFTER UPDATE ON field_defs\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE field_defs SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_item_aliases_updated_at",
       "tbl_name": "item_aliases",
       "sql": "CREATE TRIGGER trg_item_aliases_updated_at\n    AFTER UPDATE ON item_aliases\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE item_aliases SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
@@ -708,6 +750,12 @@
       "name": "trg_kit_components_updated_at",
       "tbl_name": "kit_components",
       "sql": "CREATE TRIGGER trg_kit_components_updated_at\n    AFTER UPDATE ON kit_components\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE kit_components SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_location_field_values_updated_at",
+      "tbl_name": "location_field_values",
+      "sql": "CREATE TRIGGER trg_location_field_values_updated_at\n    AFTER UPDATE ON location_field_values\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE location_field_values SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -828,6 +876,12 @@
       "name": "trg_wishlist_updated_at",
       "tbl_name": "wishlist",
       "sql": "CREATE TRIGGER trg_wishlist_updated_at\n    AFTER UPDATE ON wishlist\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE wishlist SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "view",
+      "name": "item_field_effective_values",
+      "tbl_name": "item_field_effective_values",
+      "sql": "CREATE VIEW item_field_effective_values AS\n        WITH RECURSIVE location_ancestors(location_id, ancestor_id, depth) AS (\n          SELECT id, id, 0 FROM locations\n          UNION ALL\n          SELECT la.location_id, l.parent_id, la.depth + 1\n          FROM location_ancestors la\n          JOIN locations l ON l.id = la.ancestor_id\n          WHERE l.parent_id IS NOT NULL\n        )\n        SELECT\n          ifv.item_id AS item_id,\n          ifv.def_id  AS def_id,\n          CASE WHEN ifv.mode = 'inherit' THEN (\n            SELECT lfv.value\n            FROM location_field_values lfv\n            JOIN location_ancestors la ON la.ancestor_id = lfv.location_id\n            WHERE la.location_id = i.location_id\n              AND lfv.def_id = ifv.def_id\n              AND lfv.is_inheritable = 1\n            ORDER BY la.depth ASC\n            LIMIT 1\n          ) ELSE ifv.value END AS value\n        FROM item_field_values ifv\n        JOIN items i ON i.id = ifv.item_id"
     }
   ],
   "tables": {
@@ -1214,7 +1268,7 @@
         },
         {
           "cid": 2,
-          "name": "name",
+          "name": "def_id",
           "type": "TEXT",
           "notnull": 1,
           "dflt_value": null,
@@ -1222,22 +1276,6 @@
         },
         {
           "cid": 3,
-          "name": "field_type",
-          "type": "TEXT",
-          "notnull": 1,
-          "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 4,
-          "name": "options",
-          "type": "TEXT",
-          "notnull": 0,
-          "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 5,
           "name": "is_required",
           "type": "INTEGER",
           "notnull": 1,
@@ -1245,7 +1283,7 @@
           "pk": 0
         },
         {
-          "cid": 6,
+          "cid": 4,
           "name": "default_value",
           "type": "TEXT",
           "notnull": 0,
@@ -1253,15 +1291,7 @@
           "pk": 0
         },
         {
-          "cid": 7,
-          "name": "description",
-          "type": "TEXT",
-          "notnull": 0,
-          "dflt_value": null,
-          "pk": 0
-        },
-        {
-          "cid": 8,
+          "cid": 5,
           "name": "position",
           "type": "INTEGER",
           "notnull": 1,
@@ -1269,7 +1299,7 @@
           "pk": 0
         },
         {
-          "cid": 9,
+          "cid": 6,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -1281,6 +1311,16 @@
         {
           "id": 0,
           "seq": 0,
+          "table": "field_defs",
+          "from": "def_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
           "table": "categories",
           "from": "category_id",
           "to": "id",
@@ -1291,17 +1331,31 @@
       ],
       "indexes": [
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_category_fields_category_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 0,
+          "name": "idx_category_fields_def_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 3,
           "name": "sqlite_autoindex_category_fields_1",
           "unique": 1,
           "origin": "pk",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_category_fields_2",
+          "unique": 1,
+          "origin": "u",
           "partial": 0
         }
       ]
@@ -1611,6 +1665,75 @@
         }
       ]
     },
+    "field_defs": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "field_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "options",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "description",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_field_defs_name",
+          "unique": 1,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_field_defs_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
     "item_aliases": {
       "columns": [
         {
@@ -1806,7 +1929,7 @@
         },
         {
           "cid": 2,
-          "name": "field_id",
+          "name": "def_id",
           "type": "TEXT",
           "notnull": 1,
           "dflt_value": null,
@@ -1822,6 +1945,14 @@
         },
         {
           "cid": 4,
+          "name": "mode",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'literal'",
+          "pk": 0
+        },
+        {
+          "cid": 5,
           "name": "updated_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -1833,8 +1964,8 @@
         {
           "id": 0,
           "seq": 0,
-          "table": "category_fields",
-          "from": "field_id",
+          "table": "field_defs",
+          "from": "def_id",
           "to": "id",
           "on_update": "NO ACTION",
           "on_delete": "CASCADE",
@@ -1854,7 +1985,7 @@
       "indexes": [
         {
           "seq": 0,
-          "name": "idx_item_field_values_field_id",
+          "name": "idx_item_field_values_def_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
@@ -3064,6 +3195,110 @@
         {
           "seq": 2,
           "name": "sqlite_autoindex_kit_components_2",
+          "unique": 1,
+          "origin": "u",
+          "partial": 0
+        }
+      ]
+    },
+    "location_field_values": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "location_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "def_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "value",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "is_inheritable",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "field_defs",
+          "from": "def_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
+          "table": "locations",
+          "from": "location_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_location_field_values_def_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "idx_location_field_values_location_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 3,
+          "name": "sqlite_autoindex_location_field_values_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_location_field_values_2",
           "unique": 1,
           "origin": "u",
           "partial": 0

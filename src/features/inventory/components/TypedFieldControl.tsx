@@ -12,6 +12,13 @@ export interface TypedFieldControlProps {
   readonly fieldType: FieldType;
   readonly value: string;
   readonly onChange: (value: string) => void;
+  /**
+   * Fired when the control loses focus — for a caller that edits a local draft and commits
+   * once per edit rather than per keystroke (see `LocationFieldValueInput`). The toggle
+   * types (BOOLEAN / ON_OFF / SELECT) commit on selection, so they have no separate blur
+   * step and deliberately don't wire this.
+   */
+  readonly onBlur?: () => void;
   /** SELECT's choice list; ignored for other types. */
   readonly options?: readonly string[] | null;
   readonly controlProps?: TypedFieldControlAria;
@@ -36,12 +43,13 @@ export function TypedFieldControl({
   fieldType,
   value,
   onChange,
+  onBlur,
   options,
   controlProps = {},
   ariaLabel,
   labelId,
 }: TypedFieldControlProps) {
-  const naming = { 'aria-label': ariaLabel, 'aria-labelledby': labelId };
+  const naming = { 'aria-label': ariaLabel, 'aria-labelledby': labelId, onBlur };
 
   switch (fieldType) {
     case 'NUMBER':

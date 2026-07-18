@@ -86,11 +86,15 @@ describe('eraseTargets (memory-driver integration)', () => {
       const cat = nextId('cat');
       await exec('INSERT INTO categories (id, name) VALUES (?, ?);', [cat, 'Resistors']);
       const field = nextId('field');
-      await exec('INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);', [
+      await exec('INSERT INTO field_defs (id, name, field_type) VALUES (?, ?, ?);', [
         field,
-        cat,
         'Resistance',
         'NUMBER',
+      ]);
+      await exec('INSERT INTO category_fields (id, category_id, def_id) VALUES (?, ?, ?);', [
+        nextId('cf'),
+        cat,
+        field,
       ]);
       const item = await makeItem(loc, cat);
 
@@ -105,7 +109,7 @@ describe('eraseTargets (memory-driver integration)', () => {
         item,
         'images/x.webp',
       ]);
-      await exec('INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);', [
+      await exec('INSERT INTO item_field_values (id, item_id, def_id, value) VALUES (?, ?, ?, ?);', [
         nextId('ifv'),
         item,
         field,
@@ -213,14 +217,18 @@ describe('eraseTargets (memory-driver integration)', () => {
       const cat = nextId('cat');
       await exec('INSERT INTO categories (id, name) VALUES (?, ?);', [cat, 'Caps']);
       const field = nextId('field');
-      await exec('INSERT INTO category_fields (id, category_id, name, field_type) VALUES (?, ?, ?, ?);', [
+      await exec('INSERT INTO field_defs (id, name, field_type) VALUES (?, ?, ?);', [
         field,
-        cat,
         'Voltage',
         'NUMBER',
       ]);
+      await exec('INSERT INTO category_fields (id, category_id, def_id) VALUES (?, ?, ?);', [
+        nextId('cf'),
+        cat,
+        field,
+      ]);
       const item = await makeItem(loc, cat);
-      await exec('INSERT INTO item_field_values (id, item_id, field_id, value) VALUES (?, ?, ?, ?);', [
+      await exec('INSERT INTO item_field_values (id, item_id, def_id, value) VALUES (?, ?, ?, ?);', [
         nextId('ifv'),
         item,
         field,

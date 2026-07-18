@@ -11,7 +11,21 @@
  * Anything time-related is injected via `opts.now` — there are no free
  * `Date.now()` / `new Date()` calls — so the seam is deterministic under test.
  */
-import type { CategoryField } from '@/db/repositories';
+import type { CategoryField, FieldType } from '@/db/repositories';
+
+/**
+ * The minimum a value can be validated against: the definition's identity plus whether
+ * it is required. Narrower than {@link CategoryField} on purpose, so the same seam
+ * validates an item's value (where `isRequired` is the category's policy) and a
+ * **location's** value (issue #97, where nothing is ever required) without either caller
+ * having to fabricate the category-local half of a `CategoryField`.
+ */
+export interface ValidatableField {
+  readonly name: string;
+  readonly fieldType: FieldType;
+  readonly options: string[] | null;
+  readonly isRequired: boolean;
+}
 
 /**
  * The result of validating one raw field value against its definition. Never an
@@ -55,7 +69,7 @@ function isBlank(raw: string | null | undefined): boolean {
  * The returned `value` is always the string to persist (values are stored as TEXT).
  */
 export function validateFieldValue(
-  def: CategoryField,
+  def: ValidatableField,
   raw: string | null | undefined,
   _opts: ValidateFieldOptions = {},
 ): FieldValidation {

@@ -59,6 +59,34 @@ A **transfer** moves quantity from one location to another. The total on-hand do
 the stock just now lives somewhere else. This is how you record moving a batch of parts from
 receiving to a shelf, or loading tools into a van.
 
+## Passing values down to the items inside
+
+A location can hold **custom field values** of its own, and offer them to everything stored
+inside it. If a whole cabinet holds Ryobi tools, set `Manufacturer = Ryobi` once on the cabinet
+instead of typing it onto every item.
+
+Open the location's **Edit** dialog and find **Inheritable fields**:
+
+1. Pick a field from the list (fields are defined under **Categories & schemas** — see
+   [[Custom fields & capabilities|Custom-Fields-and-Capabilities]]).
+2. Give it a value.
+3. Tick **Offer to items here**.
+
+Items in that location — and in any location nested inside it — can then choose **Inherit** for
+that field instead of entering their own value. It's opt-in per item, and the value stays live:
+change it on the location and every item inheriting it updates straight away.
+
+Nested locations override their parents, so a value on `Cabinet A` beats the one on the
+`Workshop` above it.
+
+> **ℹ️ Note**
+> Setting a value and *offering* it are separate steps. Leave **Offer to items here** unticked
+> to keep a value as the location's own detail — a shelf's load rating, say — without the items
+> inside picking it up.
+
+The full behaviour, including what happens when you withdraw an offer, is covered in
+[[Custom fields & capabilities|Custom-Fields-and-Capabilities]].
+
 ## Capacity & fullness
 
 A location can be given a **capacity**, after which Gubbins shows a fullness gauge — handy for

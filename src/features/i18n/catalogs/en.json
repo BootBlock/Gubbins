@@ -448,5 +448,20 @@
   "purchasing.import.error.parse": "Could not read this purchase list.",
   "purchasing.import.error.order": "Could not add these lines to the order.",
   "purchasing.import.error.wishlist": "Could not add these entries to the wishlist.",
-  "purchasing.import.open": "Import list"
+  "purchasing.import.open": "Import list",
+  "inventory.fields.inherit.option": "Inherit — {value} (from {location})",
+  "inventory.fields.inherit.custom": "Set a value for this item",
+  "inventory.fields.inherit.from": "Inheriting {value} from {location}.",
+  "inventory.fields.inherit.sourceLabel": "Where this value comes from",
+  "inventory.fields.inherit.empty": "(no value)",
+  "inventory.location.fields.title": "Inheritable fields",
+  "inventory.location.fields.intro": "Values set here can be inherited by the items in this location and by the locations inside it.",
+  "inventory.location.fields.empty": "No values set. Add one to let items here inherit it.",
+  "inventory.location.fields.add": "Add a field",
+  "inventory.location.fields.addLabel": "Custom field to add",
+  "inventory.location.fields.inheritable": "Offer to items here",
+  "inventory.location.fields.inheritableHint": "When off, the value is kept as this location's own detail and is not offered to anything inside it.",
+  "inventory.location.fields.remove": "Remove {name}",
+  "inventory.location.fields.saving": "Saving…",
+  "inventory.location.fields.emptyNoFields": "No custom fields exist yet. Create one under Categories & schemas, then set its value here to share it with the items inside."
 }

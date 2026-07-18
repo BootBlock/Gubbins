@@ -45,7 +45,9 @@ import type { SqlStatement } from '../rpc/driver';
 export const SYNC_TABLES = [
   'locations',
   'categories',
-  'category_fields', // FK → categories
+  'field_defs', // independent dictionary (issue #97 — the global custom-field vocabulary; ordered before every table that references a definition)
+  'category_fields', // FK → categories, field_defs
+  'location_field_values', // FK → locations, field_defs (issue #97 — the values a location offers for inheritance)
   'tags', // independent dictionary
   'items', // FK → categories
   'supplier_parts', // FK → items (Phase 60 — N suppliers per item; ordered after items so its FK never trips on an UPSERT batch)
@@ -56,7 +58,7 @@ export const SYNC_TABLES = [
   'revaluations', // FK → items (feature-gap G9 — append-only manual current-value log; LWW leaf; ordered after items so its FK never trips on an UPSERT batch)
   'item_relations', // FK → items ×2 (feature-gap G6 — "works with"/accessory/spare-for cross-links; LWW leaf, deterministic id; ordered after items so its FKs never trip on an UPSERT batch)
   'test_records', // FK → items (feature-gap G7 — per-instance test/calibration/service log; LWW leaf; ordered after items so its FK never trips on an UPSERT batch)
-  'item_field_values', // FK → items, category_fields
+  'item_field_values', // FK → items, field_defs
   'item_images', // FK → items
   'item_attachments', // FK → items
   'capabilities',

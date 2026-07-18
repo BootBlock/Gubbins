@@ -5,12 +5,19 @@
  * the strict-pagination mandate (§2.1) targets the item lists. Writes use targeted
  * invalidation — schema edits are low-frequency and reshape derived counts.
  */
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import {
   getCategoryRepository,
   getItemRepository,
   type CreateCategoryFieldInput,
   type CreateCategoryInput,
+  type SetLocationFieldValueInput,
   type UpdateCategoryFieldInput,
   type UpdateCategoryInput,
 } from '@/db/repositories';
@@ -153,4 +160,66 @@ export function useSetItemFieldValues(itemId: string) {
       void client.invalidateQueries({ queryKey: [...inventoryKeys.items(), 'fieldValues'] });
     },
   });
+}
+
+// --- location field values (issue #97) -------------------------------------------
+
+/** The global custom-field dictionary — every definition a location may set a value for. */
+export function useFieldDefs() {
+  return useQuery({
+    queryKey: inventoryKeys.fieldDefs(),
+    queryFn: () => getCategoryRepository().listFieldDefs(),
+  });
+}
+
+/** One location's custom-field values (inheritable or not). */
+export function useLocationFieldValues(locationId: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.locationFields(locationId ?? ''),
+    queryFn: () => getCategoryRepository().listLocationFieldValues(locationId!),
+    enabled: Boolean(locationId),
+  });
+}
+
+/**
+ * Set (or clear) a location's value for a definition, then refresh everything that could
+ * be *inheriting* it (issue #97).
+ *
+ * The invalidation is deliberately broad: changing what a location offers can change the
+ * resolved value of any item beneath it, at any depth, and the item→location relationship
+ * lives in the DB rather than in the cache, so there is no cheap way to name just the
+ * affected items. Dropping the whole item field cache keeps the "live updated" guarantee
+ * the feature promises; these queries are small and re-fetch on demand.
+ */
+export function useSetLocationFieldValue(locationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetLocationFieldValueInput) =>
+      getCategoryRepository().setLocationFieldValue(locationId, input),
+    onSettled: () => invalidateInheritance(client, locationId),
+  });
+}
+
+/** Drop a location's value for a definition, then refresh anything that inherited it. */
+export function useRemoveLocationFieldValue(locationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (defId: string) => getCategoryRepository().removeLocationFieldValue(locationId, defId),
+    onSettled: () => invalidateInheritance(client, locationId),
+  });
+}
+
+/** Shared invalidation for any change to what a location offers (issue #97). */
+function invalidateInheritance(client: QueryClient, locationId: string): void {
+  void client.invalidateQueries({ queryKey: inventoryKeys.locationFields(locationId) });
+  void client.invalidateQueries({ queryKey: inventoryKeys.fieldDefs() });
+  // Every item's resolved fields, and every on-card value: an inheritable change can
+  // reach any descendant item at any depth.
+  void client.invalidateQueries({
+    predicate: (q) => {
+      const key = q.queryKey as readonly unknown[];
+      return key[0] === 'inventory' && key[1] === 'items' && key.includes('fields');
+    },
+  });
+  void client.invalidateQueries({ queryKey: [...inventoryKeys.items(), 'fieldValues'] });
 }

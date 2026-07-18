@@ -12,6 +12,7 @@ const ALL_IDS: EraseTargetId[] = [
   'custom-field-values',
   'tags',
   'categories',
+  'field-dictionary',
   'locations',
   'projects',
   'purchase-orders',

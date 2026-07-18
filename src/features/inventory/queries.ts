@@ -84,6 +84,11 @@ export const inventoryKeys = {
   /** Every custom-field definition across all categories (the item-card field catalog, E1). */
   allCategoryFields: () => [...inventoryKeys.categories(), 'fields', 'all'] as const,
   itemFields: (itemId: string) => [...inventoryKeys.item(itemId), 'fields'] as const,
+  /** The global custom-field dictionary (issue #97) — the definitions a location may set. */
+  fieldDefs: () => [...inventoryKeys.categories(), 'field-defs'] as const,
+  /** One location's custom-field values, inheritable or not (issue #97). Under locations()
+   *  so a location write refreshes it by prefix. */
+  locationFields: (locationId: string) => [...inventoryKeys.locations(), locationId, 'fields'] as const,
   /** Stored custom-field values for a set of on-screen items (item cards, E1). */
   itemFieldValues: (itemIds: readonly string[]) =>
     [...inventoryKeys.items(), 'fieldValues', itemIds] as const,

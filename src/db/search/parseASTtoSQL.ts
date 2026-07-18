@@ -46,10 +46,11 @@ const CAPABILITY_PREFIX = 'capability:';
 
 /**
  * The custom-field prefix the AST uses, e.g. `field:Datasheet` (§4 "Categories &
- * Schema Evolution", Phase 71). The remainder is a category custom-field **name**,
- * matched case-insensitively against `category_fields.name`. Values live in the EAV
- * `item_field_values` table (all stored as TEXT), so a custom-field condition lowers
- * to an EXISTS over the join `item_field_values ⋈ category_fields`.
+ * Schema Evolution", Phase 71). The remainder is a custom-field **name**, matched
+ * case-insensitively against `field_defs.name` in the global dictionary (issue #97).
+ * Values (all stored as TEXT) are read from the `item_field_effective_values` view, which
+ * has already applied location inheritance, so a condition lowers to an EXISTS over the
+ * join `item_field_effective_values ⋈ field_defs`.
  */
 const CUSTOM_FIELD_PREFIX = 'field:';
 
@@ -284,10 +285,12 @@ function translateCustomField(name: string, condition: FilterCondition): Fragmen
     throw new SearchAstError('A custom-field condition is missing its name (expected "field:<name>").');
   }
   const { operator, value } = condition;
-  // Join the value row to its definition by category-field name (case-insensitive).
+  // Resolve against the *effective* value view (issue #97), not the raw value rows, so a
+  // field the item inherits from its location matches exactly as a stored one does. The
+  // field is identified by its dictionary-definition name (case-insensitive).
   const base =
-    'SELECT 1 FROM item_field_values ifv JOIN category_fields cf ON cf.id = ifv.field_id ' +
-    'WHERE ifv.item_id = items.id AND cf.name = ? COLLATE NOCASE';
+    'SELECT 1 FROM item_field_effective_values ifv JOIN field_defs fd ON fd.id = ifv.def_id ' +
+    'WHERE ifv.item_id = items.id AND fd.name = ? COLLATE NOCASE';
 
   switch (operator) {
     case 'HAS_CAPABILITY':

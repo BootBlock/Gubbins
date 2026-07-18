@@ -448,5 +448,20 @@
   "purchasing.import.error.parse": "Diese Einkaufsliste konnte nicht gelesen werden.",
   "purchasing.import.error.order": "Diese Zeilen konnten der Bestellung nicht hinzugefügt werden.",
   "purchasing.import.error.wishlist": "Diese Einträge konnten der Wunschliste nicht hinzugefügt werden.",
-  "purchasing.import.open": "Liste importieren"
+  "purchasing.import.open": "Liste importieren",
+  "inventory.fields.inherit.option": "Erben — {value} (von {location})",
+  "inventory.fields.inherit.custom": "Wert für diesen Artikel festlegen",
+  "inventory.fields.inherit.from": "Erbt {value} von {location}.",
+  "inventory.fields.inherit.sourceLabel": "Woher dieser Wert stammt",
+  "inventory.fields.inherit.empty": "(kein Wert)",
+  "inventory.location.fields.title": "Vererbbare Felder",
+  "inventory.location.fields.intro": "Hier festgelegte Werte können von den Artikeln an diesem Ort und von den darin enthaltenen Orten geerbt werden.",
+  "inventory.location.fields.empty": "Keine Werte festgelegt. Fügen Sie einen hinzu, damit Artikel ihn erben können.",
+  "inventory.location.fields.add": "Feld hinzufügen",
+  "inventory.location.fields.addLabel": "Hinzuzufügendes benutzerdefiniertes Feld",
+  "inventory.location.fields.inheritable": "Artikeln hier anbieten",
+  "inventory.location.fields.inheritableHint": "Wenn deaktiviert, bleibt der Wert eine eigene Angabe dieses Ortes und wird nichts darin angeboten.",
+  "inventory.location.fields.remove": "{name} entfernen",
+  "inventory.location.fields.saving": "Wird gespeichert…",
+  "inventory.location.fields.emptyNoFields": "Es gibt noch keine benutzerdefinierten Felder. Legen Sie eines unter „Kategorien & Schemata“ an und setzen Sie hier seinen Wert, um ihn mit den enthaltenen Artikeln zu teilen."
 }
