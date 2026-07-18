@@ -21,6 +21,12 @@ export const DEFAULT_DISCOVERY_PREFIX = 'homeassistant';
 /** The stable HA device identifier every Gubbins entity attaches to. */
 export const DEVICE_ID = 'gubbins_bridge';
 
+/** The software that produced these discovery payloads — recommended by HA, required device-based. */
+export const ORIGIN_NAME = 'Gubbins Bridge';
+
+/** Where a user goes for help with the discovered entities (public, carries no secret). */
+export const ORIGIN_SUPPORT_URL = 'https://github.com/BootBlock/Gubbins';
+
 /** One discovery message: the retained config topic and its JSON payload. */
 export interface DiscoveryConfig {
   readonly topic: string;
@@ -59,13 +65,31 @@ function deviceBlock(version: string): Record<string, unknown> {
 }
 
 /**
+ * The HA `origin` block naming the software behind these payloads. Recommended for single-component
+ * discovery and mandatory for device-based discovery, which HA is moving towards.
+ */
+function originBlock(version: string): Record<string, unknown> {
+  return {
+    name: ORIGIN_NAME,
+    sw_version: version,
+    support_url: ORIGIN_SUPPORT_URL,
+  };
+}
+
+/**
  * Build every discovery config for the current state: the four aggregate count sensors, a
  * low-stock binary sensor, and one item-count sensor per location. A caller republishes these
  * (retained) on every (re)connect and whenever the location set changes.
+ *
+ * Entity `name`s are **device-relative**: an MQTT entity with a `device` gets
+ * `has_entity_name = True`, so HA already prefixes the device name ("Gubbins"). Repeating it here
+ * would read as "Gubbins Gubbins items total". The primary sensor uses `name: null`, which names it
+ * after the device alone.
  */
 export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryOptions): DiscoveryConfig[] {
   const topics = topicsFor(options.prefix);
   const device = deviceBlock(options.version);
+  const origin = originBlock(options.version);
   const availability = {
     availability_topic: topics.status,
     payload_available: AVAILABILITY_ONLINE,
@@ -74,8 +98,16 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
   const configTopic = (component: string, objectId: string): string =>
     discoveryConfigTopic(options.discoveryPrefix, component, objectId);
 
-  /** A numeric summary sensor reading one field of the retained summary JSON. */
-  const summarySensor = (objectId: string, name: string, field: string, icon: string): DiscoveryConfig => ({
+  /**
+   * A numeric summary sensor reading one field of the retained summary JSON. `name` is
+   * device-relative; `null` names the entity after the device alone (the primary feature).
+   */
+  const summarySensor = (
+    objectId: string,
+    name: string | null,
+    field: string,
+    icon: string,
+  ): DiscoveryConfig => ({
     topic: configTopic('sensor', objectId),
     payload: JSON.stringify({
       name,
@@ -87,23 +119,25 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
       icon,
       ...availability,
       device,
+      origin,
     }),
   });
 
   const configs: DiscoveryConfig[] = [
-    summarySensor('items_total', 'Gubbins items total', 'itemsTotal', 'mdi:package-variant-closed'),
-    summarySensor('low_stock_items', 'Gubbins low stock items', 'lowStockItems', 'mdi:alert'),
+    // The total is this device's primary feature, so it takes the device's own name.
+    summarySensor('items_total', null, 'itemsTotal', 'mdi:package-variant-closed'),
+    summarySensor('low_stock_items', 'Low stock items', 'lowStockItems', 'mdi:alert'),
     summarySensor(
       'out_of_stock_items',
-      'Gubbins out of stock items',
+      'Out of stock items',
       'outOfStockItems',
       'mdi:package-variant-remove',
     ),
-    summarySensor('locations_total', 'Gubbins locations total', 'locationsTotal', 'mdi:map-marker'),
+    summarySensor('locations_total', 'Locations total', 'locationsTotal', 'mdi:map-marker'),
     {
       topic: configTopic('binary_sensor', 'low_stock'),
       payload: JSON.stringify({
-        name: 'Gubbins low stock',
+        name: 'Low stock',
         unique_id: 'gubbins_low_stock',
         object_id: 'gubbins_low_stock',
         device_class: 'problem',
@@ -115,16 +149,19 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
         icon: 'mdi:alert',
         ...availability,
         device,
+        origin,
       }),
     },
   ];
 
   for (const location of state.locations) {
-    const objectId = `location_${sanitizeTopicLevel(location.id)}`;
+    // Via the shared helper — the publisher retracts removed locations through the same one, so a
+    // change to the scheme can't leave a retained config behind under a stale topic.
+    const objectId = locationSensorObjectId(location.id);
     configs.push({
       topic: configTopic('sensor', objectId),
       payload: JSON.stringify({
-        name: `Gubbins location ${location.name}`,
+        name: `Location ${location.name}`,
         unique_id: `gubbins_${objectId}`,
         object_id: `gubbins_${objectId}`,
         state_topic: topics.locationState(location.id),
@@ -133,6 +170,7 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
         icon: 'mdi:map-marker',
         ...availability,
         device,
+        origin,
       }),
     });
   }
