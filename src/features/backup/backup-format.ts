@@ -65,6 +65,13 @@ export interface BackupManifest {
   readonly formatVersion: number;
   /** The app version that created the backup. */
   readonly appVersion: string;
+  /**
+   * Fingerprint of the schema baseline that built the source database (issue #84). Optional:
+   * backups written before this field existed simply omit it. A `replace` restore of an exact
+   * `.sqlite` copy checks it *before* overwriting, so a backup from an incompatible schema is
+   * refused while the current database is still intact.
+   */
+  readonly baselineRevision?: string;
   /** Creation time (epoch ms). */
   readonly createdAt: number;
   /** Which optional parts are present. */
@@ -160,6 +167,7 @@ export function buildManifest(input: {
   readonly snapshot: SyncSnapshot;
   readonly selection: BackupSelection;
   readonly appVersion: string;
+  readonly baselineRevision?: string;
   readonly createdAt: number;
   readonly imageCount: number;
   readonly hasSqlite: boolean;
@@ -169,6 +177,7 @@ export function buildManifest(input: {
     kind: BACKUP_MANIFEST_KIND,
     formatVersion: BACKUP_FORMAT_VERSION,
     appVersion: input.appVersion,
+    ...(input.baselineRevision ? { baselineRevision: input.baselineRevision } : {}),
     createdAt: input.createdAt,
     contents: {
       snapshot: true,
@@ -198,6 +207,7 @@ export interface BackupSources {
   /** Already-sanitised settings record, or null when not requested. */
   readonly settings: Record<string, string> | null;
   readonly appVersion: string;
+  readonly baselineRevision?: string;
   readonly createdAt: number;
 }
 
@@ -222,6 +232,7 @@ export function assembleBackup(sources: BackupSources): BackupArtifacts {
     snapshot: sources.snapshot,
     selection,
     appVersion: sources.appVersion,
+    baselineRevision: sources.baselineRevision,
     createdAt: sources.createdAt,
     imageCount: sources.images.length,
     hasSqlite: sources.sqlite !== null,

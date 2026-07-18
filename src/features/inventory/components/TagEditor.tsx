@@ -115,6 +115,9 @@ export function TagEditorControl({
             value={input}
             onChange={onInputChange}
             suggestions={unusedSuggestions}
+            // Deliberately above the 6 the old hand-rolled list showed: the control now doubles
+            // as "what tags already exist?", so a longer glance-able list earns its space.
+            maxOptions={10}
             onCommit={add}
             placeholder="Add a tag and press Enter…"
             aria-label="Add a tag"

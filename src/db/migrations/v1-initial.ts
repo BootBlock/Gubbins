@@ -13,7 +13,8 @@ import {
   UNASSIGNED_LOCATION_ID,
   UNASSIGNED_LOCATION_NAME,
 } from '../repositories/constants';
-import { BASELINE_REVISION, BASELINE_REVISION_KEY, SQL_NOW_MS, type Migration } from './migration';
+import type { SqlStatement } from '../rpc/driver';
+import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration } from './migration';
 
 /**
  * v1 — Consolidated baseline schema (the sole migration).
@@ -95,21 +96,22 @@ const procurementStatusList = PROCUREMENT_STATUSES.map((s) => `'${s}'`).join(', 
 const conditionList = CONDITIONS.map((c) => `'${c}'`).join(', ');
 const basisList = MAINTENANCE_BASES.map((b) => `'${b}'`).join(', ');
 
-export const v1Initial: Migration = {
-  version: 1,
-  name: 'initial-baseline',
-  statements: [
-    {
-      sql: `
+/**
+ * The baseline's DDL, separated from the migration object so its fingerprint can be computed
+ * from it (the stamp statement that carries the fingerprint obviously cannot hash itself).
+ */
+const baselineStatements: SqlStatement[] = [
+  {
+    sql: `
         CREATE TABLE app_meta (
           key        TEXT    PRIMARY KEY NOT NULL,
           value      TEXT,
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_app_meta_updated_at
         AFTER UPDATE ON app_meta
         FOR EACH ROW
@@ -118,9 +120,9 @@ export const v1Initial: Migration = {
           UPDATE app_meta SET updated_at = (${SQL_NOW_MS}) WHERE key = NEW.key;
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TABLE categories (
           id                      TEXT    PRIMARY KEY NOT NULL,
           name                    TEXT    NOT NULL,
@@ -161,10 +163,10 @@ export const v1Initial: Migration = {
           CHECK (default_maintenance_interval_usage IS NULL OR default_maintenance_interval_usage > 0)
         ) STRICT;
       `,
-    },
-    { sql: updatedAtTrigger('categories') },
-    {
-      sql: `
+  },
+  { sql: updatedAtTrigger('categories') },
+  {
+    sql: `
         CREATE TABLE locations (
           id         TEXT    PRIMARY KEY NOT NULL,
           name       TEXT    NOT NULL,
@@ -175,11 +177,11 @@ export const v1Initial: Migration = {
           CHECK (is_system IN (0, 1))
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_locations_parent_id ON locations(parent_id);` },
-    { sql: updatedAtTrigger('locations') },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_locations_parent_id ON locations(parent_id);` },
+  { sql: updatedAtTrigger('locations') },
+  {
+    sql: `
         CREATE TRIGGER trg_locations_protect_system_update
         BEFORE UPDATE ON locations
         FOR EACH ROW
@@ -188,9 +190,9 @@ export const v1Initial: Migration = {
           SELECT RAISE(ABORT, 'The Unassigned location is system-locked and cannot be modified.');
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_locations_protect_system_delete
         BEFORE DELETE ON locations
         FOR EACH ROW
@@ -199,16 +201,16 @@ export const v1Initial: Migration = {
           SELECT RAISE(ABORT, 'The Unassigned location is system-locked and cannot be deleted.');
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         INSERT INTO locations (id, name, parent_id, is_system)
         VALUES (?, ?, NULL, 1);
       `,
-      params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_NAME],
-    },
-    {
-      sql: `
+    params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_NAME],
+  },
+  {
+    sql: `
         CREATE TABLE items (
           id                   TEXT    PRIMARY KEY NOT NULL,
           name                 TEXT    NOT NULL,
@@ -253,13 +255,13 @@ export const v1Initial: Migration = {
           )
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_items_location_id ON items(location_id);` },
-    { sql: `CREATE INDEX idx_items_category_id ON items(category_id);` },
-    { sql: `CREATE INDEX idx_items_is_active ON items(is_active);` },
-    { sql: updatedAtTrigger('items') },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_items_location_id ON items(location_id);` },
+  { sql: `CREATE INDEX idx_items_category_id ON items(category_id);` },
+  { sql: `CREATE INDEX idx_items_is_active ON items(is_active);` },
+  { sql: updatedAtTrigger('items') },
+  {
+    sql: `
         CREATE TABLE item_history (
           id              TEXT    PRIMARY KEY NOT NULL,
           item_id         TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -271,12 +273,12 @@ export const v1Initial: Migration = {
           created_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at);`,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at);`,
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_item_history_immutable
         BEFORE UPDATE ON item_history
         FOR EACH ROW
@@ -284,10 +286,10 @@ export const v1Initial: Migration = {
           SELECT RAISE(ABORT, 'item_history is an immutable, append-only ledger.');
         END;
       `,
-    },
-    { sql: `ALTER TABLE items ADD COLUMN serial_no INTEGER;` },
-    {
-      sql: `
+  },
+  { sql: `ALTER TABLE items ADD COLUMN serial_no INTEGER;` },
+  {
+    sql: `
         CREATE TABLE category_fields (
           id            TEXT    PRIMARY KEY NOT NULL,
           category_id   TEXT    NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -303,13 +305,13 @@ export const v1Initial: Migration = {
           CHECK (is_required IN (0, 1))
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_category_fields_category_id ON category_fields(category_id);`,
-    },
-    { sql: updatedAtTrigger('category_fields') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_category_fields_category_id ON category_fields(category_id);`,
+  },
+  { sql: updatedAtTrigger('category_fields') },
+  {
+    sql: `
         CREATE TABLE item_field_values (
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -319,47 +321,47 @@ export const v1Initial: Migration = {
           UNIQUE (item_id, field_id)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_item_field_values_item_id ON item_field_values(item_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_item_field_values_field_id ON item_field_values(field_id);`,
-    },
-    { sql: updatedAtTrigger('item_field_values') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_item_field_values_item_id ON item_field_values(item_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_item_field_values_field_id ON item_field_values(field_id);`,
+  },
+  { sql: updatedAtTrigger('item_field_values') },
+  {
+    sql: `
         CREATE TABLE tags (
           id         TEXT    PRIMARY KEY NOT NULL,
           name       TEXT    NOT NULL,
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    { sql: `CREATE UNIQUE INDEX idx_tags_name ON tags(name COLLATE NOCASE);` },
-    { sql: updatedAtTrigger('tags') },
-    {
-      sql: `
+  },
+  { sql: `CREATE UNIQUE INDEX idx_tags_name ON tags(name COLLATE NOCASE);` },
+  { sql: updatedAtTrigger('tags') },
+  {
+    sql: `
         CREATE TABLE item_tags (
           item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
           tag_id  TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
           PRIMARY KEY (item_id, tag_id)
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_item_tags_tag_id ON item_tags(tag_id);` },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_item_tags_tag_id ON item_tags(tag_id);` },
+  {
+    sql: `
         CREATE TABLE location_tags (
           location_id TEXT NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
           tag_id      TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
           PRIMARY KEY (location_id, tag_id)
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_location_tags_tag_id ON location_tags(tag_id);` },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_location_tags_tag_id ON location_tags(tag_id);` },
+  {
+    sql: `
         CREATE TABLE item_images (
           id                 TEXT    PRIMARY KEY NOT NULL,
           item_id            TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -370,13 +372,13 @@ export const v1Initial: Migration = {
           updated_at         INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_item_images_item_id ON item_images(item_id, position);`,
-    },
-    { sql: updatedAtTrigger('item_images') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_item_images_item_id ON item_images(item_id, position);`,
+  },
+  { sql: updatedAtTrigger('item_images') },
+  {
+    sql: `
         CREATE TABLE item_attachments (
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -389,29 +391,29 @@ export const v1Initial: Migration = {
           CHECK (kind IN (${attachmentKindList}))
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_item_attachments_item_id ON item_attachments(item_id, position);`,
-    },
-    { sql: updatedAtTrigger('item_attachments') },
-    { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
-    { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
-    { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL;` },
-    { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
-    // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
-    // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
-    // lookup-by-barcode, and (below) FTS-indexed like the MPN so a barcode typed into
-    // the main search finds its item.
-    { sql: `ALTER TABLE items ADD COLUMN barcode TEXT;` },
-    { sql: `CREATE INDEX idx_items_barcode ON items(barcode COLLATE NOCASE);` },
-    // Intrinsic serial number (issue #90): the maker's unique per-unit identifier printed on
-    // the article (distinct from `serial_no`, which is only a SERIALISED-clone instance index).
-    // Stored verbatim; indexed for exact lookup and (below) FTS-indexed like the barcode so a
-    // serial typed into the main search finds its item.
-    { sql: `ALTER TABLE items ADD COLUMN serial_number TEXT;` },
-    { sql: `CREATE INDEX idx_items_serial_number ON items(serial_number COLLATE NOCASE);` },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_item_attachments_item_id ON item_attachments(item_id, position);`,
+  },
+  { sql: updatedAtTrigger('item_attachments') },
+  { sql: `ALTER TABLE items ADD COLUMN mpn TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN manufacturer TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN unit_cost REAL;` },
+  { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
+  // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
+  // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
+  // lookup-by-barcode, and (below) FTS-indexed like the MPN so a barcode typed into
+  // the main search finds its item.
+  { sql: `ALTER TABLE items ADD COLUMN barcode TEXT;` },
+  { sql: `CREATE INDEX idx_items_barcode ON items(barcode COLLATE NOCASE);` },
+  // Intrinsic serial number (issue #90): the maker's unique per-unit identifier printed on
+  // the article (distinct from `serial_no`, which is only a SERIALISED-clone instance index).
+  // Stored verbatim; indexed for exact lookup and (below) FTS-indexed like the barcode so a
+  // serial typed into the main search finds its item.
+  { sql: `ALTER TABLE items ADD COLUMN serial_number TEXT;` },
+  { sql: `CREATE INDEX idx_items_serial_number ON items(serial_number COLLATE NOCASE);` },
+  {
+    sql: `
         CREATE TABLE item_aliases (
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -419,21 +421,21 @@ export const v1Initial: Migration = {
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE UNIQUE INDEX idx_item_aliases_alias ON item_aliases(alias COLLATE NOCASE);`,
-    },
-    { sql: `CREATE INDEX idx_item_aliases_item_id ON item_aliases(item_id);` },
-    { sql: updatedAtTrigger('item_aliases') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE UNIQUE INDEX idx_item_aliases_alias ON item_aliases(alias COLLATE NOCASE);`,
+  },
+  { sql: `CREATE INDEX idx_item_aliases_item_id ON item_aliases(item_id);` },
+  { sql: updatedAtTrigger('item_aliases') },
+  {
+    sql: `
         INSERT INTO locations (id, name, parent_id, is_system)
         VALUES (?, ?, NULL, 1);
       `,
-      params: [IN_TRANSIT_LOCATION_ID, IN_TRANSIT_LOCATION_NAME],
-    },
-    {
-      sql: `
+    params: [IN_TRANSIT_LOCATION_ID, IN_TRANSIT_LOCATION_NAME],
+  },
+  {
+    sql: `
         CREATE TABLE projects (
           id           TEXT    PRIMARY KEY NOT NULL,
           name         TEXT    NOT NULL,
@@ -448,10 +450,10 @@ export const v1Initial: Migration = {
           CHECK (costing_mode IN (${costingModeList}))
         ) STRICT;
       `,
-    },
-    { sql: updatedAtTrigger('projects') },
-    {
-      sql: `
+  },
+  { sql: updatedAtTrigger('projects') },
+  {
+    sql: `
         CREATE TABLE project_bom_lines (
           id                 TEXT    PRIMARY KEY NOT NULL,
           project_id         TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -474,16 +476,16 @@ export const v1Initial: Migration = {
           CHECK (procurement_status IN (${procurementStatusList}))
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_project_bom_lines_project_id ON project_bom_lines(project_id, position);`,
-    },
-    {
-      sql: `CREATE INDEX idx_project_bom_lines_item_id ON project_bom_lines(item_id);`,
-    },
-    { sql: updatedAtTrigger('project_bom_lines') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_project_bom_lines_project_id ON project_bom_lines(project_id, position);`,
+  },
+  {
+    sql: `CREATE INDEX idx_project_bom_lines_item_id ON project_bom_lines(item_id);`,
+  },
+  { sql: updatedAtTrigger('project_bom_lines') },
+  {
+    sql: `
         CREATE TABLE capabilities (
           id         TEXT    PRIMARY KEY NOT NULL,
           item_id    TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -495,51 +497,51 @@ export const v1Initial: Migration = {
           CHECK (weight >= 0)
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_capabilities_item_id ON capabilities(item_id);` },
-    {
-      sql: `CREATE INDEX idx_capabilities_key ON capabilities(key COLLATE NOCASE);`,
-    },
-    {
-      sql: `CREATE UNIQUE INDEX idx_capabilities_item_key ON capabilities(item_id, key COLLATE NOCASE);`,
-    },
-    { sql: updatedAtTrigger('capabilities') },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_capabilities_item_id ON capabilities(item_id);` },
+  {
+    sql: `CREATE INDEX idx_capabilities_key ON capabilities(key COLLATE NOCASE);`,
+  },
+  {
+    sql: `CREATE UNIQUE INDEX idx_capabilities_item_key ON capabilities(item_id, key COLLATE NOCASE);`,
+  },
+  { sql: updatedAtTrigger('capabilities') },
+  {
+    sql: `
         CREATE VIRTUAL TABLE items_fts USING fts5(
           name, description, notes, mpn, manufacturer, barcode, serial_number,
           content='items',
           content_rowid='rowid'
         );
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
           INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode, serial_number) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode, new.serial_number);
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
           INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode, serial_number)
           VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode, old.serial_number);
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
           INSERT INTO items_fts(items_fts, rowid, name, description, notes, mpn, manufacturer, barcode, serial_number)
           VALUES ('delete', old.rowid, old.name, old.description, old.notes, old.mpn, old.manufacturer, old.barcode, old.serial_number);
           INSERT INTO items_fts(rowid, name, description, notes, mpn, manufacturer, barcode, serial_number) VALUES (new.rowid, new.name, new.description, new.notes, new.mpn, new.manufacturer, new.barcode, new.serial_number);
         END;
       `,
-    },
-    { sql: `INSERT INTO items_fts(items_fts) VALUES ('rebuild');` },
-    {
-      sql: `
+  },
+  { sql: `INSERT INTO items_fts(items_fts) VALUES ('rebuild');` },
+  {
+    sql: `
         CREATE TABLE contacts (
           id           TEXT    PRIMARY KEY NOT NULL,
           name         TEXT    NOT NULL,
@@ -552,13 +554,13 @@ export const v1Initial: Migration = {
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE UNIQUE INDEX idx_contacts_name ON contacts(name COLLATE NOCASE);`,
-    },
-    { sql: updatedAtTrigger('contacts') },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE UNIQUE INDEX idx_contacts_name ON contacts(name COLLATE NOCASE);`,
+  },
+  { sql: updatedAtTrigger('contacts') },
+  {
+    sql: `
         CREATE TABLE checkouts (
           id             TEXT    PRIMARY KEY NOT NULL,
           item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -586,17 +588,17 @@ export const v1Initial: Migration = {
           )
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_checkouts_item_id ON checkouts(item_id);` },
-    { sql: `CREATE INDEX idx_checkouts_contact_id ON checkouts(contact_id);` },
-    { sql: `CREATE INDEX idx_checkouts_project_id ON checkouts(project_id);` },
-    { sql: `CREATE INDEX idx_checkouts_location_id ON checkouts(location_id);` },
-    {
-      sql: `CREATE INDEX idx_checkouts_open ON checkouts(due_date) WHERE returned_at IS NULL;`,
-    },
-    { sql: updatedAtTrigger('checkouts') },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_checkouts_item_id ON checkouts(item_id);` },
+  { sql: `CREATE INDEX idx_checkouts_contact_id ON checkouts(contact_id);` },
+  { sql: `CREATE INDEX idx_checkouts_project_id ON checkouts(project_id);` },
+  { sql: `CREATE INDEX idx_checkouts_location_id ON checkouts(location_id);` },
+  {
+    sql: `CREATE INDEX idx_checkouts_open ON checkouts(due_date) WHERE returned_at IS NULL;`,
+  },
+  { sql: updatedAtTrigger('checkouts') },
+  {
+    sql: `
         CREATE TABLE tombstones (
           table_name TEXT    NOT NULL,
           id         TEXT    NOT NULL,
@@ -604,12 +606,12 @@ export const v1Initial: Migration = {
           PRIMARY KEY (table_name, id)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_tombstones_deleted_at ON tombstones(deleted_at);`,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_tombstones_deleted_at ON tombstones(deleted_at);`,
+  },
+  {
+    sql: `
         CREATE TABLE sync_meta (
           id                  INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
           last_sync_timestamp INTEGER NOT NULL DEFAULT 0,
@@ -617,25 +619,25 @@ export const v1Initial: Migration = {
           updated_at          INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `INSERT INTO sync_meta (id, last_sync_timestamp, clock_offset) VALUES (1, 0, 0);`,
-    },
-    { sql: `ALTER TABLE items ADD COLUMN expiry_date INTEGER;` },
-    { sql: `ALTER TABLE items ADD COLUMN batch_number TEXT;` },
-    { sql: `ALTER TABLE items ADD COLUMN lot_number TEXT;` },
-    {
-      sql: `CREATE INDEX idx_items_expiry ON items(expiry_date) WHERE expiry_date IS NOT NULL;`,
-    },
-    {
-      sql: `ALTER TABLE items ADD COLUMN condition TEXT CHECK (condition IS NULL OR condition IN (${conditionList}));`,
-    },
-    {
-      sql: `ALTER TABLE items ADD COLUMN parent_id TEXT REFERENCES items(id);`,
-    },
-    { sql: `CREATE INDEX idx_items_parent_id ON items(parent_id);` },
-    {
-      sql: `
+  },
+  {
+    sql: `INSERT INTO sync_meta (id, last_sync_timestamp, clock_offset) VALUES (1, 0, 0);`,
+  },
+  { sql: `ALTER TABLE items ADD COLUMN expiry_date INTEGER;` },
+  { sql: `ALTER TABLE items ADD COLUMN batch_number TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN lot_number TEXT;` },
+  {
+    sql: `CREATE INDEX idx_items_expiry ON items(expiry_date) WHERE expiry_date IS NOT NULL;`,
+  },
+  {
+    sql: `ALTER TABLE items ADD COLUMN condition TEXT CHECK (condition IS NULL OR condition IN (${conditionList}));`,
+  },
+  {
+    sql: `ALTER TABLE items ADD COLUMN parent_id TEXT REFERENCES items(id);`,
+  },
+  { sql: `CREATE INDEX idx_items_parent_id ON items(parent_id);` },
+  {
+    sql: `
         CREATE TABLE maintenance_schedules (
           id                  TEXT    PRIMARY KEY NOT NULL,
           item_id             TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -657,33 +659,33 @@ export const v1Initial: Migration = {
           CHECK (basis <> 'USAGE' OR (interval_usage IS NOT NULL AND interval_usage > 0))
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_maintenance_schedules_item_id ON maintenance_schedules(item_id);`,
-    },
-    { sql: updatedAtTrigger('maintenance_schedules') },
-    {
-      sql: `ALTER TABLE item_images ADD COLUMN full_res_downgraded_at INTEGER;`,
-    },
-    {
-      sql: `ALTER TABLE sync_meta ADD COLUMN history_pruned_before INTEGER NOT NULL DEFAULT 0;`,
-    },
-    {
-      sql: `ALTER TABLE maintenance_schedules ADD COLUMN accrue_checkout_hours INTEGER NOT NULL DEFAULT 0;`,
-    },
-    {
-      sql: `ALTER TABLE project_bom_lines ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0;`,
-    },
-    {
-      // Per-line "picked" flag (issue #121): marks a BOM line physically gathered during
-      // the location-aware picking pass, so kitting a project becomes a walk-and-tick-off
-      // task ahead of the one-shot finalise. A transient annotation on the line — not a
-      // stock movement — so it needs no ledger entry; it syncs LWW like every other line
-      // column.
-      sql: `ALTER TABLE project_bom_lines ADD COLUMN picked INTEGER NOT NULL DEFAULT 0;`,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_maintenance_schedules_item_id ON maintenance_schedules(item_id);`,
+  },
+  { sql: updatedAtTrigger('maintenance_schedules') },
+  {
+    sql: `ALTER TABLE item_images ADD COLUMN full_res_downgraded_at INTEGER;`,
+  },
+  {
+    sql: `ALTER TABLE sync_meta ADD COLUMN history_pruned_before INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    sql: `ALTER TABLE maintenance_schedules ADD COLUMN accrue_checkout_hours INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    sql: `ALTER TABLE project_bom_lines ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    // Per-line "picked" flag (issue #121): marks a BOM line physically gathered during
+    // the location-aware picking pass, so kitting a project becomes a walk-and-tick-off
+    // task ahead of the one-shot finalise. A transient annotation on the line — not a
+    // stock movement — so it needs no ledger entry; it syncs LWW like every other line
+    // column.
+    sql: `ALTER TABLE project_bom_lines ADD COLUMN picked INTEGER NOT NULL DEFAULT 0;`,
+  },
+  {
+    sql: `
         CREATE TABLE item_stock (
           id          TEXT    PRIMARY KEY NOT NULL,
           item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -695,23 +697,23 @@ export const v1Initial: Migration = {
           UNIQUE (item_id, location_id)
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_item_stock_item_id ON item_stock(item_id);` },
-    {
-      sql: `CREATE INDEX idx_item_stock_location_id ON item_stock(location_id);`,
-    },
-    {
-      sql: updatedAtTrigger('item_stock'),
-    },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_item_stock_item_id ON item_stock(item_id);` },
+  {
+    sql: `CREATE INDEX idx_item_stock_location_id ON item_stock(location_id);`,
+  },
+  {
+    sql: updatedAtTrigger('item_stock'),
+  },
+  {
+    sql: `
         INSERT INTO item_stock (id, item_id, location_id, quantity, created_at, updated_at)
         SELECT id || '|' || location_id, id, location_id, quantity, created_at, updated_at
         FROM items;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_item_stock_recompute_ins
         AFTER INSERT ON item_stock
         FOR EACH ROW
@@ -722,9 +724,9 @@ export const v1Initial: Migration = {
             AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_item_stock_recompute_upd
         AFTER UPDATE ON item_stock
         FOR EACH ROW
@@ -735,9 +737,9 @@ export const v1Initial: Migration = {
             AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_item_stock_recompute_del
         AFTER DELETE ON item_stock
         FOR EACH ROW
@@ -748,12 +750,12 @@ export const v1Initial: Migration = {
             AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id);
         END;
       `,
-    },
-    {
-      sql: `ALTER TABLE checkouts ADD COLUMN source_location_id TEXT REFERENCES locations(id);`,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `ALTER TABLE checkouts ADD COLUMN source_location_id TEXT REFERENCES locations(id);`,
+  },
+  {
+    sql: `
         CREATE TABLE stock_batches (
           id           TEXT    PRIMARY KEY NOT NULL,
           item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -769,31 +771,31 @@ export const v1Initial: Migration = {
           UNIQUE (item_id, location_id, batch_key)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_stock_batches_item_id ON stock_batches(item_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_stock_batches_location_id ON stock_batches(location_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_stock_batches_placement ON stock_batches(item_id, location_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_stock_batches_expiry ON stock_batches(expiry_date);`,
-    },
-    {
-      sql: updatedAtTrigger('stock_batches'),
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_stock_batches_item_id ON stock_batches(item_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_stock_batches_location_id ON stock_batches(location_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_stock_batches_placement ON stock_batches(item_id, location_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_stock_batches_expiry ON stock_batches(expiry_date);`,
+  },
+  {
+    sql: updatedAtTrigger('stock_batches'),
+  },
+  {
+    sql: `
         INSERT INTO stock_batches (id, item_id, location_id, batch_key, quantity, created_at, updated_at)
         SELECT id || '|', item_id, location_id, '', quantity, created_at, updated_at
         FROM item_stock;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_stock_batches_recompute_ins
         AFTER INSERT ON stock_batches
         FOR EACH ROW
@@ -808,9 +810,9 @@ export const v1Initial: Migration = {
           WHERE item_stock.quantity <> excluded.quantity;
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_stock_batches_recompute_upd
         AFTER UPDATE ON stock_batches
         FOR EACH ROW
@@ -823,9 +825,9 @@ export const v1Initial: Migration = {
                               WHERE item_id = NEW.item_id AND location_id = NEW.location_id);
         END;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TRIGGER trg_stock_batches_recompute_del
         AFTER DELETE ON stock_batches
         FOR EACH ROW
@@ -838,20 +840,20 @@ export const v1Initial: Migration = {
                               WHERE item_id = OLD.item_id AND location_id = OLD.location_id);
         END;
       `,
-    },
-    { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
-    // A return keeps its own note, distinct from the checkout `note`, so a return remark
-    // never overwrites the loan's own note (both ends retain their text). NULL while open.
-    { sql: `ALTER TABLE checkouts ADD COLUMN return_note TEXT;` },
-    {
-      sql: `ALTER TABLE maintenance_schedules ADD COLUMN location_id TEXT REFERENCES locations(id);`,
-    },
-    { sql: `ALTER TABLE item_attachments ADD COLUMN origin_device_id TEXT;` },
-    { sql: `ALTER TABLE locations ADD COLUMN description TEXT;` },
-    { sql: `ALTER TABLE locations ADD COLUMN color TEXT;` },
-    { sql: `ALTER TABLE projects ADD COLUMN budget REAL;` },
-    {
-      sql: `
+  },
+  { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
+  // A return keeps its own note, distinct from the checkout `note`, so a return remark
+  // never overwrites the loan's own note (both ends retain their text). NULL while open.
+  { sql: `ALTER TABLE checkouts ADD COLUMN return_note TEXT;` },
+  {
+    sql: `ALTER TABLE maintenance_schedules ADD COLUMN location_id TEXT REFERENCES locations(id);`,
+  },
+  { sql: `ALTER TABLE item_attachments ADD COLUMN origin_device_id TEXT;` },
+  { sql: `ALTER TABLE locations ADD COLUMN description TEXT;` },
+  { sql: `ALTER TABLE locations ADD COLUMN color TEXT;` },
+  { sql: `ALTER TABLE projects ADD COLUMN budget REAL;` },
+  {
+    sql: `
         CREATE TABLE project_budget_categories (
           id         TEXT    PRIMARY KEY NOT NULL,
           project_id TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -863,14 +865,14 @@ export const v1Initial: Migration = {
           CHECK (amount >= 0)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_project_budget_categories_project_id
+  },
+  {
+    sql: `CREATE INDEX idx_project_budget_categories_project_id
               ON project_budget_categories(project_id, position);`,
-    },
-    { sql: updatedAtTrigger('project_budget_categories') },
-    {
-      sql: `
+  },
+  { sql: updatedAtTrigger('project_budget_categories') },
+  {
+    sql: `
         CREATE TABLE project_expenses (
           id          TEXT    PRIMARY KEY NOT NULL,
           project_id  TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -883,20 +885,20 @@ export const v1Initial: Migration = {
           CHECK (amount >= 0)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_project_expenses_project_id
+  },
+  {
+    sql: `CREATE INDEX idx_project_expenses_project_id
               ON project_expenses(project_id, incurred_at);`,
-    },
-    {
-      sql: `CREATE INDEX idx_project_expenses_category_id ON project_expenses(category_id);`,
-    },
-    { sql: updatedAtTrigger('project_expenses') },
-    { sql: `ALTER TABLE items ADD COLUMN reorder_point INTEGER;` },
-    { sql: `ALTER TABLE items ADD COLUMN reorder_gauge_percent REAL;` },
-    { sql: `ALTER TABLE items ADD COLUMN reorder_qty INTEGER;` },
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_project_expenses_category_id ON project_expenses(category_id);`,
+  },
+  { sql: updatedAtTrigger('project_expenses') },
+  { sql: `ALTER TABLE items ADD COLUMN reorder_point INTEGER;` },
+  { sql: `ALTER TABLE items ADD COLUMN reorder_gauge_percent REAL;` },
+  { sql: `ALTER TABLE items ADD COLUMN reorder_qty INTEGER;` },
+  {
+    sql: `
         CREATE TABLE supplier_parts (
           id            TEXT    PRIMARY KEY NOT NULL,
           item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -919,14 +921,14 @@ export const v1Initial: Migration = {
           CHECK (min_order_qty IS NULL OR min_order_qty > 0)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_supplier_parts_item_id
+  },
+  {
+    sql: `CREATE INDEX idx_supplier_parts_item_id
               ON supplier_parts(item_id, is_preferred DESC, supplier_name COLLATE NOCASE);`,
-    },
-    { sql: updatedAtTrigger('supplier_parts') },
-    {
-      sql: `
+  },
+  { sql: updatedAtTrigger('supplier_parts') },
+  {
+    sql: `
         CREATE TABLE purchase_orders (
           id            TEXT    PRIMARY KEY NOT NULL,
           supplier_name TEXT    NOT NULL,
@@ -939,9 +941,9 @@ export const v1Initial: Migration = {
           CHECK (status IN ('DRAFT', 'ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED'))
         ) STRICT;
       `,
-    },
-    {
-      sql: `
+  },
+  {
+    sql: `
         CREATE TABLE purchase_order_lines (
           id               TEXT    PRIMARY KEY NOT NULL,
           po_id            TEXT    NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
@@ -958,49 +960,49 @@ export const v1Initial: Migration = {
           CHECK (unit_cost IS NULL OR unit_cost >= 0)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_purchase_order_lines_po_id ON purchase_order_lines(po_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_purchase_order_lines_item_id ON purchase_order_lines(item_id);`,
-    },
-    { sql: updatedAtTrigger('purchase_orders') },
-    { sql: updatedAtTrigger('purchase_order_lines') },
-    { sql: `ALTER TABLE items ADD COLUMN acquired_at TEXT;` },
-    { sql: `ALTER TABLE items ADD COLUMN warranty_expires_at TEXT;` },
-    {
-      sql: `ALTER TABLE items ADD COLUMN purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
-    },
-    {
-      sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
-    },
-    // --- Intrinsic physical weight (issue #25) -----------------------------------
-    // An item's mass, stored canonically in GRAMS (a single REAL column) so weights are
-    // directly comparable and summable across items regardless of the unit the user reads
-    // them in — the display/entry unit is the `weightUnit` preference, applied only at the
-    // edges. Nullable (no weight set); non-negative, mirroring the unit_cost CHECK.
-    {
-      sql: `ALTER TABLE items ADD COLUMN weight REAL CHECK (weight IS NULL OR weight >= 0);`,
-    },
-    // --- Intrinsic physical dimensions (issue #30) -------------------------------
-    // An item's bounding box: width, height and depth, each stored canonically in
-    // MILLIMETRES (a REAL column apiece) so dimensions are directly comparable across
-    // items regardless of the unit the user reads them in — the display/entry unit is the
-    // `dimensionUnit` preference, applied only at the edges. Each is nullable (not tracked)
-    // and non-negative, mirroring the weight CHECK.
-    {
-      sql: `ALTER TABLE items ADD COLUMN width REAL CHECK (width IS NULL OR width >= 0);`,
-    },
-    {
-      sql: `ALTER TABLE items ADD COLUMN height REAL CHECK (height IS NULL OR height >= 0);`,
-    },
-    {
-      sql: `ALTER TABLE items ADD COLUMN depth REAL CHECK (depth IS NULL OR depth >= 0);`,
-    },
-    // --- Folded former v2: asset bookings (Phase 78) ------------------------------
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_purchase_order_lines_po_id ON purchase_order_lines(po_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_purchase_order_lines_item_id ON purchase_order_lines(item_id);`,
+  },
+  { sql: updatedAtTrigger('purchase_orders') },
+  { sql: updatedAtTrigger('purchase_order_lines') },
+  { sql: `ALTER TABLE items ADD COLUMN acquired_at TEXT;` },
+  { sql: `ALTER TABLE items ADD COLUMN warranty_expires_at TEXT;` },
+  {
+    sql: `ALTER TABLE items ADD COLUMN purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE items ADD COLUMN depreciation_months INTEGER CHECK (depreciation_months IS NULL OR depreciation_months > 0);`,
+  },
+  // --- Intrinsic physical weight (issue #25) -----------------------------------
+  // An item's mass, stored canonically in GRAMS (a single REAL column) so weights are
+  // directly comparable and summable across items regardless of the unit the user reads
+  // them in — the display/entry unit is the `weightUnit` preference, applied only at the
+  // edges. Nullable (no weight set); non-negative, mirroring the unit_cost CHECK.
+  {
+    sql: `ALTER TABLE items ADD COLUMN weight REAL CHECK (weight IS NULL OR weight >= 0);`,
+  },
+  // --- Intrinsic physical dimensions (issue #30) -------------------------------
+  // An item's bounding box: width, height and depth, each stored canonically in
+  // MILLIMETRES (a REAL column apiece) so dimensions are directly comparable across
+  // items regardless of the unit the user reads them in — the display/entry unit is the
+  // `dimensionUnit` preference, applied only at the edges. Each is nullable (not tracked)
+  // and non-negative, mirroring the weight CHECK.
+  {
+    sql: `ALTER TABLE items ADD COLUMN width REAL CHECK (width IS NULL OR width >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE items ADD COLUMN height REAL CHECK (height IS NULL OR height >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE items ADD COLUMN depth REAL CHECK (depth IS NULL OR depth >= 0);`,
+  },
+  // --- Folded former v2: asset bookings (Phase 78) ------------------------------
+  {
+    sql: `
         CREATE TABLE asset_bookings (
           id                    TEXT    PRIMARY KEY NOT NULL,
           item_id               TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1015,17 +1017,17 @@ export const v1Initial: Migration = {
           CHECK (end_date >= start_date)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_asset_bookings_item_id ON asset_bookings(item_id, start_date);`,
-    },
-    {
-      sql: `CREATE INDEX idx_asset_bookings_start_date ON asset_bookings(start_date);`,
-    },
-    { sql: updatedAtTrigger('asset_bookings') },
-    // --- Folded former v3: supplier price history (Phase 81) ----------------------
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_asset_bookings_item_id ON asset_bookings(item_id, start_date);`,
+  },
+  {
+    sql: `CREATE INDEX idx_asset_bookings_start_date ON asset_bookings(start_date);`,
+  },
+  { sql: updatedAtTrigger('asset_bookings') },
+  // --- Folded former v3: supplier price history (Phase 81) ----------------------
+  {
+    sql: `
         CREATE TABLE supplier_part_price_history (
           id               TEXT    PRIMARY KEY NOT NULL,
           supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,
@@ -1038,35 +1040,35 @@ export const v1Initial: Migration = {
           CHECK (source IN ('MANUAL', 'SCRAPE'))
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_supplier_part_price_history_part
+  },
+  {
+    sql: `CREATE INDEX idx_supplier_part_price_history_part
               ON supplier_part_price_history(supplier_part_id, recorded_at);`,
-    },
-    { sql: updatedAtTrigger('supplier_part_price_history') },
-    // --- Folded former v4: richer location metadata -------------------------------
-    { sql: `ALTER TABLE locations ADD COLUMN kind TEXT;` },
-    {
-      sql: `ALTER TABLE locations ADD COLUMN capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0);`,
-    },
-    {
-      sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
-    },
-    { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
-    // --- Stock-take G1: durable "last counted" timestamp -------------------------
-    { sql: `ALTER TABLE locations ADD COLUMN last_counted_at INTEGER;` },
-    // --- Kits / bundles (v1: definition + availability) ---------------------------
-    // A kit is a reusable many-to-many item→component definition: the `kit_item_id`
-    // item is *composed of* `quantity` units of each `component_item_id` item (e.g. a
-    // first-aid kit = 2 bandages + 1 scissors). Distinct from variants (child SKUs of
-    // one identity) and a project BOM (transient work). Both FKs cascade-delete from
-    // `items`, so deleting either the kit or a component prunes the edge. The
-    // self-reference CHECK blocks the trivial one-hop cycle; deeper transitive cycles
-    // are rejected by the repository's recursive-CTE validator (a DB CHECK cannot walk
-    // the graph). Not in SYNC_TABLES for v1 — kit definitions are device-local until the
-    // assemble/disassemble v2 work, which is when their propagation is designed.
-    {
-      sql: `
+  },
+  { sql: updatedAtTrigger('supplier_part_price_history') },
+  // --- Folded former v4: richer location metadata -------------------------------
+  { sql: `ALTER TABLE locations ADD COLUMN kind TEXT;` },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0);`,
+  },
+  {
+    sql: `ALTER TABLE locations ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1));`,
+  },
+  { sql: `ALTER TABLE locations ADD COLUMN archived_at INTEGER;` },
+  // --- Stock-take G1: durable "last counted" timestamp -------------------------
+  { sql: `ALTER TABLE locations ADD COLUMN last_counted_at INTEGER;` },
+  // --- Kits / bundles (v1: definition + availability) ---------------------------
+  // A kit is a reusable many-to-many item→component definition: the `kit_item_id`
+  // item is *composed of* `quantity` units of each `component_item_id` item (e.g. a
+  // first-aid kit = 2 bandages + 1 scissors). Distinct from variants (child SKUs of
+  // one identity) and a project BOM (transient work). Both FKs cascade-delete from
+  // `items`, so deleting either the kit or a component prunes the edge. The
+  // self-reference CHECK blocks the trivial one-hop cycle; deeper transitive cycles
+  // are rejected by the repository's recursive-CTE validator (a DB CHECK cannot walk
+  // the graph). Not in SYNC_TABLES for v1 — kit definitions are device-local until the
+  // assemble/disassemble v2 work, which is when their propagation is designed.
+  {
+    sql: `
         CREATE TABLE kit_components (
           id                TEXT    PRIMARY KEY NOT NULL,
           kit_item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1080,34 +1082,34 @@ export const v1Initial: Migration = {
           UNIQUE (kit_item_id, component_item_id)
         ) STRICT;
       `,
-    },
-    { sql: `CREATE INDEX idx_kit_components_kit_item_id ON kit_components(kit_item_id, sort);` },
-    {
-      sql: `CREATE INDEX idx_kit_components_component_item_id ON kit_components(component_item_id);`,
-    },
-    { sql: updatedAtTrigger('kit_components') },
-    // --- Folded former v2: partial index on items.warranty_expires_at -------------
-    // Most items carry no warranty date, so the index is partial (mirrors idx_items_expiry):
-    // the warranty-attention probe / listWarrantyExpiring / alert centre seek the small set
-    // that actually has one rather than scanning the whole items table.
-    {
-      sql: `CREATE INDEX idx_items_warranty ON items(warranty_expires_at) WHERE warranty_expires_at IS NOT NULL;`,
-    },
-    // --- Folded former v3: partial index on items(location_id) WHERE is_active = 1 -
-    // The hot per-location active-stock reads emit `WHERE is_active = 1 AND location_id = ?`.
-    // Encoding `is_active = 1` in the index's WHERE (rather than a composite second column)
-    // keeps it single-column and makes the no-stats planner prefer it for exactly this query.
-    {
-      sql: `CREATE INDEX idx_items_active_location ON items(location_id) WHERE is_active = 1;`,
-    },
-    // --- Folded former v4: manual current value + revaluation log (feature-gap G9) -
-    // Additive: a live manual per-unit value on items, plus an append-only LWW log of the
-    // valuation points that set it (value can move up or down, independent of depreciation).
-    {
-      sql: `ALTER TABLE items ADD COLUMN current_value REAL CHECK (current_value IS NULL OR current_value >= 0);`,
-    },
-    {
-      sql: `
+  },
+  { sql: `CREATE INDEX idx_kit_components_kit_item_id ON kit_components(kit_item_id, sort);` },
+  {
+    sql: `CREATE INDEX idx_kit_components_component_item_id ON kit_components(component_item_id);`,
+  },
+  { sql: updatedAtTrigger('kit_components') },
+  // --- Folded former v2: partial index on items.warranty_expires_at -------------
+  // Most items carry no warranty date, so the index is partial (mirrors idx_items_expiry):
+  // the warranty-attention probe / listWarrantyExpiring / alert centre seek the small set
+  // that actually has one rather than scanning the whole items table.
+  {
+    sql: `CREATE INDEX idx_items_warranty ON items(warranty_expires_at) WHERE warranty_expires_at IS NOT NULL;`,
+  },
+  // --- Folded former v3: partial index on items(location_id) WHERE is_active = 1 -
+  // The hot per-location active-stock reads emit `WHERE is_active = 1 AND location_id = ?`.
+  // Encoding `is_active = 1` in the index's WHERE (rather than a composite second column)
+  // keeps it single-column and makes the no-stats planner prefer it for exactly this query.
+  {
+    sql: `CREATE INDEX idx_items_active_location ON items(location_id) WHERE is_active = 1;`,
+  },
+  // --- Folded former v4: manual current value + revaluation log (feature-gap G9) -
+  // Additive: a live manual per-unit value on items, plus an append-only LWW log of the
+  // valuation points that set it (value can move up or down, independent of depreciation).
+  {
+    sql: `ALTER TABLE items ADD COLUMN current_value REAL CHECK (current_value IS NULL OR current_value >= 0);`,
+  },
+  {
+    sql: `
         CREATE TABLE revaluations (
           id          TEXT    PRIMARY KEY NOT NULL,
           item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1119,19 +1121,19 @@ export const v1Initial: Migration = {
           CHECK (value >= 0)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_revaluations_item_id ON revaluations(item_id, revalued_at);`,
-    },
-    {
-      sql: updatedAtTrigger('revaluations'),
-    },
-    // --- Folded former v5: related-items cross-links (feature-gap G6) --------------
-    // A synced many-to-many relation between items, distinct from variants (items.parent_id)
-    // and kits. Deterministic `from|to|kind` primary key so two devices minting the same
-    // logical relation converge by LWW; `kind` is app-enforced free TEXT (no DB CHECK).
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_revaluations_item_id ON revaluations(item_id, revalued_at);`,
+  },
+  {
+    sql: updatedAtTrigger('revaluations'),
+  },
+  // --- Folded former v5: related-items cross-links (feature-gap G6) --------------
+  // A synced many-to-many relation between items, distinct from variants (items.parent_id)
+  // and kits. Deterministic `from|to|kind` primary key so two devices minting the same
+  // logical relation converge by LWW; `kind` is app-enforced free TEXT (no DB CHECK).
+  {
+    sql: `
         CREATE TABLE item_relations (
           id           TEXT    PRIMARY KEY NOT NULL,   -- canonical "from|to|kind" (deterministic)
           from_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1143,21 +1145,21 @@ export const v1Initial: Migration = {
           CHECK (from_item_id <> to_item_id)
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_item_relations_from ON item_relations(from_item_id);`,
-    },
-    {
-      sql: `CREATE INDEX idx_item_relations_to ON item_relations(to_item_id);`,
-    },
-    {
-      sql: updatedAtTrigger('item_relations'),
-    },
-    // --- Folded former v6: manual "to-buy" / wishlist (feature-gap G8) -------------
-    // A standalone dictionary table (no FK, like contacts/projects) of wanted-but-not-owned
-    // things; `priority` is app-enforced free TEXT (HIGH | MEDIUM | LOW | NONE), default NONE.
-    {
-      sql: `
+  },
+  {
+    sql: `CREATE INDEX idx_item_relations_from ON item_relations(from_item_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_item_relations_to ON item_relations(to_item_id);`,
+  },
+  {
+    sql: updatedAtTrigger('item_relations'),
+  },
+  // --- Folded former v6: manual "to-buy" / wishlist (feature-gap G8) -------------
+  // A standalone dictionary table (no FK, like contacts/projects) of wanted-but-not-owned
+  // things; `priority` is app-enforced free TEXT (HIGH | MEDIUM | LOW | NONE), default NONE.
+  {
+    sql: `
         CREATE TABLE wishlist (
           id           TEXT    PRIMARY KEY NOT NULL,
           name         TEXT    NOT NULL,
@@ -1169,16 +1171,16 @@ export const v1Initial: Migration = {
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: updatedAtTrigger('wishlist'),
-    },
-    // --- Folded former v7: per-instance test / calibration / service records (G7) --
-    // An append-only LWW child of items (structured pass/fail + reading log per serialised
-    // unit). `kind` (TEST | CALIBRATION | SERVICE) and `result` (PASS | FAIL | LIMIT | NA)
-    // are app-enforced free TEXT; `reading` is deliberately unconstrained (may be negative).
-    {
-      sql: `
+  },
+  {
+    sql: updatedAtTrigger('wishlist'),
+  },
+  // --- Folded former v7: per-instance test / calibration / service records (G7) --
+  // An append-only LWW child of items (structured pass/fail + reading log per serialised
+  // unit). `kind` (TEST | CALIBRATION | SERVICE) and `result` (PASS | FAIL | LIMIT | NA)
+  // are app-enforced free TEXT; `reading` is deliberately unconstrained (may be negative).
+  {
+    sql: `
         CREATE TABLE test_records (
           id           TEXT    PRIMARY KEY NOT NULL,
           item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1193,21 +1195,31 @@ export const v1Initial: Migration = {
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
-    },
-    {
-      sql: `CREATE INDEX idx_test_records_item_id ON test_records(item_id, performed_at);`,
-    },
-    {
-      sql: updatedAtTrigger('test_records'),
-    },
-    // --- Baseline revision stamp (issue #84) ---------------------------------------
-    // Records which revision of this squashed baseline built the database, so boot can
-    // tell a current database from one built by an *older* revision of v1 — both of which
-    // read as `user_version = 1`. See BASELINE_REVISION for why this is needed and when to
-    // bump it. Data, not DDL, so the golden-equivalence schema snapshot is unaffected.
+  },
+  {
+    sql: `CREATE INDEX idx_test_records_item_id ON test_records(item_id, performed_at);`,
+  },
+  {
+    sql: updatedAtTrigger('test_records'),
+  },
+];
+
+/** The fingerprint of the DDL above — see {@link baselineFingerprint}. */
+export const BASELINE_REVISION = baselineFingerprint(baselineStatements);
+
+export const v1Initial: Migration = {
+  version: 1,
+  name: 'initial-baseline',
+  statements: [
+    ...baselineStatements,
+    // --- Baseline fingerprint stamp (issue #84) ------------------------------------
+    // Records which revision of this squashed baseline built the database, so boot can tell a
+    // current database from one built by an *older* revision of v1 — both of which read as
+    // `user_version = 1`. Derived from the DDL, so editing the baseline updates it
+    // automatically. Data, not DDL, so the golden-equivalence schema snapshot is unaffected.
     {
       sql: `INSERT INTO app_meta (key, value) VALUES (?, ?);`,
-      params: [BASELINE_REVISION_KEY, String(BASELINE_REVISION)],
+      params: [BASELINE_REVISION_KEY, BASELINE_REVISION],
     },
   ],
 };

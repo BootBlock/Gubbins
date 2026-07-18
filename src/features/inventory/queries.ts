@@ -88,7 +88,10 @@ export const inventoryKeys = {
   itemFieldValues: (itemIds: readonly string[]) =>
     [...inventoryKeys.items(), 'fieldValues', itemIds] as const,
   tags: () => [...inventoryKeys.all, 'tags'] as const,
-  tagList: () => [...inventoryKeys.tags(), 'list'] as const,
+  /** One server-side page of the counted dictionary (issue #84). */
+  tagList: (offset: number, limit: number) => [...inventoryKeys.tags(), 'list', offset, limit] as const,
+  /** Total tag count, the pagination denominator (issue #84). */
+  tagCount: () => [...inventoryKeys.tags(), 'count'] as const,
   /** The dictionary without usage counts — the tag-entry combobox (issue #84). */
   tagNames: () => [...inventoryKeys.tags(), 'names'] as const,
   itemTags: (itemId: string) => [...inventoryKeys.item(itemId), 'tags'] as const,
