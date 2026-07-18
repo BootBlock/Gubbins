@@ -8,7 +8,17 @@
  * subset (`$select`/`$expand`/`$top`/`$skip`/`$orderby`/`$filter`/`$count`/`$search`), not the
  * whole protocol. The document is static (no user input) and built from a small typed model, so
  * it stays in lockstep with the item field registry (guarded by a test).
+ *
+ * The entity types describe the **whole projectable shape**, which is wider than the payload a
+ * default request returns: `GET /items` emits the summary field set, and everything else is
+ * opt-in via `fields`/`include` (or `$select`/`$expand`). A reader can't infer that from the
+ * property list alone, so each property outside its entity set's default payload carries an
+ * `Org.OData.Core.V1.Description` saying so — otherwise tooling that materialises a table from
+ * the CSDL (Excel, Power Query, LINQPad) builds columns that are always empty. The default sets
+ * are imported from the field registries rather than restated here, so they can't drift.
  */
+import { ITEM_SUMMARY_DEFAULT_FIELDS } from './item-view.ts';
+import { LOCATION_DEFAULT_FIELDS } from './location-view.ts';
 
 /** One EDM property: its name, EDM type, and whether it is nullable. */
 interface EdmProperty {
@@ -59,6 +69,10 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('gauge', 'Gubbins.Gauge'),
   p('createdAt', 'Edm.Int64', false),
   p('updatedAt', 'Edm.Int64', false),
+  // Collection-valued: per CSDL v4.01 §7.1.1 `Nullable` describes the *elements*, not the
+  // collection itself (which can never be null), so `false` reads "no null members" — it makes
+  // no claim about the property being present. Presence is governed by the projection, which
+  // the annotation on each of these spells out.
   p('placements', 'Collection(Gubbins.Placement)', false),
   p('capabilities', 'Collection(Gubbins.Capability)', false),
   p('fieldValues', 'Collection(Gubbins.ItemFieldValue)', false),
@@ -135,15 +149,42 @@ function xml(value: string): string {
   );
 }
 
-function property({ name, type, nullable }: EdmProperty): string {
-  return `        <Property Name="${xml(name)}" Type="${xml(type)}" Nullable="${nullable}"/>`;
+/**
+ * An `Org.OData.Core.V1.Description` annotation, indented to sit inside a `<Property>` or an
+ * `<EntitySet>` — both of which this document nests two levels deeper than the schema body.
+ */
+function description(text: string): string {
+  return `          <Annotation Term="Org.OData.Core.V1.Description" String="${xml(text)}"/>`;
 }
 
-function entityType(name: string, key: string, properties: readonly EdmProperty[]): string {
+/**
+ * One `<Property>`. Properties outside their entity's default payload are annotated as opt-in
+ * rather than silently declared, so a CSDL reader knows a plain request won't return them.
+ */
+function property({ name, type, nullable }: EdmProperty, defaults?: ReadonlySet<string>): string {
+  const head = `        <Property Name="${xml(name)}" Type="${xml(type)}" Nullable="${nullable}"`;
+  if (!defaults || defaults.has(name)) return `${head}/>`;
+  return [
+    `${head}>`,
+    description(
+      'Returned only when requested with fields/include (or $select/$expand); not part of the default payload.',
+    ),
+    `        </Property>`,
+  ].join('\n');
+}
+
+function entityType(
+  name: string,
+  key: string,
+  properties: readonly EdmProperty[],
+  defaults?: ReadonlySet<string>,
+): string {
   return [
     `      <EntityType Name="${xml(name)}">`,
     `        <Key><PropertyRef Name="${xml(key)}"/></Key>`,
-    ...properties.map(property),
+    // Bound explicitly rather than passed as `map(property)` — that hands `map` the index as
+    // the `defaults` argument.
+    ...properties.map((prop) => property(prop, defaults)),
     `      </EntityType>`,
   ].join('\n');
 }
@@ -151,8 +192,26 @@ function entityType(name: string, key: string, properties: readonly EdmProperty[
 function complexType(name: string, properties: readonly EdmProperty[]): string {
   return [
     `      <ComplexType Name="${xml(name)}">`,
-    ...properties.map(property),
+    ...properties.map((prop) => property(prop)),
     `      </ComplexType>`,
+  ].join('\n');
+}
+
+/** The default payloads as lookups, for deciding which properties need the opt-in annotation. */
+const ITEM_DEFAULTS: ReadonlySet<string> = new Set(ITEM_SUMMARY_DEFAULT_FIELDS);
+const LOCATION_DEFAULTS: ReadonlySet<string> = new Set(LOCATION_DEFAULT_FIELDS);
+
+/**
+ * One `<EntitySet>`, annotated with the field set a default (unprojected) request returns so a
+ * CSDL reader isn't left to assume it gets the entity type's whole property list.
+ */
+function entitySet(name: string, type: string, defaults?: readonly string[]): string {
+  const head = `        <EntitySet Name="${xml(name)}" EntityType="${xml(type)}"`;
+  if (!defaults) return `${head}/>`;
+  return [
+    `${head}>`,
+    description(`A request without fields/include (or $select/$expand) returns: ${defaults.join(', ')}.`),
+    `        </EntitySet>`,
   ].join('\n');
 }
 
@@ -164,10 +223,15 @@ export function odataMetadataXml(): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">',
+    // The Core vocabulary the Description annotations below are drawn from.
+    '  <edmx:Reference Uri="https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.xml">',
+    '    <edmx:Include Namespace="Org.OData.Core.V1" Alias="Core"/>',
+    '  </edmx:Reference>',
     '  <edmx:DataServices>',
     '    <Schema Namespace="Gubbins" xmlns="http://docs.oasis-open.org/odata/ns/edm">',
-    entityType('Item', 'id', ITEM_PROPERTIES),
-    entityType('Location', 'id', LOCATION_PROPERTIES),
+    entityType('Item', 'id', ITEM_PROPERTIES, ITEM_DEFAULTS),
+    entityType('Location', 'id', LOCATION_PROPERTIES, LOCATION_DEFAULTS),
+    // Categories have no extended fields — every declared property is always returned.
     entityType('Category', 'id', CATEGORY_PROPERTIES),
     complexType('Placement', PLACEMENT_PROPERTIES),
     complexType('Capability', CAPABILITY_PROPERTIES),
@@ -176,9 +240,9 @@ export function odataMetadataXml(): string {
     complexType('LocationFieldValue', LOCATION_FIELD_VALUE_PROPERTIES),
     complexType('FieldOrigin', FIELD_ORIGIN_PROPERTIES),
     '      <EntityContainer Name="Container">',
-    '        <EntitySet Name="items" EntityType="Gubbins.Item"/>',
-    '        <EntitySet Name="locations" EntityType="Gubbins.Location"/>',
-    '        <EntitySet Name="categories" EntityType="Gubbins.Category"/>',
+    entitySet('items', 'Gubbins.Item', ITEM_SUMMARY_DEFAULT_FIELDS),
+    entitySet('locations', 'Gubbins.Location', LOCATION_DEFAULT_FIELDS),
+    entitySet('categories', 'Gubbins.Category'),
     '      </EntityContainer>',
     '    </Schema>',
     '  </edmx:DataServices>',
