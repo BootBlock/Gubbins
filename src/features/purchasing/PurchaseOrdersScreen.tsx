@@ -15,8 +15,10 @@ import {
   LowStockIcon,
   ShoppingCartIcon,
   TruckIcon,
+  UploadIcon,
   WishlistIcon,
 } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { ReorderTab } from './ReorderTab';
 import { WishlistTab } from './WishlistTab';
 import type { Formatters } from '@/lib/format';
@@ -42,6 +44,7 @@ import { CreatePurchaseOrderDialog } from './components/CreatePurchaseOrderDialo
 import { PurchaseOrderLineDialog, type LineItemOption } from './components/PurchaseOrderLineDialog';
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
 import { ReturnLineDialog } from './components/ReturnLineDialog';
+import { ImportPurchaseListDialog } from './components/ImportPurchaseListDialog';
 
 /** The top-level tabs on the Purchase Orders screen. */
 type PoTab = 'orders' | 'reorder' | 'wishlist';
@@ -63,9 +66,11 @@ type PoTab = 'orders' | 'reorder' | 'wishlist';
  */
 export function PurchaseOrdersScreen() {
   const f = useFormatters();
+  const t = useT();
   const ordersQuery = usePurchaseOrders();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PoTab>('orders');
 
   const createPo = useCreatePurchaseOrder();
@@ -80,10 +85,16 @@ export function PurchaseOrdersScreen() {
         title="Purchase orders"
         actions={
           activeTab === 'orders' ? (
-            <Button variant="primary" onClick={() => setCreateOpen(true)} data-testid="po-new">
-              <AddIcon />
-              New order
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="po-import">
+                <UploadIcon />
+                {t('purchasing.import.open')}
+              </Button>
+              <Button variant="primary" onClick={() => setCreateOpen(true)} data-testid="po-new">
+                <AddIcon />
+                New order
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -206,6 +217,12 @@ export function PurchaseOrdersScreen() {
         </div>
       </main>
 
+      <ImportPurchaseListDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onCreated={(poId) => setSelectedId(poId)}
+      />
+
       <CreatePurchaseOrderDialog
         open={createOpen}
         isSaving={createPo.isPending}
@@ -295,6 +312,7 @@ function OrderListRow({
 
 function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () => void }) {
   const f = useFormatters();
+  const t = useT();
   const poQuery = usePurchaseOrder(poId);
   const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
@@ -315,6 +333,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const deletePo = useDeletePurchaseOrder();
 
   const [lineOpen, setLineOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrderLine | null>(null);
   const [returning, setReturning] = useState<PurchaseOrderLine | null>(null);
 
@@ -477,10 +496,16 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           <h2 className="text-sm font-semibold">
             Lines · {f.quantity(received)} of {f.quantity(ordered)} received
           </h2>
-          <Button variant="outline" onClick={() => setLineOpen(true)} data-testid="po-add-line">
-            <AddIcon />
-            Add line
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="po-detail-import">
+              <UploadIcon />
+              {t('purchasing.import.open')}
+            </Button>
+            <Button variant="outline" onClick={() => setLineOpen(true)} data-testid="po-add-line">
+              <AddIcon />
+              Add line
+            </Button>
+          </div>
         </div>
 
         {po.lines.length === 0 ? (
@@ -538,6 +563,13 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           </ul>
         )}
       </Surface>
+
+      <ImportPurchaseListDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        poId={po.id}
+        supplierName={po.supplierName}
+      />
 
       <PurchaseOrderLineDialog
         open={lineOpen}

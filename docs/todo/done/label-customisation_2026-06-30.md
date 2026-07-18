@@ -1,5 +1,7 @@
 # Label customisation — Phase 73 (living plan + outcome)
 
+> **Status:** ✅ COMPLETE — Phase 73 shipped.
+
 The second feature-gap audit (`feature-gap-audit-2026-06-30b`, candidate #7) flagged **label
 customisation** as a prosumer gap: Gubbins printed only fixed QR-plus-name label sheets
 (Phase 49 `qr-label-sheet.ts`). Three sub-gaps: **multi-symbology** (add a 1-D Code 128

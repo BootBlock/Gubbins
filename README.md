@@ -4,6 +4,8 @@
 
 # Gubbins
 
+[![Tests](https://github.com/BootBlock/Gubbins/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/BootBlock/Gubbins/actions/workflows/tests.yml?query=branch%3Amain)
+
 ## Use it
 
 Gubbins runs entirely in your browser — **no install or local server required**.

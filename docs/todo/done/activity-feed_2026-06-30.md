@@ -1,5 +1,7 @@
 # Phase 80 — Global activity feed
 
+> **Status:** ✅ COMPLETE — Phase 80 shipped (the `/activity` screen).
+
 > Wave 3, add-on #6 of the third feature-gap audit (`feature-gap-audit-2026-06-30c`).
 > **Read-only — no migration** (`user_version` stays 2). Living plan doc — decisions,
 > seams, surfaces, verification.

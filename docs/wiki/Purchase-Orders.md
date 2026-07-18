@@ -14,6 +14,33 @@ Raise a PO against a supplier contact and add the items and quantities you're or
 ordered stock is now **on its way** — Gubbins tracks it as **in transit** so you can see what's
 inbound.
 
+## Importing a purchase list
+
+If the list of what you're buying already exists somewhere else — a supplier's basket export, a
+quote, a spreadsheet of parts, or just a list you typed out — you don't have to re-key it. Use
+**Import list** to paste it or upload a file, then choose where it should go:
+
+- **This purchase order** — add the lines to the order you're looking at.
+- **A new purchase order** — name a supplier and Gubbins raises a draft order containing the lines.
+- **The [[Wishlist]]** — for things you're not ordering yet.
+
+Gubbins recognises **CSV / TSV**, **JSON**, a **Markdown** or **HTML** table, or a plain list with
+one thing per line — the format is detected automatically, or you can pick it with **Interpret
+as**. Columns are matched by their headings, so `Description`, `Qty`, `Unit price`, `MPN`,
+`Supplier` and `Link` are all understood however they're capitalised or punctuated. Where a row
+gives only a **line total**, the unit price is worked out from the quantity.
+
+Everything is **previewed before anything is written**, so you can see exactly what will be added.
+
+> **💡 Tip**
+> A plain list works fine — `3x M3 bolts` on its own line becomes a line for three of them. Bullets
+> and numbering are ignored, so you can paste a list straight out of your notes.
+
+> **ℹ️ Note**
+> Lines carrying an **MPN** or a supplier **order code** are matched to items you already track, so
+> receiving them moves the right item's stock. Anything unmatched is still added — just as a plain
+> line with its description.
+
 ## Receiving stock
 
 When a delivery arrives, **receive** it against the PO. Gubbins supports:

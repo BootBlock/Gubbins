@@ -7,7 +7,7 @@
 > silently drop — any deferred item.
 >
 > **This plan builds out the recommendations in the companion research doc**
-> [`ecosystem-integrations_2026-07-03.md`](ecosystem-integrations_2026-07-03.md). Read that
+> [`ecosystem-integrations_2026-07-03.md`](../ecosystem-integrations_2026-07-03.md). Read that
 > first for the *why*; this doc is the *how*, phase by phase.
 >
 > **Continuation-prompt rule (mandatory).** When a phase completes you **must** do **both**
@@ -24,7 +24,9 @@
 > Each kick-off prompt names this doc, the phase to run, and the context a **cold** session
 > needs (it starts with no memory of prior phases beyond what the code and this doc record).
 >
-> **Status:** ✅ **PLAN COMPLETE (2026-07-03).** All seven phases (EI-1 … EI-7) are implemented,
+> **Status:** ✅ COMPLETE (2026-07-03) — all seven phases EI-1 … EI-7 shipped.
+>
+> All seven phases (EI-1 … EI-7) are implemented,
 > `/code-review high`-gated, and merged to `main`. Phase order was **EI-1 → EI-7**; EI-1 (the
 > event model) was a hard prerequisite for EI-2 and EI-6. No further work is scheduled here.
 
@@ -33,7 +35,7 @@
 ## The invariants every phase must honour
 
 These are load-bearing — they are *why* the bridge exists and *why* it is safe. Re-read
-[`../../CLAUDE.md`](../../CLAUDE.md) at the start of every phase.
+[`../../CLAUDE.md`](../../../CLAUDE.md) at the start of every phase.
 
 1. **The PWA never gets a server.** Any "serve to the network" capability lives in the
    **bridge** (`bridge/`), never in the browser bundle or the GitHub-Pages build. The PWA can
@@ -205,7 +207,7 @@ properties, which Node's default strip-only mode rejects) — vitest is unaffect
 **Continuation prompt — emit on completion (starts EI-2):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-2 (iCalendar
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-2 (iCalendar
 subscription feed). EI-1 (event model + webhooks + SSE) is complete and merged. Work in a
 NEW git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-ical -b
 feat/ecosystem-ical HEAD), follow the "How every phase runs" loop and the invariants at the
@@ -295,7 +297,7 @@ spots (calendar-line injection and the scoped-token path-traversal bypass) were 
 **Continuation prompt — emit on completion (starts EI-3):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-3 (migration
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-3 (migration
 importers). EI-1 and EI-2 are complete and merged. Work in a NEW git worktree off local HEAD
 (git worktree add .claude/worktrees/ecosystem-importers -b feat/ecosystem-importers HEAD),
 follow the "How every phase runs" loop and the top-of-doc invariants, gate with /code-review
@@ -384,7 +386,7 @@ cover it), not a regression.
 **Continuation prompt — emit on completion (starts EI-4):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-4 (Web Share Target
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-4 (Web Share Target
 + file/protocol handlers). EI-1 through EI-3 are complete and merged. Work in a NEW git
 worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-share -b
 feat/ecosystem-share HEAD), follow the "How every phase runs" loop and the top-of-doc
@@ -483,7 +485,7 @@ this).
 **Continuation prompt — emit on completion (starts EI-5):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-5 (MQTT publish +
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-5 (MQTT publish +
 Home Assistant MQTT discovery). EI-1 through EI-4 are complete and merged. Work in a NEW git
 worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-mqtt -b
 feat/ecosystem-mqtt HEAD), follow the "How every phase runs" loop and the top-of-doc
@@ -597,7 +599,7 @@ outpaced the EI-1 event model — the `TRACKING_CHANGED` history action and the 
 **Continuation prompt — emit on completion (starts EI-6):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-6 (RSS/Atom/JSON
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-6 (RSS/Atom/JSON
 Feed + Prometheus /metrics). EI-1 through EI-5 are complete and merged. Work in a NEW git
 worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-feeds -b
 feat/ecosystem-feeds HEAD), follow the "How every phase runs" loop and the top-of-doc
@@ -692,7 +694,7 @@ as well as `LF`; `pathAllowsUrlToken` uses `Object.hasOwn` rather than the proto
 **Continuation prompt — emit on completion (starts EI-7):**
 
 ```text
-Read docs/todo/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-7 (documentation
+Read docs/todo/done/ecosystem-integrations-plan_2026-07-03.md and run Phase EI-7 (documentation
 truth-up + ecosystem finalisation). EI-1 through EI-6 are complete and merged. Work in a NEW
 git worktree off local HEAD (git worktree add .claude/worktrees/ecosystem-docs -b
 feat/ecosystem-docs HEAD), follow the "How every phase runs" loop and the top-of-doc
@@ -805,7 +807,7 @@ integrations build-out (EI-1 … EI-7).**
 
 None — **the plan is complete.** All seven phases (EI-1 … EI-7) shipped and merged to `main` on
 2026-07-03. This document is retained as the historical record of the ecosystem build-out; the
-living surface it describes now lives in the code and in [`../../bridge/README.md`](../../bridge/README.md)
-(see its [Permission & security matrix](../../bridge/README.md#permission--security-matrix)),
-[`../../homeassistant/README.md`](../../homeassistant/README.md) and the top-level
-[`../../README.md`](../../README.md).
+living surface it describes now lives in the code and in [`../../bridge/README.md`](../../../bridge/README.md)
+(see its [Permission & security matrix](../../../bridge/README.md#permission--security-matrix)),
+[`../../homeassistant/README.md`](../../../homeassistant/README.md) and the top-level
+[`../../README.md`](../../../README.md).

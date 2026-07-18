@@ -30,6 +30,7 @@ import { CapabilityEditor } from './CapabilityEditor';
 import { CustomFieldsEditor } from './CustomFieldsEditor';
 import { ImageManager } from './ImageManager';
 import { AssetEditor } from './AssetEditor';
+import { GaugeConfigEditor } from './GaugeConfigEditor';
 import { ItemDetailsEditor } from './ItemDetailsEditor';
 import { RarityBadge } from './RarityBadge';
 import { itemRarity } from '../rarity';
@@ -148,6 +149,14 @@ const SECTION_HINT_DETAILS =
   '- **Tracking mode** — *discrete* count, *serialised* individuals, or a *consumable gauge*.\n' +
   '- **MPN & manufacturer, unit cost, weight & dimensions** — the reference and costing details.\n\n' +
   '> Everything else in this dialog hangs off these basics.';
+
+const SECTION_HINT_GAUGE_CONFIG =
+  'What this consumable **is measured in** — the settings the gauge itself is built from.\n\n' +
+  '- **Unit** — `g`, `ml`, `m`… the unit every capacity and remaining amount is shown in.\n' +
+  '- **Full capacity** — how much a brand-new or completely full unit holds.\n' +
+  '- **Tare** — the empty container’s weight, subtracted from a scale reading during a weigh-in.\n\n' +
+  '> Use this to **correct a mistake** or to re-describe the gauge after swapping in a ' +
+  'different-sized spool or bottle. To record how much you’ve *used*, use **Update** instead.';
 
 const SECTION_HINT_LOCATION =
   'Where this item **physically lives** in your storage tree — the room, cabinet, drawer or bin ' +
@@ -300,6 +309,19 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           content: <ItemDetailsEditor item={item} />,
           hint: SECTION_HINT_DETAILS,
         },
+        // What the gauge *is* — its unit, full capacity and tare (issue #69). Only a
+        // consumable gauge has these, and correcting them belongs beside the item's other
+        // identity fields; how full it is right now stays in the Update dialog.
+        ...(item.trackingMode === 'CONSUMABLE_GAUGE'
+          ? [
+              {
+                title: 'Gauge setup',
+                icon: <GaugeIcon />,
+                content: <GaugeConfigEditor item={item} />,
+                hint: SECTION_HINT_GAUGE_CONFIG,
+              },
+            ]
+          : []),
         {
           title: 'Location',
           icon: <LocationOtherIcon />,

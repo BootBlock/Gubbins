@@ -7,6 +7,8 @@ import {
   estimateNote,
   GAUGE_LEVELS,
   percentageRemaining,
+  reconfigureNote,
+  resolveGaugeReconfiguration,
   refillDelta,
   refillNote,
   refillToFullAmount,
@@ -99,5 +101,83 @@ describe('consumable gauge "Estimate" quick-set (issue #95)', () => {
   it('formats the estimate ledger note', () => {
     expect(estimateNote('Half', 50, 500, 'g')).toBe('Estimated Half (~50%, now 500g)');
     expect(estimateNote('Empty', 0, 0, 'g')).toBe('Estimated Empty (~0%, now 0g)');
+  });
+});
+
+describe('gauge reconfiguration (issue #69)', () => {
+  const spool = { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 250, currentNetValue: 800 };
+
+  it('leaves omitted fields exactly as they were', () => {
+    const next = resolveGaugeReconfiguration(spool, { tareWeight: 300 });
+    expect(next.unitOfMeasure).toBe('g');
+    expect(next.grossCapacity).toBe(1000);
+    expect(next.tareWeight).toBe(300);
+  });
+
+  it('reports no change when every field matches the current configuration', () => {
+    expect(resolveGaugeReconfiguration(spool, {}).changed).toBe(false);
+    expect(resolveGaugeReconfiguration(spool, { grossCapacity: 1000, unitOfMeasure: 'g' }).changed).toBe(
+      false,
+    );
+    expect(resolveGaugeReconfiguration(spool, { unitOfMeasure: 'm' }).changed).toBe(true);
+  });
+
+  it('re-taring never moves the material in the gauge', () => {
+    // The tare is what a *scale* subtracts, not part of the contents — issue #69.
+    const next = resolveGaugeReconfiguration(spool, { tareWeight: 400 });
+    expect(next.currentNetValue).toBe(800);
+    expect(next.netValueDelta).toBe(0);
+  });
+
+  it('relabelling the unit never moves the material either', () => {
+    const next = resolveGaugeReconfiguration(spool, { unitOfMeasure: 'm' });
+    expect(next.currentNetValue).toBe(800);
+    expect(next.netValueDelta).toBe(0);
+  });
+
+  it('spills the excess when the new capacity is below the current level', () => {
+    const next = resolveGaugeReconfiguration(spool, { grossCapacity: 600 });
+    expect(next.currentNetValue).toBe(600);
+    expect(next.netValueDelta).toBe(-200);
+  });
+
+  it('growing the capacity leaves the level untouched', () => {
+    const next = resolveGaugeReconfiguration(spool, { grossCapacity: 2000 });
+    expect(next.currentNetValue).toBe(800);
+    expect(next.netValueDelta).toBe(0);
+  });
+
+  it('composes a note naming only the fields that changed', () => {
+    const next = resolveGaugeReconfiguration(spool, { unitOfMeasure: 'm' });
+    expect(reconfigureNote(spool, next)).toBe('Gauge reconfigured: unit g → m');
+  });
+
+  it('spells out the discarded excess in the note', () => {
+    const next = resolveGaugeReconfiguration(spool, { grossCapacity: 600 });
+    expect(reconfigureNote(spool, next)).toBe(
+      'Gauge reconfigured: capacity 1000g → 600g (200g over capacity discarded)',
+    );
+  });
+});
+
+describe('gauge reconfiguration notes label each side with its own unit', () => {
+  const spool = { unitOfMeasure: 'g', grossCapacity: 1000, tareWeight: 250, currentNetValue: 800 };
+
+  it('does not restate the old capacity in the new unit', () => {
+    // The 1000 was grams; calling it "1000m" would put a falsehood in an append-only ledger.
+    const next = resolveGaugeReconfiguration(spool, { unitOfMeasure: 'm', grossCapacity: 600 });
+    expect(reconfigureNote(spool, next)).toBe(
+      'Gauge reconfigured: unit g → m, capacity 1000g → 600m (200m over capacity discarded)',
+    );
+  });
+
+  it('labels a re-tare the same way', () => {
+    const next = resolveGaugeReconfiguration(spool, { unitOfMeasure: 'kg', tareWeight: 300 });
+    expect(reconfigureNote(spool, next)).toBe('Gauge reconfigured: unit g → kg, tare 250g → 300kg');
+  });
+
+  it('says so rather than trailing off when nothing changed', () => {
+    const next = resolveGaugeReconfiguration(spool, {});
+    expect(reconfigureNote(spool, next)).toBe('Gauge reconfigured: no change');
   });
 });

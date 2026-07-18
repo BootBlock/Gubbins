@@ -17,11 +17,11 @@ const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 
 /** A Drive REST failure carrying the HTTP status (401 ⇒ re-auth needed). */
 export class GoogleApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = 'GoogleApiError';
   }
 

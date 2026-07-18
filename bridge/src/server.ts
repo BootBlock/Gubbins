@@ -40,6 +40,7 @@ import { formatMetrics } from './feeds/metrics-format.ts';
 import type { WriteOperation } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { ItemDetailDto } from './api/dto.ts';
+import type { HaClient } from './homeassistant/client.ts';
 
 /** Whole-request timeout: a slow or stuck client is dropped rather than tying up a slot. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -81,6 +82,16 @@ export const API_V1_EVENTS_PATH = `${API_V1_BASE}/events`;
  */
 export interface EventStreamCapability {
   readonly handleConnection: (req: IncomingMessage, res: ServerResponse, url: URL) => void;
+}
+
+/**
+ * The opt-in **Home Assistant read** capability (`GUBBINS_BRIDGE_HA=on`). Its presence is the
+ * runtime gate: when absent, the `/api/v1/scale/*` endpoints are a `404` (the feature is
+ * invisible). Unlike every other capability here it reads from *outside* the snapshot — it calls
+ * Home Assistant — so it needs no `BridgeServerState` and works before a snapshot has loaded.
+ */
+export interface ScaleCapability {
+  readonly client: HaClient;
 }
 
 /** A parsed request body: a successfully-parsed JSON value, or a marker that parsing failed. */
@@ -125,6 +136,11 @@ export interface BridgeServerOptions {
    * then unavailable). Read-only — it never mutates inventory.
    */
   readonly events?: EventStreamCapability;
+  /**
+   * The opt-in Home Assistant read capability (`GUBBINS_BRIDGE_HA=on`). Omit to keep the
+   * `/api/v1/scale/*` endpoints a `404` (the scale reading is then unavailable to the PWA).
+   */
+  readonly scale?: ScaleCapability;
 }
 
 /**
@@ -233,6 +249,7 @@ export async function handleRequest(
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
+        scale: options.scale,
         body,
       });
       return;
@@ -256,6 +273,7 @@ export async function handleRequest(
         write: options.write,
         push: options.push,
         streamable: options.events !== undefined,
+        scale: options.scale,
       });
       return;
     }

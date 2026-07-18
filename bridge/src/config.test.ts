@@ -36,7 +36,41 @@ describe('loadConfig (HA-3)', () => {
       mqttClientId: 'gubbins-bridge',
       mqttDiscovery: false,
       mqttDiscoveryPrefix: 'homeassistant',
+      homeAssistant: false,
+      homeAssistantUrl: undefined,
+      homeAssistantToken: undefined,
     });
+  });
+
+  it('keeps Home Assistant reads off by default and opts in with a URL + token', () => {
+    expect(loadConfig(VALID).homeAssistant).toBe(false);
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_HA: 'on',
+      GUBBINS_BRIDGE_HA_URL: 'http://ha.test:8123/',
+      GUBBINS_BRIDGE_HA_TOKEN: '<placeholder-ha-token>',
+    });
+    expect(config.homeAssistant).toBe(true);
+    expect(config.homeAssistantUrl).toBe('http://ha.test:8123/');
+    expect(config.homeAssistantToken).toBe('<placeholder-ha-token>');
+  });
+
+  it('refuses to start with Home Assistant on but its URL or token missing', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_HA: 'on' })).toThrow(/GUBBINS_BRIDGE_HA_URL/);
+    expect(() =>
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_HA: 'on', GUBBINS_BRIDGE_HA_URL: 'http://ha.test:8123' }),
+    ).toThrow(/GUBBINS_BRIDGE_HA_TOKEN/);
+  });
+
+  it('rejects a Home Assistant URL that is not http(s)', () => {
+    expect(() =>
+      loadConfig({
+        ...VALID,
+        GUBBINS_BRIDGE_HA: 'on',
+        GUBBINS_BRIDGE_HA_URL: 'ha.test:8123',
+        GUBBINS_BRIDGE_HA_TOKEN: '<placeholder-ha-token>',
+      }),
+    ).toThrow(/http:\/\/ or https:\/\//);
   });
 
   it('keeps events + webhooks off by default and opts in explicitly', () => {

@@ -37,9 +37,9 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >
 > The Home Assistant custom integration that consumes the read surface lives in
 > [`../homeassistant/`](../homeassistant/README.md). The original HA build plan is
-> [`docs/todo/home-assistant_2026-06-29.md`](../docs/todo/home-assistant_2026-06-29.md); the
+> [`docs/todo/done/home-assistant_2026-06-29.md`](../docs/todo/done/home-assistant_2026-06-29.md); the
 > ecosystem build-out (events, calendar, importers, share target, MQTT, feeds/metrics) is
-> [`docs/todo/ecosystem-integrations-plan_2026-07-03.md`](../docs/todo/ecosystem-integrations-plan_2026-07-03.md).
+> [`docs/todo/done/ecosystem-integrations-plan_2026-07-03.md`](../docs/todo/done/ecosystem-integrations-plan_2026-07-03.md).
 
 ---
 
@@ -882,6 +882,72 @@ persistence re-learns it).
 mosquitto_sub -h 127.0.0.1 -t 'gubbins/#' -v
 ```
 
+## Home Assistant reads (opt-in)
+
+Everything else here flows *outward* — Gubbins publishes inventory state to Home Assistant. This
+is the one capability that flows the other way: it lets the app's **"Count by weight"** screen read
+a live weight off a Home Assistant **scale entity**, instead of you reading the scale and typing
+the figure in.
+
+**Off by default.** With `GUBBINS_BRIDGE_HA` unset, `/api/v1/scale/*` is a `404` and the app shows
+no scale controls at all — manual entry is, and remains, the default path.
+
+### Why the bridge, and not the app directly
+
+The app is served over **HTTPS**, and a browser on an HTTPS page cannot fetch a plain-`http` Home
+Assistant on your LAN — mixed content is hard-blocked. The bridge runs on the same network as Home
+Assistant and has no such restriction. Routing it this way also keeps your Home Assistant
+long-lived token in this git-ignored `.env`, alongside every other bridge secret, rather than in
+browser storage — the app never sees it, only the resulting weight.
+
+### Enabling it
+
+```bash
+GUBBINS_BRIDGE_HA=on
+GUBBINS_BRIDGE_HA_URL=http://homeassistant.local:8123
+GUBBINS_BRIDGE_HA_TOKEN=<YOUR_HOME_ASSISTANT_TOKEN>
+```
+
+Create the token in Home Assistant under **Profile → Security → Long-lived access tokens**.
+
+> **Read-only, outbound-only.** The bridge is an HTTP *client* here — it opens no extra port. It
+> calls exactly two Home Assistant endpoints (list states, read one state) and **cannot call a
+> service**, so this path can never switch, unlock or actuate anything in your home.
+
+### Endpoints
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/v1/scale/entities` | `{ entities: [{ entityId, name, unit }] }` — every entity reporting a convertible mass unit, for the app's scale picker. |
+| `GET /api/v1/scale/state?entity_id=…` | `{ entityId, grams, value, unit, lastUpdated }` — the current reading, reconciled to canonical **grams**. |
+
+Both use the same bearer token and rate limit as every other endpoint, and both answer before a
+snapshot has loaded (they read Home Assistant, not your inventory).
+
+### Units, and why an unknown one is refused
+
+Gubbins stores mass canonically in grams; a scale entity reports whatever unit its integration
+chose. The bridge converts `mg`, `g`, `kg`, `oz`, `lb` and `st` — and **rejects anything else with
+a `409` rather than assuming**. That strictness is deliberate: a mis-read unit would not produce a
+slightly-wrong number, it would multiply the resulting stock count by a factor of a thousand.
+
+A reading that can't be used is likewise a `409`, never a `200` with a zero weight:
+
+| Code | Meaning |
+| --- | --- |
+| `scale_unavailable` | The scale is off, asleep, or its integration has lost the connection. |
+| `scale_unsupported_unit` | The sensor reports a unit that cannot be converted to grams. |
+| `scale_not_a_number` | That entity doesn't report a numeric weight (it probably isn't a scale). |
+| `home_assistant_unreachable` / `home_assistant_unauthorised` | The bridge couldn't reach Home Assistant, or the token was rejected. |
+
+### Using it in the app
+
+In Gubbins, open an item → **Count by weight**. When a bridge with this capability is configured
+(Settings → the same bridge URL and token used for "push to bridge"), the dialog gains a **scale
+picker** and a **Read the scale** button; the reading lands in the "Weight on scale" field, in
+your chosen weight unit, and everything after that — the tare, the count, the confidence band —
+works exactly as it does for a typed figure.
+
 ## Permission & security matrix
 
 This is the **single authoritative list** of what the bridge can do and how you turn each
@@ -917,6 +983,7 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). | outbound (push) | No — an event never mutates inventory. | Per-target HMAC signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `.env` only. |
 | `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
 | `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`). | outbound (push) | No. | None new (uses the MQTT connection above). |
+| `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
 
 Notes that apply across the table:

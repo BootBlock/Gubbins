@@ -1,5 +1,7 @@
 # Phase 78 — Time-based asset booking / reservations
 
+> **Status:** ✅ COMPLETE — Phase 78 shipped (the `/bookings` screen).
+
 > Wave 2, candidate #2 of the third feature-gap audit (`feature-gap-audit-2026-06-30c`).
 > The wave's **one** migration: `user_version` 1 → **2** (new synced `asset_bookings` table).
 > Living plan doc — decisions, seams, surfaces, verification.

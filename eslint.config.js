@@ -47,6 +47,43 @@ export default tseslint.config(
     },
   },
 
+  // Strip-only TypeScript: the bridge runs the app's `.ts` directly under Node's built-in
+  // type-stripping loader (no build step), which erases type syntax but never *generates*
+  // code. Constructor parameter properties, `enum` and `namespace` all need generated code,
+  // so Node rejects them at import time with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` — while
+  // `tsc` and esbuild both accept them happily. The boot-smoke (`npm run smoke:bridge`)
+  // catches this, but only after the fact; this rule makes it an editor squiggle instead.
+  //
+  // It applies to `src/**` as well as `bridge/**` because the constraint follows the
+  // bridge's *import graph*, which reaches deep into the app source (much of `src/db`, the
+  // search modules, backup/snapshot). That graph shifts as imports change, so scoping the
+  // rule to today's reachable set would silently rot; a uniform ban costs a plain field
+  // assignment at the handful of call sites and can never be tripped by accident.
+  {
+    files: ['src/**/*.{ts,tsx}', 'bridge/**/*.ts'],
+    ignores: ['**/*.test.{ts,tsx}', 'src/test/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSParameterProperty',
+          message:
+            "Constructor parameter properties can't run under Node's strip-only TypeScript loader (the bridge imports this graph). Declare the field explicitly and assign it in the constructor body.",
+        },
+        {
+          selector: 'TSEnumDeclaration',
+          message:
+            "`enum` can't run under Node's strip-only TypeScript loader (the bridge imports this graph). Use a `const` object with `as const` plus a derived union type.",
+        },
+        // NOTE: the third strip-hostile construct, `namespace` / `module` blocks, needs no
+        // selector here — `@typescript-eslint/no-namespace` (already an error via the
+        // recommended preset) bans exactly the value-producing forms and already permits
+        // ambient `declare module`/`.d.ts` type space, which strips fine. Adding one here
+        // only produced a second error on the same line.
+      ],
+    },
+  },
+
   // Ambient declaration files legitimately use triple-slash references.
   {
     files: ['**/*.d.ts'],

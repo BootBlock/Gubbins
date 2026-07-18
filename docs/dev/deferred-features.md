@@ -1527,7 +1527,7 @@ fixed QR-plus-name sheets (Phase 49). Now a customisable, device-local **label t
 the symbology (QR / **Code 128 barcode** / both / none), the text fields shown, and the columns;
 **location labels** are printable from the sidebar and **scannable** (a location deep-link the
 in-app scanner recognises and selects). Living plan + full detail:
-`docs/todo/label-customisation_2026-06-30.md`.
+`docs/todo/done/label-customisation_2026-06-30.md`.
 
 - New pure `src/features/inventory/labels/` core: hand-rolled dependency-free **Code 128 encoder**
   (`code128.ts`, §2.4.3 — the app already decodes Code 128, so prints round-trip), `label-template.ts`
@@ -1563,7 +1563,7 @@ The second feature-gap audit's final candidate (#6, advanced analytics) landed, 
 `feature-gap-audit-2026-06-30b` candidate list entirely**. The Phase-61 read-only `ReportRepository`
 and the Reports screen gained four analytics, all projections over data already stored —
 **no schema change, `user_version` stays 1**. Living plan + full detail:
-`docs/todo/advanced-analytics_2026-06-30.md`.
+`docs/todo/done/advanced-analytics_2026-06-30.md`.
 
 - New pure, unit-tested seams under `src/features/reports/`: `abc-analysis.ts` (Pareto by annual
   consumption value; 0.8/0.95 cumulative cutoffs; top priced item anchors the A "vital few"),
@@ -1610,7 +1610,7 @@ reorder-now — is now folded into ONE chronological agenda at `/upcoming`, buck
 **Overdue / Today / This week / This month / Later**, each event tagged by kind with a
 jump-to-source link and a kind filter. Previously these were scattered across the alert centre
 and dashboard widgets with no single time-ordered view. **Read-only — no schema change,
-`user_version` stays 1.** Living plan: `docs/todo/calendar_2026-06-30.md`.
+`user_version` stays 1.** Living plan: `docs/todo/done/calendar_2026-06-30.md`.
 
 - New pure, unit-tested seam `src/features/calendar/agenda.ts` (+17 tests): `buildAgenda` lane
   builders, `startOfLocalDay`-anchored date bucketing (`bucketForDueAt`/`bucketAgenda`,
@@ -1646,7 +1646,7 @@ and dashboard widgets with no single time-ordered view. **Read-only — no schem
 (merge `bfd0d2a`; features `c770378` + review-fix `438ab7a`; pushed). The inventory multi-select
 already drove label printing and the scanner move-all; this adds **field bulk-edit** and **item
 duplication**. **~No schema change** — every write reuses an existing repository method, so
-`user_version` stays **1**. Living plan: `docs/todo/bulk-edit_2026-06-30.md`.
+`user_version` stays **1**. Living plan: `docs/todo/done/bulk-edit_2026-06-30.md`.
 
 - **Bulk edit** — set category / location / condition / active-state / tags (add **or** replace)
   across every selected item from the selection bar. Pure seam `bulk-edit.ts` (+12 tests): a
@@ -1684,7 +1684,7 @@ duplication**. **~No schema change** — every write reuses an existing reposito
 MERGED** (merge `5bf2f7c`; feature `e9c6678` + review-fix `63d1764`; pushed). A read-only "tidy
 up" checklist on the Reports screen, surfacing records needing attention with jump-to-fix links.
 Extends the Phase-61/74 `ReportRepository` + Reports screen. **No schema change — `user_version`
-stays 1.** Living plan: `docs/todo/data-hygiene_2026-06-30.md`.
+stays 1.** Living plan: `docs/todo/done/data-hygiene_2026-06-30.md`.
 
 - Checks (active, non-parent items): missing category / real location / price / photo; never
   cycle-counted (no `RECONCILED` ledger entry); stale (no activity for ≥180 days, inclusive);
@@ -1758,7 +1758,7 @@ cleanly, **no wipe**, unlike the Phase-69 squash). Merged `c86e24d` & pushed; re
 - **Review nits applied:** removed a dead `excludeId` overlap param; replaced a per-render
   `useMemo` (never cached) with a direct bounded fold.
 
-Living plan: `docs/todo/asset-booking_2026-06-30.md`. Tracked in `feature-gap-audit-2026-06-30c`.
+Living plan: `docs/todo/done/asset-booking_2026-06-30.md`. Tracked in `feature-gap-audit-2026-06-30c`.
 
 ---
 
@@ -1788,7 +1788,7 @@ Wave 2, candidate #5 (the last). **Read-only — NO migration (`user_version` st
   wired through the 5 Export-Wizard touchpoints.
 - tsc clean · **1818 unit tests** (156 files, +9 over Phase 78) · build green.
 
-Living plan: `docs/todo/spend-analytics_2026-06-30.md`.
+Living plan: `docs/todo/done/spend-analytics_2026-06-30.md`.
 
 ---
 
@@ -1830,7 +1830,7 @@ gate (both PASS). Tracked in the `feature-gap-audit-2026-06-30c` auto-memory.
 - Review gate: PASS after one fix (the no-kinds-enabled BLOCKER above). tsc clean · **1833 unit
   tests** (158 files, +15 over Phase 79) · build green.
 
-Living plan: `docs/todo/activity-feed_2026-06-30.md`.
+Living plan: `docs/todo/done/activity-feed_2026-06-30.md`.
 
 ### Phase 81 — Supplier price-history tracking (Wave 3 add-on #7) — MERGED (`6699a7b`)
 
@@ -1860,7 +1860,7 @@ Living plan: `docs/todo/activity-feed_2026-06-30.md`.
 - Review gate: **PASS, clean** (no blockers; only documented NITs needing no change). tsc clean ·
   **1859 unit tests** (161 files, +26 over Phase 80) · build green.
 
-Living plan: `docs/todo/supplier-price-history_2026-06-30.md`.
+Living plan: `docs/todo/done/supplier-price-history_2026-06-30.md`.
 
 ---
 

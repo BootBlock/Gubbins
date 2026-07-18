@@ -158,7 +158,7 @@ Every place a hidden feature must disappear from. Each is wired in the phase not
 ## 4. Phases
 
 Each phase leaves the app compiling, type-clean and green. **After each:** `/code-review high` →
-fix findings → `tsc -b` + `vitest run` (see §5 for running tests inside the worktree) →
+fix findings → `npm run type-check` + `vitest run` (see §5 for running tests inside the worktree) →
 continuation prompt for the next phase.
 
 ### Phase 1 — Foundation (registry + store + pure engine)

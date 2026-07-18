@@ -1,5 +1,7 @@
 # Opening the Gubbins ecosystem — integration feasibility (2026-07-03)
 
+> **Status:** 📘 REFERENCE — research/feasibility survey, not a build plan; kept for its verdicts.
+
 > **Research / feasibility doc**, not a build plan. It answers the user ask:
 > *"There's a Home Assistant bridge and an MCP server — what other services or features
 > can we add that open the Gubbins ecosystem to other applications, tools, and services?
@@ -10,7 +12,7 @@
 > the existing seams, gives a **verdict** (recommend / defer / decline) with a rough
 > ordering, and records what to explicitly *not* build. No code is written here. Where an
 > item graduates to a real feature it gets its own phased plan doc, mirroring
-> [`home-assistant_2026-06-29.md`](home-assistant_2026-06-29.md).
+> [`home-assistant_2026-06-29.md`](done/home-assistant_2026-06-29.md).
 
 ## TL;DR — the recommendation
 
@@ -372,4 +374,4 @@ leverage-per-effort:
 
 No continuation prompt — this is a survey, not a phased build. When an item is picked up,
 spin it into its own `docs/todo/<name>_<date>.md` plan (mirroring
-[`home-assistant_2026-06-29.md`](home-assistant_2026-06-29.md)) and start at Phase 1.
+[`home-assistant_2026-06-29.md`](done/home-assistant_2026-06-29.md)) and start at Phase 1.
