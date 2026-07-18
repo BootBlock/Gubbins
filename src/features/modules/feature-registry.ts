@@ -42,6 +42,7 @@ import {
   TagsIcon,
   VariantIcon,
   WarrantyIcon,
+  WebhookIcon,
 } from '@/components/icons';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
 
@@ -86,6 +87,7 @@ export type FeatureId =
   | 'alerts'
   | 'sync'
   | 'home-assistant'
+  | 'webhooks'
   // Optional capabilities (cross-cutting sub-features).
   | 'maintenance'
   | 'warranty'
@@ -400,6 +402,15 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     Icon: CloudIcon,
     group: 'integrations',
     route: '/sync',
+  },
+  webhooks: {
+    id: 'webhooks',
+    kind: 'page',
+    label: 'Webhooks',
+    description: 'Call a URL of your choosing when something changes. Delivered by the bridge.',
+    Icon: WebhookIcon,
+    group: 'integrations',
+    route: '/webhooks',
   },
   'home-assistant': {
     id: 'home-assistant',

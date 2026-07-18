@@ -41,7 +41,9 @@ import type { WriteOperation } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { ItemDetailDto } from './api/dto.ts';
 import type { HaClient } from './homeassistant/client.ts';
-import type { WebhookDeliveryLog } from './events/webhook-log.ts';
+import type { WebhookDeliveryLog, WebhookDeliveryRecord } from './events/webhook-log.ts';
+import type { WebhookDeliveryTarget, WebhookSecrets } from './events/webhook-targets.ts';
+import type { BridgeEvent } from './events/model.ts';
 
 /** Whole-request timeout: a slow or stuck client is dropped rather than tying up a slot. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -97,6 +99,35 @@ export interface ScaleCapability {
    * composition-root concern, and nothing reachable over HTTP should be able to trigger it.
    */
   readonly client: Pick<HaClient, 'listScaleEntities' | 'readScale'>;
+}
+
+/**
+ * The opt-in **webhook test-fire** capability (`GUBBINS_BRIDGE_WEBHOOKS=on`), backing
+ * `POST /api/v1/webhooks/test` (webhooks plan §5.5). Its presence is the runtime gate: when absent
+ * that path is a `404`, like every other opt-in capability.
+ *
+ * Gated on webhooks alone and **not** on `GUBBINS_BRIDGE_ALLOW_WRITES` — a test fire mutates no
+ * inventory. It is, however, a request-forgery primitive held back only by the bearer token, which
+ * is exactly why {@link deliver} must run the real deliverer (and therefore the real SSRF guard)
+ * rather than issuing a request of its own.
+ */
+export interface WebhookTestCapability {
+  /**
+   * The named bridge-side secrets a subscription's `secret_ref` resolves against. Held here so the
+   * endpoint resolves a target through the same shared mapping the delivery path uses; the values
+   * themselves never leave the bridge.
+   */
+  readonly secrets: WebhookSecrets;
+  /**
+   * Deliver one event to exactly one target through the real delivery path, resolving **after** the
+   * delivery has finished (delivery is otherwise fire-and-forget). Returns the delivery-log record
+   * that was written, or `null` when the matcher excluded the event and nothing was sent.
+   */
+  readonly deliver: (
+    target: WebhookDeliveryTarget,
+    event: BridgeEvent,
+    driver: IDatabaseDriver,
+  ) => Promise<WebhookDeliveryRecord | null>;
 }
 
 /** A parsed request body: a successfully-parsed JSON value, or a marker that parsing failed. */
@@ -159,6 +190,11 @@ export interface BridgeServerOptions {
    * over HTTP is the only way the app can see what its subscriptions did (webhooks plan §3.1).
    */
   readonly webhookDeliveries?: WebhookDeliveryLog;
+  /**
+   * The opt-in webhook test-fire capability (`GUBBINS_BRIDGE_WEBHOOKS=on`), served at
+   * `POST /api/v1/webhooks/test`. Omit to keep that path a `404`.
+   */
+  readonly webhookTest?: WebhookTestCapability;
 }
 
 /**
@@ -218,7 +254,7 @@ export async function handleRequest(
   const v1 = isApiV1Path(url.pathname);
   // Allow GET everywhere; POST only for the versioned write/ingest endpoints (and only when one
   // of those opt-ins is enabled). Anything else is a 405.
-  const allow = options.write || options.push ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
+  const allow = options.write || options.push || options.webhookTest ? 'GET, POST, OPTIONS' : 'GET, OPTIONS';
 
   // CORS: the bridge authenticates with a bearer token (never a cookie), so the token itself
   // — not the browser's same-origin policy — is the security boundary; a permissive origin is
@@ -305,6 +341,8 @@ export async function handleRequest(
         push: options.push,
         streamable: options.events !== undefined,
         scale: options.scale,
+        webhookDeliveries: options.webhookDeliveries,
+        webhookTest: options.webhookTest,
         body,
       });
       return;

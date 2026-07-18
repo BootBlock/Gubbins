@@ -157,6 +157,7 @@ const NAV_TOOLTIP_KEYS: Record<
   '/activity': 'dashboard.nav.tooltip.activity',
   '/alerts': 'dashboard.nav.tooltip.alerts',
   '/sync': 'dashboard.nav.tooltip.sync',
+  '/webhooks': 'dashboard.nav.tooltip.webhooks',
   '/home-assistant': 'dashboard.nav.tooltip.homeAssistant',
   '/settings': 'dashboard.nav.tooltip.settings',
   '/about': 'dashboard.nav.tooltip.about',

@@ -27,6 +27,7 @@ import {
   LightThemeIcon,
   LowStockIcon,
   ModulesIcon,
+  WebhookIcon,
   NotificationIcon,
   PackageIcon,
   QrCodeIcon,
@@ -1362,6 +1363,25 @@ export default function SettingsDialog({
             >
               <ModulesIcon />
               Manage modules
+            </Link>
+          </SettingRow>
+          <SettingRow
+            noWrap
+            label="Webhooks"
+            description="Call a URL of your choosing when something changes in your inventory. Delivery is handled by the bridge."
+            hint={
+              'Opens the **Webhooks** screen: subscribe a URL to events (an item created, stock adjusted, something moved), narrow it with filters, and choose what the payload looks like.\n\n' +
+              'Webhooks are **delivered by the bridge**, not by the app itself — a browser cannot reliably reach the endpoints people actually own. Subscriptions reach the bridge on the next sync. Opening this leaves Settings.'
+            }
+          >
+            <Link
+              to="/webhooks"
+              data-testid="open-webhooks-settings"
+              onClick={onClose}
+              className={cn(buttonVariants({ variant: 'outline' }))}
+            >
+              <WebhookIcon />
+              Webhooks
             </Link>
           </SettingRow>
           <SettingRow

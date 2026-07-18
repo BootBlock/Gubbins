@@ -202,6 +202,8 @@ export {
   // External data scraping via extension (Phase 8, §4, §9)
   DownloadCloud as ScrapeIcon,
   Puzzle as ExtensionIcon,
+  // Outbound webhook subscriptions, delivered by the bridge (issue #87)
+  Webhook as WebhookIcon,
   Globe as SupplierIcon,
   // Folding one dictionary entry into another (suppliers, issue #384).
   Merge as MergeIcon,
