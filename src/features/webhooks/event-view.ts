@@ -1,6 +1,6 @@
 /**
  * The **event view** — the allow-list itself (webhooks plan `W3`; see
- * `docs/todo/webhooks_2026-07-18.md` §5.2/§5.3).
+ * `docs/todo/done/webhooks_2026-07-18.md` §5.2/§5.3).
  *
  * The matcher and the template engine both need to read facts out of an event: "which location
  * is this item in?", "what goes in `{{item.name}}`?". Two constraints shape how they get them.

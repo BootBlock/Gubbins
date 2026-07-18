@@ -1,6 +1,6 @@
 /**
  * The PWA's transport to the bridge's webhook endpoints (webhooks plan `W7`; see
- * `docs/todo/webhooks_2026-07-18.md` §3.1, §5.5).
+ * `docs/todo/done/webhooks_2026-07-18.md` §3.1, §5.5).
  *
  * The app configures subscriptions but never delivers them — the bridge does (§1). That leaves the
  * app two things it still needs to ask the bridge directly, because neither can ride the synced

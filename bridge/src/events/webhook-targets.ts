@@ -1,6 +1,6 @@
 /**
  * Webhook **delivery targets** — the merged target model and where targets come from
- * (webhooks plan `W5`; see `docs/todo/webhooks_2026-07-18.md` §3.1, §6.1).
+ * (webhooks plan `W5`; see `docs/todo/done/webhooks_2026-07-18.md` §3.1, §6.1).
  *
  * Two sources feed one list:
  *

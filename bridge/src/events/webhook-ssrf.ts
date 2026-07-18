@@ -1,6 +1,6 @@
 /**
  * SSRF guard for outbound webhook delivery (webhooks plan `W5`; see
- * `docs/todo/webhooks_2026-07-18.md` §6.2).
+ * `docs/todo/done/webhooks_2026-07-18.md` §6.2).
  *
  * A webhook URL is user-supplied, and the bridge is the one thing in the system that sits **on the
  * LAN** and can reach what the browser cannot — the router's admin page, a printer, a Kubernetes

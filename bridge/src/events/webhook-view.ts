@@ -1,6 +1,6 @@
 /**
  * The `BridgeEvent` → `WebhookEventView` adapter (webhooks plan `W5`; see
- * `docs/todo/webhooks_2026-07-18.md` §7).
+ * `docs/todo/done/webhooks_2026-07-18.md` §7).
  *
  * `W3` shipped the matcher, the filter evaluator and the template engine as pure modules in `src/`,
  * all written against one closed projection — {@link WebhookEventView}. This module is the seam
