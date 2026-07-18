@@ -19,9 +19,15 @@
  *
  * All device access is feature-detected and guarded so unsupported environments
  * degrade gracefully rather than throwing.
+ *
+ * **Lab flag** (`/lab`, hidden testing screen): `no-camera` makes the permission-request
+ * effect skip `getUserMedia` entirely and dispatch the same `STREAM_ERROR` a genuinely
+ * camera-less device would, so the fallback/manual-entry UI can be checked on a machine
+ * that has a working camera.
  */
 import { useCallback, useEffect, useRef, type Dispatch, type RefObject } from 'react';
 import type { ScannerAction, ScannerStatus } from './scanner-machine';
+import { useLabFlag } from '@/state/stores/useLabStore';
 import { createDecoder, type FrameDecoder, type ScannerEngine } from './barcode-decoder';
 import { DEFAULT_SCANNER_SYMBOLOGY, type ScannerSymbology } from './scanner-formats';
 import { initialCadence, nextCadence, DEFAULT_WASM_CADENCE } from './decode-cadence';
@@ -74,6 +80,7 @@ export function useScanner({
   const computeRoi = useRef((source: HTMLVideoElement) =>
     elementRoiOf(source, roiRefRef.current?.current ?? null),
   ).current;
+  const noCamera = useLabFlag('no-camera');
 
   const stopStream = useCallback(() => {
     if (rafRef.current !== null) {
@@ -89,6 +96,12 @@ export function useScanner({
   useEffect(() => {
     if (status !== 'REQUESTING_PERMISSIONS') return;
     let cancelled = false;
+    // Pretend the device has no usable camera (lab flag) — take the same path a genuinely
+    // camera-less browser would, without ever calling getUserMedia.
+    if (noCamera) {
+      dispatch({ type: 'STREAM_ERROR', message: 'This device has no camera support.' });
+      return;
+    }
     const media = navigator.mediaDevices?.getUserMedia;
     if (!media) {
       dispatch({ type: 'STREAM_ERROR', message: 'This device has no camera support.' });
@@ -134,7 +147,7 @@ export function useScanner({
     return () => {
       cancelled = true;
     };
-  }, [status, dispatch, videoRef]);
+  }, [status, dispatch, videoRef, noCamera]);
 
   // Run the barcode-decode polling loop while the stream is active. The decoder is
   // resolved once (native → lazy WASM → none) and cached; the WASM path runs on an

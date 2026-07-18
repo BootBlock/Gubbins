@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { LARGE_FORMAT_QUERY } from '@/lib/env/device';
+import { useLabFlag } from '@/state/stores/useLabStore';
 import { defaultMediaQueryProvider, type MediaQueryProvider } from './useReducedMotion';
 
 /**
@@ -49,7 +50,13 @@ export function useMediaQuery(
  * `true` on a large-format touch device (tablet / unfolded foldable), updating live as
  * the device folds/unfolds or rotates. The declarative `large-format:` Tailwind variant
  * is preferred for pure styling; use this hook only for structural changes.
+ *
+ * The `force-large-format` lab flag (`/lab`, hidden testing screen) forces this to `true`
+ * regardless of the real query, so the tablet layout can be checked on a desktop — a large
+ * window with a fine (mouse) pointer can otherwise never match {@link LARGE_FORMAT_QUERY}.
  */
 export function useLargeFormat(provider: MediaQueryProvider = defaultMediaQueryProvider): boolean {
-  return useMediaQuery(LARGE_FORMAT_QUERY, provider);
+  const matches = useMediaQuery(LARGE_FORMAT_QUERY, provider);
+  const forced = useLabFlag('force-large-format');
+  return forced || matches;
 }

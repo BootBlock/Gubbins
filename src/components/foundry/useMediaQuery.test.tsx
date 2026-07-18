@@ -2,9 +2,15 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
 import { useMediaQuery, useLargeFormat } from './useMediaQuery';
 import { LARGE_FORMAT_QUERY } from '@/lib/env/device';
+import { useLabStore } from '@/state/stores/useLabStore';
 import type { MediaQueryLike, MediaQueryProvider } from './useReducedMotion';
 
-afterEach(cleanup);
+const CLEAN_LAB = { flags: {} } as const;
+
+afterEach(() => {
+  cleanup();
+  useLabStore.setState(CLEAN_LAB);
+});
 
 /** A controllable fake MediaQueryList that can flip `matches` and notify listeners. */
 class FakeMedia implements MediaQueryLike {
@@ -73,5 +79,25 @@ describe('useLargeFormat', () => {
   it('is false on a standard device', () => {
     const { result } = renderHook(() => useLargeFormat(provideMedia(new FakeMedia(false))));
     expect(result.current).toBe(false);
+  });
+
+  describe('force-large-format lab flag (`/lab`, hidden testing screen)', () => {
+    it('forces true on a standard (small/fine-pointer) device when the flag is on', () => {
+      useLabStore.setState({ flags: { 'force-large-format': true } });
+      const { result } = renderHook(() => useLargeFormat(provideMedia(new FakeMedia(false))));
+      expect(result.current).toBe(true);
+    });
+
+    it('leaves a genuinely large-format device true when the flag is on', () => {
+      useLabStore.setState({ flags: { 'force-large-format': true } });
+      const { result } = renderHook(() => useLargeFormat(provideMedia(new FakeMedia(true))));
+      expect(result.current).toBe(true);
+    });
+
+    it('does not affect the real query result when the flag is off (byte-identical baseline)', () => {
+      useLabStore.setState({ flags: { 'force-large-format': false } });
+      const { result } = renderHook(() => useLargeFormat(provideMedia(new FakeMedia(false))));
+      expect(result.current).toBe(false);
+    });
   });
 });
