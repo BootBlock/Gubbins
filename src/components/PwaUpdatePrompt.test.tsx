@@ -3,6 +3,7 @@ import { render, screen, act, cleanup, fireEvent } from '@testing-library/react'
 import { PwaUpdatePrompt } from './PwaUpdatePrompt';
 import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnoozeStore';
 import type { DeployedVersion, PwaUpdateApi, PwaUpdateHandlers } from '@/components/foundry/usePwaUpdate';
+import { APP_SCHEMA_VERSION } from '@/lib/app-version';
 
 beforeEach(() => {
   // The persist store is a module-level singleton — reset it (and its backing storage)
@@ -152,14 +153,16 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
   describe('data-safety check (issue #74)', () => {
     it('reassures when the incoming build keeps the same schema', async () => {
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: 1 });
+      // Relative to the *running* schema version, never a hard-coded number — this constant
+      // is meant to change whenever the schema does, and the assertion is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       expect(screen.getByTestId('pwa-update-prompt').textContent).toContain('stays intact');
     });
 
     it('warns that data will be reset when the incoming build changes schema', async () => {
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: 2 });
+      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION + 1 });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       const prompt = screen.getByTestId('pwa-update-prompt');
@@ -181,7 +184,9 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
   describe('skip this version (issue #74)', () => {
     it('hides the prompt and records the skipped version', async () => {
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: 1 });
+      // Relative to the *running* schema version, never a hard-coded number — this constant
+      // is meant to change whenever the schema does, and the assertion is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
 
@@ -194,7 +199,9 @@ describe('PwaUpdatePrompt (spec §2 PWA update — no surprise reload)', () => {
 
     it('stays hidden when the same skipped version re-announces after a reload', async () => {
       usePwaUpdateSnoozeStore.setState({ skippedVersion: '0.2.0' });
-      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: 1 });
+      // Relative to the *running* schema version, never a hard-coded number — this constant
+      // is meant to change whenever the schema does, and the assertion is about sameness.
+      const fake = makeFakeApi({ version: '0.2.0', schemaVersion: APP_SCHEMA_VERSION });
       render(<PwaUpdatePrompt api={fake.api} />);
       await emitAndSettle(fake);
       expect(screen.queryByTestId('pwa-update-prompt')).toBeNull();
