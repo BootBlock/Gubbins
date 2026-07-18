@@ -142,8 +142,8 @@ describe('EditLocationDialog — the field surface', () => {
     // The nested editors that persist on their own (tags, inheritable custom fields).
     expect(d.getByText('Tags (optional)')).toBeInTheDocument();
 
-    // Footer actions.
-    expect(d.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    // Footer actions. Nothing has been edited yet, so the dismiss action reads "Close".
+    expect(d.getByTestId('edit-location-dismiss')).toHaveTextContent('Close');
     expect(d.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
   });
 
@@ -422,6 +422,19 @@ describe('EditLocationDialog — saving', () => {
 });
 
 describe('EditLocationDialog — closing and deleting', () => {
+  it('names the dismiss action for what it actually does', () => {
+    renderDialog();
+    // Untouched: nothing would be lost, so offering to "Cancel" would imply otherwise.
+    expect(dialog().getByTestId('edit-location-dismiss')).toHaveTextContent('Close');
+
+    fireEvent.change(dialog().getByLabelText('Name'), { target: { value: 'Cabinet B' } });
+    expect(dialog().getByTestId('edit-location-dismiss')).toHaveTextContent('Cancel');
+
+    // Reverting the edit puts it back — the label tracks the dirty state, it does not latch.
+    fireEvent.change(dialog().getByLabelText('Name'), { target: { value: 'Cabinet A' } });
+    expect(dialog().getByTestId('edit-location-dismiss')).toHaveTextContent('Close');
+  });
+
   it('Cancel closes without saving', () => {
     const { onClose } = renderDialog();
     fireEvent.change(dialog().getByLabelText('Name'), { target: { value: 'Cabinet B' } });
