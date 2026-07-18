@@ -517,6 +517,10 @@ try {
   console.warn(`  ✗ purchase-orders/wishlist.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// The Suppliers dictionary. Whatever suppliers the seeded items and orders named above have
+// already created are listed here, so no extra seeding step is needed.
+await screenShot('suppliers', 'suppliers');
+
 // The Modules manager (populated purely from the feature registry — no seed data needed).
 try {
   await page.goto(`${BASE}modules`, { waitUntil: 'domcontentloaded' });

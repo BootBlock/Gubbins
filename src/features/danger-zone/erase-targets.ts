@@ -38,6 +38,7 @@ export type EraseTargetId =
   | 'checkouts'
   | 'maintenance'
   | 'supplier-parts'
+  | 'suppliers'
   | 'custom-field-values'
   | 'tags'
   | 'categories'
@@ -280,6 +281,34 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
       ];
       if (tombstone) statements.push(tombstoneSelect('supplier_parts', 'FROM supplier_parts'));
       statements.push({ sql: 'DELETE FROM supplier_parts;' });
+      return statements;
+    },
+  },
+  {
+    id: 'suppliers',
+    section: 'projects',
+    label: 'Suppliers',
+    tooltip:
+      'Deletes the whole supplier list, and every supplier/order-code mapping with it. Purchase orders are kept — they record what was spent — but no longer name a supplier.',
+    scope: 'db',
+    countSql: 'SELECT COUNT(*) AS n FROM suppliers',
+    buildStatements: ({ tombstone }) => {
+      const statements: SqlStatement[] = [
+        // Explicit unlink so both FK SET NULLs sync as intentional edits rather than arriving
+        // as silent side effects of the cascade (mirrors the supplier-parts target).
+        { sql: 'UPDATE purchase_orders SET supplier_id = NULL WHERE supplier_id IS NOT NULL;' },
+        {
+          sql: 'UPDATE purchase_order_lines SET supplier_part_id = NULL WHERE supplier_part_id IS NOT NULL;',
+        },
+      ];
+      if (tombstone) {
+        statements.push(
+          tombstoneSelect('supplier_parts', 'FROM supplier_parts'),
+          tombstoneSelect('suppliers', 'FROM suppliers'),
+        );
+      }
+      // Supplier parts cascade from the suppliers delete; the orders above keep their rows.
+      statements.push({ sql: 'DELETE FROM suppliers;' });
       return statements;
     },
   },

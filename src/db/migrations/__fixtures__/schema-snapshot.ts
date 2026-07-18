@@ -15,9 +15,19 @@
  *  - per-table indexes (`PRAGMA index_list`), and
  *  - the resulting `PRAGMA user_version`.
  *
- * The committed `schema-baseline.snapshot.json` fixture is the contract: it is the
- * dump of the ORIGINAL v1…v24 chain, captured once, and the equivalence test asserts
- * the NEW single-baseline build reproduces it exactly.
+ * The committed `schema-baseline.snapshot.json` fixture is the contract, and the
+ * equivalence test asserts the baseline build reproduces it exactly.
+ *
+ * It was originally the dump of the v1…v24 chain, captured once, so that the squash
+ * could be proved equivalent to the chain it replaced. That proof has served its
+ * purpose and cannot be carried forward indefinitely: while Gubbins is pre-release,
+ * schema changes are folded INTO the baseline (see `migrations/index.ts`), and each
+ * such fold necessarily moves the schema away from what the historical chain built.
+ * The fixture is therefore re-captured whenever the baseline deliberately changes —
+ * most recently for the `suppliers` table (issue #384) — and from that point it is a
+ * **regression** baseline: it catches an *accidental* schema change, not a divergence
+ * from the retired chain. Re-capture is a deliberate act that belongs in the same
+ * change as the schema edit, never a reflexive `-u` to make a red test go green.
  *
  * Test-only: it depends on the in-memory `node:sqlite` driver and is never imported
  * by production code.

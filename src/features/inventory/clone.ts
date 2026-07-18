@@ -88,10 +88,16 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
   return { ...base, quantity: 0 };
 }
 
-/** Map a source supplier part to a creation input for the clone (preserving the preferred flag). */
+/**
+ * Map a source supplier part to a creation input for the clone (preserving the preferred flag).
+ *
+ * The supplier is carried by **id**, not by name: the clone points at the very same supplier
+ * record rather than re-resolving its name, so a rename later moves both parts together and no
+ * near-duplicate can be minted on the way through.
+ */
 export function clonedSupplierPartInput(part: SupplierPart): CreateSupplierPartInput {
   return {
-    supplierName: part.supplierName,
+    supplier: { supplierId: part.supplierId },
     orderCode: part.orderCode,
     unitCost: part.unitCost,
     currency: part.currency,

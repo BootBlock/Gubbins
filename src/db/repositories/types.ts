@@ -24,6 +24,7 @@ export type * from './types/images';
 export type * from './types/attachments';
 export type * from './types/aliases';
 export type * from './types/supplier-parts';
+export type * from './types/suppliers';
 export type * from './types/supplier-part-price-history';
 export type * from './types/revaluation';
 export type * from './types/relations';

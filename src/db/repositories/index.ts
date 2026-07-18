@@ -27,6 +27,7 @@ import { RoleRepository } from './RoleRepository';
 import { StorageRepository } from './StorageRepository';
 import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
+import { SupplierRepository } from './SupplierRepository';
 import { TagRepository } from './TagRepository';
 import { TarePresetRepository } from './TarePresetRepository';
 import { UserRepository } from './UserRepository';
@@ -56,6 +57,7 @@ export { CheckoutRepository, type CheckInOptions } from './CheckoutRepository';
 export { AssetBookingRepository } from './AssetBookingRepository';
 export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';
+export { SupplierRepository } from './SupplierRepository';
 export { WishlistRepository } from './WishlistRepository';
 export { TarePresetRepository } from './TarePresetRepository';
 export {
@@ -109,6 +111,7 @@ let diagnosticsRepository: DiagnosticsRepository | null = null;
 let checkoutRepository: CheckoutRepository | null = null;
 let assetBookingRepository: AssetBookingRepository | null = null;
 let supplierPartRepository: SupplierPartRepository | null = null;
+let supplierRepository: SupplierRepository | null = null;
 let suggestionRepository: SuggestionRepository | null = null;
 let wishlistRepository: WishlistRepository | null = null;
 let tarePresetRepository: TarePresetRepository | null = null;
@@ -217,6 +220,11 @@ export function getAssetBookingRepository(): AssetBookingRepository {
 export function getSupplierPartRepository(): SupplierPartRepository {
   supplierPartRepository ??= new SupplierPartRepository(getDatabaseDriver(), productionOptions);
   return supplierPartRepository;
+}
+
+export function getSupplierRepository(): SupplierRepository {
+  supplierRepository ??= new SupplierRepository(getDatabaseDriver(), productionOptions);
+  return supplierRepository;
 }
 
 export function getSuggestionRepository(): SuggestionRepository {

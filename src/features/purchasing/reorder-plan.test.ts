@@ -106,19 +106,34 @@ describe('buildReorderPlan', () => {
         itemId: 'a',
         itemName: 'Screw',
         shortfall: 5,
-        preferredSupplier: { supplierPartId: 'sp1', supplierName: 'DigiKey', unitCost: 0.1 },
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierId: 'sup-digikey',
+          supplierName: 'DigiKey',
+          unitCost: 0.1,
+        },
       },
       {
         itemId: 'b',
         itemName: 'Cap',
         shortfall: 10,
-        preferredSupplier: { supplierPartId: 'sp2', supplierName: 'Mouser', unitCost: 0.2 },
+        preferredSupplier: {
+          supplierPartId: 'sp2',
+          supplierId: 'sup-mouser',
+          supplierName: 'Mouser',
+          unitCost: 0.2,
+        },
       },
       {
         itemId: 'c',
         itemName: 'Resistor',
         shortfall: 20,
-        preferredSupplier: { supplierPartId: 'sp3', supplierName: 'DigiKey', unitCost: 0.05 },
+        preferredSupplier: {
+          supplierPartId: 'sp3',
+          supplierId: 'sup-digikey',
+          supplierName: 'DigiKey',
+          unitCost: 0.05,
+        },
       },
     ];
     const plan = buildReorderPlan(rows);
@@ -130,20 +145,68 @@ describe('buildReorderPlan', () => {
     expect(plan[1]!.lines).toHaveLength(1);
   });
 
+  it('groups on supplier identity, not on the displayed name (issue #384)', () => {
+    // The same supplier reached by two rows whose cached display names disagree still forms
+    // ONE group. Grouping used to key on `supplierName.toLowerCase()`, which split exactly
+    // this case into two orders for one supplier.
+    const rows: ReorderShortfallRow[] = [
+      {
+        itemId: 'a',
+        itemName: 'Screw',
+        shortfall: 5,
+        preferredSupplier: { supplierPartId: 'sp1', supplierId: 'sup-rs', supplierName: 'RS Components' },
+      },
+      {
+        itemId: 'b',
+        itemName: 'Cap',
+        shortfall: 5,
+        preferredSupplier: { supplierPartId: 'sp2', supplierId: 'sup-rs', supplierName: 'RS-Components' },
+      },
+    ];
+    const plan = buildReorderPlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]!.supplierId).toBe('sup-rs');
+    expect(plan[0]!.lines).toHaveLength(2);
+  });
+
+  it('keeps distinct suppliers apart even when they share a display name', () => {
+    // The mirror of the above: identity separates two genuinely different suppliers that a
+    // name-keyed grouping would have silently merged.
+    const rows: ReorderShortfallRow[] = [
+      {
+        itemId: 'a',
+        itemName: 'Screw',
+        shortfall: 5,
+        preferredSupplier: { supplierPartId: 'sp1', supplierId: 'sup-one', supplierName: 'Acme' },
+      },
+      {
+        itemId: 'b',
+        itemName: 'Cap',
+        shortfall: 5,
+        preferredSupplier: { supplierPartId: 'sp2', supplierId: 'sup-two', supplierName: 'Acme' },
+      },
+    ];
+    expect(buildReorderPlan(rows)).toHaveLength(2);
+  });
+
   it('sorts named suppliers alphabetically, with Unassigned last', () => {
     const rows: ReorderShortfallRow[] = [
       {
         itemId: 'a',
         itemName: 'A',
         shortfall: 1,
-        preferredSupplier: { supplierPartId: 'sp1', supplierName: 'RS Components' },
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierId: 'sup-rscomponents',
+          supplierName: 'RS Components',
+        },
       },
       { itemId: 'b', itemName: 'B', shortfall: 1 }, // no supplier
       {
         itemId: 'c',
         itemName: 'C',
         shortfall: 1,
-        preferredSupplier: { supplierPartId: 'sp2', supplierName: 'Farnell' },
+        preferredSupplier: { supplierPartId: 'sp2', supplierId: 'sup-farnell', supplierName: 'Farnell' },
       },
     ];
     const plan = buildReorderPlan(rows);
@@ -158,6 +221,7 @@ describe('buildReorderPlan', () => {
         shortfall: 2,
         preferredSupplier: {
           supplierPartId: 'sp1',
+          supplierId: 'sup-digikey',
           supplierName: 'DigiKey',
           packQty: 10,
           minOrderQty: 5,
@@ -178,6 +242,7 @@ describe('buildReorderPlan', () => {
         shortfall: 13,
         preferredSupplier: {
           supplierPartId: 'sp1',
+          supplierId: 'sup-fabory',
           supplierName: 'Fabory',
           packQty: 5,
           minOrderQty: 2,
@@ -197,6 +262,7 @@ describe('buildReorderPlan', () => {
         shortfall: 4,
         preferredSupplier: {
           supplierPartId: 'sp-abc',
+          supplierId: 'sup-mouser',
           supplierName: 'Mouser',
           unitCost: 0.12,
         },
@@ -218,6 +284,7 @@ describe('buildReorderPlan', () => {
         shortfall: 250,
         preferredSupplier: {
           supplierPartId: 'sp1',
+          supplierId: 'sup-digikey',
           supplierName: 'DigiKey',
           unitCost: 0.1,
           priceBreaks: [
@@ -242,6 +309,7 @@ describe('buildReorderPlan', () => {
         shortfall: 95,
         preferredSupplier: {
           supplierPartId: 'sp1',
+          supplierId: 'sup-mouser',
           supplierName: 'Mouser',
           unitCost: 0.1,
           packQty: 100,
@@ -263,7 +331,12 @@ describe('buildReorderPlan', () => {
         itemName: 'Cap',
         shortfall: 4,
         onOrder: 6,
-        preferredSupplier: { supplierPartId: 'sp1', supplierName: 'DigiKey', unitCost: 0.2 },
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierId: 'sup-digikey',
+          supplierName: 'DigiKey',
+          unitCost: 0.2,
+        },
       },
       { itemId: 'b', itemName: 'Resistor', shortfall: 3 }, // no onOrder → line defaults to 0
     ];
@@ -280,7 +353,11 @@ describe('buildReorderPlan', () => {
         itemId: 'a',
         itemName: 'Part A',
         shortfall: 5,
-        preferredSupplier: { supplierPartId: 'sp1', supplierName: 'Alpha Supply' },
+        preferredSupplier: {
+          supplierPartId: 'sp1',
+          supplierId: 'sup-alphasupply',
+          supplierName: 'Alpha Supply',
+        },
       },
       { itemId: 'b', itemName: 'Part B', shortfall: 3 },
       { itemId: 'c', itemName: 'Part C', shortfall: 0 }, // zero shortfall — ignored
@@ -288,7 +365,11 @@ describe('buildReorderPlan', () => {
         itemId: 'd',
         itemName: 'Part D',
         shortfall: 1,
-        preferredSupplier: { supplierPartId: 'sp2', supplierName: 'Alpha Supply' },
+        preferredSupplier: {
+          supplierPartId: 'sp2',
+          supplierId: 'sup-alphasupply',
+          supplierName: 'Alpha Supply',
+        },
       },
     ];
     const plan = buildReorderPlan(rows);

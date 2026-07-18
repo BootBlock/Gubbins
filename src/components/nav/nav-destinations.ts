@@ -19,6 +19,7 @@ import {
   ReportIcon,
   SettingsIcon,
   ShoppingCartIcon,
+  SupplierIcon,
   TagIcon,
 } from '@/components/icons';
 
@@ -47,6 +48,7 @@ export type AppRoutePath =
   | '/inventory'
   | '/projects'
   | '/purchase-orders'
+  | '/suppliers'
   | '/reports'
   | '/catalogue'
   | '/insurance-schedule'
@@ -134,6 +136,14 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ShoppingCartIcon,
     group: 'primary',
     feature: 'purchase-orders',
+  },
+  {
+    to: '/suppliers',
+    label: 'Suppliers',
+    messageKey: 'nav.suppliers',
+    Icon: SupplierIcon,
+    group: 'primary',
+    feature: 'suppliers',
   },
   {
     to: '/reports',

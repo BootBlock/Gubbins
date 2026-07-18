@@ -56,7 +56,9 @@ import type {
   PurchaseOrderLineRow,
   PurchaseOrderRow,
   SupplierPart,
+  Supplier,
   SupplierPartRow,
+  SupplierRow,
   SupplierPartPriceHistoryEntry,
   SupplierPartPriceHistoryRow,
   Revaluation,
@@ -213,6 +215,7 @@ export function rowToSupplierPart(row: SupplierPartRow): SupplierPart {
   return {
     id: row.id,
     itemId: row.item_id,
+    supplierId: row.supplier_id,
     supplierName: row.supplier_name,
     orderCode: row.order_code,
     unitCost: row.unit_cost,
@@ -345,9 +348,22 @@ export function rowToTestRecord(row: TestRecordRow): TestRecord {
   };
 }
 
+export function rowToSupplier(row: SupplierRow): Supplier {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    currency: row.currency,
+    note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export function rowToPurchaseOrder(row: PurchaseOrderRow): PurchaseOrder {
   return {
     id: row.id,
+    supplierId: row.supplier_id,
     supplierName: row.supplier_name,
     reference: row.reference,
     status: row.status,

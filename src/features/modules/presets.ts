@@ -83,6 +83,7 @@ export const PRESETS: readonly Preset[] = [
     featureIds: [
       'projects',
       'purchase-orders',
+      'suppliers',
       'contacts',
       'reports',
       'scanner',
@@ -134,6 +135,7 @@ export const PRESETS: readonly Preset[] = [
     Icon: ShoppingCartIcon,
     featureIds: [
       'purchase-orders',
+      'suppliers',
       'contacts',
       'reports',
       'alerts',

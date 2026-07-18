@@ -8,13 +8,17 @@ import type { CreateSupplierPartInput } from '@/db/repositories';
  * unexported `parseBreaks` / `optionalCost` / `optionalCount` / `codeFromCurrencyChoice` helpers
  * and the `INVALID`-sentinel error gates ARE the risk surface, and this dialog is their only test
  * surface. `onSubmit` is a prop (not a mutation hook), so the sole hook to mock is the supplier
- * suggestion query; this pins the exact {@link CreateSupplierPartInput} the form assembles for the
- * minimal and fully-populated happy paths, the `qty:cost` price-break parsing, and each validation
- * gate that must block submit with a `role="alert"` rather than coerce nonsense to null.
+ * list the picker reads; this pins the exact {@link CreateSupplierPartInput} the form assembles for
+ * the minimal and fully-populated happy paths, the `qty:cost` price-break parsing, and each
+ * validation gate that must block submit with a `role="alert"` rather than coerce nonsense to null.
+ *
+ * The supplier field emits a `SupplierRef` rather than a bare name (issue #384): typing a name is
+ * still the low-friction path, and it is resolved to a canonical supplier at write time.
  */
 
-vi.mock('../queries', () => ({
-  useFieldSuggestions: () => ({ data: [] }),
+vi.mock('@/features/suppliers/queries', () => ({
+  useSuppliers: () => ({ data: { rows: [], hasMore: false }, isLoading: false }),
+  supplierKeys: { all: ['suppliers'], list: () => ['suppliers', 'list'] },
 }));
 
 import { SupplierPartFormDialog } from './SupplierPartFormDialog';
@@ -45,7 +49,7 @@ describe('SupplierPartFormDialog — the minimal happy path', () => {
     submitForm();
 
     expect(onSubmit).toHaveBeenCalledWith({
-      supplierName: 'DigiKey', // trimmed
+      supplier: { supplierName: 'DigiKey' }, // trimmed
       orderCode: null,
       unitCost: null,
       currency: null,
@@ -73,7 +77,7 @@ describe('SupplierPartFormDialog — a fully populated part', () => {
     submitForm();
 
     expect(onSubmit).toHaveBeenCalledWith({
-      supplierName: 'DigiKey',
+      supplier: { supplierName: 'DigiKey' },
       orderCode: 'ABC-123',
       unitCost: 1.5,
       currency: 'EUR',

@@ -47,7 +47,11 @@ describe('supplier_part_price_history sync round-trip (§7.3)', () => {
 
   it('publishes price points, then a peer pulls the full series', async () => {
     const item = await a.items.create({ name: 'Resistor' });
-    const part = await a.parts.create(item.id, { supplierName: 'RS', unitCost: 1.0, currency: 'GBP' });
+    const part = await a.parts.create(item.id, {
+      supplier: { supplierName: 'RS' },
+      unitCost: 1.0,
+      currency: 'GBP',
+    });
     await a.parts.update(part.id, { unitCost: 1.4, source: 'SCRAPE' });
 
     expect((await runSync(a.driver, provider, NO_QUOTA)).status).toBe('PUBLISHED');
@@ -62,7 +66,7 @@ describe('supplier_part_price_history sync round-trip (§7.3)', () => {
   it('drops an incoming price point whose supplier part did not survive the merge (FK guard)', async () => {
     // A creates an item + supplier part + price point and syncs them out.
     const item = await a.items.create({ name: 'Cap' });
-    const part = await a.parts.create(item.id, { supplierName: 'RS', unitCost: 2.0 });
+    const part = await a.parts.create(item.id, { supplier: { supplierName: 'RS' }, unitCost: 2.0 });
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
     expect(await b.parts.listPriceHistory(part.id)).toHaveLength(1);

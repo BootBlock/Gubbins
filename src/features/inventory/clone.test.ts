@@ -107,6 +107,7 @@ describe('clonedSupplierPartInput', () => {
     const part: SupplierPart = {
       id: 'sp-1',
       itemId: 'src',
+      supplierId: 'sup-mouser',
       supplierName: 'Mouser',
       orderCode: 'M-1',
       unitCost: 0.2,
@@ -116,11 +117,14 @@ describe('clonedSupplierPartInput', () => {
       priceBreaks: [{ qty: 100, unitCost: 0.18 }],
       url: 'https://example.test/part',
       isPreferred: true,
+      isPriceSource: false,
       createdAt: 1,
       updatedAt: 2,
     };
     expect(clonedSupplierPartInput(part)).toEqual({
-      supplierName: 'Mouser',
+      // The clone points at the same supplier record by id — never a re-resolved name, which
+      // could fold onto a different supplier or mint a near-duplicate.
+      supplier: { supplierId: 'sup-mouser' },
       orderCode: 'M-1',
       unitCost: 0.2,
       currency: null,
@@ -136,6 +140,7 @@ describe('clonedSupplierPartInput', () => {
     const part = {
       id: 'sp',
       itemId: 'src',
+      supplierId: 'sup-s',
       supplierName: 'S',
       orderCode: null,
       unitCost: null,
@@ -145,10 +150,12 @@ describe('clonedSupplierPartInput', () => {
       priceBreaks: [],
       url: null,
       isPreferred: false,
+      isPriceSource: false,
       createdAt: 1,
       updatedAt: 2,
     } satisfies SupplierPart;
     expect(clonedSupplierPartInput(part).priceBreaks).toBeNull();
+    expect(clonedSupplierPartInput(part).supplier).toEqual({ supplierId: 'sup-s' });
   });
 });
 

@@ -37,6 +37,7 @@ import {
   ScrapeIcon,
   SettingsIcon,
   ShoppingCartIcon,
+  SupplierIcon,
   TagsIcon,
   VariantIcon,
   WarrantyIcon,
@@ -75,6 +76,7 @@ export type FeatureId =
   // Optional page modules.
   | 'projects'
   | 'purchase-orders'
+  | 'suppliers'
   | 'contacts'
   | 'bookings'
   | 'upcoming'
@@ -193,6 +195,18 @@ const FEATURE_DEFS: Record<FeatureId, FeatureDef> = {
     group: 'pages',
     route: '/purchase-orders',
     dependsOn: ['contacts'],
+  },
+  suppliers: {
+    id: 'suppliers',
+    kind: 'page',
+    label: 'Suppliers',
+    description: 'Keep one canonical list of who you buy from, and fold duplicates together.',
+    Icon: SupplierIcon,
+    group: 'pages',
+    route: '/suppliers',
+    // Suppliers are referenced by supplier parts (inventory) as well as by orders, so the
+    // dictionary stands on its own rather than depending on the Purchase orders module — an
+    // inventory-only setup still records who a part is bought from.
   },
   contacts: {
     id: 'contacts',

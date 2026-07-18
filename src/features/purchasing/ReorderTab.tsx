@@ -14,7 +14,7 @@ import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { buildReorderExport } from './reorder-export';
-import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup, type ReorderPlanLine } from './reorder-plan';
+import type { ReorderPlanGroup, ReorderPlanLine } from './reorder-plan';
 import { useCreateDraftFromReorderPlan, useReorderPlan } from './queries';
 
 /** Clamp a user-entered order quantity to a sensible range. */
@@ -145,7 +145,9 @@ function ReorderGroup({
   onCreateDraft: () => void;
   isCreating: boolean;
 }) {
-  const isUnassigned = group.supplierName === UNASSIGNED_SUPPLIER_NAME;
+  // Identity, not spelling: a real supplier could legitimately be *named* "Unassigned", so the
+  // ungrouped bucket is the one with no supplier at all.
+  const isUnassigned = group.supplierId === null;
   const estimatedTotal = group.lines.reduce(
     (sum, l) => sum + (l.unitCost != null ? l.orderQty * l.unitCost : 0),
     0,

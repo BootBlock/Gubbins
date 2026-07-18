@@ -10,18 +10,28 @@ how those prices **change over time**.
 
 Record one or more suppliers against an item, each with:
 
-- The **supplier's name**.
+- The **supplier** it comes from.
 - The supplier's **part number / order code** for it.
 - The **price** (and, where relevant, price breaks for quantity).
 
 So when it's time to reorder, you already know **who** to buy from, **their code**, and **what it
 costs** — without digging through old invoices.
 
+### Choosing the supplier
+
+The **Supplier** field lists the suppliers you already use — pick one, or just **type a new
+name** and it's added when you save. There's no setup step to do first.
+
+Gubbins matches what you type against your existing suppliers **ignoring capitals, spaces and
+punctuation**, so typing `rs-components` finds your existing **RS Components** rather than
+creating a near-duplicate beside it. The field tells you which it's about to do before you save:
+either that it matches a supplier you already have, or that it's adding a new one.
+
 > **ℹ️ Note**
-> A supplier is recorded here as a **name you type**, not as a link to a [[contact|Contacts]]. The
-> name field suggests suppliers you've entered before, so picking the existing suggestion keeps
-> spellings consistent across items — worth doing, as the [[reorder|Reorder-and-Shopping-List]]
-> grouping works from the name.
+> A supplier is its own record, not a link to a [[contact|Contacts]]. Because every item points at
+> the same record, renaming a supplier updates it everywhere at once — and
+> [[reorder|Reorder-and-Shopping-List]] grouping can never be split by two spellings of one name.
+> The whole list lives on the [[Suppliers]] screen, where you can rename, merge or remove one.
 
 ## Price history
 
@@ -39,6 +49,7 @@ spot when a supplier's price has crept up.
 
 ## Related pages
 
+- **[[Suppliers]]** — the shared list of who you buy from: rename, merge and remove.
 - **[[Purchase orders|Purchase-Orders]]** — ordering from a supplier.
 - **[[Reorder & shopping list|Reorder-and-Shopping-List]]** — what to buy.
 - **[[Scraping supplier data|Scraping-Supplier-Data]]** — pulling part details from a supplier

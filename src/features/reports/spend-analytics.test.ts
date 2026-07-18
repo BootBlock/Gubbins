@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { buildSpendReport, SPEND_SOURCES, type SpendEvent } from './spend-analytics';
 
-/** Terse event builder with sensible defaults. */
+/**
+ * Terse event builder with sensible defaults. Totals group on `supplierId` (issue #384), so
+ * unless a case supplies one explicitly it is derived from the display name — one id per
+ * distinct name, which is what a canonical supplier list guarantees anyway.
+ */
 function ev(instant: number, amount: number, over: Partial<SpendEvent> = {}): SpendEvent {
+  const supplier = over.supplier ?? null;
   return {
     instant,
     amount,
     source: 'PURCHASE_ORDER',
-    supplier: null,
+    supplier,
+    supplierId: supplier === null ? null : `sup-${supplier.toLowerCase()}`,
     categoryId: null,
     categoryName: null,
     ...over,
@@ -60,6 +66,35 @@ describe('buildSpendReport', () => {
     );
     expect(report.buckets.map((b) => b.total)).toEqual([3, 4, 0, 0, 8]);
     expect(report.buckets[4]!.end).toBe(100);
+  });
+
+  it('totals a supplier by identity, not by the name on each event (issue #384)', () => {
+    // Spend used to be keyed on the supplier name string, so one supplier recorded under two
+    // spellings appeared as two rows splitting its true total. Identity keeps it one row.
+    const report = buildSpendReport(
+      [
+        ev(10, 100, { supplierId: 'sup-rs', supplier: 'RS Components' }),
+        ev(20, 40, { supplierId: 'sup-rs', supplier: 'RS-Components' }),
+      ],
+      0,
+      100,
+      2,
+    );
+    expect(report.bySupplier).toHaveLength(1);
+    expect(report.bySupplier[0]).toMatchObject({ id: 'sup-rs', total: 140 });
+  });
+
+  it('keeps two distinct suppliers apart even when they share a name', () => {
+    const report = buildSpendReport(
+      [
+        ev(10, 100, { supplierId: 'sup-a', supplier: 'Acme' }),
+        ev(20, 40, { supplierId: 'sup-b', supplier: 'Acme' }),
+      ],
+      0,
+      100,
+      2,
+    );
+    expect(report.bySupplier.map((g) => g.id)).toEqual(['sup-a', 'sup-b']);
   });
 
   it('groups by supplier and category with sorted catch-all buckets', () => {

@@ -149,6 +149,7 @@ const NAV_TOOLTIP_KEYS: Record<
   '/inventory': 'dashboard.nav.tooltip.inventory',
   '/projects': 'dashboard.nav.tooltip.projects',
   '/purchase-orders': 'dashboard.nav.tooltip.purchaseOrders',
+  '/suppliers': 'dashboard.nav.tooltip.suppliers',
   '/reports': 'dashboard.nav.tooltip.reports',
   '/contacts': 'dashboard.nav.tooltip.contacts',
   '/bookings': 'dashboard.nav.tooltip.bookings',

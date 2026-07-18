@@ -56,6 +56,17 @@ describe('eraseTargets (memory-driver integration)', () => {
     return id;
   }
 
+  /** A supplier, named for the free-text dictionary key the repository would fold it onto. */
+  async function makeSupplier(name: string): Promise<string> {
+    const id = nextId('sup');
+    await exec('INSERT INTO suppliers (id, name, name_key) VALUES (?, ?, ?);', [
+      id,
+      name,
+      name.toLowerCase(),
+    ]);
+    return id;
+  }
+
   /** An item at a location, optionally categorised. */
   async function makeItem(locationId: string, categoryId: string | null = null): Promise<string> {
     const id = nextId('item');
@@ -129,10 +140,11 @@ describe('eraseTargets (memory-driver integration)', () => {
         'INSERT INTO maintenance_schedules (id, item_id, name, basis, interval_days) VALUES (?, ?, ?, ?, ?);',
         [nextId('ms'), item, 'Calibrate', 'TIME', 30],
       );
-      await exec('INSERT INTO supplier_parts (id, item_id, supplier_name) VALUES (?, ?, ?);', [
+      const supplier = await makeSupplier('Acme');
+      await exec('INSERT INTO supplier_parts (id, item_id, supplier_id) VALUES (?, ?, ?);', [
         nextId('sp'),
         item,
-        'Acme',
+        supplier,
       ]);
 
       // Lines that should SURVIVE but be unlinked.
@@ -143,7 +155,7 @@ describe('eraseTargets (memory-driver integration)', () => {
         [nextId('bom'), project, item, 2],
       );
       const po = nextId('po');
-      await exec('INSERT INTO purchase_orders (id, supplier_name) VALUES (?, ?);', [po, 'Acme']);
+      await exec('INSERT INTO purchase_orders (id, supplier_id) VALUES (?, ?);', [po, supplier]);
       await exec('INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty) VALUES (?, ?, ?, ?);', [
         nextId('pol'),
         po,
@@ -208,6 +220,81 @@ describe('eraseTargets (memory-driver integration)', () => {
         "SELECT id FROM tombstones WHERE table_name = 'item_tags' LIMIT 1;",
       );
       expect(edge?.id).toContain('|');
+    });
+  });
+
+  describe('suppliers', () => {
+    /** A supplier carrying both a supplier part and a purchase order with a line. */
+    async function seedSupplierWithHistory(): Promise<{ supplier: string; item: string }> {
+      const loc = await makeLocation('Rack');
+      const item = await makeItem(loc);
+      const supplier = await makeSupplier('Acme');
+      const part = nextId('sp');
+      await exec('INSERT INTO supplier_parts (id, item_id, supplier_id) VALUES (?, ?, ?);', [
+        part,
+        item,
+        supplier,
+      ]);
+      const po = nextId('po');
+      await exec('INSERT INTO purchase_orders (id, supplier_id) VALUES (?, ?);', [po, supplier]);
+      await exec(
+        'INSERT INTO purchase_order_lines (id, po_id, item_id, supplier_part_id, ordered_qty) VALUES (?, ?, ?, ?, ?);',
+        [nextId('pol'), po, item, part, 5],
+      );
+      return { supplier, item };
+    }
+
+    it('removes suppliers and their parts, keeping the orders but unlinking them', async () => {
+      await seedSupplierWithHistory();
+
+      await eraseTargets(['suppliers'], { tombstone: false }, ports());
+
+      expect(await count('suppliers')).toBe(0);
+      expect(await count('supplier_parts')).toBe(0);
+      // purchase_orders.supplier_id is ON DELETE SET NULL — the order records what was spent
+      // and survives; only its supplier link goes. Its lines survive with it, unlinked from
+      // the supplier parts that cascaded away.
+      expect(await count('purchase_orders')).toBe(1);
+      expect(await count('purchase_order_lines')).toBe(1);
+      const linkedOrders = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM purchase_orders WHERE supplier_id IS NOT NULL;',
+      );
+      expect(Number(linkedOrders?.n)).toBe(0);
+      const linkedLines = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM purchase_order_lines WHERE supplier_part_id IS NOT NULL;',
+      );
+      expect(Number(linkedLines?.n)).toBe(0);
+      expect(await count('items')).toBe(1);
+    });
+
+    it('tombstones the suppliers and their parts — but not the surviving orders — when tombstone is on', async () => {
+      await seedSupplierWithHistory();
+
+      await eraseTargets(['suppliers'], { tombstone: true }, ports());
+
+      for (const table of ['suppliers', 'supplier_parts']) {
+        const row = await driver.queryOne<{ n: number }>(
+          'SELECT COUNT(*) AS n FROM tombstones WHERE table_name = ?;',
+          [table],
+        );
+        expect(Number(row?.n), table).toBeGreaterThan(0);
+      }
+      // The orders were never deleted, so tombstoning them would tell a peer to drop history.
+      for (const table of ['purchase_orders', 'purchase_order_lines']) {
+        const row = await driver.queryOne<{ n: number }>(
+          'SELECT COUNT(*) AS n FROM tombstones WHERE table_name = ?;',
+          [table],
+        );
+        expect(Number(row?.n), table).toBe(0);
+      }
+    });
+
+    it('counts the suppliers, not their parts or orders', async () => {
+      await seedSupplierWithHistory();
+      await makeSupplier('Beta Supplies');
+
+      const counts = await countTargets(['suppliers'], { db: driver, local: fakeStorage() });
+      expect(counts.suppliers).toBe(2);
     });
   });
 

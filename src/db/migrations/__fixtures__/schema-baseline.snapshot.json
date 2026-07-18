@@ -315,6 +315,12 @@
     },
     {
       "type": "index",
+      "name": "idx_purchase_orders_supplier_id",
+      "tbl_name": "purchase_orders",
+      "sql": "CREATE INDEX idx_purchase_orders_supplier_id ON purchase_orders(supplier_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_revaluations_item_id",
       "tbl_name": "revaluations",
       "sql": "CREATE INDEX idx_revaluations_item_id ON revaluations(item_id, revalued_at)"
@@ -359,7 +365,25 @@
       "type": "index",
       "name": "idx_supplier_parts_item_id",
       "tbl_name": "supplier_parts",
-      "sql": "CREATE INDEX idx_supplier_parts_item_id\n              ON supplier_parts(item_id, is_preferred DESC, supplier_name COLLATE NOCASE)"
+      "sql": "CREATE INDEX idx_supplier_parts_item_id\n              ON supplier_parts(item_id, is_preferred DESC, supplier_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_supplier_parts_supplier_id",
+      "tbl_name": "supplier_parts",
+      "sql": "CREATE INDEX idx_supplier_parts_supplier_id ON supplier_parts(supplier_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_suppliers_name",
+      "tbl_name": "suppliers",
+      "sql": "CREATE INDEX idx_suppliers_name ON suppliers(name COLLATE NOCASE)"
+    },
+    {
+      "type": "index",
+      "name": "idx_suppliers_name_key",
+      "tbl_name": "suppliers",
+      "sql": "CREATE UNIQUE INDEX idx_suppliers_name_key ON suppliers(name_key)"
     },
     {
       "type": "index",
@@ -587,7 +611,7 @@
       "type": "table",
       "name": "purchase_orders",
       "tbl_name": "purchase_orders",
-      "sql": "CREATE TABLE purchase_orders (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          supplier_name TEXT    NOT NULL,\n          reference     TEXT,\n          status        TEXT    NOT NULL DEFAULT 'DRAFT',\n          currency      TEXT,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          ordered_at    INTEGER,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (status IN ('DRAFT', 'ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED'))\n        ) STRICT"
+      "sql": "CREATE TABLE purchase_orders (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          -- Nullable + SET NULL, unlike supplier_parts' CASCADE: a purchase order is a record\n          -- of money spent, so deleting a supplier must not delete the order — it just loses\n          -- the link and reads as an unknown supplier.\n          --\n          -- SET NULL rather than RESTRICT specifically because of sync. RESTRICT cannot express\n          -- a distributed delete: device A legally deletes a supplier it sees as unused while\n          -- device B records an order against it, and whichever device merges second aborts its\n          -- whole transaction on the foreign key — sync hard-blocks rather than degrades.\n          -- Resurrecting the supplier instead just moves the failure, since A has already\n          -- published the tombstone and would re-delete on its next pass. A nullable FK is the\n          -- one shape that converges: it is the same choice checkouts.source_location_id makes.\n          supplier_id   TEXT    REFERENCES suppliers(id) ON DELETE SET NULL,\n          reference     TEXT,\n          status        TEXT    NOT NULL DEFAULT 'DRAFT',\n          currency      TEXT,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          ordered_at    INTEGER,\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (status IN ('DRAFT', 'ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED'))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -617,7 +641,13 @@
       "type": "table",
       "name": "supplier_parts",
       "tbl_name": "supplier_parts",
-      "sql": "CREATE TABLE supplier_parts (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          supplier_name TEXT    NOT NULL,\n          order_code    TEXT,\n          unit_cost     REAL,\n          currency      TEXT,\n          pack_qty      INTEGER,\n          min_order_qty INTEGER,\n          price_breaks  TEXT,\n          url           TEXT,\n          is_preferred  INTEGER NOT NULL DEFAULT 0,\n          is_price_source INTEGER NOT NULL DEFAULT 0,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_preferred IN (0, 1)),\n          CHECK (is_price_source IN (0, 1)),\n          CHECK (unit_cost IS NULL OR unit_cost >= 0),\n          CHECK (pack_qty IS NULL OR pack_qty > 0),\n          CHECK (min_order_qty IS NULL OR min_order_qty > 0)\n        ) STRICT"
+      "sql": "CREATE TABLE supplier_parts (\n          id            TEXT    PRIMARY KEY NOT NULL,\n          item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          -- CASCADE: a supplier part is that supplier's price for an item, so it is\n          -- meaningless once the supplier is gone. Contrast purchase_orders below.\n          supplier_id   TEXT    NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,\n          order_code    TEXT,\n          unit_cost     REAL,\n          currency      TEXT,\n          pack_qty      INTEGER,\n          min_order_qty INTEGER,\n          price_breaks  TEXT,\n          url           TEXT,\n          is_preferred  INTEGER NOT NULL DEFAULT 0,\n          is_price_source INTEGER NOT NULL DEFAULT 0,\n          created_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at    INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_preferred IN (0, 1)),\n          CHECK (is_price_source IN (0, 1)),\n          CHECK (unit_cost IS NULL OR unit_cost >= 0),\n          CHECK (pack_qty IS NULL OR pack_qty > 0),\n          CHECK (min_order_qty IS NULL OR min_order_qty > 0)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "suppliers",
+      "tbl_name": "suppliers",
+      "sql": "CREATE TABLE suppliers (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          -- Derived from name by supplierNameKey(): case-folded, diacritics stripped, all\n          -- punctuation and spacing removed. Stored rather than computed so uniqueness is a\n          -- DB guarantee and resolve-or-create is a single indexed lookup. SQLite's NOCASE\n          -- collation folds only ASCII case, which would still let \"RS Components\" and\n          -- \"RS-Components\" coexist — exactly the duplicate this table exists to prevent.\n          -- Every write goes through SupplierRepository, which is what keeps it in sync.\n          name_key   TEXT    NOT NULL,\n          url        TEXT,\n          currency   TEXT,\n          note       TEXT,\n          created_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -918,6 +948,12 @@
       "name": "trg_supplier_parts_updated_at",
       "tbl_name": "supplier_parts",
       "sql": "CREATE TRIGGER trg_supplier_parts_updated_at\n    AFTER UPDATE ON supplier_parts\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE supplier_parts SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_suppliers_updated_at",
+      "tbl_name": "suppliers",
+      "sql": "CREATE TRIGGER trg_suppliers_updated_at\n    AFTER UPDATE ON suppliers\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE suppliers SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -4416,9 +4452,9 @@
         },
         {
           "cid": 1,
-          "name": "supplier_name",
+          "name": "supplier_id",
           "type": "TEXT",
-          "notnull": 1,
+          "notnull": 0,
           "dflt_value": null,
           "pk": 0
         },
@@ -4471,10 +4507,28 @@
           "pk": 0
         }
       ],
-      "foreignKeys": [],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "suppliers",
+          "from": "supplier_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        }
+      ],
       "indexes": [
         {
           "seq": 0,
+          "name": "idx_purchase_orders_supplier_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
           "name": "sqlite_autoindex_purchase_orders_1",
           "unique": 1,
           "origin": "pk",
@@ -4905,7 +4959,7 @@
         },
         {
           "cid": 2,
-          "name": "supplier_name",
+          "name": "supplier_id",
           "type": "TEXT",
           "notnull": 1,
           "dflt_value": null,
@@ -5004,6 +5058,16 @@
         {
           "id": 0,
           "seq": 0,
+          "table": "suppliers",
+          "from": "supplier_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "CASCADE",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "seq": 0,
           "table": "items",
           "from": "item_id",
           "to": "id",
@@ -5014,15 +5078,114 @@
       ],
       "indexes": [
         {
-          "seq": 0,
+          "seq": 1,
           "name": "idx_supplier_parts_item_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
-          "seq": 1,
+          "seq": 0,
+          "name": "idx_supplier_parts_supplier_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
           "name": "sqlite_autoindex_supplier_parts_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "suppliers": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "name_key",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "url",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "currency",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "note",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_suppliers_name",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "idx_suppliers_name_key",
+          "unique": 1,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_suppliers_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

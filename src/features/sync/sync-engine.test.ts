@@ -11,6 +11,7 @@ import {
   ProjectRepository,
   PurchaseOrderRepository,
   SupplierPartRepository,
+  SupplierRepository,
   TagRepository,
   UNASSIGNED_LOCATION_ID,
 } from '@/db/repositories';
@@ -28,6 +29,7 @@ async function makeDevice(): Promise<{
   maintenance: MaintenanceRepository;
   projects: ProjectRepository;
   supplierParts: SupplierPartRepository;
+  suppliers: SupplierRepository;
   purchaseOrders: PurchaseOrderRepository;
 }> {
   const driver = createMemoryDriver();
@@ -42,6 +44,7 @@ async function makeDevice(): Promise<{
     maintenance: new MaintenanceRepository(driver),
     projects: new ProjectRepository(driver),
     supplierParts: new SupplierPartRepository(driver),
+    suppliers: new SupplierRepository(driver),
     purchaseOrders: new PurchaseOrderRepository(driver),
   };
 }
@@ -292,7 +295,7 @@ describe('runSync round-trip (§7.3)', () => {
   it('round-trips a supplier part to a peer and resolves a concurrent edit by LWW (Phase 60)', async () => {
     const item = await a.items.create({ name: 'Resistor', locationId: UNASSIGNED_LOCATION_ID });
     const sp = await a.supplierParts.create(item.id, {
-      supplierName: 'DigiKey',
+      supplier: { supplierName: 'DigiKey' },
       orderCode: 'RES-1',
       unitCost: 0.1,
       isPreferred: true,
@@ -314,7 +317,7 @@ describe('runSync round-trip (§7.3)', () => {
 
   it('drops an incoming supplier part whose item did not survive the merge (§7.5)', async () => {
     const item = await a.items.create({ name: 'Doomed', locationId: UNASSIGNED_LOCATION_ID });
-    await a.supplierParts.create(item.id, { supplierName: 'RS' });
+    await a.supplierParts.create(item.id, { supplier: { supplierName: 'RS' } });
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
     expect(await b.supplierParts.listForItem(item.id)).toHaveLength(1);
@@ -332,7 +335,7 @@ describe('runSync round-trip (§7.3)', () => {
 
   it('round-trips a purchase order and its lines to a peer, resolving a concurrent edit by LWW (Phase 62)', async () => {
     const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
-    const po = await a.purchaseOrders.create({ supplierName: 'DigiKey', reference: 'PO-100' });
+    const po = await a.purchaseOrders.create({ supplier: { supplierName: 'DigiKey' }, reference: 'PO-100' });
     const line = await a.purchaseOrders.addLine(po.id, { itemId: item.id, orderedQty: 10 });
     await a.purchaseOrders.setStatus(po.id, 'ORDERED');
     await runSync(a.driver, provider, NO_QUOTA);
@@ -361,8 +364,8 @@ describe('runSync round-trip (§7.3)', () => {
 
   it('NULLs a PO line supplier_part_id whose supplier part did not survive the merge (§7.5 SET NULL)', async () => {
     const item = await a.items.create({ name: 'Resistor', locationId: UNASSIGNED_LOCATION_ID });
-    const sp = await a.supplierParts.create(item.id, { supplierName: 'RS', orderCode: 'R-1' });
-    const po = await a.purchaseOrders.create({ supplierName: 'RS' });
+    const sp = await a.supplierParts.create(item.id, { supplier: { supplierName: 'RS' }, orderCode: 'R-1' });
+    const po = await a.purchaseOrders.create({ supplier: { supplierName: 'RS' } });
     const line = await a.purchaseOrders.addLine(po.id, {
       itemId: item.id,
       supplierPartId: sp.id,
@@ -387,7 +390,7 @@ describe('runSync round-trip (§7.3)', () => {
 
   it('drops PO lines whose order did not survive the merge (§7.5 CASCADE)', async () => {
     const item = await a.items.create({ name: 'Diode', locationId: UNASSIGNED_LOCATION_ID });
-    const po = await a.purchaseOrders.create({ supplierName: 'Mouser' });
+    const po = await a.purchaseOrders.create({ supplier: { supplierName: 'Mouser' } });
     const line = await a.purchaseOrders.addLine(po.id, { itemId: item.id, orderedQty: 3 });
     await runSync(a.driver, provider, NO_QUOTA);
     await runSync(b.driver, provider, NO_QUOTA);
@@ -401,6 +404,56 @@ describe('runSync round-trip (§7.3)', () => {
 
     expect(await b.purchaseOrders.getById(po.id)).toBeUndefined();
     expect(await b.purchaseOrders.getLine(line.id)).toBeUndefined();
+  });
+
+  it('round-trips a supplier and drops its parts when it does not survive the merge (issue #384)', async () => {
+    const item = await a.items.create({ name: 'Resistor', locationId: UNASSIGNED_LOCATION_ID });
+    await a.supplierParts.create(item.id, { supplier: { supplierName: 'RS' } });
+    const supplier = (await a.suppliers.findByName('RS'))!;
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect((await b.suppliers.getById(supplier.id))?.name).toBe('RS');
+
+    // A deletes the supplier — no purchase order anywhere references it, so nothing outranks
+    // the deletion: B must drop it and, with it, the supplier part (ON DELETE CASCADE).
+    await a.suppliers.delete(supplier.id);
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await b.suppliers.getById(supplier.id)).toBeUndefined();
+    expect(await b.supplierParts.listForItem(item.id)).toHaveLength(0);
+  });
+
+  it('keeps an order whose supplier a peer deleted, unlinking it (§7.5 SET NULL, issue #384)', async () => {
+    // Both devices share a supplier, but only B records an order against it.
+    await a.suppliers.create({ name: 'RS' });
+    const supplier = (await a.suppliers.findByName('RS'))!;
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    const po = await b.purchaseOrders.create({ supplier: { supplierId: supplier.id }, reference: 'PO-7' });
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    // A — which never saw the order — tidies the supplier off its list and pushes the
+    // tombstone. `purchase_orders.supplier_id` is nullable ON DELETE SET NULL precisely so
+    // this converges: the order is a record of money spent and survives on both devices, it
+    // simply stops naming a supplier. A non-nullable FK could only abort the whole merge.
+    await a.suppliers.delete(supplier.id);
+    expect(await a.suppliers.getById(supplier.id)).toBeUndefined();
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    // B loses the supplier but keeps the order, now unlinked.
+    expect(await b.suppliers.getById(supplier.id)).toBeUndefined();
+    const onB = await b.purchaseOrders.getById(po.id);
+    expect(onB?.reference).toBe('PO-7');
+    expect(onB?.supplierId).toBeNull();
+
+    // A picks the order up on its next sync — also unlinked, so both devices agree.
+    await runSync(a.driver, provider, NO_QUOTA);
+    expect(await a.suppliers.getById(supplier.id)).toBeUndefined();
+    const onA = await a.purchaseOrders.getById(po.id);
+    expect(onA?.reference).toBe('PO-7');
+    expect(onA?.supplierId).toBeNull();
   });
 
   it('resolves a concurrent edit by Last-Write-Wins', async () => {

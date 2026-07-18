@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as UpcomingRouteImport } from './routes/upcoming'
 import { Route as TagsRouteImport } from './routes/tags'
 import { Route as SyncRouteImport } from './routes/sync'
+import { Route as SuppliersRouteImport } from './routes/suppliers'
 import { Route as ShareTargetRouteImport } from './routes/share-target'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
@@ -45,6 +46,11 @@ const TagsRoute = TagsRouteImport.update({
 const SyncRoute = SyncRouteImport.update({
   id: '/sync',
   path: '/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SuppliersRoute = SuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShareTargetRoute = ShareTargetRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
+  '/suppliers': typeof SuppliersRoute
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
+  '/suppliers': typeof SuppliersRoute
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
@@ -212,6 +220,7 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/share-target': typeof ShareTargetRoute
+  '/suppliers': typeof SuppliersRoute
   '/sync': typeof SyncRoute
   '/tags': typeof TagsRoute
   '/upcoming': typeof UpcomingRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/share-target'
+    | '/suppliers'
     | '/sync'
     | '/tags'
     | '/upcoming'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/share-target'
+    | '/suppliers'
     | '/sync'
     | '/tags'
     | '/upcoming'
@@ -286,6 +297,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/share-target'
+    | '/suppliers'
     | '/sync'
     | '/tags'
     | '/upcoming'
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   ShareTargetRoute: typeof ShareTargetRoute
+  SuppliersRoute: typeof SuppliersRoute
   SyncRoute: typeof SyncRoute
   TagsRoute: typeof TagsRoute
   UpcomingRoute: typeof UpcomingRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/sync'
       fullPath: '/sync'
       preLoaderRoute: typeof SyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/suppliers': {
+      id: '/suppliers'
+      path: '/suppliers'
+      fullPath: '/suppliers'
+      preLoaderRoute: typeof SuppliersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/share-target': {
@@ -495,6 +515,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   ShareTargetRoute: ShareTargetRoute,
+  SuppliersRoute: SuppliersRoute,
   SyncRoute: SyncRoute,
   TagsRoute: TagsRoute,
   UpcomingRoute: UpcomingRoute,

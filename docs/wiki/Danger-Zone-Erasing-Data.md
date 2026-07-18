@@ -55,6 +55,8 @@ think they're separate jobs.
   expense ledger. Items referenced by a BOM are kept.
 - **Purchase orders** — every [[purchase order|Purchase-Orders]] and its lines. Items and
   supplier parts are kept.
+- **Suppliers** — the whole [[supplier list|Suppliers]], and every supplier/order-code mapping with
+  it. Purchase orders are kept — they record what was spent — but no longer name a supplier.
 - **Contacts** — every [[contact|Contacts]] and their checkout/loan records. Items are kept.
 
 ### App & this device

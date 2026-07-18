@@ -9,6 +9,7 @@ import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ReportRepository } from './ReportRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
+import { SupplierRepository } from './SupplierRepository';
 
 /**
  * ReportRepository — read-only §3 valuation/consumption/movement/low-stock/dead-stock
@@ -23,6 +24,7 @@ describe('ReportRepository', () => {
   let locations: LocationRepository;
   let reports: ReportRepository;
   let supplierParts: SupplierPartRepository;
+  let suppliers: SupplierRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
@@ -32,6 +34,7 @@ describe('ReportRepository', () => {
     locations = new LocationRepository(driver);
     reports = new ReportRepository(driver);
     supplierParts = new SupplierPartRepository(driver);
+    suppliers = new SupplierRepository(driver);
   });
 
   afterEach(async () => {
@@ -76,8 +79,12 @@ describe('ReportRepository', () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       // No manual unitCost: valuation must fall back to the preferred supplier part's cost.
       const item = await items.create({ name: 'Relay', locationId: shelf.id, quantity: 10, unitCost: null });
-      await supplierParts.create(item.id, { supplierName: 'Cheap Co', unitCost: 5 });
-      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 7, isPreferred: true });
+      await supplierParts.create(item.id, { supplier: { supplierName: 'Cheap Co' }, unitCost: 5 });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 7,
+        isPreferred: true,
+      });
 
       const report = await reports.inventoryValue();
       expect(report.totalValue).toBe(70); // 10 × £7 (the *preferred* part, not the cheaper one)
@@ -88,7 +95,11 @@ describe('ReportRepository', () => {
 
     it('lets a manual unitCost win over the preferred supplier cost', async () => {
       const item = await items.create({ name: 'Switch', quantity: 4, unitCost: 2 });
-      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 99, isPreferred: true });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 99,
+        isPreferred: true,
+      });
 
       const report = await reports.inventoryValue();
       expect(report.totalValue).toBe(8); // 4 × £2 manual, not £99
@@ -97,7 +108,11 @@ describe('ReportRepository', () => {
     it('values dead stock at the preferred supplier cost when unpriced manually', async () => {
       const now = Date.now();
       const item = await items.create({ name: 'OldFan', quantity: 3, unitCost: null });
-      await supplierParts.create(item.id, { supplierName: 'Preferred Co', unitCost: 6, isPreferred: true });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Preferred Co' },
+        unitCost: 6,
+        isPreferred: true,
+      });
       // Dead-stock reporting is opt-in (issue #92), so the item has to ask to be watched.
       await driver.execute("UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id = ?;", [
         now - 120 * MS_PER_DAY,
@@ -389,9 +404,10 @@ describe('ReportRepository', () => {
       status = 'ORDERED',
     ): Promise<void> {
       const poId = crypto.randomUUID();
+      const supplier = await suppliers.resolveOrCreate('Acme');
       await driver.execute(
-        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES (?, 'Acme', ?, ?);",
-        [poId, status, Date.now()],
+        'INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES (?, ?, ?, ?);',
+        [poId, supplier.id, status, Date.now()],
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
@@ -441,9 +457,9 @@ describe('ReportRepository', () => {
 
     it('joins the preferred supplier part when one is marked', async () => {
       const item = await items.create({ name: 'Chip', quantity: 0 });
-      await supplierParts.create(item.id, { supplierName: 'Non-preferred', unitCost: 1 });
+      await supplierParts.create(item.id, { supplier: { supplierName: 'Non-preferred' }, unitCost: 1 });
       await supplierParts.create(item.id, {
-        supplierName: 'DigiKey',
+        supplier: { supplierName: 'DigiKey' },
         unitCost: 0.5,
         packQty: 10,
         minOrderQty: 5,
@@ -461,7 +477,7 @@ describe('ReportRepository', () => {
     it('threads the preferred supplier price-breaks through (issue #37)', async () => {
       const item = await items.create({ name: 'Resistor', quantity: 0, reorderPoint: 250 });
       await supplierParts.create(item.id, {
-        supplierName: 'DigiKey',
+        supplier: { supplierName: 'DigiKey' },
         unitCost: 0.1,
         isPreferred: true,
         priceBreaks: [
@@ -480,7 +496,7 @@ describe('ReportRepository', () => {
     it('costs the reorder plan line at its order quantity via price-breaks (issue #37)', async () => {
       const item = await items.create({ name: 'Resistor', quantity: 0, reorderPoint: 250 });
       await supplierParts.create(item.id, {
-        supplierName: 'DigiKey',
+        supplier: { supplierName: 'DigiKey' },
         unitCost: 0.1,
         isPreferred: true,
         priceBreaks: [{ qty: 100, unitCost: 0.08 }],
@@ -494,7 +510,7 @@ describe('ReportRepository', () => {
 
     it('returns null preferredSupplier when no supplier part is marked preferred', async () => {
       const item = await items.create({ name: 'NoPreferred', quantity: 0 });
-      await supplierParts.create(item.id, { supplierName: 'Some Supplier', unitCost: 1 });
+      await supplierParts.create(item.id, { supplier: { supplierName: 'Some Supplier' }, unitCost: 1 });
       const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
       const row = rows.find((r) => r.itemId === item.id)!;
       expect(row.preferredSupplier).toBeNull();
@@ -557,7 +573,11 @@ describe('ReportRepository', () => {
     it('delegates to buildReorderPlan, producing correct supplier groups', async () => {
       const r1 = await items.create({ name: 'R1', quantity: 0 });
       await items.create({ name: 'R2', quantity: 1 });
-      await supplierParts.create(r1.id, { supplierName: 'DigiKey', unitCost: 0.1, isPreferred: true });
+      await supplierParts.create(r1.id, {
+        supplier: { supplierName: 'DigiKey' },
+        unitCost: 0.1,
+        isPreferred: true,
+      });
       // r2 has no preferred supplier → goes to Unassigned.
 
       const plan = await reports.reorderPlan({ qtyThreshold: 5 });
@@ -573,9 +593,10 @@ describe('ReportRepository', () => {
       const covered = await items.create({ name: 'AlreadyOnOrder', quantity: 0 }); // base shortfall 5
       const stillLow = await items.create({ name: 'StillLow', quantity: 1 });
       const poId = crypto.randomUUID();
+      const acme = await suppliers.resolveOrCreate('Acme');
       await driver.execute(
-        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES (?, 'Acme', 'ORDERED', ?);",
-        [poId, Date.now()],
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES (?, ?, 'ORDERED', ?);",
+        [poId, acme.id, Date.now()],
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
@@ -741,7 +762,11 @@ describe('ReportRepository', () => {
         unitCost: null,
         mpn: 'NE555P',
       });
-      await supplierParts.create(dupA.id, { supplierName: 'Pref Co', unitCost: 0.5, isPreferred: true });
+      await supplierParts.create(dupA.id, {
+        supplier: { supplierName: 'Pref Co' },
+        unitCost: 0.5,
+        isPreferred: true,
+      });
       const dupB = await items.create({
         name: 'DupB',
         categoryId: cat.id,
@@ -814,9 +839,10 @@ describe('ReportRepository', () => {
         [UNASSIGNED_LOCATION_ID],
       );
       // A received PO line: 5 received @ £2 = £10 from supplier "RS", ordered 5 days ago.
+      const rs = await suppliers.resolveOrCreate('RS');
       await driver.execute(
-        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-1', 'RS', 'RECEIVED', ?);",
-        [day(-5)],
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES ('po-1', ?, 'RECEIVED', ?);",
+        [rs.id, day(-5)],
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
@@ -829,9 +855,10 @@ describe('ReportRepository', () => {
         [day(-3)],
       );
       // An OUT-OF-WINDOW received PO (400 days ago) — must be excluded.
+      const old = await suppliers.resolveOrCreate('Old');
       await driver.execute(
-        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-old', 'Old', 'RECEIVED', ?);",
-        [day(-400)],
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES ('po-old', ?, 'RECEIVED', ?);",
+        [old.id, day(-400)],
       );
       await driver.execute(
         `INSERT INTO purchase_order_lines (id, po_id, item_id, ordered_qty, received_qty, unit_cost)
@@ -860,9 +887,10 @@ describe('ReportRepository', () => {
     });
 
     it('ignores unreceived PO lines and zero-amount events, and yields an empty report when nothing is in window', async () => {
+      const rs = await suppliers.resolveOrCreate('RS');
       await driver.execute(
-        "INSERT INTO purchase_orders (id, supplier_name, status, ordered_at) VALUES ('po-2', 'RS', 'ORDERED', ?);",
-        [day(-2)],
+        "INSERT INTO purchase_orders (id, supplier_id, status, ordered_at) VALUES ('po-2', ?, 'ORDERED', ?);",
+        [rs.id, day(-2)],
       );
       // received_qty 0 → no spend yet.
       await driver.execute(
@@ -1003,7 +1031,11 @@ describe('ReportRepository', () => {
     it('resolves the preferred supplier name and cost onto the line (falling back to it when no manual cost)', async () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       const item = await items.create({ name: 'Cap', locationId: shelf.id, quantity: 2, unitCost: null });
-      await supplierParts.create(item.id, { supplierName: 'Parts Co', unitCost: 4, isPreferred: true });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Parts Co' },
+        unitCost: 4,
+        isPreferred: true,
+      });
 
       const catalogue = await reports.partsCatalogue({ kind: 'items', itemIds: [item.id] });
       const line = catalogue.groups[0].lines[0];

@@ -203,6 +203,8 @@ export {
   DownloadCloud as ScrapeIcon,
   Puzzle as ExtensionIcon,
   Globe as SupplierIcon,
+  // Folding one dictionary entry into another (suppliers, issue #384).
+  Merge as MergeIcon,
 
   // Procurement & lifecycle logistics (Phase 9, §4, §4.3, §4.4)
   ClipboardCheck as CycleCountIcon,

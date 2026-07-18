@@ -306,6 +306,7 @@ function OrderListRow({
   formatters: Formatters;
   onSelect: () => void;
 }) {
+  const t = useT();
   const status = poStatusPresentation(po.effectiveStatus);
   return (
     <button
@@ -318,7 +319,7 @@ function OrderListRow({
       }`}
     >
       <div className="flex w-full items-center justify-between gap-2">
-        <span className="font-medium">{po.supplierName}</span>
+        <span className="font-medium">{po.supplierName ?? t('supplier.unknown')}</span>
         <span className={`text-xs font-semibold ${status.toneClass}`}>{status.label}</span>
       </div>
       <div className="flex w-full items-center justify-between text-xs text-muted-foreground">
@@ -445,7 +446,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
     <div className="flex flex-col gap-4">
       <Surface className="flex flex-wrap items-center gap-3 p-4">
         <div className="flex flex-col">
-          <span className="text-base font-semibold">{po.supplierName}</span>
+          <span className="text-base font-semibold">{po.supplierName ?? t('supplier.unknown')}</span>
           <span className="text-xs text-muted-foreground">{po.reference ?? 'No reference'}</span>
         </div>
         <span
@@ -587,7 +588,10 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         open={importOpen}
         onClose={() => setImportOpen(false)}
         poId={po.id}
-        supplierName={po.supplierName}
+        // Deliberately undefined rather than the "unknown supplier" placeholder: that string is
+        // display-only, and seeding the picker with it would create a supplier actually named it.
+        supplierId={po.supplierId ?? undefined}
+        supplierName={po.supplierName ?? undefined}
       />
 
       <PurchaseOrderLineDialog

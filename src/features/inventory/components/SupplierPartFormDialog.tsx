@@ -3,7 +3,7 @@ import { AutocompleteField, Button, FormField, Input, Modal, Textarea } from '@/
 import type { CreateSupplierPartInput, PriceBreak, SupplierPart } from '@/db/repositories';
 import { SUPPORTED_SUPPLIER_LABELS } from '@/features/scraping';
 import { CURRENCY_OPTIONS } from '@/features/settings/settings';
-import { useFieldSuggestions } from '../queries';
+import { SupplierPicker, supplierRefFrom, type SupplierPickerValue } from '@/features/suppliers';
 
 /**
  * URL-field help: which suppliers the companion extension can scrape, listed from the
@@ -110,7 +110,12 @@ export function SupplierPartFormDialog({
   onSubmit,
   onClose,
 }: SupplierPartFormDialogProps) {
-  const [supplierName, setSupplierName] = useState(part?.supplierName ?? '');
+  // Seeded from the part's *resolved* supplier when editing, so re-saving an untouched form
+  // keeps it pointed at the same row rather than re-resolving its name.
+  const [supplier, setSupplier] = useState<SupplierPickerValue>({
+    supplierId: part?.supplierId ?? null,
+    name: part?.supplierName ?? '',
+  });
   const [orderCode, setOrderCode] = useState(part?.orderCode ?? '');
   const [unitCost, setUnitCost] = useState(part?.unitCost != null ? String(part.unitCost) : '');
   const [currency, setCurrency] = useState(part?.currency ?? '');
@@ -120,12 +125,12 @@ export function SupplierPartFormDialog({
   const [breaksText, setBreaksText] = useState(part ? breaksToText(part.priceBreaks) : '');
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const { data: supplierSuggestions } = useFieldSuggestions('supplierName');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (supplierName.trim().length === 0) {
+    const supplierRef = supplierRefFrom(supplier);
+    if (supplierRef === null) {
       setError('A supplier name is required.');
       return;
     }
@@ -145,7 +150,7 @@ export function SupplierPartFormDialog({
       return;
     }
     onSubmit({
-      supplierName: supplierName.trim(),
+      supplier: supplierRef,
       orderCode: optionalText(orderCode),
       unitCost: cost,
       currency: optionalText(currency),
@@ -165,22 +170,21 @@ export function SupplierPartFormDialog({
       initialFocusRef={nameRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="supplier-part-form">
-        <AutocompleteField
-          label="Supplier"
+        <SupplierPicker
           hint={
             'The distributor or shop you buy this part from (e.g. **DigiKey**, **RS**, or a local ' +
             'supplier). **Required.** An item can list several suppliers; **star** one in the table ' +
             "to mark it preferred — its unit cost feeds the item's valuation unless you've set a " +
-            'manual cost on the item.\n\nType-ahead suggests suppliers already in your catalogue.'
+            'manual cost on the item.\n\nPick a supplier you already use, or type a new name to add ' +
+            'one. Spelling, spacing and punctuation are ignored when matching, so a supplier is ' +
+            'never duplicated by a second way of writing it.'
           }
           inputRef={nameRef}
-          value={supplierName}
+          value={supplier}
           onChange={(value) => {
-            setSupplierName(value);
+            setSupplier(value);
             setError(null);
           }}
-          suggestions={supplierSuggestions ?? []}
-          placeholder="e.g. DigiKey"
           data-testid="supplier-part-name"
         />
 

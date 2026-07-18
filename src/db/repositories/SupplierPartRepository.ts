@@ -6,15 +6,22 @@
  * with at most one marked **preferred**. {@link setPreferred} enforces the single-winner
  * invariant in one transaction so two suppliers can never both be preferred for an item.
  *
+ * The supplier itself is a first-class row (issue #384): a part carries `supplier_id`, and
+ * every read joins `suppliers` to project the canonical name alongside it, so a consumer still
+ * reads `supplierName` without knowing the join exists. Writes name their supplier through a
+ * {@link SupplierRef} and resolve it via {@link SupplierRepository.resolveRef} — the single
+ * seam through which a name may enter the database.
+ *
  * All SQL lives over the injected driver (§2.1.1) — components never write SQL. Creation
  * grows storage and is therefore Hard-Stop gated; deletes (which free space) are not and
  * record a tombstone in the same transaction so the deletion syncs (§7.2).
  */
 import { DbError } from '../errors';
-import { BaseRepository } from './base';
+import { BaseRepository, type RepositoryOptions } from './base';
 import { rowToSupplierPart, rowToSupplierPartPriceHistory } from './mappers';
+import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
-import type { SqlStatement, SqlValue } from '../rpc/driver';
+import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import type {
   CreateSupplierPartInput,
   PageParams,
@@ -26,6 +33,16 @@ import type {
   SupplierPartRow,
   UpdateSupplierPartInput,
 } from './types';
+
+/**
+ * Every supplier-part read goes through this projection: the part's own columns plus the
+ * canonical `suppliers.name` as `supplier_name`, which is what {@link rowToSupplierPart}
+ * surfaces as the DTO's read-only `supplierName`. Defined once so no read can forget the join
+ * and hand back a row with no supplier on it.
+ */
+const SUPPLIER_PART_SELECT = `SELECT sp.*, s.name AS supplier_name
+                                FROM supplier_parts sp
+                                JOIN suppliers s ON s.id = sp.supplier_id`;
 
 /**
  * Build the price-history INSERT recording a supplier part's cost at this instant, to be
@@ -93,18 +110,23 @@ function serialisePriceBreaks(breaks: readonly PriceBreak[] | null | undefined):
 }
 
 export class SupplierPartRepository extends BaseRepository {
+  private readonly suppliers: SupplierRepository;
+
+  constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
+    super(driver, options);
+    this.suppliers = new SupplierRepository(driver, options);
+  }
+
   async getById(id: string): Promise<SupplierPart | undefined> {
-    const row = await this.driver.queryOne<SupplierPartRow>('SELECT * FROM supplier_parts WHERE id = ?;', [
-      id,
-    ]);
+    const row = await this.driver.queryOne<SupplierPartRow>(`${SUPPLIER_PART_SELECT} WHERE sp.id = ?;`, [id]);
     return row ? rowToSupplierPart(row) : undefined;
   }
 
   /** Every supplier part for an item, preferred first then by supplier name. */
   async listForItem(itemId: string): Promise<SupplierPart[]> {
     const rows = await this.driver.query<SupplierPartRow>(
-      `SELECT * FROM supplier_parts WHERE item_id = ?
-       ORDER BY is_preferred DESC, supplier_name COLLATE NOCASE ASC, order_code COLLATE NOCASE ASC;`,
+      `${SUPPLIER_PART_SELECT} WHERE sp.item_id = ?
+       ORDER BY sp.is_preferred DESC, s.name COLLATE NOCASE ASC, sp.order_code COLLATE NOCASE ASC;`,
       [itemId],
     );
     return rows.map(rowToSupplierPart);
@@ -122,8 +144,8 @@ export class SupplierPartRepository extends BaseRepository {
     if (itemIds.length === 0) return byItem;
     const placeholders = itemIds.map(() => '?').join(', ');
     const rows = await this.driver.query<SupplierPartRow>(
-      `SELECT * FROM supplier_parts WHERE item_id IN (${placeholders})
-       ORDER BY is_preferred DESC, supplier_name COLLATE NOCASE ASC, order_code COLLATE NOCASE ASC;`,
+      `${SUPPLIER_PART_SELECT} WHERE sp.item_id IN (${placeholders})
+       ORDER BY sp.is_preferred DESC, s.name COLLATE NOCASE ASC, sp.order_code COLLATE NOCASE ASC;`,
       [...itemIds],
     );
     for (const row of rows) {
@@ -138,7 +160,7 @@ export class SupplierPartRepository extends BaseRepository {
   /** The preferred supplier part for an item, if one is marked. */
   async getPreferred(itemId: string): Promise<SupplierPart | undefined> {
     const row = await this.driver.queryOne<SupplierPartRow>(
-      'SELECT * FROM supplier_parts WHERE item_id = ? AND is_preferred = 1 LIMIT 1;',
+      `${SUPPLIER_PART_SELECT} WHERE sp.item_id = ? AND sp.is_preferred = 1 LIMIT 1;`,
       [itemId],
     );
     return row ? rowToSupplierPart(row) : undefined;
@@ -146,14 +168,16 @@ export class SupplierPartRepository extends BaseRepository {
 
   async create(itemId: string, input: CreateSupplierPartInput): Promise<SupplierPart> {
     this.assertWritable();
-    const supplierName = cleanText(input.supplierName);
-    if (!supplierName) {
-      throw new DbError('SQLITE_CONSTRAINT', 'A supplier part must have a supplier name.');
-    }
-    const id = crypto.randomUUID();
     const wantsPreferred = input.isPreferred === true;
+    // Validate BEFORE resolving the supplier: resolving can mint a new supplier row, and it is
+    // not part of the transaction below, so doing it first would leave a phantom supplier in
+    // the dictionary every time a write was rejected for an unrelated bad field.
     const cost = cleanCost(input.unitCost);
     const currency = cleanText(input.currency);
+    // A typed name folds onto the existing supplier (or mints one); an id is verified. Either
+    // way the part stores only the id — the name is the supplier's, not the part's.
+    const supplierId = await this.suppliers.resolveRef(input.supplier);
+    const id = crypto.randomUUID();
 
     const statements: SqlStatement[] = [];
     // Single-winner: clear any existing preferred for this item before marking the new one.
@@ -167,13 +191,13 @@ export class SupplierPartRepository extends BaseRepository {
     }
     statements.push({
       sql: `INSERT INTO supplier_parts
-              (id, item_id, supplier_name, order_code, unit_cost, currency, pack_qty,
+              (id, item_id, supplier_id, order_code, unit_cost, currency, pack_qty,
                min_order_qty, price_breaks, url, is_preferred)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         itemId,
-        supplierName,
+        supplierId,
         cleanText(input.orderCode),
         cost,
         currency,
@@ -213,13 +237,11 @@ export class SupplierPartRepository extends BaseRepository {
 
     const sets: string[] = [];
     const params: SqlValue[] = [];
-    if (input.supplierName !== undefined) {
-      const name = cleanText(input.supplierName);
-      if (!name) {
-        throw new DbError('SQLITE_CONSTRAINT', 'A supplier part must have a supplier name.');
-      }
-      sets.push('supplier_name = ?');
-      params.push(name);
+    // Re-pointing the part at another supplier moves the id; it never edits a name in place —
+    // renaming is the supplier's own operation and applies everywhere at once.
+    if (input.supplier !== undefined) {
+      sets.push('supplier_id = ?');
+      params.push(await this.suppliers.resolveRef(input.supplier));
     }
     if (input.orderCode !== undefined) {
       sets.push('order_code = ?');

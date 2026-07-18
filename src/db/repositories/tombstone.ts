@@ -54,7 +54,8 @@ export const SYNC_TABLES = [
   'location_field_values', // FK → locations, field_defs (issue #97 — the values a location offers for inheritance)
   'tags', // independent dictionary
   'items', // FK → categories
-  'supplier_parts', // FK → items (Phase 60 — N suppliers per item; ordered after items so its FK never trips on an UPSERT batch)
+  'suppliers', // independent dictionary (issue #384 — the canonical supplier list; ordered before supplier_parts and purchase_orders, which both reference it, so their FKs never trip on an UPSERT batch)
+  'supplier_parts', // FK → items (CASCADE), suppliers (CASCADE) — Phase 60 / issue #384; N suppliers per item, ordered after both parents so its FKs never trip on an UPSERT batch
   'supplier_part_price_history', // FK → supplier_parts (Phase 81 — cost-over-time points; ordered after supplier_parts so its FK never trips on an UPSERT batch)
   'item_stock', // FK → items, locations (per-location ledger; LWW; ordered after items so its recompute trigger has the final word on items.quantity)
   'stock_batches', // FK → items, locations (per-batch ledger, the SSOT below item_stock; ordered after it so its recompute trigger has the final word on item_stock.quantity → items.quantity)
@@ -76,7 +77,7 @@ export const SYNC_TABLES = [
   'maintenance_schedules', // FK → items
   'wishlist', // independent (feature-gap G8 — manual "to-buy" list; LWW leaf, no FK → no FK_REFS reconcile entry, like contacts/projects)
   'tare_presets', // independent (issue #94 — saved empty-container weights; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist)
-  'purchase_orders', // independent (supplier-keyed order; Phase 62 — ordered after items/supplier_parts so its child's FKs never trip on an UPSERT batch)
+  'purchase_orders', // FK → suppliers (SET NULL) — Phase 62 / issue #384; ordered after suppliers and after items/supplier_parts so its own and its child's FKs never trip on an UPSERT batch
   'purchase_order_lines', // FK → purchase_orders (CASCADE), items + supplier_parts (SET NULL) — ordered after its parent PO and after items/supplier_parts (Phase 62)
 ] as const;
 
