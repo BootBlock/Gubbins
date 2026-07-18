@@ -38,6 +38,11 @@ and walks you through a review before anything is written:
   in as the item's SKU automatically — handy for turning an invoice or order confirmation
   straight into items.
 
+A [[project's bill of materials|Projects-and-BOM]] and a
+[[purchase list|Purchase-Orders]] each import from where you're working, using the same format
+detection — so a BOM export, a supplier basket or a typed shopping list can be brought in without
+going through the item importer first.
+
 > **💡 Tip**
 > The fastest way to start a big inventory is to paste a list you already have — a spreadsheet
 > column, a stocktake note — and let the importer turn it into items. Then run

@@ -123,6 +123,9 @@ vi.mock('./components/PurchaseOrderLineDialog', () => ({
 vi.mock('./components/ReceiveLineDialog', () => ({
   ReceiveLineDialog: () => null,
 }));
+vi.mock('./components/ImportPurchaseListDialog', () => ({
+  ImportPurchaseListDialog: () => null,
+}));
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
