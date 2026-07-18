@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 import { addSavedSearch, removeSavedSearch, type SavedSearch } from './saved-searches';
 
 interface SavedSearchesStore {
@@ -25,6 +26,11 @@ export const useSavedSearchesStore = create<SavedSearchesStore>()(
       save: (name, query) => set((state) => ({ searches: addSavedSearch(state.searches, name, query) })),
       remove: (id) => set((state) => ({ searches: removeSavedSearch(state.searches, id) })),
     }),
-    { name: 'gubbins:saved-searches' },
+    {
+      name: 'gubbins:saved-searches',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );

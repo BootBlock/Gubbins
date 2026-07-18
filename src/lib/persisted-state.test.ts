@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import {
+  adoptUnversioned,
   isPlainObject,
   normaliseArray,
   normaliseBoolean,
@@ -89,5 +92,42 @@ describe('normaliseInteger', () => {
     expect(normaliseInteger(99, 0, { min: 0, max: 10 })).toBe(10);
     expect(normaliseInteger(-99, 0, { min: 0, max: 10 })).toBe(0);
     expect(normaliseInteger(-99, 0, { min: 0 })).toBe(0);
+  });
+});
+
+describe('adoptUnversioned', () => {
+  it('adopts a v0 payload verbatim', () => {
+    const persisted = { searches: [{ id: 'a', name: 'Spares' }] };
+    expect(adoptUnversioned(persisted)).toBe(persisted);
+  });
+
+  /**
+   * The reason the helper exists at all: zustand hydrates with `undefined` — silently wiping the
+   * user's state — when the stored version differs from the declared one and no `migrate` is set.
+   * Both halves are asserted so the pairing can't be half-undone by a later edit.
+   */
+  describe('paired with a version bump', () => {
+    interface Counter {
+      readonly count: number;
+    }
+
+    /** Seed a v0 payload under `name`, then build the v1 store that reads it back. */
+    function rehydrate(name: string, migrate?: (persisted: unknown) => Counter) {
+      localStorage.setItem(name, JSON.stringify({ state: { count: 7 }, version: 0 }));
+      return create<Counter>()(persist(() => ({ count: 0 }), { name, version: 1, migrate }));
+    }
+
+    it('keeps the persisted state across the 0 → 1 bump', () => {
+      expect(rehydrate('test:adopt', adoptUnversioned).getState().count).toBe(7);
+    });
+
+    it('would discard it if the version were bumped without a migrate', () => {
+      // Documents the failure mode, so the pairing is understood rather than cargo-culted.
+      // Zustand logs an error on this path; it's the expected outcome here, not a test failure.
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(rehydrate('test:bare').getState().count).toBe(0);
+      expect(error).toHaveBeenCalled();
+      error.mockRestore();
+    });
   });
 });

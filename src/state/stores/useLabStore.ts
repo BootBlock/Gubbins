@@ -17,6 +17,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 import type { LabFlagId } from '@/features/lab/lab-flags';
 import type { OccasionId, OccasionMode, OccasionOverrides } from '@/components/background/seasonal';
 
@@ -51,7 +52,12 @@ export const useLabStore = create<LabStore>()(
       setFlag: (id, on) => set((state) => ({ flags: { ...state.flags, [id]: on } })),
       resetLab: () => set({ ...EMPTY }),
     }),
-    { name: 'gubbins:lab' },
+    {
+      name: 'gubbins:lab',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );
 

@@ -10,6 +10,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface DismissedAlertsStore {
   /** Set of dismissed alert ids, persisted across page loads. */
@@ -52,6 +53,9 @@ export const useDismissedAlertsStore = create<DismissedAlertsStore>()(
     }),
     {
       name: 'gubbins:dismissed-alerts',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
       // Serialise the Set as an array for JSON storage.
       partialize: (state): PersistedState => ({
         dismissedIds: [...state.dismissedIds],

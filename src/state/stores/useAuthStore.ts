@@ -10,6 +10,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { adoptUnversioned } from '@/lib/persisted-state';
 
 export interface AuthStore {
   /** Connected provider id (`'memory'` | `'file-system'`), or null when never set up. */
@@ -36,6 +37,11 @@ export const useAuthStore = create<AuthStore>()(
       markSynced: (at = Date.now()) => set({ lastSyncedAt: at }),
       disconnect: () => set({ providerId: null, providerLabel: null, connectedAt: null, lastSyncedAt: null }),
     }),
-    { name: 'gubbins:auth' },
+    {
+      name: 'gubbins:auth',
+      // v1 = the shipped shape, versioned so a later change has somewhere to hang a migration.
+      version: 1,
+      migrate: adoptUnversioned,
+    },
   ),
 );
