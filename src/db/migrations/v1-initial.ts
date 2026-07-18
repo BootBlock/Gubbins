@@ -463,7 +463,9 @@ const baselineStatements: SqlStatement[] = [
   {
     // One definition per name: the dictionary must not fragment, or two spellings of
     // "Manufacturer" would silently break inheritance. NOCASE so case alone can't
-    // fork a def.
+    // fork a def — but NOCASE folds ASCII A–Z only, which leaves `Café`/`CAFÉ` free to
+    // fork one anyway. The write seam therefore compares through the Unicode-aware fold
+    // in `lib/name-fold` (issue #343); this index is the ASCII-level backstop below it.
     sql: `CREATE UNIQUE INDEX idx_field_defs_name ON field_defs(name COLLATE NOCASE);`,
   },
   { sql: updatedAtTrigger('field_defs') },

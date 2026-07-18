@@ -30,8 +30,11 @@ the same field — not two fields that happen to look alike. That's what lets a 
 [[location|Locations-and-Stock]] reach items in either category, and it means renaming
 `Manufacturer` to `Brand` renames it everywhere at once.
 
-Two consequences worth knowing:
+Three consequences worth knowing:
 
+- Names are matched **ignoring case**, in any language — `Manufacturer` and `MANUFACTURER` are
+  one field, and so are `Größe` and `GRÖSSE`. Adding a field under a different capitalisation
+  reuses the one you already have rather than quietly making a second one beside it.
 - You can't define the same name twice with **different types** — if `Rating` already exists as
   a text field, adding a number field called `Rating` is refused. Pick a different name.
 - Changing a field's **type** is only allowed while a single category uses it. If others share

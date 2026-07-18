@@ -17,6 +17,7 @@ import {
   type AncestorLocation,
   type InheritableOffer,
 } from '@/features/inventory/location-inheritance';
+import { foldName } from '@/lib/name-fold';
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository } from './base';
@@ -326,12 +327,34 @@ export class CategoryRepository extends BaseRepository {
   }
 
   /**
+   * The dictionary definition holding `name`, or `undefined` when the name is free.
+   * `excludeDefId` skips one definition — the row a rename is moving, which must not
+   * clash with itself.
+   *
+   * **Matched in JS, not SQL, and that is the point (issue #343).** The obvious
+   * `WHERE name = ? COLLATE NOCASE` folds ASCII A–Z only, so `Café` would not find
+   * `CAFÉ` and the two would fork the definition in exactly the way the table's unique
+   * index exists to prevent — see `lib/name-fold` for why the collation can't be widened.
+   * The dictionary is a user-scale list of field names (bounded by how many fields a
+   * person has defined, not by the item count), so reading it whole is one small query.
+   *
+   * Ordered so the answer is stable: a database written before this fold existed can
+   * already hold both `Größe` and `GRÖSSE`, and which of the two an unordered read
+   * happened to return first would otherwise decide which definition a field joins.
+   */
+  private async findFieldDefByName(name: string, excludeDefId?: string): Promise<FieldDefRow | undefined> {
+    const rows = await this.driver.query<FieldDefRow>('SELECT * FROM field_defs ORDER BY name, id;');
+    const needle = foldName(name);
+    return rows.find((row) => row.id !== excludeDefId && foldName(row.name) === needle);
+  }
+
+  /**
    * Resolve a dictionary definition by name, creating it when absent (issue #97).
    *
    * Reuse by name is the mechanism that keeps the dictionary from fragmenting: two
    * categories that both declare "Manufacturer" must land on the *same* definition, or a
    * location's inheritable Manufacturer would reach items in one category and silently
-   * miss the other. Matching is case-insensitive, mirroring the table's NOCASE unique index.
+   * miss the other. Matching is case-insensitive — see {@link findFieldDefByName}.
    *
    * A name that already exists with a **different** field type is rejected rather than
    * retyping the shared definition out from under every other category and location using
@@ -341,15 +364,12 @@ export class CategoryRepository extends BaseRepository {
     input: { name: string; fieldType: FieldType; options: string | null; description?: string | null },
     statements: SqlStatement[],
   ): Promise<string> {
-    const existing = await this.driver.queryOne<FieldDefRow>(
-      'SELECT * FROM field_defs WHERE name = ? COLLATE NOCASE;',
-      [input.name],
-    );
+    const existing = await this.findFieldDefByName(input.name);
     if (existing) {
       if (existing.field_type !== input.fieldType) {
         throw new DbError(
           'SQLITE_CONSTRAINT',
-          `The field "${input.name}" already exists as a ${existing.field_type} field. ` +
+          `The field "${existing.name}" already exists as a ${existing.field_type} field. ` +
             `Rename this field, or change the existing one's type, rather than defining it twice.`,
         );
       }
@@ -540,16 +560,14 @@ export class CategoryRepository extends BaseRepository {
     const defSets: string[] = [];
     const defParams: SqlValue[] = [];
     if (input.name !== undefined) {
-      // A rename onto a name another definition already holds would collide with the
-      // NOCASE unique index; report it in the app's voice rather than as a raw SQLite error.
-      const clash = await this.driver.queryOne<{ id: string }>(
-        'SELECT id FROM field_defs WHERE name = ? COLLATE NOCASE AND id <> ?;',
-        [validated.name, existing.defId],
-      );
+      // A rename onto a name another definition already holds fragments the dictionary;
+      // report it in the app's voice rather than as a raw SQLite error. Named back with the
+      // *existing* spelling, so a clash that differs only in case reads as the collision it is.
+      const clash = await this.findFieldDefByName(validated.name, existing.defId);
       if (clash) {
         throw new DbError(
           'SQLITE_CONSTRAINT',
-          `A field named "${validated.name}" already exists. Field names identify a field across ` +
+          `A field named "${clash.name}" already exists. Field names identify a field across ` +
             `every category and location, so they must be unique.`,
         );
       }
