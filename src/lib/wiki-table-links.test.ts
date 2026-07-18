@@ -17,12 +17,12 @@
  * test rather than escaping it by hand at the call site.
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { repoPath } from '../test/repo-path';
 
-// Vitest runs from the project root; under happy-dom `import.meta.url` is an http: URL, not a
-// file: one, so resolve against cwd (the same approach as the docs/todo guard).
-const WIKI_DIR = resolve(process.cwd(), 'docs/wiki');
+// Resolved from *this file's* checkout, never `process.cwd()` — see `repoPath`.
+const WIKI_DIR = repoPath(import.meta.dirname, 'docs', 'wiki');
 
 /** A `[[…]]` wiki link. Non-greedy so adjacent links on one line stay separate. */
 const WIKI_LINK = /\[\[([^\]]*?)\]\]/g;

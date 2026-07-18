@@ -7,7 +7,7 @@
  * place without the other fails CI rather than shipping a broken or over-broad grant.
  */
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { repoPath } from '../../../test/repo-path';
 import { describe, expect, it } from 'vitest';
 import {
   ALL_EXTENSION_HOST_PERMISSIONS,
@@ -17,9 +17,8 @@ import {
 } from './suppliers';
 import { SUPPLIER_PARSERS } from './registry';
 
-// Vitest runs from the project root, so resolve the manifest relative to cwd (the test
-// env's import.meta.url is an http: URL under happy-dom, not a file: URL).
-const manifestPath = resolve(process.cwd(), 'extension/manifest.json');
+// Resolved from *this file's* checkout, never `process.cwd()` — see `repoPath`.
+const manifestPath = repoPath(import.meta.dirname, 'extension', 'manifest.json');
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { host_permissions?: string[] };
 
 describe('extension host_permissions (§9 / §4 hardening)', () => {

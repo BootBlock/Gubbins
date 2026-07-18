@@ -31,6 +31,7 @@ import { writeImageFiles } from '@/features/images/opfs-images';
 import { BASELINE_REVISION } from '@/db/migrations';
 import { readBackupFile, type ParsedBackup } from './backup-format';
 import { applySettings } from './backup-settings';
+import { DEFAULT_SETTINGS_GROUPS, type SettingsGroupSelection } from './settings-groups';
 
 export type RestoreMode = 'merge' | 'replace';
 
@@ -74,8 +75,16 @@ export interface RestoreOutcome {
  * Apply a parsed backup in the chosen mode. **Destructive in `replace` mode** — the caller
  * must confirm first. Does not reload; returns whether a reload is required (see
  * {@link RestoreOutcome}) so the caller reloads or invalidates queries in place.
+ *
+ * `settingGroups` narrows which of the settings the backup carries actually land on this device
+ * (issue #175); the groups not chosen keep whatever this device already had, because the
+ * preferences blob is merged rather than overwritten.
  */
-export async function restoreBackup(parsed: ParsedBackup, mode: RestoreMode): Promise<RestoreOutcome> {
+export async function restoreBackup(
+  parsed: ParsedBackup,
+  mode: RestoreMode,
+  settingGroups: SettingsGroupSelection = DEFAULT_SETTINGS_GROUPS,
+): Promise<RestoreOutcome> {
   let reloadRequired = false;
   if (mode === 'replace') {
     reloadRequired = await restoreReplace(parsed);
@@ -83,7 +92,7 @@ export async function restoreBackup(parsed: ParsedBackup, mode: RestoreMode): Pr
     await restoreMerge(parsed);
   }
 
-  const settingsRestored = parsed.settings ? applySettings(parsed.settings) : 0;
+  const settingsRestored = parsed.settings ? applySettings(parsed.settings, settingGroups) : 0;
   if (settingsRestored > 0) reloadRequired = true; // stores only re-hydrate on boot
 
   return { reloadRequired, message: restoreSummary(parsed, mode, settingsRestored) };

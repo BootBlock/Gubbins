@@ -13,9 +13,32 @@ A backup is one portable **`.zip`** that bundles:
 - A version-guarded **JSON snapshot** of your data.
 - An exact copy of the **`.sqlite`** database.
 - **Full-resolution images**.
-- Your **device settings**.
+- Your **device settings** — as much or as little of them as you choose (see below).
 
 So restoring gives you back not just your items but the whole app state.
+
+## Choosing which settings travel
+
+Settings aren't all-or-nothing. Tick **App settings & preferences** when creating a backup and a
+list of settings **groups** appears underneath — appearance, language and units, item cards,
+dashboard, alerts, keyboard shortcuts, scanning, printed catalogue, reports, saved searches, and a
+**This device** group. Tick only the groups you want the file to carry (or use **Select all** /
+**Select none**).
+
+Restoring works the same way in reverse: after you pick a backup file, Gubbins lists the groups
+that file actually contains and lets you choose which ones to apply here. Anything you leave
+unticked is left exactly as it is on this device — restoring your theme won't disturb your
+thresholds, and vice versa.
+
+> **ℹ️ Note**
+> **This device** — the bridge address, kiosk mode, a connected scale and any prompts you've
+> dismissed — is **off by default at both ends**, because it usually describes one particular
+> machine rather than how you like Gubbins to work. Tick it when creating *and* when restoring if
+> you're rebuilding the *same* device.
+
+> **💡 Tip**
+> Your bridge **access token** is never included in a backup, whatever you tick, so a `.zip` you
+> share or store elsewhere can't leak it. You'll re-enter it on the restored device.
 
 ## Restoring: Merge or Replace
 
