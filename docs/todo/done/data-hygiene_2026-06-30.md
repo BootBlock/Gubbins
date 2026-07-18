@@ -1,5 +1,7 @@
 # Phase 77 — Data-hygiene / quality report (living plan)
 
+> **Status:** ✅ COMPLETE — Phase 77 shipped (the data-hygiene report on Reports).
+
 Third feature-gap audit (`feature-gap-audit-2026-06-30c`) **Wave 1, candidate #4** — the **last**
 Wave-1 phase. Read-only; **no migration** (`user_version` stays 1). A "tidy up" report that
 surfaces records needing attention, each with a jump-to-fix link. Extends the Phase-61/74

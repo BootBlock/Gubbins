@@ -172,10 +172,10 @@ checkout after merge to confirm.** No dependency change.
 
 ### Deferred (tracked in the spec)
 Unlimited on other modes (CHECK-forbidden); metered cost accrual; per-location unlimited; an unlimited filter
-facet — all Backlog with triggers (see `docs/todo/unlimited-supply_2026-07-03.md`).
+facet — all Backlog with triggers (see `docs/todo/done/unlimited-supply_2026-07-03.md`).
 
 ### Continuation prompt
-See `docs/todo/unlimited-supply_2026-07-03.md` → **Continuation prompt**, reproduced identically at the end of
+See `docs/todo/done/unlimited-supply_2026-07-03.md` → **Continuation prompt**, reproduced identically at the end of
 the implementation session's chat reply.
 
 ---
@@ -534,7 +534,7 @@ run the real `node:sqlite` engine (FTS5-capable) and include the byte-identical 
 Run as Wave 1 {64} → Wave 2 {65,66,67} (three parallel worktrees) → Wave 3 {68} alone; **one worktree +
 implementation sub-agent per phase, each through its mandatory pre-merge code-review gate** (all CLEAN
 with NITs — fixes applied, waived findings recorded in the per-phase Outcome notes in
-`docs/todo/inventory-breadth_2026-06-30.md`).
+`docs/todo/done/inventory-breadth_2026-06-30.md`).
 **Date:** 2026-06-30
 **Status:** ✅ **All merged to `main` (final merge `32c0c7f`).** `npx tsc -p tsconfig.app.json --noEmit`
 clean · **1626/1626 unit tests** (157 files, +156 over the 1470 post-Phase-63 baseline) · `npm run build`
@@ -572,11 +572,11 @@ both correct, informational). Full detail in auto-memory [[phase-64-scope-decisi
 
 **In flight — Wave 2 of the inventory-breadth plan ({65 procurement automation, 66 asset lifecycle v24, 67
 bulk CSV import}, three parallel worktrees)**, then Wave 3 {68 alert centre} alone. Plan doc:
-`docs/todo/inventory-breadth_2026-06-30.md`. Only Phase 66 touches schema (**v24**).
+`docs/todo/done/inventory-breadth_2026-06-30.md`. Only Phase 66 touches schema (**v24**).
 
 > **Numbering note.** This a11y lineage owns Phases **63–64**. The **"inventory-breadth"** plan (auto-memory
 > `feature-gap-audit-2026-06-30b`) **renumbers to follow it (≥ 65)** and lives in its own plan doc
-> (`docs/todo/inventory-breadth_2026-06-30.md`).
+> (`docs/todo/done/inventory-breadth_2026-06-30.md`).
 
 ---
 
@@ -596,7 +596,7 @@ smoke gained **4 new steps** (one per phase) · `test:e2e` **102/102** (Phase 62
 Phase 61 added no migration). **No dependency change.** **`build:extension` NOT re-run** (no §9 /
 `extension/` edit in any phase).
 
-> ℹ️ **Plan & execution model (now closed).** This was `docs/todo/inventory-depth_2026-06-30.md`
+> ℹ️ **Plan & execution model (now closed).** This was `docs/todo/done/inventory-depth_2026-06-30.md`
 > (Phases 59–62), a parallelised competitor-gap closure with **pre-allocated migration versions**
 > (59→v21, 60→v22, 61→none, 62→v23) so concurrent worktrees never claimed the same `user_version`.
 > All four phases are merged and reviewed; the plan doc's "Plan complete — no continuation" section

@@ -1,5 +1,7 @@
 # Inventory-depth phases (59–62) — competitor-gap closure (2026-06-30)
 
+> **Status:** ✅ COMPLETE — Phases 59–62 shipped.
+
 > **Living document.** Each phase is implemented in its own worktree/session. Tick the
 > `[ ]` boxes as work lands, append a one-paragraph **Outcome** note under each phase when it
 > completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently

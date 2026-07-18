@@ -1,5 +1,7 @@
 # Custom-field templates phases (69–72) — migration squash + custom-field depth (2026-06-30)
 
+> **Status:** ✅ COMPLETE — Phases 71–72 shipped (search/filter, CSV import/export).
+
 > **Living document.** Each phase is implemented in its own worktree/session. Tick the
 > `[ ]` boxes as work lands, append a one-paragraph **Outcome** note under each phase when it
 > completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently
@@ -400,7 +402,7 @@ relevant) and report the result plainly.
 ```text
 Plan complete — no continuation.
 
-The Gubbins custom-field-templates plan (docs/todo/custom-fields_2026-06-30.md) is FINISHED. All
+The Gubbins custom-field-templates plan (docs/todo/done/custom-fields_2026-06-30.md) is FINISHED. All
 four phases are implemented, reviewed and merged to main:
 
 - Phase 69 — migration squash → single v1-initial baseline (merged 6275c36)

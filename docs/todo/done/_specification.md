@@ -1,5 +1,7 @@
 # **Hardware & Inventory Tracking System Specification**
 
+> **Status:** ⛔ SUPERSEDED — the original build spec. The app has moved well beyond it; kept for historical context only, and NOT a description of current behaviour.
+
 ## **1\. Introduction**
 
 This document serves as the absolute specification and implementation guide for an AI agent (e.g., Opus 4.8) to construct a highly flexible, extensible web application for tracking electronic components, 3D printing supplies, tools, and general inventory.

@@ -1,5 +1,7 @@
 # Feature-gap audit — backlog (living plan)
 
+> **Status:** ✅ COMPLETE (2026-07-10) — every actionable item G1–G9 shipped.
+
 > ✅ **COMPLETE (2026-07-10).** Every actionable item G1–G9 has shipped and passed review; **G4 (UI
 > internationalization) was the last.** This file is retained as the record of the audit — the
 > deliberate non-goals below remain non-goals. No open items remain.

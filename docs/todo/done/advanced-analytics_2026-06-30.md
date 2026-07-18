@@ -1,5 +1,7 @@
 # Advanced inventory analytics — Phase 74 (living plan + outcome)
 
+> **Status:** ✅ COMPLETE — shipped.
+
 The second feature-gap audit (`feature-gap-audit-2026-06-30b`, candidate #6) flagged **advanced
 analytics** as the last parked prosumer gap after label customisation (Phase 73). Scope: **ABC
 analysis, inventory turnover, stock aging, and valuation-over-time** — all read-only projections

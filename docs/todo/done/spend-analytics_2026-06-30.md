@@ -1,5 +1,7 @@
 # Phase 79 — Procurement / spend analytics
 
+> **Status:** ✅ COMPLETE — Phase 79 shipped.
+
 > Wave 2, candidate #5 (the last) of the third feature-gap audit
 > (`feature-gap-audit-2026-06-30c`). **Read-only — NO migration** (`user_version` stays 2).
 > Completes Wave 2. Living plan doc.

@@ -21,7 +21,9 @@
 > continuation prompt instead kicks off the first **Deferred work** item (the generic
 > REST API).
 >
-> **Status:** _Phases HA-1 → HA-5 complete — the phased plan is done._ On top of the HA-1
+> **Status:** ✅ COMPLETE — phases HA-1 → HA-5 shipped; the phased plan is done.
+>
+> On top of the HA-1
 > hydration, HA-2 query core, HA-3 HTTP server and HA-4 Home Assistant custom integration,
 > Phase HA-5 packaged and hardened the bridge: a build-free `node:slim` Docker image, a
 > hardened systemd unit, a rewritten `bridge/README.md` (quick-start, config reference,
@@ -867,7 +869,7 @@ was the **last** Deferred-work item — all planned (HA-1→HA-5) and deferred w
 
 ```text
 We're extending the Gubbins query bridge. The full plan and history are in
-docs/todo/home-assistant_2026-06-29.md — read it first (especially "The hard constraint",
+docs/todo/done/home-assistant_2026-06-29.md — read it first (especially "The hard constraint",
 "Architecture: an optional companion bridge", the locked decisions, the "Deferred work"
 list, the "Security & privacy checklist", ALL the Phase HA-1 through HA-5 Outcome notes, and
 the "## Deferred work — generic REST API", "## Deferred work — MCP server wrapper",

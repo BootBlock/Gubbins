@@ -213,6 +213,31 @@ reflects it.
 If a change is purely internal (refactor, tests, build) with **no** user-visible surface, the
 wiki needs no update — the trigger is a change to what the user sees or does, not to the code.
 
+## Plan docs carry a status (`docs/todo/`)
+
+The plan, backlog and audit documents in [docs/todo](docs/todo) are long-lived and
+world-readable, and a **finished** plan reads exactly like a live one unless it says so. That is
+how stale guidance gets followed — someone picks up a recipe from a plan that shipped months ago.
+
+**The rule:** every `.md` under `docs/todo/` opens with a status banner directly after its
+heading, and finished work is archived:
+
+```markdown
+> **Status:** 🟢 ACTIVE — open backlog; phases 1–2 shipped, phase 3 next.
+```
+
+- **`🟢 ACTIVE`** / **`📘 REFERENCE`** stay in `docs/todo/`; **`✅ COMPLETE`** / **`⛔ SUPERSEDED`**
+  move to `docs/todo/done/`. The full definitions live in
+  [docs/todo/README.md](docs/todo/README.md).
+- **When an effort finishes, flip the banner and `git mv` it into `done/` in the same change.**
+  Grep for inbound links first — `docs/dev/deferred-features.md` and `docs/dev/PHASE_HANDOVER.md`
+  reference these plans by path — and update them, or the move strands them.
+- **Never restate a plan doc's history to match current practice.** A past-tense record of what a
+  phase actually ran is evidence; rewriting it to name today's command asserts something that
+  never happened. Correct *live instructions*, and let records stand.
+- A unit test (`src/lib/docs-todo-status.test.ts`) enforces the banner and the placement, so drift
+  fails the build rather than review. It can't judge whether "COMPLETE" is *true* — that's yours.
+
 ## Actioning a GitHub issue (workflow)
 
 When the maintainer gives you a Gubbins issue URL —
