@@ -407,4 +407,81 @@ describe('CategoryRepository — location-inherited fields (issue #97)', () => {
       expect(values.get(stored.id)?.get(field.id)).toBe('Makita');
     });
   });
+
+  describe('pruning unused definitions', () => {
+    it('reports nothing while the definition is still used by a category', async () => {
+      const { field } = await scenario();
+      expect(await categories.listUnusedFieldDefs()).toEqual([]);
+      // …and refuses to delete it even if asked directly.
+      expect(await categories.deleteUnusedFieldDef(field.defId)).toBe(false);
+      expect(await categories.listFieldDefs()).toHaveLength(1);
+    });
+
+    it('surfaces the definition once its last category use is dropped', async () => {
+      const { field } = await scenario();
+      await categories.deleteField(field.id);
+
+      // deleteField deliberately keeps the definition (shared vocabulary), which is exactly
+      // how an unreferenced one comes to exist.
+      expect(await categories.listFieldDefs()).toHaveLength(1);
+      const unused = await categories.listUnusedFieldDefs();
+      expect(unused.map((d) => d.name)).toEqual(['Manufacturer']);
+
+      expect(await categories.deleteUnusedFieldDef(field.defId)).toBe(true);
+      expect(await categories.listFieldDefs()).toEqual([]);
+    });
+
+    it('keeps a definition a location still sets a value for', async () => {
+      const { field, workshop } = await scenario();
+      await categories.setLocationFieldValue(workshop.id, {
+        defId: field.defId,
+        value: 'Ryobi',
+        isInheritable: true,
+      });
+      await categories.deleteField(field.id);
+
+      // No category uses it any more, but the location's offer does — removing it here would
+      // silently delete that value.
+      expect(await categories.listUnusedFieldDefs()).toEqual([]);
+      expect(await categories.deleteUnusedFieldDef(field.defId)).toBe(false);
+    });
+
+    it('keeps a definition an item still stores a value against', async () => {
+      const { field, drill, tools } = await scenario();
+      await categories.setItemFieldValues(drill.id, { [field.id]: 'Makita' });
+      // Uncategorise the item so its value outlives the category's use of the field.
+      await items.update(drill.id, { categoryId: null });
+      await categories.deleteField(field.id);
+
+      expect(await categories.listUnusedFieldDefs()).toEqual([]);
+      expect(await categories.deleteUnusedFieldDef(field.defId)).toBe(false);
+      expect(tools.id).toBeTruthy();
+    });
+
+    it('leaves no tombstone behind when it declines to delete an in-use definition', async () => {
+      const { field } = await scenario();
+      // Still used by its category, so the delete matches nothing.
+      expect(await categories.deleteUnusedFieldDef(field.defId)).toBe(false);
+
+      // A tombstone written regardless would tell peers to drop a definition that is still
+      // here — the deletion and its marker must agree.
+      const tomb = await driver.queryOne(
+        "SELECT 1 FROM tombstones WHERE table_name = 'field_defs' AND id = ?;",
+        [field.defId],
+      );
+      expect(tomb).toBeUndefined();
+    });
+
+    it('tombstones the removal so a peer does not re-download the definition', async () => {
+      const { field } = await scenario();
+      await categories.deleteField(field.id);
+      await categories.deleteUnusedFieldDef(field.defId);
+
+      const tomb = await driver.queryOne<{ id: string }>(
+        "SELECT id FROM tombstones WHERE table_name = 'field_defs' AND id = ?;",
+        [field.defId],
+      );
+      expect(tomb?.id).toBe(field.defId);
+    });
+  });
 });

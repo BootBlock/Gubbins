@@ -84,6 +84,7 @@
 - [[Export & import|Export-and-Import]]
 - [[Migrating from another tool|Migrating-from-Another-Tool]]
 - [[Storage triage|Storage-Triage]]
+- [[Danger zone: erasing data|Danger-Zone-Erasing-Data]]
 
 **Bridge & Home Assistant**
 - [[Bridge overview|Bridge-Overview]]

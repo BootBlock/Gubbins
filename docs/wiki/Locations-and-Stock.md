@@ -72,6 +72,8 @@ Open the location's **Edit** dialog and find **Inheritable fields**:
 2. Give it a value.
 3. Tick **Offer to items here**.
 
+![The Inheritable fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+
 Items in that location — and in any location nested inside it — can then choose **Inherit** for
 that field instead of entering their own value. It's opt-in per item, and the value stays live:
 change it on the location and every item inheriting it updates straight away.

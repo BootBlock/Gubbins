@@ -9,6 +9,7 @@ import {
   useSetLocationFieldValue,
 } from '../categories';
 import type { LocationFieldValue } from '@/db/repositories';
+import { CategoryManagerDialog } from './CategoryManagerDialog';
 import { TypedFieldControl } from './TypedFieldControl';
 
 /**
@@ -27,6 +28,7 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
   const setValue = useSetLocationFieldValue(locationId);
   const removeValue = useRemoveLocationFieldValue(locationId);
   const [adding, setAdding] = useState('');
+  const [managerOpen, setManagerOpen] = useState(false);
 
   if (isLoading) {
     return <p className="text-xs text-muted-foreground">{t('inventory.location.fields.saving')}</p>;
@@ -34,6 +36,12 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
 
   const used = new Set((values ?? []).map((v) => v.defId));
   const available = (defs ?? []).filter((d) => !used.has(d.id));
+
+  // Pending state is scoped to the definition actually being written. Both mutations are
+  // shared by every row, so testing `isPending` alone would grey out the whole panel while
+  // one field saves — and make an unrelated row look like it were mid-save.
+  const isSaving = (defId: string) => setValue.isPending && setValue.variables?.defId === defId;
+  const isRemoving = (defId: string) => removeValue.isPending && removeValue.variables === defId;
 
   return (
     <section className="space-y-field-gap-compact">
@@ -43,13 +51,23 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
       </div>
 
       {(values ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {/* With an empty dictionary there is nothing to add here, so say where fields are
-              defined rather than inviting an action the panel can't offer. */}
-          {available.length === 0
-            ? t('inventory.location.fields.emptyNoFields')
-            : t('inventory.location.fields.empty')}
-        </p>
+        <div className="space-y-field-gap-compact">
+          <p className="text-xs text-muted-foreground">
+            {/* With an empty dictionary there is nothing to add here, so say where fields are
+                defined rather than inviting an action the panel can't offer. */}
+            {available.length === 0
+              ? t('inventory.location.fields.emptyNoFields')
+              : t('inventory.location.fields.empty')}
+          </p>
+          {/* …and then actually offer the trip. Pointing at "Categories & schemas" in prose
+              leaves the user to find and reopen it themselves, from inside a dialog that has
+              no route to it. */}
+          {available.length === 0 ? (
+            <Button variant="outline" size="sm" onClick={() => setManagerOpen(true)}>
+              {t('inventory.location.fields.createField')}
+            </Button>
+          ) : null}
+        </div>
       ) : (
         <ul className="space-y-3">
           {(values ?? []).map((value) => {
@@ -65,7 +83,7 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
                     size="sm"
                     aria-label={t('inventory.location.fields.remove', { vars: { name: value.name } })}
                     onClick={() => removeValue.mutate(value.defId)}
-                    disabled={removeValue.isPending}
+                    disabled={isRemoving(value.defId)}
                   >
                     <DeleteIcon aria-hidden />
                   </Button>
@@ -109,14 +127,14 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
             value={adding}
             onChange={setAdding}
             options={[
-              { value: '', label: t('inventory.location.fields.add') },
+              { value: '', label: t('inventory.location.fields.addPlaceholder') },
               ...available.map((d) => ({ value: d.id, label: d.name })),
             ]}
             aria-label={t('inventory.location.fields.addLabel')}
           />
           <Button
             size="sm"
-            disabled={adding === '' || setValue.isPending}
+            disabled={adding === '' || isSaving(adding)}
             onClick={() => {
               // Seeded inheritable: adding a field to a *location* is almost always in
               // order to share it downward, and the checkbox above makes it one click to
@@ -131,6 +149,10 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
           </Button>
         </div>
       ) : null}
+
+      {/* Stacked over the location dialog rather than replacing it: the user came here to set a
+          value, so defining the field they need should return them to this panel, not unwind it. */}
+      <CategoryManagerDialog open={managerOpen} onClose={() => setManagerOpen(false)} />
     </section>
   );
 }

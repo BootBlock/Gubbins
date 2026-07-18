@@ -172,6 +172,32 @@ export function useFieldDefs() {
   });
 }
 
+/**
+ * The dictionary definitions nothing references any more — the removable leftovers a
+ * category dropping its last use of a field leaves behind.
+ */
+export function useUnusedFieldDefs() {
+  return useQuery({
+    queryKey: [...inventoryKeys.fieldDefs(), 'unused'],
+    queryFn: () => getCategoryRepository().listUnusedFieldDefs(),
+  });
+}
+
+/**
+ * Remove an unused dictionary definition.
+ *
+ * One invalidation covers everything: `fieldDefs()` is a *child* of `categories()`, so
+ * dropping the categories key by prefix also refreshes the dictionary and the unused list
+ * that hangs off it — which is why the neighbouring field mutations name `categories()` alone.
+ */
+export function useDeleteUnusedFieldDef() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (defId: string) => getCategoryRepository().deleteUnusedFieldDef(defId),
+    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.categories() }),
+  });
+}
+
 /** One location's custom-field values (inheritable or not). */
 export function useLocationFieldValues(locationId: string | undefined) {
   return useQuery({
