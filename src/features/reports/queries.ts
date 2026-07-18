@@ -19,9 +19,16 @@ export {
 } from './analytics-windows';
 import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
 
-/** Trailing-window length (days) shared by the consumption + movement reports. */
+/**
+ * Trailing-window length (days) for the consumption report, and the fallback default for
+ * {@link useMovement}. The movement chart itself no longer uses it: since issue #86 both the
+ * Reports screen and the CSV export pass the user's selected `reportsMovementWindow`.
+ */
 export const REPORT_WINDOW_DAYS = 30;
-/** Number of time buckets in the movement chart (≈ one bar every couple of days). */
+/**
+ * Number of time buckets in the movement chart. Fixed, so the bar width follows the selected
+ * window (issue #86) — roughly half a day per bar at 7d, a little over three weeks at 365d.
+ */
 export const REPORT_MOVEMENT_BUCKETS = 15;
 // The default "no movement in N days" cutoff for the dead-stock report. The live value is
 // the user-tunable preference (issue #92) — this is only the starting value — and lives in

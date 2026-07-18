@@ -8,7 +8,7 @@
  * so the test stays in happy-dom with no extra providers.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 
 // --------------------------------------------------------------------------
 // Dependency stubs (hoisted so vi.mock factory runs before imports)
@@ -214,6 +214,11 @@ function makeAllLoading() {
 // can assert the query is disabled (not merely filtered out of the DOM) when the module is off.
 let spendEnabled: boolean | undefined;
 
+// Captures the window (days) the movement query hook was last called with, so the issue #86
+// tests can assert the selected period actually reaches the query rather than only retitling
+// the panel.
+let movementWindowArg: number | undefined;
+
 vi.mock('./queries', () => ({
   REPORT_WINDOW_DAYS: 30,
   DEAD_STOCK_SINCE_DAYS: 90,
@@ -229,7 +234,10 @@ vi.mock('./queries', () => ({
   SALES_BUCKETS: 15,
   useInventoryValue: () => ({ ...queryState.value }),
   useConsumptionRate: () => ({ ...queryState.consumption }),
-  useMovement: () => ({ ...queryState.movement }),
+  useMovement: (windowDays?: number) => {
+    movementWindowArg = windowDays;
+    return { ...queryState.movement };
+  },
   useLowStockCount: () => ({ ...queryState.lowStock }),
   useDeadStock: () => ({ ...queryState.deadStock }),
   useAbcAnalysis: () => ({ ...queryState.abc }),
@@ -249,6 +257,8 @@ vi.mock('./queries', () => ({
 // --------------------------------------------------------------------------
 import { ReportsScreen } from './ReportsScreen';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
 
 // --------------------------------------------------------------------------
 // Tests
@@ -258,7 +268,11 @@ afterEach(() => {
   cleanup();
   makeAllLoading();
   useModulesStore.setState({ intent: {} });
+  // The movement window is a persisted preference on the real store — reset it so a test
+  // that changes it can't leak its pick into the next one.
+  usePreferencesStore.setState({ reportsMovementWindow: DEFAULT_ANALYTICS_WINDOW });
   spendEnabled = undefined;
+  movementWindowArg = undefined;
 });
 
 describe('ReportsScreen — aggregate-completion aria-live announcement (Phase 63 / WCAG 4.1.3)', () => {
@@ -382,5 +396,55 @@ describe('ReportsScreen — spend card gating (Modular UI Phase 7)', () => {
     expect(spendEnabled).toBe(false);
     // Sibling report cards are untouched.
     expect(screen.queryByTestId('abc-breakdown')).not.toBeNull();
+  });
+});
+
+describe('ReportsScreen — stock-movement window (issue #86)', () => {
+  it('offers a movement window control defaulting to the shared analytics window', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    const group = screen.getByRole('group', { name: 'Stock movement window' });
+    expect(group.querySelector('[aria-pressed="true"]')?.textContent).toContain(
+      String(DEFAULT_ANALYTICS_WINDOW),
+    );
+    // The panel heading names the same span the control reports.
+    expect(
+      screen.queryByRole('heading', { name: `Stock movement (last ${DEFAULT_ANALYTICS_WINDOW} days)` }),
+    ).not.toBeNull();
+    // …and the query is actually fetched over that span, not the old fixed 30-day one.
+    expect(movementWindowArg).toBe(DEFAULT_ANALYTICS_WINDOW);
+  });
+
+  it('retitles the panel and stores the pick when another window is chosen', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    const group = screen.getByRole('group', { name: 'Stock movement window' });
+    const option365 = Array.from(group.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('365'),
+    );
+    expect(option365).toBeDefined();
+    act(() => {
+      fireEvent.click(option365!);
+    });
+    expect(screen.queryByRole('heading', { name: 'Stock movement (last 365 days)' })).not.toBeNull();
+    // The refetch uses the new span — the title and the data agree.
+    expect(movementWindowArg).toBe(365);
+    // Persisted as intent so the pick survives a reload.
+    expect(usePreferencesStore.getState().reportsMovementWindow).toBe(365);
+  });
+
+  it('leaves the sibling analytics window untouched when the movement window changes', () => {
+    makeAllLoaded();
+    render(<ReportsScreen />);
+    const movementGroup = screen.getByRole('group', { name: 'Stock movement window' });
+    const option7 = Array.from(movementGroup.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('7'),
+    );
+    act(() => {
+      fireEvent.click(option7!);
+    });
+    // Each section remembers its own window independently.
+    const analyticsGroup = screen.getByRole('group', { name: 'Analytics window' });
+    expect(analyticsGroup.querySelector('[aria-pressed="true"]')?.textContent).toContain('90');
   });
 });

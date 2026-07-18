@@ -25,14 +25,19 @@ and the **[[parts catalogue|Parts-Catalogue]]**.
 
 ## Time periods
 
-The time-based reports — **Advanced analytics** (turnover and valuation over time), **Spend
-analytics**, and **Sales & disposals** — each carry a small period selector: **7d**, **14d**,
-**30d**, **60d**, **90d** and **365d**, running shortest on the left to longest on the right.
-Pick the window that suits the question — a fortnight for a quick pulse, a year for the long view.
+The time-based reports — **Advanced analytics** (turnover and valuation over time), **Stock
+movement**, **Spend analytics**, and **Sales & disposals** — each carry a small period selector:
+**7d**, **14d**, **30d**, **60d**, **90d** and **365d**, running shortest on the left to longest
+on the right. Pick the window that suits the question — a fortnight for a quick pulse, a year for
+the long view.
 
 Each report **remembers its own choice** independently, and the choice sticks between visits — so
 you can leave Spend on a year while Sales stays on the last month, and they'll be just as you left
 them next time.
+
+**Stock movement** charts what came in and what went out over the period you pick, so you can see
+how quickly things flow through your inventory rather than just where they've ended up. Exporting
+it as CSV uses the period you've selected, so the file covers the same span as the chart.
 
 ## Exporting
 
