@@ -23,8 +23,10 @@ import {
   SYNC_TABLES,
   ITEM_HISTORY_TABLE,
   ITEM_TAGS_TABLE,
+  ITEM_REGIONS_TABLE,
   LOCATION_TAGS_TABLE,
   itemTagEdgeId,
+  itemRegionEdgeId,
   locationTagEdgeId,
   parseItemTagEdgeId,
   parseLocationTagEdgeId,
@@ -42,6 +44,8 @@ import type {
   GaugeResolution,
   ItemTagEdge,
   ItemTagEdgeDelete,
+  ItemRegionEdge,
+  ItemRegionEdgeDelete,
   LocationTagEdge,
   LocationTagEdgeDelete,
   ReconciliationPlan,
@@ -89,6 +93,8 @@ const EMPTY_PLAN: ReconciliationPlan = {
   itemTagDeletes: [],
   locationTagUpserts: [],
   locationTagDeletes: [],
+  itemRegionUpserts: [],
+  itemRegionDeletes: [],
   conflicts: [],
 };
 
@@ -221,6 +227,17 @@ export function reconcile(
     finalTagIds,
     tagRekeys,
   );
+  // Issue #81: item-to-region placements. Filtered to the regions that survive the merge for
+  // the same FK-safety reason as the tag joins above — a placement in a region whose photo
+  // was deleted elsewhere must not be re-inserted.
+  const finalRegionIds = survivingIds('location_regions', local, localUpserts, localDeletes);
+  const { itemRegionUpserts, itemRegionDeletes } = reconcileItemRegions(
+    local,
+    remote,
+    offset,
+    finalItemIds,
+    finalRegionIds,
+  );
 
   return {
     localUpserts,
@@ -234,6 +251,8 @@ export function reconcile(
     itemTagDeletes,
     locationTagUpserts,
     locationTagDeletes,
+    itemRegionUpserts,
+    itemRegionDeletes,
     conflicts,
   };
 }
@@ -501,6 +520,13 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
       { col: 'location_id', parent: 'locations', nullable: false },
       { col: 'def_id', parent: 'field_defs', nullable: false },
     ],
+    // Photos of a place, and the named shapes drawn onto them (issue #81). Both FKs are
+    // ON DELETE CASCADE / NOT NULL, so an incoming photo at a removed location — or a region
+    // on a photo that did not survive the merge — is dropped rather than resurrected. The
+    // chain is two deep, and the SYNC_TABLES order (locations → location_photos →
+    // location_regions) is what lets a single pass resolve it.
+    location_photos: [{ col: 'location_id', parent: 'locations', nullable: false }],
+    location_regions: [{ col: 'photo_id', parent: 'location_photos', nullable: false }],
     item_aliases: [{ col: 'item_id', parent: 'items', nullable: false }],
     // Manual current-value log points (feature-gap G9). item_id mirrors the item-child cascade
     // above — drop an incoming revaluation whose item did not survive the merge (ON DELETE
@@ -882,6 +908,34 @@ function reconcileLocationTags(
     rekeyedEdgeKeys(local.locationTags, tagRekeys, (e) => locationTagEdgeId(e.locationId, e.tagId)),
   );
   return { locationTagUpserts: upserts, locationTagDeletes: deletes };
+}
+
+/**
+ * M:N `item_regions` membership reconciliation (issue #81 — items placed in a region drawn
+ * on a location photo).
+ *
+ * Simpler than the tag joins: regions carry no name-collision rekeying, because a region is
+ * identified by its UUID and two devices naming a region "Top shelf" are describing two
+ * genuinely different places on two different photos. So there is no rekey map to thread
+ * through, and the edge key is the raw pair.
+ */
+function reconcileItemRegions(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  offset: number,
+  finalItemIds: ReadonlySet<string>,
+  finalRegionIds: ReadonlySet<string>,
+): { itemRegionUpserts: ItemRegionEdge[]; itemRegionDeletes: ItemRegionEdgeDelete[] } {
+  const { upserts, deletes } = reconcileEdgeMembership<ItemRegionEdge>(
+    local.itemRegions,
+    remote.itemRegions,
+    edgeTombstones(local.tombstones, ITEM_REGIONS_TABLE, offset),
+    edgeTombstones(remote.tombstones, ITEM_REGIONS_TABLE, 0),
+    (e) => itemRegionEdgeId(e.itemId, e.regionId),
+    (e) => finalItemIds.has(e.itemId) && finalRegionIds.has(e.regionId),
+    new Set((local.itemRegions ?? []).map((e) => itemRegionEdgeId(e.itemId, e.regionId))),
+  );
+  return { itemRegionUpserts: upserts, itemRegionDeletes: deletes };
 }
 
 /** Edge tombstones for one edge table (key → offset-adjusted deletedAt). */

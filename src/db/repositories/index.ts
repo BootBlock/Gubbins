@@ -68,6 +68,7 @@ export {
   SYNC_TABLES,
   ITEM_TAGS_TABLE,
   LOCATION_TAGS_TABLE,
+  ITEM_REGIONS_TABLE,
   ITEM_HISTORY_TABLE,
   SYNC_EXCLUDED_COLUMNS,
   itemTagEdgeId,
@@ -76,6 +77,10 @@ export {
   clearItemTagTombstoneStatement,
   locationTagEdgeId,
   parseLocationTagEdgeId,
+  itemRegionEdgeId,
+  parseItemRegionEdgeId,
+  itemRegionTombstoneStatement,
+  clearItemRegionTombstoneStatement,
   locationTagTombstoneStatement,
   clearLocationTagTombstoneStatement,
 } from './tombstone';

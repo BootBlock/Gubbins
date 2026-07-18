@@ -3,6 +3,8 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ImageRepository } from '@/db/repositories/ImageRepository';
+import { LocationPhotoRepository } from '@/db/repositories/LocationPhotoRepository';
+import { LocationRepository } from '@/db/repositories/LocationRepository';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import {
   checkDatabaseHealth,
@@ -20,12 +22,16 @@ describe('Database Maintenance engine', () => {
   let driver: MemoryDriver;
   let items: ItemRepository;
   let images: ImageRepository;
+  let locations: LocationRepository;
+  let locationPhotos: LocationPhotoRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
     await runMigrations(driver, migrations);
     items = new ItemRepository(driver);
     images = new ImageRepository(driver);
+    locations = new LocationRepository(driver);
+    locationPhotos = new LocationPhotoRepository(driver);
   });
 
   afterEach(async () => {
@@ -128,6 +134,30 @@ describe('Database Maintenance engine', () => {
       expect(result).toEqual({ supported: true, scanned: 3, referenced: 1, removed: 2 });
       expect(deleted.sort()).toEqual(['images/orphan-1.webp', 'images/orphan-2.webp']);
       expect(deleted).not.toContain('images/keep.webp');
+    });
+
+    // Regression (issue #81): item photos and location photos share one flat OPFS `images/`
+    // directory. A sweep that built its referenced set from `item_images` alone would see
+    // every location photo as an orphan and delete a user's pictures. If a third image-owning
+    // table is ever added, this test is the one that should fail first.
+    it('keeps a location photo, which lives in the same OPFS directory as item photos', async () => {
+      const location = await locations.create({ name: 'Workshop' });
+      await locationPhotos.addPhoto({
+        locationId: location.id,
+        thumbnailBlob: null,
+        fullResOpfsPath: 'images/shelf.webp',
+        naturalWidth: 1200,
+        naturalHeight: 800,
+      });
+      const item = await items.create({ name: 'Multimeter' });
+      await images.add({ itemId: item.id, thumbnailBlob: null, fullResOpfsPath: 'images/meter.webp' });
+
+      const { ports, deleted } = portsWith(['shelf.webp', 'meter.webp', 'orphan.webp']);
+      const result = await sweepOrphanImages(ports);
+
+      expect(result).toEqual({ supported: true, scanned: 3, referenced: 2, removed: 1 });
+      expect(deleted).toEqual(['images/orphan.webp']);
+      expect(deleted).not.toContain('images/shelf.webp');
     });
 
     it('keeps a referenced file even when its bare name differs only by path prefix', async () => {

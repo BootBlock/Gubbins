@@ -82,7 +82,7 @@ export async function downgradeImagesBefore(
   let downgraded = 0;
   for (const image of candidates) {
     await deleteImageFile(image.fullResOpfsPath);
-    await repo.markImageDowngraded(image.id, now);
+    await repo.markImageDowngraded(image.id, image.owner, now);
     downgraded += 1;
   }
   return { cutoff, downgraded };

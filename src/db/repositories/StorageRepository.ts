@@ -23,17 +23,23 @@ import type {
   Page,
   PageParams,
   StorageRowCounts,
+  DowngradableOwner,
 } from './types';
 
 export class StorageRepository extends BaseRepository {
-  /** Row counts for the three OPFS-dominant tables (§7.6.2). */
+  /**
+   * Row counts for the OPFS-dominant tables (§7.6.2). Photos are counted across *both*
+   * owning tables: item images and location photos share the OPFS `images/` directory and
+   * the same row shape, so counting only one would under-report consumption (issue #81).
+   */
   async rowCounts(): Promise<StorageRowCounts> {
-    const [items, itemHistory, itemImages] = await Promise.all([
+    const [items, itemHistory, itemImages, locationPhotos] = await Promise.all([
       this.count('items'),
       this.count('item_history'),
       this.count('item_images'),
+      this.count('location_photos'),
     ]);
-    return { items, itemHistory, itemImages };
+    return { items, itemHistory, photos: itemImages + locationPhotos };
   }
 
   private async count(table: string): Promise<number> {
@@ -90,31 +96,44 @@ export class StorageRepository extends BaseRepository {
 
   // --- Workflow B: Image Downgrading (§7.6.3) -----------------------------------
 
-  /** How many images created before `cutoff` still hold a full-resolution file. */
+  /** How many photos created before `cutoff` still hold a full-resolution file. */
   async countDowngradableBefore(cutoff: number): Promise<number> {
     const row = await this.driver.queryOne<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM item_images WHERE created_at < ? AND full_res_downgraded_at IS NULL;',
+      `SELECT (SELECT COUNT(*) FROM item_images
+                WHERE created_at < ?1 AND full_res_downgraded_at IS NULL)
+            + (SELECT COUNT(*) FROM location_photos
+                WHERE created_at < ?1 AND full_res_downgraded_at IS NULL) AS n;`,
       [cutoff],
     );
     return Number(row?.n ?? 0);
   }
 
   /**
-   * A page of images whose full-resolution OPFS file can be dropped (oldest first):
-   * created before `cutoff` and not already downgraded. The caller deletes each raw
-   * OPFS file, then calls {@link markImageDowngraded}.
+   * A page of photos whose full-resolution OPFS file can be dropped (oldest first):
+   * created before `cutoff` and not already downgraded. The caller deletes each raw OPFS
+   * file, then calls {@link markImageDowngraded} with the row's `owner`.
+   *
+   * Spans both owning tables so triage frees the largest files first regardless of whether
+   * they belong to an item or a location — ordering by age across the union, not per table.
    */
   async listDowngradableBefore(cutoff: number, params: PageParams = {}): Promise<Page<DowngradableImage>> {
     const { limit, offset } = this.resolvePage(params);
-    const rows = await this.driver.query<{ id: string; full_res_opfs_path: string }>(
-      `SELECT id, full_res_opfs_path FROM item_images
-       WHERE created_at < ? AND full_res_downgraded_at IS NULL
-       ORDER BY created_at ASC, rowid ASC
-       LIMIT ? OFFSET ?;`,
+    const rows = await this.driver.query<{
+      id: string;
+      full_res_opfs_path: string;
+      owner: DowngradableOwner;
+    }>(
+      `SELECT id, full_res_opfs_path, 'item_images' AS owner, created_at FROM item_images
+        WHERE created_at < ?1 AND full_res_downgraded_at IS NULL
+       UNION ALL
+       SELECT id, full_res_opfs_path, 'location_photos' AS owner, created_at FROM location_photos
+        WHERE created_at < ?1 AND full_res_downgraded_at IS NULL
+       ORDER BY created_at ASC, id ASC
+       LIMIT ?2 OFFSET ?3;`,
       [cutoff, limit, offset],
     );
     return this.toPage(
-      rows.map((r) => ({ id: r.id, fullResOpfsPath: r.full_res_opfs_path })),
+      rows.map((r) => ({ id: r.id, fullResOpfsPath: r.full_res_opfs_path, owner: r.owner })),
       limit,
       offset,
     );
@@ -126,7 +145,13 @@ export class StorageRepository extends BaseRepository {
    * blocking it would trap the very locked-out user §7.6 exists to rescue. Local-only:
    * never propagated to cloud sync (§7.6.3 B).
    */
-  async markImageDowngraded(id: string, at: number = Date.now()): Promise<void> {
-    await this.driver.execute('UPDATE item_images SET full_res_downgraded_at = ? WHERE id = ?;', [at, id]);
+  async markImageDowngraded(
+    id: string,
+    owner: DowngradableOwner = 'item_images',
+    at: number = Date.now(),
+  ): Promise<void> {
+    // `owner` comes from the closed DowngradableOwner union, never from user input, so it is
+    // safe to interpolate as a table name — the driver cannot bind an identifier.
+    await this.driver.execute(`UPDATE ${owner} SET full_res_downgraded_at = ? WHERE id = ?;`, [at, id]);
   }
 }

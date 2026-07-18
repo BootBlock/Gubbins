@@ -196,9 +196,14 @@ function filenameOf(path: string): string | undefined {
 }
 
 /**
- * Delete raw OPFS image files that no `item_images` row references. Conservative: it
- * reads the DB references first (a throw there aborts before any delete), and only
- * removes files with no owning row — never a row whose file is merely missing.
+ * Delete raw OPFS image files that **no owning row** references. Conservative: it reads the
+ * DB references first (a throw there aborts before any delete), and only removes files with
+ * no owning row — never a row whose file is merely missing.
+ *
+ * The referenced set spans *every* table that owns an OPFS image, not just `item_images`:
+ * item photos and location photos share one flat `images/` directory, so a sweep that knew
+ * about only one of them would see the other's files as unreferenced and delete a user's
+ * photos. Any future image-owning table must be added here too.
  */
 export async function sweepOrphanImages(ports: MaintenancePorts): Promise<OrphanSweepResult> {
   const filenames = await ports.listImageFilenames();
@@ -207,7 +212,9 @@ export async function sweepOrphanImages(ports: MaintenancePorts): Promise<Orphan
   }
 
   const rows = await ports.db.query<{ full_res_opfs_path: string }>(
-    'SELECT full_res_opfs_path FROM item_images;',
+    `SELECT full_res_opfs_path FROM item_images
+     UNION ALL
+     SELECT full_res_opfs_path FROM location_photos;`,
   );
   const referenced = new Set<string>();
   for (const row of rows) {
@@ -264,7 +271,11 @@ export async function findMissingImageFiles(ports: MaintenancePorts): Promise<Mi
   const rows = await ports.db.query<{ full_res_opfs_path: string; item_name: string }>(
     `SELECT ii.full_res_opfs_path AS full_res_opfs_path, i.name AS item_name
        FROM item_images ii JOIN items i ON i.id = ii.item_id
-      WHERE ii.full_res_downgraded_at IS NULL;`,
+      WHERE ii.full_res_downgraded_at IS NULL
+     UNION ALL
+     SELECT lp.full_res_opfs_path AS full_res_opfs_path, l.name AS item_name
+       FROM location_photos lp JOIN locations l ON l.id = lp.location_id
+      WHERE lp.full_res_downgraded_at IS NULL;`,
   );
 
   const sampleNames: string[] = [];
@@ -478,7 +489,7 @@ export async function gatherDatabaseStats(ports: MaintenancePorts): Promise<Data
   const imageBytes =
     measured !== null
       ? measured
-      : estimateTableBytes({ items: 0, itemHistory: 0, itemImages: imageCount }).itemImages;
+      : estimateTableBytes({ items: 0, itemHistory: 0, photos: imageCount }).photos;
 
   const sqliteVersion = String(
     (await db.queryOne<{ v: string }>('SELECT sqlite_version() AS v;'))?.v ?? 'unknown',

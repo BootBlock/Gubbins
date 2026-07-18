@@ -47,11 +47,21 @@ export interface CreateImageInput {
 export interface StorageRowCounts {
   readonly items: number;
   readonly itemHistory: number;
-  readonly itemImages: number;
+  /** Photo rows across both owning tables — `item_images` + `location_photos` (issue #81). */
+  readonly photos: number;
 }
 
-/** An image whose full-resolution OPFS file can be dropped (§7.6.3 Workflow B). */
+/**
+ * An image whose full-resolution OPFS file can be dropped (§7.6.3 Workflow B).
+ *
+ * `owner` says which table the row lives in, because item images and location photos are
+ * both downgradable and the mark-back has to update the right one.
+ */
 export interface DowngradableImage {
   readonly id: string;
   readonly fullResOpfsPath: string;
+  readonly owner: DowngradableOwner;
 }
+
+/** Which table a {@link DowngradableImage} belongs to. */
+export type DowngradableOwner = 'item_images' | 'location_photos';

@@ -9,73 +9,64 @@ import {
   type TableRowCounts,
 } from './triage';
 
-const ZERO: TableRowCounts = { items: 0, itemHistory: 0, itemImages: 0 };
+const ZERO: TableRowCounts = { items: 0, itemHistory: 0, photos: 0 };
 
 describe('OPFS table byte estimation (spec §7.6.2)', () => {
   it('multiplies each row count by its average byte-size', () => {
-    const counts: TableRowCounts = { items: 10, itemHistory: 100, itemImages: 5 };
+    const counts: TableRowCounts = { items: 10, itemHistory: 100, photos: 5 };
     const estimate = estimateTableBytes(counts);
     expect(estimate.items).toBe(10 * AVG_ROW_BYTES.items);
     expect(estimate.itemHistory).toBe(100 * AVG_ROW_BYTES.itemHistory);
-    expect(estimate.itemImages).toBe(5 * AVG_ROW_BYTES.itemImages);
+    expect(estimate.photos).toBe(5 * AVG_ROW_BYTES.photos);
   });
 
   it('sums the three tables into the total', () => {
-    const counts: TableRowCounts = { items: 3, itemHistory: 7, itemImages: 2 };
+    const counts: TableRowCounts = { items: 3, itemHistory: 7, photos: 2 };
     const estimate = estimateTableBytes(counts);
-    expect(estimate.total).toBe(estimate.items + estimate.itemHistory + estimate.itemImages);
+    expect(estimate.total).toBe(estimate.items + estimate.itemHistory + estimate.photos);
   });
 
   it('returns all zeroes for an empty database', () => {
     const estimate = estimateTableBytes(ZERO);
-    expect(estimate).toEqual({ items: 0, itemHistory: 0, itemImages: 0, total: 0 });
+    expect(estimate).toEqual({ items: 0, itemHistory: 0, photos: 0, total: 0 });
   });
 
   it('weights images far heavier than history or item rows (full-res dominates OPFS)', () => {
-    expect(AVG_ROW_BYTES.itemImages).toBeGreaterThan(AVG_ROW_BYTES.items);
-    expect(AVG_ROW_BYTES.itemImages).toBeGreaterThan(AVG_ROW_BYTES.itemHistory);
+    expect(AVG_ROW_BYTES.photos).toBeGreaterThan(AVG_ROW_BYTES.items);
+    expect(AVG_ROW_BYTES.photos).toBeGreaterThan(AVG_ROW_BYTES.itemHistory);
   });
 
   it('treats a negative or non-finite count as zero rather than a negative estimate', () => {
     const estimate = estimateTableBytes({
       items: -5,
       itemHistory: Number.NaN,
-      itemImages: 4,
+      photos: 4,
     });
     expect(estimate.items).toBe(0);
     expect(estimate.itemHistory).toBe(0);
-    expect(estimate.itemImages).toBe(4 * AVG_ROW_BYTES.itemImages);
+    expect(estimate.photos).toBe(4 * AVG_ROW_BYTES.photos);
   });
 
   it('prefers measured OPFS image bytes over the per-row heuristic when supplied', () => {
-    const counts: TableRowCounts = { items: 2, itemHistory: 5, itemImages: 3 };
+    const counts: TableRowCounts = { items: 2, itemHistory: 5, photos: 3 };
     // 3 full-res files measured at 250 KB total; the image figure is that true size
     // plus a small thumbnail estimate per row — not 3 × the rough 110 KB heuristic.
-    const estimate = estimateTableBytes(counts, { itemImagesBytes: 250_000 });
-    expect(estimate.itemImages).toBe(250_000 + 3 * AVG_ROW_BYTES.itemImageThumbnail);
-    expect(estimate.itemImages).not.toBe(3 * AVG_ROW_BYTES.itemImages);
-    expect(estimate.total).toBe(estimate.items + estimate.itemHistory + estimate.itemImages);
+    const estimate = estimateTableBytes(counts, { photoBytes: 250_000 });
+    expect(estimate.photos).toBe(250_000 + 3 * AVG_ROW_BYTES.photoThumbnail);
+    expect(estimate.photos).not.toBe(3 * AVG_ROW_BYTES.photos);
+    expect(estimate.total).toBe(estimate.items + estimate.itemHistory + estimate.photos);
   });
 
   it('falls back to the heuristic for null/invalid measured bytes', () => {
-    const counts: TableRowCounts = { items: 1, itemHistory: 1, itemImages: 4 };
-    expect(estimateTableBytes(counts, { itemImagesBytes: null }).itemImages).toBe(
-      4 * AVG_ROW_BYTES.itemImages,
-    );
-    expect(estimateTableBytes(counts, { itemImagesBytes: Number.NaN }).itemImages).toBe(
-      4 * AVG_ROW_BYTES.itemImages,
-    );
-    expect(estimateTableBytes(counts, { itemImagesBytes: -10 }).itemImages).toBe(
-      4 * AVG_ROW_BYTES.itemImages,
-    );
+    const counts: TableRowCounts = { items: 1, itemHistory: 1, photos: 4 };
+    expect(estimateTableBytes(counts, { photoBytes: null }).photos).toBe(4 * AVG_ROW_BYTES.photos);
+    expect(estimateTableBytes(counts, { photoBytes: Number.NaN }).photos).toBe(4 * AVG_ROW_BYTES.photos);
+    expect(estimateTableBytes(counts, { photoBytes: -10 }).photos).toBe(4 * AVG_ROW_BYTES.photos);
   });
 
   it('uses measured bytes even with zero image rows (counts the files on disk)', () => {
-    const estimate = estimateTableBytes(
-      { items: 0, itemHistory: 0, itemImages: 0 },
-      { itemImagesBytes: 4_096 },
-    );
-    expect(estimate.itemImages).toBe(4_096);
+    const estimate = estimateTableBytes({ items: 0, itemHistory: 0, photos: 0 }, { photoBytes: 4_096 });
+    expect(estimate.photos).toBe(4_096);
   });
 });
 

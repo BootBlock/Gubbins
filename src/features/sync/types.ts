@@ -56,6 +56,17 @@ export interface LocationTagEdgeDelete extends LocationTagEdge {
   readonly deletedAt: number;
 }
 
+/** One M:N `item_regions` membership edge (no row id / timestamp — issue #81). */
+export interface ItemRegionEdge {
+  readonly itemId: string;
+  readonly regionId: string;
+}
+
+/** An `item_regions` edge removal to apply locally + record as an edge tombstone. */
+export interface ItemRegionEdgeDelete extends ItemRegionEdge {
+  readonly deletedAt: number;
+}
+
 /**
  * The versioned snapshot exchanged with a {@link CloudProvider}. `tables` holds the
  * full row set of every LWW syncable table (keyed by table name); `tombstones` carries
@@ -79,6 +90,8 @@ export interface SyncSnapshot {
   readonly itemTags: readonly ItemTagEdge[];
   /** M:N `location_tags` membership edges (issue #84; resolved by membership). */
   readonly locationTags: readonly LocationTagEdge[];
+  /** M:N `item_regions` membership edges (issue #81; resolved by membership). */
+  readonly itemRegions: readonly ItemRegionEdge[];
   /** Full append-only `item_history` ledger rows (Phase 11; resolved by union-by-id). */
   readonly itemHistory: readonly SqlRow[];
 }
@@ -186,6 +199,10 @@ export interface ReconciliationPlan {
   readonly locationTagUpserts: readonly LocationTagEdge[];
   /** Issue #84: `location_tags` edges to remove locally + tombstone (membership deletions). */
   readonly locationTagDeletes: readonly LocationTagEdgeDelete[];
+  /** Issue #81: `item_regions` edges to add locally (membership union). */
+  readonly itemRegionUpserts: readonly ItemRegionEdge[];
+  /** Issue #81: `item_regions` edges to remove locally + tombstone (membership deletions). */
+  readonly itemRegionDeletes: readonly ItemRegionEdgeDelete[];
   /**
    * Issue #72: genuine same-row concurrent-edit collisions where a local edit made since
    * the last sync lost to a remote change/deletion. Surfaced for user review — not applied
