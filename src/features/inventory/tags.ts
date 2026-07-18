@@ -8,11 +8,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getTagRepository } from '@/db/repositories';
 import { inventoryKeys } from './queries';
 
-/** Paginated tag dictionary with live item counts. */
-export function useTagDictionary() {
+/**
+ * One page of the tag dictionary with live item + location counts (issue #84).
+ *
+ * Paged **server-side**: the dictionary can outgrow a single read, and the management screen
+ * must be able to reach every tag, so the page is fetched by offset rather than sliced out of
+ * one capped result (which would silently hide everything past the first page).
+ */
+export function useTagDictionary(page = 1, pageSize = 100) {
+  const offset = Math.max(0, (page - 1) * pageSize);
   return useQuery({
-    queryKey: inventoryKeys.tagList(),
-    queryFn: () => getTagRepository().list({ limit: 100 }),
+    queryKey: inventoryKeys.tagList(offset, pageSize),
+    queryFn: () => getTagRepository().list({ limit: pageSize, offset }),
+    // Keep the previous page on screen while the next one loads, so paging doesn't flash
+    // the empty/loading state.
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** Total number of tags — the denominator for the Tags screen's pagination (issue #84). */
+export function useTagCount() {
+  return useQuery({
+    queryKey: inventoryKeys.tagCount(),
+    queryFn: () => getTagRepository().count(),
   });
 }
 

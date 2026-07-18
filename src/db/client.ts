@@ -8,7 +8,7 @@
  * created exactly once per tab.
  */
 import { WorkerDatabaseDriver } from './rpc/worker-driver';
-import { assertBaselineCurrent, migrations, runMigrations } from './migrations';
+import { BASELINE_REVISION, assertBaselineCurrent, migrations, runMigrations } from './migrations';
 import type { DbDiagnostics } from './rpc/protocol';
 import type { MigrationReport } from './migrations';
 
@@ -36,7 +36,7 @@ export async function bootDatabase(): Promise<DbBootResult> {
   const migration = await runMigrations(db, migrations);
   // A database at the target version may still predate the current squashed baseline; refuse
   // it here rather than letting the absent schema surface as a cryptic failure later (§2.3).
-  await assertBaselineCurrent(db);
+  await assertBaselineCurrent(db, BASELINE_REVISION);
   // After migration the schema version is the migration target; avoid an extra
   // round-trip by deriving the post-boot diagnostics locally.
   const diagnostics: DbDiagnostics = { ...initial, userVersion: migration.to };

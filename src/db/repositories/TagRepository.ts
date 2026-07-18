@@ -52,6 +52,17 @@ export class TagRepository extends BaseRepository {
   }
 
   /**
+   * How many tags exist in total — the denominator behind the Tags screen's pagination
+   * (issue #84). A dictionary can outgrow one page, and that screen is where the whole set is
+   * managed, so it pages server-side rather than slicing a single capped read (which would
+   * silently hide every tag past the first page).
+   */
+  async count(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM tags;');
+    return Number(row?.n ?? 0);
+  }
+
+  /**
    * The tag dictionary *without* usage counts, ordered by name — the tag-entry combobox
    * (issue #84). Deliberately not {@link list}: that annotates every row with two correlated
    * COUNT subqueries over `item_tags` / `location_tags`, which the picker never reads. Those

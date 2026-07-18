@@ -123,6 +123,24 @@ describe('buildManifest', () => {
     });
     expect(manifest.counts).toEqual({ items: 4, images: 3 });
   });
+
+  it('records the schema baseline when given one, and omits it otherwise (issue #84)', () => {
+    const base = {
+      snapshot: makeSnapshot(),
+      selection: DEFAULT_BACKUP_SELECTION,
+      appVersion: '9.9.9',
+      createdAt: 42,
+      imageCount: 0,
+      hasSqlite: true,
+      hasSettings: false,
+    };
+    // Present: a later `replace` restore can refuse an incompatible exact-copy before it
+    // overwrites the live database.
+    expect(buildManifest({ ...base, baselineRevision: 'abc12345' }).baselineRevision).toBe('abc12345');
+    // Absent: backups predating the field stay valid rather than being blocked on it.
+    expect(buildManifest(base).baselineRevision).toBeUndefined();
+    expect('baselineRevision' in buildManifest(base)).toBe(false);
+  });
 });
 
 describe('assembleBackup', () => {

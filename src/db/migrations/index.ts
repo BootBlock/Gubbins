@@ -23,5 +23,6 @@ export const TARGET_SCHEMA_VERSION = migrations.reduce(
 );
 
 export { runMigrations, getUserVersion, assertBaselineCurrent } from './engine';
-export { SQL_NOW_MS, BASELINE_REVISION, BASELINE_REVISION_KEY } from './migration';
+export { SQL_NOW_MS, BASELINE_REVISION_KEY, baselineFingerprint } from './migration';
+export { BASELINE_REVISION } from './v1-initial';
 export type { Migration, MigrationReport } from './migration';

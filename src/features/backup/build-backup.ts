@@ -12,6 +12,7 @@ import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
 import { APP_VERSION } from '@/lib/app-version';
 import type { VaultZipRequest, VaultZipResponse } from '@/features/export/export-vault.worker';
+import { BASELINE_REVISION } from '@/db/migrations';
 import { assembleBackup, filterSnapshot, type BackupManifest, type BackupSelection } from './backup-format';
 import { collectSettings } from './backup-settings';
 
@@ -57,6 +58,9 @@ export async function createBackup(
     images,
     settings,
     appVersion: APP_VERSION,
+    // Stamp the schema baseline this database was built from, so a later `replace` restore can
+    // refuse an incompatible backup before it overwrites anything (issue #84).
+    baselineRevision: BASELINE_REVISION,
     createdAt: Date.now(),
   });
 

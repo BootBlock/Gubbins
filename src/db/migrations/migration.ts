@@ -14,23 +14,56 @@ export const SQL_NOW_MS = "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTE
 export const BASELINE_REVISION_KEY = 'baseline_revision';
 
 /**
- * Revision counter for the squashed `v1-initial` baseline (spec §2.3).
+ * Fingerprint of the squashed `v1-initial` baseline's SQL (spec §2.3).
  *
- * While pre-release, schema changes are folded *into* the v1 baseline rather than appended as
- * forward migrations. That keeps one authoritative schema, but `PRAGMA user_version` alone
- * cannot then distinguish a database built from today's baseline from one built by an older
- * revision of it — both read as v1, so the engine applies nothing and the absent table surfaces
- * later as a cryptic "no such table" (exactly how issue #84's `location_tags` reached users).
+ * Gubbins is pre-release and **does not maintain backwards compatibility**: schema changes are
+ * folded *into* the v1 baseline rather than appended as forward migrations, and an existing
+ * database is discarded rather than migrated. That keeps one authoritative schema, but
+ * `PRAGMA user_version` alone cannot then tell a database built from today's baseline from one
+ * built by an older revision of it — both read as v1, so the engine applies nothing and the
+ * absent table only surfaces later as a cryptic "no such table" (exactly how issue #84's
+ * `location_tags` reached users' devices).
  *
- * This counter closes that gap: the baseline stamps it into `app_meta`, and boot refuses any
- * database carrying an older (or absent) stamp with `SCHEMA_STALE`, whose rescue screen offers
- * backup-then-reset. It is a *recorded* version value, exactly like `user_version` — the schema
- * is still never inferred by inspecting `sqlite_master` (§2.3.1).
+ * The baseline stamps this fingerprint into `app_meta`, and boot refuses any database whose
+ * stamp differs with `SCHEMA_STALE`, whose rescue screen offers backup-then-reset.
  *
- * **Bump this whenever the v1 baseline changes shape**, and bump `schemaVersion` in
- * `package.json` alongside it so the PWA update banner warns that data will not be preserved.
+ * **It is derived from the statements themselves, never hand-maintained.** A counter someone
+ * must remember to bump fails in precisely the situation it exists to catch — a developer folds
+ * a table into v1 and forgets — which is the original bug wearing a different hat. Deriving it
+ * means editing the baseline *is* the bump. Note this reads a value the schema *records*, like
+ * `user_version`; the schema is still never inferred from `sqlite_master` (§2.3.1).
  */
-export const BASELINE_REVISION = 2;
+export function baselineFingerprint(statements: readonly SqlStatement[]): string {
+  // FNV-1a over the concatenated SQL. A non-cryptographic hash is the right tool: this detects
+  // honest drift between a build and a database on the same device, and nothing here is a
+  // security boundary. Rendered hex so the stamp stays human-readable in `app_meta`.
+  let hash = 0x811c9dc5;
+  const feed = (text: string) => {
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      // ×16777619 in 32-bit arithmetic, via shifts to stay inside Number's safe integer range.
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+  };
+  for (const { sql, params } of statements) {
+    feed(sql);
+    // Params too, not just SQL: a baseline statement that seeds rows through bound values would
+    // otherwise change what the database *contains* without changing its fingerprint, letting
+    // exactly the silent drift this guard exists to catch back in.
+    // `SqlParams` is either a positional array or a named record; fold both, sorting record
+    // keys so an incidental reordering isn't mistaken for a schema change.
+    if (Array.isArray(params)) {
+      for (const value of params) {
+        feed(String(value));
+      }
+    } else if (params) {
+      for (const key of Object.keys(params).sort()) {
+        feed(`${key}=${String((params as Record<string, unknown>)[key])}`);
+      }
+    }
+  }
+  return hash.toString(16).padStart(8, '0');
+}
 
 /**
  * A single, immutable schema migration that upgrades the database to `version`.
