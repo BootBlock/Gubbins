@@ -13,7 +13,7 @@ import {
   UNASSIGNED_LOCATION_ID,
   UNASSIGNED_LOCATION_NAME,
 } from '../repositories/constants';
-import { SQL_NOW_MS, type Migration } from './migration';
+import { BASELINE_REVISION, BASELINE_REVISION_KEY, SQL_NOW_MS, type Migration } from './migration';
 
 /**
  * v1 — Consolidated baseline schema (the sole migration).
@@ -1199,6 +1199,15 @@ export const v1Initial: Migration = {
     },
     {
       sql: updatedAtTrigger('test_records'),
+    },
+    // --- Baseline revision stamp (issue #84) ---------------------------------------
+    // Records which revision of this squashed baseline built the database, so boot can
+    // tell a current database from one built by an *older* revision of v1 — both of which
+    // read as `user_version = 1`. See BASELINE_REVISION for why this is needed and when to
+    // bump it. Data, not DDL, so the golden-equivalence schema snapshot is unaffected.
+    {
+      sql: `INSERT INTO app_meta (key, value) VALUES (?, ?);`,
+      params: [BASELINE_REVISION_KEY, String(BASELINE_REVISION)],
     },
   ],
 };

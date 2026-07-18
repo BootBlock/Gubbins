@@ -21,6 +21,9 @@ export type DbErrorCode =
   | 'NOT_CROSS_ORIGIN_ISOLATED'
   | 'MULTI_TAB_LOCKED'
   | 'SCHEMA_TOO_NEW'
+  // The on-disk database was built by an older revision of the squashed pre-release
+  // baseline, so it is missing schema this build expects (§2.3).
+  | 'SCHEMA_STALE'
   | 'INIT_FAILED'
   | 'TRANSACTION_FAILED'
   // The storage Hard Stop (§7.6.1): writes are suspended at the locked tier.

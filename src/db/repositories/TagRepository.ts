@@ -51,6 +51,21 @@ export class TagRepository extends BaseRepository {
     );
   }
 
+  /**
+   * The tag dictionary *without* usage counts, ordered by name — the tag-entry combobox
+   * (issue #84). Deliberately not {@link list}: that annotates every row with two correlated
+   * COUNT subqueries over `item_tags` / `location_tags`, which the picker never reads. Those
+   * counts only earn their cost on the management screen.
+   */
+  async listNames(params: PageParams = {}): Promise<Page<Tag>> {
+    const { limit, offset } = this.resolvePage(params);
+    const rows = await this.driver.query<TagRow>(
+      `SELECT * FROM tags ORDER BY name COLLATE NOCASE ASC LIMIT ? OFFSET ?;`,
+      [limit, offset],
+    );
+    return this.toPage(rows.map(rowToTag), limit, offset);
+  }
+
   /** The tags currently assigned to an item (bounded set), ordered by name. */
   async getForItem(itemId: string): Promise<Tag[]> {
     const rows = await this.driver.query<TagRow>(

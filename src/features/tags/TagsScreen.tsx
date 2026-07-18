@@ -94,6 +94,17 @@ export function TagsScreen() {
 
           {dictionary.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading tags…</p>
+          ) : dictionary.isError ? (
+            // Never fall through to the empty state on failure: "No tags yet" would be a lie,
+            // and it hides a real error behind copy that reads like success.
+            <Surface className="flex flex-col items-center gap-3 p-8 text-center">
+              <p role="alert" className="text-sm text-destructive">
+                Your tags couldn’t be loaded.
+              </p>
+              <Button variant="outline" onClick={() => void dictionary.refetch()}>
+                Try again
+              </Button>
+            </Surface>
           ) : tags.length === 0 ? (
             <Surface className="flex flex-col items-center gap-2 p-8 text-center">
               <TagIcon aria-hidden className="size-8 text-muted-foreground/60" />
