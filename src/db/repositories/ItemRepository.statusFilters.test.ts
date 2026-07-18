@@ -10,6 +10,7 @@ import { MaintenanceRepository } from './MaintenanceRepository';
 import { CategoryRepository } from './CategoryRepository';
 import { TagRepository } from './TagRepository';
 import { LocationRepository } from './LocationRepository';
+import { PurchaseOrderRepository } from './PurchaseOrderRepository';
 
 /** Format a UNIX-ms instant as the `YYYY-MM-DD` string the warranty column stores. */
 const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -127,6 +128,77 @@ describe('ItemRepository.list — derived-status filters', () => {
     await maintenance.create({ itemId: item.id, name: 'Annual', basis: 'TIME', intervalDays: 30 });
     const page = await items.list({ status: ['maintenance-due'], now });
     expect(page.rows).toHaveLength(0);
+  });
+
+  // Issue #88 — the procurement side of the stock question: not "how little is on the shelf"
+  // but "how much is already on its way". Reuses the purchase-order repository's own on-order
+  // scalar, so a DRAFT or fully-received line must not count as inbound.
+  describe('on-order', () => {
+    let orders: PurchaseOrderRepository;
+
+    beforeEach(() => {
+      orders = new PurchaseOrderRepository(driver);
+    });
+
+    /** Put `qty` of `itemId` on a PO left in the given status. */
+    async function order(itemId: string, qty: number, status: 'DRAFT' | 'ORDERED') {
+      const po = await orders.create({ supplierName: 'Acme Supplies' });
+      const line = await orders.addLine(po.id, { itemId, orderedQty: qty });
+      if (status === 'ORDERED') await orders.setStatus(po.id, 'ORDERED');
+      return { po, line };
+    }
+
+    it('filters to items with stock inbound on an open order', async () => {
+      const inbound = await items.create({ name: 'Inbound', trackingMode: 'DISCRETE', quantity: 0 });
+      await items.create({ name: 'NoOrder', trackingMode: 'DISCRETE', quantity: 4 });
+      await order(inbound.id, 10, 'ORDERED');
+
+      const page = await items.list({ status: ['on-order'], now });
+      expect(page.rows.map((r) => r.name)).toEqual(['Inbound']);
+    });
+
+    it('does not count a draft order as inbound', async () => {
+      const drafted = await items.create({ name: 'Drafted', trackingMode: 'DISCRETE', quantity: 0 });
+      await order(drafted.id, 10, 'DRAFT');
+
+      const page = await items.list({ status: ['on-order'], now });
+      expect(page.rows).toHaveLength(0);
+    });
+
+    it('does not count a fully-received line as inbound', async () => {
+      const arrived = await items.create({ name: 'Arrived', trackingMode: 'DISCRETE', quantity: 0 });
+      const { line } = await order(arrived.id, 10, 'ORDERED');
+      await orders.receiveLine(line.id, { quantity: 10 });
+
+      const page = await items.list({ status: ['on-order'], now });
+      expect(page.rows).toHaveLength(0);
+    });
+
+    it('still counts a partially-received line, whose remainder is still coming', async () => {
+      const partial = await items.create({ name: 'Partial', trackingMode: 'DISCRETE', quantity: 0 });
+      const { line } = await order(partial.id, 10, 'ORDERED');
+      await orders.receiveLine(line.id, { quantity: 4 });
+
+      const page = await items.list({ status: ['on-order'], now });
+      expect(page.rows.map((r) => r.name)).toEqual(['Partial']);
+    });
+
+    // The two are independent concerns, OR-combined like every other status pair: an item can
+    // be low *and* on order, and selecting both must not drop either.
+    it('OR-combines with low-stock rather than intersecting', async () => {
+      const lowAndInbound = await items.create({
+        name: 'LowAndInbound',
+        trackingMode: 'DISCRETE',
+        quantity: 1,
+        reorderPoint: 5,
+      });
+      await order(lowAndInbound.id, 10, 'ORDERED');
+      const healthyInbound = await items.create({ name: 'HealthyInbound', quantity: 100 });
+      await order(healthyInbound.id, 2, 'ORDERED');
+
+      const page = await items.list({ status: ['low-stock', 'on-order'], now });
+      expect(page.rows.map((r) => r.name).sort()).toEqual(['HealthyInbound', 'LowAndInbound']);
+    });
   });
 
   it('filters to out-of-stock items, excluding healthy, unlimited and abstract parents', async () => {
