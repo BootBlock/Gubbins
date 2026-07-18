@@ -66,7 +66,7 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
             params: [locationId, itemId],
           });
           statements.push(
-            historyStatement(itemId, 'MOVED', {
+            historyStatement(itemId, 'MOVED', this.actorId(), {
               note: `Assembled into container "${input.resultName ?? project.name}".`,
               metadata: { toLocationId: locationId, projectId },
             }),
@@ -84,7 +84,7 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
         // Seed the new assembly's primary placement in the per-location ledger (Phase 25).
         statements.push(setStockStatement(itemId, locationId, 1));
         statements.push(
-          historyStatement(itemId, 'ASSEMBLED', {
+          historyStatement(itemId, 'ASSEMBLED', this.actorId(), {
             note: `Assembled from project "${project.name}".`,
             metadata: { projectId, fromParts: partIds },
           }),
@@ -124,7 +124,7 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
           });
         }
         statements.push(
-          historyStatement(itemId, 'CONSUMED', {
+          historyStatement(itemId, 'CONSUMED', this.actorId(), {
             note: unlimitedIds.has(itemId)
               ? `Consumed by assembly of "${projectName}" (unlimited supply — stock unchanged).`
               : `Permanently consumed by assembly of "${projectName}".`,

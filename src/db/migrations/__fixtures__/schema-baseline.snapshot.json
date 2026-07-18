@@ -117,6 +117,12 @@
     },
     {
       "type": "index",
+      "name": "idx_item_history_actor_user_id",
+      "tbl_name": "item_history",
+      "sql": "CREATE INDEX idx_item_history_actor_user_id ON item_history(actor_user_id)"
+    },
+    {
+      "type": "index",
       "name": "idx_item_history_item_id",
       "tbl_name": "item_history",
       "sql": "CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at)"
@@ -315,6 +321,12 @@
     },
     {
       "type": "index",
+      "name": "idx_roles_name",
+      "tbl_name": "roles",
+      "sql": "CREATE UNIQUE INDEX idx_roles_name ON roles(name COLLATE NOCASE)"
+    },
+    {
+      "type": "index",
       "name": "idx_stock_batches_expiry",
       "tbl_name": "stock_batches",
       "sql": "CREATE INDEX idx_stock_batches_expiry ON stock_batches(expiry_date)"
@@ -366,6 +378,18 @@
       "name": "idx_tombstones_deleted_at",
       "tbl_name": "tombstones",
       "sql": "CREATE INDEX idx_tombstones_deleted_at ON tombstones(deleted_at)"
+    },
+    {
+      "type": "index",
+      "name": "idx_users_role_id",
+      "tbl_name": "users",
+      "sql": "CREATE INDEX idx_users_role_id ON users(role_id)"
+    },
+    {
+      "type": "index",
+      "name": "idx_users_username",
+      "tbl_name": "users",
+      "sql": "CREATE UNIQUE INDEX idx_users_username ON users(username COLLATE NOCASE)"
     },
     {
       "type": "table",
@@ -437,7 +461,7 @@
       "type": "table",
       "name": "item_history",
       "tbl_name": "item_history",
-      "sql": "CREATE TABLE item_history (\n          id              TEXT    PRIMARY KEY NOT NULL,\n          item_id         TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          action          TEXT    NOT NULL,\n          quantity_delta  INTEGER,\n          net_value_delta REAL,\n          note            TEXT,\n          metadata        TEXT,\n          created_at      INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
+      "sql": "CREATE TABLE item_history (\n          id              TEXT    PRIMARY KEY NOT NULL,\n          item_id         TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          action          TEXT    NOT NULL,\n          quantity_delta  INTEGER,\n          net_value_delta REAL,\n          note            TEXT,\n          metadata        TEXT,\n          -- Who performed the action (issue #79, plan §2.4). NOT NULL: every ledger entry is\n          -- attributable, and the write path requires the actor as an argument so a caller\n          -- that forgets one fails to compile rather than silently recording System.\n          --\n          -- The DEFAULT exists for the FK action, not for callers: ON DELETE SET DEFAULT\n          -- re-points a deleted user's entries at System, which preserves both NOT NULL and\n          -- the ledger itself. Deleting a user must never delete or falsify their history,\n          -- and it must not require an UPDATE the immutability trigger would refuse — SQLite\n          -- applies FK actions internally without firing triggers (recursive_triggers is off).\n          actor_user_id   TEXT    NOT NULL DEFAULT '00000000-0000-4000-8000-000000000010'\n                                  REFERENCES users(id) ON DELETE SET DEFAULT,\n          created_at      INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -573,6 +597,12 @@
     },
     {
       "type": "table",
+      "name": "roles",
+      "tbl_name": "roles",
+      "sql": "CREATE TABLE roles (\n          id          TEXT    PRIMARY KEY NOT NULL,\n          name        TEXT    NOT NULL,\n          description TEXT,\n          -- JSON array of \"<subject>:<action>\" permission keys. The closed union that\n          -- validates them is a phase-2 concern (features/users/permission-registry.ts);\n          -- storage deliberately keeps this opaque so the registry can grow without a\n          -- schema change.\n          permissions TEXT    NOT NULL DEFAULT '[]',\n          -- A role shipped with Gubbins rather than created by an operator. Built-in roles\n          -- are editable (plan §2.3) but may not be deleted, so a user can never be left\n          -- pointing at a role that no longer exists.\n          is_builtin  INTEGER NOT NULL DEFAULT 0,\n          created_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at  INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_builtin IN (0, 1))\n        ) STRICT"
+    },
+    {
+      "type": "table",
       "name": "stock_batches",
       "tbl_name": "stock_batches",
       "sql": "CREATE TABLE stock_batches (\n          id           TEXT    PRIMARY KEY NOT NULL,\n          item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          location_id  TEXT    NOT NULL REFERENCES locations(id),\n          batch_key    TEXT    NOT NULL,\n          batch_number TEXT,\n          lot_number   TEXT,\n          expiry_date  INTEGER,\n          quantity     INTEGER NOT NULL DEFAULT 0,\n          created_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at   INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (quantity >= 0),\n          UNIQUE (item_id, location_id, batch_key)\n        ) STRICT"
@@ -618,6 +648,12 @@
       "name": "tombstones",
       "tbl_name": "tombstones",
       "sql": "CREATE TABLE tombstones (\n          table_name TEXT    NOT NULL,\n          id         TEXT    NOT NULL,\n          deleted_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          PRIMARY KEY (table_name, id)\n        ) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "users",
+      "tbl_name": "users",
+      "sql": "CREATE TABLE users (\n          id                  TEXT    PRIMARY KEY NOT NULL,\n          username            TEXT    NOT NULL,\n          display_name        TEXT    NOT NULL,\n          email               TEXT,\n          -- All three are NULL together when the user has no password at all, which is a\n          -- legitimate configuration on a shared household device where the point is\n          -- attribution rather than secrecy (plan §1.1). The iteration count is stored\n          -- per-user so it can be raised later without invalidating existing hashes.\n          password_hash       TEXT,\n          password_salt       TEXT,\n          password_iterations INTEGER,\n          is_enabled          INTEGER NOT NULL DEFAULT 1,\n          disabled_message    TEXT,\n          kind                TEXT    NOT NULL DEFAULT 'normal',\n          -- NULL for the built-in system/admin users, whose permissions are implicit and\n          -- not editable. ON DELETE RESTRICT is deliberately absent: a role that is still\n          -- assigned cannot be deleted anyway, because deleting it would leave the user\n          -- with no permissions at all rather than an obvious error.\n          role_id             TEXT    REFERENCES roles(id) ON DELETE SET NULL,\n          created_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          updated_at          INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          CHECK (is_enabled IN (0, 1)),\n          CHECK (kind IN ('system', 'admin', 'normal')),\n          -- The password triple is all-or-nothing: a hash without its salt or iteration\n          -- count is unverifiable, and a salt without a hash is meaningless.\n          CHECK (\n            (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)\n            OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)\n          )\n        ) STRICT"
     },
     {
       "type": "table",
@@ -713,7 +749,7 @@
       "type": "trigger",
       "name": "trg_item_history_immutable",
       "tbl_name": "item_history",
-      "sql": "CREATE TRIGGER trg_item_history_immutable\n        BEFORE UPDATE ON item_history\n        FOR EACH ROW\n        BEGIN\n          SELECT RAISE(ABORT, 'item_history is an immutable, append-only ledger.');\n        END"
+      "sql": "CREATE TRIGGER trg_item_history_immutable\n        BEFORE UPDATE OF id, item_id, action, quantity_delta, net_value_delta, note, metadata, created_at\n        ON item_history\n        FOR EACH ROW\n        BEGIN\n          SELECT RAISE(ABORT, 'item_history is an immutable, append-only ledger.');\n        END"
     },
     {
       "type": "trigger",
@@ -837,6 +873,18 @@
     },
     {
       "type": "trigger",
+      "name": "trg_roles_protect_builtin_delete",
+      "tbl_name": "roles",
+      "sql": "CREATE TRIGGER trg_roles_protect_builtin_delete\n        BEFORE DELETE ON roles\n        FOR EACH ROW\n        WHEN OLD.is_builtin = 1\n        BEGIN\n          SELECT RAISE(ABORT, 'A built-in role cannot be deleted.');\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_roles_updated_at",
+      "tbl_name": "roles",
+      "sql": "CREATE TRIGGER trg_roles_updated_at\n    AFTER UPDATE ON roles\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE roles SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
       "name": "trg_stock_batches_recompute_del",
       "tbl_name": "stock_batches",
       "sql": "CREATE TRIGGER trg_stock_batches_recompute_del\n        AFTER DELETE ON stock_batches\n        FOR EACH ROW\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = OLD.item_id AND location_id = OLD.location_id)\n          WHERE id = OLD.item_id || '|' || OLD.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = OLD.item_id AND location_id = OLD.location_id);\n        END"
@@ -888,6 +936,24 @@
       "name": "trg_test_records_updated_at",
       "tbl_name": "test_records",
       "sql": "CREATE TRIGGER trg_test_records_updated_at\n    AFTER UPDATE ON test_records\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE test_records SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_users_protect_builtin_delete",
+      "tbl_name": "users",
+      "sql": "CREATE TRIGGER trg_users_protect_builtin_delete\n        BEFORE DELETE ON users\n        FOR EACH ROW\n        WHEN OLD.kind IN ('system', 'admin')\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be deleted.');\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_users_protect_builtin_update",
+      "tbl_name": "users",
+      "sql": "CREATE TRIGGER trg_users_protect_builtin_update\n        BEFORE UPDATE ON users\n        FOR EACH ROW\n        WHEN OLD.kind IN ('system', 'admin')\n        BEGIN\n          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be modified.');\n        END"
+    },
+    {
+      "type": "trigger",
+      "name": "trg_users_updated_at",
+      "tbl_name": "users",
+      "sql": "CREATE TRIGGER trg_users_updated_at\n    AFTER UPDATE ON users\n    FOR EACH ROW\n    WHEN NEW.updated_at = OLD.updated_at\n    BEGIN\n      UPDATE users SET updated_at = MAX((CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), OLD.updated_at + 1) WHERE id = NEW.id;\n    END"
     },
     {
       "type": "trigger",
@@ -2091,6 +2157,14 @@
         },
         {
           "cid": 7,
+          "name": "actor_user_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'00000000-0000-4000-8000-000000000010'",
+          "pk": 0
+        },
+        {
+          "cid": 8,
           "name": "created_at",
           "type": "INTEGER",
           "notnull": 1,
@@ -2101,6 +2175,16 @@
       "foreignKeys": [
         {
           "id": 0,
+          "seq": 0,
+          "table": "users",
+          "from": "actor_user_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET DEFAULT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
           "seq": 0,
           "table": "items",
           "from": "item_id",
@@ -2113,13 +2197,20 @@
       "indexes": [
         {
           "seq": 0,
-          "name": "idx_item_history_item_id",
+          "name": "idx_item_history_actor_user_id",
           "unique": 0,
           "origin": "c",
           "partial": 0
         },
         {
           "seq": 1,
+          "name": "idx_item_history_item_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
           "name": "sqlite_autoindex_item_history_1",
           "unique": 1,
           "origin": "pk",
@@ -4479,6 +4570,83 @@
         }
       ]
     },
+    "roles": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "description",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "permissions",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'[]'",
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "is_builtin",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_roles_name",
+          "unique": 1,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "sqlite_autoindex_roles_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
     "stock_batches": {
       "columns": [
         {
@@ -5189,6 +5357,149 @@
         {
           "seq": 1,
           "name": "sqlite_autoindex_tombstones_1",
+          "unique": 1,
+          "origin": "pk",
+          "partial": 0
+        }
+      ]
+    },
+    "users": {
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "username",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "display_name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "email",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "password_hash",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "password_salt",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "password_iterations",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "is_enabled",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "disabled_message",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "kind",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'normal'",
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "role_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)",
+          "pk": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "seq": 0,
+          "table": "roles",
+          "from": "role_id",
+          "to": "id",
+          "on_update": "NO ACTION",
+          "on_delete": "SET NULL",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "seq": 0,
+          "name": "idx_users_role_id",
+          "unique": 0,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 1,
+          "name": "idx_users_username",
+          "unique": 1,
+          "origin": "c",
+          "partial": 0
+        },
+        {
+          "seq": 2,
+          "name": "sqlite_autoindex_users_1",
           "unique": 1,
           "origin": "pk",
           "partial": 0

@@ -21,6 +21,8 @@ import {
   parseItemTagEdgeId,
   parseLocationTagEdgeId,
 } from '@/db/repositories';
+import { SYSTEM_USER_ID } from '@/db/repositories/constants';
+import { historyStatement } from '@/db/repositories/item/history';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { buildSchemaDictionary } from './schema-dictionary';
@@ -46,6 +48,33 @@ const PAGE = 100;
  */
 const TABLE_FILTER: Partial<Record<SyncTable, string>> = {
   locations: 'WHERE is_system = 0',
+  // The built-in System and Admin users are seeded by the baseline with the *same* constant
+  // ids on every device and protected by `trg_users_protect_builtin_*`, exactly like the
+  // system-locked locations above — a remote UPSERT would trip that guard and abort the whole
+  // merge transaction. They need no syncing precisely because every device already has them.
+  users: "WHERE kind = 'normal'",
+};
+
+/**
+ * Per-table **wipe** filter: which rows a clone/restore is allowed to delete before
+ * re-inserting the remote's version.
+ *
+ * Deliberately separate from {@link TABLE_FILTER} (which decides what is *read* into a
+ * snapshot), because the two answers genuinely differ. Any row protected by a `RAISE(ABORT)`
+ * delete trigger must be spared here or the entire clone transaction aborts — the whole
+ * restore fails, not just that row.
+ *
+ * - `locations` — the system-locked Unassigned / In Transit rows.
+ * - `users` — the built-in System and Admin principals. Also unread, so the wipe filter
+ *   matches their read filter.
+ * - `roles` — built-in roles are *not* excluded from reading: they are editable, so their
+ *   edits must propagate. They are only undeletable, so the wipe spares them and the
+ *   subsequent `INSERT OR REPLACE` restores the remote's version in place.
+ */
+const WIPE_FILTER: Partial<Record<SyncTable, string>> = {
+  locations: 'WHERE is_system = 0',
+  users: "WHERE kind = 'normal'",
+  roles: 'WHERE is_builtin = 0',
 };
 
 /** Read every row of a table, paging the worker bridge (§2.1). */
@@ -249,17 +278,16 @@ export function historyInsertStatement(row: SqlRow, columns: readonly string[] |
   };
 }
 
-/** A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent. */
+/**
+ * A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent.
+ *
+ * Attributed to the System user explicitly (issue #79, plan §2.4): no person asked for this
+ * re-parent — the merge did it to repair a location removed on another device.
+ */
 function reparentHistoryStatement(itemId: string): SqlStatement {
-  return {
-    sql: `INSERT INTO item_history (id, item_id, action, note)
-          VALUES (?, ?, 'RE_PARENTED', ?);`,
-    params: [
-      crypto.randomUUID(),
-      itemId,
-      'Location sync conflict: re-parented to Unassigned as the target location was removed.',
-    ],
-  };
+  return historyStatement(itemId, 'RE_PARENTED', SYSTEM_USER_ID, {
+    note: 'Location sync conflict: re-parented to Unassigned as the target location was removed.',
+  });
 }
 
 /**
@@ -282,8 +310,27 @@ export async function applyPlan(
   // name/composite index, so the constraint would abort the whole atomic merge. Rows that
   // referenced the loser are cascaded away here and re-inserted against the winner by the
   // repointed upserts below, which is what merges the two devices' associations into one.
-  for (const { table, loserId, deletedAt } of plan.collisions) {
-    statements.push(tombstoneDeleteStatement(table, loserId));
+  // Issue #79: a retired *user* needs its ledger rows moved to the winner before it goes, or
+  // `actor_user_id`'s ON DELETE SET DEFAULT silently re-attributes this device's history to
+  // System — losing the very attribution the column exists to record. That repoint needs the
+  // winner to already exist, while the delete must precede the winner's INSERT (they share the
+  // username index). The cycle is broken by freeing the username here and deferring the delete
+  // itself until after the upserts, below.
+  const deferredUserRetirements: { loserId: string; winnerId: string }[] = [];
+
+  for (const { table, loserId, winnerId, deletedAt } of plan.collisions) {
+    if (table === 'users') {
+      // Park the loser on a guaranteed-unique username (its own id) so the winner's INSERT
+      // can take the real one. The row is deleted a few statements later, in this same
+      // transaction, so the parked value is never observable.
+      statements.push({
+        sql: 'UPDATE users SET username = ? WHERE id = ?;',
+        params: [loserId, loserId],
+      });
+      deferredUserRetirements.push({ loserId, winnerId });
+    } else {
+      statements.push(tombstoneDeleteStatement(table, loserId));
+    }
     statements.push({
       sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
       params: [table, loserId, deletedAt],
@@ -294,6 +341,18 @@ export async function applyPlan(
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
     statements.push(upsertStatement(table, row, dictionary[table] ?? Object.keys(row)));
+  }
+
+  // Issue #79: the winner now exists, so a retired user's ledger rows can follow it before
+  // that user is removed. The ledger's immutability trigger is scoped to the substantive
+  // columns, so re-attributing an entry is permitted — the facts of what happened are
+  // untouched. `reconcile` performs the mirror-image remap on rows arriving from the peer.
+  for (const { loserId, winnerId } of deferredUserRetirements) {
+    statements.push({
+      sql: `UPDATE ${ITEM_HISTORY_TABLE} SET actor_user_id = ? WHERE actor_user_id = ?;`,
+      params: [winnerId, loserId],
+    });
+    statements.push(tombstoneDeleteStatement('users', loserId));
   }
 
   // Phase 11: append-only ledger union-by-id. INSERT OR IGNORE so an id we already hold
@@ -431,9 +490,7 @@ export function buildCloneStatements(
   statements.push({ sql: `DELETE FROM ${ITEM_TAGS_TABLE};` });
   statements.push({ sql: `DELETE FROM ${LOCATION_TAGS_TABLE};` });
   for (const table of [...SYNC_TABLES].reverse()) {
-    statements.push({
-      sql: table === 'locations' ? 'DELETE FROM locations WHERE is_system = 0;' : `DELETE FROM ${table};`,
-    });
+    statements.push({ sql: `DELETE FROM ${table} ${WIPE_FILTER[table] ?? ''};`.replace(/\s+;$/, ';') });
   }
   statements.push({ sql: 'DELETE FROM tombstones;' });
 

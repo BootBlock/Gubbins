@@ -135,7 +135,7 @@ export function withAliases<TBase extends Constructor<ItemCoreRepository>>(Base:
       if (statements.length === 0) return existing;
 
       statements.push(
-        historyStatement(id, 'SCRAPE_APPLIED', {
+        historyStatement(id, 'SCRAPE_APPLIED', this.actorId(), {
           note: `Applied scraped supplier data: ${changed.join(', ')}.`,
         }),
       );

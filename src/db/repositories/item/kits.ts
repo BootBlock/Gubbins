@@ -265,6 +265,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
             historyStatement(
               draw.itemId,
               m.trackingMode === 'CONSUMABLE_GAUGE' ? 'GAUGE_UPDATE' : 'CONSUMED',
+              this.actorId(),
               {
                 ...(m.trackingMode === 'CONSUMABLE_GAUGE'
                   ? { netValueDelta: -draw.quantity }
@@ -278,7 +279,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
         const produceLocation = step.itemId === kitId ? destination : meta.get(step.itemId)!.locationId;
         statements.push(
           ...ledger.produce(step.itemId, produceLocation, step.buildQty),
-          historyStatement(step.itemId, 'ASSEMBLED', {
+          historyStatement(step.itemId, 'ASSEMBLED', this.actorId(), {
             quantityDelta: step.buildQty,
             note:
               step.itemId === kitId
@@ -328,7 +329,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
 
       const statements: SqlStatement[] = [
         ...(await itemConsumeStatements(this.driver, kitId, n)),
-        historyStatement(kitId, 'DISASSEMBLED', {
+        historyStatement(kitId, 'DISASSEMBLED', this.actorId(), {
           quantityDelta: -n,
           note: `Disassembled ${n} ${plural(n, 'kit')} back into components.`,
           metadata: {
@@ -348,7 +349,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
               sql: 'UPDATE items SET current_net_value = ? WHERE id = ?;',
               params: [nextNet, c.componentItemId],
             },
-            historyStatement(c.componentItemId, 'GAUGE_UPDATE', {
+            historyStatement(c.componentItemId, 'GAUGE_UPDATE', this.actorId(), {
               netValueDelta: applied,
               note: `Recovered ${applied} from disassembling ${n} × "${kit.name}".`,
               metadata: { kitId, count: n },
@@ -357,7 +358,7 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
         } else {
           statements.push(
             ...(await placementDeltaStatements(this.driver, c.componentItemId, m.locationId, give)),
-            historyStatement(c.componentItemId, 'QUANTITY_CHANGE', {
+            historyStatement(c.componentItemId, 'QUANTITY_CHANGE', this.actorId(), {
               quantityDelta: give,
               note: `Recovered ${give} from disassembling ${n} × "${kit.name}".`,
               metadata: { kitId, count: n, quantityPerKit: c.quantity },

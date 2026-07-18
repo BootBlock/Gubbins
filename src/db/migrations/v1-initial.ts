@@ -1,4 +1,7 @@
 import {
+  ADMIN_USER_DISPLAY_NAME,
+  ADMIN_USER_ID,
+  ADMIN_USER_USERNAME,
   ATTACHMENT_KINDS,
   CONDITIONS,
   COSTING_MODES,
@@ -10,9 +13,13 @@ import {
   PROCUREMENT_STATUSES,
   PROJECT_STATUSES,
   RESERVATION_STATUSES,
+  SYSTEM_USER_DISPLAY_NAME,
+  SYSTEM_USER_ID,
+  SYSTEM_USER_USERNAME,
   TRACKING_MODES,
   UNASSIGNED_LOCATION_ID,
   UNASSIGNED_LOCATION_NAME,
+  USER_KINDS,
 } from '../repositories/constants';
 import type { SqlStatement } from '../rpc/driver';
 import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration } from './migration';
@@ -97,6 +104,7 @@ const reservationStatusList = RESERVATION_STATUSES.map((s) => `'${s}'`).join(', 
 const procurementStatusList = PROCUREMENT_STATUSES.map((s) => `'${s}'`).join(', ');
 const conditionList = CONDITIONS.map((c) => `'${c}'`).join(', ');
 const basisList = MAINTENANCE_BASES.map((b) => `'${b}'`).join(', ');
+const userKindList = USER_KINDS.map((k) => `'${k}'`).join(', ');
 
 /**
  * The baseline's DDL, separated from the migration object so its fingerprint can be computed
@@ -122,6 +130,120 @@ const baselineStatements: SqlStatement[] = [
           UPDATE app_meta SET updated_at = (${SQL_NOW_MS}) WHERE key = NEW.key;
         END;
       `,
+  },
+  // --- Principals (issue #79, plan §2) -------------------------------------------------
+  // `roles` and `users` are created first so every table that attributes a row to an actor
+  // can reference them, and so their `SYNC_TABLES` entries can sit ahead of their children.
+  {
+    sql: `
+        CREATE TABLE roles (
+          id          TEXT    PRIMARY KEY NOT NULL,
+          name        TEXT    NOT NULL,
+          description TEXT,
+          -- JSON array of "<subject>:<action>" permission keys. The closed union that
+          -- validates them is a phase-2 concern (features/users/permission-registry.ts);
+          -- storage deliberately keeps this opaque so the registry can grow without a
+          -- schema change.
+          permissions TEXT    NOT NULL DEFAULT '[]',
+          -- A role shipped with Gubbins rather than created by an operator. Built-in roles
+          -- are editable (plan §2.3) but may not be deleted, so a user can never be left
+          -- pointing at a role that no longer exists.
+          is_builtin  INTEGER NOT NULL DEFAULT 0,
+          created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (is_builtin IN (0, 1))
+        ) STRICT;
+      `,
+  },
+  { sql: `CREATE UNIQUE INDEX idx_roles_name ON roles(name COLLATE NOCASE);` },
+  { sql: updatedAtTrigger('roles') },
+  {
+    sql: `
+        CREATE TRIGGER trg_roles_protect_builtin_delete
+        BEFORE DELETE ON roles
+        FOR EACH ROW
+        WHEN OLD.is_builtin = 1
+        BEGIN
+          SELECT RAISE(ABORT, 'A built-in role cannot be deleted.');
+        END;
+      `,
+  },
+  {
+    sql: `
+        CREATE TABLE users (
+          id                  TEXT    PRIMARY KEY NOT NULL,
+          username            TEXT    NOT NULL,
+          display_name        TEXT    NOT NULL,
+          email               TEXT,
+          -- All three are NULL together when the user has no password at all, which is a
+          -- legitimate configuration on a shared household device where the point is
+          -- attribution rather than secrecy (plan §1.1). The iteration count is stored
+          -- per-user so it can be raised later without invalidating existing hashes.
+          password_hash       TEXT,
+          password_salt       TEXT,
+          password_iterations INTEGER,
+          is_enabled          INTEGER NOT NULL DEFAULT 1,
+          disabled_message    TEXT,
+          kind                TEXT    NOT NULL DEFAULT 'normal',
+          -- NULL for the built-in system/admin users, whose permissions are implicit and
+          -- not editable. ON DELETE RESTRICT is deliberately absent: a role that is still
+          -- assigned cannot be deleted anyway, because deleting it would leave the user
+          -- with no permissions at all rather than an obvious error.
+          role_id             TEXT    REFERENCES roles(id) ON DELETE SET NULL,
+          created_at          INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at          INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (is_enabled IN (0, 1)),
+          CHECK (kind IN (${userKindList})),
+          -- The password triple is all-or-nothing: a hash without its salt or iteration
+          -- count is unverifiable, and a salt without a hash is meaningless.
+          CHECK (
+            (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)
+            OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)
+          )
+        ) STRICT;
+      `,
+  },
+  { sql: `CREATE UNIQUE INDEX idx_users_username ON users(username COLLATE NOCASE);` },
+  { sql: `CREATE INDEX idx_users_role_id ON users(role_id);` },
+  { sql: updatedAtTrigger('users') },
+  // The two built-in users are protected in the same shape as the system-locked locations
+  // (`trg_locations_protect_system_*`): a guard that exists only in a React component is not
+  // a guard. `kind` doubles as the flag, since only the seeded rows are ever system/admin.
+  {
+    sql: `
+        CREATE TRIGGER trg_users_protect_builtin_update
+        BEFORE UPDATE ON users
+        FOR EACH ROW
+        WHEN OLD.kind IN ('system', 'admin')
+        BEGIN
+          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be modified.');
+        END;
+      `,
+  },
+  {
+    sql: `
+        CREATE TRIGGER trg_users_protect_builtin_delete
+        BEFORE DELETE ON users
+        FOR EACH ROW
+        WHEN OLD.kind IN ('system', 'admin')
+        BEGIN
+          SELECT RAISE(ABORT, 'The built-in System and Admin users cannot be deleted.');
+        END;
+      `,
+  },
+  {
+    sql: `
+        INSERT INTO users (id, username, display_name, kind, is_enabled)
+        VALUES (?, ?, ?, 'system', 0);
+      `,
+    params: [SYSTEM_USER_ID, SYSTEM_USER_USERNAME, SYSTEM_USER_DISPLAY_NAME],
+  },
+  {
+    sql: `
+        INSERT INTO users (id, username, display_name, kind, is_enabled)
+        VALUES (?, ?, ?, 'admin', 1);
+      `,
+    params: [ADMIN_USER_ID, ADMIN_USER_USERNAME, ADMIN_USER_DISPLAY_NAME],
   },
   {
     sql: `
@@ -280,6 +402,17 @@ const baselineStatements: SqlStatement[] = [
           net_value_delta REAL,
           note            TEXT,
           metadata        TEXT,
+          -- Who performed the action (issue #79, plan §2.4). NOT NULL: every ledger entry is
+          -- attributable, and the write path requires the actor as an argument so a caller
+          -- that forgets one fails to compile rather than silently recording System.
+          --
+          -- The DEFAULT exists for the FK action, not for callers: ON DELETE SET DEFAULT
+          -- re-points a deleted user's entries at System, which preserves both NOT NULL and
+          -- the ledger itself. Deleting a user must never delete or falsify their history,
+          -- and it must not require an UPDATE the immutability trigger would refuse — SQLite
+          -- applies FK actions internally without firing triggers (recursive_triggers is off).
+          actor_user_id   TEXT    NOT NULL DEFAULT '${SYSTEM_USER_ID}'
+                                  REFERENCES users(id) ON DELETE SET DEFAULT,
           created_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
       `,
@@ -287,10 +420,16 @@ const baselineStatements: SqlStatement[] = [
   {
     sql: `CREATE INDEX idx_item_history_item_id ON item_history(item_id, created_at);`,
   },
+  { sql: `CREATE INDEX idx_item_history_actor_user_id ON item_history(actor_user_id);` },
   {
+    // Scoped to the substantive columns rather than the whole row: the ledger's *facts* are
+    // immutable, but re-attributing an entry to System when its author is deleted is not a
+    // rewrite of what happened. Leaving the trigger unscoped would make the FK's
+    // SET DEFAULT unusable and force user deletion to either destroy history or dangle.
     sql: `
         CREATE TRIGGER trg_item_history_immutable
-        BEFORE UPDATE ON item_history
+        BEFORE UPDATE OF id, item_id, action, quantity_delta, net_value_delta, note, metadata, created_at
+        ON item_history
         FOR EACH ROW
         BEGIN
           SELECT RAISE(ABORT, 'item_history is an immutable, append-only ledger.');

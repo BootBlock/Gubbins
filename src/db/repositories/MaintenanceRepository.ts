@@ -13,6 +13,7 @@
  */
 import { DbError } from '../errors';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
+import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
 import { rowToMaintenanceSchedule } from './mappers';
 import { tombstoneStatement } from './tombstone';
@@ -249,11 +250,10 @@ export class MaintenanceRepository extends BaseRepository {
         sql: 'UPDATE maintenance_schedules SET last_performed_at = ?, usage_since_service = 0 WHERE id = ?;',
         params: [now, id],
       },
-      {
-        sql: `INSERT INTO item_history (id, item_id, action, note, metadata)
-              VALUES (?, ?, 'MAINTENANCE_LOGGED', ?, ?);`,
-        params: [crypto.randomUUID(), schedule.itemId, note, JSON.stringify({ scheduleId: id })],
-      },
+      historyStatement(schedule.itemId, 'MAINTENANCE_LOGGED', this.actorId(), {
+        note,
+        metadata: { scheduleId: id },
+      }),
     ]);
     return (await this.getById(id))!;
   }

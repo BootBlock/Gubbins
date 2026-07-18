@@ -50,7 +50,7 @@ export function withRevaluations<TBase extends Constructor<ItemCoreRepository>>(
           params: [id, itemId, value, revaluedAt, note],
         },
         { sql: 'UPDATE items SET current_value = ? WHERE id = ?;', params: [value, itemId] },
-        historyStatement(itemId, 'REVALUED', {
+        historyStatement(itemId, 'REVALUED', this.actorId(), {
           note: note ? `Recorded a manual revaluation. ${note}` : 'Recorded a manual revaluation.',
           metadata: { value, revaluedAt },
         }),

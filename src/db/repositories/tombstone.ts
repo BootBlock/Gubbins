@@ -43,6 +43,10 @@ import type { SqlStatement } from '../rpc/driver';
  * order never trips a foreign key.
  */
 export const SYNC_TABLES = [
+  // Principals first (issue #79): `roles` before `users` before anything attributing a row
+  // to an actor, so an UPSERT batch can never present a child ahead of its parent.
+  'roles', // independent dictionary — referenced by users.role_id
+  'users', // FK → roles (SET NULL); referenced by item_history.actor_user_id
   'locations',
   'categories',
   'field_defs', // independent dictionary (issue #97 — the global custom-field vocabulary; ordered before every table that references a definition)

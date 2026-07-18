@@ -66,7 +66,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
 
       await this.driver.transaction([
         { sql: 'UPDATE items SET current_net_value = ? WHERE id = ?;', params: [nextNet, id] },
-        historyStatement(id, 'GAUGE_UPDATE', {
+        historyStatement(id, 'GAUGE_UPDATE', this.actorId(), {
           netValueDelta: appliedDelta,
           ...(attritionMetadata ? { metadata: attritionMetadata } : {}),
           note:
@@ -179,7 +179,7 @@ export function withGauge<TBase extends Constructor<ItemCoreRepository>>(Base: T
             id,
           ],
         },
-        historyStatement(id, 'GAUGE_UPDATE', {
+        historyStatement(id, 'GAUGE_UPDATE', this.actorId(), {
           // Zero would be a meaningless ledger point on a pure relabel, so only a real
           // spill carries a delta; the note always says what changed.
           ...(next.netValueDelta !== 0 ? { netValueDelta: next.netValueDelta } : {}),

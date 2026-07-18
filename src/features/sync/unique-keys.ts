@@ -77,6 +77,23 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   // and are reconciled by membership rather than LWW. They cannot be repointed as rows, so
   // the caller maps their edges through this table's re-key map instead (see `reconcile`).
   { table: 'tags', columns: ['name'], nocase: ['name'], references: [] },
+  // `roles` before `users` so a role re-key settles before users are resolved against it —
+  // the same dictionaries-first ordering the block comment above describes.
+  {
+    table: 'roles',
+    columns: ['name'],
+    nocase: ['name'],
+    references: [{ table: 'users', column: 'role_id' }],
+  },
+  // `users.username` is UNIQUE NOCASE over random-UUID ids, so two devices inventing the same
+  // username would otherwise collide on the merge INSERT and brick sync (issue #79).
+  //
+  // `item_history.actor_user_id` cannot be listed in `references`: that field is typed
+  // `SyncTable` and `repointReferences` reads `local.tables[…]`, which never holds
+  // `item_history` (it travels on `snapshot.itemHistory`). This is exactly the `tags`
+  // situation described above, and is handled the same way — `reconcile` pulls this table's
+  // re-key map out and applies it to the ledger itself via `resolveActor`.
+  { table: 'users', columns: ['username'], nocase: ['username'], references: [] },
   {
     table: 'contacts',
     columns: ['name'],

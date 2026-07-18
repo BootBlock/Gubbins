@@ -10,6 +10,7 @@
  */
 import { DbError } from '../errors';
 import type { SqlStatement } from '../rpc/driver';
+import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
 import { UNASSIGNED_LOCATION_ID, clampDeadStockDays } from './constants';
 import { rowToLocation } from './mappers';
@@ -345,16 +346,12 @@ export class LocationRepository extends BaseRepository {
         params: [UNASSIGNED_LOCATION_ID, id],
       });
       for (const item of orphanedItems) {
-        statements.push({
-          sql: `INSERT INTO item_history (id, item_id, action, note, metadata)
-                VALUES (?, ?, 'RE_PARENTED', ?, ?);`,
-          params: [
-            crypto.randomUUID(),
-            item.id,
-            `Re-parented to Unassigned: location "${location.name}" was deleted.`,
-            JSON.stringify({ fromLocationId: id, toLocationId: UNASSIGNED_LOCATION_ID }),
-          ],
-        });
+        statements.push(
+          historyStatement(item.id, 'RE_PARENTED', this.actorId(), {
+            note: `Re-parented to Unassigned: location "${location.name}" was deleted.`,
+            metadata: { fromLocationId: id, toLocationId: UNASSIGNED_LOCATION_ID },
+          }),
+        );
       }
     }
 

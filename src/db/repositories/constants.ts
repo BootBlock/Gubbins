@@ -409,3 +409,55 @@ export type CheckoutStatus = (typeof CHECKOUT_STATUSES)[number];
  */
 export const BORROWER_TYPES = ['contact', 'project', 'location'] as const;
 export type BorrowerType = (typeof BORROWER_TYPES)[number];
+
+/**
+ * What kind of principal a `users` row is (issue #79, plan §2.2).
+ *
+ * - `system` — the actor the app itself writes as: maintenance, pruning, imports run by a
+ *   schedule, and sync reconciliation repairing a dangling attribution. Never signs in.
+ * - `admin` — full access to everything, always. This is the user single-user mode
+ *   transparently acts as, so a Gubbins with the users module switched off attributes every
+ *   action to it.
+ * - `normal` — an ordinary account whose permissions come from its {@link Role}.
+ *
+ * The first two are seeded by the baseline with the fixed ids below and are protected from
+ * deletion and modification by `trg_users_protect_builtin_*`.
+ */
+export const USER_KINDS = ['system', 'admin', 'normal'] as const;
+export type UserKind = (typeof USER_KINDS)[number];
+
+/**
+ * Fixed, well-known identifier for the seeded **System** user (issue #79, plan §2.2).
+ *
+ * Like {@link UNASSIGNED_LOCATION_ID} it is a deliberately *constant* UUIDv4 — never
+ * `crypto.randomUUID()` — because every device must agree on it: `item_history.actor_user_id`
+ * defaults to this id, and the FK's `ON DELETE SET DEFAULT` re-points a deleted user's ledger
+ * rows here, so a per-device id would dangle the moment a history row crossed a sync.
+ */
+export const SYSTEM_USER_ID = '00000000-0000-4000-8000-000000000010';
+
+/** Sign-in handle of the seeded System user. Never used to sign in — System has no password. */
+export const SYSTEM_USER_USERNAME = 'system';
+
+/** Display name of the seeded System user, as it appears against an automated ledger entry. */
+export const SYSTEM_USER_DISPLAY_NAME = 'System';
+
+/**
+ * Fixed, well-known identifier for the seeded **Admin** user (issue #79, plan §2.2). Constant
+ * for the same reason as {@link SYSTEM_USER_ID}: with the users module off, every action in
+ * the app is attributed to this id, so it must resolve identically on every device.
+ */
+export const ADMIN_USER_ID = '00000000-0000-4000-8000-000000000011';
+
+/** Sign-in handle of the seeded Admin user. */
+export const ADMIN_USER_USERNAME = 'admin';
+
+/** Display name of the seeded Admin user. */
+export const ADMIN_USER_DISPLAY_NAME = 'Admin';
+
+/**
+ * The seeded users that may never be deleted, disabled, renamed or re-roled (plan §2.2).
+ * Enforced by SQL trigger *and* at the repository layer — a guard that only exists in a React
+ * component is not a guard.
+ */
+export const BUILTIN_USER_IDS = [SYSTEM_USER_ID, ADMIN_USER_ID] as const;

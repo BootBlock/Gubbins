@@ -64,7 +64,7 @@ export function withTestRecords<TBase extends Constructor<ItemCoreRepository>>(B
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           params: [id, itemId, kind, name, result, reading, unit, note, performedAt],
         },
-        historyStatement(itemId, 'TESTED', {
+        historyStatement(itemId, 'TESTED', this.actorId(), {
           note: `${TEST_RECORD_KIND_LABELS[kind]} — ${name}: ${TEST_RESULT_LABELS[result]}.`,
           metadata: { kind, result, reading, unit, performedAt },
         }),
