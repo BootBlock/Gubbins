@@ -1,6 +1,6 @@
 /**
  * The **synthetic test event** behind `POST /api/v1/webhooks/test` (webhooks plan `W7`; see
- * `docs/todo/webhooks_2026-07-18.md` §5.5).
+ * `docs/todo/done/webhooks_2026-07-18.md` §5.5).
  *
  * "Send test event" exists so a user can find out whether their subscription works *before* an
  * inventory change happens to match it. The whole value of that is in it being the **real** path —

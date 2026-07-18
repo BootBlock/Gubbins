@@ -1,5 +1,5 @@
 /**
- * The user-facing **event catalogue** (webhooks plan `W2`; see `docs/todo/webhooks_2026-07-18.md`).
+ * The user-facing **event catalogue** (webhooks plan `W2`; see `docs/todo/done/webhooks_2026-07-18.md`).
  *
  * {@link KNOWN_EVENT_TYPES} is the machine vocabulary — a flat list of dotted names. This module is
  * the half a *person* reads: each type paired with a plain-English label, a description of when it

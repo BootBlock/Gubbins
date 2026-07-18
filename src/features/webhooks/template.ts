@@ -1,6 +1,6 @@
 /**
  * The payload **template engine** — presets, the allow-listed interpolator, and `GET` query
- * flattening (webhooks plan `W3`; see `docs/todo/webhooks_2026-07-18.md` §5.3).
+ * flattening (webhooks plan `W3`; see `docs/todo/done/webhooks_2026-07-18.md` §5.3).
  *
  * What a subscription actually sends. Three shapes, in ascending order of how much the user is
  * doing themselves:

@@ -1,5 +1,5 @@
 /**
- * The bridge-side **delivery log** (webhooks plan `W5`; see `docs/todo/webhooks_2026-07-18.md` §3.1).
+ * The bridge-side **delivery log** (webhooks plan `W5`; see `docs/todo/done/webhooks_2026-07-18.md` §3.1).
  *
  * ## Why the log lives here and not in the database
  *

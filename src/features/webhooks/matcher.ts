@@ -1,6 +1,6 @@
 /**
  * Subscription **matching** — "should this event go to this subscription?" (webhooks plan `W3`;
- * see `docs/todo/webhooks_2026-07-18.md` §7).
+ * see `docs/todo/done/webhooks_2026-07-18.md` §7).
  *
  * One decision, in one tested place, used by the only deliverer there is. The bridge asks this per
  * (event × subscription) pair; the app will ask the same question in `W7` to preview which recent

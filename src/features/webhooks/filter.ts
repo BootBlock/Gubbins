@@ -1,6 +1,6 @@
 /**
  * The declarative webhook **filter** — vocabulary, parser and pure evaluator (webhooks plan `W3`;
- * see `docs/todo/webhooks_2026-07-18.md` §5.2).
+ * see `docs/todo/done/webhooks_2026-07-18.md` §5.2).
  *
  * A subscription narrows beyond its event types with a filter: only this location's subtree, only
  * these categories, only when the quantity drops below five. `W1` deliberately left

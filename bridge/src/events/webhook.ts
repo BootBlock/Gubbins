@@ -3,7 +3,7 @@
  *
  * Originally EI-1 (one operator-configured target, always a signed `POST` of the event envelope).
  * The webhooks plan `W5` extends it into the delivery half of issue #87: the *app* configures
- * subscriptions and the **bridge** is the sole deliverer (see `docs/todo/webhooks_2026-07-18.md`
+ * subscriptions and the **bridge** is the sole deliverer (see `docs/todo/done/webhooks_2026-07-18.md`
  * §1, §7). The retry/backoff/circuit/queue machinery below is EI-1's, unchanged in behaviour —
  * what grew is the target model and the request builder.
  *

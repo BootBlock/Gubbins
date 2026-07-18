@@ -1,6 +1,6 @@
 /**
  * The stable dotted **event type** vocabulary — the shared naming seam between the app and the
- * bridge (webhooks plan `W0`; see `docs/todo/webhooks_2026-07-18.md`).
+ * bridge (webhooks plan `W0`; see `docs/todo/done/webhooks_2026-07-18.md`).
  *
  * These names are a **public contract**: they appear in bridge webhook payloads, the SSE stream,
  * the MQTT event topics and the OpenAPI enum, and third parties filter on them. Treat the set as
