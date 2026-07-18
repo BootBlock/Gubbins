@@ -34,7 +34,11 @@ export class GoogleDriveCloudProvider implements CloudProvider {
   /** Cached snapshot file id, resolved lazily and reused across a session's calls. */
   private fileId: string | null = null;
 
-  constructor(private readonly api: DriveApi) {}
+  private readonly api: DriveApi;
+
+  constructor(api: DriveApi) {
+    this.api = api;
+  }
 
   /**
    * Drive's `Date` response header is not CORS-exposed to a browser, so the provider has

@@ -16,7 +16,11 @@ export const COOLDOWN_WINDOW_MS = 2000;
 export class CooldownMap {
   private readonly lastSeen = new Map<string, number>();
 
-  constructor(private readonly windowMs: number = COOLDOWN_WINDOW_MS) {}
+  private readonly windowMs: number;
+
+  constructor(windowMs: number = COOLDOWN_WINDOW_MS) {
+    this.windowMs = windowMs;
+  }
 
   /**
    * Decide whether a freshly decoded `code` should be accepted, recording the time

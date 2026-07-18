@@ -8,7 +8,7 @@
 # bridge file being touched. This repo pushes straight to `main` with no branch protection,
 # so a red CI run blocks nothing — this hook is the gate that keeps the bridge green.
 #
-# It runs the bridge type-check + tests before a push, but ONLY when the outgoing commits
+# It runs the bridge type-check, tests and boot-smoke before a push, but ONLY when the commits
 # touch `src/**` or `bridge/**` (a docs-only or config-only push skips it and stays fast).
 # Any failure aborts the push. In a genuine emergency, bypass with `git push --no-verify`.
 #
@@ -76,6 +76,23 @@ fi
 if ! npm run --silent test:bridge; then
   err 'bridge tests failed (vitest --config bridge/vitest.config.ts) — push aborted.'
   note 'Fix the failing bridge tests (or bypass with `git push --no-verify`).'
+  exit 1
+fi
+
+# The boot-smoke is the ONLY check that exercises Node's strip-only TypeScript loader: the
+# type-check above accepts parameter properties / `enum` / `namespace` (they are valid
+# TypeScript) and Vitest transpiles via esbuild (a full transform), so a construct the loader
+# cannot execute passes both and then fails at import time — leaving the bridge unable to boot
+# at all. It costs a few seconds (start the servers, hit /health, exit) and is the difference
+# between catching that here and shipping a dead bridge to `main`.
+if ! npm run --silent smoke:bridge; then
+  err 'bridge boot-smoke failed (node bridge/smoke.mjs) — push aborted.'
+  note 'The bridge could not start. If this is ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX, something in'
+  note 'its import graph (bridge/** or the src/** modules it imports) uses a constructor'
+  note 'parameter property, `enum` or `namespace` — none of which Node can strip.'
+  note 'If instead it failed to bind a port, something local is already on the smoke port —'
+  note 'set GUBBINS_SMOKE_PORT to a free one and re-push.'
+  note 'Fix the offending syntax (or bypass with `git push --no-verify`).'
   exit 1
 fi
 

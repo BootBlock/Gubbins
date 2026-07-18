@@ -238,8 +238,12 @@ rule applied to issue handling.
 3. **Implement the fix following every project convention** above — design tokens, i18n `t()`,
    accessibility wiring, Foundry primitives, and the no-secrets / public-hygiene rules. Match the
    surrounding code's style.
-4. **Verify it works.** Typecheck (`npx tsc -b`) and run any tests the change touches; where the
-   change has a runtime surface, drive it (the `verify` skill) rather than trusting types alone.
+4. **Verify it works.** Typecheck with `npm run type-check` — **not** `npx tsc -b`, which builds the
+   app project only and skips the bridge's separate tsconfig entirely. Run any tests the change
+   touches; where the change has a runtime surface, drive it (the `verify` skill) rather than
+   trusting types alone. If the change reaches anything the bridge imports (`bridge/**`, and much of
+   `src/db` and the search/backup modules), also run `npm run smoke:bridge` — it is the only check
+   that exercises Node's strip-only loader, which `tsc` and Vitest both bypass.
 5. **Code review before committing.** Run `/code-review high` on the diff and **fix every confirmed
    finding** before proceeding. Re-verify after fixing. Format the changed files (`npm run format`,
    or `npx prettier --write <files>`) so the pre-commit hook doesn't bounce the commit, then commit
