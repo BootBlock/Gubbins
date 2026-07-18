@@ -1,6 +1,13 @@
 import { type ReactNode, useState } from 'react';
 import { Banner, Button, Tooltip, useInstallPrompt, useToast } from '@/components/foundry';
-import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon, CheckIcon } from '@/components/icons';
+import {
+  WarningIcon,
+  CriticalIcon,
+  StorageIcon,
+  DownloadIcon,
+  CheckIcon,
+  ErrorIcon,
+} from '@/components/icons';
 import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -68,13 +75,35 @@ export function StorageBanners() {
     });
   }
 
+  /**
+   * Build and download the full archive, and always report the outcome — same contract as
+   * {@link enablePersistence}. This is offered from a storage-pressure banner, so a failure
+   * that only stopped the spinner would read as "done": the banner returns to its resting
+   * state and the *absence* of a fresh timestamp is the sole signal. The toast makes the
+   * failure explicit and offers the retry, because the archive is the thing standing between
+   * the user and losing their inventory.
+   */
   async function archiveNow() {
     setArchiving(true);
     try {
-      await runFullArchive();
+      const name = await runFullArchive();
       setLastArchivedAt(Date.now());
+      show({
+        tone: 'success',
+        icon: <CheckIcon />,
+        heading: 'Archive downloaded',
+        message: `${name} contains your database and full-resolution images. Keep it somewhere safe.`,
+      });
     } catch (err) {
       console.error('[gubbins] full archive failed', err);
+      show({
+        tone: 'danger',
+        icon: <ErrorIcon />,
+        heading: 'Archive failed',
+        message: 'No backup was downloaded, so your inventory is still unprotected. Please try again.',
+        duration: 0,
+        action: { label: 'Try again', onClick: () => void archiveNow() },
+      });
     } finally {
       setArchiving(false);
     }
