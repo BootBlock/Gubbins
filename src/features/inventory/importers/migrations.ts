@@ -3,10 +3,11 @@
  * tool.
  *
  * Each supported source (Homebox, Grocy, Sortly, Snipe-IT, InvenTree) exports its
- * catalogue with its *own* column names. A migration mapper is a pure **field-mapping**
- * that sits in *front* of the existing generalised-import pipeline: given the already
- * parsed header + data-row matrix (from {@link extractImport} in `text-import.ts`), it
- * rewrites the columns into the canonical Gubbins fields the shared
+ * catalogue with its *own* column names, as does a distributor order export (LCSC) —
+ * the same reshaping problem, so it rides the same seam. A migration mapper is a pure
+ * **field-mapping** that sits in *front* of the existing generalised-import pipeline:
+ * given the already parsed header + data-row matrix (from {@link extractImport} in
+ * `text-import.ts`), it rewrites the columns into the canonical Gubbins fields the shared
  * {@link buildImportPlanFromRows} already understands, and folds every column it does
  * *not* recognise into a single `notes` column with a clear provenance line — so nothing
  * is silently mis-mapped and no source data is lost.
@@ -31,7 +32,7 @@ import { CATALOG_FIELD_LABELS, type CatalogField, type ColumnMapping } from '../
 // ---------------------------------------------------------------------------
 
 /** The migration sources understood by the importer. */
-export type MigrationSourceId = 'homebox' | 'grocy' | 'sortly' | 'snipeit' | 'inventree';
+export type MigrationSourceId = 'homebox' | 'grocy' | 'sortly' | 'snipeit' | 'inventree' | 'lcsc';
 
 /** One field-mapping rule: any of `keys` (normalised) maps to the Gubbins `target`. */
 interface FieldRule {
@@ -152,6 +153,36 @@ const MIGRATION_SPECS: readonly MigrationSpec[] = [
       { keys: ['minimumstock', 'minstock'], target: 'reorderPoint' },
       { keys: ['defaultlocation', 'location'], target: 'locationId' },
       { keys: ['notes'], target: 'notes' },
+    ],
+  },
+  {
+    id: 'lcsc',
+    label: 'LCSC',
+    exportHint: 'LCSC → Order details / cart → Export, or the LCSC BOM CSV.',
+    // "LCSC Part Number" (the C-prefixed catalogue code) appears in every LCSC order
+    // and BOM export and in no other tool's, so one column identifies the source.
+    signature: ['lcscpartnumber'],
+    rules: [
+      // LCSC's own exports have no "name" column, so the manufacturer part number —
+      // what a maker actually calls the part — becomes the item name. `name` is kept as
+      // a fallback key because a hand-kept parts sheet that merely *carries* an LCSC
+      // column still trips this source's signature; without it every such row would
+      // fold its own name into the notes and fail as "Row has no name".
+      {
+        keys: ['manufacturepartnumber', 'manufacturerpartnumber', 'mfrpartnumber', 'name'],
+        target: 'name',
+      },
+      // The LCSC catalogue code is a distributor SKU and takes the identifier slot,
+      // where it also serves as the stable match key when a later order re-imports the
+      // same part.
+      { keys: ['lcscpartnumber', 'lcscpart'], target: 'sku' },
+      { keys: ['description'], target: 'description' },
+      { keys: ['manufacturer', 'brand'], target: 'manufacturer' },
+      { keys: ['orderqty', 'quantity', 'qty'], target: 'quantity' },
+      // The per-unit price only — "Order Price" is the line total and is folded instead.
+      // LCSC heads this column "Unit Price", "Unit Price($)" or "Unit Price(USD)"; the
+      // first two both normalise to `unitprice`, the third needs its own key.
+      { keys: ['unitprice', 'unitpriceusd', 'price'], target: 'unitCost' },
     ],
   },
 ];
