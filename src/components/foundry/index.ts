@@ -59,6 +59,9 @@ export {
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';
+// The open-dialog count, so app-global keyboard handling can stand aside while a modal owns
+// the keyboard (issue #32) — the same LIFO registry Modal itself uses to arbitrate Escape.
+export { openModalCount } from './modal-stack';
 // Glyph picker — the app-wide icon chooser. The full catalogue-bearing `GlyphPicker`
 // dialog is intentionally *not* re-exported here: it is reached only through the lazy
 // `GlyphPickerButton` (or a direct subpath import) so its icon set never lands in the

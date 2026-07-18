@@ -63,18 +63,9 @@ export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
   const setOpen = useCommandPaletteStore((s) => s.setOpen);
 
-  // Global shortcut: Cmd/Ctrl-/ toggles the palette. Bound only while the feature is on.
-  useEffect(() => {
-    if (!enabled) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
-        e.preventDefault();
-        useCommandPaletteStore.getState().toggle();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [enabled]);
+  // The Ctrl-/ shortcut is no longer bound here: it is a registered global hotkey like every
+  // other shortcut (issue #32), so it is rebindable, respects the modal stack, and lives in the
+  // one place a key press becomes an app action. See `features/hotkeys`.
 
   // If the feature is switched off while open, make sure it isn't left mounted.
   useEffect(() => {

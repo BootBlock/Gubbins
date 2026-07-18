@@ -65,6 +65,12 @@ import {
 import type { AlertKind } from '@/features/alerts/alerts';
 import { DEFAULT_OCR_MODEL, normaliseOcrModel, type OcrModel } from '@/features/inventory/ocr/ocr-engine';
 export type { OcrModel };
+import {
+  DEFAULT_HOTKEY_BINDINGS,
+  normaliseHotkeyBindings,
+  type HotkeyActionId,
+  type HotkeyBinding,
+} from '@/features/hotkeys/hotkeys';
 import { normaliseCatalogueLogo } from '@/features/reports/catalogue-branding';
 import { DEFAULT_ANALYTICS_WINDOW, normaliseAnalyticsWindow } from '@/features/reports/analytics-windows';
 import { DEFAULT_WEIGHT_UNIT, normaliseWeightUnit, type WeightUnit } from '@/lib/weight';
@@ -400,6 +406,23 @@ interface PreferencesStore {
    */
   /** Show the Cmd/Ctrl-K command palette (global quick item search) and its hero trigger. */
   readonly dashboardCommandPalette: boolean;
+  /**
+   * Master switch for the global keyboard shortcuts (issue #32). When off, no hotkey is bound
+   * at all — the app claims no key presses, which is the escape hatch for anyone whose
+   * assistive technology or browser extension wants those keys instead. **On by default**, so
+   * the shipped shortcuts are discoverable. The individual bindings live in
+   * {@link hotkeyBindings}; this only decides whether any of them are listened for.
+   */
+  readonly hotkeysEnabled: boolean;
+  /**
+   * The rebindable shortcut for each action — a map of `HotkeyActionId` → binding string
+   * (`'F1'`, `'Ctrl+/'`, or `''` for deliberately unbound). Only the high-traffic actions ship
+   * with a default; the rest are listed in Settings ready to be given a key. Persisted as
+   * *intent* and reconciled through `normaliseHotkeyBindings` on read, so a map written by an
+   * older version (missing today's actions) or holding a since-reserved chord can never reach
+   * the dispatcher. See `features/hotkeys/hotkeys.ts` for the registry and binding grammar.
+   */
+  readonly hotkeyBindings: Record<HotkeyActionId, HotkeyBinding>;
   /** Show the quick-action buttons (Add item / Scan) in the dashboard hero. */
   readonly dashboardQuickActions: boolean;
   /** Show the first-run "getting started" panel while the inventory is still empty. */
@@ -577,6 +600,12 @@ interface PreferencesStore {
   /** Choose the OCR language-model accuracy tier (G2). */
   setOcrModel: (model: OcrModel) => void;
   setDashboardCommandPalette: (enabled: boolean) => void;
+  /** Turn the global keyboard shortcuts on/off wholesale (issue #32). */
+  setHotkeysEnabled: (enabled: boolean) => void;
+  /** Rebind one action; `''` unbinds it. Invalid/reserved chords fall back to its default. */
+  setHotkeyBinding: (id: HotkeyActionId, binding: HotkeyBinding) => void;
+  /** Restore every shortcut to its shipped default. */
+  resetHotkeyBindings: () => void;
   setDashboardQuickActions: (enabled: boolean) => void;
   setDashboardGettingStarted: (enabled: boolean) => void;
   /** Turn "hide healthy cards" (issue #111) on/off for the dashboard board. */
@@ -670,6 +699,8 @@ export const usePreferencesStore = create<PreferencesStore>()(
       ocrEnabled: false,
       ocrModel: DEFAULT_OCR_MODEL,
       dashboardCommandPalette: true,
+      hotkeysEnabled: true,
+      hotkeyBindings: DEFAULT_HOTKEY_BINDINGS,
       dashboardQuickActions: true,
       dashboardGettingStarted: true,
       hideHealthyDashboardCards: false,
@@ -785,6 +816,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
       // Normalise so a stale/unknown persisted value can never reach the engine.
       setOcrModel: (model) => set({ ocrModel: normaliseOcrModel(model) }),
       setDashboardCommandPalette: (dashboardCommandPalette) => set({ dashboardCommandPalette }),
+      setHotkeysEnabled: (hotkeysEnabled) => set({ hotkeysEnabled }),
+      // Merge one action's chord (re-normalised whole, so a rejected value falls back to that
+      // action's default) over the map, leaving every other binding untouched.
+      setHotkeyBinding: (id, binding) =>
+        set((state) => ({
+          hotkeyBindings: normaliseHotkeyBindings({ ...state.hotkeyBindings, [id]: binding }),
+        })),
+      resetHotkeyBindings: () => set({ hotkeyBindings: DEFAULT_HOTKEY_BINDINGS }),
       setDashboardQuickActions: (dashboardQuickActions) => set({ dashboardQuickActions }),
       setDashboardGettingStarted: (dashboardGettingStarted) => set({ dashboardGettingStarted }),
       setHideHealthyDashboardCards: (hideHealthyDashboardCards) => set({ hideHealthyDashboardCards }),

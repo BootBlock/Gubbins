@@ -116,6 +116,8 @@ export {
   Sun as LightThemeIcon,
   Monitor as SystemThemeIcon,
   Tablet as KioskIcon,
+  // Keyboard shortcuts (issue #32) — the Hotkeys settings tab and its key-cap affordances.
+  Keyboard as HotkeyIcon,
   Bell as NotificationIcon,
   MonitorDown as InstallIcon,
 
