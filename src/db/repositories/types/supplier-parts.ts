@@ -6,6 +6,7 @@
  * JSON TEXT column in SQLite and surfaced as a structured array on the domain object.
  */
 import type { PriceHistorySource } from './supplier-part-price-history';
+import type { SupplierRef } from './suppliers';
 
 /** One quantity price-break: `unitCost` applies at `qty` and above. */
 export interface PriceBreak {
@@ -16,6 +17,11 @@ export interface PriceBreak {
 export interface SupplierPartRow {
   readonly id: string;
   readonly item_id: string;
+  readonly supplier_id: string;
+  /**
+   * Joined from `suppliers.name` — not a column on this table. Present on every row the
+   * repository reads, because essentially every consumer wants the name rather than the id.
+   */
   readonly supplier_name: string;
   readonly order_code: string | null;
   readonly unit_cost: number | null;
@@ -35,6 +41,12 @@ export interface SupplierPartRow {
 export interface SupplierPart {
   readonly id: string;
   readonly itemId: string;
+  readonly supplierId: string;
+  /**
+   * The supplier's canonical name, joined from `suppliers`. Read-only here — changing it
+   * renames the supplier everywhere, which goes through `SupplierRepository.rename`, never
+   * through a supplier part.
+   */
   readonly supplierName: string;
   readonly orderCode: string | null;
   readonly unitCost: number | null;
@@ -59,7 +71,8 @@ export interface SupplierPart {
 
 /** Fields accepted when creating a supplier part. `itemId` is supplied separately. */
 export interface CreateSupplierPartInput {
-  readonly supplierName: string;
+  /** Existing supplier by id, or a typed name to resolve-or-create. */
+  readonly supplier: SupplierRef;
   readonly orderCode?: string | null;
   readonly unitCost?: number | null;
   readonly currency?: string | null;
@@ -74,7 +87,8 @@ export interface CreateSupplierPartInput {
 
 /** Partial update; an omitted key is left unchanged, an explicit `null` clears it. */
 export interface UpdateSupplierPartInput {
-  readonly supplierName?: string;
+  /** Re-point this part at a different supplier; omit to leave it where it is. */
+  readonly supplier?: SupplierRef;
   readonly orderCode?: string | null;
   readonly unitCost?: number | null;
   readonly currency?: string | null;

@@ -45,7 +45,17 @@ export interface ParsedPurchaseListLine {
   readonly mpn: string | null;
   /** The supplier's own order code / SKU, when the source names one. */
   readonly supplierSku: string | null;
-  /** The supplier / vendor / store the line is to be bought from. */
+  /**
+   * The supplier / vendor / store the line is to be bought from, **as a name**.
+   *
+   * Suppliers are a first-class entity (issue #384), but a parsed line deliberately keeps
+   * carrying a name rather than an id: an imported file only ever contains what someone typed
+   * into a spreadsheet, and this module is pure — it has no database to look an id up in. The
+   * name is resolved onto an existing supplier, or used to create one, at *write* time by
+   * `SupplierRepository.resolveOrCreate`, which folds case, spacing and punctuation. So an
+   * import can no more mint a near-duplicate supplier than the picker can, and the parser
+   * stays a pure text-to-structure function.
+   */
   readonly supplierName: string | null;
   /** How many to buy. Always a positive whole number; defaults to 1 when absent or unusable. */
   readonly quantity: number;

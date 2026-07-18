@@ -2,11 +2,16 @@
  * SuggestionRepository — distinct existing values for the auto-completing form fields
  * (Field auto-completion).
  *
- * A handful of free-text fields (manufacturer, supplier name, gauge unit, currency) are
- * entered over and over across the catalogue, so the Add/Edit forms offer type-ahead
- * suggestions. This repository supplies the *existing* half of that list — the distinct
- * values the user has already entered — which the feature layer merges with a seeded set
- * of popular defaults ({@link file://../../features/inventory/field-suggestions.ts}).
+ * A handful of free-text fields (manufacturer, gauge unit) are entered over and over across
+ * the catalogue, so the Add/Edit forms offer type-ahead suggestions. This repository supplies
+ * the *existing* half of that list — the distinct values the user has already entered — which
+ * the feature layer merges with a seeded set of popular defaults
+ * ({@link file://../../features/inventory/field-suggestions.ts}).
+ *
+ * A field belongs here only while it is genuinely *free text*. Supplier name used to be one;
+ * since suppliers became a first-class entity (issue #384) their names come from the supplier
+ * dictionary through `SupplierPicker`, which resolves what is typed onto an existing supplier
+ * instead of merely suggesting a spelling — so it is deliberately no longer a suggestion field.
  *
  * Reads only; nothing here grows storage, so no Hard-Stop gate applies. All SQL lives over
  * the injected driver (§2.1.1); the `table`/`column` interpolated below come exclusively
@@ -17,7 +22,7 @@ import { DbError } from '../errors';
 import { BaseRepository } from './base';
 
 /** The form fields that offer value auto-completion. */
-export type SuggestionField = 'manufacturer' | 'supplierName' | 'unitOfMeasure';
+export type SuggestionField = 'manufacturer' | 'unitOfMeasure';
 
 /**
  * Where each field's already-entered values live. A fixed whitelist: the only source of
@@ -26,7 +31,6 @@ export type SuggestionField = 'manufacturer' | 'supplierName' | 'unitOfMeasure';
  */
 const SUGGESTION_SOURCES: Record<SuggestionField, { readonly table: string; readonly column: string }> = {
   manufacturer: { table: 'items', column: 'manufacturer' },
-  supplierName: { table: 'supplier_parts', column: 'supplier_name' },
   unitOfMeasure: { table: 'items', column: 'unit_of_measure' },
 };
 

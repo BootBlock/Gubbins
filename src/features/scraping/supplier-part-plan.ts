@@ -103,6 +103,10 @@ const SECOND_LEVEL_TLD_LABELS: ReadonlySet<string> = new Set([
  * `www.amazon.co.uk` → `Amazon` rather than `Co`. Two-part country suffixes (`.co.uk`,
  * `.com.au`, `.co.jp`) are handled via {@link SECOND_LEVEL_TLD_LABELS}. Title-cases the
  * label. Falls back to a generic name when the host cannot be parsed.
+ *
+ * This deliberately stays a **name** rather than a supplier id (issue #384): a scrape knows a
+ * hostname and nothing more, so the name is resolved onto an existing supplier — or used to
+ * create one — at write time by `SupplierRepository.resolveOrCreate`.
  */
 export function supplierNameFromUrl(url: string): string {
   const host = hostOf(url);
@@ -229,9 +233,14 @@ export function resolveSupplierPartWrite(
   }
 
   if (plan.matchedId === null) {
-    // A brand-new supplier row always carries the supplier name even if no field was filled.
+    // A brand-new supplier row always carries the supplier even if no field was filled. It is
+    // referenced by *name* rather than id because a scrape only ever knows a hostname — the
+    // repository folds that name onto the matching supplier, or creates one (issue #384).
     // Tag the write as scrape-sourced so the Phase-81 price-history row is attributed correctly.
-    return { kind: 'create', input: { supplierName: plan.supplierName, ...fields, source: 'SCRAPE' } };
+    return {
+      kind: 'create',
+      input: { supplier: { supplierName: plan.supplierName }, ...fields, source: 'SCRAPE' },
+    };
   }
   if (!wrote) return { kind: 'noop' };
   return { kind: 'update', id: plan.matchedId, input: { ...fields, source: 'SCRAPE' } };

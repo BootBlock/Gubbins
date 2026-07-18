@@ -14,6 +14,13 @@
  * recomputes it, and {@link onOrderQtyForItem} is a derived projection like the Phase-20
  * In-Transit one — never a stored counter.
  *
+ * The supplier is a first-class row (issue #384): the header carries `supplier_id`, and every
+ * read joins `suppliers` to project the canonical name, so a consumer still reads
+ * `supplierName` without knowing the join exists. Writes name their supplier through a
+ * {@link SupplierRef} resolved by {@link SupplierRepository.resolveRef}. The reference is
+ * nullable, ON DELETE SET NULL — tidying a supplier list can never drop spend history; the
+ * order survives and simply reads as an unknown supplier.
+ *
  * All SQL lives over the injected driver (§2.1.1). Creation grows storage and is Hard-Stop
  * gated; deletes (which free space) are not and record a tombstone in the same transaction so
  * the deletion syncs (§7.2).
@@ -22,15 +29,16 @@ import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
 import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
-import { UNASSIGNED_SUPPLIER_NAME, type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
+import { type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
 import { DbError } from '../errors';
-import { BaseRepository } from './base';
+import { BaseRepository, type RepositoryOptions } from './base';
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
 import { addStockStatement, stockRowId } from './stock';
 import { addBatchStatement, placementDeltaStatements } from './stock-batches';
+import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
-import type { SqlStatement, SqlValue } from '../rpc/driver';
+import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import type { Page, PageParams } from './types';
 import type {
   CreatePurchaseOrderInput,
@@ -53,6 +61,16 @@ import type {
  * figure can never diverge between them.
  */
 const ON_ORDER_LINE_PREDICATE = `l.ordered_qty > l.received_qty AND po.status NOT IN ('DRAFT', 'CANCELLED')`;
+
+/**
+ * Every purchase-order header read goes through this projection: the order's own columns plus
+ * the canonical `suppliers.name` as `supplier_name`, which {@link rowToPurchaseOrder} surfaces
+ * as the DTO's read-only `supplierName`. Defined once so no read can forget the join and hand
+ * back an order with no supplier on it.
+ */
+const PURCHASE_ORDER_SELECT = `SELECT po.*, s.name AS supplier_name
+                                 FROM purchase_orders po
+                                 LEFT JOIN suppliers s ON s.id = po.supplier_id`;
 
 /**
  * Correlated scalar subquery yielding the quantity of an item still **on order** — the sum of
@@ -97,10 +115,17 @@ function cleanOrderedQty(value: number): number {
 }
 
 export class PurchaseOrderRepository extends BaseRepository {
+  private readonly suppliers: SupplierRepository;
+
+  constructor(driver: IDatabaseDriver, options: RepositoryOptions = {}) {
+    super(driver, options);
+    this.suppliers = new SupplierRepository(driver, options);
+  }
+
   // --- purchase orders ---------------------------------------------------------
 
   async getById(id: string): Promise<PurchaseOrder | undefined> {
-    const row = await this.driver.queryOne<PurchaseOrderRow>('SELECT * FROM purchase_orders WHERE id = ?;', [
+    const row = await this.driver.queryOne<PurchaseOrderRow>(`${PURCHASE_ORDER_SELECT} WHERE po.id = ?;`, [
       id,
     ]);
     return row ? rowToPurchaseOrder(row) : undefined;
@@ -110,7 +135,7 @@ export class PurchaseOrderRepository extends BaseRepository {
   async list(params: PageParams = {}): Promise<Page<PurchaseOrderWithLines>> {
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<PurchaseOrderRow>(
-      'SELECT * FROM purchase_orders ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?;',
+      `${PURCHASE_ORDER_SELECT} ORDER BY po.created_at DESC, po.id ASC LIMIT ? OFFSET ?;`,
       [limit, offset],
     );
     const withLines = await Promise.all(rows.map((row) => this.attachLines(row)));
@@ -119,7 +144,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   /** A purchase order with its lines and effective status, or undefined. */
   async getWithLines(id: string): Promise<PurchaseOrderWithLines | undefined> {
-    const row = await this.driver.queryOne<PurchaseOrderRow>('SELECT * FROM purchase_orders WHERE id = ?;', [
+    const row = await this.driver.queryOne<PurchaseOrderRow>(`${PURCHASE_ORDER_SELECT} WHERE po.id = ?;`, [
       id,
     ]);
     return row ? this.attachLines(row) : undefined;
@@ -127,15 +152,18 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   async create(input: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
     this.assertWritable();
-    const supplierName = cleanText(input.supplierName);
-    if (!supplierName) {
-      throw new DbError('SQLITE_CONSTRAINT', 'A purchase order must have a supplier name.');
-    }
+    // Clean the plain fields BEFORE resolving the supplier — resolving can mint a supplier row
+    // outside this write, so a later rejection would strand it in the dictionary.
+    const reference = cleanText(input.reference);
+    const currency = cleanText(input.currency);
+    // A typed name folds onto the existing supplier (or mints one); an id is verified. The
+    // order stores only the id, so a later rename carries through to its history.
+    const supplierId = await this.suppliers.resolveRef(input.supplier);
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO purchase_orders (id, supplier_name, reference, currency)
+      `INSERT INTO purchase_orders (id, supplier_id, reference, currency)
        VALUES (?, ?, ?, ?);`,
-      [id, supplierName, cleanText(input.reference), cleanText(input.currency)],
+      [id, supplierId, reference, currency],
     );
     return (await this.getById(id))!;
   }
@@ -145,13 +173,11 @@ export class PurchaseOrderRepository extends BaseRepository {
     await this.require(id);
     const sets: string[] = [];
     const params: SqlValue[] = [];
-    if (input.supplierName !== undefined) {
-      const name = cleanText(input.supplierName);
-      if (!name) {
-        throw new DbError('SQLITE_CONSTRAINT', 'A purchase order must have a supplier name.');
-      }
-      sets.push('supplier_name = ?');
-      params.push(name);
+    // Re-pointing the order at another supplier moves the id; it never edits a name in place —
+    // renaming is the supplier's own operation and applies everywhere at once.
+    if (input.supplier !== undefined) {
+      sets.push('supplier_id = ?');
+      params.push(await this.suppliers.resolveRef(input.supplier));
     }
     if (input.reference !== undefined) {
       sets.push('reference = ?');
@@ -489,9 +515,9 @@ export class PurchaseOrderRepository extends BaseRepository {
   // --- reorder-plan bulk creation (Phase 65) -----------------------------------
 
   /**
-   * Create one DRAFT purchase order per named supplier group in the given reorder plan,
-   * adding one line per item in the group. The **Unassigned** group is skipped — items
-   * without a preferred supplier have no supplier name to key a PO.
+   * Create one DRAFT purchase order per supplier group in the given reorder plan, adding one
+   * line per item in the group. A group with a null `supplierId` is the **Unassigned** group —
+   * items with no preferred supplier, which have nothing to key a PO on — and is skipped.
    *
    * This method composes the existing {@link create} + {@link addLine} path (no second
    * PO-creation path) so all the same validation, Hard-Stop gating, and tombstone
@@ -506,10 +532,12 @@ export class PurchaseOrderRepository extends BaseRepository {
 
     for (const group of groups) {
       // The Unassigned group has no supplier to key a PO — skip it.
-      if (group.supplierName === UNASSIGNED_SUPPLIER_NAME) continue;
+      if (group.supplierId === null) continue;
       if (group.lines.length === 0) continue;
 
-      const po = await this.create({ supplierName: group.supplierName });
+      // The group already identifies its supplier, so pass the id straight through rather
+      // than re-resolving a name that could fold onto a different row.
+      const po = await this.create({ supplier: { supplierId: group.supplierId } });
 
       for (const line of group.lines) {
         await this.addLine(po.id, {
@@ -540,9 +568,13 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   /** The supplier name on a PO header, for a return's ledger note; null if the PO is gone. */
+  /** The order's supplier name, or null when it has none / the supplier has been deleted. */
   private async supplierNameFor(poId: string): Promise<string | null> {
-    const row = await this.driver.queryOne<{ supplier_name: string }>(
-      'SELECT supplier_name FROM purchase_orders WHERE id = ?;',
+    const row = await this.driver.queryOne<{ supplier_name: string | null }>(
+      `SELECT s.name AS supplier_name
+         FROM purchase_orders po
+         LEFT JOIN suppliers s ON s.id = po.supplier_id
+        WHERE po.id = ?;`,
       [poId],
     );
     return row ? row.supplier_name : null;

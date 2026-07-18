@@ -35,7 +35,8 @@ describe('PRESET_SUGGESTIONS — seeded defaults', () => {
 
   it('seeds the obvious electronics names so an empty catalogue still completes them', () => {
     expect(PRESET_SUGGESTIONS.manufacturer).toContain('Texas Instruments');
-    expect(PRESET_SUGGESTIONS.supplierName).toContain('DigiKey');
+    // No supplier presets: suppliers are a first-class entity (issue #384), so the supplier
+    // dictionary — not a seeded string list — is what completes a supplier name.
     expect(PRESET_SUGGESTIONS.unitOfMeasure).toContain('g');
   });
 });

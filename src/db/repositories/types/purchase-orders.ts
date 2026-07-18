@@ -8,12 +8,20 @@
  * states.
  */
 
+import type { SupplierRef } from './suppliers';
+
 /** The five persisted PO statuses. Only DRAFT / CANCELLED are user-set; the rest are derived. */
 export type PurchaseOrderStatus = 'DRAFT' | 'ORDERED' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
 
 export interface PurchaseOrderRow {
   readonly id: string;
-  readonly supplier_name: string;
+  /** NULL once the supplier has been deleted (ON DELETE SET NULL) — the order survives. */
+  readonly supplier_id: string | null;
+  /**
+   * Joined from `suppliers.name` — not a column on this table. NULL exactly when
+   * {@link supplier_id} is, i.e. the supplier this order was placed with no longer exists.
+   */
+  readonly supplier_name: string | null;
   readonly reference: string | null;
   readonly status: PurchaseOrderStatus;
   readonly currency: string | null;
@@ -37,7 +45,18 @@ export interface PurchaseOrderLineRow {
 
 export interface PurchaseOrder {
   readonly id: string;
-  readonly supplierName: string;
+  /**
+   * The supplier this order was placed with, or NULL once that supplier has been deleted
+   * (ON DELETE SET NULL). The order outlives the supplier: it is a record of money spent.
+   */
+  readonly supplierId: string | null;
+  /**
+   * The supplier's canonical name, joined from `suppliers`; NULL exactly when
+   * {@link supplierId} is, which the UI renders as an unknown supplier. Read-only here —
+   * changing it renames the supplier everywhere, which goes through `SupplierRepository`,
+   * never through a purchase order.
+   */
+  readonly supplierName: string | null;
   readonly reference: string | null;
   /** The persisted status snapshot (DRAFT/CANCELLED are authoritative; others are derived). */
   readonly status: PurchaseOrderStatus;
@@ -70,14 +89,16 @@ export interface PurchaseOrderWithLines extends PurchaseOrder {
 
 /** Fields accepted when creating a PO. Status starts DRAFT; lines are added separately. */
 export interface CreatePurchaseOrderInput {
-  readonly supplierName: string;
+  /** Existing supplier by id, or a typed name to resolve-or-create. */
+  readonly supplier: SupplierRef;
   readonly reference?: string | null;
   readonly currency?: string | null;
 }
 
 /** Partial PO header update; an omitted key is left unchanged. */
 export interface UpdatePurchaseOrderInput {
-  readonly supplierName?: string;
+  /** Re-point this order at a different supplier; omit to leave it where it is. */
+  readonly supplier?: SupplierRef;
   readonly reference?: string | null;
   readonly currency?: string | null;
 }

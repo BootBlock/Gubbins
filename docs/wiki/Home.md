@@ -25,7 +25,7 @@ start with the three pages below; otherwise jump straight to a section from the 
 | **People & time** | [[Contacts]], [[Loans\|Loans-Check-Out-and-In]], [[Bookings]] |
 | **Search** | [[Search overview\|Search-Overview]], [[Visual builder\|Visual-Query-Builder]], [[Text syntax\|Text-Query-Syntax]], [[Natural language\|Natural-Language-Search]] |
 | **Scanning & labels** | [[Camera scanning\|Camera-Scanning]], [[QR & labels\|QR-Codes-and-Label-Printing]], [[OCR\|Receipt-and-Label-OCR]] |
-| **Purchasing & projects** | [[Projects & BOM\|Projects-and-BOM]], [[Purchase orders\|Purchase-Orders]], [[Reorder\|Reorder-and-Shopping-List]], [[Wishlist]] |
+| **Purchasing & projects** | [[Projects & BOM\|Projects-and-BOM]], [[Purchase orders\|Purchase-Orders]], [[Reorder\|Reorder-and-Shopping-List]], [[Wishlist]], [[Suppliers]] |
 | **Reports** | [[Reports overview\|Reports-Overview]], [[Valuation & spend\|Valuation-and-Spend]], [[Sales & margin\|Sales-and-Margin]] |
 | **Data & sync** | [[How your data is stored\|How-Your-Data-Is-Stored]], [[Cloud sync\|Cloud-Sync]], [[Backup & restore\|Backup-and-Restore]], [[Import\|Export-and-Import]] |
 | **Integrations** | [[Bridge overview\|Bridge-Overview]], [[Home Assistant\|Home-Assistant-Integration]], [[AI assistant\|AI-Assistant-Query-MCP]] |

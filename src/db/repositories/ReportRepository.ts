@@ -134,12 +134,15 @@ function preferredSupplierCostSql(col: string): string {
 }
 
 /**
- * Correlated subquery yielding the **preferred** supplier part's `supplier_name` for an item
- * (NULL when none is marked), for the parts-catalogue "Supplier" column. Mirrors
+ * Correlated subquery yielding the **preferred** supplier part's supplier name for an item
+ * (NULL when none is marked), for the parts-catalogue "Supplier" column. The name lives on
+ * `suppliers` — a supplier part only references it — so this joins through `supplier_id`;
+ * an inner join is correct because the FK is NOT NULL. Mirrors
  * {@link preferredSupplierCostSql}'s single-preferred-row invariant and defensive tiebreak.
  */
 function preferredSupplierNameSql(col: string): string {
-  return `(SELECT sp.supplier_name FROM supplier_parts sp
+  return `(SELECT s.name FROM supplier_parts sp
+             JOIN suppliers s ON s.id = sp.supplier_id
              WHERE sp.item_id = ${col} AND sp.is_preferred = 1
              ORDER BY sp.updated_at DESC LIMIT 1)`;
 }
@@ -692,6 +695,7 @@ export class ReportRepository extends BaseRepository {
       base_shortfall: number;
       on_order: number;
       supplier_part_id: string | null;
+      supplier_id: string | null;
       supplier_name: string | null;
       unit_cost: number | null;
       pack_qty: number | null;
@@ -701,8 +705,11 @@ export class ReportRepository extends BaseRepository {
       // Only DISCRETE items with countable shortfall (CONSUMABLE_GAUGE has no countable
       // top-up unit); SERIALISED singles and abstract variant parents are excluded as in
       // listLowStock. The LEFT JOIN brings the preferred supplier-part row — NULL when
-      // none is marked preferred. `on_order` is the still-incoming quantity; the effective
-      // shortfall (base − on_order, floored at 0) is computed in JS below.
+      // none is marked preferred — and a second LEFT JOIN resolves that part's supplier for
+      // its name (it must stay LEFT: the part row itself may be absent, even though a part
+      // always has a supplier). The id is what the plan groups on; the name is display data.
+      // `on_order` is the still-incoming quantity; the effective shortfall (base − on_order,
+      // floored at 0) is computed in JS below.
       `SELECT i.id AS item_id,
               i.name AS item_name,
               COALESCE(
@@ -711,7 +718,8 @@ export class ReportRepository extends BaseRepository {
               ) AS base_shortfall,
               ${onOrderQtyForItemSql('i.id')} AS on_order,
               sp.id          AS supplier_part_id,
-              sp.supplier_name,
+              sp.supplier_id AS supplier_id,
+              s.name         AS supplier_name,
               sp.unit_cost,
               sp.pack_qty,
               sp.min_order_qty,
@@ -719,6 +727,7 @@ export class ReportRepository extends BaseRepository {
          FROM items i
          LEFT JOIN supplier_parts sp
                 ON sp.item_id = i.id AND sp.is_preferred = 1
+         LEFT JOIN suppliers s ON s.id = sp.supplier_id
         WHERE i.is_active = 1
           AND i.tracking_mode = 'DISCRETE'
           AND i.is_unlimited = 0
@@ -741,6 +750,7 @@ export class ReportRepository extends BaseRepository {
         preferredSupplier: r.supplier_part_id
           ? {
               supplierPartId: r.supplier_part_id,
+              supplierId: r.supplier_id!,
               supplierName: r.supplier_name!,
               unitCost: r.unit_cost,
               packQty: r.pack_qty,
@@ -1018,16 +1028,23 @@ export class ReportRepository extends BaseRepository {
     const poRows = await this.driver.query<{
       instant: number;
       amount: number;
+      supplier_id: string | null;
       supplier: string | null;
       category_id: string | null;
       category_name: string | null;
     }>(
+      // The supplier breakdown resolves through `suppliers`, so every order placed with one
+      // supplier rolls up under one heading: the name is now a property of a single supplier
+      // record rather than free text copied onto each order, so the two spellings that used to
+      // split a supplier's spend across two rows can no longer exist.
       `SELECT COALESCE(po.ordered_at, po.created_at) AS instant,
               l.received_qty * l.unit_cost AS amount,
-              po.supplier_name AS supplier,
+              po.supplier_id AS supplier_id,
+              s.name AS supplier,
               i.category_id AS category_id, c.name AS category_name
          FROM purchase_order_lines l
          JOIN purchase_orders po ON po.id = l.po_id
+         JOIN suppliers s ON s.id = po.supplier_id
          LEFT JOIN items i ON i.id = l.item_id
          LEFT JOIN categories c ON c.id = i.category_id
         WHERE l.received_qty > 0 AND l.unit_cost IS NOT NULL
@@ -1039,6 +1056,7 @@ export class ReportRepository extends BaseRepository {
         instant: Number(r.instant),
         amount: Number(r.amount),
         source: 'PURCHASE_ORDER',
+        supplierId: r.supplier_id,
         supplier: r.supplier,
         categoryId: r.category_id,
         categoryName: r.category_name,
@@ -1057,6 +1075,7 @@ export class ReportRepository extends BaseRepository {
         instant: Number(r.instant),
         amount: Number(r.amount),
         source: 'PROJECT_EXPENSE',
+        supplierId: null,
         supplier: null,
         categoryId: null,
         categoryName: null,
@@ -1090,6 +1109,7 @@ export class ReportRepository extends BaseRepository {
         instant,
         amount: Number(r.amount),
         source: 'ACQUISITION',
+        supplierId: null,
         supplier: null,
         categoryId: r.category_id,
         categoryName: r.category_name,

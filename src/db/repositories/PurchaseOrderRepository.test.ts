@@ -7,6 +7,7 @@ import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { PurchaseOrderRepository } from './PurchaseOrderRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
+import { SupplierRepository } from './SupplierRepository';
 
 describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   let driver: MemoryDriver;
@@ -14,6 +15,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   let items: ItemRepository;
   let locations: LocationRepository;
   let supplierParts: SupplierPartRepository;
+  let suppliers: SupplierRepository;
 
   beforeEach(async () => {
     driver = createMemoryDriver();
@@ -22,6 +24,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     items = new ItemRepository(driver);
     locations = new LocationRepository(driver);
     supplierParts = new SupplierPartRepository(driver);
+    suppliers = new SupplierRepository(driver);
   });
 
   afterEach(async () => {
@@ -31,7 +34,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   // --- creation & lines ----------------------------------------------------------
 
   it('creates a DRAFT purchase order, trimming the supplier name', async () => {
-    const po = await pos.create({ supplierName: '  DigiKey  ', reference: 'PO-1' });
+    const po = await pos.create({ supplier: { supplierName: '  DigiKey  ' }, reference: 'PO-1' });
     expect(po.supplierName).toBe('DigiKey');
     expect(po.reference).toBe('PO-1');
     expect(po.status).toBe('DRAFT');
@@ -39,15 +42,15 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   });
 
   it('rejects a blank supplier name and a non-positive ordered quantity', async () => {
-    await expect(pos.create({ supplierName: '   ' })).rejects.toBeInstanceOf(DbError);
-    const po = await pos.create({ supplierName: 'RS' });
+    await expect(pos.create({ supplier: { supplierName: '   ' } })).rejects.toBeInstanceOf(DbError);
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     await expect(pos.addLine(po.id, { orderedQty: 0 })).rejects.toBeInstanceOf(DbError);
     await expect(pos.addLine(po.id, { orderedQty: 2.5 })).rejects.toBeInstanceOf(DbError);
   });
 
   it('adds, lists, updates and removes lines', async () => {
     const item = await items.create({ name: 'Cap' });
-    const po = await pos.create({ supplierName: 'Mouser' });
+    const po = await pos.create({ supplier: { supplierName: 'Mouser' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 10, unitCost: 0.2 });
     expect(await pos.listLines(po.id)).toHaveLength(1);
 
@@ -62,7 +65,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('keeps a DRAFT order DRAFT even with fully-received lines', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 3 });
     // Receiving against a still-DRAFT PO updates the line but the persisted status stays DRAFT.
     await pos.receiveLine(line.id);
@@ -73,7 +76,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('moving to ORDERED stamps ordered_at and surfaces ORDERED before any receipt', async () => {
     const item = await items.create({ name: 'IC' });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
     const ordered = await pos.setStatus(po.id, 'ORDERED');
     expect(ordered.status).toBe('ORDERED');
@@ -83,7 +86,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   it('a partial receipt lands stock and derives PARTIAL; the remainder derives RECEIVED', async () => {
     const item = await items.create({ name: 'IC', quantity: 1 });
     const shelf = await locations.create({ name: 'Shelf A' });
-    const po = await pos.create({ supplierName: 'Farnell' });
+    const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5 });
     await pos.setStatus(po.id, 'ORDERED');
 
@@ -111,7 +114,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('logs a RECEIVED history entry on a matched discrete receipt', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
     await pos.setStatus(po.id, 'ORDERED');
     await pos.receiveLine(line.id);
@@ -124,7 +127,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   it('returns received stock to the supplier, dropping stock and re-deriving PARTIAL', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
     const shelf = await locations.create({ name: 'Shelf A' });
-    const po = await pos.create({ supplierName: 'Farnell' });
+    const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5, unitCost: 2 });
     await pos.setStatus(po.id, 'ORDERED');
     await pos.receiveLine(line.id, { locationId: shelf.id }); // receive all 5 → RECEIVED
@@ -147,7 +150,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   it('defaults to returning everything received and re-derives ORDERED', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
     const shelf = await locations.create({ name: 'Shelf A' });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
     await pos.setStatus(po.id, 'ORDERED');
     await pos.receiveLine(line.id, { locationId: shelf.id });
@@ -160,7 +163,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('rejects returning a line with nothing received', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 4 });
     await pos.setStatus(po.id, 'ORDERED');
     await expect(pos.returnLine(line.id)).rejects.toBeInstanceOf(DbError);
@@ -169,7 +172,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
   it('rejects returning more stock than is on hand at the location', async () => {
     const item = await items.create({ name: 'IC', quantity: 0 });
     const shelf = await locations.create({ name: 'Shelf A' });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5 });
     await pos.setStatus(po.id, 'ORDERED');
     await pos.receiveLine(line.id, { locationId: shelf.id }); // 5 on the shelf
@@ -182,7 +185,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('projects on-order quantity only for active (non-DRAFT/CANCELLED) orders', async () => {
     const item = await items.create({ name: 'IC' });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 10 });
 
     // DRAFT → nothing on order yet.
@@ -207,23 +210,23 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     const d = await items.create({ name: 'Item D' }); // only a DRAFT/CANCELLED line → 0
 
     // Item A: two active POs, one partly received → 10 + (7 − 3) = 14 outstanding.
-    const poA1 = await pos.create({ supplierName: 'RS' });
+    const poA1 = await pos.create({ supplier: { supplierName: 'RS' } });
     await pos.addLine(poA1.id, { itemId: a.id, orderedQty: 10 });
     await pos.setStatus(poA1.id, 'ORDERED');
-    const poA2 = await pos.create({ supplierName: 'Mouser' });
+    const poA2 = await pos.create({ supplier: { supplierName: 'Mouser' } });
     const lineA2 = await pos.addLine(poA2.id, { itemId: a.id, orderedQty: 7 });
     await pos.setStatus(poA2.id, 'ORDERED');
     await pos.receiveLine(lineA2.id, { quantity: 3 });
 
     // Item B: one active PO → 5 outstanding.
-    const poB = await pos.create({ supplierName: 'Farnell' });
+    const poB = await pos.create({ supplier: { supplierName: 'Farnell' } });
     await pos.addLine(poB.id, { itemId: b.id, orderedQty: 5 });
     await pos.setStatus(poB.id, 'ORDERED');
 
     // Item D: a line left DRAFT and another CANCELLED → contributes nothing.
-    const poD1 = await pos.create({ supplierName: 'RS' });
+    const poD1 = await pos.create({ supplier: { supplierName: 'RS' } });
     await pos.addLine(poD1.id, { itemId: d.id, orderedQty: 9 }); // stays DRAFT
-    const poD2 = await pos.create({ supplierName: 'RS' });
+    const poD2 = await pos.create({ supplier: { supplierName: 'RS' } });
     await pos.addLine(poD2.id, { itemId: d.id, orderedQty: 4 });
     await pos.setStatus(poD2.id, 'ORDERED');
     await pos.setStatus(poD2.id, 'CANCELLED');
@@ -250,8 +253,11 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('NULLs a line supplier_part_id when the supplier part is deleted, keeping the line', async () => {
     const item = await items.create({ name: 'Resistor' });
-    const sp = await supplierParts.create(item.id, { supplierName: 'DigiKey', orderCode: 'R-1' });
-    const po = await pos.create({ supplierName: 'DigiKey' });
+    const sp = await supplierParts.create(item.id, {
+      supplier: { supplierName: 'DigiKey' },
+      orderCode: 'R-1',
+    });
+    const po = await pos.create({ supplier: { supplierName: 'DigiKey' } });
     const line = await pos.addLine(po.id, {
       itemId: item.id,
       supplierPartId: sp.id,
@@ -269,11 +275,59 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
 
   it('cascades lines when the purchase order is deleted', async () => {
     const item = await items.create({ name: 'IC' });
-    const po = await pos.create({ supplierName: 'RS' });
+    const po = await pos.create({ supplier: { supplierName: 'RS' } });
     const line = await pos.addLine(po.id, { itemId: item.id, orderedQty: 5 });
     await pos.delete(po.id);
     expect(await pos.getById(po.id)).toBeUndefined();
     expect(await pos.getLine(line.id)).toBeUndefined();
+  });
+
+  // --- supplier identity (issue #384) --------------------------------------------
+
+  it('folds a re-typed supplier name onto the same supplier record', async () => {
+    const a = await pos.create({ supplier: { supplierName: 'RS Components' } });
+    const b = await pos.create({ supplier: { supplierName: 'rs-components' } });
+    expect(b.supplierId).toBe(a.supplierId);
+    expect(b.supplierName).toBe('RS Components'); // the first spelling is the stored one
+  });
+
+  it('re-points a purchase order at another supplier through update', async () => {
+    const rs = await suppliers.create({ name: 'RS' });
+    const mouser = await suppliers.create({ name: 'Mouser' });
+    const po = await pos.create({ supplier: { supplierId: rs.id }, reference: 'PO-9' });
+
+    const moved = await pos.update(po.id, { supplier: { supplierId: mouser.id } });
+    expect(moved.supplierId).toBe(mouser.id);
+    expect(moved.supplierName).toBe('Mouser');
+    expect(moved.reference).toBe('PO-9'); // the order itself is untouched
+  });
+
+  it('keeps an order when its supplier is deleted, unlinking it (SET NULL)', async () => {
+    const rs = await suppliers.create({ name: 'RS' });
+    const po = await pos.create({ supplier: { supplierId: rs.id }, reference: 'PO-11' });
+
+    // ON DELETE SET NULL — spend history is not dropped by tidying the supplier list; the
+    // order survives and simply stops naming a supplier.
+    await suppliers.delete(rs.id);
+
+    const after = await pos.getById(po.id);
+    expect(after?.reference).toBe('PO-11');
+    expect(after?.supplierId).toBeNull();
+    expect(after?.supplierName).toBeNull();
+  });
+
+  it('re-points an order at the target when its supplier is merged away', async () => {
+    const rs = await suppliers.create({ name: 'RS' });
+    const canonical = await suppliers.create({ name: 'RS Components' });
+    const po = await pos.create({ supplier: { supplierId: rs.id } });
+
+    // Merging is what a user wants for a *duplicate*: the order keeps naming a supplier.
+    await suppliers.merge(rs.id, canonical.id);
+
+    expect(await suppliers.getById(rs.id)).toBeUndefined();
+    const after = await pos.getById(po.id);
+    expect(after?.supplierId).toBe(canonical.id);
+    expect(after?.supplierName).toBe('RS Components');
   });
 
   // --- Phase 65: createDraftFromReorderPlan --------------------------------------
@@ -283,10 +337,15 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     const cap = await items.create({ name: 'Capacitor', quantity: 1 });
     const led = await items.create({ name: 'LED', quantity: 0 });
 
+    // The plan groups on supplier *identity*, so each named group carries a real supplier id.
+    const digikey = await suppliers.create({ name: 'DigiKey' });
+    const mouser = await suppliers.create({ name: 'Mouser' });
+
     const plan = [
       {
+        supplierId: digikey.id,
         supplierName: 'DigiKey',
-        supplierKey: 'digikey',
+        supplierKey: digikey.id,
         lines: [
           {
             itemId: res.id,
@@ -307,13 +366,15 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
         ],
       },
       {
+        supplierId: mouser.id,
         supplierName: 'Mouser',
-        supplierKey: 'mouser',
+        supplierKey: mouser.id,
         lines: [
           { itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, onOrder: 0, unitCost: 0.2 },
         ],
       },
       {
+        supplierId: null,
         supplierName: 'Unassigned',
         supplierKey: '~unassigned',
         lines: [
@@ -334,6 +395,8 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     // Two named supplier groups → two DRAFT POs; Unassigned is skipped.
     expect(created).toHaveLength(2);
     expect(created.map((p) => p.supplierName).sort()).toEqual(['DigiKey', 'Mouser']);
+    // Each order points at the very supplier its group identified — no name re-resolution.
+    expect(created.map((p) => p.supplierId).sort()).toEqual([digikey.id, mouser.id].sort());
 
     const dk = created.find((p) => p.supplierName === 'DigiKey')!;
     expect(dk.effectiveStatus).toBe('DRAFT');
@@ -351,17 +414,19 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(result).toHaveLength(0);
 
     const result2 = await pos.createDraftFromReorderPlan([
-      { supplierName: 'Unassigned', supplierKey: '~unassigned', lines: [] },
+      { supplierId: null, supplierName: 'Unassigned', supplierKey: '~unassigned', lines: [] },
     ]);
     expect(result2).toHaveLength(0);
   });
 
   it('stamps unit cost on the PO line from the plan', async () => {
     const item = await items.create({ name: 'Relay', quantity: 0 });
+    const farnell = await suppliers.create({ name: 'Farnell' });
     const plan = [
       {
+        supplierId: farnell.id,
         supplierName: 'Farnell',
-        supplierKey: 'farnell',
+        supplierKey: farnell.id,
         lines: [
           {
             itemId: item.id,

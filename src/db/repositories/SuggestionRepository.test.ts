@@ -2,17 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
-import {
-  ItemRepository,
-  SuggestionRepository,
-  SupplierPartRepository,
-  UNASSIGNED_LOCATION_ID,
-} from './index';
+import { ItemRepository, SuggestionRepository, UNASSIGNED_LOCATION_ID } from './index';
 
 describe('SuggestionRepository — distinct existing field values', () => {
   let driver: MemoryDriver;
   let items: ItemRepository;
-  let supplierParts: SupplierPartRepository;
   let repo: SuggestionRepository;
 
   beforeEach(async () => {
@@ -20,7 +14,6 @@ describe('SuggestionRepository — distinct existing field values', () => {
     await runMigrations(driver, migrations);
     await driver.execute('PRAGMA foreign_keys = ON;');
     items = new ItemRepository(driver);
-    supplierParts = new SupplierPartRepository(driver);
     repo = new SuggestionRepository(driver);
   });
 
@@ -54,13 +47,8 @@ describe('SuggestionRepository — distinct existing field values', () => {
     expect(await repo.distinctValues('unitOfMeasure')).toEqual(['g']);
   });
 
-  it('reads supplier name from supplier parts', async () => {
-    const item = await items.create({ name: 'R', locationId: UNASSIGNED_LOCATION_ID });
-    await supplierParts.create(item.id, { supplierName: 'DigiKey' });
-    await supplierParts.create(item.id, { supplierName: 'Mouser' });
-
-    expect(await repo.distinctValues('supplierName')).toEqual(['DigiKey', 'Mouser']);
-  });
+  // Supplier names are no longer a free-text suggestion field: suppliers are a first-class
+  // entity (issue #384), so the supplier dictionary itself is what offers existing names.
 
   it('returns an empty list when nothing has been entered yet', async () => {
     expect(await repo.distinctValues('manufacturer')).toEqual([]);

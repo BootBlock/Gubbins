@@ -57,6 +57,7 @@
 - [[Reorder & shopping list|Reorder-and-Shopping-List]]
 - [[Wishlist]]
 - [[Supplier parts & price history|Supplier-Parts-and-Price-History]]
+- [[Suppliers]]
 
 **Reports & insights**
 - [[Reports overview|Reports-Overview]]

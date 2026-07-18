@@ -15,6 +15,9 @@ import { unitCostForQty } from '@/features/inventory/supplier-cost';
 /** Minimal supplier-part data needed to compute order quantities. */
 export interface ReorderSupplierPart {
   readonly supplierPartId: string;
+  /** The supplier this part belongs to — the identity the plan groups on. */
+  readonly supplierId: string;
+  /** The supplier's canonical name, carried for display only; never used as an identity. */
   readonly supplierName: string;
   readonly unitCost?: number | null;
   readonly packQty?: number | null;
@@ -63,20 +66,27 @@ export interface ReorderPlanLine {
 /** One supplier group in the reorder plan. */
 export interface ReorderPlanGroup {
   /**
-   * Canonical display name for the supplier.  "Unassigned" is the sentinel value for
-   * the group that holds items with no preferred supplier.
+   * The supplier this group orders from — the identity the group was built on. `null` is the
+   * Unassigned group, holding items with no preferred supplier (no PO can be drafted for it).
+   */
+  readonly supplierId: string | null;
+  /**
+   * Display name for the supplier, for UI and exports only — never an identity. The Unassigned
+   * group carries {@link UNASSIGNED_SUPPLIER_NAME}.
    */
   readonly supplierName: string;
   /**
-   * Stable sort key (lower-cased supplier name; "~unassigned" sorts last
-   * deterministically without any locale-dependent behaviour).
+   * Stable, unique key for the group: the supplier id, or "~unassigned" for the null group.
+   * Suitable as a React key or a client-side lookup handle. Not a sort key — ordering is by
+   * display name (see {@link buildReorderPlan}).
    */
   readonly supplierKey: string;
   readonly lines: readonly ReorderPlanLine[];
 }
 
-/** Sentinel supplier name / key for items with no preferred supplier. */
+/** Sentinel display name for the group of items with no preferred supplier. */
 export const UNASSIGNED_SUPPLIER_NAME = 'Unassigned';
+/** Group key standing in for the absent supplier id, chosen so it can never collide with one. */
 const UNASSIGNED_SUPPLIER_KEY = '~unassigned';
 
 /**
@@ -121,26 +131,32 @@ export function computeOrderQty(
  * "Unassigned" group), computes the order quantity for each line, and returns the groups
  * sorted alphabetically by supplier name with Unassigned last.
  *
+ * Grouping is on the supplier's **id**, not its name: a supplier is a first-class record, so
+ * two rows belong together exactly when they point at the same supplier. Names are display
+ * data here and never decide membership — renaming a supplier cannot split or merge a group,
+ * and a name that merely *looks* like another's is not the same supplier.
+ *
  * Empty shortfall rows (shortfall ≤ 0) are ignored — nothing to order.
  */
 export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly ReorderPlanGroup[] {
-  // Group rows by supplier key.
-  const groups = new Map<string, { supplierName: string; lines: ReorderPlanLine[] }>();
+  // Keyed by supplier id, with the null supplier folded onto a sentinel key so one Map holds
+  // both cases; `supplierId` on the value is what the group actually carries out.
+  const groups = new Map<
+    string,
+    { supplierId: string | null; supplierName: string; lines: ReorderPlanLine[] }
+  >();
 
   for (const row of rows) {
     if (row.shortfall <= 0) continue;
 
     const sp = row.preferredSupplier;
+    const supplierId = sp ? sp.supplierId : null;
     const supplierName = sp ? sp.supplierName : UNASSIGNED_SUPPLIER_NAME;
-    // Group key is the case-folded supplier name. Safe because each supplier is one
-    // canonical `supplier_parts.supplier_name` row, so two items' preferred suppliers
-    // never differ only by case — do not add locale-sensitive name normalisation here
-    // without preserving that invariant.
-    const supplierKey = sp ? supplierName.toLowerCase() : UNASSIGNED_SUPPLIER_KEY;
+    const supplierKey = supplierId ?? UNASSIGNED_SUPPLIER_KEY;
 
     let group = groups.get(supplierKey);
     if (!group) {
-      group = { supplierName, lines: [] };
+      group = { supplierId, supplierName, lines: [] };
       groups.set(supplierKey, group);
     }
 
@@ -160,16 +176,21 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
     });
   }
 
-  // Sort: named suppliers alphabetically first, Unassigned last.
-  const sortedKeys = [...groups.keys()].sort((a, b) => {
-    if (a === UNASSIGNED_SUPPLIER_KEY) return 1;
-    if (b === UNASSIGNED_SUPPLIER_KEY) return -1;
-    return a < b ? -1 : a > b ? 1 : 0;
+  // Sort: named suppliers alphabetically first, Unassigned last. The comparison is on the
+  // case-folded display name — the id is an opaque identifier and would order arbitrarily —
+  // with the key as a final tiebreak so the order stays total and deterministic.
+  const sorted = [...groups.entries()].sort(([keyA, a], [keyB, b]) => {
+    if (keyA === UNASSIGNED_SUPPLIER_KEY) return 1;
+    if (keyB === UNASSIGNED_SUPPLIER_KEY) return -1;
+    const nameA = a.supplierName.toLowerCase();
+    const nameB = b.supplierName.toLowerCase();
+    if (nameA !== nameB) return nameA < nameB ? -1 : 1;
+    return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
   });
 
-  return sortedKeys.map((key) => {
-    const g = groups.get(key)!;
+  return sorted.map(([key, g]) => {
     return {
+      supplierId: g.supplierId,
       supplierName: g.supplierName,
       supplierKey: key,
       lines: g.lines,

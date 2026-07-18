@@ -1,10 +1,18 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import type { CreatePurchaseOrderInput } from '@/db/repositories';
+import { useT } from '@/features/i18n';
+import { EMPTY_SUPPLIER_VALUE, SupplierPicker, supplierRefFrom } from '@/features/suppliers';
 
 /**
  * Create a new (DRAFT) purchase order (Inventory-depth Phase 62). Local controlled state;
- * only the supplier name is required. Design tokens only (Foundry primitives), British copy.
+ * only the supplier is required. Design tokens only (Foundry primitives), British copy.
+ *
+ * The supplier is named through the shared {@link SupplierPicker} (issue #384) rather than a
+ * bare text field: this dialog is the most-used way an order comes into existence, so a
+ * free-text box here was the single largest source of near-duplicate suppliers. The picker
+ * offers the ones you already have and folds a differently-spelled name onto the existing
+ * supplier, while still letting a brand-new name be typed straight in.
  */
 export interface CreatePurchaseOrderDialogProps {
   readonly open: boolean;
@@ -24,7 +32,8 @@ export function CreatePurchaseOrderDialog({
   onSubmit,
   onClose,
 }: CreatePurchaseOrderDialogProps) {
-  const [supplierName, setSupplierName] = useState('');
+  const t = useT();
+  const [supplier, setSupplier] = useState(EMPTY_SUPPLIER_VALUE);
   const [reference, setReference] = useState('');
   const [currency, setCurrency] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -33,12 +42,15 @@ export function CreatePurchaseOrderDialog({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (supplierName.trim().length === 0) {
-      setError('A supplier name is required.');
+    // A blank field is the only rejection: an unrecognised *name* is perfectly valid — the
+    // repository resolves it onto the matching supplier, or creates one.
+    const ref = supplierRefFrom(supplier);
+    if (ref === null) {
+      setError(t('supplier.picker.required'));
       return;
     }
     onSubmit({
-      supplierName: supplierName.trim(),
+      supplier: ref,
       reference: optionalText(reference),
       currency: optionalText(currency),
     });
@@ -53,18 +65,16 @@ export function CreatePurchaseOrderDialog({
       initialFocusRef={supplierRef}
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-create-form">
-        <FormField label="Supplier">
-          <Input
-            ref={supplierRef}
-            value={supplierName}
-            onChange={(e) => {
-              setSupplierName(e.target.value);
-              setError(null);
-            }}
-            placeholder="e.g. DigiKey"
-            data-testid="po-supplier-name"
-          />
-        </FormField>
+        <SupplierPicker
+          inputRef={supplierRef}
+          value={supplier}
+          onChange={(next) => {
+            setSupplier(next);
+            setError(null);
+          }}
+          {...(error !== null ? { error } : {})}
+          data-testid="po-supplier-name"
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Reference" hint="Your PO number or order reference (optional).">
@@ -87,12 +97,6 @@ export function CreatePurchaseOrderDialog({
             />
           </FormField>
         </div>
-
-        {error !== null && (
-          <p role="alert" className="text-sm text-destructive" data-testid="po-create-error">
-            {error}
-          </p>
-        )}
 
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="outline" onClick={onClose}>

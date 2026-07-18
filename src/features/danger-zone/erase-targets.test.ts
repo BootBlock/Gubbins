@@ -10,6 +10,7 @@ const ALL_IDS: EraseTargetId[] = [
   'checkouts',
   'maintenance',
   'supplier-parts',
+  'suppliers',
   'custom-field-values',
   'tags',
   'categories',
@@ -175,6 +176,32 @@ describe('buildStatements — tombstone toggling', () => {
     expect(sql).toContain('DELETE FROM item_history;');
     const watermark = statements.find((s) => s.sql.includes('history_pruned_before'));
     expect(watermark?.params).toEqual([99]);
+  });
+
+  it('suppliers: keeps the purchase orders, unlinking them and the PO lines', () => {
+    const off = sqlOf('suppliers', false);
+    expect(off).not.toContain('INSERT OR REPLACE INTO tombstones');
+    // purchase_orders.supplier_id is ON DELETE SET NULL, so the orders outlive the supplier
+    // delete — they record what was spent. Both links are unlinked as explicit edits (rather
+    // than left to the FK) so they sync as intentional writes.
+    expect(off).not.toContain('DELETE FROM purchase_orders;');
+    expect(off).not.toContain('DELETE FROM purchase_order_lines;');
+    expect(off).toContain('UPDATE purchase_orders SET supplier_id = NULL');
+    expect(off).toContain('UPDATE purchase_order_lines SET supplier_part_id = NULL');
+    // Both unlinks land before the delete that would otherwise fire the FK silently.
+    expect(off.indexOf('UPDATE purchase_orders SET supplier_id = NULL')).toBeLessThan(
+      off.indexOf('DELETE FROM suppliers;'),
+    );
+    // Supplier parts cascade from the suppliers delete, which is the last statement.
+    expect(off.trimEnd().endsWith('DELETE FROM suppliers;')).toBe(true);
+
+    const on = sqlOf('suppliers', true);
+    // The cascading child is tombstoned before the suppliers row it hangs off; the orders are
+    // not tombstoned at all, because they are not deleted.
+    expect(on).toContain("'supplier_parts'");
+    expect(on.indexOf("'supplier_parts'")).toBeLessThan(on.indexOf("'suppliers'"));
+    expect(on).not.toContain("'purchase_orders'");
+    expect(on).not.toContain("'purchase_order_lines'");
   });
 
   it('sync-links: clears tombstones + zeroes sync cursor, never tombstones, never touches history watermark', () => {

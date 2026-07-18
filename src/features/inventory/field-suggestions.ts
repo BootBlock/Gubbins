@@ -20,11 +20,17 @@ import type { SuggestionField } from '@/db/repositories';
 
 /**
  * Seeded popular defaults per field, so an empty catalogue still auto-completes the obvious
- * values. Grounded against the major electronics component makers and distributors (the app
- * skews toward electronics inventory), plus the common gauge units. These are *starting
- * suggestions* only — never a whitelist — and the user's own entered values always take
- * precedence when the two overlap. (Currency has its own richer picker driven by
- * `CURRENCY_OPTIONS`, so it is deliberately not duplicated here.)
+ * values. Grounded against the major electronics component makers (the app skews toward
+ * electronics inventory), plus the common gauge units. These are *starting suggestions* only —
+ * never a whitelist — and the user's own entered values always take precedence when the two
+ * overlap. (Currency has its own richer picker driven by `CURRENCY_OPTIONS`, so it is
+ * deliberately not duplicated here.)
+ *
+ * Distributor names used to be seeded here too. They are not any more: since issue #384 a
+ * supplier is a real record rather than a string, and `SupplierPicker` offers the suppliers you
+ * actually have. Seeding presets would mean creating rows nobody asked for — a suggestion may
+ * be ignored for free, but a *record* shows up in the picker, in reports and in the merge/delete
+ * paths, so the two are not interchangeable.
  */
 export const PRESET_SUGGESTIONS: Record<SuggestionField, readonly string[]> = {
   // Component makers a maker/engineer actually stocks: semiconductors, passives, connectors
@@ -64,30 +70,6 @@ export const PRESET_SUGGESTIONS: Record<SuggestionField, readonly string[]> = {
     'JST',
     'Littelfuse',
     'Samsung',
-  ],
-  // The major global distributors, plus the maker-friendly and marketplace sources.
-  supplierName: [
-    'DigiKey',
-    'Mouser',
-    'Farnell',
-    'Newark',
-    'RS Components',
-    'element14',
-    'Arrow Electronics',
-    'Avnet',
-    'LCSC',
-    'TME',
-    'Reichelt',
-    'Rapid Electronics',
-    'CPC',
-    'Adafruit',
-    'SparkFun',
-    'Pimoroni',
-    'The Pi Hut',
-    'JLCPCB',
-    'AliExpress',
-    'Amazon',
-    'eBay',
   ],
   // Gauge consumables are measured, not counted — weight, volume and length units.
   unitOfMeasure: ['g', 'kg', 'mg', 'ml', 'l', 'm', 'cm', 'mm', 'oz', 'lb', 'ft', 'in'],

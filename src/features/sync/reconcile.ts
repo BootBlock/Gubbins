@@ -411,6 +411,16 @@ function computeRemovedParents(
     // Phase 62: a removed supplier-part NULLs a PO line's nullable supplier_part_id, and a
     // removed PO drops its lines (CASCADE). Both parents are plain LWW tables, so their
     // surviving set is local rows − deletes + upserts.
+    // Issue #384: the canonical supplier list. Its two children take deliberately different
+    // routes in FK_REFS below — a supplier part cannot outlive its supplier (CASCADE), while a
+    // purchase order keeps its row and merely loses the link (SET NULL), because an order is a
+    // record of money spent and must survive the other device tidying its supplier list.
+    suppliers: removedIds(
+      'suppliers',
+      local,
+      remote,
+      survivingIds('suppliers', local, localUpserts, localDeletes),
+    ),
     supplier_parts: removedIds(
       'supplier_parts',
       local,
@@ -485,13 +495,23 @@ const FK_REFS: Partial<Record<SyncTable, readonly { col: string; parent: SyncTab
     // item-child cascade above — drop an incoming record whose item did not survive the merge
     // (ON DELETE CASCADE, NOT NULL), exactly like revaluations.
     test_records: [{ col: 'item_id', parent: 'items', nullable: false }],
-    // Supplier parts (Phase 60). item_id mirrors the item-child cascade above — drop an
-    // incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
-    supplier_parts: [{ col: 'item_id', parent: 'items', nullable: false }],
+    // Supplier parts (Phase 60, issue #384). item_id mirrors the item-child cascade above —
+    // drop an incoming supplier-part whose item was removed (ON DELETE CASCADE, NOT NULL).
+    // supplier_id is the same shape: a part is that supplier's price for an item and cannot
+    // outlive the supplier.
+    supplier_parts: [
+      { col: 'item_id', parent: 'items', nullable: false },
+      { col: 'supplier_id', parent: 'suppliers', nullable: false },
+    ],
     // Supplier price-history points (Phase 81). supplier_part_id mirrors the cascade children
     // above — drop an incoming price point whose supplier part did not survive the merge
     // (ON DELETE CASCADE, NOT NULL). supplier_parts is already in the `removed`-parents set.
     supplier_part_price_history: [{ col: 'supplier_part_id', parent: 'supplier_parts', nullable: false }],
+    // Purchase orders (Phase 62, issue #384). The one NULLABLE supplier reference: an order
+    // whose supplier did not survive the merge keeps its row with the link cleared, exactly
+    // like checkouts.source_location_id above. Making this non-nullable — or the FK RESTRICT —
+    // would abort the whole merge transaction whenever two devices disagreed about a supplier.
+    purchase_orders: [{ col: 'supplier_id', parent: 'suppliers', nullable: true }],
     item_field_values: [
       { col: 'item_id', parent: 'items', nullable: false },
       { col: 'def_id', parent: 'field_defs', nullable: false },

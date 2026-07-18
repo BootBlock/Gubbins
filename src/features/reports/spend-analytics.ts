@@ -36,7 +36,14 @@ export interface SpendEvent {
   /** The amount spent (a positive money value; non-positive/non-finite events are ignored). */
   readonly amount: number;
   readonly source: SpendSource;
-  /** Supplier name, or null when the source carries none (project expenses / acquisitions). */
+  /**
+   * Canonical supplier id, or null when the source carries none (project expenses /
+   * acquisitions). This is what by-supplier totals group on: grouping on the *name* used to
+   * split one supplier's spend across every spelling of it (issue #384), and would still
+   * re-key the group if a supplier were renamed.
+   */
+  readonly supplierId: string | null;
+  /** Supplier display name, paired with {@link supplierId}. */
   readonly supplier: string | null;
   /** Item-category id, or null when uncategorised / not applicable. */
   readonly categoryId: string | null;
@@ -60,7 +67,7 @@ export interface SpendSourceTotal {
 
 /** A named spend grouping (a supplier or a category) with its share of the grand total. */
 export interface SpendGroup {
-  /** Stable id of the group (supplier name / category id), or null for the catch-all bucket. */
+  /** Stable id of the group (supplier id / category id), or null for the catch-all bucket. */
   readonly id: string | null;
   readonly name: string;
   readonly total: number;
@@ -131,7 +138,7 @@ export function buildSpendReport(
   }
 
   const sourceTotals = new Map<SpendSource, number>();
-  const supplierTotals = new Map<string | null, number>();
+  const supplierTotals = new Map<string | null, { name: string; total: number }>();
   const categoryTotals = new Map<string | null, { name: string; total: number }>();
 
   let total = 0;
@@ -152,8 +159,16 @@ export function buildSpendReport(
 
     sourceTotals.set(event.source, (sourceTotals.get(event.source) ?? 0) + amount);
 
-    const supplierKey = event.supplier ?? null;
-    supplierTotals.set(supplierKey, (supplierTotals.get(supplierKey) ?? 0) + amount);
+    // Keyed on the supplier id, exactly like categories below — the name is display data.
+    const supplierKey = event.supplierId ?? null;
+    const supplierEntry = supplierTotals.get(supplierKey);
+    if (supplierEntry) supplierEntry.total += amount;
+    else {
+      supplierTotals.set(supplierKey, {
+        name: supplierKey === null ? NO_SUPPLIER : (event.supplier ?? NO_SUPPLIER),
+        total: amount,
+      });
+    }
 
     const catKey = event.categoryId ?? null;
     const catName = event.categoryName ?? UNCATEGORISED;
@@ -168,9 +183,9 @@ export function buildSpendReport(
   });
 
   const bySupplier: SpendGroup[] = [...supplierTotals.entries()]
-    .map(([id, groupTotal]) => ({
+    .map(([id, { name, total: groupTotal }]) => ({
       id,
-      name: id ?? NO_SUPPLIER,
+      name,
       total: groupTotal,
       share: share(groupTotal, total),
     }))

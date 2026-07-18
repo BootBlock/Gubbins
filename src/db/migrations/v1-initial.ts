@@ -1014,10 +1014,49 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE items ADD COLUMN reorder_qty INTEGER;` },
   {
     sql: `
+        -- Suppliers are a first-class entity so that a supplier's name, URL and currency
+        -- live in exactly one place. Before this, both supplier_parts and purchase_orders
+        -- carried an independent free-text name, so the same supplier spelled two ways was
+        -- two unrelated strings with no way to rename or merge them.
+        --
+        -- Deliberately NOT folded into contacts: contacts are people-shaped (phone_mobile,
+        -- phone_home, address) and are the borrower side of a checkout. Overloading them
+        -- would leave half the columns null on either side and force every borrower picker
+        -- to filter suppliers back out.
+        CREATE TABLE suppliers (
+          id         TEXT    PRIMARY KEY NOT NULL,
+          name       TEXT    NOT NULL,
+          -- Derived from name by supplierNameKey(): case-folded, diacritics stripped, all
+          -- punctuation and spacing removed. Stored rather than computed so uniqueness is a
+          -- DB guarantee and resolve-or-create is a single indexed lookup. SQLite's NOCASE
+          -- collation folds only ASCII case, which would still let "RS Components" and
+          -- "RS-Components" coexist — exactly the duplicate this table exists to prevent.
+          -- Every write goes through SupplierRepository, which is what keeps it in sync.
+          name_key   TEXT    NOT NULL,
+          url        TEXT,
+          currency   TEXT,
+          note       TEXT,
+          created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  {
+    sql: `CREATE UNIQUE INDEX idx_suppliers_name_key ON suppliers(name_key);`,
+  },
+  {
+    // Sort order for the supplier list; the uniqueness guarantee lives on name_key above.
+    sql: `CREATE INDEX idx_suppliers_name ON suppliers(name COLLATE NOCASE);`,
+  },
+  { sql: updatedAtTrigger('suppliers') },
+  {
+    sql: `
         CREATE TABLE supplier_parts (
           id            TEXT    PRIMARY KEY NOT NULL,
           item_id       TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          supplier_name TEXT    NOT NULL,
+          -- CASCADE: a supplier part is that supplier's price for an item, so it is
+          -- meaningless once the supplier is gone. Contrast purchase_orders below.
+          supplier_id   TEXT    NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
           order_code    TEXT,
           unit_cost     REAL,
           currency      TEXT,
@@ -1038,15 +1077,32 @@ const baselineStatements: SqlStatement[] = [
       `,
   },
   {
+    // No UNIQUE (item_id, supplier_id): one supplier legitimately offers the same item under
+    // several order codes or pack sizes, and each is its own row.
     sql: `CREATE INDEX idx_supplier_parts_item_id
-              ON supplier_parts(item_id, is_preferred DESC, supplier_name COLLATE NOCASE);`,
+              ON supplier_parts(item_id, is_preferred DESC, supplier_id);`,
+  },
+  {
+    // Drives the supplier-side reads: a supplier's parts, and the RESTRICT check on delete.
+    sql: `CREATE INDEX idx_supplier_parts_supplier_id ON supplier_parts(supplier_id);`,
   },
   { sql: updatedAtTrigger('supplier_parts') },
   {
     sql: `
         CREATE TABLE purchase_orders (
           id            TEXT    PRIMARY KEY NOT NULL,
-          supplier_name TEXT    NOT NULL,
+          -- Nullable + SET NULL, unlike supplier_parts' CASCADE: a purchase order is a record
+          -- of money spent, so deleting a supplier must not delete the order — it just loses
+          -- the link and reads as an unknown supplier.
+          --
+          -- SET NULL rather than RESTRICT specifically because of sync. RESTRICT cannot express
+          -- a distributed delete: device A legally deletes a supplier it sees as unused while
+          -- device B records an order against it, and whichever device merges second aborts its
+          -- whole transaction on the foreign key — sync hard-blocks rather than degrades.
+          -- Resurrecting the supplier instead just moves the failure, since A has already
+          -- published the tombstone and would re-delete on its next pass. A nullable FK is the
+          -- one shape that converges: it is the same choice checkouts.source_location_id makes.
+          supplier_id   TEXT    REFERENCES suppliers(id) ON DELETE SET NULL,
           reference     TEXT,
           status        TEXT    NOT NULL DEFAULT 'DRAFT',
           currency      TEXT,
@@ -1081,6 +1137,9 @@ const baselineStatements: SqlStatement[] = [
   },
   {
     sql: `CREATE INDEX idx_purchase_order_lines_item_id ON purchase_order_lines(item_id);`,
+  },
+  {
+    sql: `CREATE INDEX idx_purchase_orders_supplier_id ON purchase_orders(supplier_id);`,
   },
   { sql: updatedAtTrigger('purchase_orders') },
   { sql: updatedAtTrigger('purchase_order_lines') },

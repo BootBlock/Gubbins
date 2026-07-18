@@ -92,7 +92,8 @@ describe('resolveSupplierPartWrite (§4 no-overwrite)', () => {
     const write = resolveSupplierPartWrite(plan);
     expect(write.kind).toBe('create');
     if (write.kind === 'create') {
-      expect(write.input.supplierName).toBe('Digikey');
+      // Referenced by name — a scrape knows only a hostname; the repository resolves it.
+      expect(write.input.supplier).toEqual({ supplierName: 'Digikey' });
       expect(write.input.unitCost).toBe(0.42);
       expect(write.input.orderCode).toBe('RES-1');
       expect(write.input.url).toBe('https://www.digikey.com/p/123');

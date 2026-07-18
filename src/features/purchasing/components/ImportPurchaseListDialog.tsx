@@ -1,8 +1,9 @@
 import { useId, useRef, useState } from 'react';
-import { Banner, Button, FormField, Input, Modal, Money, Select, Textarea } from '@/components/foundry';
+import { Banner, Button, Modal, Money, Select, Textarea } from '@/components/foundry';
 import { UploadIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT } from '@/features/i18n';
+import { EMPTY_SUPPLIER_VALUE, SupplierPicker, type SupplierPickerValue } from '@/features/suppliers';
 import {
   detectImportFormat,
   IMPORT_FORMATS,
@@ -49,6 +50,7 @@ export function ImportPurchaseListDialog({
   open,
   onClose,
   poId,
+  supplierId,
   supplierName,
   onCreated,
 }: {
@@ -56,7 +58,10 @@ export function ImportPurchaseListDialog({
   onClose: () => void;
   /** The open purchase order, when the dialog was opened from one. Enables "this order". */
   poId?: string;
-  /** That order's supplier, used to seed the new-order supplier field. */
+  /** That order's supplier id, so the seeded picker starts already resolved rather than as a
+   * name that merely happens to fold onto one. */
+  supplierId?: string;
+  /** That order's supplier name, used to seed the new-order supplier field. */
   supplierName?: string;
   /** Called with the new order's id after a successful new-order import. */
   onCreated?: (poId: string) => void;
@@ -72,8 +77,15 @@ export function ImportPurchaseListDialog({
   const createOrder = useCreateOrderFromPurchaseList();
   const importIntoWishlist = useImportPurchaseListIntoWishlist();
 
+  /**
+   * The picker's seed: the order's supplier when the dialog was opened from one, otherwise
+   * blank. Kept as a function so both the initial state and {@link reset} agree.
+   */
+  const seedSupplier = (): SupplierPickerValue =>
+    supplierName ? { supplierId: supplierId ?? null, name: supplierName } : EMPTY_SUPPLIER_VALUE;
+
   const [destination, setDestination] = useState<Destination>(poId ? 'thisOrder' : 'wishlist');
-  const [supplier, setSupplier] = useState(supplierName ?? '');
+  const [supplier, setSupplier] = useState<SupplierPickerValue>(seedSupplier);
   const [text, setText] = useState('');
   // 'auto' → detect the source shape from the content; a format id forces that parser.
   const [formatOverride, setFormatOverride] = useState<ImportFormat | 'auto'>('auto');
@@ -85,7 +97,7 @@ export function ImportPurchaseListDialog({
 
   const reset = () => {
     setDestination(poId ? 'thisOrder' : 'wishlist');
-    setSupplier(supplierName ?? '');
+    setSupplier(seedSupplier());
     setText('');
     setFormatOverride('auto');
     setParsed(null);
@@ -155,7 +167,10 @@ export function ImportPurchaseListDialog({
     }
 
     if (destination === 'newOrder') {
-      const trimmed = supplier.trim();
+      // The name is what is sent even when the picker resolved an id: `resolveOrCreate` folds
+      // case, spacing and punctuation, so a resolved name lands on that very supplier and an
+      // unrecognised one creates it. Nothing here can mint a near-duplicate.
+      const trimmed = supplier.name.trim();
       if (trimmed.length === 0) {
         supplierRef.current?.focus();
         return;
@@ -179,7 +194,7 @@ export function ImportPurchaseListDialog({
     });
   };
 
-  const supplierMissing = destination === 'newOrder' && supplier.trim().length === 0;
+  const supplierMissing = destination === 'newOrder' && supplier.name.trim().length === 0;
 
   const destinationOptions = [
     ...(poId ? [{ value: 'thisOrder', label: t('purchasing.import.destination.thisOrder') }] : []),
@@ -214,18 +229,15 @@ export function ImportPurchaseListDialog({
         </div>
 
         {destination === 'newOrder' ? (
-          <FormField
+          <SupplierPicker
+            inputRef={supplierRef}
+            value={supplier}
+            onChange={setSupplier}
             label={t('purchasing.import.supplier.label')}
             hint={t('purchasing.import.supplier.hint')}
-          >
-            <Input
-              ref={supplierRef}
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-              placeholder={t('purchasing.import.supplier.placeholder')}
-              data-testid="purchase-import-supplier"
-            />
-          </FormField>
+            placeholder={t('purchasing.import.supplier.placeholder')}
+            data-testid="purchase-import-supplier"
+          />
         ) : null}
 
         <div className="flex flex-wrap items-end gap-3">

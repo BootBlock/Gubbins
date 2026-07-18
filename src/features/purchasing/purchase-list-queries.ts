@@ -99,6 +99,11 @@ export interface CreateOrderFromListResult extends PurchaseListImportSummary {
 
 /** Variables for {@link useCreateOrderFromPurchaseList}. */
 export interface CreateOrderFromListVars {
+  /**
+   * The supplier as the user typed it on the import dialog. Passed to the repository as a
+   * name rather than an id because an import is exactly the case where the supplier may not
+   * exist yet; the repository resolves it onto the matching supplier or creates one.
+   */
   readonly supplierName: string;
   readonly reference?: string;
   readonly lines: readonly ParsedPurchaseListLine[];
@@ -119,7 +124,7 @@ export function useCreateOrderFromPurchaseList() {
       lines,
     }: CreateOrderFromListVars): Promise<CreateOrderFromListResult> => {
       const po = await getPurchaseOrderRepository().create({
-        supplierName,
+        supplier: { supplierName },
         ...(reference ? { reference } : {}),
       });
       const summary = await importLinesInto(po.id, lines);

@@ -22,7 +22,12 @@ export interface ReorderExportRow {
   readonly unitCost: number | null;
 }
 
-/** Flatten the grouped plan into self-contained per-line rows (supplier repeated per row). */
+/**
+ * Flatten the grouped plan into self-contained per-line rows (supplier repeated per row).
+ *
+ * The supplier column carries the display **name**, never the group's `supplierId` — this file
+ * is read by a person or pasted into an order portal, where an opaque id means nothing.
+ */
 export function flattenReorderPlan(groups: readonly ReorderPlanGroup[]): ReorderExportRow[] {
   const rows: ReorderExportRow[] = [];
   for (const group of groups) {
