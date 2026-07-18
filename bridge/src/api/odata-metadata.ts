@@ -61,6 +61,7 @@ export const ITEM_PROPERTIES: readonly EdmProperty[] = [
   p('updatedAt', 'Edm.Int64', false),
   p('placements', 'Collection(Gubbins.Placement)', false),
   p('capabilities', 'Collection(Gubbins.Capability)', false),
+  p('fieldValues', 'Collection(Gubbins.ItemFieldValue)', false),
 ];
 
 const PLACEMENT_PROPERTIES: readonly EdmProperty[] = [
@@ -74,6 +75,29 @@ const CAPABILITY_PROPERTIES: readonly EdmProperty[] = [
   p('valueNum', 'Edm.Double'),
   p('valueText', 'Edm.String'),
   p('weight', 'Edm.Double', false),
+];
+
+/** One resolved custom-field value of an item — nullable origin when it was inherited. */
+const ITEM_FIELD_VALUE_PROPERTIES: readonly EdmProperty[] = [
+  p('name', 'Edm.String', false),
+  p('fieldType', 'Edm.String', false),
+  p('value', 'Edm.String', false),
+  p('source', 'Edm.String', false),
+  p('inheritedFrom', 'Gubbins.FieldOrigin'),
+];
+
+/** The location an inherited field value came from. */
+const FIELD_ORIGIN_PROPERTIES: readonly EdmProperty[] = [
+  p('locationId', 'Edm.String', false),
+  p('locationName', 'Edm.String', false),
+];
+
+/** One custom-field value a location holds. */
+const LOCATION_FIELD_VALUE_PROPERTIES: readonly EdmProperty[] = [
+  p('name', 'Edm.String', false),
+  p('fieldType', 'Edm.String', false),
+  p('value', 'Edm.String', false),
+  p('isInheritable', 'Edm.Boolean', false),
 ];
 
 const GAUGE_PROPERTIES: readonly EdmProperty[] = [
@@ -95,6 +119,7 @@ const LOCATION_PROPERTIES: readonly EdmProperty[] = [
   p('description', 'Edm.String'),
   p('color', 'Edm.String'),
   p('itemCount', 'Edm.Int64', false),
+  p('fieldValues', 'Collection(Gubbins.LocationFieldValue)', false),
 ];
 
 const CATEGORY_PROPERTIES: readonly EdmProperty[] = [
@@ -147,6 +172,9 @@ export function odataMetadataXml(): string {
     complexType('Placement', PLACEMENT_PROPERTIES),
     complexType('Capability', CAPABILITY_PROPERTIES),
     complexType('Gauge', GAUGE_PROPERTIES),
+    complexType('ItemFieldValue', ITEM_FIELD_VALUE_PROPERTIES),
+    complexType('LocationFieldValue', LOCATION_FIELD_VALUE_PROPERTIES),
+    complexType('FieldOrigin', FIELD_ORIGIN_PROPERTIES),
     '      <EntityContainer Name="Container">',
     '        <EntitySet Name="items" EntityType="Gubbins.Item"/>',
     '        <EntitySet Name="locations" EntityType="Gubbins.Location"/>',

@@ -7,7 +7,7 @@ import { createServer, type Server } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BridgeEvent } from './model.ts';
+import type { BridgeEvent, LedgerEvent } from './model.ts';
 import {
   backoffFor,
   createWebhookDeliverer,
@@ -21,7 +21,7 @@ import {
   type WebhookTarget,
 } from './webhook.ts';
 
-function event(overrides: Partial<BridgeEvent> & { id: string; type: string }): BridgeEvent {
+function event(overrides: Partial<LedgerEvent> & { id: string; type: string }): BridgeEvent {
   return {
     occurredAt: '2025-06-27T06:13:20.000Z',
     data: {

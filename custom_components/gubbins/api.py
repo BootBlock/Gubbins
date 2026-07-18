@@ -148,25 +148,37 @@ class GubbinsClient:
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise GubbinsConnectionError(str(err)) from err
 
-    async def where_spoken(self, item: str) -> str:
-        """Return the bridge's ready-to-speak sentence for an item.
+    async def where_answer(self, item: str) -> tuple[str, dict[str, Any] | None]:
+        """Return ``(spoken sentence, raw payload)`` for an item lookup.
 
-        On any failure this returns a friendly British-English fallback rather than
-        raising, so the voice assistant never reads out a stack trace.
+        On any failure this returns a friendly British-English fallback and a ``None``
+        payload rather than raising, so the voice assistant never reads out a stack trace.
+        The raw payload is what the intent handler turns into a bus event; the sentence is
+        always usable regardless.
         """
         try:
             data = await self.where(item)
         except GubbinsAuthError:
             return (
                 "Sorry, the Gubbins inventory bridge rejected my access token. "
-                "Please check the integration settings."
+                "Please check the integration settings.",
+                None,
             )
         except GubbinsConnectionError:
-            return "Sorry, I couldn't reach the Gubbins inventory bridge just now."
+            return "Sorry, I couldn't reach the Gubbins inventory bridge just now.", None
 
+        payload = data if isinstance(data, dict) else None
         # The bridge always supplies a spoken sentence (including for no matches); the
         # guard below is belt-and-braces in case of an unexpected response shape.
-        spoken = data.get("spoken")
+        spoken = payload.get("spoken") if payload is not None else None
         if not isinstance(spoken, str) or not spoken.strip():
-            return f"Sorry, I couldn't find anything matching {item} in your inventory."
+            return (
+                f"Sorry, I couldn't find anything matching {item} in your inventory.",
+                payload,
+            )
+        return spoken, payload
+
+    async def where_spoken(self, item: str) -> str:
+        """Return just the bridge's ready-to-speak sentence — see :meth:`where_answer`."""
+        spoken, _payload = await self.where_answer(item)
         return spoken

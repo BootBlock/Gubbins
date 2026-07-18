@@ -18,7 +18,7 @@ import {
   buildEvents,
   diffNewEntries,
   DEFAULT_EVENT_SCAN_LIMIT,
-  type BridgeEvent,
+  type LedgerEvent,
   type BuildEventsOptions,
   type EventCursor,
   type ResolvedEntry,
@@ -39,7 +39,7 @@ export async function computeGenerationEvents(
   driver: IDatabaseDriver,
   previous: EventCursor | null,
   options: GenerationOptions = {},
-): Promise<{ events: BridgeEvent[]; cursor: EventCursor }> {
+): Promise<{ events: LedgerEvent[]; cursor: EventCursor }> {
   const items = new ItemRepository(driver);
   const scanLimit = options.scanLimit ?? DEFAULT_EVENT_SCAN_LIMIT;
   // One bounded page of the newest ledger rows — the diff and the cursor both live inside this

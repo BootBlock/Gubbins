@@ -61,6 +61,7 @@ describe('gubbins_search', () => {
         id: 'item-esp32',
         name: 'ESP32 Dev Board',
         quantity: 7,
+        locationId: 'loc-shelf-2',
         locationName: 'Shelf 2',
         mpn: 'DEV-ESP32',
         manufacturer: 'Synthetic Silicon Co',

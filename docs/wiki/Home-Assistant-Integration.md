@@ -25,6 +25,10 @@ which includes a built-in, step-by-step setup guide.
 
 - **Ask where things are.** A custom integration answers spoken *"where is / where are my…"*
   questions, speaking the location back — Gubbins does the lookup and Home Assistant relays it.
+- **Light up where it is.** Each spoken lookup also raises an event in Home Assistant naming the
+  item and the location it's in, so an automation can react — the classic example being to flash
+  the light above the right bin while it reads the answer back. The same details come back from the
+  search action, for dashboards and scripts that don't involve voice.
 - **See stock as entities.** Via **MQTT discovery**, Gubbins can publish summary figures (like
   low/out-of-stock counts) that appear automatically as Home Assistant entities — ready for
   dashboards and automations.

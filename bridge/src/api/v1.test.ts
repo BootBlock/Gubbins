@@ -230,6 +230,7 @@ describe('field selection (fields / include)', () => {
     const search = await json('/api/v1/search?q=ESP32');
     expect(Object.keys(search.matches[0]).sort()).toEqual([
       'id',
+      'locationId',
       'locationName',
       'manufacturer',
       'mpn',

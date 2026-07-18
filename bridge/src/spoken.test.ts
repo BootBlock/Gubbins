@@ -13,6 +13,7 @@ function match(over: Partial<WhereIsMatch> = {}): WhereIsMatch {
     id: 'item-x',
     name: 'Widget',
     quantity: 0,
+    locationId: null,
     locationName: null,
     mpn: null,
     manufacturer: null,
@@ -30,7 +31,7 @@ describe('speakWhereIs', () => {
     const m = match({
       name: 'M3 x 10 Hex Bolt',
       quantity: 42,
-      placements: [{ locationName: 'Drawer A', quantity: 42 }],
+      placements: [{ locationId: 'loc-drawer-a', locationName: 'Drawer A', quantity: 42 }],
     });
     expect(speakWhereIs('M3 bolt', [m])).toBe('Your M3 x 10 Hex Bolt is in Drawer A — 42 in stock.');
   });
@@ -39,7 +40,7 @@ describe('speakWhereIs', () => {
     const m = match({
       name: 'ESP32 Dev Board',
       quantity: 5,
-      placements: [{ locationName: 'Shelf 2', quantity: 5 }],
+      placements: [{ locationId: 'loc-shelf-2', locationName: 'Shelf 2', quantity: 5 }],
     });
     expect(speakWhereIs('esp32', [m])).toBe('Your ESP32 Dev Board is on Shelf 2 — 5 in stock.');
   });
@@ -49,8 +50,8 @@ describe('speakWhereIs', () => {
       name: 'ESP32 Dev Board',
       quantity: 7,
       placements: [
-        { locationName: 'Shelf 2', quantity: 5 },
-        { locationName: 'Bin 4', quantity: 2 },
+        { locationId: 'loc-shelf-2', locationName: 'Shelf 2', quantity: 5 },
+        { locationId: 'loc-bin-4', locationName: 'Bin 4', quantity: 2 },
       ],
     });
     expect(speakWhereIs('esp32', [m])).toBe(
@@ -65,8 +66,16 @@ describe('speakWhereIs', () => {
 
   it('lists several matches with their primary location', () => {
     const matches = [
-      match({ id: 'a', name: 'M3 Bolt', placements: [{ locationName: 'Drawer A', quantity: 42 }] }),
-      match({ id: 'b', name: 'M3 Washer', placements: [{ locationName: 'Drawer A', quantity: 100 }] }),
+      match({
+        id: 'a',
+        name: 'M3 Bolt',
+        placements: [{ locationId: 'loc-drawer-a', locationName: 'Drawer A', quantity: 42 }],
+      }),
+      match({
+        id: 'b',
+        name: 'M3 Washer',
+        placements: [{ locationId: 'loc-drawer-a', locationName: 'Drawer A', quantity: 100 }],
+      }),
     ];
     expect(speakWhereIs('M3', matches)).toBe(
       'I found 2 items matching "M3": M3 Bolt in Drawer A and M3 Washer in Drawer A.',
@@ -75,7 +84,11 @@ describe('speakWhereIs', () => {
 
   it('caps the named items and summarises the remainder', () => {
     const matches = Array.from({ length: 5 }, (_, i) =>
-      match({ id: `i${i}`, name: `Part ${i}`, placements: [{ locationName: 'Bin 4', quantity: 1 }] }),
+      match({
+        id: `i${i}`,
+        name: `Part ${i}`,
+        placements: [{ locationId: 'loc-bin-4', locationName: 'Bin 4', quantity: 1 }],
+      }),
     );
     expect(speakWhereIs('part', matches)).toBe(
       'I found 5 items matching "part": Part 0 in Bin 4, Part 1 in Bin 4, Part 2 in Bin 4 and 2 more.',

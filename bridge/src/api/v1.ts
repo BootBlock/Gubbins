@@ -16,7 +16,7 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { emptyAst } from '@/db/search/ast.ts';
 import type { LocationTreeNode } from '@/db/repositories/types';
-import { searchItems, searchItemRows, whereIs } from '../query.ts';
+import { searchItems, searchItemRows, whereIs, type LookupObserver } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
 import type {
   BridgeServerState,
@@ -58,6 +58,7 @@ import {
   ITEM_SUMMARY_DEFAULT_FIELDS,
   SEARCH_DEFAULT_FIELDS,
 } from './item-view.ts';
+import { createLocationViewContext, parseLocationSelection, projectLocation } from './location-view.ts';
 import { BadQueryError, parseOrderBy, readOption } from './odata.ts';
 import { parseODataFilter } from './odata-filter.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
@@ -133,6 +134,11 @@ export interface ApiV1Context {
    * its absence makes every `/api/v1/scale/*` path a `404`.
    */
   readonly scale?: ScaleCapability;
+  /**
+   * The opt-in resolved-lookup observer (`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`), threaded through to
+   * `GET /api/v1/where`. Absent (the default) means a lookup emits no event.
+   */
+  readonly lookup?: LookupObserver;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
 }
@@ -191,7 +197,7 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       if (segments.length === 1) return void (await handleSearch(res, driver, url));
       break;
     case 'where':
-      if (segments.length === 1) return void (await handleWhere(res, driver, url));
+      if (segments.length === 1) return void (await handleWhere(res, driver, url, ctx.lookup));
       break;
     case 'items':
       if (segments.length === 1) return void (await handleItems(res, driver, url));
@@ -217,7 +223,7 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
     }
     case 'locations':
       if (segments.length === 1) return void (await handleLocations(res, driver, url));
-      if (segments.length === 2) return void (await handleLocation(res, driver, decode(segments[1]!)));
+      if (segments.length === 2) return void (await handleLocation(res, driver, url, decode(segments[1]!)));
       break;
     case 'categories':
       if (segments.length === 1) return void (await handleCategories(res, driver, url));
@@ -459,10 +465,15 @@ async function handleSearch(res: ServerResponse, driver: Driver, url: URL): Prom
   sendJson(res, 200, { query: q.trim(), matches });
 }
 
-async function handleWhere(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
+async function handleWhere(
+  res: ServerResponse,
+  driver: Driver,
+  url: URL,
+  lookup: LookupObserver | undefined,
+): Promise<void> {
   const q = readQueryParam(res, url, true);
   if (q === null) return;
-  sendJson(res, 200, await whereIs(driver, q));
+  sendJson(res, 200, await whereIs(driver, q, { observer: lookup }));
 }
 
 // --- items ------------------------------------------------------------------------
@@ -778,16 +789,36 @@ async function handleItem(res: ServerResponse, driver: Driver, url: URL, id: str
 
 async function handleLocations(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
   const page = readPage(url);
+  const raw = readSelection(url);
   const result = await new LocationRepository(driver).list({ limit: page.limit, offset: page.offset });
-  sendList(res, result.rows.map(toLocation), page, result.hasMore);
+
+  // Without a selection the response is the plain `LocationDto` it has always been; with one,
+  // the same rows go through the shared field-selection engine (so `include=fields` adds the
+  // location's custom-field values).
+  if (!hasSelection(raw)) {
+    return void sendList(res, result.rows.map(toLocation), page, result.hasMore);
+  }
+  const selection = parseLocationSelectionOr400(res, raw);
+  if (selection === null) return;
+  const rows = await Promise.all(
+    result.rows.map((location) => projectLocation(createLocationViewContext(driver, location), selection)),
+  );
+  sendList(res, rows, page, result.hasMore);
 }
 
-async function handleLocation(res: ServerResponse, driver: Driver, id: string): Promise<void> {
+async function handleLocation(res: ServerResponse, driver: Driver, url: URL, id: string): Promise<void> {
+  const raw = readSelection(url);
+  const selection = hasSelection(raw) ? parseLocationSelectionOr400(res, raw) : undefined;
+  if (selection === null) return;
+
   const location = await new LocationRepository(driver).getById(id);
   if (location === undefined) return notFound(res, 'location');
   // The live item count is the number of items whose home location is this one.
   const itemCount = await new ItemRepository(driver).count({ locationId: id });
-  sendJson(res, 200, toLocation({ ...location, itemCount }));
+  const row = { ...location, itemCount };
+
+  if (selection === undefined) return void sendJson(res, 200, toLocation(row));
+  sendJson(res, 200, await projectLocation(createLocationViewContext(driver, row), selection));
 }
 
 // --- categories -------------------------------------------------------------------
@@ -862,8 +893,23 @@ function parseSelectionOr400(
   defaults: readonly string[],
   raw: RawSelection,
 ): readonly SelectedField[] | null {
+  return selectionOr400(res, () => parseItemSelection(defaults, raw));
+}
+
+/** The location-vocabulary counterpart of {@link parseSelectionOr400}. */
+function parseLocationSelectionOr400(
+  res: ServerResponse,
+  raw: RawSelection,
+): readonly SelectedField[] | null {
+  return selectionOr400(res, () => parseLocationSelection(raw));
+}
+
+function selectionOr400(
+  res: ServerResponse,
+  parse: () => readonly SelectedField[],
+): readonly SelectedField[] | null {
   try {
-    return parseItemSelection(defaults, raw);
+    return parse();
   } catch (err) {
     if (err instanceof FieldSelectionError) {
       sendError(res, 400, 'bad_request', err.message, { v1: true });

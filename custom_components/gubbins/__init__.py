@@ -43,6 +43,7 @@ from .const import (
     SERVICE_ADJUST_QUANTITY,
     SERVICE_SEARCH,
 )
+from .events import collect_location_ids, normalise_matches
 from .intent import async_register_intent
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
@@ -113,11 +114,23 @@ def _async_register_search_service(hass: HomeAssistant) -> None:
         if client is None:
             raise HomeAssistantError("No Gubbins bridge is configured")
         try:
-            return await client.search(call.data["query"], call.data.get("limit"))
+            payload = await client.search(call.data["query"], call.data.get("limit"))
         except GubbinsConnectionError as err:
             raise HomeAssistantError(f"Could not reach the Gubbins bridge: {err}") from err
         except GubbinsError as err:
             raise HomeAssistantError(str(err)) from err
+
+        # Additive enrichment: the bridge's own keys are passed through untouched, and the
+        # resolved location ids are added alongside them so a script or dashboard can map a
+        # match to a place without going through the voice intent. `located_matches` mirrors
+        # the `gubbins_item_located` event payload exactly, so the same template works for
+        # both. Older bridges that don't report location ids simply yield empty lists.
+        located_matches = normalise_matches(payload)
+        return {
+            **(payload if isinstance(payload, dict) else {}),
+            "location_ids": collect_location_ids(located_matches),
+            "located_matches": located_matches,
+        }
 
     hass.services.async_register(
         DOMAIN,

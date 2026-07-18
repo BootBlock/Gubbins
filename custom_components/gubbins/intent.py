@@ -6,18 +6,27 @@ intent type. The sentences that trigger it ("where are my {item}", "find my {ite
 user copies into their Home Assistant config directory — Home Assistant's built-in
 conversation agent matches the spoken text and fires this intent with the ``item`` slot.
 
-The handler simply asks the bridge for its ready-made spoken sentence and reads it back
-verbatim, so the voice wording is single-sourced in the bridge.
+The handler asks the bridge for its ready-made spoken sentence and reads it back verbatim,
+so the voice wording is single-sourced in the bridge. In addition, a successful lookup fires
+the ``gubbins_item_located`` event on the Home Assistant bus, carrying the matched items and
+their location ids, so an automation can react to a lookup with a plain event trigger — see
+``homeassistant/README.md``. Speech always takes priority: an event-bus failure is logged and
+swallowed, never surfaced to the speaker.
 """
 
 from __future__ import annotations
+
+import logging
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, intent
 
 from .api import GubbinsClient
-from .const import DOMAIN, INTENT_WHERE_IS
+from .const import DOMAIN, EVENT_ITEM_LOCATED, INTENT_WHERE_IS
+from .events import build_located_event
+
+_LOGGER = logging.getLogger(__name__)
 
 # A module-level flag so the global handler is registered only once, even with
 # multiple config entries.
@@ -49,9 +58,27 @@ class GubbinsWhereIsIntent(intent.IntentHandler):
             )
             return response
 
-        # where_spoken never raises — it returns a friendly fallback on any error.
-        response.async_set_speech(await client.where_spoken(item))
+        # where_answer never raises — it returns a friendly fallback on any error.
+        spoken, payload = await client.where_answer(item)
+        response.async_set_speech(spoken)
+        _async_fire_located_event(intent_obj.hass, item, payload)
         return response
+
+
+def _async_fire_located_event(hass: HomeAssistant, item: str, payload: object) -> None:
+    """Fire ``gubbins_item_located`` for a lookup that resolved to at least one item.
+
+    Nothing is fired when the lookup failed or matched nothing — an automation triggered on
+    this event only makes sense when there is a location to point at. Any failure here is
+    logged and swallowed: the spoken answer has already been set and must not be lost.
+    """
+    try:
+        event_data = build_located_event(item, payload)
+        if event_data is None:
+            return
+        hass.bus.async_fire(EVENT_ITEM_LOCATED, event_data)
+    except Exception:  # noqa: BLE001 - the spoken response must never fail because of this
+        _LOGGER.exception("Could not fire the %s event", EVENT_ITEM_LOCATED)
 
 
 def async_register_intent(hass: HomeAssistant) -> None:

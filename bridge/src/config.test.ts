@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_HOST, DEFAULT_MAX_PUSH_BYTES, DEFAULT_PORT, isLanExposed, loadConfig } from './config.ts';
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC } from './rate-limit.ts';
+import { DEFAULT_LOOKUP_DEBOUNCE_MS, MAX_LOOKUP_DEBOUNCE_MS } from './events/lookup.ts';
 
 const VALID: Record<string, string> = {
   GUBBINS_BRIDGE_TOKEN: 'placeholder-token-for-tests',
@@ -25,6 +26,8 @@ describe('loadConfig (HA-3)', () => {
       allowPush: false,
       maxPushBytes: DEFAULT_MAX_PUSH_BYTES,
       events: false,
+      lookupEvents: false,
+      lookupEventsDebounceMs: DEFAULT_LOOKUP_DEBOUNCE_MS,
       webhooks: false,
       webhooksFile: undefined,
       webhooksInline: undefined,
@@ -250,5 +253,52 @@ describe('loadConfig (HA-3)', () => {
     expect(isLanExposed(DEFAULT_HOST)).toBe(false);
     expect(isLanExposed('localhost')).toBe(false);
     expect(isLanExposed('0.0.0.0')).toBe(true);
+  });
+
+  // --- A2: the read-triggered lookup event (its own opt-in) --------------------------
+  it('keeps lookup events off by default', () => {
+    expect(loadConfig(VALID).lookupEvents).toBe(false);
+  });
+
+  it('does NOT enable lookup events via GUBBINS_BRIDGE_EVENTS', () => {
+    // Deliberate: a lookup event publishes what someone SEARCHED FOR, which is a privacy step
+    // beyond publishing inventory state — so it is never implied by the event stream, nor by
+    // webhooks or MQTT (both of which do imply the stream).
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_EVENTS: 'on' }).lookupEvents).toBe(false);
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_WEBHOOKS: 'on' }).lookupEvents).toBe(false);
+    expect(
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_MQTT: 'on', GUBBINS_BRIDGE_MQTT_URL: 'mqtt://broker.test:1883' })
+        .lookupEvents,
+    ).toBe(false);
+  });
+
+  it('enables lookup events only when its own flag is set', () => {
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS: 'on' }).lookupEvents).toBe(true);
+  });
+
+  it('does not enable the event stream just because lookup events are on', () => {
+    expect(loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS: 'on' }).events).toBe(false);
+  });
+
+  it('defaults, honours and clamps the lookup debounce window', () => {
+    expect(loadConfig(VALID).lookupEventsDebounceMs).toBe(DEFAULT_LOOKUP_DEBOUNCE_MS);
+    expect(
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS: '500' }).lookupEventsDebounceMs,
+    ).toBe(500);
+    expect(
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS: '0' }).lookupEventsDebounceMs,
+    ).toBe(0);
+    expect(
+      loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS: '99999999' }).lookupEventsDebounceMs,
+    ).toBe(MAX_LOOKUP_DEBOUNCE_MS);
+  });
+
+  it('rejects a non-boolean lookup-events flag and a negative debounce', () => {
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS: 'maybe' })).toThrow(
+      /GUBBINS_BRIDGE_LOOKUP_EVENTS/,
+    );
+    expect(() => loadConfig({ ...VALID, GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS: '-1' })).toThrow(
+      /GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS/,
+    );
   });
 });

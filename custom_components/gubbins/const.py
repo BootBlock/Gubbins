@@ -18,6 +18,11 @@ DEFAULT_PORT = 8787
 # custom_sentences/en/gubbins.yaml (copied into the user's HA config directory).
 INTENT_WHERE_IS = "GubbinsWhereIs"
 
+# Fired on the Home Assistant event bus whenever a voice lookup resolves to at least one
+# item, so an automation can react with a plain event trigger (flash the bin's light, …).
+# It is never fired for a lookup that matched nothing. See homeassistant/README.md.
+EVENT_ITEM_LOCATED = "gubbins_item_located"
+
 # Service that exposes a raw search to automations/dashboards.
 SERVICE_SEARCH = "search"
 

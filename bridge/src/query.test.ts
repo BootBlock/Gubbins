@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
-import { searchItems, whereIs } from './query.ts';
+import { searchItems, whereIs, type WhereIsResult } from './query.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
 
@@ -31,6 +31,7 @@ describe('searchItems (HA-2)', () => {
         id: 'item-esp32',
         name: 'ESP32 Dev Board',
         quantity: 7,
+        locationId: 'loc-shelf-2',
         locationName: 'Shelf 2',
         mpn: 'DEV-ESP32',
         manufacturer: 'Synthetic Silicon Co',
@@ -93,6 +94,41 @@ describe('whereIs (HA-2)', () => {
   it('speaks a single-item, single-location sentence', async () => {
     const result = await whereIs(hydrated.driver, 'Nylon');
     expect(result.spoken).toBe('Your M3 Nylon Washer is in Drawer A — 100 in stock.');
+  });
+
+  it('carries a location id alongside the name on every placement', async () => {
+    const result = await whereIs(hydrated.driver, 'ESP32');
+    expect(result.matches[0]!.placements).toEqual(
+      expect.arrayContaining([
+        { locationId: 'loc-shelf-2', locationName: 'Shelf 2', quantity: 5 },
+        { locationId: 'loc-bin-4', locationName: 'Bin 4', quantity: 2 },
+      ]),
+    );
+  });
+
+  it('notifies an injected observer once with the resolved answer', async () => {
+    const seen: WhereIsResult[] = [];
+    const result = await whereIs(hydrated.driver, 'ESP32', {
+      observer: { onLookupResolved: (r) => void seen.push(r) },
+    });
+    expect(seen).toEqual([result]);
+  });
+
+  it('emits nothing when no observer is injected (the default)', async () => {
+    // The default-off proof at the query seam: with nothing wired, a lookup is a pure read.
+    const result = await whereIs(hydrated.driver, 'ESP32');
+    expect(result.matches).toHaveLength(1);
+  });
+
+  it('still answers when the observer throws', async () => {
+    const result = await whereIs(hydrated.driver, 'ESP32', {
+      observer: {
+        onLookupResolved: () => {
+          throw new Error('sink exploded');
+        },
+      },
+    });
+    expect(result.matches).toHaveLength(1);
   });
 
   it('speaks a not-found sentence', async () => {

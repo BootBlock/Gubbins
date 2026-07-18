@@ -231,7 +231,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -239,7 +239,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -416,7 +416,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -424,7 +424,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -986,7 +986,7 @@ paths:
         name: "fields"
         in: "query"
         required: false
-        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities."
+        description: "Sparse fieldset: a comma-separated list of item fields to return INSTEAD of the default set (a projection). Naming an extended field (e.g. unitCost, notes) opts it in, so `fields=name,unitCost` returns just those two. Nest an array field with a dot: `placements.quantity`. An unknown field is a 400. Valid fields: id, name, quantity, isUnlimited, locationId, locationName, categoryId, categoryName, mpn, manufacturer, trackingMode, isActive, description, notes, condition, serialNumber, serialNo, parentId, unitCost, purchasePrice, weight, width, height, depth, expiryDate, batchNumber, lotNumber, acquiredAt, warrantyExpiresAt, depreciationMonths, reorderPoint, reorderGaugePercent, reorderQty, operationalMetadata, gauge, createdAt, updatedAt, placements, capabilities, fieldValues."
         schema:
           type: "string"
         example: "name,unitCost"
@@ -994,7 +994,7 @@ paths:
         name: "include"
         in: "query"
         required: false
-        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), and all (every extended field). An unknown name is a 400."
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: relations (placements, capabilities, categoryName), pricing (unitCost, purchasePrice), lifecycle (acquiredAt, warrantyExpiresAt, purchasePrice, depreciationMonths), reorder (reorderPoint, reorderGaugePercent, reorderQty), timestamps (createdAt, updatedAt), fields (fieldValues — the custom-field values, with location inheritance resolved), and all (every extended field). An unknown name is a 400."
         schema:
           type: "string"
         example: "capabilities,notes"
@@ -1310,6 +1310,7 @@ paths:
       tags:
       - "locations"
       summary: "Browse locations (paginated)"
+      description: "The physical storage hierarchy, each entry with its live item count. Use `include=fields` to add `fieldValues` — the location's custom-field values, which is where a user records metadata such as the entity id of a light above a shelf."
       parameters:
       -
         name: "limit"
@@ -1330,6 +1331,38 @@ paths:
           type: "integer"
           minimum: 0
           default: 0
+      -
+        name: "fields"
+        in: "query"
+        required: false
+        description: "Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400."
+        schema:
+          type: "string"
+        example: "id,name,fieldValues"
+      -
+        name: "include"
+        in: "query"
+        required: false
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: fields (fieldValues — the location's custom-field values) and all. An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "fields"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
       responses:
         "200":
           description: "A page of results."
@@ -1380,6 +1413,7 @@ paths:
       tags:
       - "locations"
       summary: "Look up one location by id"
+      description: "One location with its live item count. Use `include=fields` to add the location's custom-field values (`fieldValues`)."
       parameters:
       -
         name: "id"
@@ -1388,6 +1422,38 @@ paths:
         description: "The location id."
         schema:
           type: "string"
+      -
+        name: "fields"
+        in: "query"
+        required: false
+        description: "Sparse fieldset: a comma-separated list of location fields to return INSTEAD of the default set. Valid fields: id, name, parentId, isSystem, description, color, itemCount, fieldValues. Nest the array field with a dot: `fieldValues.value`. An unknown field is a 400."
+        schema:
+          type: "string"
+        example: "id,name,fieldValues"
+      -
+        name: "include"
+        in: "query"
+        required: false
+        description: "Field expansion: a comma-separated list of extended fields, or named groups, to ADD on top of the default payload. Groups: fields (fieldValues — the location's custom-field values) and all. An unknown name is a 400."
+        schema:
+          type: "string"
+        example: "fields"
+      -
+        name: "$select"
+        in: "query"
+        required: false
+        description: "OData-style alias of `fields` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "name,unitCost"
+      -
+        name: "$expand"
+        in: "query"
+        required: false
+        description: "OData-style alias of `include` (this alias wins if both are given)."
+        schema:
+          type: "string"
+        example: "capabilities,notes"
       responses:
         "200":
           description: "The location."
@@ -1937,6 +2003,7 @@ components:
       - "id"
       - "name"
       - "quantity"
+      - "locationId"
       - "locationName"
       - "mpn"
       - "manufacturer"
@@ -1952,6 +2019,11 @@ components:
           nullable: true
           example: 7
           description: "On-hand grand total; **null** for an unlimited-supply item (an infinite source has no finite count)."
+        locationId:
+          type: "string"
+          nullable: true
+          example: "loc-shelf-2"
+          description: "The primary/home location's stable id — what an automation acts on (the name is for a human). Null exactly when locationName is."
         locationName:
           type: "string"
           nullable: true
@@ -2045,6 +2117,69 @@ components:
         weight:
           type: "number"
           example: 2
+    ItemFieldValue:
+      type: "object"
+      description: "One of the item's custom-field values, resolved exactly as the app resolves it: a value set on the item wins, otherwise the value offered by the nearest ancestor location that makes it inheritable, otherwise the field default. Fields with no value are omitted. Read-only."
+      required:
+      - "name"
+      - "fieldType"
+      - "value"
+      - "source"
+      - "inheritedFrom"
+      properties:
+        name:
+          type: "string"
+          example: "Datasheet"
+        fieldType:
+          type: "string"
+          example: "TEXT"
+        value:
+          type: "string"
+          example: "https://example.com/esp32.pdf"
+        source:
+          type: "string"
+          enum:
+          - "stored"
+          - "inherited"
+          - "default"
+          example: "stored"
+          description: "Where the value came from: set on the item (`stored`), inherited from an ancestor location (`inherited`), or the field default (`default`)."
+        inheritedFrom:
+          type: "object"
+          nullable: true
+          description: "The location that supplied the value when `source` is `inherited`; null otherwise."
+          required:
+          - "locationId"
+          - "locationName"
+          properties:
+            locationId:
+              type: "string"
+              example: "loc-shelf-2"
+            locationName:
+              type: "string"
+              example: "Shelf 2"
+    LocationFieldValue:
+      type: "object"
+      description: "One custom-field value held by a location. Fields with no value are omitted. Read-only."
+      required:
+      - "name"
+      - "fieldType"
+      - "value"
+      - "isInheritable"
+      properties:
+        name:
+          type: "string"
+          example: "Indicator Entity"
+        fieldType:
+          type: "string"
+          example: "TEXT"
+        value:
+          type: "string"
+          example: "light.shelf_two"
+        isInheritable:
+          type: "boolean"
+          example: true
+          description: "True when the location offers this value to the items stored beneath it; false when it is the location's own metadata only."
     ItemSummary:
       type: "object"
       required:
@@ -2159,6 +2294,11 @@ components:
             type: "array"
             items:
               $ref: "#/components/schemas/Capability"
+          fieldValues:
+            type: "array"
+            description: "Present only when requested with `include=fields`."
+            items:
+              $ref: "#/components/schemas/ItemFieldValue"
     Location:
       type: "object"
       required:
@@ -2192,6 +2332,11 @@ components:
         itemCount:
           type: "integer"
           example: 2
+        fieldValues:
+          type: "array"
+          description: "Present only when requested with `include=fields`."
+          items:
+            $ref: "#/components/schemas/LocationFieldValue"
     CategoryField:
       type: "object"
       required:
