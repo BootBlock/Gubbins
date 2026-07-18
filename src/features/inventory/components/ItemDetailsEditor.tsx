@@ -9,13 +9,12 @@ import {
   SelectField,
   Textarea,
 } from '@/components/foundry';
-import { ScanIcon } from '@/components/icons';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
 import { fromMm, toMm, type DimensionUnit } from '@/lib/dimensions';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
-import { useFeature } from '@/features/modules/useFeature';
+import { BarcodeField } from './BarcodeField';
 import { useCategories } from '../categories';
 import { useUpdateItem } from '../mutations';
 import { useFieldSuggestions } from '../queries';
@@ -106,12 +105,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
   const [width, setWidth] = useState(() => dimensionToInput(item.width, dimensionUnit));
   const [height, setHeight] = useState(() => dimensionToInput(item.height, dimensionUnit));
   const [depth, setDepth] = useState(() => dimensionToInput(item.depth, dimensionUnit));
-  // Camera barcode capture for the Barcode field (issue #8/#52): a "Scan" button beside the
-  // field opens the shared scanner to fill the GTIN without typing. Gated by the same `scanner`
-  // capability as the Add-item dialog — with it off the button is hidden; the field is still
-  // typable. The dialog stacks on top of the editor.
+  // Camera barcode capture for the Barcode field (issue #8/#52): {@link BarcodeField} owns the
+  // "Scan" button and its `scanner`-capability gating; this only holds the dialog it opens,
+  // which stacks on top of the editor.
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
-  const scannerEnabled = useFeature('scanner');
 
   // Re-sync the draft when the persisted values change (open, after a save, or sync).
   useEffect(() => {
@@ -248,42 +245,13 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         />
       </div>
 
-      {/* The Scan button sits beside the field (issue #52) but *outside* the FormField's
-          `<label>` — so it never folds into the input's accessible name and clicking it can't
-          be mistaken for the label. `items-end` bottom-aligns it with the input (both h-10).
-          Mirrors the Add-item dialog's Barcode field exactly. */}
-      <div className="flex items-end gap-2">
-        <FormField
-          className="flex-1"
-          label="Barcode (optional)"
-          hintSize="lg"
-          hint={
-            'The **retail barcode** (GTIN) printed on the packaging — EAN-13, UPC-A, EAN-8 or ' +
-            'GTIN-14.\n\nScanning a product barcode fills this automatically. It is the item’s ' +
-            'own scannable code, distinct from the **MPN** above.\n\n> A future scan of the same ' +
-            'barcode jumps straight to this item.'
-          }
-        >
-          <Input
-            inputMode="numeric"
-            placeholder="e.g. 4006381333931"
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            data-testid="item-details-barcode"
-          />
-        </FormField>
-        {scannerEnabled ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setBarcodeScanOpen(true)}
-            data-testid="item-details-barcode-scan"
-          >
-            <ScanIcon aria-hidden />
-            Scan
-          </Button>
-        ) : null}
-      </div>
+      <BarcodeField
+        value={barcode}
+        onChange={setBarcode}
+        onScan={() => setBarcodeScanOpen(true)}
+        inputTestId="item-details-barcode"
+        scanTestId="item-details-barcode-scan"
+      />
 
       <FormField
         label="Serial number (optional)"

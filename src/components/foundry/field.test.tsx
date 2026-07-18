@@ -75,3 +75,50 @@ describe('FormField — accessible labelled control (spec §3 / WCAG 3.3.1, 1.3.
     expect(control.getAttribute('aria-describedby')).toBe('external-hint');
   });
 });
+
+describe('FormField — advisory warning tier (issue #344)', () => {
+  it('shows the warning and describes it to the control, but never marks it invalid', () => {
+    render(
+      <FormField label="Barcode" warning="Its check digit doesn’t match.">
+        <Input />
+      </FormField>,
+    );
+    const control = screen.getByLabelText('Barcode');
+    const warning = screen.getByText('Its check digit doesn’t match.');
+    expect(control.getAttribute('aria-invalid')).toBeNull();
+    expect(control.getAttribute('aria-describedby')).toBe(warning.id);
+  });
+
+  it('keeps the live region mounted while quiet, so a later warning is announced', () => {
+    // A role="status" inserted at warn time is frequently not announced (see LiveRegion),
+    // so an opted-in field pre-mounts an empty region rather than creating one on demand.
+    const { container } = render(
+      <FormField label="Barcode" warning="">
+        <Input />
+      </FormField>,
+    );
+    const region = container.querySelector('[role="status"]');
+    expect(region).toBeTruthy();
+    expect(region?.textContent).toBe('');
+  });
+
+  it('mounts no live region at all for a field that never warns', () => {
+    const { container } = render(
+      <FormField label="Name">
+        <Input />
+      </FormField>,
+    );
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('shows only the error when a field has both', () => {
+    render(
+      <FormField label="Barcode" error="Required" warning="Its check digit doesn’t match.">
+        <Input />
+      </FormField>,
+    );
+    expect(screen.getByRole('alert').textContent).toBe('Required');
+    expect(screen.queryByText('Its check digit doesn’t match.')).toBeNull();
+    expect(screen.getByLabelText('Barcode').getAttribute('aria-invalid')).toBe('true');
+  });
+});

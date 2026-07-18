@@ -41,6 +41,13 @@ Hold the code inside the box; good light and a steady hand still help most.
 > future scans jump straight to it. A barcode Gubbins doesn't recognise can also trigger a
 > [[product lookup|Scraping-Supplier-Data]].
 
+> **💡 Tip**
+> Typing a barcode by hand instead? Gubbins checks it as you move on. Retail barcodes carry a
+> built-in check digit, so a mistyped or swapped digit is spotted and flagged under the field —
+> which matters, because a barcode that's a digit out will never be found by a future scan. It's
+> only a warning: you can still save whatever you typed, and codes that aren't retail barcodes
+> (an internal shelf code, say) are left alone.
+
 > **ℹ️ Note**
 > Some packaging carries a **marketing QR code** (a website link) next to the real barcode. If
 > you scan one into the **Barcode** field, Gubbins spots that it's a link rather than a barcode
