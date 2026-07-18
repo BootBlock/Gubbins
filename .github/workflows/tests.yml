@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           # `type-check` runs the app's `tsc -b`; ESLint's type-aware rules also drive the
           # TypeScript program. Pin the same Node 25 the test jobs use for consistency.
@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           # The app's `:memory:` test driver uses `node:sqlite` (Node >= 22.5), so the
           # test job needs a recent Node even though the shipped PWA runs in the browser.
@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           # The bridge has no build step — it runs TypeScript directly, which needs
           # Node >= 24 (or >= 22.16 LTS) for unflagged type-stripping and node:sqlite
