@@ -20,6 +20,7 @@ import {
   UNASSIGNED_LOCATION_ID,
   UNASSIGNED_LOCATION_NAME,
   USER_KINDS,
+  WEBHOOK_METHODS,
 } from '../repositories/constants';
 import type { SqlStatement } from '../rpc/driver';
 import { BASELINE_REVISION_KEY, SQL_NOW_MS, baselineFingerprint, type Migration } from './migration';
@@ -105,6 +106,7 @@ const procurementStatusList = PROCUREMENT_STATUSES.map((s) => `'${s}'`).join(', 
 const conditionList = CONDITIONS.map((c) => `'${c}'`).join(', ');
 const basisList = MAINTENANCE_BASES.map((b) => `'${b}'`).join(', ');
 const userKindList = USER_KINDS.map((k) => `'${k}'`).join(', ');
+const webhookMethodList = WEBHOOK_METHODS.map((m) => `'${m}'`).join(', ');
 
 /**
  * The baseline's DDL, separated from the migration object so its fingerprint can be computed
@@ -1574,6 +1576,64 @@ const baselineStatements: SqlStatement[] = [
   // costing nothing for the overwhelmingly common 'inherit' default.
   {
     sql: `CREATE INDEX idx_items_dead_stock_mode ON items(dead_stock_mode) WHERE dead_stock_mode <> 'inherit';`,
+  },
+
+  // --- Webhook subscriptions (issue #87) ------------------------------------------
+  // "Call this URL when this happens." The app *configures* subscriptions here and syncs
+  // them like any other user record; the **bridge** is the sole deliverer (it reads them
+  // from the database it already hydrates), because a browser cannot reliably reach the
+  // endpoints users actually own — CSP pins the outbound origin list at build time, a
+  // signed cross-origin POST is preflighted and most receivers send no CORS headers, an
+  // HTTPS page cannot call a plain-`http` LAN box, and nothing delivers with the tab shut.
+  //
+  // An independent LWW leaf with no FK, exactly like `wishlist` / `tare_presets`: a
+  // subscription is about *events*, not about any one item, category or location, so
+  // narrowing is expressed by the declarative `filter` rather than by a foreign key that
+  // would delete the subscription along with whatever it happened to point at.
+  //
+  // The JSON-bearing columns (`event_types`, `filter`, `headers`) are opaque TEXT here and
+  // parsed at the repository boundary. SQLite could validate them with `json_valid()`, but a
+  // CHECK that rejects a row on hydration would let one malformed value from a peer break a
+  // whole sync apply; the mapper softens instead, so a bad payload costs that one field.
+  //
+  // The signing secret is deliberately two columns, not one (plan §6.1):
+  //  · `secret_ref` — the *name* of a secret held in the bridge's git-ignored config. The
+  //    recommended option and the one the UI steers to: the value never enters the database,
+  //    and therefore never enters the sync artefact (which by design sits on a NAS or in a
+  //    cloud drive) or a backup.
+  //  · `secret` — the value itself, for zero-setup convenience. It travels with synced data,
+  //    which the UI and the wiki must say plainly.
+  // The CHECK enforces "at most one of the two": a row carrying both would leave which
+  // secret actually signs a delivery ambiguous. Neither is legal — an unsigned webhook to a
+  // trusted LAN endpoint is a reasonable thing to want.
+  //
+  // No index: this table holds a handful of rows per user and every read is a full list
+  // (the bridge takes the whole enabled set on each hydrate), so an index on `enabled` would
+  // be write cost for a scan the planner would skip anyway.
+  {
+    sql: `
+        CREATE TABLE webhooks (
+          id          TEXT    PRIMARY KEY NOT NULL,
+          name        TEXT    NOT NULL,                  -- user label, e.g. "Home Assistant"
+          url         TEXT    NOT NULL,                  -- absolute http(s) endpoint
+          method      TEXT    NOT NULL DEFAULT 'POST',
+          enabled     INTEGER NOT NULL DEFAULT 1,
+          secret      TEXT,                              -- HMAC secret held in-row (syncs!)
+          secret_ref  TEXT,                              -- name of a bridge-side secret (preferred)
+          event_types TEXT    NOT NULL,                  -- JSON array of dotted types, or ["*"]
+          filter      TEXT,                              -- JSON filter expression, or NULL (all)
+          template    TEXT,                              -- payload template, or NULL (default envelope)
+          headers     TEXT,                              -- JSON object of extra static headers
+          created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          CHECK (method IN (${webhookMethodList})),
+          CHECK (enabled IN (0, 1)),
+          CHECK (secret IS NULL OR secret_ref IS NULL)
+        ) STRICT;
+      `,
+  },
+  {
+    sql: updatedAtTrigger('webhooks'),
   },
 ];
 

@@ -79,6 +79,7 @@ export const SYNC_TABLES = [
   'tare_presets', // independent (issue #94 — saved empty-container weights; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist)
   'purchase_orders', // FK → suppliers (SET NULL) — Phase 62 / issue #384; ordered after suppliers and after items/supplier_parts so its own and its child's FKs never trip on an UPSERT batch
   'purchase_order_lines', // FK → purchase_orders (CASCADE), items + supplier_parts (SET NULL) — ordered after its parent PO and after items/supplier_parts (Phase 62)
+  'webhooks', // independent (issue #87 — user-configured event subscriptions; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist/tare_presets). Syncing it IS the delivery mechanism: the bridge reads its targets from the database it hydrates, so a subscription excluded from the snapshot would simply never fire.
 ] as const;
 
 export type SyncTable = (typeof SYNC_TABLES)[number];
@@ -176,6 +177,14 @@ export function clearLocationTagTombstoneStatement(locationId: string, tagId: st
  * that a device dropped its own local full-res file (Phase 10). Propagating it would make
  * a peer that still holds its full-res image wrongly believe it was downgraded, so the
  * schema dictionary and the snapshot reader both strip it.
+ *
+ * `webhooks.secret` is deliberately **not** listed, despite being a credential. This map is
+ * applied inside the *shared* snapshot builder used by sync, backup **and** the bridge push, so
+ * excluding the column would strip it from the very payload the bridge hydrates — and the bridge
+ * is the only thing that signs a delivery, so webhook signing would simply stop working. The
+ * answer to "a secret should not travel in the sync artefact" is therefore `webhooks.secret_ref`
+ * (issue #87, plan §6.1), which keeps the value in the bridge's own config and out of the
+ * database entirely, not a redaction here that would break the feature it was meant to protect.
  */
 export const SYNC_EXCLUDED_COLUMNS: Partial<Record<SyncTable, readonly string[]>> = {
   item_images: ['full_res_downgraded_at'],

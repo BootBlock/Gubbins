@@ -74,12 +74,16 @@ import type {
   TagRow,
   WishlistEntry,
   WishlistRow,
+  WebhookFilter,
+  WebhookRow,
+  WebhookSubscription,
 } from './types';
 import type { BorrowerType, FieldType } from './constants';
 import type { RelationKind } from '@/features/inventory/item-relations';
 import { normaliseTarePresetKind } from '@/features/inventory/tare-presets';
 import { normaliseTestRecordKind, normaliseTestResult } from '@/features/inventory/test-records';
 import { normaliseWishlistPriority } from '@/features/purchasing/wishlist';
+import { normaliseWebhookMethod } from '@/features/webhooks/subscription';
 
 function parseJson(value: string | null): Record<string, unknown> | null {
   if (value == null) return null;
@@ -287,6 +291,60 @@ export function rowToSavedTarePreset(row: TarePresetRow): SavedTarePreset {
     kind: normaliseTarePresetKind(row.kind),
     tareGrams: row.tare_grams,
     note: row.note,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Parse a JSON **object** column, rejecting anything that is not a plain object — including an
+ * array, which {@link parseJson} would otherwise wave through as a `Record` (arrays are objects
+ * to `typeof`) and hand to a caller expecting named keys.
+ */
+function parseJsonObject(value: string | null): Record<string, unknown> | null {
+  const parsed = parseJson(value);
+  return parsed !== null && !Array.isArray(parsed) ? parsed : null;
+}
+
+/**
+ * Map a raw webhook-subscription row (issue #87). The three JSON columns are parsed here so a
+ * caller only ever sees typed values, and each one softens independently on malformed input
+ * rather than throwing: these rows arrive over sync from peers that may be running a newer (or
+ * older) build, and one bad field must not fail the whole read — or, worse, abort a sync apply
+ * mid-batch.
+ *
+ * `event_types` softens to `[]` and `enabled` is read strictly (`=== 1`), which together make a
+ * corrupt row **inert** rather than over-firing: a subscription that cannot say what it wants
+ * matches nothing, which is the safe direction for something that calls out to the network.
+ * `method` goes through the seam like `rowToWishlistEntry`'s priority, though the DB CHECK means
+ * it should never need to.
+ *
+ * `headers` upholds the seam's "empty means none" invariant on the way *out* as well as in: a
+ * stored `{}` — or an object whose every value was dropped as non-text — reads back as `null`,
+ * not as a truthy empty object, so a caller can test `headers` for presence without also having
+ * to count its keys.
+ */
+export function rowToWebhookSubscription(row: WebhookRow): WebhookSubscription {
+  const eventTypes = parseJson(row.event_types);
+  const headers = parseJsonObject(row.headers);
+  const textHeaders =
+    headers === null
+      ? null
+      : Object.fromEntries(
+          Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        );
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    method: normaliseWebhookMethod(row.method),
+    enabled: row.enabled === 1,
+    secret: row.secret,
+    secretRef: row.secret_ref,
+    eventTypes: Array.isArray(eventTypes) ? eventTypes.filter((t): t is string => typeof t === 'string') : [],
+    filter: parseJsonObject(row.filter) as WebhookFilter | null,
+    headers: textHeaders !== null && Object.keys(textHeaders).length > 0 ? textHeaders : null,
+    template: row.template,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

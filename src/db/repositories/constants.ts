@@ -427,6 +427,23 @@ export const USER_KINDS = ['system', 'admin', 'normal'] as const;
 export type UserKind = (typeof USER_KINDS)[number];
 
 /**
+ * HTTP methods a webhook subscription may be delivered with (issue #87, plan §4.1).
+ *
+ * `POST` is the default and the shape every receiver understands; the rest exist because the
+ * issue explicitly asks for more than POST (a `GET` "ping" style endpoint, or a `PUT`/`PATCH`
+ * upsert against a REST API). A `GET` carries its payload as query parameters rather than a
+ * body, and therefore cannot carry an HMAC **body** signature — a limitation the delivery
+ * phase surfaces rather than hides.
+ *
+ * Unlike the free-TEXT vocabularies above (`wishlist.priority`, `item_relations.kind`) this one
+ * is a hard DB CHECK on `webhooks.method`: the set is fixed by HTTP, not by Gubbins, so there is
+ * no forward-compatibility case for letting a newer peer mint a value the deliverer could not
+ * issue anyway.
+ */
+export const WEBHOOK_METHODS = ['POST', 'GET', 'PUT', 'PATCH'] as const;
+export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
+
+/**
  * Fixed, well-known identifier for the seeded **System** user (issue #79, plan §2.2).
  *
  * Like {@link UNASSIGNED_LOCATION_ID} it is a deliberately *constant* UUIDv4 — never
