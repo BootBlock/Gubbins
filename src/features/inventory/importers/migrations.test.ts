@@ -65,6 +65,21 @@ R-0402-10K,10k Resistor,0402 1% resistor,Passives/Resistors,5000,1000,Reel Store
 C-0603-100N,100nF Capacitor,0603 X7R,Passives/Capacitors,3000,500,Reel Store,,
 `;
 
+// An LCSC order export. Real column names (including LCSC's own "Manufacture Part
+// Number" spelling and the `Min\Mult` column); invented part codes and manufacturers.
+// Cells are comma-free here so the naive `rows()` splitter can read them — the quoted
+// real-world shape is covered end-to-end by LCSC_QUOTED below.
+const LCSC = `
+LCSC Part Number,Manufacture Part Number,Manufacturer,Customer NO.,Package,Description,RoHS,Order Qty.,Min\\Mult Order Qty.,Unit Price,Order Price
+C900001,EX32-WROVER-N4R2,Example Semiconductor,,SMD-18x31mm,WiFi module with 4MB flash,YES,5,1\\1,4.955700,24.78
+C900002,EXC0402-10K-1PCT,Example Passives,BIN-A7,0402,10k 1% thick film resistor,YES,100,50\\50,0.001200,0.12
+`;
+
+// The same export in its true CSV shape: package/description carry embedded commas and
+// are therefore quoted. Format detection must still see 11 consistent columns.
+const LCSC_QUOTED = `LCSC Part Number,Manufacture Part Number,Manufacturer,Customer NO.,Package,Description,RoHS,Order Qty.,Min\\Mult Order Qty.,Unit Price,Order Price
+C900001,EX32-WROVER-N4R2,Example Semiconductor,,"SMD,18x31mm"," SMD,18x31mm  WiFi Modules ROHS",YES,5,1\\1,4.955700,24.78`;
+
 // ---------------------------------------------------------------------------
 // Detection
 // ---------------------------------------------------------------------------
@@ -76,6 +91,7 @@ describe('detectMigrationSource', () => {
     ['sortly', SORTLY],
     ['snipeit', SNIPEIT],
     ['inventree', INVENTREE],
+    ['lcsc', LCSC],
   ] as const)('recognises a %s export from its headers', (id, fixture) => {
     expect(detectMigrationSource(rows(fixture).header)).toBe(id);
   });
@@ -213,6 +229,87 @@ describe('InvenTree mapper', () => {
     expect(resistor.notes).toContain('Reel A3'); // native notes preserved
     expect(resistor.notes).toContain('Category: Passives/Resistors');
     expect(resistor.notes).toContain('Keywords: smd resistor');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LCSC (distributor order export)
+// ---------------------------------------------------------------------------
+
+describe('LCSC mapper', () => {
+  it('names each part by its MPN and keeps the LCSC code as the identifier', () => {
+    const { header, data } = rows(LCSC);
+    const plan = planFor('lcsc', header, data);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create).toHaveLength(2);
+
+    const module_ = plan.create[0]!.input;
+    expect(module_.name).toBe('EX32-WROVER-N4R2'); // MPN → name (LCSC has no name column)
+    expect(module_.mpn).toBe('C900001'); // LCSC catalogue code → identifier slot
+    expect(module_.description).toBe('WiFi module with 4MB flash');
+    expect(module_.manufacturer).toBe('Example Semiconductor');
+    expect(module_.quantity).toBe(5); // "Order Qty."
+    expect(module_.unitCost).toBe(4.9557); // per-unit, not the 24.78 line total
+  });
+
+  it('folds package / RoHS / order-total columns into provenance notes', () => {
+    const { header, data } = rows(LCSC);
+    const resistor = planFor('lcsc', header, data).create[1]!.input;
+    expect(resistor.quantity).toBe(100);
+    expect(resistor.unitCost).toBe(0.0012);
+    expect(resistor.notes).toContain('Imported from LCSC:');
+    expect(resistor.notes).toContain('Package: 0402');
+    expect(resistor.notes).toContain('RoHS: YES');
+    expect(resistor.notes).toContain('Order Price: 0.12');
+    expect(resistor.notes).toContain('Customer NO.: BIN-A7');
+    // The empty "Customer NO." on the first row is dropped rather than left blank.
+    const module_ = planFor('lcsc', header, data).create[0]!.input;
+    expect(module_.notes).not.toContain('Customer NO.:');
+  });
+
+  it('re-importing a later order updates the part it matched by LCSC code', () => {
+    const { header, data } = rows(LCSC);
+    const mapped = mapMigration('lcsc', header, data);
+    const existing = [{ id: 'item-1', name: 'Old name', mpn: 'C900001', quantity: 5 }];
+    const plan = buildImportPlanFromRows(mapped.headerRow, mapped.dataRows, mapped.mapping, existing, {
+      matchKey: 'sku',
+    });
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.itemId).toBe('item-1');
+    expect(plan.create).toHaveLength(1); // the resistor is still new
+  });
+
+  it('still imports a hand-kept sheet that merely carries an LCSC column', () => {
+    // A parts spreadsheet with its own Name column trips the LCSC signature. It must
+    // still import: before the `name` fallback key, every row failed "Row has no name".
+    const header = ['Name', 'LCSC Part Number', 'Qty', 'Unit Price(USD)'];
+    const data = [['Resistor bin A', 'C900002', '50', '0.0012']];
+    expect(detectMigrationSource(header)).toBe('lcsc');
+
+    const plan = planFor('lcsc', header, data);
+    expect(plan.errors).toEqual([]);
+    const bin = plan.create[0]!.input;
+    expect(bin.name).toBe('Resistor bin A');
+    expect(bin.mpn).toBe('C900002');
+    expect(bin.quantity).toBe(50);
+    expect(bin.unitCost).toBe(0.0012); // "Unit Price(USD)" variant header
+  });
+
+  it('detects and maps a real quoted export whose cells contain commas', () => {
+    // Regression guard: the package/description commas must not defeat CSV detection.
+    const extraction = extractImport(LCSC_QUOTED);
+    expect(extraction.isTabular).toBe(true);
+    expect(extraction.headerRow).toHaveLength(11);
+    expect(detectMigrationSource(extraction.headerRow)).toBe('lcsc');
+
+    const migrated = applyMigration(extraction, 'lcsc');
+    const plan = buildImportPlanFromRows(migrated.headerRow, migrated.dataRows, migrated.mapping, []);
+    expect(plan.errors).toEqual([]);
+    const part = plan.create[0]!.input;
+    expect(part.name).toBe('EX32-WROVER-N4R2');
+    expect(part.mpn).toBe('C900001');
+    expect(part.description).toBe('SMD,18x31mm  WiFi Modules ROHS');
+    expect(part.notes).toContain('Package: SMD,18x31mm');
   });
 });
 

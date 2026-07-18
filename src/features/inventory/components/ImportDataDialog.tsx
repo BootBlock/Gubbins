@@ -490,7 +490,9 @@ function ImportWorkbench({
         {activeSource ? (
           <p className="text-xs text-muted-foreground" data-testid="import-source-note">
             {sourceOverride === 'auto'
-              ? `Recognised a ${MIGRATION_SOURCE_LABELS[activeSource]} export — `
+              ? // Phrased as "an export from X" so the sentence stays grammatical for every
+                // source label — "a LCSC" / "a InvenTree" would both take the wrong article.
+                `Recognised an export from ${MIGRATION_SOURCE_LABELS[activeSource]} — `
               : ''}
             columns mapped to Gubbins fields; anything unrecognised is kept in each item’s notes.{' '}
             {MIGRATION_SOURCE_HINTS[activeSource]}

@@ -2,7 +2,8 @@
 
 Already running another inventory app? Gubbins has **one-click migration** for several popular
 tools — export from the old app, paste or pick the file, and Gubbins maps it in with a live
-preview.
+preview. The same path also takes an **LCSC order export**, so a delivery of components can be
+booked straight into stock.
 
 **Where to find it:** **Import…** beside the Add-item button → choose your **Import source**.
 
@@ -18,10 +19,31 @@ works — or you can force a specific source:
 | **Sortly** | Export → CSV (all items) |
 | **Snipe-IT** | Assets → Export → CSV |
 | **InvenTree** | Part list → Export → CSV |
+| **LCSC** | Order details / cart → Export, or an LCSC BOM CSV |
 | **Generic** | Any spreadsheet / CSV — you map the columns yourself |
 
 Each tool's fields are mapped to the matching Gubbins fields — name, quantity, location, price,
 barcode, reorder point, and so on.
+
+## Importing an LCSC order
+
+An LCSC export lists parts by catalogue code rather than by name, so it's mapped a little
+differently:
+
+| LCSC column | Becomes |
+| --- | --- |
+| **Manufacture Part Number** | the item **name** — what you'd actually call the part |
+| **LCSC Part Number** (`C…`) | the item's **SKU / part number** |
+| **Description**, **Manufacturer** | description and manufacturer |
+| **Order Qty.** | quantity received |
+| **Unit Price** | unit cost (the per-part price, not the line total) |
+
+Package, RoHS, your own **Customer NO.** and the order total are folded into the item's notes.
+
+> **💡 Tip**
+> Because the **LCSC part number** lands in the SKU field, importing a *later* order with the
+> match set to **SKU / MPN** updates the parts you already have instead of duplicating them —
+> handy for restocking the same components.
 
 ## Nothing is lost
 
