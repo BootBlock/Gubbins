@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Button, Tooltip, evaluateExpression, hasCalcExpression, useToast } from '@/components/foundry';
-import { AddIcon, ErrorIcon, SubtractIcon } from '@/components/icons';
-import { useT } from '@/features/i18n';
+import { Button, Tooltip, evaluateExpression, hasCalcExpression } from '@/components/foundry';
+import { AddIcon, SubtractIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { useAdjustQuantity } from '../mutations';
 import { ChangeFlash } from './ChangeFlash';
@@ -20,29 +19,6 @@ import { ChangeFlash } from './ChangeFlash';
 export function QuantityStepper({ id, quantity }: { id: string; quantity: number }) {
   const adjust = useAdjustQuantity();
   const fmt = useFormatters();
-  const t = useT();
-  const { show } = useToast();
-
-  /**
-   * Both entry points share this: the optimistic number rolls back on failure, which on its own
-   * looks like the tap simply did nothing. The commonest failure is a lost race — an overlapping
-   * decrement took the last unit first (#302) — so say what happened rather than silently
-   * reverting.
-   */
-  const submit = (delta: number) => {
-    adjust.mutate(
-      { id, delta },
-      {
-        onError: (error) =>
-          show({
-            tone: 'danger',
-            icon: <ErrorIcon aria-hidden />,
-            heading: t('inventory.quantity.updateFailed'),
-            message: error instanceof Error ? error.message : String(error),
-          }),
-      },
-    );
-  };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   // Focus the field when it appears (managed here rather than via the discouraged
@@ -54,7 +30,7 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
 
   const bump = (delta: number) => {
     if (quantity + delta < 0) return;
-    submit(delta);
+    adjust.mutate({ id, delta });
   };
 
   const startEdit = () => {
@@ -82,7 +58,7 @@ export function QuantityStepper({ id, quantity }: { id: string; quantity: number
     const delta = next - quantity;
     // A no-op (same value) is skipped, so the flash only plays on a real change — exactly
     // like a ± tap that would take it below zero.
-    if (delta !== 0) submit(delta);
+    if (delta !== 0) adjust.mutate({ id, delta });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
