@@ -71,6 +71,7 @@ export const SYNC_TABLES = [
   'project_expenses', // FK → projects, project_budget_categories
   'maintenance_schedules', // FK → items
   'wishlist', // independent (feature-gap G8 — manual "to-buy" list; LWW leaf, no FK → no FK_REFS reconcile entry, like contacts/projects)
+  'tare_presets', // independent (issue #94 — saved empty-container weights; LWW leaf, no FK → no FK_REFS reconcile entry, like wishlist)
   'purchase_orders', // independent (supplier-keyed order; Phase 62 — ordered after items/supplier_parts so its child's FKs never trip on an UPSERT batch)
   'purchase_order_lines', // FK → purchase_orders (CASCADE), items + supplier_parts (SET NULL) — ordered after its parent PO and after items/supplier_parts (Phase 62)
 ] as const;

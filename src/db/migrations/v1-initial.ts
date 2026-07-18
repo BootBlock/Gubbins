@@ -1318,6 +1318,40 @@ const baselineStatements: SqlStatement[] = [
     sql: updatedAtTrigger('test_records'),
   },
 
+  // --- Saved container tares (issue #94) -----------------------------------------
+  // A small library of "what does this container weigh empty" entries the user can pull
+  // into any tare field instead of typing the number from memory each time. Tare is
+  // already a first-class concept — `items.tare_weight` for a CONSUMABLE_GAUGE, and the
+  // per-reading tare of a weigh-in — so this table holds only the *reusable* value, never
+  // a second copy of an item's own tare.
+  //
+  // `tare_grams` is canonical **grams**, exactly like `items.weight` (issue #25), so a
+  // preset stays comparable regardless of the unit the user reads it in.
+  //
+  // The app also ships a built-in catalogue of common spools and containers in code
+  // (`features/inventory/tare-presets.ts`). Those are NOT seeded here: they are reference
+  // values that improve with each release, and seeding them would freeze one release's
+  // numbers into every database and sync them between devices as if the user had measured
+  // them. This table is only ever what *this user* saved — which is also why it is a plain
+  // independent LWW leaf with no FK, like `wishlist`.
+  {
+    sql: `
+        CREATE TABLE tare_presets (
+          id         TEXT    PRIMARY KEY NOT NULL,
+          name       TEXT    NOT NULL,                  -- what the user calls it ("Flour jar")
+          brand      TEXT,                              -- optional maker, for spools bought by brand
+          kind       TEXT    NOT NULL DEFAULT 'OTHER',  -- SPOOL | JAR | BIN | TRAY | OTHER (app-enforced)
+          tare_grams REAL    NOT NULL CHECK (tare_grams >= 0),
+          note       TEXT,
+          created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
+          updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
+        ) STRICT;
+      `,
+  },
+  {
+    sql: updatedAtTrigger('tare_presets'),
+  },
+
   // --- Dead-stock reporting opt-in (issue #92) ------------------------------------
   // Flagging stock that has not moved for a long time is opt-in: an inventory where
   // everything is reported is noise. Both columns default to 'inherit', so an untouched

@@ -19,6 +19,7 @@ import {
 } from '@/components/foundry';
 import { DueDateIcon, EditIcon, ScanIcon, SupplierIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
+import { toGrams } from '@/lib/weight';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { OcrPrefillDialog, type OcrPrefill } from '@/features/inventory/ocr/OcrPrefillDialog';
@@ -58,6 +59,8 @@ import {
   GAUGE_TARE_HINT,
   GAUGE_UNIT_HINT,
 } from '../gauge-field-copy';
+import { gaugeTareWeightUnit, tareFieldValue } from '../tare-presets';
+import { TarePresetPickerButton } from './TarePresetPickerButton';
 import { useFieldSuggestions } from '../queries';
 import { useApplyScrape, useCreateItem, useCreateSerialisedItems, useCreateSupplierPart } from '../mutations';
 import { useAddItemImage } from '../media';
@@ -388,6 +391,10 @@ export function CreateItemDialog({
   });
 
   const trackingMode = watch('trackingMode');
+  // Watched (not read via getValues) so the picker appears/disappears as the unit is typed,
+  // and so the pre-fill it offers tracks whatever is currently in the tare box.
+  const tareWeightDraft = watch('tareWeight') ?? '';
+  const gaugeTareUnit = gaugeTareWeightUnit(watch('unitOfMeasure'));
   const lowStockPolicy = watch('lowStockPolicy') ?? 'default';
   const isUnlimited = watch('isUnlimited') ?? false;
 
@@ -1133,9 +1140,35 @@ export function CreateItemDialog({
           <FormField label="Full capacity" error={errors.grossCapacity?.message} hint={GAUGE_CAPACITY_HINT}>
             <Input type="number" min={0} step="any" {...register('grossCapacity')} />
           </FormField>
-          <FormField label="Tare (empty)" hint={GAUGE_TARE_HINT}>
-            <Input type="number" min={0} step="any" {...register('tareWeight')} />
-          </FormField>
+          {/* The picker is a *sibling* of the FormField, never a child — see the note in
+              GaugeConfigEditor: a second child silently drops FormField's error ARIA wiring. */}
+          <div>
+            <FormField label="Tare (empty)" hint={GAUGE_TARE_HINT}>
+              <Input type="number" min={0} step="any" {...register('tareWeight')} />
+            </FormField>
+            {/* Only offered when the gauge is actually measured by mass: the tare is carried
+                in the gauge's own unit, so a gram figure written into a gauge measured in
+                metres would be a meaningless number that merely looks plausible (issue #94). */}
+            {gaugeTareUnit ? (
+              <div className="mt-field-gap-compact">
+                <TarePresetPickerButton
+                  currentTareGrams={
+                    tareWeightDraft.trim() !== '' &&
+                    Number.isFinite(Number(tareWeightDraft)) &&
+                    Number(tareWeightDraft) >= 0
+                      ? toGrams(Number(tareWeightDraft), gaugeTareUnit)
+                      : null
+                  }
+                  onSelect={(grams) =>
+                    setValue('tareWeight', tareFieldValue(grams, gaugeTareUnit), {
+                      shouldDirty: true,
+                    })
+                  }
+                  data-testid="create-item-tare-preset"
+                />
+              </div>
+            ) : null}
+          </div>
           <FormField
             label="Current (optional)"
             hint="How full it is **right now**, in the unit above. Leave blank to start at *full capacity*."

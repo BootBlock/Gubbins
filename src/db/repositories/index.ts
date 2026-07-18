@@ -26,6 +26,7 @@ import { StorageRepository } from './StorageRepository';
 import { SuggestionRepository } from './SuggestionRepository';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { TagRepository } from './TagRepository';
+import { TarePresetRepository } from './TarePresetRepository';
 import { TombstoneRepository } from './tombstone';
 import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
@@ -52,6 +53,7 @@ export { AssetBookingRepository } from './AssetBookingRepository';
 export { SuggestionRepository, type SuggestionField } from './SuggestionRepository';
 export { SupplierPartRepository } from './SupplierPartRepository';
 export { WishlistRepository } from './WishlistRepository';
+export { TarePresetRepository } from './TarePresetRepository';
 export {
   TombstoneRepository,
   tombstoneStatement,
@@ -106,6 +108,7 @@ let supplierPartRepository: SupplierPartRepository | null = null;
 let suggestionRepository: SuggestionRepository | null = null;
 let tombstoneRepository: TombstoneRepository | null = null;
 let wishlistRepository: WishlistRepository | null = null;
+let tarePresetRepository: TarePresetRepository | null = null;
 
 /** Production write-gate: refuse growth-writes while storage is locked (§7.6.1). */
 const productionOptions: RepositoryOptions = {
@@ -205,4 +208,9 @@ export function getTombstoneRepository(): TombstoneRepository {
 export function getWishlistRepository(): WishlistRepository {
   wishlistRepository ??= new WishlistRepository(getDatabaseDriver(), productionOptions);
   return wishlistRepository;
+}
+
+export function getTarePresetRepository(): TarePresetRepository {
+  tarePresetRepository ??= new TarePresetRepository(getDatabaseDriver(), productionOptions);
+  return tarePresetRepository;
 }

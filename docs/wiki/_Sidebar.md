@@ -18,6 +18,7 @@
 - [[Custom fields & capabilities|Custom-Fields-and-Capabilities]]
 - [[Low stock & gauges|Low-Stock-and-Gauges]]
 - [[Counting by weight|Counting-by-Weight]]
+- [[Container weights|Container-Weights]]
 - [[Bulk edit & clone|Bulk-Edit-and-Clone]]
 - [[Inventory views|Inventory-Views]]
 
