@@ -166,6 +166,13 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
         object_id: `gubbins_${objectId}`,
         state_topic: topics.locationState(location.id),
         value_template: '{{ value_json.itemCount }}',
+        // The location's custom-field values ride along as entity attributes, read from the very
+        // same (retained) state topic — the idiomatic HA way to attach metadata to an MQTT sensor.
+        // An automation then reads e.g. `state_attr('sensor.gubbins_location_<id>', 'ha_entity')`
+        // instead of the user maintaining a parallel mapping table in YAML. Because the attributes
+        // travel on the state topic, a *value* changing needs no new discovery config.
+        json_attributes_topic: topics.locationState(location.id),
+        json_attributes_template: '{{ value_json.attributes | tojson }}',
         state_class: 'measurement',
         icon: 'mdi:map-marker',
         ...availability,

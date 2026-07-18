@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { projectInventoryState } from './state.ts';
 
@@ -36,8 +37,40 @@ describe('projectInventoryState', () => {
     const state = await projectInventoryState(hydrated.driver, { generatedAt: GENERATED_AT });
     const byId = new Map(state.locations.map((l) => [l.id, l]));
     expect(state.locations).toHaveLength(2);
-    expect(byId.get('loc-store')).toEqual({ id: 'loc-store', name: 'Store Room', itemCount: 2 });
+    expect(byId.get('loc-store')).toEqual({
+      id: 'loc-store',
+      name: 'Store Room',
+      itemCount: 2,
+      fieldValues: [],
+    });
     // The Workbench holds one active item; the soft-deleted one is not counted.
-    expect(byId.get('loc-bench')).toEqual({ id: 'loc-bench', name: 'Workbench', itemCount: 1 });
+    expect(byId.get('loc-bench')).toEqual({
+      id: 'loc-bench',
+      name: 'Workbench',
+      itemCount: 1,
+      fieldValues: [],
+    });
+  });
+
+  it("carries a location's custom-field values through the app's own repository seam", async () => {
+    // Seed synthetic field-dictionary values on the Store Room only, so the other location proves
+    // the "no custom fields" case still projects an empty list.
+    const categories = new CategoryRepository(hydrated.driver);
+    const entity = await categories.addField('cat-supplies', {
+      name: 'HA Entity',
+      fieldType: 'TEXT',
+    });
+    await categories.setLocationFieldValue('loc-store', {
+      defId: entity.defId,
+      value: 'light.store_room',
+      isInheritable: true,
+    });
+
+    const state = await projectInventoryState(hydrated.driver, { generatedAt: GENERATED_AT });
+    const byId = new Map(state.locations.map((l) => [l.id, l]));
+    expect(byId.get('loc-store')?.fieldValues).toEqual([
+      { name: 'HA Entity', fieldType: 'TEXT', value: 'light.store_room', isInheritable: true },
+    ]);
+    expect(byId.get('loc-bench')?.fieldValues).toEqual([]);
   });
 });

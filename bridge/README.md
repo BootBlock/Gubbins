@@ -889,7 +889,7 @@ SSE, webhooks, MQTT — so a lookup event reaches them exactly like any other; w
 there is nowhere to publish and nothing is sent. Enabling the SSE stream, webhooks or MQTT does
 **not** turn it on, and turning it on does **not** enable the SSE stream.
 
-Every resolved `GET /where` / `GET /api/v1/where` emits one event:
+Every `GET /where` / `GET /api/v1/where` that **matched at least one item** emits one event:
 
 ```json
 {
@@ -914,6 +914,12 @@ Every resolved `GET /where` / `GET /api/v1/where` emits one event:
 `itemIds` and `locationIds` are the **flattened, de-duplicated unions** across every match — trigger
 an automation on those rather than walking `matches`. Placements carry a **location id** as well as
 a name, so a consumer can act on the answer instead of string-matching a label.
+
+**A lookup that matched nothing emits no event.** There would be no location for an automation to
+act on, so the event could only ever no-op — and it keeps queries that found nothing, the most
+revealing thing a lookup could publish, off the wire entirely. The Home Assistant integration
+suppresses the same case, so the two paths always agree. A consumer can therefore assume
+`matches`, `itemIds` and `locationIds` are **non-empty** on every event it receives.
 
 **The `id` derivation.** The published contract is "the id is deterministic, so a sink can dedupe";
 a ledger event satisfies it with the ledger row's id, and there is no ledger row here. So a lookup
@@ -964,13 +970,84 @@ Everything hangs under the prefix (default `gubbins`, override with `GUBBINS_BRI
 | --- | --- | --- |
 | `gubbins/status` | yes | `online` / `offline` — the availability topic (also the MQTT Last-Will, so an ungraceful death flips it to `offline` automatically). |
 | `gubbins/summary/state` | yes | `{ itemsTotal, lowStockItems, outOfStockItems, locationsTotal, generatedAt }` — refreshed on every snapshot change. |
-| `gubbins/location/<id>/state` | yes | `{ id, name, itemCount }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). |
+| `gubbins/location/<id>/state` | yes | `{ id, name, itemCount, attributes }` — one per **user** location (the built-in `Unassigned` / `In Transit` buckets are omitted). See [location attributes](#location-attributes-your-custom-fields) below. |
 | `gubbins/event/<type>` | no | The EI-1 change event (the [same shape](#the-event-shape) the webhooks/SSE emit), e.g. `gubbins/event/item.low_stock`. Transient — a late subscriber doesn't replay history. |
+| `gubbins/locate` | **no** | The resolved answer to a "where is X?" lookup. Needs `GUBBINS_BRIDGE_LOOKUP_EVENTS=on` — see [the locate topic](#the-locate-topic-where-is-x-for-automations) below. Transient, deliberately. |
 
 State is **retained** so a subscriber (or Home Assistant) that connects after the bridge sees the
 last-known values immediately. The low-stock / out-of-stock counts use the exact same rule as the
 `item.low_stock` / `item.out_of_stock` events, so they never drift. Every published payload is
-synthetic-safe: it carries only inventory facts, never the token or the broker credentials.
+synthetic-safe: it carries only inventory facts — your inventory's own data, including the custom
+fields described next — and never the token or the broker credentials.
+
+### Location attributes (your custom fields)
+
+Each location's state payload carries an `attributes` object holding the **custom-field values that
+location holds** — the app's field dictionary. That is what lets an automation read "which lamp is
+above this shelf" straight off the location, instead of you keeping a parallel mapping table in your
+automation config:
+
+```json
+{
+  "id": "loc-bin-42",
+  "name": "Bin 42",
+  "itemCount": 7,
+  "attributes": { "ha_entity": "light.bin_42", "aisle": "B" }
+}
+```
+
+Field names are lower-cased with anything non-alphanumeric collapsed to `_`, so a field called
+`HA Entity` reads as `ha_entity`. A location with no custom fields publishes `"attributes": {}` — the
+key is always there, so a template never has to guard for it. Empty values are omitted, and if two
+field names normalise to the same key the first (by field name) wins.
+
+With [discovery](#home-assistant-mqtt-discovery-no-custom-component) on, these arrive as **entity
+attributes** on `sensor.gubbins_location_<id>`, so an automation reads them directly:
+
+```yaml
+# turn on whichever light the location's "HA Entity" field names
+service: light.turn_on
+target:
+  entity_id: "{{ state_attr('sensor.gubbins_location_bin_42', 'ha_entity') }}"
+```
+
+### The locate topic: "where is X?" for automations
+
+With **`GUBBINS_BRIDGE_LOOKUP_EVENTS=on`** (the same flag as
+[lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — there is no separate one), a
+resolved "where is X?" lookup is also published to a single fixed topic, `gubbins/locate`, with the
+answer flattened to the top level:
+
+```json
+{
+  "id": "lookup:0123456789abcdef:1751000000000",
+  "occurredAt": "2025-06-27T07:33:20.000Z",
+  "query": "solder",
+  "itemIds": ["item-solder"],
+  "locationIds": ["loc-bin-42"],
+  "matches": [
+    {
+      "itemId": "item-solder",
+      "itemName": "Solder 0.7mm",
+      "placements": [{ "locationId": "loc-bin-42", "locationName": "Bin 42", "quantity": 3 }]
+    }
+  ]
+}
+```
+
+Combined with the location attributes above, that is a complete "ask where it is, light that bin"
+path in **Node-RED or a plain MQTT trigger, with no `custom_components/gubbins` installed**: trigger
+on `gubbins/locate`, read `locationIds[0]`, and look up that location's `ha_entity` attribute.
+(The event also still appears on `gubbins/event/lookup.resolved` in its untouched event shape, for
+anything consuming the event stream generically.)
+
+> **⚠️ Transient, not retained — deliberately.** Unlike the state topics, `gubbins/locate` is
+> published **without** the retain flag, and never will be. A retained locate message would be
+> re-delivered to every client that connects later, so restarting Home Assistant at midnight would
+> light a bin over a question somebody asked at lunchtime. It answers a question asked *now*, so it
+> exists only for whoever is listening now.
+
+With the flag off — its default — nothing is ever published to `gubbins/locate`.
 
 ### Home Assistant MQTT discovery (no custom component)
 
@@ -982,7 +1059,8 @@ this is an *alternative* to the [custom component](../homeassistant/README.md); 
 under a single "Gubbins" device: `sensor.gubbins_items_total`, `sensor.gubbins_low_stock_items`,
 `sensor.gubbins_out_of_stock_items`, `sensor.gubbins_locations_total`, a
 `binary_sensor.gubbins_low_stock` (problem class, `on` when anything is low), and one
-`sensor.gubbins_location_<id>` per user location. The discovery layout is re-published whenever a
+`sensor.gubbins_location_<id>` per user location — each carrying that location's
+[custom fields as entity attributes](#location-attributes-your-custom-fields). The discovery layout is re-published whenever a
 location is added/removed/renamed and on every reconnect (so a broker that restarted without
 persistence re-learns it). Entity names are **device-relative** — Home Assistant prefixes the
 "Gubbins" device name itself, so they display as *Gubbins*, *Gubbins Low stock items*, *Gubbins
@@ -1153,10 +1231,10 @@ capability can change your stock (always via the app's own §7.3 sync merge — 
 | `ALLOW_WRITES` | [Limited stock writes](#limited-writes-opt-in) — `POST /api/v1/items/{id}/adjust-quantity` \| `/adjust-gauge` (JSON source only). | inbound (HTTP) | **Yes** — check-in/out & gauge adjust, round-tripped through the sync merge. | None new — reuses `GUBBINS_BRIDGE_TOKEN`. |
 | `ALLOW_PUSH` | [Snapshot push](#snapshot-push-opt-in) — `POST /api/v1/snapshot` (the PWA "push to bridge"; JSON source only). | inbound (HTTP) | Replaces the **whole** served snapshot atomically (no SQL). | None new — reuses the token. |
 | `EVENTS` | [SSE event stream](#events-webhooks--sse-opt-in) — `GET /api/v1/events`. | outbound (pull) | No — read-only change events. | None new — reuses the token. |
-| `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
+| `LOOKUP_EVENTS` | [Read-triggered lookup events](#lookup-events--read-triggered-opt-in-separate-flag) — one `lookup.resolved` per resolved "where is X?" lookup, published to whichever sinks you enabled; with MQTT on, also to the transient [`gubbins/locate`](#the-locate-topic-where-is-x-for-automations) topic. | outbound (push) | No — it is a read; nothing is written. | None new — but it publishes the **search text**, so it is deliberately **not** implied by `EVENTS`. |
 | `WEBHOOKS` | [Outbound signed webhooks](#events-webhooks--sse-opt-in) (also implies `EVENTS`). | outbound (push) | No — an event never mutates inventory. | Per-target HMAC signing secrets in the **git-ignored** `webhooks.json` / `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` / `.env` only. |
-| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
-| `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`). | outbound (push) | No. | None new (uses the MQTT connection above). |
+| `MQTT` | [Outbound MQTT publishing](#mqtt-publishing-opt-in) — state + events to your broker (a *client* dialling out; no inbound port). Location state includes that location's [custom-field values as attributes](#location-attributes-your-custom-fields). | outbound (push) | No — publishes read-only facts only. | Broker `…_MQTT_USERNAME` / `…_MQTT_PASSWORD` in `.env` only; **never logged**. |
+| `MQTT_DISCOVERY` | [Home Assistant MQTT discovery](#home-assistant-mqtt-discovery-no-custom-component) configs (sub-flag of `MQTT`), including the location attributes above. | outbound (push) | No. | None new (uses the MQTT connection above). |
 | `HA` | [Home Assistant reads](#home-assistant-reads-opt-in) — `GET /api/v1/scale/{entities,state}`, so "count by weight" can read a scale entity. | outbound (pull) | No — reads a weight; the resulting stock change is the user's own action in the app. | Home Assistant `…_HA_TOKEN` in `.env` only; **never logged, never sent to the app**. |
 | `MDNS` | [mDNS / zeroconf advertising](#mdns--zeroconf-discovery) so HA can auto-discover the bridge (auto-skipped on the loopback default). | LAN advertisement | No — announcement only. | **None** — the token is **never** advertised. |
 

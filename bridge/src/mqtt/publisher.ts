@@ -18,6 +18,7 @@
  */
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { BridgeEvent } from '../events/model.ts';
+import { isLookupEvent } from '../events/lookup.ts';
 import type { EventSink } from '../events/pipeline.ts';
 import {
   createMqttClient,
@@ -33,6 +34,7 @@ import {
   AVAILABILITY_OFFLINE,
   AVAILABILITY_ONLINE,
   eventPayload,
+  locatePayload,
   locationPayload,
   summaryPayload,
   topicsFor,
@@ -124,7 +126,10 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     const currentIds = new Set(state.locations.map((l) => l.id));
     for (const id of publishedLocationIds) {
       if (currentIds.has(id)) continue;
-      client.publish(topics.locationState(id), '', true);
+      // Retract the discovery config *before* blanking the state topic. The per-location sensor
+      // reads its attributes from that same state topic, so clearing the state first would hand
+      // Home Assistant an empty payload to run `json_attributes_template` over — an avoidable
+      // parse warning in the log for an entity that is about to disappear anyway.
       if (options.discovery) {
         client.publish(
           discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
@@ -132,6 +137,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
           true,
         );
       }
+      client.publish(topics.locationState(id), '', true);
     }
     publishedLocationIds = state.locations.map((l) => l.id);
   }
@@ -163,6 +169,14 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     deliver(events: readonly BridgeEvent[]): void {
       for (const event of events) {
         client.publish(topics.event(event.type), eventPayload(event), false);
+        // A resolved lookup ALSO goes to the dedicated locate topic: one fixed topic with the
+        // answer flattened to the top level, so a Node-RED flow or an MQTT trigger can act on it
+        // without the custom component. Never retained — a late subscriber must not re-light a bin
+        // over a question somebody asked yesterday. The event topic still carries it untouched for
+        // anything consuming the event stream generically.
+        if (isLookupEvent(event)) {
+          client.publish(topics.locate, locatePayload(event), false);
+        }
       }
     },
 

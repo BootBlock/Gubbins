@@ -157,6 +157,31 @@ describe('createLookupObserver — debounce', () => {
     return { events, deliver: (e) => void events.push(e) };
   }
 
+  it('emits nothing when the lookup matched nothing', () => {
+    const c = collector();
+    const t = clock();
+    const observer = createLookupObserver({ deliver: c.deliver, debounceMs: 3000, now: t.now });
+
+    // Nothing matched: there is no location for an automation to act on, and the Home Assistant
+    // intent handler suppresses this same case — the two paths must not disagree.
+    observer.onLookupResolved(result({ matches: [], query: 'flux capacitors' }));
+
+    expect(c.events).toHaveLength(0);
+  });
+
+  it('does not let a matchless lookup consume the debounce window', () => {
+    const c = collector();
+    const t = clock();
+    const observer = createLookupObserver({ deliver: c.deliver, debounceMs: 3000, now: t.now });
+
+    // A miss must not open a window that then swallows the real answer moments later.
+    observer.onLookupResolved(result({ matches: [] }));
+    t.advance(10);
+    observer.onLookupResolved(result());
+
+    expect(c.events).toHaveLength(1);
+  });
+
   it('emits once for repeated equivalent lookups inside the window', () => {
     const c = collector();
     const t = clock();

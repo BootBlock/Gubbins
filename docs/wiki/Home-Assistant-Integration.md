@@ -28,10 +28,17 @@ which includes a built-in, step-by-step setup guide.
 - **Light up where it is.** Each spoken lookup also raises an event in Home Assistant naming the
   item and the location it's in, so an automation can react — the classic example being to flash
   the light above the right bin while it reads the answer back. The same details come back from the
-  search action, for dashboards and scripts that don't involve voice.
+  search action, for dashboards and scripts that don't involve voice. If you'd rather not install
+  the custom integration at all, the bridge can publish the same answer to an MQTT topic instead,
+  which Home Assistant or Node-RED can trigger on. It's sent live and never replayed, so a lookup
+  can't light a bin hours after the fact.
 - **See stock as entities.** Via **MQTT discovery**, Gubbins can publish summary figures (like
   low/out-of-stock counts) that appear automatically as Home Assistant entities — ready for
   dashboards and automations.
+- **Keep the light mapping in Gubbins.** Each location entity also carries that location's own
+  [[custom fields|Custom-Fields-and-Capabilities]] as attributes. So you can record which light
+  sits above a shelf on the shelf itself, and have an automation read it from there — instead of
+  keeping a separate list of locations and lights in your Home Assistant configuration.
 - **Automate on changes.** Because the bridge emits [[change events|Webhooks-MQTT-and-iCal]], you
   can trigger Home Assistant automations from inventory changes (e.g. notify when something runs
   low).

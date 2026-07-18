@@ -79,6 +79,16 @@ export interface LookupEvent extends BridgeEventBase<LookupEventData> {
 }
 
 /**
+ * Is this event the read-triggered lookup event? A hand-written predicate rather than a plain
+ * `event.type === LOOKUP_RESOLVED_TYPE` narrowing, because the ledger half of the union types its
+ * `type` as an open `string` (it is derived from the ledger action), so TypeScript cannot discriminate
+ * the union on it. The dotted type is unique to this event, which is what makes the cast sound.
+ */
+export function isLookupEvent(event: { readonly type: string }): event is LookupEvent {
+  return event.type === LOOKUP_RESOLVED_TYPE;
+}
+
+/**
  * The **id derivation** for a lookup event (documented in `bridge/README.md` too, because it
  * departs from the ledger-derived contract):
  *
@@ -217,6 +227,13 @@ export function createLookupObserver(options: LookupObserverOptions): LookupObse
   return {
     onLookupResolved(result: WhereIsResult): void {
       try {
+        // A lookup that matched nothing is not an event. There is no location to act on, so a
+        // locate automation triggering on it could only no-op; the Home Assistant intent handler
+        // suppresses the same case for the same reason, and emitting here would make the two paths
+        // disagree. It also keeps queries that found nothing — the most revealing thing a lookup
+        // can publish — off the wire entirely.
+        if (result.matches.length === 0) return;
+
         const at = now();
         // Shape first: the digest is a function of the *resolved answer*, not just the query, so
         // the same words resolving somewhere new are not mistaken for a retry.

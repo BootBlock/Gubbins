@@ -81,6 +81,21 @@ If a location stops offering a field (you untick the box, clear the value, or mo
 elsewhere), items that were inheriting fall back to the category default. Your choice to inherit
 is remembered, so restoring the value on the location restores the inheritance too.
 
+### Reading fields from other systems
+
+If you run the [[bridge|Bridge-Overview]], custom-field values can be read by whatever you
+connect to it — inherited values included, resolved exactly as they appear in the app. That makes
+a custom field a good place to record something another system needs to know: which light sits
+above a shelf, which printer serves a room, a supplier's reference for a part.
+
+Values are only sent when the connecting system asks for them, so ordinary requests stay small.
+Location fields also travel as attributes on that location's
+[[Home Assistant entity|Home-Assistant-Integration]], so an automation can read them directly.
+
+> **ℹ️ Note**
+> This is read-only — nothing connecting to the bridge can change a field's value. Editing stays
+> in the app.
+
 ### Adding a field note
 
 When you define a custom field you can give it an optional **Description** — a short note about

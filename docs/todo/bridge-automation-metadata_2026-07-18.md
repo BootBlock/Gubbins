@@ -1,6 +1,8 @@
 # Bridge automation & item metadata — grounding research + backlog (living plan)
 
-> **Status:** 🟢 ACTIVE — open backlog; research complete, no tasks shipped yet. `A1` next.
+> **Status:** 🟢 ACTIVE — living backlog; `A1`–`A4` and `B1` all shipped (the "smart bin" chain is
+> complete end-to-end). Stays open per the issue: further automation findings and task IDs get
+> appended here as the surface grows.
 
 Grounding research into whether the [Home Assistant bridge](../../bridge/README.md) can usefully
 grow features that help **automation** — and, if so, which. Driven by the "smart bin" scenario: a
@@ -22,7 +24,7 @@ The LED scenario needs a chain of four links. Gubbins already has three of them:
 | A stable identifier per storage location | ✅ `LocationDto.id`; MQTT already publishes `gubbins/location/<id>/state` and a discovery-created `sensor.gubbins_location_<id>` per user location. |
 | Somewhere to record "this location's LED is `light.bin_42`" | ✅ **The substrate exists** — the field dictionary (`field_defs` + `location_field_values` / `item_field_values`, with the effective-value VIEW). It is simply **not exposed over the bridge**. |
 | A way for Home Assistant to act on a location | ✅ Entirely HA's side — `light.turn_on` against whatever entity the user maps. Not our problem to solve. |
-| **A signal that a lookup just resolved to a location** | ❌ **Missing. This is the blocker.** |
+| **A signal that a lookup just resolved to a location** | ✅ **Shipped as `A2`/`A3`/`A4`.** This was the blocker when the research below was written — the sections that follow describe the gap as it stood then. |
 
 So the answer to the issue's question is: the bridge does **not** need to learn about LEDs, lights,
 or any physical device. It needs to (a) **emit a lookup as an event** and (b) **stop hiding the
@@ -64,7 +66,7 @@ so far.
 
 ## Tasks
 
-### A1 — Expose custom-field values over the read API
+### A1 — Expose custom-field values over the read API — ✅ shipped
 
 **The issue's explicit ask.** `field_defs` / `item_field_values` / `location_field_values` are
 already in the v1 baseline schema, already synced, already editable in the app — and completely
@@ -82,7 +84,7 @@ This alone makes `ha_entity: light.bin_42` on a location a thing a user can reco
 an integration can read — with **no new schema, no new UI, and no HA-specific concept in the data
 model**. Mirror it into the MCP item tools so agent callers see the same shape.
 
-### A2 — A lookup event (`lookup.resolved`)
+### A2 — A lookup event (`lookup.resolved`) — ✅ shipped
 
 Give `whereIs` an event emission: when a lookup resolves, publish one event carrying the query, the
 matched item ids/names, and — critically — the **resolved location ids** (not just names). Route it
@@ -101,7 +103,7 @@ Design notes:
 - Rate-limit / debounce it: voice assistants retry, and a locate automation firing three times
   because the user rephrased is a poor experience.
 
-### A3 — Fire a Home Assistant bus event from the intent handler
+### A3 — Fire a Home Assistant bus event from the intent handler — ✅ shipped
 
 With `A2` shipped, make the custom component fire `gubbins_item_located` on the HA event bus from
 `GubbinsWhereIsIntent` (in addition to speaking the sentence), carrying the matched item and
@@ -114,14 +116,14 @@ exists that doesn't involve voice at all.
 Ship a worked example in the integration README: an automation that maps location id → light
 entity and flashes it for N seconds. Keep the sample data synthetic.
 
-### A4 — MQTT locate topic
+### A4 — MQTT locate topic — ✅ shipped
 
 For the no-custom-component path (`GUBBINS_BRIDGE_MQTT_DISCOVERY=on`), publish the `A2` lookup
 event to a transient `gubbins/locate` topic. Node-RED and MQTT-trigger automations then get the
 same capability without `custom_components/gubbins` installed. Transient, not retained — a late
 subscriber must not re-light a bin from a lookup that happened yesterday.
 
-### B1 — Location metadata as MQTT/discovery attributes
+### B1 — Location metadata as MQTT/discovery attributes — ✅ shipped
 
 Once `A1` exposes location custom fields, surface them as attributes on the per-location MQTT state
 payload and the discovery-created `sensor.gubbins_location_<id>`. That lets an HA template read the

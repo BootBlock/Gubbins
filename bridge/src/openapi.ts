@@ -1376,12 +1376,67 @@ export const openapiDocument: JsonValue = {
           },
         },
       },
+      LookupEventData: {
+        type: 'object',
+        required: ['query', 'itemIds', 'locationIds', 'matches'],
+        description:
+          'The payload of a `lookup.resolved` event. `itemIds` and `locationIds` are the flattened, ' +
+          'de-duplicated unions across every match, so an automation can trigger on them without ' +
+          'walking `matches`.',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The query as asked (trimmed), verbatim.',
+            example: 'M3 screws',
+          },
+          itemIds: {
+            type: 'array',
+            description: 'Every matched item id, in match order, de-duplicated.',
+            items: { type: 'string' },
+            example: ['itm-m3-bolt'],
+          },
+          locationIds: {
+            type: 'array',
+            description: 'Every resolved location id across all matches, in encounter order, de-duplicated.',
+            items: { type: 'string' },
+            example: ['loc-drawer-a'],
+          },
+          matches: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['itemId', 'itemName', 'placements'],
+              properties: {
+                itemId: { type: 'string', example: 'itm-m3-bolt' },
+                itemName: { type: 'string', example: 'M3 × 10mm bolt' },
+                placements: {
+                  type: 'array',
+                  description: 'Where this item’s stock sits, busiest location first.',
+                  items: {
+                    type: 'object',
+                    required: ['locationId', 'locationName', 'quantity'],
+                    properties: {
+                      locationId: { type: 'string', example: 'loc-drawer-a' },
+                      locationName: { type: 'string', example: 'Drawer A' },
+                      quantity: { type: 'number', example: 120 },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       BridgeEvent: {
         type: 'object',
         required: ['id', 'type', 'occurredAt', 'data'],
         description:
           'One event delivered over the SSE stream and to outbound webhooks. `id` is deterministic ' +
-          '(ledger-row-derived) so a consumer can dedupe; `type` is a stable dotted name.',
+          'so a consumer can dedupe; `type` is a stable dotted name. Almost every event is derived ' +
+          'from a new row in the history ledger — an inventory *change* — and takes its id from that ' +
+          'row. The exception is `lookup.resolved`, which is **read**-triggered (someone asked where ' +
+          'an item is, and nothing changed): it has no ledger row, so its id is derived from the ' +
+          'resolved query instead, and it is only emitted when its own opt-in flag is enabled.',
         properties: {
           id: { type: 'string', example: 'hist-0007' },
           type: {
@@ -1404,16 +1459,27 @@ export const openapiDocument: JsonValue = {
               'item.supplier_data_applied',
               'item.changed',
               'events.truncated',
+              'lookup.resolved',
             ],
             example: 'item.low_stock',
           },
           occurredAt: {
             type: 'string',
             format: 'date-time',
-            description: 'The ledger row’s created_at as ISO-8601.',
+            description:
+              'When the event occurred, as ISO-8601 — the ledger row’s created_at for a ' +
+              'ledger-derived event, or the moment the lookup resolved for `lookup.resolved`.',
             example: '2025-06-27T06:13:20.000Z',
           },
-          data: { $ref: '#/components/schemas/BridgeEventData' },
+          data: {
+            description:
+              'The payload, whose shape follows `type`: `LookupEventData` for `lookup.resolved`, ' +
+              '`BridgeEventData` for every ledger-derived event.',
+            oneOf: [
+              { $ref: '#/components/schemas/BridgeEventData' },
+              { $ref: '#/components/schemas/LookupEventData' },
+            ],
+          },
         },
       },
     },

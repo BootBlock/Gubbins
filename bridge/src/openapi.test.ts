@@ -61,6 +61,24 @@ describe('openapiDocument', () => {
     expect(doc.components.schemas.ApiIndex.properties.streamable).toBeDefined();
   });
 
+  it('documents the read-triggered lookup.resolved event and its payload (#62)', () => {
+    const bridgeEvent = doc.components.schemas.BridgeEvent;
+    // The read-triggered event is a documented member of the type enum...
+    expect(bridgeEvent.properties.type.enum).toContain('lookup.resolved');
+    // ...and the envelope's `data` admits its distinct shape alongside the ledger payload.
+    const refs = bridgeEvent.properties.data.oneOf.map((entry: { $ref: string }) => entry.$ref);
+    expect(refs).toContain('#/components/schemas/BridgeEventData');
+    expect(refs).toContain('#/components/schemas/LookupEventData');
+    // The payload carries the flattened unions an automation triggers on.
+    const lookup = doc.components.schemas.LookupEventData;
+    expect(lookup.required).toEqual(['query', 'itemIds', 'locationIds', 'matches']);
+    // A placement must carry the location *id*, not just its name — that is what makes it actionable.
+    const placement = lookup.properties.matches.items.properties.placements.items;
+    expect(placement.required).toContain('locationId');
+    // The departure from "every event derives from the ledger" is called out for consumers.
+    expect(bridgeEvent.description).toContain('read');
+  });
+
   it('documents the syndication feeds and the Prometheus /metrics endpoint (EI-6)', () => {
     const paths = doc.paths as Record<string, any>;
     // The three feed formats, each with its own media type, tagged `feeds`.
