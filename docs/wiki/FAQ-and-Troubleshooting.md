@@ -81,6 +81,17 @@ That packaging had a **marketing QR code** (a link) as well as its barcode, and 
 up the QR. Gubbins won't save a link as a barcode — it offers to open it instead. Aim at the
 product's own barcode (the striped one) to record that.
 
+**Which version am I running?**
+It's the first thing on the **About** screen — **Settings → App → About Gubbins**. See
+[[About & diagnostics|About-and-Diagnostics]].
+
+**How do I report a problem?**
+Open **Settings → App → About Gubbins**, expand **Diagnostics** and press **Refresh**, then press
+**Open issue on GitHub** — the report arrives with your version, browser and device details
+already filled in, so there's no back-and-forth working out what you're running. Nothing is
+gathered until you press **Refresh**, and your inventory is never included. See
+[[About & diagnostics|About-and-Diagnostics]].
+
 **After an update, Gubbins asks me to reset or purge my data. Why?**
 Gubbins is still in early, rapid development (before version **1.0**). As new features land, the
 shape of the local database changes — and while it's this young, those changes aren't migrated
@@ -99,6 +110,8 @@ JSON export) and then reset to continue. Once Gubbins reaches 1.0, updates will 
 
 ## Related pages
 
+- **[[About & diagnostics|About-and-Diagnostics]]** — your version, and the details to attach when
+  reporting a problem.
 - **[[Privacy & security|Privacy-and-Security]]** — the privacy details in full.
 - **[[Backup & restore|Backup-and-Restore]]** and **[[Storage triage|Storage-Triage]]** — keeping
   data safe and lean.
