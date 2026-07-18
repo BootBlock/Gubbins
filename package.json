@@ -1,8 +1,8 @@
 {
   "name": "gubbins",
   "private": true,
-  "version": "0.1.1",
-  "releaseDate": "2026-07-12",
+  "version": "1.2.0",
+  "releaseDate": "2026-07-19",
   "schemaVersion": 5,
   "type": "module",
   "description": "Gubbins — a local-first, offline-capable PWA for tracking electronics, 3D-printing supplies, tools, and general inventory.",
