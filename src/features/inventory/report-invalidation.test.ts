@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { repoPath } from '@/test/repo-path';
 import { QueryClient } from '@tanstack/react-query';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
@@ -28,7 +29,9 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const SRC = join(process.cwd(), 'src');
+// Resolved from this file's own location, not the cwd: a cwd-relative guard run from another
+// checkout would sweep *its* sources and pass without ever seeing the change under test.
+const SRC = repoPath(import.meta.dirname, 'src');
 
 describe('invalidateItems', () => {
   it('invalidates the item prefix and the reports prefix together', async () => {
