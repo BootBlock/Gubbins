@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NAV_DESTINATIONS } from '@/components/nav/nav-destinations';
 import { DASHBOARD_WIDGETS } from '@/features/dashboard/widgets';
+import { HOTKEY_ACTIONS } from '@/features/hotkeys/hotkeys';
 import { EN_CATALOG } from './messages';
 
 /**
@@ -22,6 +23,12 @@ describe('catalog ↔ registry drift', () => {
   it('every dashboard widget title equals its title key in the English catalog', () => {
     for (const widget of DASHBOARD_WIDGETS) {
       expect(EN_CATALOG[widget.titleKey], `widget ${widget.id}`).toBe(widget.title);
+    }
+  });
+
+  it('every hotkey action label equals its message key in the English catalog', () => {
+    for (const action of HOTKEY_ACTIONS) {
+      expect(EN_CATALOG[action.messageKey], `hotkey ${action.id}`).toBe(action.label);
     }
   });
 });

@@ -6,6 +6,7 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
 import { FirstRunModules } from '@/features/modules/FirstRunModules';
 import { SettingsDialogHost } from '@/features/settings/SettingsDialogHost';
+import { useGlobalHotkeys } from '@/features/hotkeys/useGlobalHotkeys';
 import { cn } from '@/lib/utils';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
@@ -16,7 +17,8 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
  * routed content. The {@link SkipLink} is the first focusable element on every route;
  * each screen carries the `#main-content` landmark it targets (spec §3 — WCAG 2.4.1).
  * Settings lives here (rather than a screen) so it can open over any route while still
- * resolving its links to Modules / About.
+ * resolving its links to Modules / About. The global keyboard shortcuts (issue #32) are bound
+ * here for the same reason: this is the one component mounted on every route.
  *
  * The PWA "new version ready" update prompt is NOT here — this layout only mounts once
  * <BootGate> reaches `ready`, but service-worker registration must happen regardless of
@@ -33,6 +35,9 @@ function RootLayout() {
   // Full-width opt-out (issue #14) so they widen together rather than the banners staying in a
   // narrow centred column while the page fills the viewport.
   const fullWidth = usePreferencesStore((s) => s.fullWidth);
+  // The app's single document-level keyboard-shortcut listener (issue #32) — here because the
+  // root layout is the one component mounted on every route, and the shortcuts are global.
+  useGlobalHotkeys();
   // `isolate` makes this element the stacking context the fixed background-effects canvas belongs
   // to, so its `-z-10` paints *above* this element's opaque `bg-background` (a stacking context
   // paints negative-z-index children after its own background) yet still below all content. Without

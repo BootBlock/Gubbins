@@ -20,6 +20,7 @@ import {
   DataDensityIcon,
   DatasheetIcon,
   HomeIcon,
+  HotkeyIcon,
   InfoIcon,
   InstallIcon,
   KioskIcon,
@@ -45,6 +46,7 @@ import { ReminderSettings } from '@/features/alerts/ReminderSettings';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
 import { CARD_BADGE_OPTIONS } from '@/features/inventory/card-badge';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
+import { HotkeySettings } from '@/features/hotkeys/HotkeySettings';
 import { DatabaseMaintenance } from '@/features/maintenance';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
@@ -565,7 +567,7 @@ export default function SettingsDialog({
               description="Show a command palette for jumping straight to any item by name — opened from the dashboard or with Ctrl/⌘ / anywhere."
               hint={
                 'A fast command palette for finding an item by name and jumping straight to it, without opening the full Inventory screen.\n\n' +
-                'Open it from the dashboard search box, or with **Ctrl / ⌘ + /** from anywhere. Type `>` to switch it into *jump to a screen* mode. Turning this off just hides the dashboard entry point — the keyboard shortcut still works.'
+                'Open it from the dashboard search box, or with **Ctrl / ⌘ + /** from anywhere. Type `>` to switch it into *jump to a screen* mode. Turning this off removes the palette entirely — both the dashboard entry point and its keyboard shortcut, which also disappears from the Keyboard shortcuts list.'
               }
             >
               <Select
@@ -1176,6 +1178,14 @@ export default function SettingsDialog({
           </SettingsSection>
         </>
       ),
+    },
+    {
+      id: 'hotkeys',
+      label: t('hotkeys.section'),
+      icon: <HotkeyIcon />,
+      // The whole tab is one self-contained feature (issue #32) — the rebinding recorder needs
+      // its own state, so it lives beside the hotkey seam rather than inline here.
+      content: <HotkeySettings />,
     },
     {
       id: 'notifications',
