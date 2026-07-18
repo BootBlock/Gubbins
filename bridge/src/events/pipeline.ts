@@ -18,8 +18,22 @@ import type { BridgeEvent, EventCursor } from './model.ts';
 
 /** A destination for delivered events (a webhook queue, the SSE hub, …). */
 export interface EventSink {
-  /** Hand a generation's events to this sink. Must not throw; must return promptly. */
-  deliver(events: readonly BridgeEvent[]): void;
+  /**
+   * Hand a generation's events to this sink. Must not throw; must return promptly.
+   *
+   * `driver` is the just-swapped generation's driver, passed so a sink that needs to *read* while
+   * projecting an event can do so — the webhook deliverer resolves each event's location path,
+   * category and tags this way (`webhook-view.ts`). It is optional because most sinks (SSE, MQTT)
+   * serialise the envelope and need nothing else, and because the read-triggered `lookup.resolved`
+   * path has no generation behind it.
+   *
+   * A sink may return a promise; the pipeline **awaits** it. That is what keeps a reading sink
+   * safe: the watcher does not let the next reload close the driver until `onGeneration` resolves,
+   * so awaiting here is the difference between reading a live driver and racing a closed one. Work
+   * that needs no driver (the actual HTTP delivery) should be queued rather than awaited, so a slow
+   * receiver cannot hold up the next hydration.
+   */
+  deliver(events: readonly BridgeEvent[], driver?: IDatabaseDriver): void | Promise<void>;
 }
 
 export interface EventPipelineOptions extends GenerationOptions {
@@ -45,7 +59,10 @@ export function createEventPipeline(options: EventPipelineOptions): EventPipelin
         if (events.length === 0) return;
         for (const sink of options.sinks) {
           try {
-            sink.deliver(events);
+            // Awaited so a sink that reads the driver while projecting events (the webhook
+            // deliverer) finishes before the watcher is free to close it. A sink returning void
+            // costs nothing here.
+            await sink.deliver(events, driver);
           } catch (err) {
             report(options, err);
           }

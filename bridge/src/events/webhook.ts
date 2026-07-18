@@ -1,21 +1,63 @@
 /**
- * Outbound webhook delivery (EI-1) — opt-in (`GUBBINS_BRIDGE_WEBHOOKS=on`), off by default.
+ * Outbound webhook delivery — opt-in (`GUBBINS_BRIDGE_WEBHOOKS=on`), off by default.
  *
- * For each configured target, every matching event is POSTed as a JSON body carrying an
- * `X-Gubbins-Signature: sha256=<hex>` HMAC-SHA256 of the **raw body** (the GitHub/Stripe
- * pattern) plus a unique `X-Gubbins-Delivery` id, so a receiver can verify authenticity and
- * dedupe. Delivery is at-least-once with bounded exponential backoff, and each target has its
- * own FIFO queue + failure circuit, so one dead URL can neither stall the others nor retry
- * forever. Zero dependencies — `node:crypto` + the global `fetch`.
+ * Originally EI-1 (one operator-configured target, always a signed `POST` of the event envelope).
+ * The webhooks plan `W5` extends it into the delivery half of issue #87: the *app* configures
+ * subscriptions and the **bridge** is the sole deliverer (see `docs/todo/webhooks_2026-07-18.md`
+ * §1, §7). The retry/backoff/circuit/queue machinery below is EI-1's, unchanged in behaviour —
+ * what grew is the target model and the request builder.
  *
- * Secrets live only in the target config the operator supplies (a git-ignored
- * `bridge/webhooks.json` / an env var); nothing here is ever logged.
+ * ## What a delivery now involves
+ *
+ * A target may specify its own HTTP **method** (the issue explicitly asks for more than `POST`),
+ * extra static **headers**, a payload **template** or preset, a declarative **filter**, and it may
+ * be **unsigned** (the EI-1 target required a secret). So per (event × target):
+ *
+ *   1. The event is projected to a closed `WebhookEventView` (`webhook-view.ts`) — the allow-list
+ *      the `W3` modules read.
+ *   2. `subscriptionMatches` decides delivery: enabled, then event type, then filter. One rule, in
+ *      `src/`, shared with the app's `W7` preview so the two can never disagree.
+ *   3. `resolveWebhookPayload` decides the body: the default envelope (the event serialised
+ *      **unchanged**, so every EI-1 receiver keeps working byte-for-byte), a preset, or a rendered
+ *      template.
+ *   4. The **SSRF guard** (`webhook-ssrf.ts`, §6.2) decides whether the destination may be reached
+ *      at all. This is the feature's primary security control, so it sits in the request path
+ *      rather than at config time — a subscription's URL arrives over sync and is never trusted.
+ *   5. `GET` flattens the payload into query parameters and sends **no body** — and therefore
+ *      carries **no HMAC signature**, since the signature signs a body. That is a real limitation
+ *      of the method, not an oversight.
+ *   6. The outcome is recorded in the bridge-side delivery log (`webhook-log.ts`), which is the
+ *      only way the app can ever see what happened (§3.1).
+ *
+ * ## Secrets and logging
+ *
+ * A secret reaches this module already resolved (`webhook-targets.ts` turns a `secret_ref` into a
+ * value, or drops the target). Nothing here logs a secret, a signature, a header, or a query
+ * string — diagnostics use `redactUrl` (origin + path), and a `GET` delivery's query carries
+ * payload data, which is exactly why it is dropped.
+ *
+ * Zero dependencies — `node:crypto` + the global `fetch`.
  */
 import { createHmac, randomUUID } from 'node:crypto';
+import type { IDatabaseDriver } from '@/db/rpc/driver';
+import type { WebhookEventView } from '@/features/webhooks/event-view.ts';
+import { subscriptionMatches } from '@/features/webhooks/matcher.ts';
+import { resolveWebhookPayload, webhookQueryParams } from '@/features/webhooks/template.ts';
 import type { BridgeEvent } from './model.ts';
 import type { EventSink } from './pipeline.ts';
+import { buildWebhookEventView, createWebhookViewContext } from './webhook-view.ts';
+import { configTargetToDeliveryTarget, type WebhookDeliveryTarget } from './webhook-targets.ts';
+import { checkWebhookDestination, type WebhookHostResolver, type WebhookSsrfPolicy } from './webhook-ssrf.ts';
+import type { WebhookDeliveryLog, WebhookDeliveryOutcome } from './webhook-log.ts';
 
-/** One webhook destination: where to POST, the signing secret, and an optional type filter. */
+/**
+ * One **operator-configured** webhook destination, from the git-ignored `webhooks.json` /
+ * `GUBBINS_BRIDGE_WEBHOOKS_TARGETS`.
+ *
+ * Deliberately unchanged from EI-1 — this is a committed config contract, and an operator's
+ * existing file must keep working. The richer per-subscription model is
+ * {@link WebhookDeliveryTarget}; `configTargetToDeliveryTarget` adapts this shape into it.
+ */
 export interface WebhookTarget {
   /** Absolute http(s) URL to POST to. */
   readonly url: string;
@@ -46,14 +88,38 @@ export const DEFAULT_CIRCUIT_COOLDOWN_MS = 60_000;
 /** Hard cap on a single target's pending queue; excess is dropped (logged) rather than unbounded. */
 export const DEFAULT_MAX_QUEUE = 1_000;
 
-/** A minimal fetch shape so tests can inject a fake without pulling in DOM lib types. */
+/**
+ * A minimal fetch shape so tests can inject a fake without pulling in DOM lib types.
+ *
+ * `body` is **optional**: a `GET` delivery carries its payload in the query string and sends none.
+ * The response's `body` is likewise optional — a receiver's error text is recorded (truncated) in
+ * the delivery log when available, and its absence is not a failure.
+ */
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; status: number }>;
+  init: { method: string; headers: Record<string, string>; body?: string },
+) => Promise<{ ok: boolean; status: number; body?: string }>;
+
+/**
+ * Resolve the current target list. Called once per event batch, so a subscription added in the app
+ * and synced to the bridge becomes live on the next generation without a restart.
+ *
+ * `driver` is the just-swapped generation's driver, absent for a batch with no generation behind it
+ * (the read-triggered `lookup.resolved` path).
+ */
+export type WebhookTargetResolver = (driver?: IDatabaseDriver) => Promise<readonly WebhookDeliveryTarget[]>;
 
 export interface WebhookDelivererOptions {
-  readonly targets: readonly WebhookTarget[];
+  /**
+   * Operator-configured targets (the EI-1 shape). Merged with whatever {@link resolveTargets}
+   * returns; supply either, both, or neither.
+   */
+  readonly targets?: readonly WebhookTarget[];
+  /**
+   * Dynamic target source — in practice the app's `webhooks` table, read from the hydrated DB.
+   * Absent means the static {@link targets} are the whole list.
+   */
+  readonly resolveTargets?: WebhookTargetResolver;
   /** Injectable transport (defaults to the global `fetch`). */
   readonly fetchImpl?: FetchLike;
   /** Injectable delay (defaults to a real `setTimeout` sleep). */
@@ -70,6 +136,15 @@ export interface WebhookDelivererOptions {
   readonly now?: () => number;
   /** Optional log sink for delivery diagnostics (defaults to `console.warn`). Never receives secrets. */
   readonly log?: (message: string) => void;
+  /**
+   * The SSRF policy (§6.2). Defaults to the safe posture — private/loopback destinations refused —
+   * so a caller that forgets to pass one gets the guard, not a hole.
+   */
+  readonly ssrfPolicy?: WebhookSsrfPolicy;
+  /** Injectable DNS resolver for the SSRF guard, so tests never touch the network. */
+  readonly hostResolver?: WebhookHostResolver;
+  /** The bridge-side delivery log the `/api/v1/webhooks/deliveries` endpoint reads. */
+  readonly deliveryLog?: WebhookDeliveryLog;
 }
 
 export interface WebhookDeliverer extends EventSink {
@@ -132,7 +207,76 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Create the deliverer. Each target gets its own ordered queue + circuit; targets never block each other. */
+/**
+ * The concrete HTTP request a delivery will issue — built purely, so it is directly testable and
+ * so "what goes on the wire?" has one answer rather than being smeared through the retry loop.
+ */
+export interface WebhookRequestPlan {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Record<string, string>;
+  /** Absent for `GET` (whose payload rides the query string). */
+  readonly body?: string;
+}
+
+/**
+ * Build the request for one (target × event).
+ *
+ * Header precedence is deliberate and one-directional: the subscription's static headers go on
+ * **first**, then the deliverer's own (`content-type`, the `X-Gubbins-*` family) overwrite them.
+ * A subscription therefore cannot forge its own signature or delivery id even if the header
+ * sanitiser in `webhook-targets.ts` were bypassed — two independent guards on the same property,
+ * because it is the one that matters.
+ */
+export function buildWebhookRequest(
+  target: WebhookDeliveryTarget,
+  event: BridgeEvent,
+  view: WebhookEventView,
+  deliveryId: string,
+): WebhookRequestPlan {
+  const payload = resolveWebhookPayload(target.template, view);
+  const headers: Record<string, string> = { ...(target.headers ?? {}) };
+
+  if (target.method === 'GET') {
+    // No body, so no signature: an HMAC signs a body, and there isn't one. The UI says so (§5.3).
+    const url = new URL(target.url);
+    for (const [name, value] of webhookQueryParams(payload, view)) {
+      url.searchParams.set(name, value);
+    }
+    headers[DELIVERY_HEADER] = deliveryId;
+    headers[EVENT_TYPE_HEADER] = event.type;
+    return { url: url.href, method: 'GET', headers };
+  }
+
+  // `envelope` sends the original event object unchanged — the EI-1 contract, byte-for-byte.
+  const body =
+    payload.kind === 'envelope'
+      ? JSON.stringify(event)
+      : payload.kind === 'json'
+        ? JSON.stringify(payload.body)
+        : payload.body;
+
+  headers['content-type'] =
+    payload.kind === 'text' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8';
+  if (target.secret !== null) headers[SIGNATURE_HEADER] = signBody(target.secret, body);
+  headers[DELIVERY_HEADER] = deliveryId;
+  headers[EVENT_TYPE_HEADER] = event.type;
+
+  return { url: target.url, method: target.method, headers, body };
+}
+
+/** One queued unit of work: a matched (target × event) pair with its already-built view. */
+interface WebhookJob {
+  readonly target: WebhookDeliveryTarget;
+  readonly event: BridgeEvent;
+  readonly view: WebhookEventView;
+}
+
+/**
+ * Create the deliverer. Each target gets its own ordered queue + circuit; targets never block each
+ * other, and a target's circuit state survives across generations (it is keyed by target id, not
+ * rebuilt when the subscription list is re-read).
+ */
 export function createWebhookDeliverer(options: WebhookDelivererOptions): WebhookDeliverer {
   const fetchImpl = options.fetchImpl ?? defaultFetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -145,12 +289,29 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
   const circuitThreshold = Math.max(1, options.circuitThreshold ?? DEFAULT_CIRCUIT_THRESHOLD);
   const cooldown = Math.max(0, options.circuitCooldownMs ?? DEFAULT_CIRCUIT_COOLDOWN_MS);
   const maxQueue = Math.max(1, options.maxQueue ?? DEFAULT_MAX_QUEUE);
+  // Default to the guarded posture: a caller that omits the policy gets the protection, not a hole.
+  const ssrfPolicy = options.ssrfPolicy ?? { allowPrivate: false };
+  const deliveryLog = options.deliveryLog;
 
-  const workers = options.targets.map((target) => createTargetWorker(target));
+  // Adapted once, through the same seam `webhook-targets.ts` owns — there is no import cycle to
+  // dodge, because that module's import of this one is type-only and therefore erased at runtime.
+  const staticTargets = (options.targets ?? []).map(configTargetToDeliveryTarget);
+  const workers = new Map<string, TargetWorkerShape>();
+  /** Serialises the async intake so `whenIdle` can wait for enqueueing as well as draining. */
+  let intake: Promise<void> = Promise.resolve();
+
+  function workerFor(targetId: string): TargetWorkerShape {
+    let worker = workers.get(targetId);
+    if (worker === undefined) {
+      worker = createTargetWorker();
+      workers.set(targetId, worker);
+    }
+    return worker;
+  }
 
   /** One target's ordered queue + retry loop + failure circuit. */
-  function createTargetWorker(target: WebhookTarget): TargetWorkerShape {
-    const queue: BridgeEvent[] = [];
+  function createTargetWorker(): TargetWorkerShape {
+    const queue: WebhookJob[] = [];
     let running = false;
     let consecutiveFailures = 0;
     let circuitOpenUntil = 0;
@@ -160,18 +321,22 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
       running = true;
       try {
         while (queue.length > 0) {
-          const event = queue.shift()!;
+          const job = queue.shift()!;
           if (now() < circuitOpenUntil) {
-            log(`Webhook target skipped (circuit open): ${redactUrl(target.url)}`);
+            log(`Webhook target skipped (circuit open): ${redactUrl(job.target.url)}`);
+            recordOutcome(job, 'skipped', 0, null, 'The target failure circuit is open.');
             continue;
           }
-          const ok = await deliverWithRetry(target, event);
-          if (ok) {
+          const result = await deliverWithRetry(job);
+          // A refusal leaves the counter exactly as it was: it is neither evidence the endpoint is
+          // healthy (so it must not reset) nor evidence it is failing (so it must not increment).
+          if (result === 'blocked') continue;
+          if (result === 'delivered') {
             consecutiveFailures = 0;
           } else if (++consecutiveFailures >= circuitThreshold) {
             circuitOpenUntil = now() + cooldown;
             log(
-              `Webhook target circuit opened after ${consecutiveFailures} failures: ${redactUrl(target.url)}`,
+              `Webhook target circuit opened after ${consecutiveFailures} failures: ${redactUrl(job.target.url)}`,
             );
           }
         }
@@ -183,71 +348,170 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
       }
     }
 
-    async function deliverWithRetry(t: WebhookTarget, event: BridgeEvent): Promise<boolean> {
-      const body = JSON.stringify(event);
-      const headers = {
-        'content-type': 'application/json; charset=utf-8',
-        [SIGNATURE_HEADER]: signBody(t.secret, body),
-        [DELIVERY_HEADER]: newDeliveryId(),
-        [EVENT_TYPE_HEADER]: event.type,
-      };
+    /**
+     * Issue one job, retrying with bounded exponential backoff.
+     *
+     * The SSRF check runs **inside** here, once per job rather than once per target list, because a
+     * hostname's resolution can change and the check is what stands between a synced subscription
+     * and the operator's LAN. A refusal is terminal for the job — it is not a transient failure, so
+     * retrying it would only repeat the same verdict — and it is reported as `blocked` rather than
+     * `failed` so the UI can say *why* nothing was sent, and so the caller can leave the failure
+     * circuit alone (see the call site).
+     */
+    async function deliverWithRetry(job: WebhookJob): Promise<'delivered' | 'failed' | 'blocked'> {
+      const verdict = await checkWebhookDestination(job.target.url, ssrfPolicy, options.hostResolver);
+      if (!verdict.allowed) {
+        log(
+          `Webhook delivery refused for ${redactUrl(job.target.url)}: ${verdict.reason}. ` +
+            'Set GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on to allow private/loopback destinations.',
+        );
+        recordOutcome(job, 'blocked', 0, null, `Refused: ${verdict.reason}.`);
+        return 'blocked';
+      }
+
+      const plan = buildWebhookRequest(job.target, job.event, job.view, newDeliveryId());
+      let lastStatus: number | null = null;
+      let lastDetail: string | null = null;
+
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          const res = await fetchImpl(t.url, { method: 'POST', headers: { ...headers }, body });
-          if (res.ok) return true;
-          log(`Webhook delivery got HTTP ${res.status} from ${redactUrl(t.url)} (attempt ${attempt}).`);
+          const res = await fetchImpl(plan.url, {
+            method: plan.method,
+            headers: { ...plan.headers },
+            ...(plan.body !== undefined ? { body: plan.body } : {}),
+          });
+          lastStatus = res.status;
+          if (res.ok) {
+            recordOutcome(job, 'delivered', attempt, res.status, null);
+            return 'delivered';
+          }
+          lastDetail = res.body ?? null;
+          log(`Webhook delivery got HTTP ${res.status} from ${redactUrl(plan.url)} (attempt ${attempt}).`);
         } catch (err) {
-          log(`Webhook delivery failed to ${redactUrl(t.url)} (attempt ${attempt}): ${errMessage(err)}`);
+          lastDetail = errMessage(err);
+          log(`Webhook delivery failed to ${redactUrl(plan.url)} (attempt ${attempt}): ${lastDetail}`);
         }
         if (attempt < maxAttempts) await sleep(backoffFor(attempt, baseBackoff, maxBackoff));
       }
-      return false;
+      recordOutcome(job, 'failed', maxAttempts, lastStatus, lastDetail);
+      return 'failed';
     }
 
     return {
-      enqueue(event: BridgeEvent): void {
+      enqueue(job: WebhookJob): void {
         if (queue.length >= maxQueue) {
-          log(`Webhook queue full for ${redactUrl(target.url)}; dropping an event.`);
+          log(`Webhook queue full for ${redactUrl(job.target.url)}; dropping an event.`);
           return;
         }
-        queue.push(event);
+        queue.push(job);
         if (!running) void drain();
       },
       whenIdle(): Promise<void> {
         if (!running && queue.length === 0) return Promise.resolve();
         return new Promise<void>((resolve) => idleWaiters.push(resolve));
       },
-      wants: (type: string) => targetWantsType(target, type),
     };
   }
 
-  return {
-    deliver(events: readonly BridgeEvent[]): void {
-      for (const worker of workers) {
-        for (const event of events) {
-          if (worker.wants(event.type)) worker.enqueue(event);
-        }
+  /** Record a finished delivery, if a log is wired. Never receives a secret, header or query. */
+  function recordOutcome(
+    job: WebhookJob,
+    outcome: WebhookDeliveryOutcome,
+    attempts: number,
+    status: number | null,
+    detail: string | null,
+  ): void {
+    deliveryLog?.record({
+      targetId: job.target.id,
+      targetName: job.target.name,
+      source: job.target.source,
+      url: redactUrl(job.target.url),
+      method: job.target.method,
+      eventId: job.event.id,
+      eventType: job.event.type,
+      outcome,
+      attempts,
+      status,
+      detail,
+    });
+  }
+
+  /**
+   * Resolve the current targets, project each event once, match, and enqueue.
+   *
+   * The view is built **once per event** and shared by every matching target: it costs DB reads,
+   * and every target sees the same event. Building it inside the awaited intake matters — the
+   * watcher only lets the next reload close the driver after `onGeneration` resolves, so this is
+   * the window in which the driver is guaranteed live. The network delivery that follows is
+   * queued and outlives it, which is fine because it touches no driver.
+   */
+  async function ingest(events: readonly BridgeEvent[], driver?: IDatabaseDriver): Promise<void> {
+    let resolved: readonly WebhookDeliveryTarget[] = [];
+    try {
+      resolved = options.resolveTargets ? await options.resolveTargets(driver) : [];
+    } catch (err) {
+      log(`Failed to read webhook subscriptions: ${errMessage(err)}. Using configured targets only.`);
+    }
+    const targets = [...staticTargets, ...resolved];
+    if (targets.length === 0) return;
+
+    const context = driver ? createWebhookViewContext(driver) : undefined;
+    for (const event of events) {
+      let view: WebhookEventView;
+      try {
+        view = await buildWebhookEventView(event, context);
+      } catch (err) {
+        log(`Failed to project webhook event ${event.id}: ${errMessage(err)}.`);
+        continue;
       }
+      for (const target of targets) {
+        if (!subscriptionMatches(target, view)) continue;
+        workerFor(target.id).enqueue({ target, event, view });
+      }
+    }
+  }
+
+  return {
+    /**
+     * The {@link EventSink} entry point. Returns the intake promise so the pipeline can await the
+     * driver-touching half; the network half continues in the background.
+     */
+    deliver(events: readonly BridgeEvent[], driver?: IDatabaseDriver): Promise<void> {
+      const pending = ingest(events, driver).catch((err: unknown) => {
+        log(`Webhook intake failed: ${errMessage(err)}.`);
+      });
+      // Chained so `whenIdle` waits for *every* in-flight intake, not just the latest.
+      intake = intake.then(() => pending);
+      return pending;
     },
-    whenIdle(): Promise<void> {
-      return Promise.all(workers.map((w) => w.whenIdle())).then(() => undefined);
+    async whenIdle(): Promise<void> {
+      // Intake first: until it resolves, jobs may still be being enqueued, so a worker reporting
+      // "idle" would be answering about a queue that is not yet fully populated.
+      await intake;
+      await Promise.all([...workers.values()].map((w) => w.whenIdle()));
     },
   };
 
   /** The default transport: the global `fetch`, narrowed to {@link FetchLike}. */
   async function defaultFetch(
     url: string,
-    init: { method: string; headers: Record<string, string>; body: string },
-  ): Promise<{ ok: boolean; status: number }> {
+    init: { method: string; headers: Record<string, string>; body?: string },
+  ): Promise<{ ok: boolean; status: number; body?: string }> {
     const res = await fetch(url, init);
-    return { ok: res.ok, status: res.status };
+    // The body is read only to record a short diagnostic; a receiver that sends none is normal.
+    let body: string | undefined;
+    try {
+      body = await res.text();
+    } catch {
+      body = undefined;
+    }
+    return { ok: res.ok, status: res.status, ...(body !== undefined ? { body } : {}) };
   }
 }
 
 interface TargetWorkerShape {
-  enqueue(event: BridgeEvent): void;
+  enqueue(job: WebhookJob): void;
   whenIdle(): Promise<void>;
-  wants(type: string): boolean;
 }
 
 /** Exponential backoff for the nth retry (1-based), capped. */
@@ -255,7 +519,12 @@ export function backoffFor(attempt: number, base: number, max: number): number {
   return Math.min(max, base * 2 ** (attempt - 1));
 }
 
-/** Reduce a URL to origin + path for logs (drop any query — it must never carry a secret anyway). */
+/**
+ * Reduce a URL to origin + path for logs and the delivery log.
+ *
+ * The dropped query string is not merely tidiness: a `GET` delivery puts the whole payload there,
+ * so keeping it would copy event data into every log line.
+ */
 function redactUrl(url: string): string {
   try {
     const u = new URL(url);

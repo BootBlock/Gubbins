@@ -41,6 +41,7 @@ import type { WriteOperation } from './write.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { ItemDetailDto } from './api/dto.ts';
 import type { HaClient } from './homeassistant/client.ts';
+import type { WebhookDeliveryLog } from './events/webhook-log.ts';
 
 /** Whole-request timeout: a slow or stuck client is dropped rather than tying up a slot. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -151,6 +152,13 @@ export interface BridgeServerOptions {
    * usual sinks. Omit (the default) and lookups emit nothing at all.
    */
   readonly lookup?: LookupObserver;
+  /**
+   * The opt-in webhook delivery log (`GUBBINS_BRIDGE_WEBHOOKS=on`), served at
+   * `GET /api/v1/webhooks/deliveries`. Omit to keep that path a `404`. The bridge cannot write
+   * delivery outcomes back into the swapped-per-hydration snapshot, so this in-memory log read
+   * over HTTP is the only way the app can see what its subscriptions did (webhooks plan §3.1).
+   */
+  readonly webhookDeliveries?: WebhookDeliveryLog;
 }
 
 /**
@@ -322,6 +330,7 @@ export async function handleRequest(
         streamable: options.events !== undefined,
         scale: options.scale,
         lookup: options.lookup,
+        webhookDeliveries: options.webhookDeliveries,
       });
       return;
     }

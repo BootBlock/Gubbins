@@ -38,6 +38,13 @@
  *                                  (default `webhooks.json`); the target SECRETS live only here.
  *   GUBBINS_BRIDGE_WEBHOOKS_TARGETS (optional) — inline JSON target list (wins over the file);
  *                                  carries secrets, so keep it in the git-ignored .env only.
+ *   GUBBINS_BRIDGE_WEBHOOKS_SECRETS (optional) — inline JSON { "name": "secret" } map resolving the
+ *                                  `secret_ref` an app-configured subscription may name; merged over
+ *                                  any "secrets" block in the targets file. .env only, never logged.
+ *   GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE (optional) — allow webhook delivery to loopback,
+ *                                  link-local, private and cloud-metadata addresses. OFF by default:
+ *                                  a webhook URL is user-supplied and the bridge sits on the LAN, so
+ *                                  this is the feature's primary SSRF control (plan §6.2).
  *   GUBBINS_BRIDGE_MQTT           (optional) — connect OUT to an MQTT broker and publish inventory
  *                                  state + the EI-1 events. Off by default (outbound-only; no port).
  *   GUBBINS_BRIDGE_MQTT_URL       (required when MQTT on) — mqtt:// or mqtts:// broker URL.
@@ -163,6 +170,31 @@ export interface BridgeConfig {
    */
   readonly webhooksInline: string | undefined;
   /**
+   * Inline JSON map of named bridge-side webhook secrets (`GUBBINS_BRIDGE_WEBHOOKS_SECRETS`),
+   * resolving the `secret_ref` an app-configured subscription may carry. Merged over any
+   * `"secrets"` block in {@link webhooksFile}, so an operator may use either.
+   *
+   * This is the **recommended** way to sign an app-configured webhook (plan §6.1): the value stays
+   * here and never enters the database, so it never reaches the sync artefact — which by design
+   * sits on a NAS or in a cloud drive — or any backup. `.env` only, and never logged.
+   */
+  readonly webhooksSecretsInline: string | undefined;
+  /**
+   * Whether the operator opted into delivering webhooks to **private / loopback / link-local /
+   * cloud-metadata** destinations (`GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE=on`). **Off by default.**
+   *
+   * A webhook URL is user-supplied and arrives over sync, and the bridge is the one component that
+   * sits on the LAN and can reach what a browser cannot — a router's admin page, a printer, a cloud
+   * instance's metadata service. With direct-from-browser delivery dropped (§6.3) every delivery
+   * leaves from the bridge, which makes this the feature's primary security control (§6.2) rather
+   * than a footnote.
+   *
+   * Turning it on is entirely legitimate — webhooking your own Home Assistant on `192.168.1.x` is
+   * a normal thing to want — which is exactly why it is a deliberate, logged opt-in in keeping with
+   * the bridge's posture for everything else with reach.
+   */
+  readonly webhooksAllowPrivate: boolean;
+  /**
    * Whether the operator opted into **outbound MQTT publishing** (`GUBBINS_BRIDGE_MQTT=on`).
    * **Off by default.** When on, the bridge connects OUT to {@link mqttUrl} (an MQTT *client* — no
    * inbound port) and publishes retained inventory state + the EI-1 events. Implies the event
@@ -258,6 +290,12 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   );
   const webhooksFile = (env.GUBBINS_BRIDGE_WEBHOOKS_FILE ?? '').trim() || undefined;
   const webhooksInline = (env.GUBBINS_BRIDGE_WEBHOOKS_TARGETS ?? '').trim() || undefined;
+  const webhooksSecretsInline = (env.GUBBINS_BRIDGE_WEBHOOKS_SECRETS ?? '').trim() || undefined;
+  const webhooksAllowPrivate = parseBool(
+    env.GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE,
+    false,
+    'GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE',
+  );
 
   const mqtt = parseBool(env.GUBBINS_BRIDGE_MQTT, false, 'GUBBINS_BRIDGE_MQTT');
   const mqttUrl = (env.GUBBINS_BRIDGE_MQTT_URL ?? '').trim() || undefined;
@@ -326,6 +364,8 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     webhooks,
     webhooksFile,
     webhooksInline,
+    webhooksSecretsInline,
+    webhooksAllowPrivate,
     mqtt,
     mqttUrl,
     mqttUsername,

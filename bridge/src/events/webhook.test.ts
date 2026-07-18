@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BridgeEvent, LedgerEvent } from './model.ts';
 import {
   backoffFor,
+  buildWebhookRequest,
   createWebhookDeliverer,
   DELIVERY_HEADER,
   EVENT_TYPE_HEADER,
@@ -20,6 +21,9 @@ import {
   type FetchLike,
   type WebhookTarget,
 } from './webhook.ts';
+import { createWebhookDeliveryLog } from './webhook-log.ts';
+import type { WebhookDeliveryTarget } from './webhook-targets.ts';
+import type { WebhookEventView } from '@/features/webhooks/event-view.ts';
 
 function event(overrides: Partial<LedgerEvent> & { id: string; type: string }): BridgeEvent {
   return {
@@ -41,6 +45,16 @@ function event(overrides: Partial<LedgerEvent> & { id: string; type: string }): 
 }
 
 const noSleep = (): Promise<void> => Promise.resolve();
+
+/**
+ * A fake DNS resolver mapping every synthetic `example.test` host to one public address.
+ *
+ * The `W5` SSRF guard resolves any non-literal host and refuses a destination it cannot classify —
+ * so without this, every test below would be `blocked` rather than delivered, because `.test` names
+ * deliberately do not resolve. Injecting it keeps these tests offline **and** keeps them testing
+ * delivery rather than accidentally re-testing the guard (which `webhook-ssrf.test.ts` covers).
+ */
+const publicResolver = (): Promise<readonly string[]> => Promise.resolve(['203.0.113.10']);
 
 describe('signBody', () => {
   it('produces a verifiable sha256= HMAC over the raw body', () => {
@@ -94,10 +108,11 @@ describe('createWebhookDeliverer', () => {
   it('signs the body, sets the delivery + event headers, and delivers once on success', async () => {
     const calls: Array<{ url: string; headers: Record<string, string>; body: string }> = [];
     const fetchImpl: FetchLike = async (url, init) => {
-      calls.push({ url, headers: init.headers, body: init.body });
+      calls.push({ url, headers: init.headers, body: init.body ?? '' });
       return { ok: true, status: 200 };
     };
     const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
       targets: [{ url: 'https://a.example.test/hook', secret: 'topsecret' }],
       fetchImpl,
       sleep: noSleep,
@@ -122,6 +137,7 @@ describe('createWebhookDeliverer', () => {
       return { ok: true, status: 200 };
     };
     const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
       targets: [{ url: 'https://a.example.test/hook', secret: 's' }],
       fetchImpl,
       sleep,
@@ -140,6 +156,7 @@ describe('createWebhookDeliverer', () => {
       return { ok: false, status: 500 };
     };
     const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
       targets: [{ url: 'https://dead.example.test/hook', secret: 's' }],
       fetchImpl,
       sleep: noSleep,
@@ -164,6 +181,7 @@ describe('createWebhookDeliverer', () => {
       return { ok: false, status: 502 };
     };
     const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
       targets: [
         { url: 'https://dead.example.test/hook', secret: 's' },
         { url: 'https://good.example.test/hook', secret: 's' },
@@ -184,6 +202,7 @@ describe('createWebhookDeliverer', () => {
       return { ok: true, status: 200 };
     };
     const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
       targets: [{ url: 'https://a.example.test/hook', secret: 's', events: ['item.low_stock'] }],
       fetchImpl,
       sleep: noSleep,
@@ -194,6 +213,497 @@ describe('createWebhookDeliverer', () => {
     ]);
     await deliverer.whenIdle();
     expect(got).toEqual(['item.low_stock']);
+  });
+});
+
+// --- W5: the extended target model and request builder ----------------------------
+
+describe('buildWebhookRequest (W5)', () => {
+  const view: WebhookEventView = {
+    id: 'hist-1',
+    type: 'item.low_stock',
+    occurredAt: '2025-06-27T06:13:20.000Z',
+    item: {
+      id: 'item-1',
+      name: 'Widget',
+      quantity: 2,
+      locationId: 'loc-1',
+      locationName: 'Shelf 2',
+      locationPath: ['loc-root', 'loc-1'],
+      categoryId: 'cat-1',
+      categoryName: 'Electronics',
+      tagIds: ['tag-1'],
+    },
+    change: {
+      action: 'QUANTITY_CHANGE',
+      kind: 'stock',
+      label: 'Quantity changed',
+      detail: null,
+      delta: '−1',
+      quantityDelta: -1,
+      netValueDelta: null,
+    },
+  };
+  const evt = event({ id: 'hist-1', type: 'item.low_stock' });
+
+  function target(overrides: Partial<WebhookDeliveryTarget> = {}): WebhookDeliveryTarget {
+    return {
+      id: 'w1',
+      name: 'Test target',
+      source: 'database',
+      url: 'https://a.example.test/hook',
+      method: 'POST',
+      enabled: true,
+      secret: null,
+      eventTypes: ['*'],
+      filter: null,
+      template: null,
+      headers: null,
+      ...overrides,
+    };
+  }
+
+  it('sends the event envelope UNCHANGED when there is no template (the EI-1 contract)', () => {
+    const plan = buildWebhookRequest(target(), evt, view, 'd-1');
+    expect(plan.body).toBe(JSON.stringify(evt));
+    expect(plan.headers['content-type']).toBe('application/json; charset=utf-8');
+  });
+
+  it('omits the signature entirely for an unsigned target', () => {
+    const plan = buildWebhookRequest(target(), evt, view, 'd-1');
+    expect(plan.headers[SIGNATURE_HEADER]).toBeUndefined();
+    // The delivery + event headers are still set — they are not the signature's job.
+    expect(plan.headers[DELIVERY_HEADER]).toBe('d-1');
+    expect(plan.headers[EVENT_TYPE_HEADER]).toBe('item.low_stock');
+  });
+
+  it('signs the body when a secret is present', () => {
+    const plan = buildWebhookRequest(target({ secret: 'shhh' }), evt, view, 'd-1');
+    expect(plan.headers[SIGNATURE_HEADER]).toBe(signBody('shhh', plan.body!));
+  });
+
+  it('honours a non-POST method', () => {
+    expect(buildWebhookRequest(target({ method: 'PUT' }), evt, view, 'd-1').method).toBe('PUT');
+    expect(buildWebhookRequest(target({ method: 'PATCH' }), evt, view, 'd-1').method).toBe('PATCH');
+  });
+
+  it('renders a preset template as JSON', () => {
+    const plan = buildWebhookRequest(target({ template: 'preset:slack' }), evt, view, 'd-1');
+    expect(JSON.parse(plan.body!)).toEqual({ text: 'Quantity changed: Widget (−1)' });
+  });
+
+  it('renders a custom template as text, with the right content type', () => {
+    const plan = buildWebhookRequest(
+      target({ template: '{{item.name}} is low ({{item.quantity}})' }),
+      evt,
+      view,
+      'd-1',
+    );
+    expect(plan.body).toBe('Widget is low (2)');
+    expect(plan.headers['content-type']).toBe('text/plain; charset=utf-8');
+  });
+
+  it('carries a subscription’s extra static headers', () => {
+    const plan = buildWebhookRequest(target({ headers: { 'X-Custom': 'v' } }), evt, view, 'd-1');
+    expect(plan.headers['X-Custom']).toBe('v');
+  });
+
+  it('never lets a subscription header override a computed one', () => {
+    // A second, independent guard on top of the target-sourcing sanitiser: even a header that
+    // somehow reached the target model cannot forge a signature or a delivery id.
+    const plan = buildWebhookRequest(
+      target({
+        secret: 'shhh',
+        headers: { [SIGNATURE_HEADER]: 'sha256=forged', [DELIVERY_HEADER]: 'forged', 'content-type': 'x' },
+      }),
+      evt,
+      view,
+      'd-1',
+    );
+    expect(plan.headers[SIGNATURE_HEADER]).toBe(signBody('shhh', plan.body!));
+    expect(plan.headers[DELIVERY_HEADER]).toBe('d-1');
+    expect(plan.headers['content-type']).toBe('application/json; charset=utf-8');
+  });
+
+  it('flattens the payload into the query string for GET, and sends no body or signature', () => {
+    const plan = buildWebhookRequest(target({ method: 'GET', secret: 'shhh' }), evt, view, 'd-1');
+    expect(plan.body).toBeUndefined();
+    // A GET has no body, and an HMAC signs a body — so there is nothing to sign. The UI says so.
+    expect(plan.headers[SIGNATURE_HEADER]).toBeUndefined();
+
+    const url = new URL(plan.url);
+    expect(url.searchParams.get('event.type')).toBe('item.low_stock');
+    expect(url.searchParams.get('item.name')).toBe('Widget');
+    // A query string cannot express null, so null-valued keys are dropped rather than sent as "null".
+    expect(url.searchParams.has('change.detail')).toBe(false);
+  });
+
+  it('preserves an existing query string on a GET target URL', () => {
+    const plan = buildWebhookRequest(
+      target({ method: 'GET', url: 'https://a.example.test/hook?fixed=1' }),
+      evt,
+      view,
+      'd-1',
+    );
+    const url = new URL(plan.url);
+    expect(url.searchParams.get('fixed')).toBe('1');
+    expect(url.searchParams.get('event.id')).toBe('hist-1');
+  });
+});
+
+describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
+  const evt = event({ id: 'hist-1', type: 'item.low_stock' });
+
+  function dbTarget(overrides: Partial<WebhookDeliveryTarget> = {}): WebhookDeliveryTarget {
+    return {
+      id: 'w1',
+      name: 'Workshop notifier',
+      source: 'database',
+      url: 'https://a.example.test/hook',
+      method: 'POST',
+      enabled: true,
+      secret: null,
+      eventTypes: ['*'],
+      filter: null,
+      template: null,
+      headers: null,
+      ...overrides,
+    };
+  }
+
+  it('merges resolved targets with the operator’s configured ones', async () => {
+    const urls: string[] = [];
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://config.example.test/hook', secret: 's' }],
+      resolveTargets: async () => [dbTarget({ url: 'https://app.example.test/hook' })],
+      fetchImpl: async (url) => {
+        urls.push(url);
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(urls.sort()).toEqual(['https://app.example.test/hook', 'https://config.example.test/hook']);
+  });
+
+  it('does not deliver to a disabled subscription', async () => {
+    let calls = 0;
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      resolveTargets: async () => [dbTarget({ enabled: false })],
+      fetchImpl: async () => {
+        calls++;
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(calls).toBe(0);
+  });
+
+  it('applies the subscription’s declarative filter', async () => {
+    let calls = 0;
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      // The event carries item: null, so an item-scoped filter cannot confirm a match and must
+      // narrow rather than wave it through — the W3 rule this delivery path must not soften.
+      resolveTargets: async () => [dbTarget({ filter: { kind: 'category', categoryIds: ['cat-1'] } })],
+      fetchImpl: async () => {
+        calls++;
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(calls).toBe(0);
+  });
+
+  it('re-reads the targets on every batch, so a new subscription goes live without a restart', async () => {
+    let generation = 0;
+    const urls: string[] = [];
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      resolveTargets: async () =>
+        generation === 0 ? [] : [dbTarget({ url: 'https://added.example.test/hook' })],
+      fetchImpl: async (url) => {
+        urls.push(url);
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(urls).toEqual([]);
+
+    generation = 1;
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(urls).toEqual(['https://added.example.test/hook']);
+  });
+
+  it('keeps delivering to configured targets when the subscription read fails', async () => {
+    const urls: string[] = [];
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://config.example.test/hook', secret: 's' }],
+      resolveTargets: async () => {
+        throw new Error('driver closed');
+      },
+      fetchImpl: async (url) => {
+        urls.push(url);
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+      log: () => undefined,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(urls).toEqual(['https://config.example.test/hook']);
+  });
+});
+
+describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
+  const evt = event({ id: 'hist-1', type: 'item.low_stock' });
+
+  it('refuses a private destination and issues NO request at all', async () => {
+    let calls = 0;
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      targets: [{ url: 'http://192.168.1.50/hook', secret: 's' }],
+      fetchImpl: async () => {
+        calls++;
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    expect(calls).toBe(0);
+    const record = log.list()[0]!;
+    expect(record.outcome).toBe('blocked');
+    expect(record.attempts).toBe(0);
+    expect(record.detail).toMatch(/private/);
+  });
+
+  it('delivers to that same destination once the operator opts in', async () => {
+    let calls = 0;
+    const deliverer = createWebhookDeliverer({
+      ssrfPolicy: { allowPrivate: true },
+      targets: [{ url: 'http://192.168.1.50/hook', secret: 's' }],
+      fetchImpl: async () => {
+        calls++;
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(calls).toBe(1);
+  });
+
+  it('guards by default when no policy is passed at all', async () => {
+    let calls = 0;
+    const deliverer = createWebhookDeliverer({
+      targets: [{ url: 'http://169.254.169.254/latest/meta-data/', secret: 's' }],
+      fetchImpl: async () => {
+        calls++;
+        return { ok: true, status: 200 };
+      },
+      sleep: noSleep,
+      log: () => undefined,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+    expect(calls).toBe(0);
+  });
+
+  it('does not let a blocked target trip its own failure circuit', async () => {
+    // A misconfigured URL is not a transport fault; tripping the circuit would then suppress
+    // delivery for a target that is otherwise perfectly healthy once the URL is fixed.
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      targets: [{ url: 'http://127.0.0.1/hook', secret: 's' }],
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+      sleep: noSleep,
+      circuitThreshold: 2,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+    deliverer.deliver(Array.from({ length: 4 }, (_, i) => event({ id: `e${i}`, type: 'item.low_stock' })));
+    await deliverer.whenIdle();
+    // All four are individually refused; none is "skipped" by an opened circuit.
+    expect(log.list().map((r) => r.outcome)).toEqual(['blocked', 'blocked', 'blocked', 'blocked']);
+  });
+
+  it('leaves an existing failure count untouched rather than resetting it', async () => {
+    // A refusal is neither evidence the endpoint is healthy nor evidence it is failing. If it
+    // *reset* the counter, a target that intermittently resolves private could never trip its
+    // circuit, and a genuinely dead endpoint would be hammered forever.
+    const log = createWebhookDeliveryLog();
+    // The guard resolves a non-literal host on every job, so flipping what the name resolves to is
+    // the honest way to interleave a blocked job between two real failures — and it models the
+    // actual scenario (a hostname whose resolution changes under us).
+    let resolvesPrivate = false;
+    const deliverer = createWebhookDeliverer({
+      hostResolver: () => Promise.resolve([resolvesPrivate ? '10.0.0.9' : '203.0.113.10']),
+      targets: [{ url: 'https://flaky.example.test/hook', secret: 's' }],
+      fetchImpl: async () => ({ ok: false, status: 500 }),
+      sleep: noSleep,
+      now: () => 0,
+      maxAttempts: 1,
+      circuitThreshold: 2,
+      circuitCooldownMs: 1_000,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+
+    resolvesPrivate = false;
+    deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
+    await deliverer.whenIdle();
+
+    resolvesPrivate = true;
+    deliverer.deliver([event({ id: 'e2', type: 'item.low_stock' })]);
+    await deliverer.whenIdle();
+
+    resolvesPrivate = false;
+    deliverer.deliver([event({ id: 'e3', type: 'item.low_stock' })]);
+    await deliverer.whenIdle();
+
+    // fail, blocked, fail — the blocked job must not have reset the count, so the second real
+    // failure reaches the threshold of 2 and trips the circuit.
+    expect(log.list().map((r) => r.outcome)).toEqual(['failed', 'blocked', 'failed']);
+
+    resolvesPrivate = false;
+    deliverer.deliver([event({ id: 'e4', type: 'item.low_stock' })]);
+    await deliverer.whenIdle();
+    expect(log.list()[0]!.outcome).toBe('skipped');
+  });
+});
+
+describe('the delivery log in the delivery path (W5, §3.1)', () => {
+  const evt = event({ id: 'hist-1', type: 'item.low_stock' });
+
+  it('records a success with its status and attempt count', async () => {
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://a.example.test/hook', secret: 's' }],
+      fetchImpl: async () => ({ ok: true, status: 204 }),
+      sleep: noSleep,
+      deliveryLog: log,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    expect(log.list()[0]).toMatchObject({
+      outcome: 'delivered',
+      status: 204,
+      attempts: 1,
+      eventId: 'hist-1',
+      eventType: 'item.low_stock',
+      source: 'config',
+      method: 'POST',
+    });
+  });
+
+  it('records a failure after every attempt, keeping the receiver’s message', async () => {
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://a.example.test/hook', secret: 's' }],
+      fetchImpl: async () => ({ ok: false, status: 500, body: 'upstream exploded' }),
+      sleep: noSleep,
+      maxAttempts: 2,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    expect(log.list()[0]).toMatchObject({
+      outcome: 'failed',
+      status: 500,
+      attempts: 2,
+      detail: 'upstream exploded',
+    });
+  });
+
+  it('records a skip once the circuit is open', async () => {
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://dead.example.test/hook', secret: 's' }],
+      fetchImpl: async () => ({ ok: false, status: 500 }),
+      sleep: noSleep,
+      now: () => 0,
+      maxAttempts: 1,
+      circuitThreshold: 1,
+      circuitCooldownMs: 1_000,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+    deliverer.deliver([
+      event({ id: 'e1', type: 'item.low_stock' }),
+      event({ id: 'e2', type: 'item.low_stock' }),
+    ]);
+    await deliverer.whenIdle();
+
+    expect(log.list().map((r) => r.outcome)).toEqual(['skipped', 'failed']);
+  });
+
+  it('records the URL with its query string dropped', async () => {
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      // A GET delivery fills the query with payload data, which is exactly why it is not recorded.
+      resolveTargets: async () => [
+        {
+          id: 'w1',
+          name: 'A',
+          source: 'database' as const,
+          url: 'https://a.example.test/hook?token=super-secret',
+          method: 'GET' as const,
+          enabled: true,
+          secret: null,
+          eventTypes: ['*'],
+          filter: null,
+          template: null,
+          headers: null,
+        },
+      ],
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+      sleep: noSleep,
+      deliveryLog: log,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    expect(log.list()[0]!.url).toBe('https://a.example.test/hook');
+    expect(JSON.stringify(log.list())).not.toContain('super-secret');
+  });
+
+  it('never records a secret or a signature', async () => {
+    const log = createWebhookDeliveryLog();
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://a.example.test/hook', secret: 'a-very-secret-value' }],
+      fetchImpl: async () => ({ ok: true, status: 200 }),
+      sleep: noSleep,
+      deliveryLog: log,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    const serialised = JSON.stringify(log.list());
+    expect(serialised).not.toContain('a-very-secret-value');
+    expect(serialised).not.toContain('sha256=');
   });
 });
 
@@ -227,6 +737,10 @@ describe('end-to-end signature verification against a real receiver', () => {
     const { port } = server!.address() as AddressInfo;
 
     const deliverer = createWebhookDeliverer({
+      // The receiver is a real in-process server on loopback, which the `W5` SSRF guard refuses by
+      // default — so this end-to-end test is also the demonstration that the opt-in flag is what
+      // makes a loopback destination reachable, and that nothing else does.
+      ssrfPolicy: { allowPrivate: true },
       targets: [{ url: `http://127.0.0.1:${port}/hook`, secret }],
       sleep: noSleep,
     });

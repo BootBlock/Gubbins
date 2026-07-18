@@ -159,7 +159,7 @@ describe('computeGenerationEvents', () => {
 describe('createEventPipeline', () => {
   it('holds the cursor across generations and fans new events to every sink', async () => {
     const captured: BridgeEvent[] = [];
-    const pipeline = createEventPipeline({ sinks: [{ deliver: (evts) => captured.push(...evts) }] });
+    const pipeline = createEventPipeline({ sinks: [{ deliver: (evts) => void captured.push(...evts) }] });
 
     const baseline = await hydrate(snapshot(7, [created(100)]));
     await pipeline.onGeneration(baseline.driver);
@@ -180,7 +180,7 @@ describe('createEventPipeline', () => {
             throw new Error('sink boom');
           },
         },
-        { deliver: (evts) => captured.push(...evts) },
+        { deliver: (evts) => void captured.push(...evts) },
       ],
     });
     await pipeline.onGeneration((await hydrate(snapshot(7, [created(100)]))).driver); // baseline
