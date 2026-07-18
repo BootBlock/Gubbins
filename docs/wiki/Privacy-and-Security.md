@@ -25,6 +25,7 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | **[[Scraping|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
 | **[[Product lookup|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |
 | **[[Camera scanning|Camera-Scanning]]** / **[[OCR|Receipt-and-Label-OCR]]** | Read codes / text | On-device only; no image leaves your device |
+| **[[Diagnostics|About-and-Diagnostics]]** | Environment details for a bug report | Only gathered when you press **Refresh**; only shared if you copy it or open the pre-filled issue; never includes your inventory |
 
 ## Good habits
 
@@ -52,3 +53,4 @@ does — see the [Gubbins repository](https://github.com/BootBlock/Gubbins).
 - **[[Backup & restore|Backup-and-Restore]]** and **[[Cloud sync|Cloud-Sync]]** — keeping data safe
   and portable.
 - **[[Bridge overview|Bridge-Overview]]** — the security model for the one networked feature.
+- **[[About & diagnostics|About-and-Diagnostics]]** — exactly what a bug report includes.

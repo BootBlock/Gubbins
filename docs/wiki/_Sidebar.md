@@ -109,3 +109,4 @@
 - [[Glossary]]
 - [[FAQ & troubleshooting|FAQ-and-Troubleshooting]]
 - [[Privacy & security|Privacy-and-Security]]
+- [[About & diagnostics|About-and-Diagnostics]]
