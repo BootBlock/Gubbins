@@ -126,8 +126,8 @@ export {
   buildBurstParticles,
   BURST_PARTICLE_COUNT,
   BURST_DURATION_MS,
+  BURST_HUE_SPREAD,
   type BurstParticle,
-  type BurstHue,
   type Rng,
 } from './success-burst-geometry';
 export {

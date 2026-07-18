@@ -18,6 +18,13 @@ vi.mock('@/lib/env/feature-detection', async (importActual) => ({
   isLikelyMobile: () => isLikelyMobile(),
 }));
 
+// Drive the archive outcome so both the success and failure paths can be asserted.
+const runFullArchive = vi.fn();
+vi.mock('@/features/archive/auto-archive', async (importActual) => ({
+  ...(await importActual<typeof import('@/features/archive/auto-archive')>()),
+  runFullArchive: () => runFullArchive(),
+}));
+
 import { ToastProvider } from '@/components/foundry';
 import { StorageBanners } from './StorageBanners';
 import { useStorageStore } from '@/state/stores/useStorageStore';
@@ -45,6 +52,7 @@ beforeEach(() => {
   useAuthStore.setState({ providerId: null });
   usePreferencesStore.setState({ lastArchivedAt: null, archiveNudgeSnoozedUntil: null });
   requestPersistentStorage.mockReset();
+  runFullArchive.mockReset();
   isLikelyMobile.mockReturnValue(false);
 });
 afterEach(() => {
@@ -133,5 +141,54 @@ describe('StorageBanners — weekly-backup nudge dismissal', () => {
     usePreferencesStore.setState({ archiveNudgeSnoozedUntil: Date.now() - 1000 });
     renderBanners();
     expect(screen.getByText('Time for a weekly backup')).toBeTruthy();
+  });
+});
+
+describe('StorageBanners — archive outcome feedback', () => {
+  beforeEach(() => {
+    // Mobile, no sync provider, never archived → the weekly-backup nudge (and its button) is due.
+    isLikelyMobile.mockReturnValue(true);
+  });
+
+  it('confirms the download and stamps the archive time on success', async () => {
+    runFullArchive.mockResolvedValue('gubbins-archive-20260718-1200.zip');
+    renderBanners();
+
+    fireEvent.click(screen.getByTestId('run-archive'));
+
+    await waitFor(() => expect(screen.getByText('Archive downloaded')).toBeTruthy());
+    expect(screen.getByText(/gubbins-archive-20260718-1200\.zip/)).toBeTruthy();
+    expect(usePreferencesStore.getState().lastArchivedAt).not.toBeNull();
+  });
+
+  it('says so — rather than falling quiet — when the archive fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    runFullArchive.mockRejectedValue(new Error('quota exceeded'));
+    renderBanners();
+
+    fireEvent.click(screen.getByTestId('run-archive'));
+
+    await waitFor(() => expect(screen.getByText('Archive failed')).toBeTruthy());
+    // The "last archived" stamp must not advance — the nudge is still due, and the banner stays.
+    expect(usePreferencesStore.getState().lastArchivedAt).toBeNull();
+    expect(screen.getByText('Time for a weekly backup')).toBeTruthy();
+    // The button is usable again so the offered retry can actually run.
+    expect(screen.getByTestId('run-archive').hasAttribute('disabled')).toBe(false);
+    consoleError.mockRestore();
+  });
+
+  it('offers a retry that re-runs the archive', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    runFullArchive.mockRejectedValueOnce(new Error('transient')).mockResolvedValue('retry.zip');
+    renderBanners();
+
+    fireEvent.click(screen.getByTestId('run-archive'));
+    await waitFor(() => expect(screen.getByText('Archive failed')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() => expect(screen.getByText('Archive downloaded')).toBeTruthy());
+    expect(runFullArchive).toHaveBeenCalledTimes(2);
+    consoleError.mockRestore();
   });
 });

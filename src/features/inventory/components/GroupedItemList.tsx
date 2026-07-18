@@ -9,11 +9,12 @@ import type {
   LocationWithCount,
   LowStockThresholds,
 } from '@/db/repositories';
-import type { ItemDensity } from '@/state/stores/useLayoutStore';
+import { useLayoutStore, type ItemDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
 import { useItemFieldValues } from '../categories';
 import { useItemsTags } from '../tags';
 import { useLocationSectionItems } from '../queries';
+import { toItemSort } from '../sorting';
 import { LocationKindIcon } from './LocationKindIcon';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
@@ -225,6 +226,11 @@ function SectionItems({
   readonly isLeaf: boolean;
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  // The ordering axis (issue #128) is read straight from the layout store rather than drilled
+  // through the section tree: it is one global choice that every section obeys, and each section
+  // owns its own query, so there is nothing for a parent to coordinate.
+  const inventorySort = useLayoutStore((s) => s.inventorySort);
+  const sort = useMemo(() => toItemSort(inventorySort), [inventorySort]);
   const filters = useMemo(
     () => ({
       locationId,
@@ -232,6 +238,7 @@ function SectionItems({
       ...(categoryId ? { categoryId } : {}),
       ...(tagIds && tagIds.length > 0 ? { tagIds } : {}),
       ...(search ? { search } : {}),
+      ...(sort ? { sort } : {}),
       ...(status && status.length > 0 ? { status, lowStockThresholds, expirySoonWindowDays } : {}),
     }),
     [
@@ -240,6 +247,7 @@ function SectionItems({
       categoryId,
       tagIds,
       search,
+      sort,
       status,
       lowStockThresholds,
       expirySoonWindowDays,

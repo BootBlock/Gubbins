@@ -63,6 +63,10 @@ On a phone or tablet **without [[Cloud sync|Cloud-Sync]] connected**, Gubbins sh
 weekly backup"* banner once a week, with a **Download archive** button that saves a full `.zip` to
 your device. It's a nudge to keep a safety net where continuous auto-save isn't available.
 
+Gubbins always tells you how it went: a confirmation naming the downloaded `.zip` when the archive
+succeeds, or — if it couldn't be created — a message saying so, with a **Try again** button. The
+reminder stays put until a backup has actually been taken.
+
 > **💡 Tip**
 > Not ready right now? Dismiss the banner with its **✕** and it stays hidden for a week — it only
 > comes back if you still haven't taken a backup by then. Downloading an archive (or connecting

@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 import type { CardCustomField } from '../card-fields';
 
@@ -26,7 +26,8 @@ vi.mock('@/lib/useFormatters', () => ({
 }));
 
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
-import { tableFieldColumns, tableGridColumns } from './item-table-columns';
+import { columnSortField, tableFieldColumns, tableGridColumns } from './item-table-columns';
+import { DEFAULT_INVENTORY_SORT, useLayoutStore } from '@/state/stores/useLayoutStore';
 
 const BASE: Item = {
   id: 'item-1',
@@ -136,6 +137,75 @@ describe('ItemTableHeader', () => {
   it('adds a Select header in selection mode', () => {
     render(<ItemTableHeader columns={[]} selecting gridTemplate={tableGridColumns(0, true)} />);
     expect(screen.getByRole('columnheader', { name: 'Select' })).toBeInTheDocument();
+  });
+});
+
+describe('columnSortField', () => {
+  it('maps the one sortable card-field column to its data-layer field', () => {
+    expect(columnSortField('updated')).toBe('updatedAt');
+  });
+
+  it('reports columns with no orderable column as unsortable', () => {
+    // Joined (location/category/tags), derived (value/condition) and custom fields have no
+    // scalar `items` column to order by, so the data layer can't sort them.
+    for (const id of ['location', 'category', 'tags', 'value', 'condition', 'custom:cf-1']) {
+      expect(columnSortField(id)).toBeNull();
+    }
+  });
+});
+
+describe('ItemTableHeader sorting (issue #128)', () => {
+  const cols = [
+    { id: 'location', label: 'Location' },
+    { id: 'updated', label: 'Last updated' },
+  ];
+  const renderHeader = () =>
+    render(<ItemTableHeader columns={cols} selecting={false} gridTemplate={tableGridColumns(2, false)} />);
+
+  beforeEach(() => {
+    useLayoutStore.setState({ inventorySort: DEFAULT_INVENTORY_SORT });
+  });
+
+  it('makes sortable columns buttons and leaves the rest inert labels', () => {
+    renderHeader();
+    expect(screen.getByRole('button', { name: 'Name' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stock' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Last updated' })).toBeInTheDocument();
+    // Location joins another table — there is nothing to order by, so it stays a plain label.
+    expect(screen.queryByRole('button', { name: 'Location' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Location' })).toBeInTheDocument();
+  });
+
+  it('reports no sort direction on any column under the default order', () => {
+    renderHeader();
+    for (const name of ['Name', 'Stock', 'Last updated']) {
+      expect(screen.getByRole('columnheader', { name })).toHaveAttribute('aria-sort', 'none');
+    }
+  });
+
+  it('sorts by a column on click, at that field’s natural direction', () => {
+    renderHeader();
+    fireEvent.click(screen.getByRole('button', { name: 'Name' }));
+    expect(useLayoutStore.getState().inventorySort).toEqual({ field: 'name', direction: 'asc' });
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'ascending');
+
+    // Stock is a quantity — the useful first look is "what do I have most of".
+    fireEvent.click(screen.getByRole('button', { name: 'Stock' }));
+    expect(useLayoutStore.getState().inventorySort).toEqual({ field: 'quantity', direction: 'desc' });
+    expect(screen.getByRole('columnheader', { name: 'Stock' })).toHaveAttribute('aria-sort', 'descending');
+    // The previously-active column stands down rather than keeping a stale arrow.
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'none');
+  });
+
+  it('cycles the active column back to the default order on a third click', () => {
+    renderHeader();
+    const name = () => screen.getByRole('button', { name: 'Name' });
+    fireEvent.click(name());
+    fireEvent.click(name());
+    expect(useLayoutStore.getState().inventorySort).toEqual({ field: 'name', direction: 'desc' });
+    fireEvent.click(name());
+    expect(useLayoutStore.getState().inventorySort).toEqual(DEFAULT_INVENTORY_SORT);
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'none');
   });
 });
 

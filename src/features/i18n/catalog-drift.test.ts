@@ -4,6 +4,9 @@ import { OCCASIONS } from '@/components/background/seasonal';
 import { DASHBOARD_WIDGETS } from '@/features/dashboard/widgets';
 import { HOTKEY_ACTIONS } from '@/features/hotkeys/hotkeys';
 import { LAB_FLAGS } from '@/features/lab/lab-flags';
+import { DENSITY_MODES } from '@/features/inventory/view-modes';
+import { GROUP_MODES } from '@/features/inventory/grouping';
+import { SORT_MODES } from '@/features/inventory/sorting';
 import { EN_CATALOG } from './messages';
 
 /**
@@ -45,6 +48,36 @@ describe('catalog ↔ registry drift', () => {
     for (const flag of LAB_FLAGS) {
       expect(EN_CATALOG[flag.labelKey], `flag ${flag.id} label`).toBe(flag.label);
       expect(EN_CATALOG[flag.descriptionKey], `flag ${flag.id} description`).toBe(flag.description);
+    }
+  });
+
+  // The inventory's three arrangement axes (View / Group by / Sort by), each guarded identically.
+  it('every view mode label equals its message key in the English catalog', () => {
+    for (const mode of DENSITY_MODES) {
+      expect(EN_CATALOG[mode.labelKey], `view mode ${mode.value}`).toBe(mode.label);
+    }
+  });
+
+  it('every group mode label equals its message key in the English catalog', () => {
+    for (const mode of GROUP_MODES) {
+      expect(EN_CATALOG[mode.labelKey], `group mode ${mode.value}`).toBe(mode.label);
+    }
+  });
+
+  it('every sort mode label equals its message key in the English catalog', () => {
+    for (const mode of SORT_MODES) {
+      expect(EN_CATALOG[mode.labelKey], `sort mode ${mode.value}`).toBe(mode.label);
+    }
+  });
+
+  it('every sort direction label equals its message key in the English catalog', () => {
+    for (const mode of SORT_MODES) {
+      // The default order offers no direction at all; labels and keys travel together in one
+      // object, so there is no longer a half-set state to guard against.
+      if (mode.directions === null) continue;
+      const { labels, keys } = mode.directions;
+      expect(EN_CATALOG[keys.asc], `sort ${mode.value} asc`).toBe(labels.asc);
+      expect(EN_CATALOG[keys.desc], `sort ${mode.value} desc`).toBe(labels.desc);
     }
   });
 });

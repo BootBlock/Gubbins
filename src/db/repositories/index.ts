@@ -89,6 +89,8 @@ export {
 export type { Tombstone, SyncTable } from './tombstone';
 export type {
   ItemListFilters,
+  ItemSort,
+  ItemSortField,
   ItemStatusFilter,
   SearchByAstParams,
   LocationStockLine,
@@ -97,7 +99,12 @@ export type {
   KitComponent,
   ItemStatusCount,
 } from './ItemRepository';
-export { ITEM_STATUS_FILTERS, STATUS_FILTER_FEATURE, isItemStatusFilter } from './ItemRepository';
+export {
+  ITEM_SORT_FIELDS,
+  ITEM_STATUS_FILTERS,
+  STATUS_FILTER_FEATURE,
+  isItemStatusFilter,
+} from './ItemRepository';
 export type { UpdateAttachmentInput } from './AttachmentRepository';
 export type { AssemblyResult } from './ProjectRepository';
 export type { RepositoryOptions } from './base';

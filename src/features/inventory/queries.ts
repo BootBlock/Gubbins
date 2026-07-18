@@ -60,6 +60,7 @@ export type ItemQueryFilters = Pick<
   | 'status'
   | 'lowStockThresholds'
   | 'expirySoonWindowDays'
+  | 'sort'
 >;
 
 export const inventoryKeys = {
@@ -370,9 +371,13 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
  * count while paginating doesn't run it in infinite-scroll mode.
  */
 export function useItemCount(filters: ItemQueryFilters = {}, enabled = true) {
+  // A count is order-independent, so the sort axis (issue #128) is stripped from both the key
+  // and the argument — otherwise re-sorting the list would re-run a `COUNT(*)` that is certain
+  // to return the same number, which is real work at 100k+ scale.
+  const { sort: _sort, ...counted } = filters;
   return useQuery({
-    queryKey: [...inventoryKeys.itemList(filters), 'count'],
-    queryFn: () => getItemRepository().count(filters),
+    queryKey: [...inventoryKeys.itemList(counted), 'count'],
+    queryFn: () => getItemRepository().count(counted),
     enabled,
     // Hold the previous count while a new filter loads (mirrors the list above) so the
     // header/sidebar total doesn't blink to "Loading…" on a filter toggle.
