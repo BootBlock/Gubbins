@@ -12,6 +12,16 @@ import {
 /** A restore awaiting confirmation: a raw `.sqlite` binary or a full `.zip` archive. */
 type PendingRestore = { kind: 'sqlite' | 'archive'; file: File };
 
+export interface RescueActionsProps {
+  /**
+   * Hide the irreversible hard reset. Set only where the failure being shown is *simulated*
+   * (the lab's `schema-too-new` flag): the database is actually healthy, so offering to purge
+   * it would let a presentation-only switch destroy real data on a single confirmed click. The
+   * non-destructive rescues — download a .sqlite, a JSON dump, restore — stay available.
+   */
+  readonly allowHardReset?: boolean;
+}
+
 /**
  * The shared "rescue your data" action set (spec §3) used by both the Safe Mode
  * crash fallback and the boot-failure screen. Hard reset requires a deliberate
@@ -19,7 +29,7 @@ type PendingRestore = { kind: 'sqlite' | 'archive'; file: File };
  * full-archive restore (Phase 17 — re-hydrates OPFS images too) likewise confirm
  * before overwriting the live database.
  */
-export function RescueActions() {
+export function RescueActions({ allowHardReset = true }: RescueActionsProps = {}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
@@ -120,7 +130,7 @@ export function RescueActions() {
       )}
       {restoreError ? <p className="text-sm text-destructive">{restoreError}</p> : null}
 
-      {confirmingReset ? (
+      {!allowHardReset ? null : confirmingReset ? (
         <div className="flex gap-2">
           <Button
             variant="destructive"
