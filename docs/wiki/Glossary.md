@@ -12,7 +12,7 @@ explanation.
 | **Transfer** | Moving stock between your own locations. See [[Locations & stock\|Locations-and-Stock]]. |
 | **Batch / lot** | A dated group of stock within a location, with an expiry. See [[Batches & lots\|Batches-and-Lots]]. |
 | **Variant** | The same product in a different size/colour/value. See [[Variants & SKUs\|Variants-and-SKUs]]. |
-| **Kit** | An item defined as an assembly of other items. See [[Kits & bundles\|Kits-and-Bundles]]. |
+| **Kit** | An item defined as a reusable assembly of other items, which you can assemble and disassemble. See [[Kits & bundles\|Kits-and-Bundles]]. |
 | **Capability** | A weighted, searchable attribute of an item. See [[Custom fields & capabilities\|Custom-Fields-and-Capabilities]]. |
 | **Custom field** | Your own labelled value on an item, usually per category. See [[Custom fields & capabilities\|Custom-Fields-and-Capabilities]]. |
 | **Tag** | A freeform label shared across items and locations; a thing can have many. See [[Tags, attachments & related\|Tags-Attachments-and-Related-Items]]. |
@@ -22,7 +22,7 @@ explanation.
 | **Booking** | A future reservation of an item for a contact. See [[Bookings]]. |
 | **Contact** | A person or supplier you lend to, borrow from, or buy from. See [[Contacts]]. |
 | **Project** | A build with a bill of materials and budget. See [[Projects & BOM\|Projects-and-BOM]]. |
-| **BOM** | Bill of materials — a project's component list. See [[Projects & BOM\|Projects-and-BOM]]. |
+| **BOM** | Bill of materials — a parts list. A *project's* BOM covers one build; a *reusable* one is a [[kit\|Kits-and-Bundles]]. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **Purchase order (PO)** | A tracked order to a supplier. See [[Purchase orders\|Purchase-Orders]]. |
 | **Wishlist** | Things you want to buy but don't own yet. See [[Wishlist]]. |
 | **Cycle count** | Checking on-hand stock against reality, per location. See [[Cycle counts & audit day\|Cycle-Counts-and-Audit-Day]]. |
