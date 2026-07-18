@@ -268,9 +268,9 @@ describe('EditLocationDialog — Save gating', () => {
     expect(saveButton()).toBeDisabled();
   });
 
-  it('leaves Save enabled for an out-of-range idle threshold, but clicking it does nothing', () => {
-    // Current behaviour (characterised, not endorsed): the Save button's `disabled` guard
-    // omits `deadStockDaysValid`, so the button stays enabled — only `submit()` refuses.
+  it('disables Save for an out-of-range idle threshold, like an invalid capacity', () => {
+    // The disabled guard once omitted `deadStockDaysValid` while `submit()` checked it, which
+    // left a button that looked usable and silently did nothing. Both now agree.
     renderDialog();
     fireEvent.change(dialog().getByLabelText('Idle threshold (optional)'), {
       target: { value: String(DEAD_STOCK_DAYS_BOUNDS.max + 1) },
@@ -280,7 +280,7 @@ describe('EditLocationDialog — Save gating', () => {
         `Idle threshold must be between ${DEAD_STOCK_DAYS_BOUNDS.min} and ${DEAD_STOCK_DAYS_BOUNDS.max} days.`,
       ),
     ).toBeInTheDocument();
-    expect(saveButton()).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
     fireEvent.click(saveButton());
     expect(spies.update).not.toHaveBeenCalled();
   });

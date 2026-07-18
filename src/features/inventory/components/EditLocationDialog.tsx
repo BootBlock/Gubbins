@@ -366,7 +366,9 @@ export function EditLocationDialog({
             </Button>
             <Button
               onClick={submit}
-              disabled={update.isPending || trimmed.length === 0 || !dirty || !capacityValid}
+              disabled={
+                update.isPending || trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid
+              }
             >
               Save changes
             </Button>
