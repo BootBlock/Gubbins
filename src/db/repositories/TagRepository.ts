@@ -344,11 +344,14 @@ export class TagRepository extends BaseRepository {
  * *different* tag. Carries that tag's id so the caller can offer to merge into it.
  */
 export class TagNameInUseError extends Error {
-  constructor(
-    readonly existingTagId: string,
-    name: string,
-  ) {
+  // A field declaration + explicit assignment, never a constructor parameter property: this
+  // module is reachable from the bridge, which Node loads with its strip-only TypeScript loader
+  // — that erases types without emitting the assignment a parameter property implies, so one
+  // here fails the whole bridge at import time. Guarded by `npm run smoke:bridge`.
+  readonly existingTagId: string;
+  constructor(existingTagId: string, name: string) {
     super(`A tag named “${name}” already exists.`);
+    this.existingTagId = existingTagId;
     this.name = 'TagNameInUseError';
   }
 }

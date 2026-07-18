@@ -35,6 +35,39 @@ it compares to the quantity already recorded. **Apply count** adjusts the item's
 in the [[activity log|Activity-Log]] how the new figure was arrived at — so a jump in quantity is
 never unexplained.
 
+## Reading the scale automatically
+
+If your scale is connected to **Home Assistant**, Gubbins can read it directly instead of you
+reading the display and typing the figure in. The dialog then shows a **scale picker** and a
+**Read the scale** button; the current reading drops straight into **Weight on scale**, and
+everything after that works exactly as it does for a typed figure.
+
+This is entirely optional, and typing the reading in yourself always works — nothing here is a
+prerequisite for counting by weight.
+
+**What you need:**
+
+1. The optional **[[bridge|Bridge-Overview]]** running, with its URL and access token filled in
+   under **Settings → Sync**, and
+2. the bridge configured to read Home Assistant, and pointed at your instance.
+
+See **[[Home Assistant integration|Home-Assistant-Integration]]** for setting that up. Once it is
+running, any Home Assistant entity that reports a weight appears in the picker; choose yours once
+and Gubbins remembers it on that device.
+
+> **💡 Tip**
+> The choice of scale is remembered **per device**, so a tablet in the workshop and a phone in the
+> stockroom can each read their own bench scale.
+
+Gubbins converts the reading into your chosen weight unit for you, so a sensor reporting
+kilograms works fine even if you read everything in grams.
+
+> **⚠️ Heads-up**
+> If the sensor reports a unit Gubbins can't convert, it says so rather than guessing — a
+> misread unit could be out by a factor of a thousand and would quietly wreck your stock figure.
+> The same applies if the scale is switched off or unreachable: you get a plain explanation
+> instead of a reading. You can always type the weight in by hand instead.
+
 ## How much to trust the number
 
 A scale reading is never perfectly exact, so Gubbins tells you how well the reading lines up with
@@ -70,3 +103,5 @@ are tracked individually rather than counted, and
 - **[[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]]** — reconciling stock across a whole
   location.
 - **[[Activity log|Activity-Log]]** — where an applied count is recorded.
+- **[[Home Assistant integration|Home-Assistant-Integration]]** — connecting a scale so Gubbins can
+  read it.

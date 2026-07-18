@@ -431,6 +431,15 @@ interface PreferencesStore {
    */
   readonly bridgeToken: string;
   /**
+   * Which Home Assistant entity is "the scale" for counting by weight (issue #122), e.g.
+   * `sensor.workshop_scale`. Device-local: the scale is a property of *where you are standing*,
+   * not of the shared inventory, so a second device in another room keeps its own choice rather
+   * than inheriting one that would weigh the wrong bench. Empty until the user picks one, which
+   * is also the "never used this" state — the reading is strictly opt-in and manual entry
+   * remains the default path.
+   */
+  readonly scaleEntityId: string;
+  /**
    * Printed **parts-catalogue letterhead** (issue #22 follow-up). A device-local set of branding
    * fields the Catalogue screen stamps onto the printed document, so a company can print an
    * on-brand catalogue. Persisted (localStorage) so the letterhead is set once and reused on
@@ -564,6 +573,8 @@ interface PreferencesStore {
   dismissWipBanner: () => void;
   setBridgeUrl: (url: string) => void;
   setBridgeToken: (token: string) => void;
+  /** Choose which Home Assistant entity is the scale (empty clears the choice). */
+  setScaleEntityId: (entityId: string) => void;
   /** Set the catalogue document title override (empty → "Catalogue"). */
   setCatalogueTitle: (title: string) => void;
   /** Set the catalogue letterhead organisation name. */
@@ -650,6 +661,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       wipBannerDismissed: false,
       bridgeUrl: '',
       bridgeToken: '',
+      scaleEntityId: '',
       catalogueTitle: '',
       catalogueOrgName: '',
       catalogueOrgDetails: '',
@@ -762,6 +774,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       dismissWipBanner: () => set({ wipBannerDismissed: true }),
       setBridgeUrl: (bridgeUrl) => set({ bridgeUrl }),
       setBridgeToken: (bridgeToken) => set({ bridgeToken }),
+      setScaleEntityId: (scaleEntityId) => set({ scaleEntityId: scaleEntityId.trim() }),
       // Letterhead text is stored verbatim — trimming here runs on every keystroke, which would
       // eat a space or newline the moment it lands at the end of the field (so the user could
       // never type a trailing space or a new address line). Any incidental leading/trailing

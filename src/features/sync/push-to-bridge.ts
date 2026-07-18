@@ -16,6 +16,7 @@
  * bloat).
  */
 import type { IDatabaseDriver } from '@/db/rpc/driver';
+import { normaliseBridgeBaseUrl } from '@/lib/bridge-url';
 import { buildLocalSnapshot } from './snapshot';
 import { snapshotToBackupJson } from './backup';
 
@@ -40,11 +41,7 @@ export async function buildPushSnapshotJson(
  * base or the full endpoint works). Throws a friendly error on a blank or non-HTTP(S) URL.
  */
 export function resolveBridgeIngestUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (trimmed === '') throw new Error('Enter the bridge URL, e.g. http://127.0.0.1:8787.');
-  if (!/^https?:\/\//i.test(trimmed)) {
-    throw new Error('The bridge URL must start with http:// or https://.');
-  }
+  const trimmed = normaliseBridgeBaseUrl(baseUrl);
   return trimmed.endsWith(SNAPSHOT_INGEST_PATH) ? trimmed : `${trimmed}${SNAPSHOT_INGEST_PATH}`;
 }
 

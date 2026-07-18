@@ -32,6 +32,26 @@ which includes a built-in, step-by-step setup guide.
   can trigger Home Assistant automations from inventory changes (e.g. notify when something runs
   low).
 
+## Reading a scale
+
+Everything above sends information *to* Home Assistant. One feature reads *from* it: if you have a
+scale exposed as a Home Assistant entity, [[counting by weight|Counting-by-Weight]] can pull the
+current reading straight into the app rather than you typing it in.
+
+This is **off by default** and enabled on the bridge, by pointing it at your Home Assistant
+instance and giving it a **long-lived access token** (created in Home Assistant under **Profile →
+Security**). Once it's on, the *Count by weight* dialog gains a scale picker and a **Read the
+scale** button.
+
+> **ℹ️ Note**
+> The token lives on the bridge, not in the app — the app only ever receives the resulting weight.
+> The bridge can *read* entity states and nothing else: it cannot call a Home Assistant service, so
+> it can't switch, unlock or actuate anything in your home.
+
+The reading goes through the bridge rather than the app talking to Home Assistant directly,
+because a browser on a secure page isn't allowed to contact a plain-`http` address on your
+network. The bridge sits on the same network as Home Assistant, so it can.
+
 ## Discovery
 
 The bridge can advertise itself on your network (mDNS/zeroconf), so Home Assistant can **discover**

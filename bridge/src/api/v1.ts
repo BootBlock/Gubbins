@@ -18,9 +18,30 @@ import { emptyAst } from '@/db/search/ast.ts';
 import type { LocationTreeNode } from '@/db/repositories/types';
 import { searchItems, searchItemRows, whereIs } from '../query.ts';
 import { openapiDocument } from '../openapi.ts';
-import type { BridgeServerState, ParsedBody, PushCapability, WriteCapability } from '../server.ts';
+import type {
+  BridgeServerState,
+  ParsedBody,
+  PushCapability,
+  ScaleCapability,
+  WriteCapability,
+} from '../server.ts';
+import { HaError } from '../homeassistant/client.ts';
+import {
+  SUPPORTED_HA_WEIGHT_UNITS,
+  type ScaleReadingIssue,
+  type ScaleReadingOutcome,
+} from '../homeassistant/scale.ts';
 import { WriteError, type WriteOperation } from '../write.ts';
-import { sendError, sendJson, sendText, sendXml, sendCsv, sendCalendar, sendFeed } from './respond.ts';
+import {
+  sendError,
+  sendJson,
+  sendText,
+  sendXml,
+  sendCsv,
+  sendCalendar,
+  sendFeed,
+  type ApiErrorCode,
+} from './respond.ts';
 import { buildCalendar, isCalendarSourceType, type CalendarSourceType } from '../ical/feed.ts';
 import { buildActivityFeed } from '../feeds/feed.ts';
 import { emitRss, emitAtom, emitJsonFeed, type FeedChannel } from '../feeds/emitters.ts';
@@ -107,6 +128,11 @@ export interface ApiV1Context {
    * the socket open); this flag is threaded through only so the discovery index can advertise it.
    */
   readonly streamable?: boolean;
+  /**
+   * Present only when the Home Assistant read capability is opted in (`GUBBINS_BRIDGE_HA=on`);
+   * its absence makes every `/api/v1/scale/*` path a `404`.
+   */
+  readonly scale?: ScaleCapability;
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
 }
@@ -130,7 +156,12 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
     return void sendJson(
       res,
       200,
-      apiIndex(ctx.write !== undefined, ctx.push !== undefined, ctx.streamable === true),
+      apiIndex(
+        ctx.write !== undefined,
+        ctx.push !== undefined,
+        ctx.streamable === true,
+        ctx.scale !== undefined,
+      ),
     );
   }
   if (segments.length === 1 && segments[0] === 'openapi.json') {
@@ -138,6 +169,12 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   }
   if (segments.length === 1 && segments[0] === '$metadata') {
     return void sendXml(res, 200, odataMetadataXml());
+  }
+
+  // The scale endpoints read Home Assistant, not the snapshot, so they are routed *before* the
+  // state gate below — a bridge that has not yet loaded a snapshot can still read a scale.
+  if (segments[0] === 'scale') {
+    return void (await handleScale(res, segments, url, ctx.scale));
   }
 
   const state = ctx.getState();
@@ -192,6 +229,88 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
   }
 
   sendError(res, 404, 'not_found', 'Not found', { v1: true });
+}
+
+// --- Home Assistant scale reads (opt-in, off by default) --------------------------
+
+/**
+ * Route `GET /api/v1/scale/*` — the opt-in inbound Home Assistant read behind "count by weight"
+ * (issue #122):
+ *
+ *   GET /api/v1/scale/entities          → { entities: ScaleEntityDto[] } — the picker's source
+ *   GET /api/v1/scale/state?entity_id=… → the current reading, reconciled to grams
+ *
+ * When the capability is absent (`GUBBINS_BRIDGE_HA` unset/off) every path here is a `404`, the
+ * same "the feature simply isn't there" posture the write and push opt-ins take.
+ *
+ * A reading that can't be interpreted is a **`409`, not a `200` with a null weight**: the caller
+ * is about to turn this number into a stock count, so "the scale is unavailable" and "that
+ * sensor reports a unit I can't convert" must be impossible to mistake for a valid zero.
+ */
+async function handleScale(
+  res: ServerResponse,
+  segments: readonly string[],
+  url: URL,
+  scale: ScaleCapability | undefined,
+): Promise<void> {
+  if (scale === undefined || segments.length !== 2) {
+    return void sendError(res, 404, 'not_found', 'Not found', { v1: true });
+  }
+
+  try {
+    if (segments[1] === 'entities') {
+      return void sendJson(res, 200, { entities: await scale.client.listScaleEntities() });
+    }
+
+    if (segments[1] === 'state') {
+      const entityId = (url.searchParams.get('entity_id') ?? '').trim();
+      if (entityId === '') {
+        return void sendError(res, 400, 'bad_request', 'entity_id is required', { v1: true });
+      }
+      const outcome = await scale.client.readScale(entityId);
+      if (!outcome.ok) {
+        return void sendError(res, 409, SCALE_ISSUE_CODES[outcome.issue], scaleIssueMessage(outcome), {
+          v1: true,
+        });
+      }
+      return void sendJson(res, 200, outcome.reading);
+    }
+  } catch (err) {
+    if (err instanceof HaError) {
+      return void sendError(res, err.status, err.code, err.message, { v1: true });
+    }
+    throw err; // unexpected → the caller's generic 500
+  }
+
+  sendError(res, 404, 'not_found', 'Not found', { v1: true });
+}
+
+/**
+ * Map each reading issue to its published error code. An explicit table rather than a derived
+ * string (`scale_${issue.replace(…)}`): the codes are part of the API contract, so they must be
+ * checkable against {@link ApiErrorCode} and greppable, and adding an issue must not silently
+ * mint an undocumented code.
+ */
+const SCALE_ISSUE_CODES: Readonly<Record<ScaleReadingIssue, ApiErrorCode>> = {
+  unavailable: 'scale_unavailable',
+  'unsupported-unit': 'scale_unsupported_unit',
+  'not-a-number': 'scale_not_a_number',
+};
+
+/**
+ * A plain, secret-free explanation of why a reading couldn't be used. The unsupported-unit case
+ * names both the offending unit and the ones that do work, because that is a configuration
+ * problem the user can actually fix (change the sensor's unit in Home Assistant).
+ */
+function scaleIssueMessage(outcome: Extract<ScaleReadingOutcome, { ok: false }>): string {
+  switch (outcome.issue) {
+    case 'unavailable':
+      return 'The scale is unavailable in Home Assistant.';
+    case 'not-a-number':
+      return 'That entity does not report a numeric weight.';
+    case 'unsupported-unit':
+      return `That entity reports weights in "${outcome.unit ?? 'no unit'}", which cannot be converted. Supported units: ${SUPPORTED_HA_WEIGHT_UNITS.join(', ')}.`;
+  }
 }
 
 // --- writes (opt-in, off by default) ----------------------------------------------
@@ -265,7 +384,7 @@ function parseAdjustBody(
 
 // --- meta -------------------------------------------------------------------------
 
-function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): unknown {
+function apiIndex(writable: boolean, pushable: boolean, streamable: boolean, scalable: boolean): unknown {
   return {
     name: 'Gubbins Bridge API',
     version: '1.0.0',
@@ -276,6 +395,12 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): un
     pushable,
     /** Whether this bridge has the opt-in read-only SSE event stream enabled. */
     streamable,
+    /**
+     * Whether this bridge has the opt-in Home Assistant read enabled, i.e. whether "count by
+     * weight" can pull a live reading off a scale entity. The PWA reads this to decide whether
+     * to offer the button at all, rather than showing a control that would always 404.
+     */
+    scalable,
     endpoints: [
       `${API_V1_BASE}/openapi.json`,
       `${API_V1_BASE}/$metadata`,
@@ -300,6 +425,7 @@ function apiIndex(writable: boolean, pushable: boolean, streamable: boolean): un
         : []),
       ...(pushable ? [`POST ${API_V1_BASE}/snapshot`] : []),
       ...(streamable ? [`${API_V1_BASE}/events`] : []),
+      ...(scalable ? [`${API_V1_BASE}/scale/entities`, `${API_V1_BASE}/scale/state`] : []),
     ],
   };
 }

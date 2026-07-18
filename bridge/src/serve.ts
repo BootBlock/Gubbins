@@ -26,6 +26,7 @@ import { createSnapshotWatcher, type SnapshotWatcher } from './watcher.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { createMdnsAdvertiser, type MdnsAdvertiser } from './mdns/advertise.ts';
 import { pickAdvertisedAddress, resolveMdnsPlan, sanitizeHostLabel } from './mdns/records.ts';
+import { createHaClient } from './homeassistant/client.ts';
 import { createEventPipeline, type EventSink } from './events/pipeline.ts';
 import { createSseHub, type SseHub } from './events/sse.ts';
 import { createWebhookDeliverer, parseWebhookTargets, type WebhookTarget } from './events/webhook.ts';
@@ -102,6 +103,19 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
           ingestSnapshot({ snapshotPath: config.snapshotPath, body, maxBytes: config.maxPushBytes }),
       }
     : undefined;
+  // Home Assistant reads (issue #122) — an independent, outbound-only opt-in: the bridge calls
+  // HA, so this opens no port and is unrelated to the data source. Present only when configured;
+  // otherwise `/api/v1/scale/*` is a 404. The HA token stays here and is never sent to the PWA.
+  const scale =
+    config.homeAssistant && config.homeAssistantUrl && config.homeAssistantToken
+      ? {
+          client: createHaClient({
+            baseUrl: config.homeAssistantUrl,
+            token: config.homeAssistantToken,
+          }),
+        }
+      : undefined;
+
   const server = createBridgeServer({
     token: config.token,
     getState: () => watcher.getState(),
@@ -110,6 +124,7 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
     push,
     // Present only when events are enabled → `GET /api/v1/events` streams; otherwise a 404.
     events: sseHub,
+    scale,
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -168,6 +183,16 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
       'Events/webhooks: disabled. Set GUBBINS_BRIDGE_EVENTS=on for the SSE stream, or ' +
         'GUBBINS_BRIDGE_WEBHOOKS=on for outbound webhooks.',
     );
+  }
+  if (scale) {
+    // The HA base URL is safe to log (it is a host the operator typed); the TOKEN never is.
+    console.log(
+      `Home Assistant reads ENABLED (GUBBINS_BRIDGE_HA=on): "count by weight" can read a scale ` +
+        `entity from ${config.homeAssistantUrl}. Outbound-only and read-only — the bridge cannot ` +
+        'call a Home Assistant service.',
+    );
+  } else {
+    console.log('Home Assistant reads: disabled. Set GUBBINS_BRIDGE_HA=on to enable a scale reading.');
   }
   if (mqttEndpoint) {
     // The endpoint label is safe to log (host/port only); the username/password are NEVER logged.

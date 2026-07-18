@@ -42,6 +42,10 @@
  *   GUBBINS_BRIDGE_MQTT_DISCOVERY (optional) — also emit Home Assistant MQTT-discovery configs so
  *                                  HA auto-creates entities with no custom component. Off by default.
  *   GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX (optional) — HA discovery prefix (default `homeassistant`).
+ *   GUBBINS_BRIDGE_HA            (optional) — opt into reading Home Assistant entity state (the
+ *                                 "count by weight" scale reading). Off by default; outbound-only.
+ *   GUBBINS_BRIDGE_HA_URL        (required when HA on) — base URL of the Home Assistant instance.
+ *   GUBBINS_BRIDGE_HA_TOKEN      (required when HA on) — long-lived access token; .env only.
  */
 import { DEFAULT_RATE_CAPACITY, DEFAULT_RATE_REFILL_PER_SEC, type RateLimiterOptions } from './rate-limit.ts';
 
@@ -153,6 +157,21 @@ export interface BridgeConfig {
   readonly mqttDiscovery: boolean;
   /** HA discovery prefix (`GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX`, default `homeassistant`). */
   readonly mqttDiscoveryPrefix: string;
+  /**
+   * Whether the operator opted into **reading Home Assistant entity state** (`GUBBINS_BRIDGE_HA=on`)
+   * — the inbound path that lets "count by weight" pull a live reading off a scale entity.
+   * **Off by default.** Like MQTT this is an *outbound client* (the bridge calls HA; no new inbound
+   * port), and it is read-only with respect to Home Assistant: the bridge can list entity states and
+   * read one, and cannot call a service. When off, the `/api/v1/scale/*` endpoints are a `404`.
+   */
+  readonly homeAssistant: boolean;
+  /** Base URL of the Home Assistant instance. Required (non-empty) when {@link homeAssistant} is on. */
+  readonly homeAssistantUrl: string | undefined;
+  /**
+   * Home Assistant long-lived access token (`GUBBINS_BRIDGE_HA_TOKEN`). Required when
+   * {@link homeAssistant} is on. `.env` only — never logged, and never forwarded to the PWA.
+   */
+  readonly homeAssistantToken: string | undefined;
 }
 
 /** The subset of the environment we read; `process.env`-shaped for easy injection in tests. */
@@ -200,6 +219,19 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const mqttClientId = (env.GUBBINS_BRIDGE_MQTT_CLIENT_ID ?? '').trim() || 'gubbins-bridge';
   const mqttDiscovery = parseBool(env.GUBBINS_BRIDGE_MQTT_DISCOVERY, false, 'GUBBINS_BRIDGE_MQTT_DISCOVERY');
   const mqttDiscoveryPrefix = (env.GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX ?? '').trim() || 'homeassistant';
+  const homeAssistant = parseBool(env.GUBBINS_BRIDGE_HA, false, 'GUBBINS_BRIDGE_HA');
+  const homeAssistantUrl = (env.GUBBINS_BRIDGE_HA_URL ?? '').trim() || undefined;
+  const homeAssistantToken = (env.GUBBINS_BRIDGE_HA_TOKEN ?? '').trim() || undefined;
+  if (homeAssistant && homeAssistantUrl === undefined) {
+    throw new Error('GUBBINS_BRIDGE_HA is on but GUBBINS_BRIDGE_HA_URL is unset (set it in .env).');
+  }
+  if (homeAssistant && homeAssistantToken === undefined) {
+    throw new Error('GUBBINS_BRIDGE_HA is on but GUBBINS_BRIDGE_HA_TOKEN is unset (set it in .env).');
+  }
+  if (homeAssistantUrl !== undefined && !/^https?:\/\//i.test(homeAssistantUrl)) {
+    throw new Error('GUBBINS_BRIDGE_HA_URL must start with http:// or https://.');
+  }
+
   const maxPushBytes = Math.floor(
     parsePositive(
       env.GUBBINS_BRIDGE_MAX_PUSH_BYTES,
@@ -234,6 +266,9 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     mqttClientId,
     mqttDiscovery,
     mqttDiscoveryPrefix,
+    homeAssistant,
+    homeAssistantUrl,
+    homeAssistantToken,
   };
 }
 
