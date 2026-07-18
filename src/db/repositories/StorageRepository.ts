@@ -140,16 +140,17 @@ export class StorageRepository extends BaseRepository {
   }
 
   /**
-   * Record that an image's full-resolution file was dropped, keeping its thumbnail.
+   * Record that a photo's full-resolution file was dropped, keeping its thumbnail.
+   *
+   * `owner` is required rather than defaulted: the id and the table must agree, and a default
+   * would let a forgotten argument update the wrong table, match no row, and report success —
+   * leaving a deleted file with no row marked downgraded.
+   *
    * An UPDATE, but it *reclaims* space, so it deliberately bypasses the Hard Stop —
    * blocking it would trap the very locked-out user §7.6 exists to rescue. Local-only:
    * never propagated to cloud sync (§7.6.3 B).
    */
-  async markImageDowngraded(
-    id: string,
-    owner: DowngradableOwner = 'item_images',
-    at: number = Date.now(),
-  ): Promise<void> {
+  async markImageDowngraded(id: string, owner: DowngradableOwner, at: number = Date.now()): Promise<void> {
     // `owner` comes from the closed DowngradableOwner union, never from user input, so it is
     // safe to interpolate as a table name — the driver cannot bind an identifier.
     await this.driver.execute(`UPDATE ${owner} SET full_res_downgraded_at = ? WHERE id = ?;`, [at, id]);

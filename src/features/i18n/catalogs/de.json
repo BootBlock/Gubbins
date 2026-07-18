@@ -793,7 +793,6 @@
   "events.truncated.label": "Ereignisse übersprungen",
   "events.truncated.description": "Es sind zu viele Änderungen auf einmal passiert, sodass einige Ereignisse nicht gesendet wurden. Meist ein Massenimport — die Änderungen selbst sind sicher, nur die Benachrichtigungen sind entfallen.",
   "inventory.locationPhotos.tab": "Fotos",
-  "inventory.locationPhotos.title": "Fotos dieses Ortes",
   "inventory.locationPhotos.empty": "Fügen Sie ein Foto dieses Ortes hinzu und markieren Sie darauf Bereiche, damit Gegenstände genau auf ihren Platz verweisen können.",
   "inventory.locationPhotos.addLabel": "Foto hinzufügen",
   "inventory.locationPhotos.uploadLabel": "Foto hochladen",
@@ -831,10 +830,8 @@
   "inventory.regions.addItemPlaceholder": "Gegenstände suchen…",
   "inventory.regions.removeItem": "{name} aus diesem Bereich entfernen",
   "inventory.regions.itemsEmpty": "Hier sind noch keine Gegenstände abgelegt.",
-  "inventory.placements.title": "Wo er sich befindet",
   "inventory.placements.empty": "Dieser Gegenstand wurde noch nicht auf einem Ortsfoto platziert.",
   "inventory.placements.at": "{region} — {location}",
-  "inventory.placements.viewLocation": "{location} öffnen",
   "inventory.location.detailsTab": "Details",
   "inventory.location.railLabel": "Ortsabschnitte",
   "inventory.locationPhotos.missing": "Das Foto in voller Größe ist auf diesem Gerät nicht verfügbar.",
@@ -842,5 +839,10 @@
   "inventory.regions.defaultName": "Neuer Bereich",
   "inventory.regions.done": "Fertig",
   "inventory.regions.removeCancel": "Abbrechen",
-  "inventory.regions.addItemAction": "Hinzufügen"
+  "inventory.regions.addItemAction": "Hinzufügen",
+  "inventory.regions.saveFailed": "Diese Änderung am Bereich konnte nicht gespeichert werden.",
+  "inventory.locationPhotos.saveFailed": "Diese Änderung am Foto konnte nicht gespeichert werden.",
+  "inventory.locationPhotos.removeConfirm": "Dieses Foto löschen? Seine Bereiche werden mitgelöscht; die darin abgelegten Gegenstände bleiben erhalten — ihre Zuordnung wird nur aufgehoben.",
+  "inventory.locationPhotos.removeCancel": "Abbrechen",
+  "inventory.locationPhotos.removeConfirmAction": "Foto löschen"
 }

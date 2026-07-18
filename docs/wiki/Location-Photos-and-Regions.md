@@ -68,8 +68,8 @@ shelf" is exactly what you record, without drawing two overlapping boxes.
 You can work from either end:
 
 - **From the photo** — open a region and add items to it.
-- **From the item** — an item shows every region it sits in, with a preview of the photo and a
-  link back to the location.
+- **From the item** — an item's **Where it sits** section shows every region it sits in, each
+  with a preview of the photo and the name of the location it belongs to.
 
 > **ℹ️ Note**
 > Placing an item in a region does **not** move its stock. Regions describe *where within a

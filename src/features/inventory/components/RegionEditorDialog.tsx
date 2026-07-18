@@ -30,6 +30,7 @@ import {
   RegionCanvas,
   SegmentedRadioGroup,
   Spinner,
+  useToast,
   type SegmentedOption,
 } from '@/components/foundry';
 import { AddIcon, DeleteIcon, ImageIcon, UnlinkIcon } from '@/components/icons';
@@ -89,6 +90,16 @@ export function RegionEditorDialog({
   locationName: string;
 }) {
   const t = useT();
+  const { show } = useToast();
+  // Every write here can fail — most plausibly against the §7.6 storage Hard Stop, which
+  // `assertWritable()` throws on. Without this the dialog would simply do nothing, which is
+  // indistinguishable from having ignored the click.
+  const onFailure = (error: unknown) =>
+    show({
+      tone: 'danger',
+      message: error instanceof Error ? error.message : t('inventory.regions.saveFailed'),
+    });
+
   const { src, loading } = usePhotoImageSrc(photo);
   const { data: regions } = usePhotoRegions(photo.id);
   const addRegion = useAddRegion();
@@ -139,8 +150,10 @@ export function RegionEditorDialog({
         name,
         shape: geometry.shape,
         geometry: serialiseGeometry(geometry),
-        // Newest on top, so a region drawn over another wins the hit test.
-        position: rows.length,
+        // Strictly above every existing region, so a shape drawn over another wins the hit
+        // test. `rows.length` would not do: positions are never compacted after a delete, so
+        // a photo left holding 0 and 5 would put the new region at 2 — underneath.
+        position: rows.reduce((top, region) => Math.max(top, region.position + 1), 0),
       },
       {
         onSuccess: (region) => {
@@ -148,6 +161,7 @@ export function RegionEditorDialog({
           setSelectedId(region.id);
           setAnnouncement(t('inventory.regions.created', { vars: { name: region.name } }));
         },
+        onError: onFailure,
       },
     );
   };
@@ -155,7 +169,10 @@ export function RegionEditorDialog({
   const onCommit = (geometry: RegionGeometry) => {
     if (tool === 'select') {
       if (!selected) return;
-      updateRegion.mutate({ id: selected.id, input: { geometry: serialiseGeometry(geometry) } });
+      updateRegion.mutate(
+        { id: selected.id, input: { geometry: serialiseGeometry(geometry) } },
+        { onError: onFailure },
+      );
       return;
     }
     create(geometry);
@@ -163,6 +180,7 @@ export function RegionEditorDialog({
 
   const confirmDelete = (region: LocationRegionWithCount) => {
     removeRegion.mutate(region.id, {
+      onError: onFailure,
       onSuccess: () => {
         setPendingDeleteId(null);
         if (selectedId === region.id) setSelectedId(null);
@@ -254,8 +272,26 @@ export function RegionEditorDialog({
                 key={selected.id}
                 photoId={photo.id}
                 region={selected}
-                onRename={(name) => updateRegion.mutate({ id: selected.id, input: { name } })}
-                onRecolour={(color) => updateRegion.mutate({ id: selected.id, input: { color } })}
+                onError={onFailure}
+                onRename={(name) =>
+                  updateRegion.mutate(
+                    { id: selected.id, input: { name } },
+                    {
+                      onError: onFailure,
+                      onSuccess: () => setAnnouncement(t('inventory.regions.updated', { vars: { name } })),
+                    },
+                  )
+                }
+                onRecolour={(color) =>
+                  updateRegion.mutate(
+                    { id: selected.id, input: { color } },
+                    {
+                      onError: onFailure,
+                      onSuccess: () =>
+                        setAnnouncement(t('inventory.regions.updated', { vars: { name: selected.name } })),
+                    },
+                  )
+                }
               />
             ) : null}
           </div>
@@ -363,11 +399,14 @@ function SelectedRegionEditor({
   region,
   onRename,
   onRecolour,
+  onError,
 }: {
   photoId: string;
   region: LocationRegionWithCount;
   onRename: (name: string) => void;
   onRecolour: (color: string | null) => void;
+  /** Surfaces a failed placement — otherwise the row simply never appears, with no reason given. */
+  onError: (error: unknown) => void;
 }) {
   const t = useT();
   const [name, setName] = useState(region.name);
@@ -378,9 +417,11 @@ function SelectedRegionEditor({
   const { data: itemsById } = useItemsById(ids);
   const link = useLinkItemToRegion(photoId);
 
-  // Candidate items to place: the same bounded first page the other item pickers use
-  // (RelationsEditor / SubstitutionsEditor). A fuller search picker is a later refinement.
-  const { data: itemsPage } = useInventoryItems({}, 100);
+  // Candidates come from a *search*, not a fixed first page: an inventory of any real size
+  // would otherwise put most of its items permanently out of reach of this picker. The typed
+  // text drives the query, so what the user is looking for is what gets fetched.
+  const search = picked.trim();
+  const { data: itemsPage } = useInventoryItems(search.length > 0 ? { search } : {}, 20);
   const candidates = useMemo(() => itemsPage?.pages.flatMap((page) => page.rows) ?? [], [itemsPage]);
 
   const placed = useMemo(
@@ -389,21 +430,34 @@ function SelectedRegionEditor({
   );
   const placedIds = useMemo(() => new Set(ids), [ids]);
 
-  // Names of items not already in this region, for the picker's suggestion list.
-  const suggestions = useMemo(
-    () =>
-      candidates
-        .filter((item) => !placedIds.has(item.id))
-        .map((item) => itemDisplayName(item.name, item.serialNo)),
-    [candidates, placedIds],
-  );
+  /**
+   * Label → item, for the picker's suggestions and for resolving what the user typed back to a
+   * row. Two items can legitimately render the same label (same name, neither serialised), and
+   * matching on the label alone would silently link whichever came first — so a repeated label
+   * is disambiguated with a short id fragment, keeping every entry uniquely resolvable.
+   */
+  const byLabel = useMemo(() => {
+    const seen = new Map<string, number>();
+    const out = new Map<string, (typeof candidates)[number]>();
+    for (const item of candidates) {
+      if (placedIds.has(item.id)) continue;
+      const base = itemDisplayName(item.name, item.serialNo);
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      out.set(n === 1 ? base : `${base} (${item.id.slice(0, 6)})`, item);
+    }
+    return out;
+  }, [candidates, placedIds]);
+
+  const suggestions = useMemo(() => [...byLabel.keys()], [byLabel]);
 
   const addPicked = () => {
-    const wanted = picked.trim();
-    if (wanted.length === 0) return;
-    const match = candidates.find((item) => itemDisplayName(item.name, item.serialNo) === wanted);
+    const match = byLabel.get(picked.trim());
     if (!match) return;
-    link.mutate({ itemId: match.id, regionId: region.id, linked: true }, { onSuccess: () => setPicked('') });
+    link.mutate(
+      { itemId: match.id, regionId: region.id, linked: true },
+      { onSuccess: () => setPicked(''), onError },
+    );
   };
 
   const commitName = () => {
@@ -457,7 +511,9 @@ function SelectedRegionEditor({
                     variant="ghost"
                     size="sm"
                     aria-label={t('inventory.regions.removeItem', { vars: { name: label } })}
-                    onClick={() => link.mutate({ itemId: item.id, regionId: region.id, linked: false })}
+                    onClick={() =>
+                      link.mutate({ itemId: item.id, regionId: region.id, linked: false }, { onError })
+                    }
                     className="[&_svg]:size-3.5"
                   >
                     <UnlinkIcon aria-hidden="true" />
@@ -483,7 +539,7 @@ function SelectedRegionEditor({
             data-testid="region-add-item"
           />
         </div>
-        <Button variant="outline" onClick={addPicked} disabled={picked.trim().length === 0}>
+        <Button variant="outline" onClick={addPicked} disabled={!byLabel.has(picked.trim())}>
           {t('inventory.regions.addItemAction')}
         </Button>
       </div>

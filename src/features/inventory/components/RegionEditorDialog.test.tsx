@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { ToastProvider } from '@/components/foundry';
 import type { Item, LocationPhoto, LocationRegionWithCount } from '@/db/repositories';
 import { serialiseGeometry } from '../regions/geometry';
 
@@ -87,7 +88,13 @@ const item = (overrides: Partial<Item> = {}): Item =>
   }) as Item;
 
 function renderDialog() {
-  return render(<RegionEditorDialog open onClose={vi.fn()} photo={PHOTO} locationName="Workshop" />);
+  // The dialog reports failed writes through a toast, so `useToast()` needs its provider —
+  // exactly as it has one under <App>.
+  return render(
+    <ToastProvider>
+      <RegionEditorDialog open onClose={vi.fn()} photo={PHOTO} locationName="Workshop" />
+    </ToastProvider>,
+  );
 }
 
 const dialog = () => within(screen.getByRole('dialog', { name: 'Regions on this photo' }));
@@ -200,10 +207,19 @@ describe('RegionEditorDialog — creating a region', () => {
   });
 
   it('stacks a new region above the existing ones so it wins an overlapping hit', () => {
-    h.regions = [region({ id: 'r1' }), region({ id: 'r2' })];
+    h.regions = [region({ id: 'r1', position: 0 }), region({ id: 'r2', position: 1 })];
     renderDialog();
     fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
-    expect(h.addRegion.mock.calls[0]![0].position).toBe(2);
+    expect(h.addRegion.mock.calls[0]![0].position).toBeGreaterThan(1);
+  });
+
+  // Positions are never compacted after a delete, so a photo can hold a gap. Counting the rows
+  // would put the new region at 2 here — underneath the one at 5, the opposite of the intent.
+  it('stays above a sparse set of positions left behind by a deletion', () => {
+    h.regions = [region({ id: 'r1', position: 0 }), region({ id: 'r2', position: 5 })];
+    renderDialog();
+    fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
+    expect(h.addRegion.mock.calls[0]![0].position).toBeGreaterThan(5);
   });
 
   it('selects and announces the region the repository actually created', () => {
@@ -237,7 +253,10 @@ describe('RegionEditorDialog — editing a region', () => {
     fireEvent.change(field, { target: { value: '  Second shelf  ' } });
     expect(h.updateRegion).not.toHaveBeenCalled();
     fireEvent.blur(field);
-    expect(h.updateRegion).toHaveBeenCalledWith({ id: 'r1', input: { name: 'Second shelf' } });
+    expect(h.updateRegion).toHaveBeenCalledWith(
+      { id: 'r1', input: { name: 'Second shelf' } },
+      expect.anything(),
+    );
   });
 
   it('refuses to save a blank name', () => {
@@ -255,7 +274,7 @@ describe('RegionEditorDialog — editing a region', () => {
     renderDialog();
     fireEvent.click(selectRow(0));
     fireEvent.click(screen.getByRole('radio', { name: 'Blue' }));
-    expect(h.updateRegion).toHaveBeenCalledWith({ id: 'r1', input: { color: 'blue' } });
+    expect(h.updateRegion).toHaveBeenCalledWith({ id: 'r1', input: { color: 'blue' } }, expect.anything());
   });
 });
 
@@ -337,6 +356,6 @@ describe('RegionEditorDialog — item placements', () => {
     renderDialog();
     fireEvent.click(selectRow(0));
     fireEvent.click(screen.getByRole('button', { name: 'Remove NE555 timer from this region' }));
-    expect(h.link).toHaveBeenCalledWith({ itemId: 'i1', regionId: 'r1', linked: false });
+    expect(h.link).toHaveBeenCalledWith({ itemId: 'i1', regionId: 'r1', linked: false }, expect.anything());
   });
 });

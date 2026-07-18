@@ -793,7 +793,6 @@
   "events.truncated.label": "Events were skipped",
   "events.truncated.description": "Too many changes happened at once and some events were not sent. Usually a bulk import — the changes themselves are safe, only the notifications were dropped.",
   "inventory.locationPhotos.tab": "Photos",
-  "inventory.locationPhotos.title": "Photos of this location",
   "inventory.locationPhotos.empty": "Add a photo of this location, then mark out regions on it so items can point at exactly where they sit.",
   "inventory.locationPhotos.addLabel": "Add a photo",
   "inventory.locationPhotos.uploadLabel": "Upload a photo",
@@ -831,10 +830,8 @@
   "inventory.regions.addItemPlaceholder": "Search items…",
   "inventory.regions.removeItem": "Remove {name} from this region",
   "inventory.regions.itemsEmpty": "No items placed here yet.",
-  "inventory.placements.title": "Where it sits",
   "inventory.placements.empty": "This item has not been placed on a location photo.",
   "inventory.placements.at": "{region} — {location}",
-  "inventory.placements.viewLocation": "Open {location}",
   "inventory.location.detailsTab": "Details",
   "inventory.location.railLabel": "Location sections",
   "inventory.locationPhotos.missing": "The full-size photo isn’t available on this device.",
@@ -842,5 +839,10 @@
   "inventory.regions.defaultName": "New region",
   "inventory.regions.done": "Done",
   "inventory.regions.removeCancel": "Cancel",
-  "inventory.regions.addItemAction": "Add"
+  "inventory.regions.addItemAction": "Add",
+  "inventory.regions.saveFailed": "Could not save that change to the region.",
+  "inventory.locationPhotos.saveFailed": "Could not save that change to the photo.",
+  "inventory.locationPhotos.removeConfirm": "Delete this photo? Its regions go with it, and the items placed in them are kept — they are only unplaced.",
+  "inventory.locationPhotos.removeCancel": "Cancel",
+  "inventory.locationPhotos.removeConfirmAction": "Delete photo"
 }

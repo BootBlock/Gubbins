@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { ToastProvider } from '@/components/foundry';
 import type { LocationPhoto } from '@/db/repositories';
 
 /**
@@ -57,7 +58,13 @@ const photo = (overrides: Partial<LocationPhoto> = {}): LocationPhoto => ({
 });
 
 function renderManager() {
-  return render(<LocationPhotoManager locationId={LOCATION_ID} locationName="Workshop" />);
+  // The manager reports failed writes through a toast, so `useToast()` needs its provider —
+  // exactly as it has one under <App>.
+  return render(
+    <ToastProvider>
+      <LocationPhotoManager locationId={LOCATION_ID} locationName="Workshop" />
+    </ToastProvider>,
+  );
 }
 
 const uploadInput = () => screen.getByLabelText('Upload a photo') as HTMLInputElement;
@@ -126,7 +133,7 @@ describe('LocationPhotoManager — adding and removing', () => {
     renderManager();
     const file = new File(['fake-bytes'], 'bench.png', { type: 'image/png' });
     fireEvent.change(uploadInput(), { target: { files: [file] } });
-    expect(h.addPhoto).toHaveBeenCalledWith({ locationId: LOCATION_ID, file });
+    expect(h.addPhoto).toHaveBeenCalledWith({ locationId: LOCATION_ID, file }, expect.anything());
   });
 
   it('clears the input so re-picking the same file fires again', () => {
@@ -142,12 +149,30 @@ describe('LocationPhotoManager — adding and removing', () => {
     expect(h.addPhoto).not.toHaveBeenCalled();
   });
 
-  it('removes the photo the control belongs to, with its location id', () => {
+  // Deleting a photo takes its regions and every placement on them with it, so it confirms
+  // first — the click that opens the prompt must not itself delete anything.
+  it('asks before removing a photo, and deletes nothing until confirmed', () => {
     h.photos = [photo({ id: 'p1' }), photo({ id: 'p2' })];
     renderManager();
     fireEvent.click(within(tiles()[1]!).getByRole('button', { name: 'Remove photo' }));
+
+    expect(h.removePhoto).not.toHaveBeenCalled();
+    const confirm = within(tiles()[1]!).getByTestId('photo-delete-confirm');
+    expect(confirm).toHaveTextContent(/only unplaced/i);
+
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Delete photo' }));
     expect(h.removePhoto).toHaveBeenCalledTimes(1);
-    expect(h.removePhoto).toHaveBeenCalledWith({ id: 'p2', locationId: LOCATION_ID });
+    expect(h.removePhoto).toHaveBeenCalledWith({ id: 'p2', locationId: LOCATION_ID }, expect.anything());
+  });
+
+  it('abandons the deletion when the prompt is cancelled', () => {
+    h.photos = [photo({ id: 'p1' })];
+    renderManager();
+    fireEvent.click(within(tiles()[0]!).getByRole('button', { name: 'Remove photo' }));
+    fireEvent.click(within(tiles()[0]!).getByRole('button', { name: 'Cancel' }));
+
+    expect(h.removePhoto).not.toHaveBeenCalled();
+    expect(within(tiles()[0]!).queryByTestId('photo-delete-confirm')).toBeNull();
   });
 });
 
@@ -160,11 +185,10 @@ describe('LocationPhotoManager — captions', () => {
     // Typing alone must not fire a mutation — that would invalidate the list mid-edit.
     expect(h.updateCaption).not.toHaveBeenCalled();
     fireEvent.blur(field);
-    expect(h.updateCaption).toHaveBeenCalledWith({
-      id: 'p1',
-      caption: 'Under the bench',
-      locationId: LOCATION_ID,
-    });
+    expect(h.updateCaption).toHaveBeenCalledWith(
+      { id: 'p1', caption: 'Under the bench', locationId: LOCATION_ID },
+      expect.anything(),
+    );
   });
 
   it('normalises a cleared caption to null', () => {
@@ -173,7 +197,10 @@ describe('LocationPhotoManager — captions', () => {
     const field = screen.getByLabelText('Caption (optional)');
     fireEvent.change(field, { target: { value: '   ' } });
     fireEvent.blur(field);
-    expect(h.updateCaption).toHaveBeenCalledWith({ id: 'p1', caption: null, locationId: LOCATION_ID });
+    expect(h.updateCaption).toHaveBeenCalledWith(
+      { id: 'p1', caption: null, locationId: LOCATION_ID },
+      expect.anything(),
+    );
   });
 
   it('does not save when the caption is unchanged', () => {
