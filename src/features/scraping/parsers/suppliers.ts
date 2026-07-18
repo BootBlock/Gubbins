@@ -11,6 +11,8 @@
  * MV3 match patterns cannot wildcard a TLD, so each supplier lists its concrete domains.
  * Subdomains are covered by the leading `*.` (e.g. `uk.farnell.com`, `www.mouser.com`).
  */
+import { isHostWithinDomains } from '../../../lib/host-match';
+
 export const EXTENSION_HOST_PERMISSIONS: readonly string[] = [
   // DigiKey
   'https://*.digikey.com/*',
@@ -62,8 +64,7 @@ function isAllowedUrlForDomains(rawUrl: string, domains: readonly string[]): boo
   if (url.protocol !== 'https:') return false;
   // A userinfo component (user:pass@host) is never legitimate here and can disguise the host.
   if (url.username.length > 0 || url.password.length > 0) return false;
-  const host = url.hostname.toLowerCase();
-  return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  return isHostWithinDomains(url.hostname, domains);
 }
 
 /** Whether a scrape target is a registered supplier domain the extension may fetch (§9). */

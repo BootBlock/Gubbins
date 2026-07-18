@@ -9,19 +9,19 @@
  * not an indefinitely-maintained scraper. Keep selectors in this one file so DOM
  * drift is fixed in a single place.
  */
+import { isUrlWithinDomains } from '../../../lib/host-match';
 import { type ScrapeResultPayload } from '../protocol';
 import { optionalText, parsePrice, requireText, type SupplierParser } from './types';
+
+/** DigiKey's registrable domains — curated, so a look-alike host is never routed here. */
+const DIGIKEY_DOMAINS = ['digikey.com', 'digikey.co.uk'] as const;
 
 export const digikeyParser: SupplierParser = {
   id: 'digikey',
   label: 'DigiKey',
 
   matches(url: string): boolean {
-    try {
-      return /(^|\.)digikey\.[a-z.]+$/i.test(new URL(url).hostname);
-    } catch {
-      return false;
-    }
+    return isUrlWithinDomains(url, DIGIKEY_DOMAINS);
   },
 
   parse(doc: Document, url: string): ScrapeResultPayload {

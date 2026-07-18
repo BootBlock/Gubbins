@@ -10,7 +10,7 @@ import { makeSupplierParser } from './metadata';
 export const adafruitParser = makeSupplierParser({
   id: 'adafruit',
   label: 'Adafruit',
-  hostPattern: /(^|\.)adafruit\.[a-z.]+$/i,
+  domains: ['adafruit.com'],
   selectors: {
     mpn: ['.product-id', '[itemprop="productID"]', '[itemprop="sku"]', '.mpn'],
     manufacturer: ['.product-vendor', '[itemprop="brand"]'],

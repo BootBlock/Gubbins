@@ -14,6 +14,12 @@
  * and the importer ({@link ./text-import}) tries that first.
  */
 
+/**
+ * The shared registrable-domain test, so the importer, the scraping parsers' host routing
+ * and the extension allow-list all agree on what "their domain" means.
+ */
+import { isHostWithinDomains } from '../../lib/host-match';
+
 /** A recognised supplier order code and the exact substring it was found in. */
 export interface SupplierCodeMatch {
   readonly supplier: string;
@@ -36,12 +42,6 @@ interface UrlRule {
   readonly registrableDomains: readonly string[];
   /** Matched against `new URL(url).pathname`; group 1 is the order code. */
   readonly pathPattern: RegExp;
-}
-
-/** Whether `hostname` is `domain` (or a subdomain of it), for any domain in `registrableDomains`. */
-function isHostOf(hostname: string, registrableDomains: readonly string[]): boolean {
-  const h = hostname.trim().toLowerCase().replace(/\.$/, '');
-  return registrableDomains.some((d) => h === d || h.endsWith(`.${d}`));
 }
 
 /**
@@ -98,7 +98,7 @@ function findUrlCode(text: string, rule: UrlRule): SupplierCodeMatch | null {
   } catch {
     return null;
   }
-  if (!isHostOf(url.hostname, rule.registrableDomains)) return null;
+  if (!isHostWithinDomains(url.hostname, rule.registrableDomains)) return null;
   const path = rule.pathPattern.exec(url.pathname);
   if (!path) return null;
   return { supplier: rule.supplier, code: path[1]!.toUpperCase(), matchedText: found[0] };

@@ -10,7 +10,7 @@ import { makeSupplierParser } from './metadata';
 export const sparkfunParser = makeSupplierParser({
   id: 'sparkfun',
   label: 'SparkFun',
-  hostPattern: /(^|\.)sparkfun\.[a-z.]+$/i,
+  domains: ['sparkfun.com'],
   selectors: {
     mpn: ['.product-id', '[itemprop="sku"]', '.sku', '.mpn'],
     manufacturer: ['.product-manufacturer', '[itemprop="brand"]'],

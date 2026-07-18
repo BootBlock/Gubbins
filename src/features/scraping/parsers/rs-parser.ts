@@ -10,7 +10,7 @@ import { makeSupplierParser } from './metadata';
 export const rsParser = makeSupplierParser({
   id: 'rs',
   label: 'RS',
-  hostPattern: /(^|\.)rs-online\.[a-z.]+$/i,
+  domains: ['rs-online.com'],
   selectors: {
     mpn: ['[data-testid="mpn"]', '[data-testid="long-description-attribute-mpn"]', '[itemprop="mpn"]'],
     manufacturer: ['[data-testid="brand"]', '[data-testid="brand-logo"] img', '[itemprop="brand"]'],

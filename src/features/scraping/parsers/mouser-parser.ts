@@ -11,7 +11,7 @@ import { makeSupplierParser } from './metadata';
 export const mouserParser = makeSupplierParser({
   id: 'mouser',
   label: 'Mouser',
-  hostPattern: /(^|\.)mouser\.[a-z.]+$/i,
+  domains: ['mouser.com', 'mouser.co.uk'],
   selectors: {
     mpn: ['#pdpPartNumber', '[data-testid="pdp-mfr-part-number"]', '.pdp-product-number', '[itemprop="mpn"]'],
     manufacturer: [
