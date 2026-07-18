@@ -28,6 +28,28 @@ Selecting a location **filters** the inventory to what it holds, including every
 beneath it, and shows the location's description (if it has one) above the items. Select
 **All items** to clear the filter.
 
+## Finding a location
+
+Above the tree is a **search box**. Type into it and the tree narrows to the locations that
+match, with the branches leading down to them opened for you — so you can jump straight to a
+deeply nested bin without expanding anything by hand.
+
+Search matches the **whole path**, not just the location's own name, and every word you type has
+to appear somewhere on it. So `garage bin` finds *Garage → Shelf A → Bin 3*, and typing just
+`garage` narrows the tree to the Garage and everything inside it.
+
+Clear the box (with the **✕**, or by pressing `Escape` while typing in it) and the tree comes
+back exactly as you left it — searching never changes which branches you had open.
+
+> **💡 Tip**
+> Search combines with the **tag filter** below it: pick a tag *and* type a name to narrow by
+> both at once.
+
+> **ℹ️ Note**
+> Very large location trees are drawn a screenful at a time as you scroll, so the sidebar stays
+> quick no matter how many locations you have. Search and the keyboard still reach every one of
+> them.
+
 ## Photos of a location
 
 A location can also carry **photos**, with named regions drawn on them, so an item can point at

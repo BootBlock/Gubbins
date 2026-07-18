@@ -5,6 +5,7 @@
  * Edit dialog to forbid invalid parent moves and to render an ancestry breadcrumb.
  */
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
 
 /** The minimal shape these helpers need from a location row. */
 export interface FlatNode {
@@ -93,6 +94,80 @@ export function pruneTreeToIds<T extends { id: string; children: T[] }>(
     out.push({ ...node, children: pruneTreeToIds(node.children, keep) });
   }
   return out;
+}
+
+/**
+ * One rendered row of a tree, flattened in render order (issue #129). Carries the ARIA
+ * position facts a **flat** `role="tree"` needs — `aria-level`, plus the `aria-posinset` /
+ * `aria-setsize` pair that tells assistive tech how many siblings a row has even when the
+ * others aren't in the DOM. That last part is what makes the tree safe to virtualise.
+ */
+export interface VisibleTreeRow<T> {
+  readonly node: T;
+  /** 1-based depth, matching `aria-level`. */
+  readonly level: number;
+  /** 1-based index among the node's siblings (`aria-posinset`). */
+  readonly posInSet: number;
+  /** How many siblings the node has in total (`aria-setsize`). */
+  readonly setSize: number;
+}
+
+/**
+ * Flatten a nested tree to the rows that are actually visible, in render order —
+ * descendants of a collapsed node are omitted. The single source of truth for "which rows
+ * exist and in what order", shared by the sidebar's rendering, its keyboard navigation and
+ * its virtualiser so all three can never disagree about row identity or position.
+ */
+export function flattenVisibleTree<T extends { id: string; children: T[] }>(
+  nodes: readonly T[],
+  isOpen: (id: string, level: number) => boolean,
+  level = 1,
+  out: VisibleTreeRow<T>[] = [],
+): VisibleTreeRow<T>[] {
+  nodes.forEach((node, index) => {
+    out.push({ node, level, posInSet: index + 1, setSize: nodes.length });
+    if (node.children.length > 0 && isOpen(node.id, level)) {
+      flattenVisibleTree(node.children, isOpen, level + 1, out);
+    }
+  });
+  return out;
+}
+
+/**
+ * Ids of the locations matching a free-text query (issue #129), using the shared
+ * whitespace-splits-into-AND-ed-substrings model (`lib/text-terms`) that every searchable
+ * picker uses. Each location is matched against its **full ancestry path**, not just its own
+ * name, so `shed 3` finds `Shed / Bin 3` — the point of the box is finding a deeply nested bin
+ * without expanding branches by hand. An empty query matches nothing (the caller treats that as
+ * "no filter" rather than "no results"). Pair with {@link matchingWithAncestors} so a match keeps
+ * its parent context. Paths are memoised per call, so this is linear in the tree, and a broken or
+ * cyclic parent chain simply stops the walk.
+ */
+export function locationsMatchingQuery(flat: readonly FlatNode[], query: string): Set<string> {
+  const matches = new Set<string>();
+  const terms = splitSearchTerms(query);
+  if (terms.length === 0) return matches;
+
+  const byId = new Map(flat.map((n) => [n.id, n] as const));
+  const paths = new Map<string, string>();
+  const pathOf = (id: string): string => {
+    const cached = paths.get(id);
+    if (cached !== undefined) return cached;
+    const node = byId.get(id);
+    if (!node) return '';
+    // Seed the cache with the bare name *before* recursing: a cyclic parent chain then
+    // resolves to that partial value instead of recursing forever.
+    paths.set(id, node.name);
+    const parent = node.parentId ? pathOf(node.parentId) : '';
+    const full = parent ? `${parent} / ${node.name}` : node.name;
+    paths.set(id, full);
+    return full;
+  };
+
+  for (const node of flat) {
+    if (includesAllTerms(pathOf(node.id), terms)) matches.add(node.id);
+  }
+  return matches;
 }
 
 /**

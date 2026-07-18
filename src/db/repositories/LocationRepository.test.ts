@@ -56,6 +56,24 @@ describe('LocationRepository', () => {
     expect(shelfRow?.itemCount).toBe(1);
   });
 
+  it('listAll returns every location, past the default page size (issue #129)', async () => {
+    // `list` is capped by the default page size; the flat list the UI works from must not be —
+    // a location missing from it makes pickers, ancestry maths and the sidebar search wrong
+    // rather than merely short.
+    const created = 120;
+    for (let i = 0; i < created; i += 1) await locations.create({ name: `Bay ${i}` });
+
+    const paged = await locations.list();
+    const all = await locations.listAll();
+
+    expect(paged.rows.length).toBeLessThan(created);
+    // Everything created, plus whatever system locations the schema seeds.
+    expect(all.length).toBeGreaterThanOrEqual(created);
+    expect(all.filter((l) => l.name.startsWith('Bay ')).length).toBe(created);
+    // Same ordering as the paged read, so the two never disagree about sequence.
+    expect(all.slice(0, paged.rows.length).map((l) => l.id)).toEqual(paged.rows.map((l) => l.id));
+  });
+
   it('refuses to modify or delete the Unassigned location', async () => {
     await expect(locations.update(UNASSIGNED_LOCATION_ID, { name: 'Nope' })).rejects.toBeInstanceOf(DbError);
     await expect(locations.delete(UNASSIGNED_LOCATION_ID)).rejects.toBeInstanceOf(DbError);

@@ -357,6 +357,127 @@ describe('LocationSidebar — accessible APG tree', () => {
   });
 });
 
+describe('LocationSidebar — name search (issue #129)', () => {
+  function search(text: string) {
+    const box = screen.getByRole('textbox', { name: 'Search locations' });
+    fireEvent.change(box, { target: { value: text } });
+    return box;
+  }
+
+  it('narrows the tree to matches and opens the branches leading to them', () => {
+    renderSidebar();
+    // Drawer starts hidden — its parent Cabinet is collapsed by default.
+    expect(screen.queryByRole('treeitem', { name: 'Drawer' })).toBeNull();
+
+    search('drawer');
+
+    // The match is revealed without the user expanding anything…
+    expect(screen.getByRole('treeitem', { name: 'Drawer' })).toBeTruthy();
+    // …with its ancestor path kept for context…
+    expect(screen.getByRole('treeitem', { name: 'Cabinet' })).toBeTruthy();
+    expect(screen.getByRole('treeitem', { name: 'Workshop' })).toBeTruthy();
+    // …and everything that doesn't lead to a match dropped.
+    expect(screen.queryByRole('treeitem', { name: 'Unassigned' })).toBeNull();
+    // "All items" is not a location and never filters away.
+    expect(screen.getByRole('treeitem', { name: 'All items' })).toBeTruthy();
+  });
+
+  it('matches on the ancestry path, so a parent name narrows to its subtree', () => {
+    renderSidebar();
+    search('workshop');
+    expect(screen.getByRole('treeitem', { name: 'Workshop' })).toBeTruthy();
+    expect(screen.getByRole('treeitem', { name: 'Cabinet' })).toBeTruthy();
+    expect(screen.queryByRole('treeitem', { name: 'Unassigned' })).toBeNull();
+  });
+
+  it('reports a query that matches nothing', () => {
+    renderSidebar();
+    search('nothing here');
+    expect(screen.getByText('No locations match “nothing here”.')).toBeTruthy();
+    expect(screen.queryByRole('treeitem', { name: 'Workshop' })).toBeNull();
+  });
+
+  it('restores the tree — and the user’s own expansion — when the search is cleared', () => {
+    renderSidebar();
+    search('drawer');
+    expect(screen.getByRole('treeitem', { name: 'Drawer' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear location search' }));
+
+    expect(screen.getByRole('treeitem', { name: 'Unassigned' })).toBeTruthy();
+    // The forced expansion was never written to the store, so Cabinet is collapsed again.
+    expect(screen.queryByRole('treeitem', { name: 'Drawer' })).toBeNull();
+    expect(screen.getByRole('treeitem', { name: 'Cabinet' }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('Escape in a non-empty search box clears it', () => {
+    renderSidebar();
+    const box = search('drawer');
+    box.focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect((box as HTMLInputElement).value).toBe('');
+  });
+
+  it('keeps arrow-key navigation consistent with the filtered rows', () => {
+    renderSidebar();
+    search('drawer');
+
+    const all = screen.getByRole('treeitem', { name: 'All items' });
+    all.focus();
+    fireEvent.keyDown(all, { key: 'ArrowDown' });
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    expect(document.activeElement).toBe(workshop);
+
+    fireEvent.keyDown(workshop, { key: 'ArrowDown' });
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    expect(document.activeElement).toBe(cabinet);
+
+    // Cabinet is force-expanded by the filter, so Drawer really is the next row down — the
+    // keyboard walks exactly the rows the filtered tree shows.
+    fireEvent.keyDown(cabinet, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('treeitem', { name: 'Drawer' }));
+  });
+});
+
+describe('LocationSidebar — large trees (issue #129)', () => {
+  // 300 top-level locations: comfortably past the windowing threshold.
+  const bigTree: LocationTreeNode[] = Array.from({ length: 300 }, (_, i) =>
+    node(`loc-${i}`, `Location ${i}`),
+  );
+  const bigFlat: LocationWithCount[] = bigTree.map((n) => ({
+    id: n.id,
+    name: n.name,
+    parentId: null,
+    isSystem: false,
+    description: null,
+    color: null,
+    updatedAt: 0,
+    itemCount: 0,
+  }));
+
+  it('renders only a window of rows, but still reports the full set size to assistive tech', () => {
+    render(
+      <ToastProvider>
+        <LocationSidebar tree={bigTree} flat={bigFlat} selectedId={null} onSelect={vi.fn()} totalCount={0} />
+      </ToastProvider>,
+    );
+
+    const rows = screen.getAllByRole('treeitem');
+    // Far fewer nodes in the DOM than locations in the tree — that is the whole point.
+    expect(rows.length).toBeLessThan(bigTree.length);
+    // Every rendered row still says how many siblings it really has (301 = 300 + "All items"),
+    // so a screen reader announces "2 of 301" rather than counting the rendered handful.
+    expect(rows[0]!.getAttribute('aria-setsize')).toBe('301');
+    expect(screen.getByRole('treeitem', { name: 'All items' }).getAttribute('aria-posinset')).toBe('1');
+  });
+
+  it('keeps the whole tree in the DOM below the threshold', () => {
+    renderSidebar();
+    // 1 "All items" + Workshop + Cabinet + Unassigned (Drawer's parent is collapsed).
+    expect(screen.getAllByRole('treeitem').length).toBe(4);
+  });
+});
+
 /** Dispatch a fully-populated pointer event (jsdom's PointerEvent is absent/partial). */
 function firePointer(
   target: EventTarget,

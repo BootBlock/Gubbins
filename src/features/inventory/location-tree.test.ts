@@ -3,7 +3,9 @@ import {
   collectDescendantIds,
   defaultLocationForNewItem,
   defaultParentForNewLocation,
+  flattenVisibleTree,
   locationPath,
+  locationsMatchingQuery,
   matchingWithAncestors,
   pruneArchivedTree,
   pruneTreeToIds,
@@ -166,5 +168,84 @@ describe('matchingWithAncestors + pruneTreeToIds (tag filter, issue #84)', () =>
     expect(pruned.map((n) => n.id)).toEqual(['workshop']);
     expect(pruned[0]!.children.map((n) => n.id)).toEqual(['cabinet']);
     expect(pruned[0]!.children[0]!.children.map((n) => n.id)).toEqual(['drawer']);
+  });
+});
+
+describe('flattenVisibleTree', () => {
+  interface TestNode {
+    id: string;
+    children: TestNode[];
+  }
+  const branch = (id: string, children: TestNode[] = []): TestNode => ({ id, children });
+  // a → a1 → a1a; a → a2; plus b.
+  const tree: TestNode[] = [branch('a', [branch('a1', [branch('a1a')]), branch('a2')]), branch('b')];
+
+  it('omits the descendants of a collapsed node', () => {
+    const rows = flattenVisibleTree(tree, (id) => id === 'a');
+    expect(rows.map((r) => r.node.id)).toEqual(['a', 'a1', 'a2', 'b']);
+  });
+
+  it('walks the whole tree in render order when everything is open', () => {
+    const rows = flattenVisibleTree(tree, () => true);
+    expect(rows.map((r) => r.node.id)).toEqual(['a', 'a1', 'a1a', 'a2', 'b']);
+  });
+
+  it('reports each row depth and its position among its own siblings', () => {
+    const rows = flattenVisibleTree(tree, () => true);
+    expect(rows.map((r) => [r.node.id, r.level, r.posInSet, r.setSize])).toEqual([
+      ['a', 1, 1, 2],
+      ['a1', 2, 1, 2],
+      ['a1a', 3, 1, 1],
+      ['a2', 2, 2, 2],
+      ['b', 1, 2, 2],
+    ]);
+  });
+
+  it('asks about expansion only for nodes that have children, passing their level', () => {
+    const seen: [string, number][] = [];
+    flattenVisibleTree(tree, (id, level) => {
+      seen.push([id, level]);
+      return true;
+    });
+    // `a1a`, `a2` and `b` are leaves — there is nothing to expand, so they are never asked.
+    expect(seen).toEqual([
+      ['a', 1],
+      ['a1', 2],
+    ]);
+  });
+});
+
+describe('locationsMatchingQuery', () => {
+  it('matches nothing for an empty or whitespace-only query', () => {
+    expect(locationsMatchingQuery(nodes, '')).toEqual(new Set());
+    expect(locationsMatchingQuery(nodes, '   ')).toEqual(new Set());
+  });
+
+  it('matches a location by its own name, case-insensitively', () => {
+    expect(locationsMatchingQuery(nodes, 'GARAGE')).toEqual(new Set(['garage']));
+  });
+
+  it('matches on the ancestry path, so an ancestor name narrows to its subtree', () => {
+    // "Workshop" itself plus everything beneath it — Garage is not under it.
+    expect(locationsMatchingQuery(nodes, 'workshop')).toEqual(
+      new Set(['workshop', 'cabinet', 'drawer', 'bench']),
+    );
+  });
+
+  it('AND-s whitespace-separated terms across the whole path', () => {
+    // Only Drawer 3 has both "cabinet" (an ancestor) and "3" (its own name) on its path.
+    expect(locationsMatchingQuery(nodes, 'cabinet 3')).toEqual(new Set(['drawer']));
+  });
+
+  it('matches nothing when a term appears nowhere', () => {
+    expect(locationsMatchingQuery(nodes, 'workshop attic')).toEqual(new Set());
+  });
+
+  it('terminates on a cyclic parent chain', () => {
+    const cyclic: FlatNode[] = [
+      { id: 'x', name: 'Xylophone', parentId: 'y' },
+      { id: 'y', name: 'Yacht', parentId: 'x' },
+    ];
+    expect(locationsMatchingQuery(cyclic, 'yacht')).toEqual(new Set(['x', 'y']));
   });
 });

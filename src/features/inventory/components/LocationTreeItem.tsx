@@ -10,6 +10,14 @@ import { LocationRowActions } from './LocationRowActions';
 export interface TreeItemProps {
   readonly id: string;
   readonly level: number;
+  /**
+   * 1-based index among this row's siblings, and how many siblings there are (`aria-posinset` /
+   * `aria-setsize`). Required because the tree is virtualised above a threshold (issue #129): with
+   * only a window of rows in the DOM, these are the only way assistive tech can report "3 of 400"
+   * rather than counting the handful of rendered nodes.
+   */
+  readonly posInSet: number;
+  readonly setSize: number;
   readonly selected: boolean;
   readonly focused: boolean;
   readonly icon: ReactNode;
@@ -95,6 +103,8 @@ export interface TreeItemProps {
 export function LocationTreeItem({
   id,
   level,
+  posInSet,
+  setSize,
   selected,
   focused,
   icon,
@@ -143,6 +153,8 @@ export function LocationTreeItem({
       ref={ref}
       role="treeitem"
       aria-level={level}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
       aria-selected={selected}
       aria-expanded={expanded}
       aria-label={label}
