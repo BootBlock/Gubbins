@@ -17,6 +17,13 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Emit relative Location headers. nginx otherwise builds an absolute URL using its OWN
+    # listen port, which is almost never the port the user reached it on: published as
+    # `-p 8081:8080`, a redirect to the base path would send the browser to :8080 — a port
+    # that need not even be open on the host. The same applies behind a reverse proxy
+    # terminating on 443. A relative Location is correct at every hop.
+    absolute_redirect off;
+
     # Cross-origin isolation (spec §2.2.6) — without both of these the SQLite OPFS VFS
     # cannot get SharedArrayBuffer and the database fails to open. `always` so they are
     # sent on error responses too, not just 2xx/3xx.

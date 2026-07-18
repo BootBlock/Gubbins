@@ -61,12 +61,15 @@ jobs:
         run: docker build --build-arg GUBBINS_BASE_PATH=${{ matrix.base }} -t gubbins:ci .
 
       - name: Start the container
-        run: docker run -d --name gubbins-ci -p 8080:8080 gubbins:ci
+        # Published on a DIFFERENT host port to the one nginx listens on, deliberately: with
+        # them equal, a redirect that leaks the container's internal port still resolves and
+        # the bug hides. 18080 -> 8080 makes any such leak fail.
+        run: docker run -d --name gubbins-ci -p 18080:8080 gubbins:ci
 
       - name: Wait for it to answer
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then
               echo "up after ${i}s"; exit 0
             fi
             sleep 1
@@ -76,13 +79,13 @@ jobs:
       - name: Assert the app shell is served at the configured base path
         run: |
           set -euo pipefail
-          body="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/)"
+          body="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/)"
           grep -q '<title>Gubbins</title>' <<<"$body"
 
       - name: Assert the cross-origin isolation headers are present
         run: |
           set -euo pipefail
-          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080${{ matrix.prefix }}/)"
+          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:18080${{ matrix.prefix }}/)"
           echo "$headers"
           grep -iq '^cross-origin-opener-policy: *same-origin' <<<"$headers"
           grep -iq '^cross-origin-embedder-policy: *require-corp' <<<"$headers"
@@ -92,11 +95,11 @@ jobs:
           set -euo pipefail
           # Pull a real hashed asset URL out of the shell rather than guessing a filename:
           # this is what proves the baked-in base path and the served path agree.
-          asset="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/ \
+          asset="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/ \
             | grep -o '${{ matrix.prefix }}/assets/[A-Za-z0-9._-]*\.js' | head -n1)"
           test -n "$asset"
           echo "resolved asset: $asset"
-          headers="$(curl -fsS -D - -o /dev/null "http://127.0.0.1:8080$asset")"
+          headers="$(curl -fsS -D - -o /dev/null "http://127.0.0.1:18080$asset")"
           grep -iq '^cross-origin-embedder-policy: *require-corp' <<<"$headers"
           grep -iq '^cache-control: *public, max-age=31536000, immutable' <<<"$headers"
           # Exactly one Cache-Control: two (from `expires` plus an explicit add_header)
@@ -106,9 +109,9 @@ jobs:
       - name: Assert JavaScript is actually served gzipped
         run: |
           set -euo pipefail
-          asset="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/ \
+          asset="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/ \
             | grep -o '${{ matrix.prefix }}/assets/[A-Za-z0-9._-]*\.js' | head -n1)"
-          headers="$(curl -fsS -H 'Accept-Encoding: gzip' -D - -o /dev/null "http://127.0.0.1:8080$asset")"
+          headers="$(curl -fsS -H 'Accept-Encoding: gzip' -D - -o /dev/null "http://127.0.0.1:18080$asset")"
           echo "$headers"
           # A gzip_types list that misses the mime type nginx assigns to .js compresses
           # nothing and reports no error, so assert the encoding rather than the config.
@@ -127,22 +130,28 @@ jobs:
           set -euo pipefail
           # Served at the root this is the app itself; served under a sub-path it must
           # redirect there rather than 403 on an empty document root.
-          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)"
-          echo "bare / returned $code"
-          case "$code" in 200|301|302) ;; *) echo "unexpected"; exit 1 ;; esac
+          headers="$(curl -s -D - -o /dev/null http://127.0.0.1:18080/)"
+          echo "$headers"
+          code="$(head -n1 <<<"$headers" | awk '{print $2}')"
+          case "$code" in 200|301|302) ;; *) echo "unexpected status $code"; exit 1 ;; esac
+          # A Location must never carry an absolute URL: that would pin the redirect to
+          # nginx's internal port (8080) rather than the port the client actually used.
+          if grep -iq '^location:' <<<"$headers"; then
+            grep -iq '^location: */' <<<"$headers" || { echo "Location is not relative"; exit 1; }
+          fi
           # Following it must land on the app either way.
-          curl -fsSL http://127.0.0.1:8080/ | grep -q '<title>Gubbins</title>'
+          curl -fsSL http://127.0.0.1:18080/ | grep -q '<title>Gubbins</title>'
 
       - name: Assert deep links fall back to the app shell
         run: |
           set -euo pipefail
-          body="$(curl -fsS http://127.0.0.1:8080${{ matrix.prefix }}/items)"
+          body="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/items)"
           grep -q '<title>Gubbins</title>' <<<"$body"
 
       - name: Assert the service worker is served uncached
         run: |
           set -euo pipefail
-          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:8080${{ matrix.prefix }}/sw.js)"
+          headers="$(curl -fsS -D - -o /dev/null http://127.0.0.1:18080${{ matrix.prefix }}/sw.js)"
           echo "$headers"
           grep -iq '^cache-control: *no-cache' <<<"$headers"
 
@@ -152,6 +161,17 @@ jobs:
           uid="$(docker exec gubbins-ci id -u)"
           echo "container uid: $uid"
           test "$uid" != "0"
+
+      # The documented entry point is `docker compose up -d`, which no assertion above
+      # exercises — the image can be perfect while the compose file refuses to start. It
+      # broke once already: Compose interpolates EVERY service regardless of active
+      # profiles, so a required-variable default on the opt-in bridge blocked the app-only
+      # path entirely. Validate both profile selections.
+      - name: Assert the compose file is valid with and without the bridge
+        run: |
+          set -euo pipefail
+          docker compose config --quiet
+          docker compose --profile bridge config --quiet
 
       - name: Container logs on failure
         if: failure()
