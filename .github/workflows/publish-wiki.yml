@@ -1,0 +1,97 @@
+name: Publish wiki
+
+# Publishes the staged wiki (`docs/wiki/`) to the separate `BootBlock/Gubbins.wiki` repo.
+#
+# `docs/wiki/` is the single source of truth; the wiki repo is a mirror of it and nothing else
+# writes there. This ran as a manual copy-by-hand for a long time, which is exactly why the
+# published wiki drifted — link fixes and a whole page sat unpublished while the source was
+# correct. Automating it is the fix: a `docs/wiki/` change that reaches `main` is live without
+# anyone remembering a chore.
+#
+# Unlike the Pages deploy (deliberately manual — it ships the app), this is safe to run on
+# push: it publishes documentation that has already been reviewed and merged, and it can only
+# ever make the wiki match `main`.
+on:
+  push:
+    branches: [main]
+    # Only when the source of truth actually changes — every other push is a no-op.
+    paths:
+      - 'docs/wiki/**'
+      - '.github/workflows/publish-wiki.yml'
+      - 'scripts/wiki-check.mjs'
+  # Also runnable by hand from the Actions tab, to force a re-sync (e.g. after editing the
+  # wiki directly on GitHub, which this workflow will overwrite on the next publish).
+  workflow_dispatch:
+
+# Least-privilege: `contents: write` is what lets the job's GITHUB_TOKEN push to the wiki
+# repo. No personal access token is involved — a long-lived PAT in a public repo's secrets
+# would be a far larger blast radius than this job needs.
+permissions:
+  contents: write
+
+# One publish at a time. These runs push to a shared branch, so overlapping runs would race;
+# a newer run supersedes an in-flight one because it carries strictly newer content.
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Sync docs/wiki to the wiki repo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Gate on link/image integrity before anything is published. A broken `[[link]]` or a
+      # missing image only misbehaves once rendered, so catching it here keeps the published
+      # wiki from ever showing it. No `npm ci` needed — the checker is dependency-free.
+      - name: Check wiki integrity
+        run: node scripts/wiki-check.mjs
+
+      # The wiki is a real git repo at `<repo>.wiki.git`. Its default branch is `master`, not
+      # `main`; letting checkout pick the default avoids hard-coding that.
+      - name: Checkout wiki repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: .wiki
+          # Full history, not the default shallow depth: pushing from a shallow clone can be
+          # rejected with "shallow update not allowed", which would fail every publish at the
+          # very last step. The wiki is a handful of markdown files, so this costs nothing.
+          fetch-depth: 0
+
+      # Clear-then-copy rather than a copy-over-the-top, so this is a mirror and not an
+      # append-only sync: a page removed from `docs/wiki/` disappears from the wiki instead of
+      # lingering forever. `.git` is preserved so the wiki repo's own history survives, and git
+      # works out the actual additions/deletions from the result.
+      #
+      # Deliberately plain coreutils, not rsync: this exact sequence can be run locally to
+      # check what a publish would do, which rsync (absent on a stock Windows toolchain) could
+      # not be.
+      - name: Sync pages and images
+        run: |
+          set -euo pipefail
+          find .wiki -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -R docs/wiki/. .wiki/
+
+      - name: Commit and push
+        working-directory: .wiki
+        env:
+          # The commit that triggered this run, so the wiki's history points back at the change
+          # it came from rather than being an opaque series of "sync" commits.
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -A
+          # A push with no changes is the common case for a manual re-run; make it a clean
+          # no-op rather than a failed step.
+          if git diff --cached --quiet; then
+            echo 'Wiki already matches docs/wiki/ — nothing to publish.'
+            exit 0
+          fi
+          git commit -m "Sync wiki with docs/wiki/ at ${SOURCE_SHA}"
+          git push
+          echo "Published: https://github.com/${GITHUB_REPOSITORY}/wiki"
