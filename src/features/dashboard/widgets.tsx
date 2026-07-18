@@ -29,7 +29,7 @@ import {
   ValueIcon,
 } from '@/components/icons';
 import { useBootResult } from '@/app/boot/boot-context';
-import { useStorageStore } from '@/state/stores/useStorageStore';
+import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
@@ -601,7 +601,7 @@ function DatabaseWidget() {
 
 function StorageWidget() {
   const t = useT();
-  const persisted = useStorageStore((state) => state.persisted);
+  const persisted = useStoragePersisted();
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
   const fmt = useFormatters();

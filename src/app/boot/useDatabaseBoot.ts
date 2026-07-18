@@ -17,6 +17,7 @@ import { acquireDatabaseTabLock } from '@/db/tab-lock';
 import { bootDatabase, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
 import { useStorageStore } from '@/state/stores/useStorageStore';
+import { labFlag } from '@/state/stores/useLabStore';
 
 export type BootState =
   | { readonly status: 'starting' }
@@ -57,6 +58,21 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   const support = checkCriticalSupport();
   if (!support.supported) {
     commit({ status: 'unsupported', diagnosis: await diagnoseCriticalSupport(support.missing) });
+    return;
+  }
+
+  // Lab-only test seam (`schema-too-new`): present the "database is from a newer build"
+  // screen without ever touching the tab lock or the real database, so nothing on disk is
+  // read, migrated or reset.
+  if (labFlag('schema-too-new')) {
+    commit({
+      status: 'error',
+      error: new DbError(
+        'SCHEMA_TOO_NEW',
+        'The on-device database is at a newer schema than this build supports. ' +
+          '(Forced by the lab’s "schema-too-new" flag — nothing on disk was changed.)',
+      ),
+    });
     return;
   }
 

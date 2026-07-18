@@ -27,8 +27,10 @@ import {
 } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS } from '@/features/storage/tiers';
+import { labFlag } from '@/state/stores/useLabStore';
 import { decodeRowForTable } from './blob-codec';
 import { measureClockOffset } from './clock';
+import { forceLwwTies } from './lww-tie-override';
 import type { CloudProvider } from './provider';
 import { reconcile } from './reconcile';
 import { buildSchemaDictionary } from './schema-dictionary';
@@ -219,7 +221,11 @@ export async function runSync(
   // `sync_meta.last_sync_timestamp` is stored in *server* time (every push normalises to it),
   // so shift it back by the offset to compare against the local-frame row timestamps.
   const conflictSince = meta.lastSyncTimestamp > 0 ? meta.lastSyncTimestamp - offset : undefined;
-  const plan = reconcile(local, remote, {
+  // Lab-only reproduction seam (`sync-lww-tie`): force every shared row's incoming timestamp to
+  // tie the local one, in memory only, so the LWW-tie re-upsert bug can be reproduced on demand
+  // (see lww-tie-override.ts). Off by default; leaves this path byte-identical.
+  const reconcileRemote = labFlag('sync-lww-tie') ? forceLwwTies(local, remote) : remote;
+  const plan = reconcile(local, reconcileRemote, {
     offset: 0,
     dictionary,
     historyPrunedBefore: meta.historyPrunedBefore,

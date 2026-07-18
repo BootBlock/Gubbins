@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { Banner, Button, Tooltip, useInstallPrompt, useToast } from '@/components/foundry';
 import { WarningIcon, CriticalIcon, StorageIcon, DownloadIcon, CheckIcon } from '@/components/icons';
-import { useStorageStore } from '@/state/stores/useStorageStore';
+import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLikelyMobile } from '@/lib/env/feature-detection';
@@ -18,7 +18,7 @@ import { StorageTriageDialog } from './StorageTriageDialog';
  *    a Hard-Stop notice at 95%.
  */
 export function StorageBanners() {
-  const persisted = useStorageStore((state) => state.persisted);
+  const persisted = useStoragePersisted();
   const tier = useStorageStore((state) => state.tier);
   const estimate = useStorageStore((state) => state.estimate);
   const ratio = useStorageStore((state) => state.ratio);
