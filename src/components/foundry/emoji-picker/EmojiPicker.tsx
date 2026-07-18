@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { EMOJI_PICKER_SIZE_KEY } from '@/lib/storage-keys';
 import { SearchIcon } from '@/components/icons';
 import { Button } from '../button';
 import { Input } from '../input';
@@ -13,9 +14,6 @@ import { usePersistedSize, useResizeObserver } from './use-persisted-size';
 
 /** The synthetic "All" group id — shows every emoji when no search is active. */
 const ALL_GROUP_ID = 'all';
-
-/** localStorage key for the persisted panel size (device-local UI state). */
-const SIZE_STORAGE_KEY = 'gubbins:emoji-picker-size';
 
 /** Default panel size — a comfortable browse area the user can grow or shrink. */
 const DEFAULT_SIZE = { width: 560, height: 420 } as const;
@@ -79,7 +77,7 @@ export function EmojiPicker({
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const railRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const [panelSize, persistSize] = usePersistedSize(SIZE_STORAGE_KEY, DEFAULT_SIZE);
+  const [panelSize, persistSize] = usePersistedSize(EMOJI_PICKER_SIZE_KEY, DEFAULT_SIZE);
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
   useResizeObserver(panelEl, persistSize);
 

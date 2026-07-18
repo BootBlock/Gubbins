@@ -12,14 +12,20 @@
  *
  * The allow-list and scrubbing are pure (testable with a plain record); only
  * {@link collectSettings} / {@link applySettings} touch `localStorage`.
+ *
+ * The allow-list is *derived* from the shared key registry (`lib/storage-keys.ts`, issue #378)
+ * rather than restated here, so a newly-added store has to make an explicit `backupIncluded`
+ * decision instead of silently defaulting out of backups.
  */
+import { backupIncludedKeys } from '@/lib/storage-keys';
 
-/** The only `localStorage` keys a backup may carry (everything else, incl. auth/tokens, is excluded). */
-export const EXPORTABLE_SETTING_KEYS = [
-  'gubbins:preferences', // theme, units, density, currency, bridge URL (token scrubbed)
-  'gubbins:layout', // dashboard widget layout
-  'gubbins:saved-searches', // saved search queries
-] as const;
+/**
+ * The only `localStorage` keys a backup may carry — every registry entry flagged
+ * `backupIncluded` (everything else, incl. auth/tokens, is excluded):
+ * app preferences (theme, units, density, currency, bridge URL — token scrubbed), the
+ * dashboard widget layout, and saved searches.
+ */
+export const EXPORTABLE_SETTING_KEYS: readonly string[] = backupIncludedKeys();
 
 const EXPORTABLE_SET: ReadonlySet<string> = new Set(EXPORTABLE_SETTING_KEYS);
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { ERASE_SECTIONS, ERASE_TARGETS, eraseTargetById, type EraseTargetId } from './erase-targets';
 
 /** Every id the contract pins — the catalog must expose exactly these. */
@@ -23,6 +24,7 @@ const ALL_IDS: EraseTargetId[] = [
   'dismissed-alerts',
   'cloud-signin',
   'sync-links',
+  'enabled-features',
   'local-ui',
 ];
 
@@ -60,6 +62,23 @@ describe('ERASE_TARGETS catalog', () => {
         expect(target.localKeys?.length, target.id).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('erases every localStorage key the shared registry files under a target (issue #378)', () => {
+    for (const entry of STORAGE_KEYS) {
+      if (entry.storage !== 'local' || entry.eraseGroup === null) continue;
+      const target = eraseTargetById(entry.eraseGroup);
+      expect(target, `${entry.key} names a group with no matching target`).toBeDefined();
+      expect(target?.localKeys ?? [], `${entry.key} is not erased by ${entry.eraseGroup}`).toContain(
+        entry.key,
+      );
+    }
+  });
+
+  it('never erases a localStorage key the registry deliberately excludes', () => {
+    const excluded = STORAGE_KEYS.filter((e) => e.eraseGroup === null).map((e) => e.key);
+    const erased = new Set(ERASE_TARGETS.flatMap((t) => t.localKeys ?? []));
+    for (const key of excluded) expect(erased.has(key), key).toBe(false);
   });
 
   it('eraseTargetById resolves a known id and rejects an unknown one', () => {

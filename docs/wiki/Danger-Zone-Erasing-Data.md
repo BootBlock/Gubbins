@@ -64,11 +64,19 @@ These are local settings rather than inventory data, and none of them touch your
 - **App preferences** — theme, units, scanner settings and so on, back to defaults.
 - **Dashboard layout** — your customised [[widget layout|Dashboard-and-Widgets]].
 - **Saved searches** — the [[searches you saved|Saved-Searches-and-Favourites]] on this device.
-- **Dismissed alerts** — so any still-relevant [[alerts|Alerts]] reappear.
-- **Cloud sign-in** — signs you out of [[cloud sync|Cloud-Sync]]. No data is deleted.
-- **Sync links & pending deletions** — clears the links between this device and the cloud, so the
-  next sync starts fresh. Your inventory is not deleted.
-- **Drafts & reminders** — export drafts and app-update reminders.
+- **Dismissed alerts** — so any still-relevant [[alerts|Alerts]] reappear, including reminders
+  you've already been notified about.
+- **Enabled features** — which optional features are switched on for this device, back to the
+  start, so the [[first-run feature chooser|Modular-UI]] runs again next time the app starts. No
+  data is deleted.
+- **Cloud sign-in** — signs you out of [[cloud sync|Cloud-Sync]] and discards the stored cloud
+  access token. No data is deleted.
+- **Sync links & pending deletions** — clears the links between this device and the cloud, along
+  with any unresolved [[sync conflicts|Cloud-Sync]], so the next sync starts fresh. Your inventory
+  is not deleted.
+- **Drafts & reminders** — the local odds and ends: export drafts, app-update reminders, an
+  in-progress [[stock-take|Cycle-Counts-and-Audit-Day]], which location groups are expanded,
+  remembered dialog sizes, and which one-off celebrations have already played.
 
 ## Erasing on your other devices too
 
