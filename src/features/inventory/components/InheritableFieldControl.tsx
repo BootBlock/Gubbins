@@ -1,14 +1,18 @@
 import { Select } from '@/components/foundry';
 import { useT } from '@/features/i18n';
-import type { FieldType, InheritableFieldValue } from '@/db/repositories';
+import { INHERIT_VALUE, type FieldType, type InheritableFieldValue } from '@/db/repositories';
 import { TypedFieldControl, type TypedFieldControlAria } from './TypedFieldControl';
 
 /**
  * The sentinel the editor's draft state uses to mean "inherit this field from the
- * location" (issue #97). Matches the repository's `INHERIT_VALUE` so the draft can be
- * handed to `setItemFieldValues` unchanged.
+ * location" (issue #97).
+ *
+ * Re-exported from the repository's own constant rather than re-declared: the draft value
+ * is handed to `setItemFieldValues` verbatim, so two independent copies of this string
+ * would silently stop matching if either were ever edited, and the symptom — inheritance
+ * quietly saving as literal text — would not look like a typo.
  */
-export const INHERIT_DRAFT_VALUE = '<inherit>';
+export const INHERIT_DRAFT_VALUE = INHERIT_VALUE;
 
 export interface InheritableFieldControlProps {
   readonly fieldType: FieldType;
@@ -18,6 +22,12 @@ export interface InheritableFieldControlProps {
   readonly controlProps?: TypedFieldControlAria;
   readonly labelId?: string;
   readonly ariaLabel?: string;
+  /**
+   * The field's name, used to name the source picker distinctly from the value control
+   * ("Manufacturer — where this value comes from"). Without it the two sibling controls
+   * would share one accessible name and be indistinguishable to a screen reader.
+   */
+  readonly fieldName?: string;
   /**
    * The value this field's location chain offers, or null/absent when nothing above the
    * item offers one — in which case this renders exactly as a plain
@@ -52,6 +62,7 @@ export function InheritableFieldControl({
   controlProps,
   labelId,
   ariaLabel,
+  fieldName,
   inheritable,
 }: InheritableFieldControlProps) {
   const t = useT();
@@ -88,8 +99,14 @@ export function InheritableFieldControl({
           },
           { value: '', label: t('inventory.fields.inherit.custom') },
         ]}
-        aria-label={t('inventory.fields.inherit.sourceLabel')}
-        aria-labelledby={labelId}
+        // Named ONLY by this label, never by the field's own label id: the picker sits
+        // beside the value control, and `aria-labelledby` would win over `aria-label` and
+        // leave both controls announced identically as "Manufacturer".
+        aria-label={
+          fieldName
+            ? `${fieldName} — ${t('inventory.fields.inherit.sourceLabel')}`
+            : t('inventory.fields.inherit.sourceLabel')
+        }
       />
       {isInheriting ? (
         // The resolved value, shown read-only: the user needs to see *what* they are

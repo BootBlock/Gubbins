@@ -118,6 +118,7 @@ export function CustomFieldsEditor({ itemId }: { itemId: string }) {
               options={field.options}
               controlProps={controlProps}
               labelId={`${field.id}-label`}
+              fieldName={field.name}
               inheritable={field.inheritable}
             />
             {hasError ? (
