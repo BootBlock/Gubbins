@@ -2,9 +2,10 @@
 
 The same inventory can be shown in different ways depending on what you're doing — browsing
 visually, scanning a dense list, or working spreadsheet-style. Gubbins offers three **view
-densities**, plus grouping and a favourites filter.
+densities**, plus grouping, sorting and a favourites filter.
 
-**Where to find it:** the **More** menu on the Inventory screen → **View** (and **Group by**).
+**Where to find it:** the **More** menu on the Inventory screen → **View** (and **Group by** /
+**Sort by**).
 
 ## The three densities
 
@@ -35,6 +36,50 @@ where you can compare rows at a glance.
 
 **Group by** clusters the list into sections — by location, category, or other axes — so a long
 inventory breaks into meaningful chunks instead of one endless list.
+
+## Sorting
+
+**Sort by** sets the order the list is shown in. By default Gubbins leads with your favourites and
+then runs alphabetically by name; pick any of these instead:
+
+| Sort by | Useful for |
+| --- | --- |
+| **Name** | Straight alphabetical order. |
+| **Quantity** | What you hold most — or least — of. |
+| **Unit cost** | Your most and least expensive items. |
+| **Manufacturer** | Keeping one brand's items together. |
+| **MPN** | Working through a manufacturer's part numbers. |
+| **Serial number** | Individually-tracked items in serial order. |
+| **Date added** | What you've catalogued most recently. |
+| **Last updated** | What you've touched most recently. |
+
+Choosing a field applies the order that usually makes sense for it — names run **A → Z**, while
+quantities, costs and dates start **largest** or **newest first**. Underneath the field list sit the
+two directions, named for the field you picked (**A → Z** / **Z → A**, **Newest first** / **Oldest
+first**), so you can flip it either way. Choose **Default** to go back to favourites-first.
+
+**Where to find it:** the **More** menu → **Sort by**.
+
+### Click a column to sort (Table view)
+
+In the **Table** view you can sort straight from the header — click **Name**, **Stock**, or **Last
+updated** to order by that column. An arrow marks the column you're sorted by and which way it's
+running. Clicking the same column again reverses it, and a third click returns to the default
+order, so you're never stuck in a sort you didn't want.
+
+Columns that come from elsewhere — **Location**, **Category**, **Tags**, and your own custom
+fields — aren't sortable and stay as plain labels.
+
+> **💡 Tip**
+> Sort by **Unit cost**, highest first, for a quick look at where the value in your inventory
+> actually sits — or by **Last updated** to pick up wherever you left off.
+
+> **ℹ️ Note**
+> Sorting is a per-device preference and sticks between visits. Like the view density, it only
+> changes the **order** items are shown in — never your data, and never which items match your
+> current [[search|Search-Overview]], location and status filters. Your
+> [[favourites|Saved-Searches-and-Favourites]] always lead the list, whichever sort you pick —
+> the sort then orders everything below them.
 
 ## Pagination
 

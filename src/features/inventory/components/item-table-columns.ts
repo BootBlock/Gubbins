@@ -1,3 +1,4 @@
+import type { ItemSortField } from '@/db/repositories';
 import { builtinCardFieldLabel, parseCustomCardFieldId, type CardCustomField } from '../card-fields';
 
 /**
@@ -38,6 +39,33 @@ export function tableFieldColumns(
   }
   return out;
 }
+
+/**
+ * Which sortable field a table column orders by, or `null` when the column can't be sorted
+ * (issue #128). The data layer's allow-list is deliberately narrow — only scalar columns on
+ * `items` — so most card fields have no counterpart: `location` / `category` / `tags` live in
+ * joined tables, `value` and `condition` are derived, and a custom field's value is a row in the
+ * field-value table rather than a column. Those columns simply render as plain, inert labels.
+ *
+ * The two fixed columns are handled by their own constants below rather than through this map,
+ * since they aren't card fields: Name is always present, and Stock supersedes `quantity`.
+ */
+const COLUMN_SORT_FIELDS: Readonly<Record<string, ItemSortField>> = {
+  updated: 'updatedAt',
+};
+
+export function columnSortField(id: string): ItemSortField | null {
+  return COLUMN_SORT_FIELDS[id] ?? null;
+}
+
+/** The always-present Name column sorts by the item name. */
+export const NAME_COLUMN_SORT_FIELD: ItemSortField = 'name';
+
+/**
+ * The always-present Stock column sorts by `quantity` — the underlying number the column's
+ * gauge/stepper presents, and the same field the dropped `quantity` card field would have used.
+ */
+export const STOCK_COLUMN_SORT_FIELD: ItemSortField = 'quantity';
 
 /**
  * The shared `grid-template-columns` for the header and rows: an optional select column, the

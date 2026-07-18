@@ -8,7 +8,7 @@
  * the worker (and never logs an error that would fail the §8.5.5 smoke).
  */
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository } from '@/db/repositories';
+import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository, type ItemSort } from '@/db/repositories';
 import type { SearchAST } from '@/db/search/ast';
 import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 import { inventoryKeys } from '@/features/inventory/queries';
@@ -26,12 +26,24 @@ export function astError(ast: SearchAST): string | null {
   }
 }
 
-export function useAstSearch(ast: SearchAST, enabled: boolean, pageSize = DEFAULT_PAGE_SIZE) {
+/**
+ * @param sort - the inventory's ordering axis (issue #128), or `undefined` to keep the AST
+ *   search's own relevance ordering (capability "best match" rank, then alphabetical). An
+ *   explicit sort **replaces** that ranking — the user asked for a specific order, so it wins
+ *   over relevance. Part of the query key, so re-sorting re-runs the search.
+ */
+export function useAstSearch(
+  ast: SearchAST,
+  enabled: boolean,
+  sort?: readonly ItemSort[],
+  pageSize = DEFAULT_PAGE_SIZE,
+) {
   return useInfiniteQuery({
-    queryKey: [...inventoryKeys.search(), 'ast', ast] as const,
+    queryKey: [...inventoryKeys.search(), 'ast', ast, sort ?? null] as const,
     enabled,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam }),
+    queryFn: ({ pageParam }) =>
+      getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam, sort }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     // Bound the resident window exactly as the plain list does (spec §2.1) so a
     // long AST result set never accumulates every page's thumbnail BLOBs.

@@ -229,4 +229,22 @@ describe('ItemRepository.searchByAst — weighted "best match" ranking (spec §4
     const page = await items.searchByAst(and(leaf('quantity', 'GREATER_THAN', -1)));
     expect(page.rows.map((r) => r.name)).toEqual(['Antelope', 'Zebra']);
   });
+
+  // Issue #128 — the inventory's Sort control applies to Visual-search results too, so an
+  // explicit sort has to beat the relevance ranking rather than be quietly ignored.
+  it('lets an explicit sort replace the capability relevance ranking', async () => {
+    const alpha = await items.create({ name: 'Alpha widget' });
+    const zeta = await items.create({ name: 'Zeta widget' });
+    // Zeta outranks Alpha on weight, so relevance alone would put it first.
+    await items.setCapability(alpha.id, { key: 'voltage', value: '5', weight: 1 });
+    await items.setCapability(zeta.id, { key: 'voltage', value: '5', weight: 9 });
+
+    const ranked = await items.searchByAst(and(leaf('capability:voltage', 'HAS_CAPABILITY', '')));
+    expect(ranked.rows.map((r) => r.name)).toEqual(['Zeta widget', 'Alpha widget']);
+
+    const sorted = await items.searchByAst(and(leaf('capability:voltage', 'HAS_CAPABILITY', '')), {
+      sort: [{ field: 'name', direction: 'asc' }],
+    });
+    expect(sorted.rows.map((r) => r.name)).toEqual(['Alpha widget', 'Zeta widget']);
+  });
 });

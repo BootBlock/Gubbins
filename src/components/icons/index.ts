@@ -148,6 +148,11 @@ export {
   Grid2x2 as TreemapViewIcon,
   // Grouping axis (how the list is arranged, §3)
   Layers as GroupByIcon,
+  // Ordering axis (how the list is sorted, issue #128): the axis glyph, plus the two directions
+  // used both by the "Sort by" menu and the sortable table-column headers.
+  ArrowUpDown as SortIcon,
+  ArrowUp as SortAscIcon,
+  ArrowDown as SortDescIcon,
 
   // Fullscreen toggle (issue #118) — enter fills the display; exit returns to windowed.
   Maximize as FullscreenIcon,

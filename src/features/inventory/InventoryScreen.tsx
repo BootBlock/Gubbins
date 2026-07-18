@@ -34,6 +34,9 @@ import {
   ScanIcon,
   SearchIcon,
   SelectIcon,
+  SortAscIcon,
+  SortDescIcon,
+  SortIcon,
   TableViewIcon,
   TagIcon,
   TreemapViewIcon,
@@ -57,7 +60,7 @@ import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
-import { useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
+import { SORT_DIRECTIONS, useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
@@ -80,6 +83,7 @@ import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
 import { GROUP_MODES } from './grouping';
+import { SORT_MODES, initialDirection, sortMode, toItemSort } from './sorting';
 import { LocationSidebar } from './components/LocationSidebar';
 import { ItemList } from './components/ItemList';
 import { GroupedItemList } from './components/GroupedItemList';
@@ -152,9 +156,17 @@ function InventoryWorkspace() {
   const setDensity = useLayoutStore((s) => s.setDensity);
   const grouping = useLayoutStore((s) => s.grouping);
   const setGrouping = useLayoutStore((s) => s.setGrouping);
-  // The current View / Group-by choices, so each submenu trigger names and glyphs its active mode.
+  // The ordering axis (issue #128) — which field the list is sorted by, and which way.
+  const inventorySort = useLayoutStore((s) => s.inventorySort);
+  const setInventorySort = useLayoutStore((s) => s.setInventorySort);
+  // The current View / Group-by / Sort choices, so each submenu trigger names and glyphs its
+  // active mode.
   const activeDensity = DENSITY_MODES.find((m) => m.value === density) ?? DENSITY_MODES[0]!;
   const activeGrouping = GROUP_MODES.find((m) => m.value === grouping) ?? GROUP_MODES[0]!;
+  const activeSort = sortMode(inventorySort.field);
+  // Null under the default order, which has no user-facing direction to offer — hoisted so the
+  // menu's direction pair narrows on one check rather than per label lookup.
+  const sortDirectionLabels = activeSort.directionLabels;
   // The opt-out compact per-location summary card (device-local view preference).
   const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
   const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
@@ -324,6 +336,10 @@ function InventoryWorkspace() {
   );
   // Sort the tag ids too so the query key is stable regardless of the order chips were added.
   const tagIdList = useMemo(() => [...tagIds].sort(), [tagIds]);
+  // The repository's `sort` argument for the chosen ordering — `undefined` under the default
+  // order, so the filter slice (and therefore the query key) is unchanged for a user who never
+  // touches the control. Memoised so the array identity is stable across renders.
+  const itemSort = useMemo(() => toItemSort(inventorySort), [inventorySort]);
 
   const filters: ItemQueryFilters = useMemo(
     () => ({
@@ -332,6 +348,9 @@ function InventoryWorkspace() {
       ...(tagIdList.length > 0 ? { tagIds: tagIdList } : {}),
       ...(search ? { search } : {}),
       includeInactive,
+      // Absent for the default order, so the repository keeps its own favourites-first ordering
+      // (and the query key stays identical to the pre-sort one).
+      ...(itemSort ? { sort: itemSort } : {}),
       ...(statusList.length > 0
         ? {
             status: statusList,
@@ -349,6 +368,7 @@ function InventoryWorkspace() {
       tagIdList,
       search,
       includeInactive,
+      itemSort,
       statusList,
       lowStockQtyThreshold,
       lowStockGaugePercent,
@@ -362,7 +382,9 @@ function InventoryWorkspace() {
   // In paginated mode the infinite list is suspended and the page read (below) drives the list, so
   // the two never both run; otherwise the infinite list feeds the virtualised scroll as before.
   const listItems = useInventoryItems(filters, undefined, !paginated);
-  const astItems = useAstSearch(ast, astActive);
+  // The chosen ordering applies to Visual-search results too — otherwise the Sort control would
+  // silently do nothing while the builder drives the list.
+  const astItems = useAstSearch(ast, astActive, itemSort);
   const active = astActive ? astItems : listItems;
   // Discrete-pagination reads (issue #20), gated off unless the flat list is paginated: one page of
   // rows plus the filtered total that sizes the page count.
@@ -719,6 +741,41 @@ function InventoryWorkspace() {
                     {mode.label}
                   </MenuAction>
                 ))}
+              </MenuSub>
+              {/* Sort by (the ordering axis, issue #128) — the third arrangement axis, rendered
+                  off the same kind of descriptor SSOT. Picking a field applies its natural
+                  direction (A → Z for text, newest/largest first for dates and numbers); the
+                  direction pair below then names what each way *means* for the chosen field,
+                  and is omitted under the default order, which has no direction to offer. */}
+              <MenuSub icon={<SortIcon />} label={`Sort by: ${activeSort.label}`}>
+                {SORT_MODES.map((mode) => (
+                  <MenuAction
+                    key={mode.value}
+                    onSelect={() =>
+                      setInventorySort({ field: mode.value, direction: initialDirection(mode.value) })
+                    }
+                    selected={inventorySort.field === mode.value}
+                    selectionRole="radio"
+                  >
+                    {mode.label}
+                  </MenuAction>
+                ))}
+                {sortDirectionLabels ? (
+                  <>
+                    <MenuSeparator />
+                    {SORT_DIRECTIONS.map((direction) => (
+                      <MenuAction
+                        key={direction}
+                        icon={direction === 'asc' ? <SortAscIcon /> : <SortDescIcon />}
+                        onSelect={() => setInventorySort({ field: inventorySort.field, direction })}
+                        selected={inventorySort.direction === direction}
+                        selectionRole="radio"
+                      >
+                        {sortDirectionLabels[direction]}
+                      </MenuAction>
+                    ))}
+                  </>
+                ) : null}
               </MenuSub>
               <MenuSeparator />
               <MenuAction

@@ -13,6 +13,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DashboardLayout } from '@/features/dashboard/dashboard-layout';
 import type { NavOrder } from '@/features/dashboard/dashboard-nav-order';
+// The leaf SQL module, not the `@/db/repositories` barrel: the allow-list is a plain string
+// array, and importing it via the barrel would pull every repository class into this store
+// (the same reason `usePreferencesStore` reaches for `repositories/constants` directly).
+import { ITEM_SORT_FIELDS } from '@/db/repositories/item/sql';
 import { adoptUnversioned, normaliseArray, normaliseBoolean, normaliseOneOf } from '@/lib/persisted-state';
 
 /**
@@ -74,10 +78,53 @@ export function normaliseGrouping(value: unknown): GroupingMode {
   return normaliseOneOf(value, GROUPING_MODES, DEFAULT_GROUPING);
 }
 
+/**
+ * How the inventory list is *ordered* (issue #128) — a third axis alongside {@link LayoutDensity}
+ * (how each item is drawn) and {@link GroupingMode} (how the list is arranged).
+ *
+ * The field set is the data layer's sortable allow-list (`ITEM_SORT_FIELDS`) plus `'default'`,
+ * which means "no explicit sort" — not *unordered*, but the repository's own default ordering
+ * (favourites first, then name/serial/created). The user-facing labels and per-field direction
+ * semantics live in the `features/inventory/sorting.ts` descriptor SSOT.
+ */
+export const INVENTORY_SORT_FIELDS = ['default', ...ITEM_SORT_FIELDS] as const;
+
+export type InventorySortField = (typeof INVENTORY_SORT_FIELDS)[number];
+
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const;
+
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
+
+export interface InventorySort {
+  readonly field: InventorySortField;
+  readonly direction: SortDirection;
+}
+
+/** The ordering the inventory opens in before the user picks one. */
+export const DEFAULT_INVENTORY_SORT: InventorySort = { field: 'default', direction: 'asc' };
+
+/**
+ * Reconcile a persisted/unknown sort against the live shape — see {@link normaliseDensity}.
+ * Unlike the scalar prefs this is an *object*, so both members are reconciled independently
+ * and a non-object (or a field dropped from the allow-list) falls back to the default order
+ * rather than reaching `itemOrderByClause`, which indexes its column table by the field name.
+ */
+export function normaliseInventorySort(value: unknown): InventorySort {
+  if (typeof value !== 'object' || value === null) return DEFAULT_INVENTORY_SORT;
+  const v = value as Partial<Record<keyof InventorySort, unknown>>;
+  const field = normaliseOneOf(v.field, INVENTORY_SORT_FIELDS, DEFAULT_INVENTORY_SORT.field);
+  // A recognised field with an unrecognised direction is still usable — keep the field and
+  // fall back to ascending rather than discarding the user's whole choice.
+  const direction = normaliseOneOf(v.direction, SORT_DIRECTIONS, DEFAULT_INVENTORY_SORT.direction);
+  return field === 'default' ? DEFAULT_INVENTORY_SORT : { field, direction };
+}
+
 interface LayoutStore {
   readonly density: LayoutDensity;
   /** How the inventory grid arranges items (grouping axis). Persisted like `density`. */
   readonly grouping: GroupingMode;
+  /** How the inventory list is ordered (sort axis, issue #128). Persisted like `density`. */
+  readonly inventorySort: InventorySort;
   readonly sidebarCollapsed: boolean;
   /**
    * Whether the compact per-location info card sits atop the inventory list when a location
@@ -103,6 +150,7 @@ interface LayoutStore {
   setDensity: (density: LayoutDensity) => void;
   toggleDensity: () => void;
   setGrouping: (grouping: GroupingMode) => void;
+  setInventorySort: (sort: InventorySort) => void;
   toggleSidebar: () => void;
   toggleInventoryLocationCard: () => void;
   setDashboardLayout: (layout: DashboardLayout) => void;
@@ -114,6 +162,7 @@ export const useLayoutStore = create<LayoutStore>()(
     (set) => ({
       density: DEFAULT_DENSITY,
       grouping: DEFAULT_GROUPING,
+      inventorySort: DEFAULT_INVENTORY_SORT,
       sidebarCollapsed: false,
       inventoryLocationCard: true,
       dashboardLayout: [],
@@ -121,6 +170,7 @@ export const useLayoutStore = create<LayoutStore>()(
       setDensity: (density) => set({ density: normaliseDensity(density) }),
       toggleDensity: () => set((state) => ({ density: state.density === 'data' ? 'visual' : 'data' })),
       setGrouping: (grouping) => set({ grouping: normaliseGrouping(grouping) }),
+      setInventorySort: (sort) => set({ inventorySort: normaliseInventorySort(sort) }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleInventoryLocationCard: () =>
         set((state) => ({ inventoryLocationCard: !state.inventoryLocationCard })),
@@ -142,6 +192,7 @@ export const useLayoutStore = create<LayoutStore>()(
           ...current,
           density: normaliseDensity(p.density),
           grouping: normaliseGrouping(p.grouping),
+          inventorySort: normaliseInventorySort(p.inventorySort),
           sidebarCollapsed: normaliseBoolean(p.sidebarCollapsed, current.sidebarCollapsed),
           inventoryLocationCard: normaliseBoolean(p.inventoryLocationCard, current.inventoryLocationCard),
           dashboardLayout: normaliseArray<DashboardLayout[number]>(p.dashboardLayout),
