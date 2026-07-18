@@ -52,6 +52,7 @@ const baseItem: Item = {
     currentNetValue: 85.5,
     percentageRemaining: 85.5,
     currentGrossWeight: 87.5,
+    attritionPercent: null,
   },
   operationalMetadata: null,
 };
@@ -83,7 +84,7 @@ describe('GaugeConfigEditor (issue #69)', () => {
     fireEvent.click(save());
     expect(spies.reconfigure).toHaveBeenCalledWith({
       id: 'item-1',
-      change: { unitOfMeasure: 'm', grossCapacity: 250, tareWeight: 2 },
+      change: { unitOfMeasure: 'm', grossCapacity: 250, tareWeight: 2, attritionPercent: null },
     });
   });
 

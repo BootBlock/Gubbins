@@ -20,6 +20,7 @@ export interface ItemRow {
   readonly gross_capacity: number | null;
   readonly tare_weight: number | null;
   readonly current_net_value: number | null;
+  readonly attrition_percent: number | null;
   readonly operational_metadata: string | null;
   readonly serial_no: number | null;
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress, v4). */
@@ -100,6 +101,12 @@ export interface GaugeState {
   readonly currentNetValue: number;
   readonly percentageRemaining: number;
   readonly currentGrossWeight: number;
+  /**
+   * Proportional waste applied on top of a requested consumption (issue #89), or `null`
+   * when this item has no attrition — the default. Persisted, unlike the two derived
+   * fields above.
+   */
+  readonly attritionPercent: number | null;
 }
 
 export interface Item {
@@ -237,6 +244,11 @@ export interface GaugeInput {
   readonly tareWeight?: number;
   /** Usable material remaining; defaults to `grossCapacity` (a full item). */
   readonly currentNetValue?: number;
+  /**
+   * Proportional waste a draw costs on top of the amount asked for (issue #89), 0–100.
+   * Omitted or `null` means no attrition, which is the default.
+   */
+  readonly attritionPercent?: number | null;
   readonly operationalMetadata?: Record<string, unknown> | null;
 }
 
@@ -441,4 +453,19 @@ export interface GaugeAdjustment {
   readonly delta: number;
   /** Human-readable ledger note (e.g. a weigh-in calibration message). */
   readonly note?: string;
+  /**
+   * The attrition breakdown behind this delta (issue #89), when the item has an attrition
+   * rate and the user asked to consume an amount. Recording what was *asked for* alongside
+   * what actually left is the whole point of the feature — without it the Activity Log
+   * shows a 110 g draw against a user who typed 100 and reads like a bug.
+   *
+   * Only consumption carries this. A weigh-in already measures reality, so inferring waste
+   * from it would double-count.
+   */
+  readonly attrition?: {
+    /** The amount the user intended to use. */
+    readonly requested: number;
+    /** The extra amount attributed to waste. */
+    readonly waste: number;
+  };
 }

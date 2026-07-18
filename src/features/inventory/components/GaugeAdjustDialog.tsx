@@ -3,6 +3,8 @@ import { Button, Input, Modal, useRovingRadioGroup } from '@/components/foundry'
 import { cn } from '@/lib/utils';
 import type { Item } from '@/db/repositories';
 import {
+  attritionDraw,
+  attritionNote,
   clampNetValue,
   estimateDelta,
   estimateNote,
@@ -54,6 +56,12 @@ export function GaugeAdjustDialog({
 
   const selectedLevel = mode === 'estimate' ? (GAUGE_LEVELS.find((l) => l.key === level) ?? null) : null;
 
+  // Attrition (issue #89) applies to Consumption only. Weigh-In already measures what is
+  // physically left, so waste is baked into its reading — taxing it again would double-count.
+  // Refill and Estimate are not draws at all.
+  const draw = mode === 'consume' && numericValid ? attritionDraw(numeric, gauge.attritionPercent) : null;
+  const hasAttrition = draw !== null && draw.waste > 0;
+
   // Every mode resolves to a signed net-value delta; only the delta is persisted.
   const valid = mode === 'estimate' ? selectedLevel !== null : numericValid;
   const delta = !valid
@@ -61,7 +69,7 @@ export function GaugeAdjustDialog({
     : mode === 'estimate'
       ? estimateDelta(selectedLevel!.percent, gauge.currentNetValue, gauge.grossCapacity)
       : mode === 'consume'
-        ? -numeric
+        ? -(draw?.total ?? numeric)
         : mode === 'weighin'
           ? weighInToDelta(numeric, gauge.currentNetValue, gauge.tareWeight)
           : refillDelta(numeric, gauge.currentNetValue, gauge.grossCapacity);
@@ -77,9 +85,18 @@ export function GaugeAdjustDialog({
           ? weighInNote(numeric, delta, gauge.unitOfMeasure)
           : mode === 'refill'
             ? refillNote(delta, projectedNet, gauge.unitOfMeasure)
-            : undefined;
+            : hasAttrition
+              ? attritionNote(draw, gauge.unitOfMeasure)
+              : undefined;
     adjust.mutate(
-      { id: item.id, adjustment: { delta, note } },
+      {
+        id: item.id,
+        adjustment: {
+          delta,
+          note,
+          ...(hasAttrition ? { attrition: { requested: draw.requested, waste: draw.waste } } : {}),
+        },
+      },
       {
         onSuccess: () => {
           setValue('');
@@ -192,6 +209,18 @@ export function GaugeAdjustDialog({
             </>
           ) : (
             <>
+              {/* Attrition must be visible *before* committing — the whole feature turns a
+                  number the user typed into a larger one, and a silent multiplier reads as a
+                  bug. Naming both figures is what makes it legible. */}
+              {hasAttrition ? (
+                <span className="block" data-testid="gauge-attrition-preview">
+                  Using {fmt.measure(draw.requested, gauge.unitOfMeasure)} costs{' '}
+                  <span className="font-medium text-foreground">
+                    {fmt.measure(draw.total, gauge.unitOfMeasure)}
+                  </span>{' '}
+                  ({fmt.measure(draw.waste, gauge.unitOfMeasure)} waste at {gauge.attritionPercent}%)
+                </span>
+              ) : null}
               New net level:{' '}
               <span className="font-medium text-foreground">
                 {fmt.measure(projectedNet, gauge.unitOfMeasure)}

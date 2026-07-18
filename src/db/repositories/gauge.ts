@@ -128,12 +128,84 @@ export function estimateNote(label: string, percent: number, newNetValue: number
   return `Estimated ${label} (~${percent}%, now ${newNetValue}${unit})`;
 }
 
+/**
+ * The valid range for a gauge's attrition rate (issue #89), as a percentage *of the
+ * amount asked for*. `0` and an unset rate behave identically; the ceiling of `100`
+ * allows a draw to at most double, which comfortably covers real trimming and spillage
+ * losses while keeping an obvious typo (`1000`) from silently emptying a gauge.
+ */
+export const ATTRITION_PERCENT_BOUNDS = { min: 0, max: 100 } as const;
+
+/** Whether a value is usable as an attrition rate — finite and inside the bounds. */
+export function isValidAttritionPercent(value: number): boolean {
+  return (
+    Number.isFinite(value) && value >= ATTRITION_PERCENT_BOUNDS.min && value <= ATTRITION_PERCENT_BOUNDS.max
+  );
+}
+
+/** The outcome of applying an attrition rate to a requested consumption (issue #89). */
+export interface AttritionDraw {
+  /** The amount the user actually wants to *use*. */
+  readonly requested: number;
+  /** The extra amount lost to waste on top of the requested amount. */
+  readonly waste: number;
+  /** What actually leaves the gauge: `requested + waste`. */
+  readonly total: number;
+}
+
+/**
+ * Apply a per-item attrition rate to a requested consumption (issue #89).
+ *
+ * Some materials cost more than you use: taking 100 g of flour out of the bag really
+ * removes 110 g once the dusting left on the board and the bag is counted. The rate is
+ * *proportional* — a scrap factor rather than a fixed per-use adder — because that is
+ * how both recipe costing (yield percentage) and manufacturing BOMs (component scrap)
+ * model it, and because it degrades sensibly at small draws where a flat overhead would
+ * dominate.
+ *
+ * A null/absent or zero rate is the identity, so items that opt out are unaffected.
+ * Negative or non-finite requests yield a zero draw rather than an inverted one.
+ */
+export function attritionDraw(requestedAmount: number, attritionPercent: number | null): AttritionDraw {
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    return { requested: 0, waste: 0, total: 0 };
+  }
+  const rate = attritionPercent !== null && isValidAttritionPercent(attritionPercent) ? attritionPercent : 0;
+  // Multiplying by a percentage introduces float noise that plain addition never does
+  // (33 × 15% = 4.949999999999999), and these numbers are written verbatim into an
+  // append-only ledger note. Attrition is an estimate to begin with, so round to a
+  // precision far finer than any real scale reads — 1e-4 of a gram is 0.1 mg. The sum is
+  // rounded too, not just the waste: 12.3 + 0.861 lands on 13.161000000000001 unaided.
+  const waste = roundAmount(requestedAmount * (rate / 100));
+  return { requested: requestedAmount, waste, total: roundAmount(requestedAmount + waste) };
+}
+
+/** Round a gauge amount to 1e-4, the shared precision floor for attrition arithmetic. */
+function roundAmount(value: number): number {
+  return Math.round(value * 1e4) / 1e4;
+}
+
+/**
+ * Compose the consumption ledger note when attrition applied (issue #89), naming both
+ * numbers: what was used and what it actually cost, e.g.
+ * "Used 100g (+10g waste, 110g total)". Without this the Activity Log would show a
+ * 110 g draw against a user who typed 100, which reads as a bug.
+ */
+export function attritionNote(draw: AttritionDraw, unit: string): string {
+  return `Used ${draw.requested}${unit} (+${draw.waste}${unit} waste, ${draw.total}${unit} total)`;
+}
+
 /** A gauge item's full configuration plus the level currently sitting in it (§4.1.1). */
 export interface GaugeConfig {
   readonly unitOfMeasure: string;
   readonly grossCapacity: number;
   readonly tareWeight: number;
   readonly currentNetValue: number;
+  /**
+   * Proportional waste applied to a requested consumption (issue #89), or `null` when the
+   * item has no attrition — the default, and indistinguishable from `0` in the maths.
+   */
+  readonly attritionPercent: number | null;
 }
 
 /**
@@ -144,6 +216,13 @@ export interface GaugeConfigChange {
   readonly unitOfMeasure?: string;
   readonly grossCapacity?: number;
   readonly tareWeight?: number;
+  /**
+   * The attrition rate (issue #89). Unlike its siblings this is *tri-state*: `undefined`
+   * leaves the existing rate alone (the partial-update contract above), while an explicit
+   * `null` clears it back to "no attrition". Without that distinction there would be no
+   * way to turn the feature back off once switched on.
+   */
+  readonly attritionPercent?: number | null;
 }
 
 /** The resolved outcome of applying a {@link GaugeConfigChange} to a {@link GaugeConfig}. */
@@ -180,6 +259,10 @@ export function resolveGaugeReconfiguration(
   const unitOfMeasure = change.unitOfMeasure ?? current.unitOfMeasure;
   const grossCapacity = change.grossCapacity ?? current.grossCapacity;
   const tareWeight = change.tareWeight ?? current.tareWeight;
+  // Tri-state: `??` would collapse an explicit null (clear the rate) into "leave alone",
+  // making the feature impossible to switch back off.
+  const attritionPercent =
+    change.attritionPercent === undefined ? current.attritionPercent : change.attritionPercent;
 
   // Only capacity constrains the stored level. Tare shifts what a *scale* reads, not how
   // much material is in the gauge, so re-taring deliberately leaves the net value alone.
@@ -191,11 +274,13 @@ export function resolveGaugeReconfiguration(
     grossCapacity,
     tareWeight,
     currentNetValue,
+    attritionPercent,
     netValueDelta,
     changed:
       unitOfMeasure !== current.unitOfMeasure ||
       grossCapacity !== current.grossCapacity ||
-      tareWeight !== current.tareWeight,
+      tareWeight !== current.tareWeight ||
+      attritionPercent !== current.attritionPercent,
   };
 }
 
@@ -219,6 +304,10 @@ export function reconfigureNote(current: GaugeConfig, next: GaugeReconfiguration
   }
   if (next.tareWeight !== current.tareWeight) {
     parts.push(`tare ${current.tareWeight}${before} → ${next.tareWeight}${after}`);
+  }
+  if (next.attritionPercent !== current.attritionPercent) {
+    const describe = (rate: number | null) => (rate === null ? 'none' : `${rate}%`);
+    parts.push(`attrition ${describe(current.attritionPercent)} → ${describe(next.attritionPercent)}`);
   }
   // Guard the degenerate call: the repository only reaches here when something changed, but
   // this is exported, and "Gauge reconfigured: " with an empty tail is worse than saying so.

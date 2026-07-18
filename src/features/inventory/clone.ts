@@ -69,6 +69,9 @@ export function planItemClone(source: Item, options: { readonly nameSuffix?: str
         grossCapacity: source.gauge.grossCapacity,
         tareWeight: source.gauge.tareWeight,
         currentNetValue: 0, // reset: the clone starts empty
+        // Attrition is configuration, not state — a second spool of the same filament wastes
+        // the same proportion — so it is copied rather than reset alongside the level.
+        attritionPercent: source.gauge.attritionPercent,
       },
     };
   }

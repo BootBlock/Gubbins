@@ -224,6 +224,7 @@ const baselineStatements: SqlStatement[] = [
           gross_capacity       REAL,
           tare_weight          REAL,
           current_net_value    REAL,
+          attrition_percent    REAL,
           operational_metadata TEXT,
           is_active            INTEGER NOT NULL DEFAULT 1,
           is_unlimited         INTEGER NOT NULL DEFAULT 0,
@@ -252,7 +253,14 @@ const baselineStatements: SqlStatement[] = [
               tare_weight       IS NOT NULL AND tare_weight >= 0 AND
               current_net_value IS NOT NULL AND current_net_value >= 0
             )
-          )
+          ),
+          -- Attrition (issue #89) is the proportional waste a draw costs on top of what was
+          -- asked for. Unlike the gauge fields above it is *optional* — NULL means "no
+          -- attrition", which is the default and the overwhelmingly common case — so it gets
+          -- its own CHECK rather than joining the mandatory block. The 0–100 ceiling bounds a
+          -- draw at double the requested amount, so a mistyped rate cannot empty a gauge.
+          CHECK (attrition_percent IS NULL OR (attrition_percent >= 0 AND attrition_percent <= 100)),
+          CHECK (attrition_percent IS NULL OR tracking_mode = 'CONSUMABLE_GAUGE')
         ) STRICT;
       `,
   },

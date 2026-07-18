@@ -23,6 +23,35 @@ You keep that gauge up to date however suits the moment — record usage, weigh 
 top it up, or (when there's no scale to hand) just **Estimate** the level from *Full* to *Empty*.
 The gauge threshold below then flags it as low the same way, whichever method you used.
 
+## Attrition — when using some costs more than you use
+
+Some materials cost you more than you actually use. Take 100 g of flour out of the bag and
+nearer 110 g really leaves it, once the dusting left on the board and in the bag is counted.
+Trimmings, spillage and offcuts all work the same way.
+
+A consumable item can carry an optional **attrition** percentage to account for that. Set it
+when you add the item, or later under **Gauge setup** on the item itself. At `10%`, recording
+`100` used takes `110` off the gauge — and the dialog shows you both figures before you
+confirm, so nothing changes behind your back:
+
+> Using 100g costs 110g (10g waste at 10%)
+
+Leave the field blank — the default — and nothing changes: what you record used is exactly what
+comes off.
+
+> **ℹ️ Note**
+> Attrition applies only when you **record an amount used**. A weigh-in already measures what is
+> physically left, so the waste is in that reading — applying a rate on top would count it
+> twice. Refills and estimates aren't draws either, so they're unaffected.
+
+Each entry in the item's [[Activity Log|Activity-Log]] records what you asked for alongside what
+actually left, so the waste is visible after the fact rather than silently folded into the total.
+
+> **💡 Tip**
+> Not sure what rate to use? Leave it off at first. If cycle counts on an item keep coming up
+> short by roughly the same proportion, that gap *is* your attrition rate — see
+> [[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]].
+
 ## Thresholds
 
 A **low-stock threshold** is the quantity at or below which an item counts as "low". You can set:

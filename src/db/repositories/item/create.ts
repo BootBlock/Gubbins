@@ -8,6 +8,7 @@
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { UNASSIGNED_LOCATION_ID } from '../constants';
+import { ATTRITION_PERCENT_BOUNDS, isValidAttritionPercent } from '../gauge';
 import { setStockStatement } from '../stock';
 import type { CreateItemInput } from '../types';
 import { historyStatement } from './history';
@@ -63,6 +64,7 @@ export interface ResolvedCreate {
   readonly grossCapacity: number | null;
   readonly tareWeight: number | null;
   readonly netValue: number | null;
+  readonly attritionPercent: number | null;
   readonly operationalMetadata: string | null;
 }
 
@@ -96,6 +98,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
   let grossCapacity: number | null = null;
   let tareWeight: number | null = null;
   let netValue: number | null = null;
+  let attritionPercent: number | null = null;
   let operationalMetadata: string | null = null;
 
   if (trackingMode === 'CONSUMABLE_GAUGE') {
@@ -112,6 +115,18 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     netValue = gauge.currentNetValue ?? gauge.grossCapacity;
     if (tareWeight < 0 || netValue < 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'Gauge weights cannot be negative.');
+    }
+    // Attrition (issue #89) is optional — absent and null both mean "no attrition" — but a
+    // supplied rate must be in range, mirroring the DB CHECK with a legible error for the
+    // import path, which rejects bad rows before they reach SQLite.
+    if (gauge.attritionPercent !== undefined && gauge.attritionPercent !== null) {
+      if (!isValidAttritionPercent(gauge.attritionPercent)) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          `Attrition must be between ${ATTRITION_PERCENT_BOUNDS.min} and ${ATTRITION_PERCENT_BOUNDS.max} percent.`,
+        );
+      }
+      attritionPercent = gauge.attritionPercent;
     }
     operationalMetadata = gauge.operationalMetadata ? JSON.stringify(gauge.operationalMetadata) : null;
   }
@@ -151,6 +166,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     grossCapacity,
     tareWeight,
     netValue,
+    attritionPercent,
     operationalMetadata,
   };
 }
@@ -166,11 +182,11 @@ export function buildInsert(
     {
       sql: `INSERT INTO items
               (id, name, description, notes, location_id, category_id, tracking_mode, quantity, serial_no,
-               unit_of_measure, gross_capacity, tare_weight, current_net_value, operational_metadata,
+               unit_of_measure, gross_capacity, tare_weight, current_net_value, attrition_percent, operational_metadata,
                mpn, manufacturer, barcode, serial_number, unit_cost, expiry_date, batch_number, lot_number, condition, is_unlimited, is_favourite,
                reorder_point, reorder_gauge_percent, reorder_qty, parent_id,
                acquired_at, warranty_expires_at, purchase_price, depreciation_months, weight, width, height, depth, current_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       params: [
         id,
         r.name,
@@ -185,6 +201,7 @@ export function buildInsert(
         r.grossCapacity,
         r.tareWeight,
         r.netValue,
+        r.attritionPercent,
         r.operationalMetadata,
         r.mpn,
         r.manufacturer,
