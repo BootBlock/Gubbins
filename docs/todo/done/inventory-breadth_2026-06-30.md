@@ -1,5 +1,7 @@
 # Inventory-breadth phases (65–68) — second feature-gap closure (2026-06-30)
 
+> **Status:** ✅ COMPLETE — shipped.
+
 > **Living document.** Each phase is implemented in its own worktree/session. Tick the
 > `[ ]` boxes as work lands, append a one-paragraph **Outcome** note under each phase when it
 > completes (mirroring `docs/dev/deferred-features.md`), and re-schedule — never silently

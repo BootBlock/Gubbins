@@ -1,5 +1,7 @@
 # Stock-take (audit day) enhancements — backlog (living plan)
 
+> **Status:** 🟢 ACTIVE — open backlog; G1 shipped, F1 next.
+
 A grouped backlog of cycle-count / stock-take enhancements, to be implemented **one task at a
 time** in separate sessions. Each task has a stable ID (`F1`, `F2`, …) so a session can be kicked
 off with just "implement `F2`".

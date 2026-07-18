@@ -37,9 +37,9 @@ you need Node **≥ 24** (or the **22.16+ LTS** line).
 >
 > The Home Assistant custom integration that consumes the read surface lives in
 > [`../homeassistant/`](../homeassistant/README.md). The original HA build plan is
-> [`docs/todo/home-assistant_2026-06-29.md`](../docs/todo/home-assistant_2026-06-29.md); the
+> [`docs/todo/done/home-assistant_2026-06-29.md`](../docs/todo/done/home-assistant_2026-06-29.md); the
 > ecosystem build-out (events, calendar, importers, share target, MQTT, feeds/metrics) is
-> [`docs/todo/ecosystem-integrations-plan_2026-07-03.md`](../docs/todo/ecosystem-integrations-plan_2026-07-03.md).
+> [`docs/todo/done/ecosystem-integrations-plan_2026-07-03.md`](../docs/todo/done/ecosystem-integrations-plan_2026-07-03.md).
 
 ---
 

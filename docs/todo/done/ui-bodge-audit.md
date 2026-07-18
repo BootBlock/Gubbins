@@ -1,5 +1,7 @@
 # UI design-system bodge audit
 
+> **Status:** ✅ COMPLETE — all five categories resolved.
+
 > **Effort:** multi-phase, multi-session, review-gated. Phase 0 = audit only (this doc).
 > Each later phase fixes **exactly one category**, runs the checks, updates this register,
 > and stops for review. When every finding below is `done`, move this file to

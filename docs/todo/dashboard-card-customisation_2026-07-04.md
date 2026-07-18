@@ -1,5 +1,7 @@
 # Dashboard & item card customisation — backlog (living plan)
 
+> **Status:** 🟢 ACTIVE — open backlog; A1/A2/B1 shipped, E1 next.
+
 A grouped backlog of card enhancements, to be implemented **one task at a time** in separate
 sessions. Each task has a stable ID (`A1`, `B2`, …) so a session can be kicked off with just
 "implement `A2`". Customisability is the through-line — users strongly favour making the cards
