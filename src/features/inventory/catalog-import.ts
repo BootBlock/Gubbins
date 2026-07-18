@@ -461,6 +461,29 @@ function unlimitedModeError(data: CatalogRowData, mode: TrackingMode): string | 
   return null;
 }
 
+/**
+ * Mirror the serialised-quantity invariant at dry-run time (issue #348): a SERIALISED item is
+ * one instance record, so its quantity is always 1. A row asking for any other quantity is
+ * rejected rather than silently coerced down to 1 — the same treatment as the unlimited-supply
+ * invariant above, so the user never loses units to a preview that showed a larger number.
+ * Returns a row-error message, or `null` when the row is fine.
+ */
+function serialisedQuantityError(data: CatalogRowData, mode: TrackingMode): string | null {
+  if (mode === 'SERIALISED' && data.quantity !== undefined && data.quantity !== 1) {
+    return `A serialised item is a single instance, so its quantity must be 1 (this row has ${data.quantity}). Import one row per unit.`;
+  }
+  return null;
+}
+
+/**
+ * Every tracking-mode invariant a *create* row must satisfy, checked against the mode the row
+ * will be created with. Returns the first violation's message, or `null` when the row is fine.
+ */
+function createRowModeError(data: CatalogRowData): string | null {
+  const mode = data.trackingMode ?? 'DISCRETE';
+  return unlimitedModeError(data, mode) ?? serialisedQuantityError(data, mode);
+}
+
 function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   const mpn = data.sku ?? data.mpn;
   const result: UpdateItemInput = {};
@@ -773,9 +796,9 @@ export function buildImportPlanFromRows(
         continue;
       }
       // No match key but has a name — treat as create.
-      const unlimitedError = unlimitedModeError(data, data.trackingMode ?? 'DISCRETE');
-      if (unlimitedError) {
-        errors.push({ sourceRow, message: unlimitedError });
+      const createError = createRowModeError(data);
+      if (createError) {
+        errors.push({ sourceRow, message: createError });
         continue;
       }
       creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
@@ -816,9 +839,9 @@ export function buildImportPlanFromRows(
         errors.push({ sourceRow, message: 'Name is required when creating a new item.' });
         continue;
       }
-      const unlimitedError = unlimitedModeError(data, data.trackingMode ?? 'DISCRETE');
-      if (unlimitedError) {
-        errors.push({ sourceRow, message: unlimitedError });
+      const createError = createRowModeError(data);
+      if (createError) {
+        errors.push({ sourceRow, message: createError });
         continue;
       }
       creates.push({ sourceRow, input: toCreateInput(data), ...withFieldValues(fieldValues) });
