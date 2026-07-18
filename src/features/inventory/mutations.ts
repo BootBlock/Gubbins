@@ -33,7 +33,7 @@ import {
   type UpdateLocationInput,
   type UpdateSupplierPartInput,
 } from '@/db/repositories';
-import { currentGrossWeight, percentageRemaining } from '@/db/repositories/gauge';
+import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from '@/db/repositories/gauge';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
 import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
@@ -319,6 +319,25 @@ export function useAdjustGauge() {
       if (client.isMutating({ mutationKey: ADJUST_GAUGE_KEY }) === 1) {
         void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       }
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
+    },
+  });
+}
+
+/**
+ * Correct a gauge's unit / capacity / tare (issue #69). Unlike `useAdjustGauge` this is a
+ * deliberate, one-at-a-time configuration edit rather than a rapid-tap stock movement, so
+ * it takes the straightforward invalidate-on-settle path with no optimistic patching — a
+ * capacity shrink can also spill material, and the clamped result is the repository's to
+ * decide, not something the cache should guess at.
+ */
+export function useReconfigureGauge() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, change }: { id: string; change: GaugeConfigChange }) =>
+      getItemRepository().reconfigureGauge(id, change),
+    onSettled: (_d, _e, { id }) => {
+      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });

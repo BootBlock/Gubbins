@@ -127,3 +127,102 @@ export function estimateDelta(percent: number, currentNetValue: number, grossCap
 export function estimateNote(label: string, percent: number, newNetValue: number, unit: string): string {
   return `Estimated ${label} (~${percent}%, now ${newNetValue}${unit})`;
 }
+
+/** A gauge item's full configuration plus the level currently sitting in it (§4.1.1). */
+export interface GaugeConfig {
+  readonly unitOfMeasure: string;
+  readonly grossCapacity: number;
+  readonly tareWeight: number;
+  readonly currentNetValue: number;
+}
+
+/**
+ * A requested change to a gauge's configuration (issue #69). Every field is optional —
+ * an omitted one is left exactly as it was, matching `UpdateItemInput`'s partial shape.
+ */
+export interface GaugeConfigChange {
+  readonly unitOfMeasure?: string;
+  readonly grossCapacity?: number;
+  readonly tareWeight?: number;
+}
+
+/** The resolved outcome of applying a {@link GaugeConfigChange} to a {@link GaugeConfig}. */
+export interface GaugeReconfiguration extends GaugeConfig {
+  /**
+   * The signed net-value change forced by the new capacity, if any. Shrinking a gauge's
+   * capacity below the material currently in it has to spill the excess — there is
+   * physically nowhere for it to sit — and that spill is a real stock movement, so it is
+   * recorded as a delta exactly like a consumption (the §7.3 delta-CRDT rule). Zero
+   * whenever the capacity grew, held still, or still exceeds the current net.
+   */
+  readonly netValueDelta: number;
+  /** Whether anything actually differs from the current configuration. */
+  readonly changed: boolean;
+}
+
+/**
+ * Resolve a requested gauge reconfiguration (issue #69) — the pure half of
+ * `reconfigureGauge`, so the clamping and no-op detection are unit-tested without a
+ * database.
+ *
+ * A gauge's unit, capacity and tare are fixed at creation today, which makes a typo
+ * ("g" where "m" was meant) or a swap to a differently-sized spool unfixable without
+ * deleting the item and losing its history. Correcting them is a plain configuration
+ * edit — but capacity is the one field that can invalidate stored state, because
+ * `current_net_value` must never exceed it (§4.1.1), hence the clamp.
+ *
+ * Validation is the caller's job; this assumes already-valid inputs.
+ */
+export function resolveGaugeReconfiguration(
+  current: GaugeConfig,
+  change: GaugeConfigChange,
+): GaugeReconfiguration {
+  const unitOfMeasure = change.unitOfMeasure ?? current.unitOfMeasure;
+  const grossCapacity = change.grossCapacity ?? current.grossCapacity;
+  const tareWeight = change.tareWeight ?? current.tareWeight;
+
+  // Only capacity constrains the stored level. Tare shifts what a *scale* reads, not how
+  // much material is in the gauge, so re-taring deliberately leaves the net value alone.
+  const currentNetValue = clampNetValue(current.currentNetValue, grossCapacity);
+  const netValueDelta = currentNetValue - current.currentNetValue;
+
+  return {
+    unitOfMeasure,
+    grossCapacity,
+    tareWeight,
+    currentNetValue,
+    netValueDelta,
+    changed:
+      unitOfMeasure !== current.unitOfMeasure ||
+      grossCapacity !== current.grossCapacity ||
+      tareWeight !== current.tareWeight,
+  };
+}
+
+/**
+ * Compose the reconfiguration ledger note (§4.1.3 style) — only the fields that actually
+ * changed, plus the forced spill when a smaller capacity displaced material, e.g.
+ * "Gauge reconfigured: capacity 1000g → 750g (250g over capacity discarded)".
+ */
+export function reconfigureNote(current: GaugeConfig, next: GaugeReconfiguration): string {
+  // Each side of an arrow is labelled with the unit it was actually recorded in: the old
+  // capacity of a spool relabelled g → m was grams, and saying "1000m → 600m" would put a
+  // plain falsehood in an append-only ledger.
+  const before = current.unitOfMeasure;
+  const after = next.unitOfMeasure;
+  const parts: string[] = [];
+  if (after !== before) {
+    parts.push(`unit ${before} → ${after}`);
+  }
+  if (next.grossCapacity !== current.grossCapacity) {
+    parts.push(`capacity ${current.grossCapacity}${before} → ${next.grossCapacity}${after}`);
+  }
+  if (next.tareWeight !== current.tareWeight) {
+    parts.push(`tare ${current.tareWeight}${before} → ${next.tareWeight}${after}`);
+  }
+  // Guard the degenerate call: the repository only reaches here when something changed, but
+  // this is exported, and "Gauge reconfigured: " with an empty tail is worse than saying so.
+  if (parts.length === 0) return 'Gauge reconfigured: no change';
+  const spill = next.netValueDelta < 0 ? ` (${-next.netValueDelta}${after} over capacity discarded)` : '';
+  return `Gauge reconfigured: ${parts.join(', ')}${spill}`;
+}
