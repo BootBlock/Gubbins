@@ -96,10 +96,19 @@ RUN set -eu; \
     sed -e "s#__BASE__#$base#g" -e "s#__ROOT_REDIRECT__#$redirect#g" \
         /etc/nginx/conf.d/gubbins.conf.in > /etc/nginx/conf.d/default.conf; \
     rm /etc/nginx/conf.d/gubbins.conf.in; \
-    nginx -t; \
     chown -R 101:101 /usr/share/nginx/html /etc/nginx/conf.d
 
 USER 101
+
+# Validate the generated config AS THE RUNTIME USER, not as root. `nginx -t` creates the
+# pid file the base image points at (/tmp/nginx.pid), so testing as root leaves it
+# root-owned and the real startup then dies with
+#   [emerg] open() "/tmp/nginx.pid" failed (13: Permission denied)
+# after the entrypoint has already reported "ready for start up". Running the test as uid
+# 101 both catches a bad config at build time and proves the runtime user can actually
+# start; the pid file is removed so the image ships without a stale one.
+RUN nginx -t && rm -f /tmp/nginx.pid
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
