@@ -4,6 +4,7 @@ import './styles/index.css';
 import { App } from './App';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { applyAppearance } from '@/features/settings/theme';
+import { startLabClock } from '@/features/lab/lab-clock';
 import { completeGoogleAuthRedirect } from '@/features/sync/providers/google-oauth';
 
 // Complete an in-progress Google Drive sign-in *before* the hash router mounts: this lifts
@@ -28,6 +29,12 @@ completeGoogleAuthRedirect();
     surfaceStyle: s.surfaceStyle,
   });
 }
+
+// Apply any hidden date override before the first render, for the same reason the appearance is
+// projected above: the date-driven queries (expiring soon, due for service, dead stock) evaluate
+// as the app mounts, so an offset applied later would leave them answering for the wrong day.
+// A no-op — and the real clock — unless the override has been set from the hidden lab screen.
+startLabClock();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

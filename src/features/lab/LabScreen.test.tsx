@@ -9,7 +9,15 @@
  * click-driven per the component-test conventions.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+
+// The seed action is the one lab feature that writes to the database, so the repository is stubbed
+// and asserted on directly — these tests are as much about *not* writing (before confirmation) as
+// about writing.
+const createMany = vi.fn(async (inputs: readonly unknown[]) => inputs.map(() => ({})));
+vi.mock('@/db/repositories', () => ({
+  getItemRepository: () => ({ createMany }),
+}));
 
 // Plain-anchor Link so PageHeader renders without a RouterProvider.
 vi.mock('@tanstack/react-router', () => ({
@@ -40,10 +48,13 @@ vi.mock('@/components/icons', async (importOriginal) => {
 import { LabScreen } from './LabScreen';
 import { useLabStore } from '@/state/stores/useLabStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { setClockOffsetMs } from '@/lib/clock';
+import { startLabClock } from './lab-clock';
 
-const CLEAN = { occasionModes: {}, flags: {} } as const;
+const CLEAN = { dateOverride: null, occasionModes: {}, flags: {} } as const;
 
 beforeEach(() => {
+  createMany.mockClear();
   useLabStore.setState(CLEAN);
   usePreferencesStore.setState({ backgroundEffect: 'snow' });
 });
@@ -97,10 +108,92 @@ describe('LabScreen', () => {
   });
 
   it('resets every override', () => {
-    useLabStore.setState({ occasionModes: { cats: 'on' }, flags: { 'seasonal-dense': true } });
+    useLabStore.setState({
+      dateOverride: '2030-01-01',
+      occasionModes: { cats: 'on' },
+      flags: { 'seasonal-dense': true },
+    });
     render(<LabScreen />);
     fireEvent.click(screen.getByTestId('lab-reset'));
+    expect(useLabStore.getState().dateOverride).toBeNull();
     expect(useLabStore.getState().occasionModes).toEqual({});
     expect(useLabStore.getState().flags).toEqual({});
+  });
+
+  describe('date override', () => {
+    it('stores a chosen date and reports it', () => {
+      render(<LabScreen />);
+      fireEvent.change(screen.getByTestId('lab-date-input'), { target: { value: '2026-12-24' } });
+      expect(useLabStore.getState().dateOverride).toBe('2026-12-24');
+      expect(screen.getByTestId('lab-date-status')).toHaveTextContent('2026-12-24');
+    });
+
+    it('reads a cleared field as no override rather than an unparseable date', () => {
+      useLabStore.setState({ dateOverride: '2026-12-24' });
+      render(<LabScreen />);
+      fireEvent.change(screen.getByTestId('lab-date-input'), { target: { value: '' } });
+      expect(useLabStore.getState().dateOverride).toBeNull();
+    });
+
+    it('offers an explicit way back to the real date, disabled when already real', () => {
+      useLabStore.setState({ dateOverride: '2026-12-24' });
+      render(<LabScreen />);
+      const clear = screen.getByTestId('lab-date-clear');
+      expect(clear).toBeEnabled();
+      fireEvent.click(clear);
+      expect(useLabStore.getState().dateOverride).toBeNull();
+      expect(screen.getByTestId('lab-date-clear')).toBeDisabled();
+    });
+
+    it('resolves the seasonal occasion against the overridden date', () => {
+      // The screen reads the shifted clock, which only moves once the lab clock is running — the
+      // same wiring `main.tsx` performs before first render, so the test starts it too.
+      useLabStore.setState({ dateOverride: '2026-10-31' });
+      const stop = startLabClock();
+      try {
+        render(<LabScreen />);
+        expect(screen.getByTestId('lab-seasonal-status')).toHaveTextContent('Falling now: Halloween.');
+      } finally {
+        stop();
+        setClockOffsetMs(0);
+      }
+    });
+  });
+
+  describe('seed action', () => {
+    it('does not write anything until the confirmation is accepted', () => {
+      render(<LabScreen />);
+      fireEvent.click(screen.getByTestId('lab-seed-start'));
+      expect(screen.getByRole('dialog', { name: /Add 100 synthetic items/ })).toBeInTheDocument();
+      expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when the confirmation is dismissed', () => {
+      render(<LabScreen />);
+      fireEvent.click(screen.getByTestId('lab-seed-start'));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('seeds the chosen number of items once confirmed, and reports it', async () => {
+      render(<LabScreen />);
+      fireEvent.click(screen.getByTestId('lab-seed-start'));
+      fireEvent.click(screen.getByTestId('lab-seed-confirm-action'));
+      await waitFor(() => expect(createMany).toHaveBeenCalledTimes(1));
+      expect(createMany.mock.calls[0]?.[0]).toHaveLength(100);
+      await waitFor(() =>
+        expect(screen.getByTestId('lab-seed-status')).toHaveTextContent('Added 100 synthetic items.'),
+      );
+    });
+
+    it('reports a failure rather than claiming items were added', async () => {
+      createMany.mockRejectedValueOnce(new Error('database closed'));
+      render(<LabScreen />);
+      fireEvent.click(screen.getByTestId('lab-seed-start'));
+      fireEvent.click(screen.getByTestId('lab-seed-confirm-action'));
+      await waitFor(() =>
+        expect(screen.getByTestId('lab-seed-status')).toHaveTextContent('Could not add the items.'),
+      );
+    });
   });
 });

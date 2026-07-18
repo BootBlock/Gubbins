@@ -301,7 +301,6 @@ function SeedSection() {
           open
           onClose={() => setConfirming(false)}
           title={t('lab.seed.confirmTitle', { vars: { count } })}
-          data-testid="lab-seed-confirm"
         >
           <p className="text-sm text-muted-foreground">{t('lab.seed.confirmBody', { vars: { count } })}</p>
           <div className="mt-5 flex justify-end gap-2">
