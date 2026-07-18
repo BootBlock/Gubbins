@@ -7,6 +7,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLikelyMobile } from '@/lib/env/feature-detection';
 import { useFormatters } from '@/lib/useFormatters';
 import { ARCHIVE_NUDGE_SNOOZE_MS, isArchiveDue, runFullArchive } from '@/features/archive/auto-archive';
+import { nowMs } from '@/lib/clock';
 import { StorageTriageDialog } from './StorageTriageDialog';
 
 /**
@@ -108,7 +109,7 @@ export function StorageBanners() {
   // unavailable) get a weekly nudge to download a full archive (SQLite binary + images).
   // Dismissing it snoozes the nudge for a week rather than hiding it for good, so the
   // safety-net prompt returns if a fresh archive still hasn't been taken.
-  const now = Date.now();
+  const now = nowMs();
   const archiveSnoozed = archiveNudgeSnoozedUntil !== null && now < archiveNudgeSnoozedUntil;
   if (mobile && providerId === null && !archiveSnoozed && isArchiveDue(lastArchivedAt, now)) {
     banners.push(

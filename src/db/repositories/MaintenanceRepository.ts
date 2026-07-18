@@ -24,6 +24,7 @@ import type {
   Page,
   PageParams,
 } from './types';
+import { nowMs } from '@/lib/clock';
 
 /**
  * SQL fragment yielding the instant a TIME schedule falls due (UNIX-ms), qualified
@@ -84,7 +85,7 @@ export function maintenanceDueExistsSql(): string {
 
 export class MaintenanceRepository extends BaseRepository {
   /** All schedules for an item, oldest first (stable display order). */
-  async listForItem(itemId: string, now: number = Date.now()): Promise<MaintenanceSchedule[]> {
+  async listForItem(itemId: string, now: number = nowMs()): Promise<MaintenanceSchedule[]> {
     const rows = await this.driver.query<MaintenanceScheduleRow>(
       `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, sl.name AS location_name
        FROM maintenance_schedules ms
@@ -95,7 +96,7 @@ export class MaintenanceRepository extends BaseRepository {
     return rows.map(rowToMaintenanceSchedule);
   }
 
-  async getById(id: string, now: number = Date.now()): Promise<MaintenanceSchedule | undefined> {
+  async getById(id: string, now: number = nowMs()): Promise<MaintenanceSchedule | undefined> {
     const row = await this.driver.queryOne<MaintenanceScheduleRow>(
       `SELECT ms.*, ${AUTO_USAGE_HOURS} AS auto_usage_hours, sl.name AS location_name
        FROM maintenance_schedules ms

@@ -28,6 +28,7 @@ import {
 } from '@/components/foundry';
 import { BookingIcon, CheckoutIcon, InfoIcon, SuccessIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
+import { nowMs } from '@/lib/clock';
 import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
 import {
@@ -380,7 +381,7 @@ export function BookingsScreen() {
   // against the same `now` (mirrors the agenda's single-`now` discipline). The grouping is a
   // bounded (≤100-row) fold, so it is computed directly each render rather than memoised on a
   // per-render `now` (which would never hit the cache anyway).
-  const now = Date.now();
+  const now = nowMs();
   const bookings = data?.rows ?? [];
 
   const byStatus = new Map<BookingStatus, AssetBookingWithNames[]>();

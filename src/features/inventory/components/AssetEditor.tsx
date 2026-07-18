@@ -15,6 +15,7 @@ import { CostIcon, SecureIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { cn } from '@/lib/utils';
 import { useFormatters } from '@/lib/useFormatters';
+import { nowMs } from '@/lib/clock';
 import { warrantyStatus, currentValue, type WarrantyStatus } from '../asset-lifecycle';
 import { WARRANTY_STATUS_COLOR_CLASS } from './inventory-ui';
 import { useUpdateItem } from '../mutations';
@@ -45,7 +46,7 @@ export function AssetEditor({ item }: { item: Item }) {
     setDepreciationMonths(item.depreciationMonths?.toString() ?? '');
   }, [item.acquiredAt, item.warrantyExpiresAt, item.purchasePrice, item.depreciationMonths]);
 
-  const now = Date.now();
+  const now = nowMs();
 
   // Derive warranty status and current value from the *persisted* item (not draft),
   // so the badge and value display always match what is stored in the DB.

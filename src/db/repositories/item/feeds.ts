@@ -21,10 +21,11 @@ import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSq
 import { ITEM_STATUS_FILTERS, buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+import { nowMs } from '@/lib/clock';
 
 /** Tuning for {@link ItemFeedRepository.applicableStatuses} (mirrors the list's status filter). */
 export interface ApplicableStatusParams {
-  /** Injected clock (UNIX-ms) for the time-based statuses; defaults to `Date.now()`. */
+  /** Injected clock (UNIX-ms) for the time-based statuses; defaults to `nowMs()`. */
   readonly now?: number;
   readonly lowStockThresholds?: LowStockThresholds;
   readonly expirySoonWindowDays?: number;
@@ -90,7 +91,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // entirely rather than issue a degenerate `SELECT;`.
       if (candidates.length === 0) return [];
       const ctx = {
-        now: params.now ?? Date.now(),
+        now: params.now ?? nowMs(),
         lowStockThresholds: params.lowStockThresholds,
         expirySoonWindowDays: params.expirySoonWindowDays,
       };

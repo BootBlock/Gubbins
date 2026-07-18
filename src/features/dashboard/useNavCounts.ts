@@ -53,6 +53,7 @@ import {
 } from '@/features/settings/settings';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
+import { nowDate } from '@/lib/clock';
 
 /** One counted tile's badge: the figure, the spoken nouns and the attention tone. */
 export interface NavCount {
@@ -74,7 +75,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The instant at the start of the local day — the cut-off for a booking still being upcoming. */
 function startOfToday(): number {
-  const d = new Date();
+  const d = nowDate();
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
