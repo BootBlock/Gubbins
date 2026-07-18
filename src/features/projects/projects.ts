@@ -29,6 +29,7 @@ import {
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import type { ParsedBomLine } from './bom-import';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const projectKeys = {
   all: ['projects'] as const,
@@ -195,7 +196,7 @@ export function useDeleteProject() {
       void client.invalidateQueries({ queryKey: projectKeys.budgetAlerts() });
       // A returned loan restores stock and closes checkout rows — refresh those views too.
       void client.invalidateQueries({ queryKey: ['checkouts'] });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }
@@ -333,7 +334,7 @@ export function useSetReservation(projectId: string) {
       getProjectRepository().setReservation(lineId, status, qty),
     onSettled: (_data, _err, vars) => {
       invalidateProject(client, projectId);
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(vars.lineId) });
     },
   });
@@ -346,7 +347,7 @@ export function useSetProcurement(projectId: string) {
       getProjectRepository().setProcurement(lineId, status),
     onSettled: () => {
       invalidateProject(client, projectId);
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       // Refresh the dashboard "arriving" feed and per-item incoming totals (Phase 20).
       void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
     },
@@ -369,7 +370,7 @@ export function useReceiveLine(projectId: string) {
     }) => getProjectRepository().receiveLine(lineId, { locationId, quantity, batch }),
     onSettled: () => {
       invalidateProject(client, projectId);
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       // Received stock leaves the "arriving" feed and the item's incoming total (Phase 20).
       void client.invalidateQueries({ queryKey: inventoryKeys.inTransit() });
     },
@@ -474,7 +475,7 @@ export function useFinaliseAssembly(projectId: string) {
     onSettled: () => {
       invalidateProject(client, projectId);
       // Assembly creates/moves/consumes items and may create a location.
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });

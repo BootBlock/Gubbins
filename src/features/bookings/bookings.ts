@@ -13,7 +13,7 @@ import {
   type ConvertBookingInput,
   type CreateBookingInput,
 } from '@/db/repositories';
-import { inventoryKeys } from '@/features/inventory/queries';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const bookingKeys = {
   all: ['bookings'] as const,
@@ -79,7 +79,7 @@ export function useConvertBooking() {
       // A conversion creates a loan: it decrements on-hand stock and opens a checkout.
       void client.invalidateQueries({ queryKey: ['checkouts'] });
       void client.invalidateQueries({ queryKey: ['contacts'] });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }

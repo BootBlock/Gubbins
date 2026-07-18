@@ -9,15 +9,14 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getItemRepository, type SellItemInput, type WriteOffItemInput } from '@/db/repositories';
-import { inventoryKeys } from '@/features/inventory/queries';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 /** Invalidate every view a sale / write-off reshapes (stock, the item's history, the reports). */
 function invalidateSale(client: ReturnType<typeof useQueryClient>): void {
-  // `items()` is the prefix of the item detail, its history, per-location stock and batches, so
-  // one invalidation refreshes them all.
-  void client.invalidateQueries({ queryKey: inventoryKeys.items() });
-  // The sales & margin report (and the movement/valuation reports) read the ledger this writes.
-  void client.invalidateQueries({ queryKey: ['reports'] });
+  // The item prefix covers the detail, its history, per-location stock and batches; the helper
+  // carries the reports alongside, whose sales/margin, movement and valuation views read the
+  // very ledger rows this write appends.
+  invalidateItems(client);
 }
 
 export function useSellItem() {

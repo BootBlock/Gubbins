@@ -64,6 +64,7 @@ import {
   type MigrationSourceId,
 } from '../importers/migrations';
 import { inventoryKeys } from '../queries';
+import { invalidateItems } from '../invalidate';
 
 // ---------------------------------------------------------------------------
 // Catalogue loaders — read the whole item + custom-field set once per open, so
@@ -435,7 +436,7 @@ function ImportWorkbench({
     try {
       const res = await applyCatalogImportPlan(plan, getItemRepository(), getCategoryRepository());
       setResult(res);
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'The import failed unexpectedly.');

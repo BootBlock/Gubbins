@@ -34,9 +34,11 @@ import {
   type UpdateSupplierPartInput,
 } from '@/db/repositories';
 import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from '@/db/repositories/gauge';
+import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
 import { clonedFieldValues, clonedSupplierPartInput, planItemClone } from './clone';
+import { invalidateItems } from './invalidate';
 
 type ItemListData = InfiniteData<Page<Item>, number>;
 
@@ -102,7 +104,7 @@ export function useCreateItem() {
   return useMutation({
     mutationFn: (input: CreateItemInput) => getItemRepository().create(input),
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -118,7 +120,7 @@ export function useCreateSerialisedItems() {
   return useMutation({
     mutationFn: (input: CreateItemInput) => getItemRepository().createSerialised(input),
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -136,12 +138,8 @@ export function useUpdateItem() {
     },
     onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
-      // An item edit can change what the reports project — most directly the dead-stock
-      // opt-in (issue #92), whose editor renders the resolved policy right beside the
-      // control that just changed it. Without this the note contradicts the save.
-      void client.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }
@@ -157,7 +155,7 @@ export function useApplyScrape() {
     mutationFn: ({ id, write }: { id: string; write: ScrapeApplyInput }) =>
       getItemRepository().applyScrape(id, write),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -177,7 +175,7 @@ export function useRecordRevaluation() {
     mutationFn: ({ id, input }: { id: string; input: RecordRevaluationInput }) =>
       getItemRepository().recordRevaluation(id, input),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.item(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemRevaluations(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
@@ -231,7 +229,7 @@ export function useRecordTestResult() {
     mutationFn: ({ id, input }: { id: string; input: RecordTestResultInput }) =>
       getItemRepository().recordTestResult(id, input),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemTestRecords(id) });
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -265,7 +263,7 @@ export function useMoveItem() {
     },
     onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -293,7 +291,7 @@ export function useAdjustQuantity() {
       // stale value mid-burst. `isMutating === 1` means this is the only adjust still in
       // flight, i.e. the burst is over (TanStack's awaited-optimistic-update pattern).
       if (client.isMutating({ mutationKey: ADJUST_QUANTITY_KEY }) === 1) {
-        void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+        invalidateItems(client);
       }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -321,7 +319,7 @@ export function useAdjustGauge() {
       // As with quantity: only the last of a rapid burst refetches, so an earlier tap's
       // refetch can't snap the gauge back to a stale value before a later write lands.
       if (client.isMutating({ mutationKey: ADJUST_GAUGE_KEY }) === 1) {
-        void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+        invalidateItems(client);
       }
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
@@ -341,7 +339,7 @@ export function useReconfigureGauge() {
     mutationFn: ({ id, change }: { id: string; change: GaugeConfigChange }) =>
       getItemRepository().reconfigureGauge(id, change),
     onSettled: (_d, _e, { id }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(id) });
     },
   });
@@ -358,7 +356,7 @@ export function useSoftDeleteItem() {
     },
     onError: (_e, _v, ctx) => restoreLists(client, ctx?.lists),
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -368,7 +366,7 @@ export function useRestoreItem() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => getItemRepository().restore(id),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.items() }),
+    onSettled: () => invalidateItems(client),
   });
 }
 
@@ -377,7 +375,7 @@ export function useHardDeleteItem() {
   return useMutation({
     mutationFn: (id: string) => getItemRepository().hardDelete(id),
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -443,7 +441,7 @@ export function useBulkEditItems() {
       return { succeeded, failed };
     },
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -497,7 +495,7 @@ export function useCloneItem() {
       return created;
     },
     onSettled: () => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
     },
   });
@@ -598,8 +596,9 @@ export function useUpdateLocation() {
     onSettled: () => {
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
       // A location carries the dead-stock opt-in and idle threshold for everything inside
-      // it (issue #92), so editing one re-shapes the dead-stock report.
-      void client.invalidateQueries({ queryKey: ['reports'] });
+      // it (issue #92), so editing one re-shapes the dead-stock report. No item row changes,
+      // so this is the one write that wants the reports prefix without `invalidateItems`.
+      void client.invalidateQueries({ queryKey: reportKeys.all });
     },
   });
 }
@@ -629,7 +628,7 @@ export function useDeleteLocation() {
     onSettled: () => {
       // A delete re-parents items to Unassigned, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: ['checkouts'] });
     },
   });

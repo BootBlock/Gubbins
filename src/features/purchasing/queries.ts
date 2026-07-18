@@ -16,7 +16,8 @@ import {
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
 import type { BatchIdentity } from '@/features/inventory/batches';
-import { inventoryKeys } from '@/features/inventory/queries';
+import { invalidateItems } from '@/features/inventory/invalidate';
+import { reportKeys } from '@/features/reports/keys';
 import type { ReorderPlanGroup } from './reorder-plan';
 
 export const purchaseOrderKeys = {
@@ -140,6 +141,9 @@ export function useUpdatePurchaseOrderLine() {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       // Editing an ordered/received quantity shifts the item's outstanding total.
       void client.invalidateQueries({ queryKey: onOrderKeys.all });
+      // The spend report totals `received_qty * unit_cost`, so correcting either on an
+      // already-received line re-prices history even though no item row moves.
+      void client.invalidateQueries({ queryKey: reportKeys.all });
     },
   });
 }
@@ -177,7 +181,7 @@ export function useReceivePurchaseOrderLine() {
       // A receipt moved stock — refresh the item caches so on-hand + history reflect it.
       // Invalidating the `items()` prefix covers the detail, history, stock and list slices
       // (they all hang off it), so a per-item key is unnecessary.
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       // Receiving reduces the outstanding quantity (and may fully clear it).
       void client.invalidateQueries({ queryKey: onOrderKeys.all });
     },
@@ -204,8 +208,7 @@ export function useReturnPurchaseOrderLine() {
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
-      void client.invalidateQueries({ queryKey: ['reports'] });
+      invalidateItems(client);
     },
   });
 }

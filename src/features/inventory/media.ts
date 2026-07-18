@@ -16,6 +16,7 @@ import {
 import { processImageFile } from '@/features/images/compression';
 import { deleteImageFile, saveImageFile } from '@/features/images/opfs-images';
 import { inventoryKeys } from './queries';
+import { invalidateItems } from './invalidate';
 
 // --- Images ---------------------------------------------------------------------
 
@@ -49,7 +50,7 @@ export function useAddItemImage() {
     onSettled: (_d, _e, { itemId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemImages(itemId) });
       // The list/detail thumbnail JOIN means the item caches may change too.
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }
@@ -63,7 +64,7 @@ export function useRemoveItemImage() {
     },
     onSettled: (_d, _e, { itemId }) => {
       void client.invalidateQueries({ queryKey: inventoryKeys.itemImages(itemId) });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }

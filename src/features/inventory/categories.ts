@@ -22,6 +22,7 @@ import {
   type UpdateCategoryInput,
 } from '@/db/repositories';
 import { inventoryKeys } from './queries';
+import { invalidateItems } from './invalidate';
 
 export function useCategories() {
   return useQuery({
@@ -116,7 +117,7 @@ export function useDeleteCategory() {
     onSettled: () => {
       // Deleting a category nulls its items' category_id, so refresh items too.
       void client.invalidateQueries({ queryKey: inventoryKeys.categories() });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }

@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getTagRepository } from '@/db/repositories';
 import { inventoryKeys } from './queries';
+import { invalidateItems } from './invalidate';
 
 /**
  * One page of the tag dictionary with live item + location counts (issue #84).
@@ -166,7 +167,7 @@ export function useTagManagement() {
   const client = useQueryClient();
   const invalidateAll = () => {
     void client.invalidateQueries({ queryKey: inventoryKeys.tags() });
-    void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+    invalidateItems(client);
     void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
   };
   const create = useMutation({
