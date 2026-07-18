@@ -43,6 +43,25 @@ spool every time.
 > Use Estimate for a quick eyeball, then a proper Weigh-In now and then when you want the number
 > to be exact — for example before starting a long print.
 
+The unit is yours to choose — grams, millilitres, metres, feet, whatever suits the material. A
+100 m drum of Cat6 measured in `m` works exactly like a 1 kg spool measured in `g`: take 14.5 m
+for a network drop and it reads 85.5 m remaining. Amounts can be **fractional**, so you're never
+forced to round to a whole unit.
+
+#### Changing the unit, capacity or tare later
+
+Open the item, go to **Details → Gauge setup**, and edit the unit, full capacity or tare. Handy
+when you mistyped the unit when adding the item, or you've fitted a spool of a different size or
+a reel with a different empty weight.
+
+> **⚠️ Heads-up**
+> Lowering the capacity below the amount currently in the gauge discards the difference — there's
+> nowhere for it to go. Gubbins tells you how much before you save, and records it in the item's
+> [[activity log|Activity-Log]].
+
+Changing the **tare** doesn't change how much is in the gauge, only what future weigh-ins expect
+to see on the scale. To record what you've *used*, use **Update** rather than this.
+
 ### Untracked
 
 For things you want to *list* but not *count* — reference material, fixtures, anything where a
