@@ -20,8 +20,10 @@
  *    `contain`ed so the sparks can never invalidate the page beneath them, each spark carries a
  *    `will-change` hint, and the particle count is capped in {@link buildBurstParticles} so the
  *    number of composited layers is bounded regardless of viewport size.
- *  - **Tokens only** — every colour is a brand token (`--primary` / `--highlight`) that tracks the
- *    user's accent, so the burst recolours for free with their Colour.
+ *  - **Tokens only** — colour comes from the `--primary` brand token, which tracks the user's
+ *    accent. Each spark is offset around *that* token's hue in OKLCH rather than being given a
+ *    literal of its own, so the shell burns a believable range of temperatures and still recolours
+ *    for free with their Colour.
  *  - **Reduced motion is nothing** — when decorative motion is suppressed (OS
  *    `prefers-reduced-motion` OR the F9 "Reduce effects" switch, resolved live via
  *    {@link useDecorationMotionReduced}) `burst()` is a no-op that renders no particle at all; the
@@ -45,6 +47,7 @@ import {
 } from 'react';
 import {
   buildBurstParticles,
+  sparkColour,
   BURST_DURATION_MS,
   DEFAULT_BURST_REACH,
   type BurstParticle,
@@ -85,14 +88,11 @@ interface ActiveBurst {
 
 const BurstContext = createContext<BurstContextValue | null>(null);
 
-/**
- * The soft shockwave ring expands to the full reach of the sparks, so it reads as the leading edge
- * of the shell rather than a small halo left behind at the origin.
- */
-const RING_SIZE_FACTOR = 2;
+/** The ignition flash's diameter as a fraction of the shell's reach — a bloom, not a full sweep. */
+const FLASH_SIZE_FACTOR = 0.55;
 
-/** How long the shockwave ring takes to cross the page, ms — it leads the sparks, then is gone. */
-const RING_DURATION_MS = 1400;
+/** How long the ignition flash lasts, ms — the light of the burst, gone before the sparks spread. */
+const FLASH_DURATION_MS = 500;
 
 /**
  * How many bursts may be in flight at once. Each one is now a page-filling shell that lives for
@@ -101,12 +101,6 @@ const RING_DURATION_MS = 1400;
  * often `burst()` is called (a milestone firing beside a stock-take, or the lab trigger held down).
  */
 const MAX_ACTIVE_BURSTS = 3;
-
-/** The brand-token CSS variable each spark hue maps to (accent-tracked — see the Colour axis). */
-const HUE_VAR: Record<BurstParticle['hue'], string> = {
-  primary: 'var(--primary)',
-  highlight: 'var(--highlight)',
-};
 
 /** Resolve the default origin — centre-ish of the current viewport, guarded for non-DOM envs. */
 function defaultOrigin(): BurstOrigin {
@@ -201,22 +195,22 @@ export function BurstProvider({ children, motionProvider, rng }: BurstProviderPr
           }}
         >
           {bursts.map((b) => {
-            const ringSize = b.reach * RING_SIZE_FACTOR;
+            const flashSize = b.reach * FLASH_SIZE_FACTOR;
             return (
               <div key={b.id} className="absolute" style={{ left: b.x, top: b.y }} data-testid="burst">
-                {/* Soft shockwave ring expanding out ahead of the sparks, centred on the origin. */}
+                {/* The ignition flash: a soft bloom of light at the origin, gone in half a second. */}
                 <span
                   aria-hidden
-                  className="animate-burst-ring absolute rounded-full"
+                  className="animate-burst-flash absolute rounded-full"
                   style={{
-                    width: ringSize,
-                    height: ringSize,
-                    left: -ringSize / 2,
-                    top: -ringSize / 2,
-                    border: '2px solid color-mix(in oklab, var(--primary) 50%, transparent)',
+                    width: flashSize,
+                    height: flashSize,
+                    left: -flashSize / 2,
+                    top: -flashSize / 2,
+                    background:
+                      'radial-gradient(closest-side, color-mix(in oklab, var(--primary) 70%, transparent), transparent)',
                     willChange: 'transform, opacity',
-                    // The shockwave outruns the sparks and is gone well before they land.
-                    ['--burst-duration' as string]: `${RING_DURATION_MS}ms`,
+                    ['--burst-duration' as string]: `${FLASH_DURATION_MS}ms`,
                   }}
                 />
                 {b.particles.map((p) => (
@@ -224,20 +218,22 @@ export function BurstProvider({ children, motionProvider, rng }: BurstProviderPr
                     key={p.id}
                     aria-hidden
                     data-testid="burst-particle"
-                    className="animate-burst-spark absolute rounded-full"
+                    // `bg-primary` is the fallback that applies if the relative colour below is
+                    // unsupported and therefore dropped — never a dead spark.
+                    className="animate-burst-spark absolute rounded-full bg-primary"
                     style={{
                       width: p.size,
                       height: p.size,
                       left: -p.size / 2,
                       top: -p.size / 2,
-                      backgroundColor: HUE_VAR[p.hue],
+                      backgroundColor: sparkColour(p),
                       animationDelay: `${p.delayMs}ms`,
                       willChange: 'transform, opacity',
-                      // Consumed by the `gubbins-burst-spark` keyframe as the outward end-point,
-                      // the gravity sag applied as it fades, and this spark's own flight time.
+                      // Consumed by the `gubbins-burst-spark` keyframe as the ejection vector, the
+                      // gravity fall applied on its own curve, and this spark's own flight time.
                       ['--burst-dx' as string]: `${p.dx}px`,
                       ['--burst-dy' as string]: `${p.dy}px`,
-                      ['--burst-drop' as string]: `${p.drop}px`,
+                      ['--burst-gravity' as string]: `${p.gravity}px`,
                       ['--burst-duration' as string]: `${p.durationMs}ms`,
                     }}
                   />

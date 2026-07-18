@@ -9,7 +9,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { BurstProvider, useBurst } from './success-burst';
-import { buildBurstParticles, BURST_PARTICLE_COUNT, BURST_DURATION_MS } from './success-burst-geometry';
+import {
+  buildBurstParticles,
+  sparkColour,
+  BURST_PARTICLE_COUNT,
+  BURST_DURATION_MS,
+  BURST_HUE_SPREAD,
+} from './success-burst-geometry';
 import type { MediaQueryProvider } from './useReducedMotion';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
@@ -47,21 +53,36 @@ describe('buildBurstParticles', () => {
     expect(buildBurstParticles()).toHaveLength(BURST_PARTICLE_COUNT);
   });
 
-  it('alternates the two accent hues and keeps offsets/sizes bounded', () => {
+  it('keeps every ejection, size, fall and flight time bounded', () => {
     const reach = 900;
     const particles = buildBurstParticles(BURST_PARTICLE_COUNT, () => 0.5, reach);
-    expect(particles[0]!.hue).toBe('primary');
-    expect(particles[1]!.hue).toBe('highlight');
     for (const p of particles) {
-      // No spark travels further than the reach it was laid out for.
+      // No spark is ejected further than the reach it was laid out for.
       expect(Math.hypot(p.dx, p.dy)).toBeLessThanOrEqual(reach + 0.001);
-      expect(p.drop).toBeGreaterThanOrEqual(0);
-      expect(p.size).toBeGreaterThanOrEqual(6);
-      expect(p.size).toBeLessThanOrEqual(16);
+      // Gravity only ever pulls down.
+      expect(p.gravity).toBeGreaterThan(0);
+      expect(p.size).toBeGreaterThanOrEqual(5);
+      expect(p.size).toBeLessThanOrEqual(13);
       expect(p.delayMs).toBeGreaterThanOrEqual(0);
       // Every flight lands inside the 3–5s the effect is meant to occupy.
       expect(p.durationMs).toBeGreaterThanOrEqual(3000);
       expect(p.durationMs + p.delayMs).toBeLessThanOrEqual(BURST_DURATION_MS);
+    }
+  });
+
+  it('spreads the sparks around the accent hue rather than giving them all one colour', () => {
+    // A real RNG, since the point of the assertion is that the shell is *varied*.
+    const particles = buildBurstParticles(BURST_PARTICLE_COUNT);
+    const shifts = particles.map((p) => p.hueShift);
+
+    // Varied…
+    expect(new Set(shifts).size).toBeGreaterThan(8);
+    // …but centred on the token's own hue, not scattered across the wheel.
+    for (const p of particles) {
+      expect(Math.abs(p.hueShift)).toBeLessThanOrEqual(BURST_HUE_SPREAD);
+      // Embers only ever burn hotter than the base accent, never duller.
+      expect(p.lightnessLift).toBeGreaterThanOrEqual(0);
+      expect(p.lightnessLift).toBeLessThanOrEqual(0.16);
     }
   });
 
@@ -73,6 +94,15 @@ describe('buildBurstParticles', () => {
     // A reach beyond the clamp band can't produce an unbounded burst.
     const absurd = buildBurstParticles(8, () => 1, 100_000);
     for (const p of absurd) expect(Math.hypot(p.dx, p.dy)).toBeLessThanOrEqual(1600.001);
+  });
+
+  it('builds each spark colour as an offset from the accent token, never a literal', () => {
+    const [p] = buildBurstParticles(1, () => 0.75, 600);
+    const colour = sparkColour(p!);
+    // The token is the centre point — the accent still drives the whole shell.
+    expect(colour).toContain('var(--primary)');
+    // …offset in hue and lifted in lightness, rather than replaced by a raw colour value.
+    expect(colour).toMatch(/^oklch\(from var\(--primary\) calc\(l \+ [\d.]+\) c calc\(h \+ -?\d+\)\)$/);
   });
 
   it('is deterministic for a given RNG', () => {
@@ -106,14 +136,18 @@ describe('BurstProvider / useBurst', () => {
     );
     fireEvent.click(screen.getByText('go'));
     const first = screen.getAllByTestId('burst-particle')[0]!;
-    // The keyframe reads these custom props as the spark's outward end-point.
+    // The keyframe reads these custom props as the spark's ejection vector…
     expect(first.style.getPropertyValue('--burst-dx')).not.toBe('');
     expect(first.style.getPropertyValue('--burst-dy')).not.toBe('');
-    // …plus the gravity sag and this spark's own flight time.
-    expect(first.style.getPropertyValue('--burst-drop')).not.toBe('');
+    // …the gravity fall it applies on its own curve, and this spark's own flight time. The fall
+    // stays a separate variable from the ejection: the keyframe combines them, it can't unpick a
+    // pre-summed end-point back into two different curves.
+    expect(first.style.getPropertyValue('--burst-gravity')).not.toBe('');
     expect(first.style.getPropertyValue('--burst-duration')).not.toBe('');
-    // Colour comes from an accent-tracking brand token, never a raw literal.
-    expect(first.style.backgroundColor).toContain('var(--primary)');
+    // The plain token stays as the cascade fallback wherever relative colour is unsupported —
+    // including this test DOM, whose CSS parser drops the inline colour exactly as such a browser
+    // would. (`sparkColour` itself is asserted directly above.)
+    expect(first).toHaveClass('bg-primary');
     expect(first).toHaveClass('animate-burst-spark');
   });
 
