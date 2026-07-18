@@ -186,6 +186,12 @@ for end users (plus the Bridge / Home Assistant integration surface). The taxono
 house style live in [docs/todo/wiki_2026-07-11.md](docs/todo/wiki_2026-07-11.md) — the single
 source of truth for what the wiki covers.
 
+**Publishing is automatic — never hand-copy pages to the wiki repo.** `docs/wiki/` is the source
+of truth; `.github/workflows/publish-wiki.yml` mirrors it to the wiki whenever a change lands on
+`main`. Editing the wiki directly on GitHub is overwritten by the next publish. Run
+`npm run wiki:check` to verify links and images resolve before pushing (CI runs it too); the
+mechanics are in §7 of the plan doc.
+
 **The rule — the same discipline as design tokens and i18n:** when a change **adds, removes or
 alters anything a user sees or configures** — a feature, screen, capability, setting, option,
 concept, or a piece of behaviour the wiki describes — the corresponding wiki page(s) under

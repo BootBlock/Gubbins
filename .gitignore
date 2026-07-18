@@ -65,3 +65,8 @@ bridge/webhooks.*.json
 
 # Local browser-smoke artefact
 scripts/.smoke-screenshot.png
+
+# Local checkout of the wiki repo. `docs/todo/wiki_2026-07-11.md` §7 describes running the
+# publish sync by hand to see what it would do; that clones the wiki here. It is a whole
+# second repo (with its own .git) and must never be committed into this one.
+/.wiki/

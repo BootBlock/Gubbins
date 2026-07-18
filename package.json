@@ -32,6 +32,7 @@
     "test:bridge": "vitest run --config bridge/vitest.config.ts",
     "smoke:bridge": "node bridge/smoke.mjs",
     "test:e2e": "node scripts/browser-smoke.mjs",
+    "wiki:check": "node scripts/wiki-check.mjs",
     "type-check": "npm run type-check:app && npm run type-check:bridge",
     "type-check:app": "tsc -b --noEmit",
     "type-check:bridge": "tsc --noEmit -p bridge/tsconfig.json",

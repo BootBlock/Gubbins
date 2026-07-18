@@ -45,6 +45,12 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # Link/image integrity for the staged wiki. The publish workflow gates on this too, but
+      # running it here means a broken `[[link]]` fails the PR that introduced it rather than
+      # the publish that would have shipped it.
+      - name: Check wiki integrity
+        run: npm run wiki:check
+
   app:
     name: App unit tests
     runs-on: ubuntu-latest
