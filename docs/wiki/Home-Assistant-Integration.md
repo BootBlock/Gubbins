@@ -41,7 +41,7 @@ which includes a built-in, step-by-step setup guide.
   keeping a separate list of locations and lights in your Home Assistant configuration. A
   location's fields are published as soon as MQTT publishing is on, so it's worth
   [[knowing what goes out|Webhooks-MQTT-and-iCal]] if you'd already set MQTT up.
-- **Automate on changes.** Because the bridge emits [[change events|Webhooks-MQTT-and-iCal]], you
+- **Automate on changes.** Because the bridge delivers [[webhooks|Webhooks]] and change events, you
   can trigger Home Assistant automations from inventory changes (e.g. notify when something runs
   low).
 
@@ -106,4 +106,6 @@ Write-back is **off by default**.
 - **[[Bridge overview|Bridge-Overview]]** and **[[Running the bridge|Running-the-Bridge]]** — the
   foundation.
 - **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]** — the same lookups for AI assistants.
-- **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — events, MQTT and calendar in detail.
+- **[[Webhooks]]** — calling a Home Assistant webhook when your inventory changes.
+- **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — the event stream, MQTT and calendar in
+  detail.

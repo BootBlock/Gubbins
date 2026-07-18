@@ -22,6 +22,7 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | **[[Backup & restore\|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose |
 | **[[Export & import\|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
 | **[[Bridge\|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only + token by default; read-only unless you allow writes |
+| **[[Webhooks]]** (delivered by the bridge) | Calls a URL you chose when something changes | Off until you add one; goes only where you point it. Sign it so your receiver can confirm it's genuine — and prefer a secret held by the bridge, since one stored on the webhook travels with your synced data |
 | **[[MQTT publishing\|Webhooks-MQTT-and-iCal]]** (part of the bridge) | Pushes stock counts and per-location details to your broker | Off until you enable it; goes to *your* broker. Note this one **pushes** rather than waiting to be asked — including every [[custom field\|Custom-Fields-and-Capabilities]] on a location |
 | **[[Scraping\|Scraping-Supplier-Data]]** | Reads a supplier web page | Only when *you* trigger it, via the trusted companion extension |
 | **[[Product lookup\|Scraping-Supplier-Data]]** | Names a scanned barcode | Off until you allow it; then sends *only the barcode number* to Open Food Facts, only when you tap **Look up** |

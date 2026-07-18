@@ -18,7 +18,8 @@ expose:
 - A **read-only query API** — search and read your items over HTTP.
 - A **[[calendar feed|Webhooks-MQTT-and-iCal]]** (iCal) of due-backs, bookings, maintenance and
   warranties.
-- **[[Change events|Webhooks-MQTT-and-iCal]]** — webhooks and a live event stream.
+- **[[Webhooks]]** — calls a URL of your choosing when something changes.
+- A **[[live event stream|Webhooks-MQTT-and-iCal]]** (SSE) of the same changes.
 - **[[MQTT publishing + Home Assistant discovery|Home-Assistant-Integration]]**.
 - An **[[MCP server|AI-Assistant-Query-MCP]]** so an AI assistant can answer *"where are my…"*.
 
@@ -42,5 +43,5 @@ The bridge is built to be cautious:
 
 - **[[Running the bridge|Running-the-Bridge]]** — starting it up.
 - **[[Home Assistant integration|Home-Assistant-Integration]]** — the flagship use.
-- **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]** and
+- **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]**, **[[Webhooks]]** and
   **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — the other surfaces.

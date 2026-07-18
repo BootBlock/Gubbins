@@ -40,4 +40,4 @@ then it goes through Gubbins' safe merge so it can't cause drift.
 - **[[Bridge overview|Bridge-Overview]]** — what the bridge is and its safety model.
 - **[[Home Assistant integration|Home-Assistant-Integration]]**,
   **[[AI assistant query (MCP)|AI-Assistant-Query-MCP]]**,
-  **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — what to do with it.
+  **[[Webhooks]]**, **[[Webhooks, MQTT & iCal|Webhooks-MQTT-and-iCal]]** — what to do with it.
