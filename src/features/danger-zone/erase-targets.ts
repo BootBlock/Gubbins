@@ -546,11 +546,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     id: 'enabled-features',
     section: 'local',
     label: 'Enabled features',
-    // Wording deliberately promises the reset, not an *immediate* chooser: a selective erase
-    // clears the stored key but does not reload, so the live store keeps its state until the
-    // app next starts. Claiming the chooser reappears straight away would be untrue.
     tooltip:
-      'Resets which optional features are switched on for this device, so the first-run feature chooser runs again next time the app starts. No data is deleted.',
+      'Resets which optional features are switched on for this device, and shows the first-run feature chooser again. No data is deleted.',
     scope: 'local',
     localKeys: localKeysFor('enabled-features'),
   },
