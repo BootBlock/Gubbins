@@ -276,6 +276,31 @@ export class ItemCoreRepository extends BaseRepository {
     const params: SqlValue[] = [];
     const statements: SqlStatement[] = [];
 
+    /**
+     * The attributes whose edits raise a ledger row, and therefore a webhook (`W10`).
+     *
+     * Only fields a user would expect to be notified about are tracked — price, identity,
+     * classification, reordering and expiry. The rest (description, notes, dimensions, …) stay
+     * silent, as do the deliberately history-free reporting toggles (`is_favourite`,
+     * `is_unlimited`, `dead_stock_mode`). `label` is British-English prose for the note; `field`
+     * is the camelCase name a machine consumer reads out of the metadata.
+     *
+     * A value set to what it already holds is **not** a change: `track` compares before
+     * recording, so re-saving an unedited form writes no ledger row and fires no webhook.
+     */
+    const changedLabels: string[] = [];
+    const changedFields: string[] = [];
+    // `===` rather than `Object.is` deliberately: `Object.is(0, -0)` is false, and a numeric
+    // field can pick up a negative zero from parsed input (`Number('-0')`), which would log a
+    // change — and fire a webhook — every time an unchanged row was re-imported. No value
+    // reaching here can be NaN (the normalisers reject non-finite input), so the other
+    // difference between the two comparisons cannot arise.
+    const track = (field: string, label: string, from: SqlValue, to: SqlValue): void => {
+      if (from === to) return;
+      changedFields.push(field);
+      changedLabels.push(label);
+    };
+
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (name.length === 0) {
@@ -324,6 +349,7 @@ export class ItemCoreRepository extends BaseRepository {
     if (input.categoryId !== undefined) {
       sets.push('category_id = ?');
       params.push(input.categoryId);
+      track('categoryId', 'category', existing.categoryId, input.categoryId);
     }
     if (input.mpn !== undefined) {
       sets.push('mpn = ?');
@@ -334,20 +360,28 @@ export class ItemCoreRepository extends BaseRepository {
       params.push(normaliseText(input.manufacturer));
     }
     if (input.barcode !== undefined) {
+      const barcode = normaliseText(input.barcode);
       sets.push('barcode = ?');
-      params.push(normaliseText(input.barcode));
+      params.push(barcode);
+      track('barcode', 'barcode', existing.barcode, barcode);
     }
     if (input.serialNumber !== undefined) {
+      const serialNumber = normaliseText(input.serialNumber);
       sets.push('serial_number = ?');
-      params.push(normaliseText(input.serialNumber));
+      params.push(serialNumber);
+      track('serialNumber', 'serial number', existing.serialNumber, serialNumber);
     }
     if (input.unitCost !== undefined) {
+      const unitCost = normaliseUnitCost(input.unitCost);
       sets.push('unit_cost = ?');
-      params.push(normaliseUnitCost(input.unitCost));
+      params.push(unitCost);
+      track('unitCost', 'unit cost', existing.unitCost, unitCost);
     }
     if (input.expiryDate !== undefined) {
+      const expiryDate = normaliseExpiry(input.expiryDate);
       sets.push('expiry_date = ?');
-      params.push(normaliseExpiry(input.expiryDate));
+      params.push(expiryDate);
+      track('expiryDate', 'expiry date', existing.expiryDate, expiryDate);
     }
     if (input.batchNumber !== undefined) {
       sets.push('batch_number = ?');
@@ -394,16 +428,27 @@ export class ItemCoreRepository extends BaseRepository {
       params.push(input.deadStockMode);
     }
     if (input.reorderPoint !== undefined) {
+      const reorderPoint = normaliseReorderInt(input.reorderPoint);
       sets.push('reorder_point = ?');
-      params.push(normaliseReorderInt(input.reorderPoint));
+      params.push(reorderPoint);
+      track('reorderPoint', 'reorder point', existing.reorderPoint, reorderPoint);
     }
     if (input.reorderGaugePercent !== undefined) {
+      const reorderGaugePercent = normaliseReorderPercent(input.reorderGaugePercent);
       sets.push('reorder_gauge_percent = ?');
-      params.push(normaliseReorderPercent(input.reorderGaugePercent));
+      params.push(reorderGaugePercent);
+      track(
+        'reorderGaugePercent',
+        'reorder gauge percentage',
+        existing.reorderGaugePercent,
+        reorderGaugePercent,
+      );
     }
     if (input.reorderQty !== undefined) {
+      const reorderQty = normaliseReorderInt(input.reorderQty);
       sets.push('reorder_qty = ?');
-      params.push(normaliseReorderInt(input.reorderQty));
+      params.push(reorderQty);
+      track('reorderQty', 'reorder quantity', existing.reorderQty, reorderQty);
     }
     if (input.acquiredAt !== undefined) {
       sets.push('acquired_at = ?');
@@ -414,8 +459,10 @@ export class ItemCoreRepository extends BaseRepository {
       params.push(normaliseIsoDate(input.warrantyExpiresAt));
     }
     if (input.purchasePrice !== undefined) {
+      const purchasePrice = normalisePurchasePrice(input.purchasePrice);
       sets.push('purchase_price = ?');
-      params.push(normalisePurchasePrice(input.purchasePrice));
+      params.push(purchasePrice);
+      track('purchasePrice', 'purchase price', existing.purchasePrice, purchasePrice);
     }
     if (input.depreciationMonths !== undefined) {
       sets.push('depreciation_months = ?');
@@ -441,8 +488,10 @@ export class ItemCoreRepository extends BaseRepository {
       // Manual current value (feature-gap G9). This path sets/clears the live column only —
       // a recorded revaluation (which also appends the log point) goes through
       // `recordRevaluation`. Kept here for clearing (null) and import/round-trip.
+      const currentValue = normaliseCurrentValue(input.currentValue);
       sets.push('current_value = ?');
-      params.push(normaliseCurrentValue(input.currentValue));
+      params.push(currentValue);
+      track('currentValue', 'current value', existing.currentValue, currentValue);
     }
     if (input.operationalMetadata !== undefined) {
       // §4.1.1 schema-less map; an empty/cleared set stores SQL NULL. Serialised here
@@ -452,6 +501,20 @@ export class ItemCoreRepository extends BaseRepository {
         input.operationalMetadata && Object.keys(input.operationalMetadata).length > 0
           ? JSON.stringify(input.operationalMetadata)
           : null,
+      );
+    }
+
+    if (changedFields.length > 0) {
+      // One entry for the whole edit rather than one per field, so saving a form that touched
+      // three attributes reads as a single change in the Activity Log and delivers a single
+      // webhook. No `netValueDelta`, even for the price fields: that column carries realised
+      // movement for the sales/margin report (`SOLD`), and a revaluation is not a movement —
+      // populating it here would both distort that report and render a spurious delta badge.
+      statements.push(
+        historyStatement(id, 'ATTRIBUTES_CHANGED', this.actorId(), {
+          note: `Changed ${changedLabels.join(', ')}.`,
+          metadata: { fields: changedFields },
+        }),
       );
     }
 
