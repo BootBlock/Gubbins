@@ -21,6 +21,7 @@ import {
   parseDelimited,
   type ImportFormat,
 } from '@/features/import/tabular';
+import { cellAt, cellAsCount, mapColumns, type ColumnSynonyms } from '@/features/import/columns';
 
 // Re-export the shared codec from here so existing importers keep their import site
 // (the RFC-4180 reader moved to features/import/tabular; these are thin pass-throughs).
@@ -43,13 +44,11 @@ export class BomImportError extends Error {
   }
 }
 
-/** Normalise a header cell to a comparison key: lowercase, alphanumeric only. */
-function headerKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
+/** The logical columns a BOM line is built from. */
+type LogicalColumn = 'designator' | 'mpn' | 'manufacturer' | 'description' | 'quantity';
 
-/** Header synonyms (already passed through {@link headerKey}) → logical column. */
-const COLUMN_SYNONYMS: Record<string, ReadonlyArray<string>> = {
+/** Header synonyms (already in `headerKey` form) → logical column. */
+const COLUMN_SYNONYMS: ColumnSynonyms<LogicalColumn> = {
   designator: ['reference', 'references', 'designator', 'designators', 'refdes', 'ref'],
   mpn: [
     'mpn',
@@ -65,28 +64,6 @@ const COLUMN_SYNONYMS: Record<string, ReadonlyArray<string>> = {
   description: ['description', 'comment', 'name', 'partdescription', 'value'],
   quantity: ['quantity', 'qty', 'qnty', 'count', 'amount'],
 };
-
-type LogicalColumn = keyof typeof COLUMN_SYNONYMS;
-
-/** Resolve a header row into a map of logical column → cell index. */
-function mapHeaders(header: readonly string[]): Partial<Record<LogicalColumn, number>> {
-  const map: Partial<Record<LogicalColumn, number>> = {};
-  header.forEach((cell, index) => {
-    const key = headerKey(cell);
-    for (const [logical, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
-      if (map[logical] === undefined && synonyms.includes(key)) {
-        map[logical] = index;
-      }
-    }
-  });
-  return map;
-}
-
-function cell(row: readonly string[], index: number | undefined): string | null {
-  if (index === undefined) return null;
-  const value = (row[index] ?? '').trim();
-  return value.length > 0 ? value : null;
-}
 
 /** The error message shown when the input carries no columns a BOM can be built from. */
 const NO_COLUMNS_MESSAGE =
@@ -144,7 +121,7 @@ export function parseBom(text: string, options: ParseBomOptions = {}): ParsedBom
     throw new BomImportError(NO_COLUMNS_MESSAGE);
   }
 
-  const columns = mapHeaders(extraction.headerRow);
+  const columns = mapColumns(extraction.headerRow, COLUMN_SYNONYMS);
 
   // We need at least one identifying column to make a usable BOM line.
   if (columns.mpn === undefined && columns.description === undefined && columns.designator === undefined) {
@@ -153,17 +130,19 @@ export function parseBom(text: string, options: ParseBomOptions = {}): ParsedBom
 
   const lines: ParsedBomLine[] = [];
   for (const row of extraction.dataRows) {
-    const designator = cell(row, columns.designator);
-    const mpn = cell(row, columns.mpn);
-    const manufacturer = cell(row, columns.manufacturer);
-    const description = cell(row, columns.description);
+    const designator = cellAt(row, columns.designator);
+    const mpn = cellAt(row, columns.mpn);
+    const manufacturer = cellAt(row, columns.manufacturer);
+    const description = cellAt(row, columns.description);
     if (!designator && !mpn && !manufacturer && !description) continue; // blank row
 
-    const qtyText = cell(row, columns.quantity);
-    const parsedQty = qtyText ? Number.parseInt(qtyText, 10) : NaN;
-    const requiredQty = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
-
-    lines.push({ designator, mpn, manufacturer, description, requiredQty });
+    lines.push({
+      designator,
+      mpn,
+      manufacturer,
+      description,
+      requiredQty: cellAsCount(row, columns.quantity, 1),
+    });
   }
 
   return lines;

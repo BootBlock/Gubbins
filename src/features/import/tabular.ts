@@ -163,19 +163,28 @@ function nonEmptyLines(text: string): string[] {
 }
 
 /**
- * Is a delimiter used consistently across the sampled lines? A block is
- * "consistent" when every line contains the delimiter and they all split into the
- * same number (> 1) of columns — the signature of tabular data. Naive splitting
- * (ignoring quotes) is deliberate: it is only a sniff to choose the codec, and the
- * real parse re-reads the text with full RFC-4180 quoting.
+ * Is a delimiter used consistently across a sample of the text? A block is "consistent" when
+ * the sampled rows all yield the same number (> 1) of columns — the signature of tabular data.
+ *
+ * The sample is read with the real RFC-4180 codec rather than a naive `split`, so a delimiter
+ * that appears *inside* a quoted cell (`"£1,234.56"`, a `"R1, R2"` designator) does not
+ * unbalance the count and wrongly disqualify a perfectly good CSV. Quoting is the single most
+ * common reason a delimiter sniff mis-fires, and every importer inherits the answer, so it is
+ * worth reading the sample properly.
  */
 function delimiterConsistency(
-  lines: readonly string[],
+  sample: string,
   delimiter: string,
+  truncated: boolean,
 ): { consistent: boolean; columns: number } {
-  if (lines.length === 0) return { consistent: false, columns: 0 };
-  const columns = lines[0]!.split(delimiter).length;
-  const consistent = columns > 1 && lines.every((l) => l.split(delimiter).length === columns);
+  const parsed = parseDelimited(sample, delimiter).filter((row) => row.some((c) => c.trim().length > 0));
+  // A sample cut off mid-file may have severed the final row (or left a quoted cell unclosed,
+  // which swallows the remainder into one field). Its width proves nothing, so drop it — but
+  // only while at least one whole row is left to judge by.
+  const rows = truncated && parsed.length > 1 ? parsed.slice(0, -1) : parsed;
+  if (rows.length === 0) return { consistent: false, columns: 0 };
+  const columns = rows[0]!.length;
+  const consistent = columns > 1 && rows.every((row) => row.length === columns);
   return { consistent, columns };
 }
 
@@ -185,8 +194,12 @@ function delimiterConsistency(
  * strongest paste signal (tab, then semicolon, then comma).
  */
 function detectDelimited(text: string): ImportFormat | null {
-  const lines = nonEmptyLines(text).slice(0, DETECTION_SAMPLE_SIZE);
-  if (lines.length === 0) return null;
+  // Sample whole lines (not the filtered set) so a quoted cell spanning a line break is still
+  // readable by the codec; blank rows are dropped after parsing instead.
+  const allLines = text.split(/\r\n|\r|\n/);
+  const sample = allLines.slice(0, DETECTION_SAMPLE_SIZE).join('\n');
+  const truncated = allLines.length > DETECTION_SAMPLE_SIZE;
+  if (sample.trim().length === 0) return null;
   const candidates: ReadonlyArray<readonly [ImportFormat, string]> = [
     ['tsv', '\t'],
     ['ssv', ';'],
@@ -195,7 +208,7 @@ function detectDelimited(text: string): ImportFormat | null {
   let best: ImportFormat | null = null;
   let bestColumns = 1;
   for (const [format, delimiter] of candidates) {
-    const { consistent, columns } = delimiterConsistency(lines, delimiter);
+    const { consistent, columns } = delimiterConsistency(sample, delimiter, truncated);
     if (consistent && columns > bestColumns) {
       best = format;
       bestColumns = columns;

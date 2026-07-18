@@ -21,6 +21,16 @@ The list sorts by priority, so the things you want most sit at the top.
 > Paste the product page **link** and a **target price** so, when you're ready to buy, everything
 > you need is one click away — no hunting for where you saw it.
 
+## Importing a list
+
+Got a list already? **Import list** takes a pasted block or a file and adds every line to the
+wishlist in one go — a spreadsheet, a **CSV / TSV**, **JSON**, a **Markdown** or **HTML** table, or
+simply one thing per line. Where the list gives a price it becomes the entry's **target price**, a
+link becomes its **link**, and a supplier is kept in the entry's note.
+
+You'll see a preview of what will be added before anything is written. The same importer can send a
+list to a [[purchase order|Purchase-Orders]] instead, if you're ready to actually order it.
+
 > **⚠️ Heads-up**
 > Only ordinary web links (`http`/`https`) are accepted for an entry's link, so a wishlist can't
 > carry anything unsafe.

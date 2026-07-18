@@ -19,6 +19,13 @@ vi.mock('./wishlist-queries', () => ({
   useDeleteWishlistEntry: () => ({ mutate: deleteSpy, isPending: false, isSuccess: false }),
 }));
 
+// The import dialog is mounted (closed) by the tab, so its mutation hooks run on every render.
+vi.mock('./purchase-list-queries', () => ({
+  useImportPurchaseListIntoOrder: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateOrderFromPurchaseList: () => ({ mutate: vi.fn(), isPending: false }),
+  useImportPurchaseListIntoWishlist: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({
     currency: (v: number) => `£${v.toFixed(2)}`,

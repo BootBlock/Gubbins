@@ -9,9 +9,17 @@
  */
 import { useMemo, useState } from 'react';
 import { Button, LiveRegion, Money, Spinner, Surface } from '@/components/foundry';
-import { AddIcon, DeleteIcon, EditIcon, ExternalLinkIcon, WishlistIcon } from '@/components/icons';
+import {
+  AddIcon,
+  DeleteIcon,
+  EditIcon,
+  ExternalLinkIcon,
+  UploadIcon,
+  WishlistIcon,
+} from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
+import { useT } from '@/features/i18n';
 import type { WishlistEntry } from '@/db/repositories';
 import { WISHLIST_PRIORITY_LABELS, summariseWishlist, type WishlistPriority } from './wishlist';
 import {
@@ -21,6 +29,7 @@ import {
   useWishlist,
 } from './wishlist-queries';
 import { WishlistEntryDialog } from './components/WishlistEntryDialog';
+import { ImportPurchaseListDialog } from './components/ImportPurchaseListDialog';
 
 /** Design-token tone for each priority badge; `NONE` shows no badge. */
 const PRIORITY_TONE: Record<Exclude<WishlistPriority, 'NONE'>, string> = {
@@ -37,7 +46,9 @@ export function WishlistTab() {
   const f = useFormatters();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<WishlistEntry | null>(null);
+  const t = useT();
 
   const entries = useMemo(() => listQuery.data?.rows ?? [], [listQuery.data]);
   const summary = useMemo(() => summariseWishlist(entries), [entries]);
@@ -86,10 +97,16 @@ export function WishlistTab() {
             </>
           )}
         </p>
-        <Button variant="primary" onClick={openAdd} data-testid="wishlist-add">
-          <AddIcon />
-          Add wish
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="wishlist-import">
+            <UploadIcon />
+            {t('purchasing.import.open')}
+          </Button>
+          <Button variant="primary" onClick={openAdd} data-testid="wishlist-add">
+            <AddIcon />
+            Add wish
+          </Button>
+        </div>
       </div>
 
       {listQuery.isLoading ? (
@@ -139,6 +156,8 @@ export function WishlistTab() {
           }
         }}
       />
+
+      <ImportPurchaseListDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       <LiveRegion visuallyHidden data-testid="wishlist-mutation-live">
         {createEntry.isSuccess ? <p>Added to your wishlist.</p> : null}

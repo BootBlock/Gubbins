@@ -60,6 +60,17 @@ describe('detectImportFormat', () => {
   it('falls back to a line list when nothing is tabular', () => {
     expect(detectImportFormat('just some free text\nanother line')).toBe('lines');
   });
+  it('is not fooled by a delimiter inside a quoted cell', () => {
+    // The naive sniff counted the comma in "1,234.56" as a column break and gave up on a
+    // perfectly good CSV; the codec-backed sniff reads the quoting properly.
+    expect(detectImportFormat('Name,Price\nWidget,"£1,234.56"')).toBe('csv');
+    expect(detectImportFormat('Reference,Value\n"R1, R2",10k')).toBe('csv');
+  });
+  it('ignores a final row severed by the detection sample window', () => {
+    // 12 rows: the 10-line sample cuts mid-file, leaving a partial last row that proves nothing.
+    const rows = Array.from({ length: 12 }, (_, i) => `item${i},${i}`).join('\n');
+    expect(detectImportFormat(`Name,Qty\n${rows}`)).toBe('csv');
+  });
 });
 
 describe('parseHtmlRows', () => {
