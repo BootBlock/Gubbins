@@ -141,6 +141,28 @@ export interface ReparentLog {
  * the **local** mutations to apply atomically; the engine re-reads and pushes the
  * merged state, so the push half needs no separate diff here.
  */
+/**
+ * Issue #187: one id retired because a peer's row won the same non-primary-key UNIQUE index —
+ * a tag / contact / custom-field *name*, or a composite child key such as
+ * `capabilities(item_id, key)`. Both devices reach the same verdict from the same pure rule
+ * (see `unique-keys.ts`), so the retirement is symmetric rather than a local preference.
+ *
+ * The apply runs the DELETE + tombstone for `loserId` **before** the merge's upserts, so the
+ * winner's INSERT finds the natural key free; the tombstone then propagates the retirement so
+ * the losing id does not simply come back on the next sync. Anything that pointed at
+ * `loserId` has already been repointed at `winnerId` in the plan's upserts, so the two
+ * devices' associations merge rather than one side's being lost to the cascade.
+ */
+export interface CollisionResolution {
+  readonly table: SyncTable;
+  /** The id that lost the natural key and is retired. */
+  readonly loserId: string;
+  /** The id that keeps it, and that every reference to `loserId` now points at. */
+  readonly winnerId: string;
+  /** Tombstone instant recorded for `loserId`. */
+  readonly deletedAt: number;
+}
+
 export interface ReconciliationPlan {
   /** Rows to UPSERT locally (remote won LWW, or are new), already sanitised + re-parented. */
   readonly localUpserts: readonly TableRow[];
@@ -152,6 +174,8 @@ export interface ReconciliationPlan {
   readonly reparented: readonly ReparentLog[];
   /** §7.5.3 location moves discarded because they would create a nesting cycle. */
   readonly rejectedCycles: readonly string[];
+  /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
+  readonly collisions: readonly CollisionResolution[];
   /** Phase 11: remote `item_history` rows missing locally (union-by-id), to INSERT. */
   readonly historyInserts: readonly SqlRow[];
   /** Phase 11: `item_tags` edges to add locally (membership union). */

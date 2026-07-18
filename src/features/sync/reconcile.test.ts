@@ -203,9 +203,15 @@ describe('reconcile (§7.3 / §7.5)', () => {
         tables: { item_aliases: [{ id: 'remoteAl', item_id: 'iRemote', alias: 'SHARED', updated_at: 20 }] },
       });
       const plan = reconcile(local, remote, opts);
-      // Remote row is upserted, local conflicting row is tombstoned (frees the UNIQUE text).
+      // Remote row is upserted; the local row is retired ahead of it so the UNIQUE text is
+      // free by the time the INSERT runs (issue #187 moved this onto the shared channel).
       expect(plan.localUpserts.some((u) => u.row.id === 'remoteAl')).toBe(true);
-      expect(plan.localDeletes).toContainEqual({ tableName: 'item_aliases', id: 'localAl', deletedAt: 20 });
+      expect(plan.collisions).toContainEqual({
+        table: 'item_aliases',
+        loserId: 'localAl',
+        winnerId: 'remoteAl',
+        deletedAt: 20,
+      });
     });
 
     it('older incoming alias loses: the upsert is dropped, the local mapping stands', () => {

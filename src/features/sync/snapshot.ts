@@ -276,6 +276,20 @@ export async function applyPlan(
   const tableIndex = (t: string) => SYNC_TABLES.indexOf(t as SyncTable);
   const statements: SqlStatement[] = [];
 
+  // Issue #187: retire ids that lost a non-primary-key UNIQUE index to a peer's row. This
+  // runs FIRST, ahead of the upserts, because the winner's INSERT would otherwise hit the
+  // losing row still holding the natural key — the `ON CONFLICT(id)` target does not cover a
+  // name/composite index, so the constraint would abort the whole atomic merge. Rows that
+  // referenced the loser are cascaded away here and re-inserted against the winner by the
+  // repointed upserts below, which is what merges the two devices' associations into one.
+  for (const { table, loserId, deletedAt } of plan.collisions) {
+    statements.push(tombstoneDeleteStatement(table, loserId));
+    statements.push({
+      sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
+      params: [table, loserId, deletedAt],
+    });
+  }
+
   // UPSERTs, parents before children.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
