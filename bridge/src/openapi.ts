@@ -11,6 +11,8 @@
  * personal data, hosts, or tokens appear here (CLAUDE.md / security checklist).
  */
 
+import { KNOWN_EVENT_TYPES } from '@/features/events/event-types.ts';
+
 /** A plain JSON value — the spec is pure data, serialisable to JSON and YAML alike. */
 export type JsonValue =
   string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
@@ -1441,26 +1443,10 @@ export const openapiDocument: JsonValue = {
           id: { type: 'string', example: 'hist-0007' },
           type: {
             type: 'string',
-            enum: [
-              'item.created',
-              'item.renamed',
-              'stock.adjusted',
-              'item.low_stock',
-              'item.out_of_stock',
-              'item.moved',
-              'item.checked_out',
-              'item.checked_in',
-              'item.reserved',
-              'item.reservation_cleared',
-              'item.removed',
-              'item.restored',
-              'item.condition_changed',
-              'item.maintenance_logged',
-              'item.supplier_data_applied',
-              'item.changed',
-              'events.truncated',
-              'lookup.resolved',
-            ],
+            // Driven from the shared vocabulary rather than hand-listed: this enum had already
+            // drifted (it was missing `item.tracking_changed`, which the bridge does emit), and a
+            // published contract that under-documents what it sends is worse than no enum at all.
+            enum: [...KNOWN_EVENT_TYPES],
             example: 'item.low_stock',
           },
           occurredAt: {

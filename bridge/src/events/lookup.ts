@@ -24,11 +24,14 @@
  * an injectable clock.
  */
 import { createHash } from 'node:crypto';
+import { LOOKUP_RESOLVED_TYPE } from '@/features/events/event-types.ts';
 import type { WhereIsResult } from '../query.ts';
 import type { BridgeEventBase } from './model.ts';
 
-/** The stable dotted type of the read-triggered lookup event. */
-export const LOOKUP_RESOLVED_TYPE = 'lookup.resolved';
+// The stable dotted type of the read-triggered lookup event. Declared with the rest of the event
+// vocabulary in the app (`@/features/events/event-types.ts`) so the webhook subscription UI can
+// offer it; re-exported here so existing bridge call sites keep their import unchanged.
+export { LOOKUP_RESOLVED_TYPE } from '@/features/events/event-types.ts';
 
 /** Default debounce window (ms): repeated equivalent lookups inside it emit once. */
 export const DEFAULT_LOOKUP_DEBOUNCE_MS = 3000;
