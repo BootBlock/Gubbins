@@ -23,6 +23,13 @@ import { isLow, type ReorderDefaults, type ReorderItem } from '@/features/invent
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '@/db/repositories/constants.ts';
 import type { HistoryAction } from '@/db/repositories/constants.ts';
 import type { ActivityFeedEntry, Item } from '@/db/repositories/types';
+import {
+  EVENTS_TRUNCATED_TYPE,
+  eventTypeForAction,
+  LOW_STOCK_TYPE,
+  OUT_OF_STOCK_TYPE,
+  STOCK_ADJUSTED_TYPE,
+} from '@/features/events/event-types.ts';
 import type { ItemSummaryDto } from '../api/dto.ts';
 // Type-only (erased at runtime), so the mutual reference with `lookup.ts` creates no import cycle.
 import type { LookupEvent } from './lookup.ts';
@@ -74,8 +81,19 @@ export interface BridgeEventData {
   readonly item: ItemSummaryDto | null;
 }
 
-/** The special event emitted when a single generation's fan-out is capped. */
-export const EVENTS_TRUNCATED_TYPE = 'events.truncated';
+// The dotted event-type vocabulary lives in the app (`@/features/events/event-types.ts`) so the
+// webhook subscription UI can build its picker from it — `src/` cannot import from `bridge/`, only
+// the other way. Re-exported here so every existing bridge call site keeps its import unchanged.
+export {
+  ACTION_EVENT_TYPE,
+  EVENTS_TRUNCATED_TYPE,
+  eventTypeForAction,
+  ITEM_CHANGED_TYPE,
+  KNOWN_EVENT_TYPES,
+  LOW_STOCK_TYPE,
+  OUT_OF_STOCK_TYPE,
+  STOCK_ADJUSTED_TYPE,
+} from '@/features/events/event-types.ts';
 
 /**
  * A resolved new ledger entry: the joined feed row plus the item's current state (used both
@@ -119,62 +137,9 @@ export const DEFAULT_LOW_STOCK: ReorderDefaults = {
   gaugePercent: LOW_STOCK_GAUGE_PERCENT,
 };
 
-/**
- * The stable dotted event type for each §4 ledger action. Grouped so related actions share a
- * type (e.g. all "coming into existence" actions are `item.created`). A forward-compat action a
- * newer peer synced falls back to `item.changed` (mirroring the activity-kind graceful
- * degradation) rather than crashing.
- */
-const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
-  CREATED: 'item.created',
-  VARIANT_CREATED: 'item.created',
-  ASSEMBLED: 'item.created',
-  RENAMED: 'item.renamed',
-  QUANTITY_CHANGE: 'stock.adjusted',
-  GAUGE_UPDATE: 'stock.adjusted',
-  RECONCILED: 'stock.adjusted',
-  CONSUMED: 'stock.adjusted',
-  DISASSEMBLED: 'stock.adjusted',
-  RECEIVED: 'stock.adjusted',
-  PROCURED: 'stock.adjusted',
-  MOVED: 'item.moved',
-  RE_PARENTED: 'item.moved',
-  CHECKED_OUT: 'item.checked_out',
-  CHECKED_IN: 'item.checked_in',
-  RESERVED: 'item.reserved',
-  RESERVATION_CLEARED: 'item.reservation_cleared',
-  SOFT_DELETED: 'item.removed',
-  RESTORED: 'item.restored',
-  CONDITION_CHANGED: 'item.condition_changed',
-  TRACKING_CHANGED: 'item.tracking_changed',
-  MAINTENANCE_LOGGED: 'item.maintenance_logged',
-  SCRAPE_APPLIED: 'item.supplier_data_applied',
-  // Outbound disposals & refunds all reduce stock, so they group with stock.adjusted (they can
-  // additionally raise a low/out-of-stock event via isStockAction).
-  SOLD: 'stock.adjusted',
-  WRITTEN_OFF: 'stock.adjusted',
-  RETURNED_TO_SUPPLIER: 'stock.adjusted',
-  // Record-keeping lifecycle events with no stock movement and no dedicated public event type
-  // (a manual revaluation, G9; a per-instance test / calibration / service record, G7). They map
-  // to the generic documented `item.changed` — exactly what the `?? 'item.changed'` fallback
-  // already emitted for them — so this only makes the exhaustive `Record<HistoryAction>` map
-  // complete (bridge type-check) without introducing an event type absent from the OpenAPI enum.
-  REVALUED: 'item.changed',
-  TESTED: 'item.changed',
-  // A loan renewal (B3) changes a due date in place — a record-keeping event with no stock
-  // movement and no dedicated OpenAPI event type, so it maps to the generic `item.changed`
-  // (the `?? 'item.changed'` fallback already emitted this) — keeping the exhaustive map complete.
-  LOAN_RENEWED: 'item.changed',
-};
-
-/** The dotted event type for a ledger action (unknown actions → `item.changed`). */
-export function eventTypeForAction(action: string): string {
-  return ACTION_EVENT_TYPE[action as HistoryAction] ?? 'item.changed';
-}
-
 /** The actions that move stock — the ones that can additionally raise a low/out-of-stock event. */
 function isStockAction(action: HistoryAction): boolean {
-  return eventTypeForAction(action) === 'stock.adjusted';
+  return eventTypeForAction(action) === STOCK_ADJUSTED_TYPE;
 }
 
 /**
@@ -272,7 +237,7 @@ function statusEvent(resolved: ResolvedEntry, defaults: ReorderDefaults): Ledger
   if (!isLow(item, defaults)) return null;
 
   const empty = isStockEmpty(item);
-  const type = empty ? 'item.out_of_stock' : 'item.low_stock';
+  const type = empty ? OUT_OF_STOCK_TYPE : LOW_STOCK_TYPE;
   const base = baseEvent(resolved);
   return {
     id: `${entry.id}:${empty ? 'out_of_stock' : 'low_stock'}`,
