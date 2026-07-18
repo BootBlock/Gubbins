@@ -7,7 +7,12 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { reportKeys } from './keys';
 import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
+
+// The `['reports', …]` prefix is the SSOT in ./keys — every key below is built from it so
+// that invalidating the prefix (see `invalidateItems`) provably refreshes all of them.
+export { reportKeys } from './keys';
 
 // The selectable analytics windows live in their own dependency-free module (SSOT) so the
 // preferences store can share them without importing back through this store-consuming module.
@@ -56,14 +61,14 @@ export const SALES_BUCKETS = 15;
 
 export function useInventoryValue() {
   return useQuery({
-    queryKey: ['reports', 'inventory-value'],
+    queryKey: [...reportKeys.all, 'inventory-value'],
     queryFn: () => getReportRepository().inventoryValue(),
   });
 }
 
 export function useConsumptionRate(windowDays: number = REPORT_WINDOW_DAYS) {
   return useQuery({
-    queryKey: ['reports', 'consumption', windowDays],
+    queryKey: [...reportKeys.all, 'consumption', windowDays],
     queryFn: () => getReportRepository().consumptionRate(windowDays),
   });
 }
@@ -73,7 +78,7 @@ export function useMovement(
   buckets: number = REPORT_MOVEMENT_BUCKETS,
 ) {
   return useQuery({
-    queryKey: ['reports', 'movement', windowDays, buckets],
+    queryKey: [...reportKeys.all, 'movement', windowDays, buckets],
     queryFn: () => getReportRepository().movement(windowDays, buckets),
   });
 }
@@ -87,7 +92,7 @@ export function useLowStockCount(options: { enabled?: boolean } = {}) {
   const qtyThreshold = usePreferencesStore((s) => s.lowStockQtyThreshold);
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   return useQuery({
-    queryKey: ['reports', 'low-stock-count', qtyThreshold, gaugePercent],
+    queryKey: [...reportKeys.all, 'low-stock-count', qtyThreshold, gaugePercent],
     queryFn: () => getReportRepository().lowStockCount({ qtyThreshold, gaugePercent }),
     enabled: options.enabled ?? true,
   });
@@ -101,7 +106,7 @@ export function useLowStockCount(options: { enabled?: boolean } = {}) {
  */
 export function useOutOfStockCount(options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: ['reports', 'out-of-stock-count'],
+    queryKey: [...reportKeys.all, 'out-of-stock-count'],
     queryFn: () => getReportRepository().outOfStockCount(),
     enabled: options.enabled ?? true,
   });
@@ -119,7 +124,7 @@ export function useDeadStock(sinceDays?: number) {
   const preferred = usePreferencesStore((s) => s.deadStockDays);
   const effective = sinceDays ?? preferred;
   return useQuery({
-    queryKey: ['reports', 'dead-stock', effective],
+    queryKey: [...reportKeys.all, 'dead-stock', effective],
     queryFn: () => getReportRepository().deadStock(effective),
   });
 }
@@ -132,21 +137,21 @@ export function useDeadStock(sinceDays?: number) {
 export function useDeadStockPolicy(itemId: string) {
   const defaultDays = usePreferencesStore((s) => s.deadStockDays);
   return useQuery({
-    queryKey: ['reports', 'dead-stock-policy', itemId, defaultDays],
+    queryKey: [...reportKeys.all, 'dead-stock-policy', itemId, defaultDays],
     queryFn: () => getReportRepository().deadStockPolicy(itemId, defaultDays),
   });
 }
 
 export function useAbcAnalysis() {
   return useQuery({
-    queryKey: ['reports', 'abc', ABC_WINDOW_DAYS],
+    queryKey: [...reportKeys.all, 'abc', ABC_WINDOW_DAYS],
     queryFn: () => getReportRepository().abcAnalysis(ABC_WINDOW_DAYS),
   });
 }
 
 export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
   return useQuery({
-    queryKey: ['reports', 'turnover', windowDays],
+    queryKey: [...reportKeys.all, 'turnover', windowDays],
     queryFn: () => getReportRepository().turnover(windowDays),
     // The window toggle re-keys this query; hold the previous window's table on screen
     // while the new one loads so toggling never flashes the panel to a spinner and back.
@@ -156,14 +161,14 @@ export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
 
 export function useStockAging() {
   return useQuery({
-    queryKey: ['reports', 'stock-aging'],
+    queryKey: [...reportKeys.all, 'stock-aging'],
     queryFn: () => getReportRepository().stockAging(),
   });
 }
 
 export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
   return useQuery({
-    queryKey: ['reports', 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
+    queryKey: [...reportKeys.all, 'valuation-trend', windowDays, VALUATION_TREND_POINTS],
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
     // Re-keyed by the same analytics window toggle — keep the previous sparkline visible
     // while the new window loads (flicker-free, mirrors useTurnover above).
@@ -173,7 +178,7 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
 
 export function useDataHygiene(staleDays: number = DATA_HYGIENE_STALE_DAYS) {
   return useQuery({
-    queryKey: ['reports', 'data-hygiene', staleDays],
+    queryKey: [...reportKeys.all, 'data-hygiene', staleDays],
     queryFn: () => getReportRepository().dataHygiene(staleDays),
   });
 }
@@ -190,7 +195,7 @@ export function useSpendAnalytics(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: ['reports', 'spend', windowDays, SPEND_BUCKETS],
+    queryKey: [...reportKeys.all, 'spend', windowDays, SPEND_BUCKETS],
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
     enabled: options?.enabled ?? true,
     // The spend window toggle re-keys this query; hold the previous breakdown on screen
@@ -210,7 +215,7 @@ export function useSalesAnalytics(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: ['reports', 'sales', windowDays, SALES_BUCKETS],
+    queryKey: [...reportKeys.all, 'sales', windowDays, SALES_BUCKETS],
     queryFn: () => getReportRepository().salesAnalytics(windowDays, SALES_BUCKETS),
     enabled: options?.enabled ?? true,
     // The window toggle re-keys this query; hold the previous breakdown on screen while the new
@@ -226,7 +231,7 @@ export function useSalesAnalytics(
  */
 export function useInsuranceSchedule() {
   return useQuery({
-    queryKey: ['reports', 'insurance-schedule'],
+    queryKey: [...reportKeys.all, 'insurance-schedule'],
     queryFn: () => getReportRepository().insuranceSchedule(),
   });
 }
@@ -243,7 +248,7 @@ export function useInsuranceSchedule() {
 export function usePartsCatalogue(scope: CatalogueScope | null, options: CataloguePartsOptions = {}) {
   const { includePhotos = false, groupBy, sortBy } = options;
   return useQuery({
-    queryKey: ['reports', 'parts-catalogue', scope, includePhotos, groupBy, sortBy],
+    queryKey: [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy],
     queryFn: () => getReportRepository().partsCatalogue(scope!, { includePhotos, groupBy, sortBy }),
     enabled: scope !== null,
     // Re-keyed as the reader changes scope/grouping/columns; keep the previous document on screen

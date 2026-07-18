@@ -22,6 +22,7 @@ import {
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { nowMs } from '@/lib/clock';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 // --- Variants (spec §4 Variant/SKU) --------------------------------------------
 
@@ -39,7 +40,7 @@ export function useCreateVariant() {
     mutationFn: ({ parentId, input }: { parentId: string; input: CreateItemInput }) =>
       getItemRepository().createVariant(parentId, input),
     onSettled: (_d, _e, { parentId }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemVariants(parentId) });
     },
   });
@@ -50,7 +51,7 @@ export function useSetParent() {
   return useMutation({
     mutationFn: ({ childId, parentId }: { childId: string; parentId: string | null }) =>
       getItemRepository().setParent(childId, parentId),
-    onSettled: () => void client.invalidateQueries({ queryKey: inventoryKeys.items() }),
+    onSettled: () => invalidateItems(client),
   });
 }
 
@@ -139,7 +140,7 @@ export function useAssembleKit() {
       cascade?: boolean;
     }) => getItemRepository().assemble(kitId, count, { destinationLocationId, cascade }),
     onSettled: (_d, _e, { kitId }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(kitId) });
     },
   });
@@ -152,7 +153,7 @@ export function useDisassembleKit() {
     mutationFn: ({ kitId, count }: { kitId: string; count: number }) =>
       getItemRepository().disassemble(kitId, count),
     onSettled: (_d, _e, { kitId }) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(kitId) });
     },
   });
@@ -267,7 +268,7 @@ export function useTransferStock() {
     }) => getItemRepository().transferStock(itemId, fromLocationId, toLocationId, quantity, batchKey),
     onSettled: (_d, _e, { itemId }) => {
       // `items()` is a prefix of `itemStock`/`item` (the detail), so this refreshes both.
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(itemId) });
     },
   });
@@ -281,7 +282,7 @@ export function useReconcile() {
     mutationFn: (adjustments: readonly ReconciliationAdjustment[]) =>
       getItemRepository().reconcile(adjustments),
     onSettled: (updated) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       updated?.forEach(
         (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );
@@ -296,7 +297,7 @@ export function useReconcileSerialised() {
     mutationFn: (adjustments: readonly SerialisedReconciliation[]) =>
       getItemRepository().reconcileSerialised(adjustments),
     onSettled: (updated) => {
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
       updated?.forEach(
         (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );

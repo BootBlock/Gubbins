@@ -19,6 +19,7 @@ import {
   type UpdateContactInput,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const contactKeys = {
   all: ['contacts'] as const,
@@ -116,7 +117,7 @@ export function useDeleteContact() {
     onSettled: () => {
       void client.invalidateQueries({ queryKey: contactKeys.all });
       void client.invalidateQueries({ queryKey: checkoutKeys.all });
-      void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+      invalidateItems(client);
     },
   });
 }
@@ -127,7 +128,7 @@ export function useDeleteContact() {
 function invalidateBorrowing(client: ReturnType<typeof useQueryClient>): void {
   void client.invalidateQueries({ queryKey: checkoutKeys.all });
   void client.invalidateQueries({ queryKey: contactKeys.all });
-  void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+  invalidateItems(client);
   // A loan's duration feeds checkout-hours maintenance telemetry (§4.3, Phase 22), so a
   // checkout/return shifts the derived usage on any accrue-mode schedule and the due set.
   void client.invalidateQueries({ queryKey: inventoryKeys.maintenance() });

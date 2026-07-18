@@ -8,11 +8,11 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getStorageRepository } from '@/db/repositories';
-import { inventoryKeys } from '@/features/inventory/queries';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { imagesBytesOnDisk } from '@/features/images/opfs-images';
 import { archiveAndPruneHistory, downgradeImagesBefore } from './triage-actions';
 import { estimateTableBytes } from './triage';
+import { invalidateItems } from '@/features/inventory/invalidate';
 
 export const storageKeys = {
   all: ['storage'] as const,
@@ -63,7 +63,7 @@ export function useDowngradeCandidateCount(cutoff: number) {
 /** Invalidate every triage read + refresh the live OPFS telemetry after a reclaim. */
 function refreshAfterReclaim(client: ReturnType<typeof useQueryClient>): void {
   void client.invalidateQueries({ queryKey: storageKeys.all });
-  void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+  invalidateItems(client);
   void useStorageStore.getState().refresh();
 }
 
