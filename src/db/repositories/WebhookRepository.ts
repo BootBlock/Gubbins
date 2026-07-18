@@ -18,6 +18,7 @@ import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToWebhookSubscription } from './mappers';
 import { tombstoneStatement } from './tombstone';
+import { parseWebhookFilter } from '@/features/webhooks/filter';
 import {
   normaliseWebhookEventTypes,
   normaliseWebhookHeaders,
@@ -169,8 +170,11 @@ export class WebhookRepository extends BaseRepository {
     }
 
     if (input.filter !== undefined) {
+      // Parsed on the way in, exactly as `create` does through the plan seam, so a filter can
+      // only ever be stored in the shape the evaluator understands.
+      const filter = parseWebhookFilter(input.filter);
       sets.push('filter = ?');
-      params.push(input.filter === null ? null : JSON.stringify(input.filter));
+      params.push(filter === null ? null : JSON.stringify(filter));
     }
     if (input.template !== undefined) {
       sets.push('template = ?');

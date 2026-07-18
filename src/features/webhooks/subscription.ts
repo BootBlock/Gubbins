@@ -26,7 +26,8 @@
  * user's events are sent to would be worse than telling them it is wrong.
  */
 import { WEBHOOK_METHODS, type WebhookMethod } from '@/db/repositories/constants';
-import type { WebhookFilter, WebhookHeaders } from '@/db/repositories/types';
+import type { WebhookHeaders } from '@/db/repositories/types';
+import { parseWebhookFilter, type WebhookFilter } from './filter';
 
 /** The method a subscription takes when none is chosen (or an unknown one is supplied). */
 export const DEFAULT_WEBHOOK_METHOD: WebhookMethod = 'POST';
@@ -205,7 +206,11 @@ export function planWebhookSubscription(draft: WebhookSubscriptionDraft): Webhoo
       secret,
       secretRef,
       eventTypes,
-      filter: draft.filter ?? null,
+      // Parsed rather than trusted: this is the one choke-point a create goes through, so the
+      // filter that reaches storage is always the canonical shape the evaluator understands.
+      // An unrecognised filter becomes the inert `none` node — never silently "no filter", which
+      // would widen the subscription to every event of its types (see `filter.ts`).
+      filter: parseWebhookFilter(draft.filter),
       template: normaliseWebhookText(draft.template),
       headers,
     },
