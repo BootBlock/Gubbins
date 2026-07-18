@@ -1,7 +1,18 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import { Button, FormField, InfoHint, Input, Modal, Textarea } from '@/components/foundry';
+import {
+  Button,
+  FormField,
+  InfoHint,
+  Input,
+  Modal,
+  SegmentedRadioGroup,
+  Textarea,
+} from '@/components/foundry';
 import { DeleteIcon, PackageIcon, MoveIcon } from '@/components/icons';
 import type { LocationWithCount } from '@/db/repositories';
+import type { DeadStockMode } from '@/db/repositories/constants';
+import { DEAD_STOCK_DAYS_BOUNDS } from '@/features/settings/settings';
+import { DEAD_STOCK_MODE_OPTIONS } from '../dead-stock-options';
 import { useFormatters } from '@/lib/useFormatters';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
@@ -19,6 +30,8 @@ import { LocationFullnessBar } from './LocationFullnessBar';
 import {
   HINT_CAPACITY,
   HINT_COLOUR,
+  HINT_DEAD_STOCK_DAYS,
+  HINT_DEAD_STOCK_MODE,
   HINT_DEFAULT,
   HINT_DESCRIPTION,
   HINT_KIND,
@@ -58,6 +71,7 @@ export function EditLocationDialog({
   const parentLabelId = useId();
   const colorLabelId = useId();
   const kindLabelId = useId();
+  const deadStockLabelId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(location.name);
   const [parentId, setParentId] = useState<string>(location.parentId ?? '');
@@ -68,6 +82,10 @@ export function EditLocationDialog({
   const [kind, setKind] = useState<LocationKind | null>(isLocationKind(location.kind) ? location.kind : null);
   const [capacity, setCapacity] = useState(location.capacity != null ? String(location.capacity) : '');
   const [isDefault, setIsDefault] = useState(location.isDefault);
+  const [deadStockMode, setDeadStockMode] = useState<DeadStockMode>(location.deadStockMode);
+  const [deadStockDays, setDeadStockDays] = useState(
+    location.deadStockDays != null ? String(location.deadStockDays) : '',
+  );
   const [error, setError] = useState<string | null>(null);
 
   // A location may not move under itself or any of its own descendants (the repo
@@ -90,6 +108,14 @@ export function EditLocationDialog({
   const capacityValue = capacity.trim() === '' ? null : Math.floor(Number(capacity));
   const capacityValid =
     capacity.trim() === '' || (Number.isFinite(Number(capacity)) && Number(capacity) >= 0);
+  // Blank ⇒ no override (defer to the location above, then the global default), matching
+  // how the repository persists it.
+  const deadStockDaysValue = deadStockDays.trim() === '' ? null : Math.floor(Number(deadStockDays));
+  const deadStockDaysValid =
+    deadStockDays.trim() === '' ||
+    (Number.isFinite(Number(deadStockDays)) &&
+      Number(deadStockDays) >= DEAD_STOCK_DAYS_BOUNDS.min &&
+      Number(deadStockDays) <= DEAD_STOCK_DAYS_BOUNDS.max);
   const dirty =
     trimmed !== location.name ||
     (parentId || null) !== location.parentId ||
@@ -97,13 +123,15 @@ export function EditLocationDialog({
     color !== (isLocationColor(location.color) ? location.color : null) ||
     kind !== (isLocationKind(location.kind) ? location.kind : null) ||
     capacityValue !== location.capacity ||
-    isDefault !== location.isDefault;
+    isDefault !== location.isDefault ||
+    deadStockMode !== location.deadStockMode ||
+    deadStockDaysValue !== location.deadStockDays;
 
   const kindLabel = locationKindLabel(location.kind);
   const fullness = locationFullness(location.itemCount, location.capacity);
 
   const submit = () => {
-    if (trimmed.length === 0 || !dirty || !capacityValid) return;
+    if (trimmed.length === 0 || !dirty || !capacityValid || !deadStockDaysValid) return;
     setError(null);
     update.mutate(
       {
@@ -116,6 +144,8 @@ export function EditLocationDialog({
           kind,
           capacity: capacityValue,
           isDefault,
+          deadStockMode,
+          deadStockDays: deadStockDaysValue,
         },
       },
       {
@@ -225,6 +255,49 @@ export function EditLocationDialog({
           Use as the default location for new items
           <InfoHint content={HINT_DEFAULT} />
         </label>
+
+        {/* Dead-stock reporting for everything stored here (issue #92). The mode and the
+            idle threshold are independent, so a location can set a house threshold for its
+            subtree without also opting its contents in. */}
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="relative">
+            <span id={deadStockLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
+              Dead-stock reporting
+            </span>
+            <span className="absolute right-0 top-0.5">
+              <InfoHint content={HINT_DEAD_STOCK_MODE} />
+            </span>
+            <SegmentedRadioGroup
+              options={DEAD_STOCK_MODE_OPTIONS}
+              value={deadStockMode}
+              onChange={setDeadStockMode}
+              labelledBy={deadStockLabelId}
+              testIdPrefix="location-dead-stock-mode"
+            />
+          </div>
+
+          <FormField
+            label="Idle threshold (optional)"
+            hint={HINT_DEAD_STOCK_DAYS}
+            error={
+              deadStockDaysValid
+                ? undefined
+                : `Idle threshold must be between ${DEAD_STOCK_DAYS_BOUNDS.min} and ${DEAD_STOCK_DAYS_BOUNDS.max} days.`
+            }
+          >
+            <Input
+              type="number"
+              min={DEAD_STOCK_DAYS_BOUNDS.min}
+              max={DEAD_STOCK_DAYS_BOUNDS.max}
+              step={1}
+              inputMode="numeric"
+              value={deadStockDays}
+              onChange={(e) => setDeadStockDays(e.target.value)}
+              placeholder="Use the default"
+              data-testid="location-dead-stock-days"
+            />
+          </FormField>
+        </div>
 
         {/* Read-only metadata for the location. */}
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-secondary/40 p-3 text-sm">

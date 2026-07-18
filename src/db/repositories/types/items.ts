@@ -4,7 +4,7 @@
  * these into the camelCase {@link Item}, computing the derived gauge values that
  * spec §4.1.1 forbids storing in the database.
  */
-import type { Condition, TrackingMode } from '../constants';
+import type { Condition, DeadStockMode, TrackingMode } from '../constants';
 
 export interface ItemRow {
   readonly id: string;
@@ -52,6 +52,8 @@ export interface ItemRow {
   readonly is_unlimited: number;
   /** "Favourite" pin (issue #23): 1 = the item sorts ahead of all others in the list. */
   readonly is_favourite: number;
+  /** Dead-stock reporting (issue #92); 'inherit' defers to the location chain. */
+  readonly dead_stock_mode: DeadStockMode;
   /** Per-item DISCRETE quantity reorder floor; null = use the global default (v21). */
   readonly reorder_point: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null = use the global default (v21). */
@@ -166,6 +168,12 @@ export interface Item {
    */
   readonly isFavourite: boolean;
   /**
+   * Whether this item is reported as **dead stock** — stock that has not moved for a long
+   * time (issue #92). `inherit` — the default — defers to the item's location chain, so
+   * reporting stays opt-in; `always` / `never` override whatever the locations say.
+   */
+  readonly deadStockMode: DeadStockMode;
+  /**
    * This item's **own** low-stock trigger (spec §4, Phase 59), overriding the global
    * default when set:
    * - `reorderPoint` — a DISCRETE on-hand quantity floor; the item is low at/below it.
@@ -279,6 +287,9 @@ export interface CreateItemInput {
   readonly isUnlimited?: boolean;
   /** "Favourite" pin (issue #23); defaults to false. */
   readonly isFavourite?: boolean;
+  // Dead-stock reporting (issue #92) is deliberately absent here: a new item always starts
+  // at 'inherit' (the column default), which hands the decision to its location. It is
+  // changed afterwards from the item editor, so there is nothing to accept at create time.
   /** Per-item DISCRETE quantity reorder floor; omit/null to use the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; omit/null to use the global default (§4, v21). */
@@ -355,6 +366,12 @@ export interface UpdateItemInput {
    * personal curation, not a change to what the item *is*. Omit to leave it untouched.
    */
   readonly isFavourite?: boolean;
+  /**
+   * Dead-stock reporting (issue #92). Like the favourite pin this is a plain LWW update
+   * with no history action — a reporting preference, not a change to what the item *is*.
+   * Omit to leave it untouched; set `inherit` to hand the decision back to the location.
+   */
+  readonly deadStockMode?: DeadStockMode;
   /** Per-item DISCRETE quantity reorder floor; null clears it back to the global default (§4, v21). */
   readonly reorderPoint?: number | null;
   /** Per-item CONSUMABLE_GAUGE percentage reorder floor; null clears it back to the global default (§4, v21). */

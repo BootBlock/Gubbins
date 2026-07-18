@@ -38,6 +38,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { suppressesFlourish } from '@/features/settings/theme-registry';
 import { LocationEditor } from './LocationEditor';
 import { OperationalMetadataEditor } from './OperationalMetadataEditor';
+import { DeadStockEditor } from './DeadStockEditor';
 import { ReorderPointEditor } from './ReorderPointEditor';
 import { RelationsEditor } from './RelationsEditor';
 import { SubstitutionsEditor } from './SubstitutionsEditor';
@@ -180,6 +181,13 @@ const SECTION_HINT_LOW_STOCK =
   '- **Custom** — your own trigger: a quantity floor (with an optional top-up amount) for counted ' +
   'items, or a percentage-remaining floor for a gauge.\n' +
   '- **Never** — a hard exemption: never flagged, even when a global default is on.';
+
+const SECTION_HINT_DEAD_STOCK =
+  'Whether this item appears on the **Dead stock** report when it goes unused.\n\n' +
+  '- **Inherit** — follow the location it’s stored in; if no location above it opts in, ' +
+  'it isn’t reported.\n' +
+  '- **Report** — always flag it once it has sat unmoved for the idle threshold.\n' +
+  '- **Ignore** — never flag it, even if its location reports everything stored there.';
 
 const SECTION_HINT_OPERATIONAL =
   'A free-form list of **operational facts** intrinsic to the item — anything worth recording that ' +
@@ -346,6 +354,12 @@ export function buildTabs(item: Item, enabled: ReadonlySet<FeatureId>): readonly
           icon: <LowStockIcon />,
           content: <ReorderPointEditor item={item} />,
           hint: SECTION_HINT_LOW_STOCK,
+        },
+        {
+          title: 'Dead-stock reporting',
+          icon: <HistoryIcon />,
+          content: <DeadStockEditor item={item} />,
+          hint: SECTION_HINT_DEAD_STOCK,
         },
         {
           title: 'Operational parameters',

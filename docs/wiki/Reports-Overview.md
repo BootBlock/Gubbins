@@ -16,7 +16,7 @@ data, and most can be exported.
 | **Spend** | Where has my money gone over time? | [[Valuation & spend\|Valuation-and-Spend]] |
 | **ABC analysis** | Which items matter most (the vital few vs the trivial many)? | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
 | **Turnover** | How fast is stock moving? | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
-| **Stock aging / dead stock** | What's been sitting untouched? | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
+| **Stock aging / dead stock** | What's been sitting untouched? (dead stock is opt-in) | [[ABC, turnover & aging\|ABC-Turnover-and-Aging]] |
 | **Sales & margin** | What have I sold, and at what profit? | [[Sales & margin\|Sales-and-Margin]] |
 | **Data hygiene** | Which records are incomplete? | [[Data hygiene\|Data-Hygiene]] |
 

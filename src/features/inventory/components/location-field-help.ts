@@ -50,6 +50,21 @@ export const HINT_CAPACITY =
   '**fullness gauge** and warns you when you add an item to a full location. Leave blank for no ' +
   'limit.';
 
+export const HINT_DEAD_STOCK_MODE =
+  'Whether items stored here are flagged on the **Dead stock** report once they go unused ' +
+  '— a handy way to watch a whole cupboard without setting each item individually.\n\n' +
+  '- **Inherit** — follow the location above; if nothing above opts in, items here are not ' +
+  'reported.\n' +
+  '- **Report** — flag items stored here (and in its sub-locations) once they go unmoved.\n' +
+  '- **Ignore** — never flag items here, even if a location above reports everything.\n\n' +
+  'An individual item can always override this from its own **Dead-stock reporting** panel.';
+
+export const HINT_DEAD_STOCK_DAYS =
+  'How long items stored here must sit unmoved before they count as dead stock. Leave blank ' +
+  'to use the value from the location above, or the global default in **Settings → Reports**.\n\n' +
+  'Useful when one place keeps different time to the rest: deep storage might only be worth ' +
+  'flagging after a year, while a workbench goes stale in a month.';
+
 export const HINT_DEFAULT =
   'Pre-select this location when adding a new item, so your most-used spot is one click away. ' +
   'Only **one** location can be the default; choosing this clears it from any other.';

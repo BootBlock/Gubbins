@@ -149,6 +149,7 @@ export {
   type TiltVars,
 } from './pointer-tilt';
 export { useRovingRadioGroup } from './useRovingRadioGroup';
+export { SegmentedRadioGroup, type SegmentedOption } from './segmented-radio-group';
 export {
   useInstallPrompt,
   browserInstallPromptApi,

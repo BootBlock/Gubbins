@@ -287,6 +287,12 @@ export interface DeadStockCandidate {
    */
   readonly lastMovedAt: number | null;
   readonly createdAt: number;
+  /**
+   * This item's own idle threshold in days, resolved from its location chain (issue #92).
+   * Omitted ⇒ the report-level `sinceDays` applies. Only items the caller has already
+   * confirmed are opted in reach here — the opt-in decision is not re-made in this seam.
+   */
+  readonly thresholdDays?: number;
 }
 
 /** A dead-stock line: an item idle since before the cutoff, with its tied-up value. */
@@ -298,6 +304,12 @@ export interface DeadStockLine {
   readonly idleDays: number;
   /** Capital tied up in the idle stock (`quantity * effectiveUnitCost`). */
   readonly value: number;
+  /**
+   * The idle threshold this line was judged against (issue #92) — the report-level
+   * `sinceDays` unless a location overrode it. Surfaced so a row flagged at 365 days
+   * doesn't look wrong next to a heading that says 90.
+   */
+  readonly thresholdDays: number;
 }
 
 /** The dead-stock report: idle lines (most idle first) plus the tied-up total. */
@@ -306,27 +318,41 @@ export interface DeadStockReport {
   readonly lines: readonly DeadStockLine[];
   /** Total capital tied up in idle stock. */
   readonly totalValue: number;
+  /**
+   * How many items were **opted in and hold stock**, and were therefore actually judged
+   * (issue #92) — whether or not they turned out to be idle. Lets the UI tell "nothing is
+   * being watched" apart from "everything being watched is still moving", which an empty
+   * `lines` alone can't say. Items with no stock are excluded, matching `lines`.
+   */
+  readonly consideredCount: number;
 }
 
 /**
- * Select items whose last movement (or creation, when never moved) is at or before the
- * `now − sinceDays` cutoff — i.e. **no movement in N days**. The boundary is inclusive:
- * an item idle for *exactly* `sinceDays` qualifies. Lines are sorted most-idle first; the
- * tied-up value uses {@link effectiveUnitCost}. Items with no on-hand stock are excluded
- * (there is nothing dead to report).
+ * Select items whose last movement (or creation, when never moved) is at or before their
+ * cutoff — i.e. **no movement in N days**. The boundary is inclusive: an item idle for
+ * *exactly* its threshold qualifies. Lines are sorted most-idle first; the tied-up value
+ * uses {@link effectiveUnitCost}. Items with no on-hand stock are excluded (there is
+ * nothing dead to report).
+ *
+ * Each candidate may carry its own {@link DeadStockCandidate.thresholdDays}, resolved from
+ * its location chain (issue #92); `sinceDays` is the fallback for those that don't, and
+ * the figure the report as a whole is labelled with. Because thresholds vary per line, the
+ * cutoff is computed per candidate rather than once up front.
  */
 export function selectDeadStock(
   candidates: readonly DeadStockCandidate[],
   sinceDays: number,
   now: number,
 ): DeadStockReport {
-  const cutoff = now - sinceDays * MS_PER_DAY;
   const lines: DeadStockLine[] = [];
   let totalValue = 0;
+  let consideredCount = 0;
   for (const candidate of candidates) {
-    if (candidate.quantity <= 0) continue;
+    if (candidate.quantity <= 0) continue; // no stock ⇒ nothing dead to report
+    consideredCount += 1;
+    const thresholdDays = candidate.thresholdDays ?? sinceDays;
     const reference = candidate.lastMovedAt ?? candidate.createdAt;
-    if (reference > cutoff) continue; // moved more recently than the cutoff → still live
+    if (reference > now - thresholdDays * MS_PER_DAY) continue; // still live
     const idleDays = Math.max(0, Math.floor((now - reference) / MS_PER_DAY));
     const value = Math.max(0, candidate.quantity) * effectiveUnitCost(candidate);
     totalValue += value;
@@ -336,8 +362,9 @@ export function selectDeadStock(
       quantity: candidate.quantity,
       idleDays,
       value,
+      thresholdDays,
     });
   }
   lines.sort((a, b) => (b.idleDays !== a.idleDays ? b.idleDays - a.idleDays : b.value - a.value));
-  return { sinceDays, lines, totalValue };
+  return { sinceDays, lines, totalValue, consideredCount };
 }

@@ -85,6 +85,21 @@ export type TrackingMode = (typeof TRACKING_MODES)[number];
 export const CONVERTIBLE_TRACKING_MODES = ['DISCRETE', 'UNTRACKED'] as const;
 
 /**
+ * How an item or a location participates in **dead-stock reporting** (issue #92) — the
+ * flagging of stock that has not moved for a long time.
+ *
+ * Reporting is opt-in, so both `items.dead_stock_mode` and `locations.dead_stock_mode`
+ * default to `inherit`, and an item whose whole ancestry is `inherit` is not reported.
+ * The resolution rules live in the pure `features/reports/dead-stock` seam.
+ *
+ * - `inherit` — defer to the location above.
+ * - `always` — report, whatever the locations above say.
+ * - `never` — don't report, whatever the locations above say.
+ */
+export const DEAD_STOCK_MODES = ['inherit', 'always', 'never'] as const;
+export type DeadStockMode = (typeof DEAD_STOCK_MODES)[number];
+
+/**
  * Whether an item may be switched from tracking mode `from` to `to` by an in-place edit
  * (see {@link CONVERTIBLE_TRACKING_MODES}). Both ends must be convertible and differ. The
  * repository enforces this; the edit UI uses it to decide whether the mode is editable.
@@ -168,6 +183,13 @@ export type MaintenanceBasis = (typeof MAINTENANCE_BASES)[number];
  * surfaced as "expiring soon" (spec §4 Perishables, §3 "Soon to Expire" widget).
  */
 export const EXPIRY_SOON_WINDOW_DAYS = 30;
+
+/**
+ * Default idle window (days) after which unmoved stock is reported as **dead stock**
+ * (issue #92, §3 Reports). The user-tunable preference and individual locations both
+ * override it; this is only the starting value and the fallback for invalid input.
+ */
+export const DEAD_STOCK_SINCE_DAYS = 90;
 
 /**
  * Default window (days) before a `warranty_expires_at` date within which an asset's

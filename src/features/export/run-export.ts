@@ -41,7 +41,6 @@ import {
 import {
   ABC_WINDOW_DAYS,
   DATA_HYGIENE_STALE_DAYS,
-  DEAD_STOCK_SINCE_DAYS,
   DEFAULT_ANALYTICS_WINDOW,
   REPORT_MOVEMENT_BUCKETS,
   REPORT_WINDOW_DAYS,
@@ -100,7 +99,9 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
     case 'MOVEMENT':
       return buildMovementCsv(await repo.movement(REPORT_WINDOW_DAYS, REPORT_MOVEMENT_BUCKETS));
     case 'DEAD_STOCK':
-      return buildDeadStockCsv(await repo.deadStock(DEAD_STOCK_SINCE_DAYS));
+      // Honour the user's configured idle threshold (issue #92) so the exported CSV agrees
+      // with the on-screen report it was exported from, rather than the bare default.
+      return buildDeadStockCsv(await repo.deadStock(usePreferencesStore.getState().deadStockDays));
     case 'ABC':
       return buildAbcCsv(await repo.abcAnalysis(ABC_WINDOW_DAYS));
     case 'TURNOVER':

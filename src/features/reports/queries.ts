@@ -23,8 +23,11 @@ import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
 export const REPORT_WINDOW_DAYS = 30;
 /** Number of time buckets in the movement chart (≈ one bar every couple of days). */
 export const REPORT_MOVEMENT_BUCKETS = 15;
-/** "No movement in N days" cutoff for the dead-stock report. */
-export const DEAD_STOCK_SINCE_DAYS = 90;
+// The default "no movement in N days" cutoff for the dead-stock report. The live value is
+// the user-tunable preference (issue #92) — this is only the starting value — and lives in
+// the dependency-free constants module so the preferences store can share it without
+// importing back through this store-consuming module.
+export { DEAD_STOCK_SINCE_DAYS } from '@/db/repositories/constants';
 
 // Phase 74 — advanced analytics ------------------------------------------------
 /** Annual window (days) for ABC analysis — the standard "annual consumption value" basis. */
@@ -97,10 +100,33 @@ export function useOutOfStockCount(options: { enabled?: boolean } = {}) {
   });
 }
 
-export function useDeadStock(sinceDays: number = DEAD_STOCK_SINCE_DAYS) {
+/**
+ * The dead-stock report (issue #92): items opted in — directly or via their location —
+ * that have not moved within their effective idle threshold.
+ *
+ * The threshold defaults to the user-tuned Tier-2 preference so the Reports figure agrees
+ * with what Settings says; individual locations may still override it further, which the
+ * repository resolves per item. Pass `sinceDays` to override the global default outright.
+ */
+export function useDeadStock(sinceDays?: number) {
+  const preferred = usePreferencesStore((s) => s.deadStockDays);
+  const effective = sinceDays ?? preferred;
   return useQuery({
-    queryKey: ['reports', 'dead-stock', sinceDays],
-    queryFn: () => getReportRepository().deadStock(sinceDays),
+    queryKey: ['reports', 'dead-stock', effective],
+    queryFn: () => getReportRepository().deadStock(effective),
+  });
+}
+
+/**
+ * The resolved dead-stock policy for one item (issue #92) — whether it is reported, the
+ * idle threshold that applies, and which location decided each. The item editor uses it to
+ * explain what "Inherit" actually resolves to.
+ */
+export function useDeadStockPolicy(itemId: string) {
+  const defaultDays = usePreferencesStore((s) => s.deadStockDays);
+  return useQuery({
+    queryKey: ['reports', 'dead-stock-policy', itemId, defaultDays],
+    queryFn: () => getReportRepository().deadStockPolicy(itemId, defaultDays),
   });
 }
 
