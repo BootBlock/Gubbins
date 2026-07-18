@@ -32,7 +32,7 @@ store, the same building blocks apply.
 | **Dashboard** | Your landing overview — totals and anything needing attention, on a board of widgets you can rearrange. See [[Dashboard & widgets\|Dashboard-and-Widgets]]. |
 | **Inventory** | The heart of the app: your [[items\|Items]], [[locations\|Locations-and-Stock]] and stock. |
 | **Projects** | Group items into builds with a bill of materials and a budget. See [[Projects & BOM\|Projects-and-BOM]]. |
-| **Contacts** | The people and suppliers you [[lend to, borrow from or buy from\|Loans-Check-Out-and-In]]. |
+| **Contacts** | The people and organisations you [[lend to or borrow from\|Loans-Check-Out-and-In]]. |
 | **Reports** | [[Valuation, spend, sales and stock insights\|Reports-Overview]] across your inventory. |
 | **Search** | [[Find anything fast\|Search-Overview]] — full-text, a visual builder, or plain English. |
 
