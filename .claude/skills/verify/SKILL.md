@@ -49,6 +49,39 @@ rather than re-deriving them.
 
 ## Worktrees
 
-The dev server **cannot boot from inside a `.claude/worktrees/*` worktree** — sqlite-wasm
-resolves up to the primary checkout's `node_modules`, outside the worktree's `server.fs.allow`
-root, so the DB never initialises. Merge first, then verify from the primary checkout.
+The dev server **does** run from inside a `.claude/worktrees/*` worktree, but not with a plain
+`npm run dev`: the worktree has no `node_modules`, so sqlite-wasm resolves up to the primary
+checkout and Vite serves its loader via `@fs/…` while the sibling `.wasm` 404s — the DB never
+initialises and the app never reaches "Add item".
+
+Two things fix it together — a junction **and** `resolve.preserveSymlinks` (the junction alone
+doesn't work; Vite dereferences the link and goes back to `@fs`). `vite.worktree.config.ts`
+carries the flag, so no config edit is needed:
+
+```bash
+# 1. junction the primary checkout's node_modules into the worktree
+powershell -c "New-Item -ItemType Junction -Path '<worktree>/node_modules' -Target '<repo>/node_modules'"
+
+# 2. serve on a port of your own (other agents may be on 5173)
+npx vite --config vite.worktree.config.ts --port 5199
+
+# 3. drive it, e.g. regenerate the wiki images
+WIKI_BASE=http://localhost:5199/Gubbins/ node scripts/wiki-screenshots.mjs
+```
+
+**Clean up in this order, or the next step breaks:**
+
+1. Stop the dev server (it holds handles under `node_modules`).
+2. **Remove the junction** — `[IO.Directory]::Delete('<worktree>/node_modules', $false)`, then
+   confirm the `LINK` is gone. Deleting it recursively would walk into the *real* `node_modules`.
+3. Only then run Vitest or `git worktree remove`. With the junction still in place the Vitest
+   CLI and Vite resolve the same package by two different realpaths, load two Vitest instances,
+   and every file fails with "failed to find the current suite".
+
+For the unit suite from a worktree, use `vitest.worktree.config.ts` (it drops the
+`**/.claude/worktrees/**` exclude that would otherwise collect zero tests) and do **not**
+junction `node_modules` — Node's upward resolution already finds the real one:
+
+```bash
+npx vitest run --config vitest.worktree.config.ts [files…]
+```

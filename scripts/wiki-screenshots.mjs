@@ -59,6 +59,23 @@ async function shot(name, locator, opts = {}) {
   }
 }
 
+/**
+ * Set the shared items-per-page preference from Settings.
+ *
+ * Settings is a rail *dialog*, not a page: the control only mounts once its own rail tab is
+ * selected, so the tab click is load-bearing rather than incidental.
+ */
+async function setPageSize(size) {
+  await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 8000 });
+  await page.getByRole('tab', { name: 'Inventory' }).click();
+  const input = page.locator('[data-testid="setting-page-size"]');
+  await input.waitFor({ state: 'visible', timeout: 8000 });
+  await input.fill(size);
+  await input.blur();
+  await page.keyboard.press('Escape').catch(() => {});
+}
+
 async function gotoInventory() {
   await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 15000 });
@@ -87,12 +104,20 @@ async function addBulkItem(name, qty, cost) {
   await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
 }
 
-async function addDiscreteItem(name, cost) {
+async function addDiscreteItem(name, cost, { category, location } = {}) {
   await page.getByRole('button', { name: 'Add item' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add item' });
   await dialog.getByLabel('Name').fill(name);
   // Tracking defaults to DISCRETE ("Bulk"-labelled family); leave it as-is for a plain unit.
   if (cost) await dialog.getByLabel('Unit cost (optional)').fill(String(cost));
+  // A category is what gives the item a custom-field schema, and the location is what it
+  // inherits values *from* — both are needed for the inheritance shots.
+  // Not exact: both option lists render a `meta` suffix (an item count) inside the option, so
+  // its accessible name is "<name> <n> items", not the bare name.
+  if (category) await chooseOption(dialog.getByLabel('Category (optional)'), category, { exact: false });
+  if (location) {
+    await chooseOption(dialog.getByRole('combobox', { name: 'Location' }), location, { exact: false });
+  }
   await dialog.getByRole('button', { name: 'Create item' }).click();
   await dialog.waitFor({ state: 'hidden', timeout: 8000 });
   await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
@@ -141,6 +166,77 @@ async function addGaugeItem(name) {
   await page.getByText(name).first().waitFor({ state: 'visible', timeout: 8000 });
 }
 
+/**
+ * Create a category and give it one custom field (issue #97's dictionary).
+ *
+ * The category manager is a dialog reached from the inventory "More" menu, so this opens it,
+ * creates the category, fills the add-field form and closes up again. Seeding a category is
+ * what makes the inheritance shots possible at all — without one there is no custom field to
+ * hold an inheritable value.
+ */
+async function addCategoryWithField(categoryName, fieldName) {
+  await gotoInventory();
+  await page.getByRole('button', { name: 'More inventory actions' }).click();
+  await page.getByRole('menuitem', { name: 'Categories', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Categories & schemas' });
+  await dialog.waitFor({ state: 'visible', timeout: 8000 });
+
+  await dialog.getByRole('textbox', { name: 'New category name' }).fill(categoryName);
+  await dialog.getByRole('button', { name: 'Add category' }).click();
+  await dialog.getByRole('button', { name: new RegExp(categoryName) }).click();
+
+  await dialog.getByRole('textbox', { name: 'Field name' }).fill(fieldName);
+  await dialog.getByRole('button', { name: /Add field/ }).click();
+  await dialog.getByText(fieldName).first().waitFor({ state: 'visible', timeout: 8000 });
+
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden', timeout: 8000 });
+}
+
+/**
+ * Wait for any success toast to disappear.
+ *
+ * Toasts stack in an overlay above the page and intercept pointer events while they animate
+ * out, so a click issued straight after a save-driven toast retries until it times out — even
+ * though its target is visible and enabled the whole time.
+ */
+async function waitForToastsToClear() {
+  await page
+    .locator('[data-testid="toast"]')
+    .last()
+    .waitFor({ state: 'hidden', timeout: 10000 })
+    .catch(() => {});
+}
+
+/** Open a location's Edit dialog from its row in the tree. */
+async function openLocationEditor(locationName) {
+  await gotoInventory();
+  const row = page.getByRole('treeitem', { name: new RegExp(locationName) }).first();
+  await row.hover();
+  await row.getByRole('button', { name: `Edit ${locationName}` }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit location' });
+  await dialog.waitFor({ state: 'visible', timeout: 8000 });
+  return dialog;
+}
+
+/**
+ * Give a location an inheritable value for a dictionary field (issue #97) — the offer that
+ * everything stored inside it can then adopt.
+ */
+async function setInheritableLocationField(locationName, fieldName, value) {
+  const dialog = await openLocationEditor(locationName);
+  await chooseOption(dialog.getByRole('combobox', { name: 'Custom field to add' }), fieldName);
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+  // The row's value box commits on blur, not per keystroke.
+  const input = dialog.getByRole('textbox', { name: fieldName });
+  await input.waitFor({ state: 'visible', timeout: 8000 });
+  await input.fill(value);
+  await input.blur();
+  await page.waitForTimeout(600);
+  return dialog;
+}
+
 async function addLocation(name, { description, colour, parent } = {}) {
   await page.getByRole('button', { name: 'Add location' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add location' });
@@ -168,10 +264,23 @@ if (!alreadySeeded) {
   await addLocation('Garage', { description: 'Main workshop and storage', colour: 'Teal' });
   await addLocation('Workshop Shelf A', { parent: 'Garage' });
   await addLocation('Kitchen', { description: 'Household consumables', colour: 'Amber' });
+  // A category with a custom field, and a location offering an inheritable value for it —
+  // the setup the location-inheritance shots photograph (issue #97).
+  await addCategoryWithField('Power tools', 'Storage conditions');
+  await waitForToastsToClear();
+  await setInheritableLocationField('Garage', 'Storage conditions', 'Dry, unheated');
+  await page.keyboard.press('Escape').catch(() => {});
+  // The save toast overlays the page and would swallow the next dialog's clicks.
+  await waitForToastsToClear();
+
   await addBulkItem('M3 × 10 Socket Screws', 250, 0.05);
   await addBulkItem('USB-C Cable 1m', 12, 4.5);
   await addDiscreteItem('Raspberry Pi 5 (8GB)', 65);
-  await addDiscreteItem('Cordless Drill', 45);
+  // Sits inside Garage, so it can inherit the Storage conditions the Garage offers.
+  await addDiscreteItem('Cordless Drill', 45, {
+    category: 'Power tools',
+    location: 'Workshop Shelf A',
+  });
   await addGaugeItem('PLA Filament — Galaxy Black');
   // A few more so a long list spans more than one page for the pagination shot.
   await addDiscreteItem('Multimeter', 30);
@@ -281,24 +390,75 @@ try {
   console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
-// The pagination control (issue #20) — enable "Paginate list", set a small page size so the
-// seeded items span more than one page, and capture the control at the foot of the list. Toggled
-// back off afterwards so the persisted preference doesn't paginate the later shots (or a re-run).
+// The pagination control (issue #20) — enable "Paginate list", shrink the page size so the
+// seeded items span more than one page, and capture the control at the foot of the list. Both
+// preferences are restored afterwards so they don't leak into later shots (or a re-run).
+//
+// The page size is set from **Settings**, not from the control's own picker: `Pagination`
+// renders nothing at all while there is only one page (`pageCount <= 1`), and the default size
+// of 50 comfortably holds the whole seeded inventory — so the picker this step used to reach
+// for does not exist yet at the moment it is needed. Setting the preference first is what
+// splits the list and brings the control into being.
 try {
+  await setPageSize('5');
+
   await gotoInventory();
   await page.getByRole('button', { name: 'More inventory actions' }).click();
   await page.getByRole('menuitemcheckbox', { name: 'Paginate list' }).click();
-  const perPage = page.getByRole('combobox', { name: 'Per page' });
-  await perPage.fill('5');
-  await perPage.blur();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(600);
   await shot('inventory-pagination', page.getByTestId('inventory-pagination'), { settle: 400 });
-  // Restore infinite scroll so the preference doesn't leak into later captures.
+
+  // Restore infinite scroll and the default page size.
   await page.getByRole('button', { name: 'More inventory actions' }).click();
   await page.getByRole('menuitemcheckbox', { name: 'Paginate list' }).click();
+  await setPageSize('50');
 } catch (err) {
   failed += 1;
   console.warn(`  ✗ inventory-pagination.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// ── Location-inherited custom fields (issue #97) ─────────────────────────────
+// The location's side of the feature: the "Inheritable fields" panel in the Edit-location
+// dialog, where a location sets a value and chooses whether to offer it to its contents.
+try {
+  const dialog = await openLocationEditor('Garage');
+  const panel = dialog.getByText('Inheritable fields', { exact: true }).locator('xpath=ancestor::section[1]');
+  await shot('location-inheritable-fields', panel.first(), { settle: 500 });
+  await page.keyboard.press('Escape').catch(() => {});
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ location-inheritable-fields.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// The item's side: the source picker on the Classification tab, offering
+// "Inherit — <value> (from <location>)" beside the option to set the item's own value.
+try {
+  await gotoInventory();
+  const drillCard = page
+    .locator('#main-content')
+    .getByRole('heading', { name: 'Cordless Drill' })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]');
+  await drillCard.first().getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Edit details' }).click();
+  const detail = page.getByRole('dialog').first();
+  await detail.getByRole('tab', { name: 'Classification' }).click();
+
+  // Switch the field to Inherit before capturing. The picker defaults to "Set a value for this
+  // item", so an untouched shot would document the option the page *isn't* about — the point
+  // here is the resolved inherited value and where it came from.
+  await chooseOption(
+    detail.getByRole('combobox', { name: 'Storage conditions — Where this value comes from' }),
+    /^Inherit —/,
+    { exact: false },
+  );
+  await page.waitForTimeout(600);
+
+  const fields = detail.getByText('Custom fields', { exact: true }).locator('xpath=ancestor::section[1]');
+  await shot('item-inherited-field', fields.first(), { settle: 600 });
+  await page.keyboard.press('Escape').catch(() => {});
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ item-inherited-field.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // ── Data-dependent screens (need the seed above) ─────────────────────────────

@@ -49,10 +49,14 @@ Open a location's **Edit** dialog and find **Inheritable fields**. Add a field, 
 and tick **Offer to items here**. Any item in that location — or in any location nested inside
 it — can then pick up that value.
 
+![The Inheritable fields panel in a location's Edit dialog: a Storage conditions field set to "Dry, unheated", with "Offer to items here" ticked](images/location-inheritable-fields.png)
+
 On the item, the field grows a small chooser above it:
 
 - **Inherit — *value* (from *location*)** — take the location's value.
 - **Set a value for this item** — enter your own, exactly as before.
+
+![An item's Custom fields section, with the Storage conditions field set to inherit "Dry, unheated" from the Garage](images/item-inherited-field.png)
 
 Inheriting is **opt-in per item and per field**: nothing changes on existing items until you
 choose it. The chooser only appears when a location above the item actually offers that field.

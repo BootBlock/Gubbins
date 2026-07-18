@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import type { CategoryField, CategoryWithFieldCount } from '@/db/repositories';
+import type { CategoryField, CategoryWithFieldCount, FieldDef } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 /**
@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
   addField: vi.fn(),
   addFieldAsync: vi.fn(),
   deleteField: vi.fn(),
+  unusedDefs: [] as FieldDef[],
+  deleteUnusedFieldDef: vi.fn(),
 }));
 
 vi.mock('../categories', () => ({
@@ -37,6 +39,12 @@ vi.mock('../categories', () => ({
   useCategoryFields: () => ({ data: h.fields }),
   useAddCategoryField: () => ({ mutate: h.addField, mutateAsync: h.addFieldAsync, isPending: false }),
   useDeleteCategoryField: () => ({ mutate: h.deleteField, isPending: false }),
+  useUnusedFieldDefs: () => ({ data: h.unusedDefs }),
+  useDeleteUnusedFieldDef: () => ({
+    mutate: h.deleteUnusedFieldDef,
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 import { CategoryManagerDialog } from './CategoryManagerDialog';
@@ -96,6 +104,8 @@ beforeEach(() => {
   h.addField.mockReset().mockImplementation((_input, opts) => opts?.onSuccess?.());
   h.addFieldAsync.mockReset().mockResolvedValue(undefined);
   h.deleteField.mockReset();
+  h.unusedDefs = [];
+  h.deleteUnusedFieldDef.mockReset();
   onClose.mockReset();
   usePreferencesStore.setState({ attachmentMode: 'URL_ONLY' });
 });
@@ -575,5 +585,65 @@ describe('CategoryManagerDialog — datasheet linking config', () => {
     expect(usePreferencesStore.getState().attachmentMode).toBe('URL_ONLY');
     fireEvent.click(screen.getByRole('radio', { name: 'URLs + local file pointers' }));
     expect(usePreferencesStore.getState().attachmentMode).toBe('HYBRID');
+  });
+});
+
+describe('CategoryManagerDialog — built-in field-name collision warning (#97 follow-up)', () => {
+  const nameInput = () => screen.getByRole('textbox', { name: 'Field name' });
+
+  it('warns when the typed name duplicates a built-in item field', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.change(nameInput(), { target: { value: 'Manufacturer' } });
+    expect(screen.getByTestId('field-builtin-clash')).toHaveTextContent(/built-in Manufacturer/);
+  });
+
+  it('stays silent for a name that collides with nothing', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.change(nameInput(), { target: { value: 'Voltage' } });
+    expect(screen.queryByTestId('field-builtin-clash')).toBeNull();
+  });
+
+  it('warns but never blocks — the field is still addable under the duplicate name', () => {
+    renderDialog();
+    selectCategory(/Resistors/);
+    fireEvent.change(nameInput(), { target: { value: 'Manufacturer' } });
+
+    expect(addFieldButton()).toBeEnabled();
+    fireEvent.click(addFieldButton());
+    expect(h.addField).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ name: 'Manufacturer' }) }),
+      expect.anything(),
+    );
+  });
+});
+
+describe('CategoryManagerDialog — unused field definitions (#97 follow-up)', () => {
+  const def = (overrides: Partial<FieldDef> = {}): FieldDef => ({
+    id: 'def-1',
+    name: 'Tolerance',
+    fieldType: 'NUMBER',
+    options: null,
+    description: null,
+    updatedAt: 0,
+    ...overrides,
+  });
+
+  it('hides the whole section when the dictionary has no leftovers', () => {
+    h.unusedDefs = [];
+    renderDialog();
+    expect(screen.queryByText('Unused custom fields')).toBeNull();
+  });
+
+  it('lists each unreferenced definition and removes the one asked for', () => {
+    h.unusedDefs = [def(), def({ id: 'def-2', name: 'Legacy code', fieldType: 'TEXT' })];
+    renderDialog();
+
+    expect(screen.getByText('Unused custom fields')).toBeInTheDocument();
+    expect(screen.getByText('Tolerance')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove unused field Legacy code' }));
+    expect(h.deleteUnusedFieldDef).toHaveBeenCalledWith('def-2');
   });
 });

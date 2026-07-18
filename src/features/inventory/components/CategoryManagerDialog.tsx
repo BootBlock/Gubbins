@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Banner,
   Button,
   Checkbox,
   EmojiPickerButton,
@@ -12,7 +13,7 @@ import {
   Tooltip,
   INFO_OPEN_DELAY_MS,
 } from '@/components/foundry';
-import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon } from '@/components/icons';
+import { AddIcon, CategoryIcon, CloseIcon, DeleteIcon, InfoIcon, WarningIcon } from '@/components/icons';
 import {
   FIELD_TYPES,
   MAINTENANCE_BASES,
@@ -25,6 +26,7 @@ import {
 } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { usePreferencesStore, type AttachmentMode } from '@/state/stores/usePreferencesStore';
+import { builtInFieldNameClash } from '../builtin-field-names';
 import {
   useAddCategoryField,
   useCategories,
@@ -32,6 +34,8 @@ import {
   useCreateCategory,
   useDeleteCategory,
   useDeleteCategoryField,
+  useDeleteUnusedFieldDef,
+  useUnusedFieldDefs,
   useUpdateCategory,
 } from '../categories';
 import { CategoryPresetPickerDialog } from './CategoryPresetPicker';
@@ -66,8 +70,61 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
         items without a category just skip this step.
       </p>
       <CategoryManagerBody />
+      <UnusedFieldsSection />
       <DatasheetLinkingConfig />
     </Modal>
+  );
+}
+
+/**
+ * The leftovers of the shared field dictionary: definitions no category, location or item
+ * refers to any more.
+ *
+ * Removing a field from a category deliberately keeps its *definition* — the dictionary is
+ * vocabulary shared across every category and location, so destroying it on the last
+ * category's say-so would take other people's fields with it. What that leaves behind is a
+ * definition with no users, cluttering every "Add a field" picker with no way to be rid of
+ * it. This is that way: it lists only the genuinely unreferenced ones, so removing one can
+ * never take a value with it, and it hides itself entirely when there is nothing to clean up.
+ */
+function UnusedFieldsSection() {
+  const t = useT();
+  const { data: unused } = useUnusedFieldDefs();
+  const remove = useDeleteUnusedFieldDef();
+
+  if (!unused || unused.length === 0) return null;
+
+  return (
+    <section className="mt-5 rounded-xl border border-border bg-secondary/10 p-3">
+      <h3 className="mb-field-gap-compact flex items-center gap-1.5 text-sm font-semibold">
+        {t('inventory.fields.unused.title')}
+        <InfoHint content={t('inventory.fields.unused.hint')} />
+      </h3>
+      <ul className="flex flex-wrap gap-1.5">
+        {unused.map((def) => (
+          <li
+            key={def.id}
+            className="flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-secondary/20 px-2.5 py-1 text-sm"
+          >
+            {/* `min-w-0` is what lets the name actually shrink: a flex item defaults to its
+                content's width, so `truncate` alone would never engage and a long field name
+                would push the chip past the section instead of ellipsising. */}
+            <span className="min-w-0 truncate">{def.name}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{FIELD_TYPE_LABELS[def.fieldType]}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-5 [&_svg]:size-3.5"
+              aria-label={t('inventory.fields.unused.remove', { vars: { name: def.name } })}
+              disabled={remove.isPending && remove.variables === def.id}
+              onClick={() => remove.mutate(def.id)}
+            >
+              <CloseIcon className="text-glyph-danger" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -509,6 +566,7 @@ function parseChoices(raw: string): string[] {
 }
 
 function AddFieldForm({ categoryId }: { categoryId: string }) {
+  const t = useT();
   const addField = useAddCategoryField();
   const [name, setName] = useState('');
   const [fieldType, setFieldType] = useState<FieldType>('TEXT');
@@ -517,6 +575,11 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
   const [defaultValue, setDefaultValue] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Advisory, never blocking: a custom "Manufacturer" is legitimate when the built-in column
+  // goes unused, so the name is allowed — the duplicate is just made a choice rather than a
+  // surprise the user only meets later, on an item showing the field twice.
+  const builtInClash = builtInFieldNameClash(name);
 
   const submit = () => {
     setError(null);
@@ -627,6 +690,17 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
         </label>
         <InfoHint content="When on, an item in this category must have a value for this field before its custom fields can be saved." />
       </div>
+      {builtInClash ? (
+        <Banner
+          tone="warning"
+          icon={<WarningIcon aria-hidden />}
+          role="status"
+          data-testid="field-builtin-clash"
+          className="text-xs"
+        >
+          {t('inventory.fields.builtInClash', { vars: { name: builtInClash } })}
+        </Banner>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
-import { migrations } from '@/db/migrations';
+import { migrations, SQL_NOW_MS } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { restoreConflictVersion } from './conflict-restore';
 import { buildConflict } from './conflict-detect';
@@ -10,6 +10,22 @@ async function makeDriver(): Promise<MemoryDriver> {
   const driver = createMemoryDriver();
   await runMigrations(driver, migrations);
   return driver;
+}
+
+/**
+ * Read the clock the auto-stamp trigger itself uses, via the very expression the trigger
+ * interpolates.
+ *
+ * Bracketing the restore with two reads of *this* clock — rather than with `Date.now()` —
+ * is what makes the re-stamp assertion deterministic. The two are separate clock sources
+ * (V8 interpolates a high-resolution timer; SQLite reads the coarser system clock), so under
+ * load a `Date.now()` sampled first can legitimately read a millisecond *ahead* of the stamp
+ * the trigger goes on to write, failing a comparison that is really only checking "the
+ * trigger stamped now".
+ */
+async function dbNow(driver: MemoryDriver): Promise<number> {
+  const row = await driver.queryOne<{ now: number }>(`SELECT ${SQL_NOW_MS} AS now;`);
+  return Number(row?.now);
 }
 
 describe('restoreConflictVersion (#72)', () => {
@@ -26,7 +42,7 @@ describe('restoreConflictVersion (#72)', () => {
   it('re-applies the discarded version and re-stamps updated_at so it wins next sync', async () => {
     // A contact currently holding the "winning" (remote) name, with an old updated_at.
     await driver.execute("INSERT INTO contacts (id, name, updated_at) VALUES ('c1', 'Theirs', 1000);");
-    const before = Date.now();
+    const before = await dbNow(driver);
 
     const conflict = buildConflict(
       'contacts',
@@ -35,14 +51,20 @@ describe('restoreConflictVersion (#72)', () => {
       999,
     );
     await restoreConflictVersion(driver, conflict);
+    const after = await dbNow(driver);
 
     const row = await driver.queryOne<{ name: string; updated_at: number }>(
       "SELECT name, updated_at FROM contacts WHERE id = 'c1';",
     );
     expect(row?.name).toBe('Mine'); // the user's version is back
-    // The auto-stamp trigger re-stamped updated_at to ~now (not the stored 500), so a
-    // subsequent sync sees it as the newest and propagates it.
-    expect(Number(row?.updated_at)).toBeGreaterThanOrEqual(before);
+    // The auto-stamp trigger re-stamped updated_at to now (not the stored 500), so a
+    // subsequent sync sees it as the newest and propagates it. Bracketed by the trigger's own
+    // clock, so the window is exact rather than a lower bound borrowed from another clock.
+    const stamped = Number(row?.updated_at);
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
+    // …and strictly past the remote version it lost to, which is what makes it win next sync.
+    expect(stamped).toBeGreaterThan(1000);
   });
 
   it('resurrects a deleted row and clears its tombstone (DELETE conflict)', async () => {

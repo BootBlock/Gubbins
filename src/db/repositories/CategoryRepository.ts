@@ -260,6 +260,72 @@ export class CategoryRepository extends BaseRepository {
   }
 
   /**
+   * The dictionary definitions nothing references any more — no category uses them, no
+   * location sets a value for them, and no item has a value stored against them.
+   *
+   * These accumulate by design rather than by accident: {@link deleteField} deliberately
+   * leaves the definition behind when a category drops a field, because the dictionary is
+   * *shared vocabulary* — another category or location may still want it, and silently
+   * destroying it would take their field with it. The cost is that a definition whose last
+   * user has gone lingers in the "Add a field" picker forever with no way to be rid of it.
+   * Surfacing exactly the unreferenced ones is what makes removal safe to offer: anything
+   * still in use is, by construction, not in this list.
+   */
+  async listUnusedFieldDefs(): Promise<FieldDef[]> {
+    const rows = await this.driver.query<FieldDefRow>(
+      `SELECT * FROM field_defs fd
+       WHERE NOT EXISTS (SELECT 1 FROM category_fields      WHERE def_id = fd.id)
+         AND NOT EXISTS (SELECT 1 FROM location_field_values WHERE def_id = fd.id)
+         AND NOT EXISTS (SELECT 1 FROM item_field_values     WHERE def_id = fd.id)
+       ORDER BY name COLLATE NOCASE ASC;`,
+    );
+    return rows.map(rowToFieldDef);
+  }
+
+  /**
+   * Delete an **unused** dictionary definition (see {@link listUnusedFieldDefs}).
+   *
+   * The unused test is re-applied here rather than trusted from the caller's list, which may
+   * be seconds stale — a peer's sync or another tab could have given the definition a user in
+   * the meantime, and deleting it then would cascade away a value someone had just set.
+   *
+   * Crucially the test lives **inside the DELETE's own WHERE clause**, not in a preceding
+   * query: a separate check would only narrow the race, since a reference can still arrive
+   * between the check resolving and the delete running. As one statement, SQLite evaluates
+   * the predicate and the deletion together, so a definition that has acquired a reference
+   * matches nothing and survives. No child tombstones are needed precisely because a row
+   * that passes the predicate has no children.
+   */
+  async deleteUnusedFieldDef(defId: string): Promise<boolean> {
+    this.assertWritable();
+    await this.driver.transaction([
+      {
+        sql: `DELETE FROM field_defs
+              WHERE id = ?
+                AND NOT EXISTS (SELECT 1 FROM category_fields       WHERE def_id = field_defs.id)
+                AND NOT EXISTS (SELECT 1 FROM location_field_values WHERE def_id = field_defs.id)
+                AND NOT EXISTS (SELECT 1 FROM item_field_values     WHERE def_id = field_defs.id);`,
+        params: [defId],
+      },
+      // Tombstoned on the same condition, so a definition the predicate spared is never
+      // marked deleted for peers (a tombstone without the deletion would strand it).
+      {
+        sql: `INSERT OR REPLACE INTO tombstones (table_name, id)
+              SELECT 'field_defs', ?
+              WHERE NOT EXISTS (SELECT 1 FROM field_defs WHERE id = ?);`,
+        params: [defId, defId],
+      },
+    ]);
+
+    // Report what actually happened by reading back, rather than assuming success: the
+    // caller distinguishes "removed" from "left alone because it is in use after all".
+    const survivor = await this.driver.queryOne<{ id: string }>('SELECT id FROM field_defs WHERE id = ?;', [
+      defId,
+    ]);
+    return survivor === undefined;
+  }
+
+  /**
    * Resolve a dictionary definition by name, creating it when absent (issue #97).
    *
    * Reuse by name is the mechanism that keeps the dictionary from fragmenting: two
