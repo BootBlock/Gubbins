@@ -60,6 +60,32 @@ export function isValidGtin(raw: string): boolean {
 }
 
 /**
+ * Why a hand-typed barcode looks wrong (issue #344). Both concerns are **advisory**, never
+ * blocking: the field legitimately holds non-retail codes (an internal Code-128 label, a
+ * shelf code), so only an unambiguously GTIN-shaped entry — a run of digits and nothing
+ * else — is ever judged at all.
+ *
+ * - `check-digit` — a recognised GTIN width whose mod-10 check digit fails, i.e. almost
+ *   certainly a mistyped or transposed digit. Lookup is an exact match (see the module
+ *   note above), so such an item would never resolve on a re-scan.
+ * - `length` — digits only, but not 8/12/13/14, so it is not a GTIN of any width.
+ */
+export type GtinConcern = 'check-digit' | 'length';
+
+/**
+ * Judge a **typed** barcode entry, returning why it looks wrong or `null` when there is
+ * nothing to say. Blank, and anything containing a non-digit character, return `null` —
+ * see {@link GtinConcern} for why this deliberately stays quiet rather than policing the
+ * field. Pure: the caller decides how (and how loudly) to surface the result.
+ */
+export function describeGtinConcern(raw: string): GtinConcern | null {
+  const digits = raw.trim();
+  if (!isAllDigits(digits)) return null;
+  if (!GTIN_LENGTHS.includes(digits.length)) return 'length';
+  return hasValidGtinCheckDigit(digits) ? null : 'check-digit';
+}
+
+/**
  * Normalise a scanned/typed string to a canonical GTIN, or `null` when it is not one.
  * The canonical form is simply the trimmed digit string as printed on the article — no
  * zero-padding — so it round-trips a re-scan and keys the Open Food Facts lookup directly.

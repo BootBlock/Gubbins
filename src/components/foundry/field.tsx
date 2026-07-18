@@ -1,13 +1,21 @@
 import { type ReactElement, type ReactNode, cloneElement, isValidElement, useId } from 'react';
+import { WarningIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
+import { LiveRegion } from './live-region';
 import { type TooltipSize } from './tooltip';
 
 export interface FormFieldProps {
   readonly label: ReactNode;
   /** Validation message; when present the control is marked invalid and this is announced. */
   readonly error?: string;
+  /**
+   * Advisory message for an entry that is accepted but looks wrong (issue #344) — shown
+   * below the control and described to it, but *never* marks it invalid or blocks a save.
+   * Ignored while an `error` is present, which outranks it.
+   */
+  readonly warning?: string;
   readonly className?: string;
   /**
    * Optional rich-Markdown help, surfaced via an {@link InfoHint} `i` badge at the
@@ -34,14 +42,24 @@ export interface FormFieldProps {
  * announce reliably when inserted at error time). The conditional-attribute logic
  * is the pure {@link fieldAria} seam.
  *
+ * Alongside the blocking `error` it offers an advisory `warning` tier (issue #344) for
+ * an entry that saves fine but looks wrong — a mistyped barcode, say. That message is
+ * described to the control but never marks it invalid, and lands in an always-mounted
+ * {@link LiveRegion} so it is actually announced when it appears.
+ *
  * The single control child is cloned to receive the ARIA props, so call sites read
  * as plainly as the bare markup did: `<FormField label="Name" error={…}><Input
  * {...register('name')} /></FormField>`. The child's own props always win, so an
  * explicit `aria-*` at the call site is never clobbered.
  */
-export function FormField({ label, error, className, hint, hintSize, children }: FormFieldProps) {
+export function FormField({ label, error, warning, className, hint, hintSize, children }: FormFieldProps) {
   const fieldId = useId();
-  const { controlProps, errorId, hasError } = fieldAria(fieldId, error);
+  const { controlProps, errorId, warningId, hasError, hasWarning } = fieldAria(fieldId, error, warning);
+  // The advisory slot is opt-in: passing a string (empty included) mounts the live region,
+  // omitting the prop leaves the field exactly as it was. The region must pre-exist for its
+  // later content to announce at all — see {@link LiveRegion}'s note — so a field that can
+  // warn keeps an empty one mounted rather than inserting it at warn time.
+  const warnable = typeof warning === 'string';
   const control = isValidElement(children)
     ? cloneElement(children as ReactElement<Record<string, unknown>>, {
         ...controlProps,
@@ -66,6 +84,16 @@ export function FormField({ label, error, className, hint, hintSize, children }:
         <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
           {error}
         </span>
+      ) : null}
+      {warnable ? (
+        <LiveRegion>
+          {hasWarning ? (
+            <span id={warningId} className="mt-1 flex items-start gap-1 text-xs text-warning">
+              <WarningIcon className="mt-px size-3.5 shrink-0" aria-hidden />
+              {warning}
+            </span>
+          ) : null}
+        </LiveRegion>
       ) : null}
     </div>
   );

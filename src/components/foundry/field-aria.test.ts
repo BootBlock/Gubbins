@@ -34,3 +34,30 @@ describe('fieldAria — accessible form-field wiring (spec §3 / WCAG 3.3.1, 1.3
     expect(fieldAria('loc', 'bad').errorId).toBe('loc-error');
   });
 });
+
+describe('fieldAria — advisory warning tier (issue #344)', () => {
+  it('derives the warning element id from the field id', () => {
+    expect(fieldAria('barcode').warningId).toBe('barcode-warning');
+  });
+
+  it('describes a warning to the control without marking it invalid', () => {
+    const aria = fieldAria('barcode', undefined, 'Check digit does not match');
+    expect(aria.hasWarning).toBe(true);
+    expect(aria.hasError).toBe(false);
+    expect('aria-invalid' in aria.controlProps).toBe(false);
+    expect(aria.controlProps['aria-describedby']).toBe('barcode-warning');
+  });
+
+  it('treats a blank or whitespace-only warning as no warning', () => {
+    expect(fieldAria('barcode', undefined, '').hasWarning).toBe(false);
+    expect(fieldAria('barcode', undefined, '   ').hasWarning).toBe(false);
+    expect(fieldAria('barcode', undefined, '   ').controlProps).toEqual({});
+  });
+
+  it('lets an error outrank a warning — only the error is wired', () => {
+    const aria = fieldAria('barcode', 'Required', 'Check digit does not match');
+    expect(aria.hasError).toBe(true);
+    expect(aria.hasWarning).toBe(false);
+    expect(aria.controlProps['aria-describedby']).toBe('barcode-error');
+  });
+});
