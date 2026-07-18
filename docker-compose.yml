@@ -39,10 +39,16 @@ services:
     ports:
       - '127.0.0.1:8787:8787'
     environment:
-      # Required, and never stored in this file: export it in your shell or put it in a
-      # git-ignored `.env` beside this compose file. Generate one with:
+      # Required by the bridge, and never stored in this file: export it in your shell or
+      # put it in a git-ignored `.env` beside this compose file. Generate one with:
       #   node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-      GUBBINS_BRIDGE_TOKEN: ${GUBBINS_BRIDGE_TOKEN:?set GUBBINS_BRIDGE_TOKEN before starting the bridge}
+      #
+      # Deliberately NOT declared `:?` (Compose's required-variable form): Compose
+      # interpolates every service in the file regardless of which profiles are active, so
+      # a required variable here would break the plain `docker compose up -d` that runs the
+      # app alone. The bridge refuses to start without a token anyway, with a clearer
+      # message than interpolation can give (bridge/src/config.ts).
+      GUBBINS_BRIDGE_TOKEN: ${GUBBINS_BRIDGE_TOKEN:-}
       GUBBINS_SNAPSHOT_PATH: /data/gubbins-sync.json
     volumes:
       # Point the left-hand side at the folder the app syncs to, and keep it read-only:
