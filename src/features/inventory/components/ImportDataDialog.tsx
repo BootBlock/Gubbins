@@ -742,6 +742,8 @@ function TextInputPanel({ text, onTextChange }: { text: string; onTextChange: (t
   );
 }
 
+const FILE_READ_ERROR = 'Could not read the file — please try again.';
+
 function FileInputPanel({
   filename,
   onFileLoaded,
@@ -758,16 +760,30 @@ function FileInputPanel({
     if (!file) return;
     setError(null);
     setBusy(true);
+    // Every exit from the read — success, failure, abort, or a throw out of the
+    // consumer — must clear `busy`, or the panel is stuck on "Reading file…"
+    // until the dialog is reopened.
+    const fail = () => {
+      setBusy(false);
+      setError(FILE_READ_ERROR);
+    };
     const reader = new FileReader();
     reader.onload = () => {
-      onFileLoaded(reader.result as string, file.name);
-      setBusy(false);
+      try {
+        onFileLoaded(reader.result as string, file.name);
+      } catch {
+        setError(FILE_READ_ERROR);
+      } finally {
+        setBusy(false);
+      }
     };
-    reader.onerror = () => {
-      setBusy(false);
-      setError('Could not read the file — please try again.');
-    };
-    reader.readAsText(file, 'utf-8');
+    reader.onerror = fail;
+    reader.onabort = () => setBusy(false);
+    try {
+      reader.readAsText(file, 'utf-8');
+    } catch {
+      fail();
+    }
   };
 
   return (
