@@ -55,6 +55,10 @@
    * plain `card` is actually *darker* than the `secondary` track (see the dark block).
    */
   --card-elevated: oklch(1 0 0);
+  /* Kept deliberately, though currently unreferenced: `--card-elevated-foreground`,
+   * `--accent-foreground` and `--success-foreground` are the paired text tone for their
+   * background token. Nothing consumes them yet (their `@theme` aliases were dropped as unused),
+   * but the pairing is the palette's convention — not dead code to prune. */
   --card-elevated-foreground: oklch(0.2 0.015 281);
 
   --popover: oklch(1 0 0);
@@ -805,7 +809,10 @@
   --color-card-foreground: var(--card-foreground);
 
   --color-card-elevated: var(--card-elevated);
-  --color-card-elevated-foreground: var(--card-elevated-foreground);
+  /* `--color-card-elevated-foreground` is deliberately absent — nothing reads
+   * `text-card-elevated-foreground` yet. The `--card-elevated-foreground` token itself stays
+   * declared, so if you need the utility, restore the alias here rather than hard-coding a
+   * colour: an unknown Tailwind utility emits no CSS and raises no error. */
 
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -820,7 +827,7 @@
   --color-muted-foreground: var(--muted-foreground);
 
   --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  /* `--color-accent-foreground` deliberately absent — see the card-elevated note above. */
 
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -828,14 +835,13 @@
   --color-destructive-emphasis-foreground: var(--destructive-emphasis-foreground);
 
   --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
+  /* `--color-success-foreground` deliberately absent — see the card-elevated note above. */
 
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
 
-  /* Call-to-attention highlight → `text-highlight` / `ring-highlight` etc. The
-   * `animate-highlight` flash references the raw `--highlight` var directly. */
-  --color-highlight: var(--highlight);
+  /* No `--color-highlight` alias: the `animate-highlight` flash reads the raw `--highlight`
+   * var directly, so the utility namespace had no consumer. */
 
   --color-border: var(--border);
   --color-input: var(--input);
@@ -878,14 +884,9 @@
   --color-abc-b: var(--abc-b);
   --color-abc-c: var(--abc-c);
 
-  /* Collector-card rarity tiers → `text-rarity-*` / `border-rarity-*` utilities for the gamified
-   * card frame + gem. The `.gubbins-rarity[data-rarity]` blocks below also fold these into one
-   * `--rarity` var so the frame can read a single tier colour. */
-  --color-rarity-common: var(--rarity-common);
-  --color-rarity-uncommon: var(--rarity-uncommon);
-  --color-rarity-rare: var(--rarity-rare);
-  --color-rarity-epic: var(--rarity-epic);
-  --color-rarity-legendary: var(--rarity-legendary);
+  /* No `--color-rarity-*` aliases: the collector-card frame + gem are driven entirely by the
+   * `.gubbins-rarity[data-rarity]` blocks below, which fold the tier tokens into one `--rarity`
+   * var. Nothing selects a tier by class, so the utility namespace had no consumer. */
 
   /* Condition "Good" lime → `text-cond-good` (the one condition hue not already a
    * semantic token; Mint/Out-for-calibration/Needs-repair use success/warning/destructive). */
@@ -895,10 +896,8 @@
    * colourise the currency symbol distinctly from the numeric value. */
   --color-money-symbol: var(--money-symbol);
 
-  /* Starfield tokens → exposed as `*-star` utilities for completeness; the
-   * .gubbins-star / .gubbins-flare classes reference the raw vars directly. */
-  --color-star: var(--star);
-  --color-star-flare: var(--star-flare);
+  /* No `--color-star` / `--color-star-flare` aliases: the .gubbins-star / .gubbins-flare
+   * classes reference the raw vars directly, so the utilities were never used. */
 
   /*
    * Right-aligned "N items" hint inside the location Parent picker (and similar
