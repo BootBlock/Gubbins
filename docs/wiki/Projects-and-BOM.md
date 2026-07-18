@@ -36,7 +36,8 @@ flows into your [[purchasing|Reorder-and-Shopping-List]].
 
 > **ℹ️ Note**
 > A **project** is a one-off build with its own BOM and budget. A reusable assembly you make
-> repeatedly is better modelled as a **[[kit|Kits-and-Bundles]]**.
+> repeatedly is better modelled as a **[[kit|Kits-and-Bundles]]** — that page has a fuller
+> side-by-side comparison of the two.
 
 ## Picking the parts
 

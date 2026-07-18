@@ -87,6 +87,7 @@ export {
   Car as LocationVehicleIcon,
   MapPin as LocationOtherIcon,
   Gauge as GaugeIcon,
+  Scale as ScaleIcon,
   Hash as DiscreteIcon,
   ScanBarcode as SerialisedIcon,
   Bookmark as UntrackedIcon,

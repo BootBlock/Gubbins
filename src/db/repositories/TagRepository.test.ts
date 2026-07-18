@@ -62,6 +62,16 @@ describe('TagRepository', () => {
     expect(dict.rows.every((t) => t.itemCount === 1)).toBe(true);
   });
 
+  it('counts every tag, independent of any page limit', async () => {
+    const a = await items.create({ name: 'A' });
+    await tags.setForItem(a.id, ['one', 'two', 'three']);
+
+    // The Tags screen's pagination denominator: it must reflect the whole dictionary, not
+    // the size of the page currently on screen.
+    expect(await tags.count()).toBe(3);
+    expect((await tags.list({ limit: 2 })).rows).toHaveLength(2);
+  });
+
   it('lists tag names without usage counts, ordered case-insensitively', async () => {
     const a = await items.create({ name: 'A' });
     await tags.setForItem(a.id, ['Zeta', 'alpha']);

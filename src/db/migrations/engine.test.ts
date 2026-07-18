@@ -3,7 +3,8 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations, getUserVersion, assertBaselineCurrent } from './engine';
 import { migrations, TARGET_SCHEMA_VERSION } from './index';
 import { v1Initial } from './v1-initial';
-import { BASELINE_REVISION, BASELINE_REVISION_KEY, type Migration } from './migration';
+import { BASELINE_REVISION_KEY, baselineFingerprint, type Migration } from './migration';
+import { BASELINE_REVISION } from './v1-initial';
 import { DbError } from '@/db/errors';
 
 describe('migration engine', () => {
@@ -100,43 +101,36 @@ describe('migration engine', () => {
       const row = await driver.queryOne<{ value: string }>('SELECT value FROM app_meta WHERE key = ?;', [
         BASELINE_REVISION_KEY,
       ]);
-      expect(Number(row?.value)).toBe(BASELINE_REVISION);
+      expect(row?.value).toBe(BASELINE_REVISION);
     });
 
     it('accepts a database built by the current baseline', async () => {
       await runMigrations(driver, migrations);
-      await expect(assertBaselineCurrent(driver)).resolves.toBeUndefined();
+      await expect(assertBaselineCurrent(driver, BASELINE_REVISION)).resolves.toBeUndefined();
     });
 
-    it('refuses a database built by an older revision of the baseline', async () => {
+    it('refuses a database built from a different revision of the baseline', async () => {
       await runMigrations(driver, migrations);
-      await driver.execute('UPDATE app_meta SET value = ? WHERE key = ?;', [
-        String(BASELINE_REVISION - 1),
-        BASELINE_REVISION_KEY,
-      ]);
-      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+      // Simulate a build whose baseline DDL differs from what wrote this database.
+      await expect(assertBaselineCurrent(driver, 'deadbeef')).rejects.toMatchObject({
         name: 'DbError',
         code: 'SCHEMA_STALE',
       });
     });
 
-    it('treats a malformed stamp as stale rather than letting NaN pass the check', async () => {
-      await runMigrations(driver, migrations);
-      await driver.execute('UPDATE app_meta SET value = ? WHERE key = ?;', [
-        'nonsense',
-        BASELINE_REVISION_KEY,
-      ]);
-      // Number('nonsense') is NaN, and NaN < n is false — it must not slip through.
-      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
-        name: 'DbError',
-        code: 'SCHEMA_STALE',
-      });
+    it('derives the fingerprint from the DDL, so editing the baseline changes it', () => {
+      const base = [{ sql: 'CREATE TABLE a (id TEXT);' }];
+      const edited = [{ sql: 'CREATE TABLE a (id TEXT);' }, { sql: 'CREATE TABLE b (id TEXT);' }];
+      // The whole point: a developer folding a table into v1 cannot forget to bump it.
+      expect(baselineFingerprint(base)).not.toBe(baselineFingerprint(edited));
+      // Stable for identical input, so an unchanged baseline never forces a spurious reset.
+      expect(baselineFingerprint(base)).toBe(baselineFingerprint([{ sql: 'CREATE TABLE a (id TEXT);' }]));
     });
 
     it('reports SCHEMA_STALE — not a raw SQL error — when app_meta is absent', async () => {
       await runMigrations(driver, migrations);
       await driver.execute('DROP TABLE app_meta;');
-      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+      await expect(assertBaselineCurrent(driver, BASELINE_REVISION)).rejects.toMatchObject({
         name: 'DbError',
         code: 'SCHEMA_STALE',
       });
@@ -148,7 +142,7 @@ describe('migration engine', () => {
       await runMigrations(driver, migrations);
       await driver.execute('DELETE FROM app_meta WHERE key = ?;', [BASELINE_REVISION_KEY]);
       expect(await getUserVersion(driver)).toBe(TARGET_SCHEMA_VERSION);
-      await expect(assertBaselineCurrent(driver)).rejects.toMatchObject({
+      await expect(assertBaselineCurrent(driver, BASELINE_REVISION)).rejects.toMatchObject({
         name: 'DbError',
         code: 'SCHEMA_STALE',
       });

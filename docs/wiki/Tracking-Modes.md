@@ -15,6 +15,9 @@ ties, offcuts. A single number you nudge up and down.
 
 > M3 × 10 socket screws: **250 in stock**.
 
+Bulk stock is the one mode you can [[count on a scale|Counting-by-Weight]] rather than by hand —
+handy when "how many" runs into the hundreds of near-identical little things.
+
 ### Serialised
 
 For individually identified units — tools, instruments, devices — where each one matters. Each
@@ -69,3 +72,4 @@ quantity would be meaningless. No number at all.
 - **[[Items]]** — creating and editing items.
 - **[[Core concepts|Core-Concepts]]** — how tracking, stock and locations fit together.
 - **[[Batches & lots|Batches-and-Lots]]** — splitting stock by delivery and expiry.
+- **[[Counting by weight|Counting-by-Weight]]** — counting bulk stock on a scale.

@@ -28,6 +28,7 @@ import {
 import { ITEM_HISTORY_TABLE } from '@/db/repositories';
 import { overwriteOpfsDatabase } from '@/app/error/safe-mode-actions';
 import { writeImageFiles } from '@/features/images/opfs-images';
+import { BASELINE_REVISION } from '@/db/migrations';
 import { readBackupFile, type ParsedBackup } from './backup-format';
 import { applySettings } from './backup-settings';
 
@@ -103,6 +104,19 @@ async function restoreMerge(parsed: ParsedBackup): Promise<void> {
  */
 async function restoreReplace(parsed: ParsedBackup): Promise<boolean> {
   if (parsed.sqlite) {
+    // Refuse an exact-copy restore from an incompatible schema *before* touching OPFS. Gubbins
+    // is pre-release and does not migrate across baseline changes, so such a database would be
+    // refused at the next boot (SCHEMA_STALE) — but by then the current data is already gone.
+    // Backups written before the manifest carried a stamp can't be checked, so they proceed as
+    // before rather than being blocked on a missing field.
+    const stamp = parsed.manifest?.baselineRevision;
+    if (stamp && stamp !== BASELINE_REVISION) {
+      throw new Error(
+        'This backup was made with a different version of Gubbins, and its exact database copy ' +
+          'is not compatible with this build. Restore it with the “merge” mode instead, which ' +
+          'brings your records across without replacing the database file.',
+      );
+    }
     await disposeDatabase();
     await overwriteOpfsDatabase(parsed.sqlite);
     if (parsed.images.length > 0) await writeImageFiles(parsed.images);
