@@ -27,7 +27,6 @@ import {
   GroupByIcon,
   ImportIcon,
   InfoIcon,
-  MapViewIcon,
   MoreIcon,
   PackageIcon,
   PrintIcon,
@@ -37,10 +36,7 @@ import {
   SortAscIcon,
   SortDescIcon,
   SortIcon,
-  TableViewIcon,
   TagIcon,
-  TreemapViewIcon,
-  VisualDensityIcon,
 } from '@/components/icons';
 import {
   InfoHint,
@@ -60,9 +56,10 @@ import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
-import { SORT_DIRECTIONS, useLayoutStore, type LayoutDensity } from '@/state/stores/useLayoutStore';
+import { SORT_DIRECTIONS, useLayoutStore } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
+import { useT } from '@/features/i18n';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
 import { astError, useAstSearch } from '@/features/search/queries';
@@ -82,6 +79,7 @@ import { useFullscreen } from '@/lib/useFullscreen';
 import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useInventoryEntry } from './useInventoryEntry';
 import { ItemDragProvider } from './item-drag';
+import { DENSITY_MODES } from './view-modes';
 import { GROUP_MODES } from './grouping';
 import { SORT_MODES, initialDirection, sortMode, toItemSort } from './sorting';
 import { LocationSidebar } from './components/LocationSidebar';
@@ -111,23 +109,6 @@ import type { ItemSelection } from './components/inventory-ui';
 import type { LabelItem } from './labels/label-sheet';
 
 /**
- * The rows in the inventory "More" menu's **View** submenu — the View axis (how the collection is
- * presented; orthogonal to {@link GROUP_MODES}, which governs how items are *arranged*). The first
- * three draw the inventory item-by-item — Card, dense Data rows, or a spreadsheet Table — and the
- * last two are whole-collection visualisations: a spatial location Map and a value Treemap. Kept a
- * plain local array (the whole set is enumerated here and in the store's `LayoutDensity` union); the
- * per-item card view is still stored under the `visual` key, its label just reads "Card".
- */
-const DENSITY_MODES: ReadonlyArray<{ value: LayoutDensity; label: string; icon: typeof VisualDensityIcon }> =
-  [
-    { value: 'visual', label: 'Card', icon: VisualDensityIcon },
-    { value: 'data', label: 'Data', icon: DataDensityIcon },
-    { value: 'table', label: 'Table', icon: TableViewIcon },
-    { value: 'map', label: 'Location map', icon: MapViewIcon },
-    { value: 'treemap', label: 'Value treemap', icon: TreemapViewIcon },
-  ];
-
-/**
  * Help text for the "Show removed" toggle (rendered as rich Markdown in an {@link InfoHint}).
  * Explains that removing an item is a reversible soft-delete — it leaves active inventory but
  * keeps its history — and that the toggle brings those items back so they can be restored.
@@ -152,6 +133,7 @@ export function InventoryScreen() {
 }
 
 function InventoryWorkspace() {
+  const t = useT();
   const density = useLayoutStore((s) => s.density);
   const setDensity = useLayoutStore((s) => s.setDensity);
   const grouping = useLayoutStore((s) => s.grouping);
@@ -166,7 +148,7 @@ function InventoryWorkspace() {
   const activeSort = sortMode(inventorySort.field);
   // Null under the default order, which has no user-facing direction to offer — hoisted so the
   // menu's direction pair narrows on one check rather than per label lookup.
-  const sortDirectionLabels = activeSort.directionLabels;
+  const sortDirections = activeSort.directions;
   // The opt-out compact per-location summary card (device-local view preference).
   const showLocationCard = useLayoutStore((s) => s.inventoryLocationCard);
   const toggleLocationCard = useLayoutStore((s) => s.toggleInventoryLocationCard);
@@ -713,11 +695,15 @@ function InventoryWorkspace() {
                 Visual search
               </MenuAction>
               <MenuSeparator />
-              {/* View (the density axis — how each item is *drawn*: Card / Data / Table) and
-                  Group by (how the list is *arranged*) are the two arrangement axes. Each is a
-                  nested submenu holding its own modes — rendered off its SSOT array so a future
-                  mode needs no menu rework — with the trigger showing the current choice. */}
-              <MenuSub icon={<activeDensity.icon />} label={`View: ${activeDensity.label}`}>
+              {/* The three arrangement axes: View (how each item is *drawn*: Card / Data / Table),
+                  Group by (how the list is *arranged*) and Sort by (what order it runs in). Each is
+                  a nested submenu holding its own modes — rendered off its own descriptor SSOT, so a
+                  future mode needs no menu rework — with the trigger showing the current choice, and
+                  each label resolved through the message catalog. */}
+              <MenuSub
+                icon={<activeDensity.icon />}
+                label={t('inventory.view.trigger', { vars: { mode: t(activeDensity.labelKey) } })}
+              >
                 {DENSITY_MODES.map((mode) => (
                   <MenuAction
                     key={mode.value}
@@ -726,11 +712,14 @@ function InventoryWorkspace() {
                     selected={density === mode.value}
                     selectionRole="radio"
                   >
-                    {mode.label}
+                    {t(mode.labelKey)}
                   </MenuAction>
                 ))}
               </MenuSub>
-              <MenuSub icon={<GroupByIcon />} label={`Group by: ${activeGrouping.label}`}>
+              <MenuSub
+                icon={<GroupByIcon />}
+                label={t('inventory.groupBy.trigger', { vars: { mode: t(activeGrouping.labelKey) } })}
+              >
                 {GROUP_MODES.map((mode) => (
                   <MenuAction
                     key={mode.value}
@@ -738,7 +727,7 @@ function InventoryWorkspace() {
                     selected={grouping === mode.value}
                     selectionRole="radio"
                   >
-                    {mode.label}
+                    {t(mode.labelKey)}
                   </MenuAction>
                 ))}
               </MenuSub>
@@ -747,7 +736,10 @@ function InventoryWorkspace() {
                   direction (A → Z for text, newest/largest first for dates and numbers); the
                   direction pair below then names what each way *means* for the chosen field,
                   and is omitted under the default order, which has no direction to offer. */}
-              <MenuSub icon={<SortIcon />} label={`Sort by: ${activeSort.label}`}>
+              <MenuSub
+                icon={<SortIcon />}
+                label={t('inventory.sort.trigger', { vars: { mode: t(activeSort.labelKey) } })}
+              >
                 {SORT_MODES.map((mode) => (
                   <MenuAction
                     key={mode.value}
@@ -757,10 +749,10 @@ function InventoryWorkspace() {
                     selected={inventorySort.field === mode.value}
                     selectionRole="radio"
                   >
-                    {mode.label}
+                    {t(mode.labelKey)}
                   </MenuAction>
                 ))}
-                {sortDirectionLabels ? (
+                {sortDirections ? (
                   <>
                     <MenuSeparator />
                     {SORT_DIRECTIONS.map((direction) => (
@@ -771,7 +763,7 @@ function InventoryWorkspace() {
                         selected={inventorySort.direction === direction}
                         selectionRole="radio"
                       >
-                        {sortDirectionLabels[direction]}
+                        {t(sortDirections.keys[direction])}
                       </MenuAction>
                     ))}
                   </>
