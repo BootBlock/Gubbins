@@ -10,7 +10,7 @@ import { makeSupplierParser } from './metadata';
 export const farnellParser = makeSupplierParser({
   id: 'farnell',
   label: 'Farnell',
-  hostPattern: /(^|\.)farnell\.[a-z.]+$/i,
+  domains: ['farnell.com'],
   selectors: {
     mpn: ['[data-testid="long-order-code-mpn"]', '.prodDetailInfoBlock .mpn', '[itemprop="mpn"]'],
     manufacturer: ['[data-testid="manufacturer-name"]', '.brandBlock a', '[itemprop="brand"]'],
